@@ -47,14 +47,14 @@ def create_connector_test_suite(
         )
     metadata_dict: dict[str, Any] = yaml.safe_load(metadata_yaml_path.read_text())
     metadata_tags = metadata_dict["data"].get("tags", [])
-    language_tag = next((tag for tag in metadata_tags if tag.startswith("language:")), None)
-    if not language_tag:
+    language_tags: list[str] = [tag for tag in metadata_tags if tag.startswith("language:")]
+    if not language_tags:
         raise ValueError(
             f"Metadata YAML file '{metadata_yaml_path}' does not contain a 'language' tag. "
             "Please ensure the metadata file is correctly configured."
             f"Found tags: {', '.join(metadata_tags)}"
         )
-    language = language_tag.split(":", 1)[1]
+    language = language_tags[0].split(":")[1]
 
     if language == "java":
         test_suite_class = DockerConnectorTestSuite
@@ -65,7 +65,7 @@ def create_connector_test_suite(
     elif language == "python" and connector_name.startswith("destination-"):
         test_suite_class = DestinationTestSuiteBase
     else:
-        raise ValueError("Unsupported language for connector '{connector_name}': {language}")
+        raise ValueError(f"Unsupported language for connector '{connector_name}': {language}")
 
     subclass_overrides: dict[str, Any] = {
         "get_connector_root_dir": classmethod(lambda cls: connector_directory),
