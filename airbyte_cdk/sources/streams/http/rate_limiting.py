@@ -111,7 +111,8 @@ def user_defined_backoff_handler(
                     f"Status code: {exc.response.status_code!r}, Response Content: {exc.response.content!r}"
                 )
             retry_after = exc.backoff
-            logger.info(f"Retrying. Sleeping for {retry_after} seconds")
+            # include logging og the current time to help with debugging
+            logger.info(f"Retrying. Sleeping for {retry_after} seconds at {time.strftime('%Y-%m-%d %H:%M:%S')}")
             time.sleep(retry_after + 1)  # extra second to cover any fractions of second
 
     def log_give_up(details: Mapping[str, Any]) -> None:
