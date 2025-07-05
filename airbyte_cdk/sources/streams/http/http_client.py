@@ -259,9 +259,9 @@ class HttpClient:
         max_tries = max(0, max_retries) + 1
         max_time = self._max_time
 
-        user_backoff_handler = user_defined_backoff_handler(
-            max_tries=max_tries, max_time=max_time
-        )(self._send)
+        user_backoff_handler = user_defined_backoff_handler(max_tries=max_tries, max_time=max_time)(
+            self._send
+        )
         rate_limit_backoff_handler = rate_limit_default_backoff_handler(max_tries=max_tries)
         backoff_handler = http_client_default_backoff_handler(
             max_tries=max_tries, max_time=max_time
