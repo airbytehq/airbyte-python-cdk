@@ -528,7 +528,7 @@ class HttpClient:
             request_kwargs=request_kwargs,
             log_formatter=log_formatter,
             exit_on_rate_limit=exit_on_rate_limit,
-            stream_slice=stream_slice
+            stream_slice=stream_slice,
         )
 
         return request, response

@@ -118,9 +118,7 @@ def user_defined_backoff_handler(
             logging_message = f"Retrying. Sleeping for {retry_after} seconds at {time.strftime('%Y-%m-%d %H:%M:%S')}"
             if stream_slice:
                 logging_message += f" for slice: {stream_slice}"
-            logger.info(
-                logging_message
-            )
+            logger.info(logging_message)
             time.sleep(retry_after + 1)  # extra second to cover any fractions of second
 
     def log_give_up(details: Mapping[str, Any]) -> None:
