@@ -9,6 +9,7 @@ from typing import Any, Callable, Mapping, Optional
 
 import backoff
 from requests import PreparedRequest, RequestException, Response, codes, exceptions
+from airbyte_cdk.utils.datetime_helpers import ab_datetime_now
 
 from .exceptions import (
     DefaultBackoffException,
@@ -114,8 +115,8 @@ def user_defined_backoff_handler(
                     f"Status code: {exc.response.status_code!r}, Response Content: {exc.response.content!r}"
                 )
             retry_after = exc.backoff
-            # include logging og the current time to help with debugging
-            logging_message = f"Retrying. Sleeping for {retry_after} seconds at {time.strftime('%Y-%m-%d %H:%M:%S')}"
+            # server logs are misleading as several sleeping messages are logged at the same timestamp
+            logging_message = f"Retrying. Sleeping for {retry_after} seconds at {ab_datetime_now()} UTC"
             if stream_slice:
                 logging_message += f" for slice: {stream_slice}"
             logger.info(logging_message)
