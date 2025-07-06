@@ -473,6 +473,7 @@ class HttpRequester(Requester):
             dedupe_query_params=True,
             log_formatter=log_formatter,
             exit_on_rate_limit=self._exit_on_rate_limit,
+            stream_slice=stream_slice,
         )
 
         return response

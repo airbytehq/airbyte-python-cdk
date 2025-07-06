@@ -103,6 +103,7 @@ def http_client_default_backoff_handler(
 def user_defined_backoff_handler(
     max_tries: Optional[int],
     max_time: Optional[int] = None,
+    stream_slice: Optional[Mapping[str, Any]] = None,
     **kwargs: Any,
 ) -> Callable[[SendRequestCallableType], SendRequestCallableType]:
     def sleep_on_ratelimit(details: Mapping[str, Any]) -> None:
@@ -114,8 +115,11 @@ def user_defined_backoff_handler(
                 )
             retry_after = exc.backoff
             # include logging og the current time to help with debugging
+            logging_message = f"Retrying. Sleeping for {retry_after} seconds at {time.strftime('%Y-%m-%d %H:%M:%S')}"
+            if stream_slice:
+                logging_message += f" for slice: {stream_slice}"
             logger.info(
-                f"Retrying. Sleeping for {retry_after} seconds at {time.strftime('%Y-%m-%d %H:%M:%S')}"
+                logging_message
             )
             time.sleep(retry_after + 1)  # extra second to cover any fractions of second
 

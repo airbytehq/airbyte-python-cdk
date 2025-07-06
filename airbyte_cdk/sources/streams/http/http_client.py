@@ -243,6 +243,7 @@ class HttpClient:
         request_kwargs: Mapping[str, Any],
         log_formatter: Optional[Callable[[requests.Response], Any]] = None,
         exit_on_rate_limit: Optional[bool] = False,
+        stream_slice: Optional[Mapping[str, Any]] = None,
     ) -> requests.Response:
         """
         Sends a request with retry logic.
@@ -259,9 +260,9 @@ class HttpClient:
         max_tries = max(0, max_retries) + 1
         max_time = self._max_time
 
-        user_backoff_handler = user_defined_backoff_handler(max_tries=max_tries, max_time=max_time)(
-            self._send
-        )
+        user_backoff_handler = user_defined_backoff_handler(
+            max_tries=max_tries, max_time=max_time, stream_slice=stream_slice
+        )(self._send)
         rate_limit_backoff_handler = rate_limit_default_backoff_handler(max_tries=max_tries)
         backoff_handler = http_client_default_backoff_handler(
             max_tries=max_tries, max_time=max_time
@@ -506,6 +507,7 @@ class HttpClient:
         dedupe_query_params: bool = False,
         log_formatter: Optional[Callable[[requests.Response], Any]] = None,
         exit_on_rate_limit: Optional[bool] = False,
+        stream_slice: Optional[Mapping[str, Any]] = None,
     ) -> Tuple[requests.PreparedRequest, requests.Response]:
         """
         Prepares and sends request and return request and response objects.
@@ -526,6 +528,7 @@ class HttpClient:
             request_kwargs=request_kwargs,
             log_formatter=log_formatter,
             exit_on_rate_limit=exit_on_rate_limit,
+            stream_slice=stream_slice
         )
 
         return request, response

@@ -546,6 +546,7 @@ class HttpStream(Stream, CheckpointMixin, ABC):
             dedupe_query_params=True,
             log_formatter=self.get_log_formatter(),
             exit_on_rate_limit=self.exit_on_rate_limit,
+            stream_slice=stream_slice
         )
 
         return request, response
