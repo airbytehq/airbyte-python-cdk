@@ -4404,21 +4404,23 @@ def test_simple_retriever_with_requester_properties_from_endpoint():
       url_base: "https://api.hubapi.com"
       http_method: "GET"
       path: "adAnalytics"
-      fetch_properties_from_endpoint:
-        type: PropertiesFromEndpoint
-        property_field_path: [ "name" ]
-        retriever:
-          type: SimpleRetriever
-          requester:
-            type: HttpRequester
-            url_base: https://api.hubapi.com
-            path: "/properties/v2/dynamics/properties"
-            http_method: GET
-          record_selector:
-            type: RecordSelector
-            extractor:
-              type: DpathExtractor
-              field_path: []
+      query_properties:
+        type: QueryProperties
+        property_list:
+          type: PropertiesFromEndpoint
+          property_field_path: [ "name" ]
+          retriever:
+            type: SimpleRetriever
+            requester:
+              type: HttpRequester
+              url_base: https://api.hubapi.com
+              path: "/properties/v2/dynamics/properties"
+              http_method: GET
+            record_selector:
+              type: RecordSelector
+              extractor:
+                type: DpathExtractor
+                field_path: []
     dynamic_properties_stream:
       type: DeclarativeStream
       incremental_sync:
