@@ -217,10 +217,26 @@ class AbstractOauth2Authenticator(AuthBase):
                 data=self.build_refresh_request_body(),
                 headers=self.build_refresh_request_headers(),
             )
-            # log the response even if the request failed for troubleshooting purposes
+
+            if not response.ok:
+                # log the response even if the request failed for troubleshooting purposes
+                self._log_response(response)
+                response.raise_for_status()
+
+            response_json = response.json()
+
+            try:
+                # extract the access token and add to secrets to avoid logging the raw value
+                access_key = self._extract_access_token(response_json)
+                if access_key:
+                    add_to_secrets(access_key)
+            except ResponseKeysMaxRecurtionReached as e:
+                # could not find the access token in the response, so do nothing
+                pass
+
             self._log_response(response)
-            response.raise_for_status()
-            return response.json()
+
+            return response_json
         except requests.exceptions.RequestException as e:
             if e.response is not None:
                 if e.response.status_code == 429 or e.response.status_code >= 500:
@@ -240,9 +256,7 @@ class AbstractOauth2Authenticator(AuthBase):
 
         This method attempts to extract the access token from the provided response data.
         If the access token is not found, it raises an exception indicating that the token
-        refresh API response was missing the access token. If the access token is found,
-        it adds the token to the list of secrets to ensure it is replaced before logging
-        the response.
+        refresh API response was missing the access token.
 
         Args:
             response_data (Mapping[str, Any]): The response data from which to extract the access token.
@@ -257,9 +271,6 @@ class AbstractOauth2Authenticator(AuthBase):
                 raise Exception(
                     f"Token refresh API response was missing access token {self.get_access_token_name()}"
                 )
-            # Add the access token to the list of secrets so it is replaced before logging the response
-            # An argument could be made to remove the prevous access key from the list of secrets, but unmasking values seems like a security incident waiting to happen...
-            add_to_secrets(access_key)
         except ResponseKeysMaxRecurtionReached as e:
             raise e
 

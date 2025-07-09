@@ -21,26 +21,6 @@ from airbyte_cdk.test.models import (
 )
 
 
-def _errors_to_str(
-    entrypoint_output: entrypoint_wrapper.EntrypointOutput,
-) -> str:
-    """Convert errors from entrypoint output to a string."""
-    if not entrypoint_output.errors:
-        # If there are no errors, return an empty string.
-        return ""
-
-    return "\n" + "\n".join(
-        [
-            str(error.trace.error).replace(
-                "\\n",
-                "\n",
-            )
-            for error in entrypoint_output.errors
-            if error.trace
-        ],
-    )
-
-
 @runtime_checkable
 class IConnector(Protocol):
     """A connector that can be run in a test scenario.
@@ -125,9 +105,7 @@ def run_test_job(
         expected_outcome=test_scenario.expected_outcome,
     )
     if result.errors and test_scenario.expected_outcome.expect_success():
-        raise AssertionError(
-            f"Expected no errors but got {len(result.errors)}: \n" + _errors_to_str(result)
-        )
+        raise result.as_exception()
 
     if verb == "check":
         # Check is expected to fail gracefully without an exception.
@@ -137,7 +115,7 @@ def run_test_job(
             "Expected exactly one CONNECTION_STATUS message. Got "
             f"{len(result.connection_status_messages)}:\n"
             + "\n".join([str(msg) for msg in result.connection_status_messages])
-            + _errors_to_str(result)
+            + result.get_formatted_error_message()
         )
         if test_scenario.expected_outcome.expect_exception():
             conn_status = result.connection_status_messages[0].connectionStatus
@@ -161,7 +139,8 @@ def run_test_job(
 
     if test_scenario.expected_outcome.expect_success():
         assert not result.errors, (
-            f"Expected no errors but got {len(result.errors)}: \n" + _errors_to_str(result)
+            f"Test job failed with {len(result.errors)} error(s): \n"
+            + result.get_formatted_error_message()
         )
 
     return result

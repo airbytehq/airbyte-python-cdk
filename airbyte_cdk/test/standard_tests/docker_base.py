@@ -11,7 +11,7 @@ import warnings
 from dataclasses import asdict
 from pathlib import Path
 from subprocess import CompletedProcess, SubprocessError
-from typing import Literal
+from typing import Literal, cast
 
 import orjson
 import pytest
@@ -25,19 +25,18 @@ from airbyte_cdk.models import (
     DestinationSyncMode,
     SyncMode,
 )
-from airbyte_cdk.models.airbyte_protocol_serializers import (
-    AirbyteCatalogSerializer,
-    AirbyteStreamSerializer,
-)
 from airbyte_cdk.models.connector_metadata import MetadataFile
 from airbyte_cdk.test.entrypoint_wrapper import EntrypointOutput
 from airbyte_cdk.test.models import ConnectorTestScenario
-from airbyte_cdk.test.utils.reading import catalog
 from airbyte_cdk.utils.connector_paths import (
     ACCEPTANCE_TEST_CONFIG,
     find_connector_root,
 )
-from airbyte_cdk.utils.docker import build_connector_image, run_docker_command
+from airbyte_cdk.utils.docker import (
+    build_connector_image,
+    run_docker_airbyte_command,
+    run_docker_command,
+)
 
 
 class DockerConnectorTestSuite:
@@ -54,6 +53,17 @@ class DockerConnectorTestSuite:
     def get_connector_root_dir(cls) -> Path:
         """Get the root directory of the connector."""
         return find_connector_root([cls.get_test_class_dir(), Path.cwd()])
+
+    @classproperty
+    def connector_name(self) -> str:
+        """Get the name of the connector."""
+        connector_root = self.get_connector_root_dir()
+        return connector_root.absolute().name
+
+    @classmethod
+    def is_destination_connector(cls) -> bool:
+        """Check if the connector is a destination."""
+        return cast(str, cls.connector_name).startswith("destination-")
 
     @classproperty
     def acceptance_test_config_path(cls) -> Path:
@@ -145,23 +155,16 @@ class DockerConnectorTestSuite:
                 no_verify=False,
             )
 
-        try:
-            result: CompletedProcess[str] = run_docker_command(
-                [
-                    "docker",
-                    "run",
-                    "--rm",
-                    connector_image,
-                    "spec",
-                ],
-                check=True,  # Raise an error if the command fails
-                capture_stderr=True,
-                capture_stdout=True,
-            )
-        except SubprocessError as ex:
-            raise AssertionError(
-                f"Failed to run `spec` command in docker image {connector_image!r}. Error: {ex!s}"
-            ) from None
+        _ = run_docker_airbyte_command(
+            [
+                "docker",
+                "run",
+                "--rm",
+                connector_image,
+                "spec",
+            ],
+            raise_if_errors=True,
+        )
 
     @pytest.mark.skipif(
         shutil.which("docker") is None,
@@ -203,7 +206,7 @@ class DockerConnectorTestSuite:
         with scenario.with_temp_config_file(
             connector_root=connector_root,
         ) as temp_config_file:
-            _ = run_docker_command(
+            _ = run_docker_airbyte_command(
                 [
                     "docker",
                     "run",
@@ -215,9 +218,7 @@ class DockerConnectorTestSuite:
                     "--config",
                     container_config_path,
                 ],
-                check=True,  # Raise an error if the command fails
-                capture_stderr=True,
-                capture_stdout=True,
+                raise_if_errors=True,
             )
 
     @pytest.mark.skipif(
@@ -242,6 +243,9 @@ class DockerConnectorTestSuite:
             the local docker image cache using `docker image prune -a` command.
           - If the --connector-image arg is provided, it will be used instead of building the image.
         """
+        if self.is_destination_connector():
+            pytest.skip("Skipping read test for destination connector.")
+
         if scenario.expected_outcome.expect_exception():
             pytest.skip("Skipping (expected to fail).")
 
@@ -295,7 +299,7 @@ class DockerConnectorTestSuite:
             ) as temp_dir_str,
         ):
             temp_dir = Path(temp_dir_str)
-            discover_result = run_docker_command(
+            discover_result = run_docker_airbyte_command(
                 [
                     "docker",
                     "run",
@@ -307,20 +311,12 @@ class DockerConnectorTestSuite:
                     "--config",
                     container_config_path,
                 ],
-                check=True,  # Raise an error if the command fails
-                capture_stderr=True,
-                capture_stdout=True,
+                raise_if_errors=True,
             )
-            parsed_output = EntrypointOutput(messages=discover_result.stdout.splitlines())
-            try:
-                catalog_message = parsed_output.catalog  # Get catalog message
-                assert catalog_message.catalog is not None, "Catalog message missing catalog."
-                discovered_catalog: AirbyteCatalog = parsed_output.catalog.catalog
-            except Exception as ex:
-                raise AssertionError(
-                    f"Failed to load discovered catalog from {discover_result.stdout}. "
-                    f"Error: {ex!s}"
-                ) from None
+
+            catalog_message = discover_result.catalog  # Get catalog message
+            assert catalog_message.catalog is not None, "Catalog message missing catalog."
+            discovered_catalog: AirbyteCatalog = catalog_message.catalog
             if not discovered_catalog.streams:
                 raise ValueError(
                     f"Discovered catalog for connector '{connector_name}' is empty. "
@@ -355,7 +351,7 @@ class DockerConnectorTestSuite:
             configured_catalog_path.write_text(
                 orjson.dumps(asdict(configured_catalog)).decode("utf-8")
             )
-            read_result: CompletedProcess[str] = run_docker_command(
+            read_result: EntrypointOutput = run_docker_airbyte_command(
                 [
                     "docker",
                     "run",
@@ -371,18 +367,5 @@ class DockerConnectorTestSuite:
                     "--catalog",
                     container_catalog_path,
                 ],
-                check=False,
-                capture_stderr=True,
-                capture_stdout=True,
+                raise_if_errors=True,
             )
-            if read_result.returncode != 0:
-                raise AssertionError(
-                    f"Failed to run `read` command in docker image {connector_image!r}. "
-                    "\n-----------------"
-                    f"EXIT CODE: {read_result.returncode}\n"
-                    "STDERR:\n"
-                    f"{read_result.stderr}\n"
-                    f"STDOUT:\n"
-                    f"{read_result.stdout}\n"
-                    "\n-----------------"
-                ) from None

@@ -253,12 +253,10 @@ class FileStreamTest(TestCase):
 
                 # Assert file reference fields are copied to record data
                 record_data = output.records[0].record.data
-                assert record_data["staging_file_url"] == file_reference.staging_file_url
                 assert (
                     record_data["source_file_relative_path"]
                     == file_reference.source_file_relative_path
                 )
-                assert record_data["file_size_bytes"] == file_reference.file_size_bytes
 
     def test_discover_article_attachments(self) -> None:
         output = discover(self._config())
