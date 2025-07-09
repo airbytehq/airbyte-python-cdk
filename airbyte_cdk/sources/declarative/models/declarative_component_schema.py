@@ -1936,6 +1936,11 @@ class DefaultErrorHandler(BaseModel):
         examples=[5, 0, 10],
         title="Max Retry Count",
     )
+    max_time: Optional[int] = Field(
+        600,
+        description="The maximum total time (in seconds) spent waiting between retries, that is the sum of all backoff intervals, before giving up and failing.",
+        title="Max cumulative retry wait time (seconds)",
+    )
     response_filters: Optional[List[HttpResponseFilter]] = Field(
         None,
         description="List of response filters to iterate on when deciding how to handle an error. When using an array of multiple filters, the filters will be applied sequentially and the response will be selected if it matches any of the filter's predicate.",

@@ -1736,6 +1736,11 @@ definitions:
           - 5
           - 0
           - 10
+      max_time:
+        title: Max cumulative retry wait time (seconds)
+        description: The maximum total time (in seconds) spent waiting between retries, that is the sum of all backoff intervals, before giving up and failing.
+        type: integer
+        default: 600
       response_filters:
         title: Response Filters
         description: List of response filters to iterate on when deciding how to handle an error. When using an array of multiple filters, the filters will be applied sequentially and the response will be selected if it matches any of the filter's predicate.
