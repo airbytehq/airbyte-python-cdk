@@ -2160,6 +2160,7 @@ class ConfigNormalizationRules(BaseModel):
     class Config:
         extra = Extra.forbid
 
+    type: Literal["ConfigNormalizationRules"]
     config_migrations: Optional[List[ConfigMigration]] = Field(
         [],
         description="The discrete migrations that will be applied on the incoming config. Each migration will be applied in the order they are defined.",

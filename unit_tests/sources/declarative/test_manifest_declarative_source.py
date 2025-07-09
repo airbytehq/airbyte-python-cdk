@@ -2488,6 +2488,7 @@ def test_given_unmigrated_config_when_migrating_then_config_is_migrated(migratio
             "documentation_url": "https://example.org",
             "connection_specification": {},
             "config_normalization_rules": {
+                "type": "ConfigNormalizationRules",
                 "config_migrations": [
                     {
                         "type": "ConfigMigration",
@@ -2558,6 +2559,7 @@ def test_given_already_migrated_config_no_control_message_is_emitted(migration_m
             "documentation_url": "https://example.org",
             "connection_specification": {},
             "config_normalization_rules": {
+                "type": "ConfigNormalizationRules",
                 "config_migrations": [
                     {
                         "type": "ConfigMigration",
@@ -2628,6 +2630,7 @@ def test_given_transformations_config_is_transformed():
             "documentation_url": "https://example.org",
             "connection_specification": {},
             "config_normalization_rules": {
+                "type": "ConfigNormalizationRules",
                 "transformations": [
                     {
                         "type": "ConfigAddFields",
@@ -2703,6 +2706,7 @@ def test_given_valid_config_streams_validates_config_and_does_not_raise():
             "connection_specification": {},
             "parameters": {},
             "config_normalization_rules": {
+                "type": "ConfigNormalizationRules",
                 "validations": [
                     {
                         "type": "DpathValidator",
@@ -2767,6 +2771,7 @@ def test_given_invalid_config_streams_validates_config_and_raises():
             "connection_specification": {},
             "parameters": {},
             "config_normalization_rules": {
+                "type": "ConfigNormalizationRules",
                 "validations": [
                     {
                         "type": "DpathValidator",
