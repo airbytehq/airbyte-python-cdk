@@ -3835,7 +3835,12 @@ definitions:
         title: Config Normalization Rules
         type: object
         additionalProperties: false
+        required:
+          - type
         properties:
+          type:
+            type: string
+            enum: [ConfigNormalizationRules]
           config_migrations:
             title: Config Migrations
             description: The discrete migrations that will be applied on the incoming config. Each migration will be applied in the order they are defined.
