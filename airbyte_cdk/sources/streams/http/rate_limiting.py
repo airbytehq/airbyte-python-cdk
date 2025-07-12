@@ -17,6 +17,7 @@ from .exceptions import (
     RateLimitBackoffException,
     UserDefinedBackoffException,
 )
+from airbyte_cdk.sources.declarative.request_local import RequestLocal
 
 TRANSIENT_EXCEPTIONS = (
     DefaultBackoffException,
@@ -120,8 +121,9 @@ def user_defined_backoff_handler(
             logging_message = (
                 f"Retrying. Sleeping for {retry_after} seconds at {ab_datetime_now()} UTC"
             )
-            if stream_slice:
-                logging_message += f" for slice: {stream_slice}"
+            request_local = RequestLocal()
+            if request_local.stream_slice:
+                logging_message += f" for slice: {request_local.stream_slice}"
             logger.info(logging_message)
             time.sleep(retry_after + 1)  # extra second to cover any fractions of second
 
@@ -156,9 +158,14 @@ def rate_limit_default_backoff_handler(
             logger.info(
                 f"Status code: {exc.response.status_code!r}, Response Content: {exc.response.content!r}"
             )
-        logger.info(
-            f"Caught retryable error '{str(exc)}' after {details['tries']} tries. Waiting {details['wait']} seconds then retrying..."
+        logger_slice_info = ""
+        request_local = RequestLocal()
+        if request_local.stream_slice:
+            logger_slice_info = f" for slice: {request_local.stream_slice}"
+        logger_info_message = (
+            f"Caught retryable error '{str(exc)}' after {details['tries']} tries. Waiting {details['wait']} seconds then retrying{logger_slice_info}..."
         )
+        logger.info(logger_info_message)
 
     return backoff.on_exception(  # type: ignore # Decorator function returns a function with a different signature than the input function, so mypy can't infer the type of the returned function
         backoff.expo,
