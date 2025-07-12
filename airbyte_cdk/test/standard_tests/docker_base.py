@@ -10,7 +10,6 @@ import tempfile
 import warnings
 from dataclasses import asdict
 from pathlib import Path
-from subprocess import CompletedProcess, SubprocessError
 from typing import Literal, cast
 
 import orjson
@@ -35,7 +34,6 @@ from airbyte_cdk.utils.connector_paths import (
 from airbyte_cdk.utils.docker import (
     build_connector_image,
     run_docker_airbyte_command,
-    run_docker_command,
 )
 
 
@@ -85,7 +83,7 @@ class DockerConnectorTestSuite:
         """
         categories = ["connection", "spec"]
         try:
-            acceptance_test_config_path = cls.acceptance_test_config_path
+            cls.acceptance_test_config_path
         except FileNotFoundError as e:
             # Destinations sometimes do not have an acceptance tests file.
             warnings.warn(
