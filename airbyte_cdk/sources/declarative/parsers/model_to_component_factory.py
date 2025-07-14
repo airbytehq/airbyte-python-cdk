@@ -187,6 +187,9 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
     CustomBackoffStrategy as CustomBackoffStrategyModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    CustomConfigTransformation as CustomConfigTransformationModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     CustomDecoder as CustomDecoderModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
@@ -687,6 +690,7 @@ class ModelToComponentFactory:
             CustomPartitionRouterModel: self.create_custom_component,
             CustomTransformationModel: self.create_custom_component,
             CustomValidationStrategyModel: self.create_custom_component,
+            CustomConfigTransformationModel: self.create_custom_component,
             DatetimeBasedCursorModel: self.create_datetime_based_cursor,
             DeclarativeStreamModel: self.create_declarative_stream,
             DefaultErrorHandlerModel: self.create_default_error_handler,

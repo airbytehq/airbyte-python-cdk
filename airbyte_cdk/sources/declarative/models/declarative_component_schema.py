@@ -160,6 +160,20 @@ class CustomBackoffStrategy(BaseModel):
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
 
+class CustomConfigTransformation(BaseModel):
+    class Config:
+        extra = Extra.allow
+
+    type: Literal["CustomConfigTransformation"]
+    class_name: str = Field(
+        ...,
+        description="Fully-qualified name of the class that will be implementing the custom config transformation. The format is `source_<name>.<package>.<class_name>`.",
+        examples=["source_declarative_manifest.components.MyCustomConfigTransformation"],
+        title="Class Name",
+    )
+    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
+
+
 class CustomErrorHandler(BaseModel):
     class Config:
         extra = Extra.allow
@@ -2149,7 +2163,9 @@ class ConfigMigration(BaseModel):
     description: Optional[str] = Field(
         None, description="The description/purpose of the config migration."
     )
-    transformations: List[Union[ConfigRemapField, ConfigAddFields, ConfigRemoveFields]] = Field(
+    transformations: List[
+        Union[ConfigRemapField, ConfigAddFields, ConfigRemoveFields, CustomConfigTransformation]
+    ] = Field(
         ...,
         description="The list of transformations that will attempt to be applied on an incoming unmigrated config. The transformations will be applied in the order they are defined.",
         title="Transformations",
@@ -2166,7 +2182,9 @@ class ConfigNormalizationRules(BaseModel):
         title="Config Migrations",
     )
     transformations: Optional[
-        List[Union[ConfigRemapField, ConfigAddFields, ConfigRemoveFields]]
+        List[
+            Union[ConfigRemapField, ConfigAddFields, ConfigRemoveFields, CustomConfigTransformation]
+        ]
     ] = Field(
         [],
         description="The list of transformations that will be applied on the incoming config at the start of each sync. The transformations will be applied in the order they are defined.",
