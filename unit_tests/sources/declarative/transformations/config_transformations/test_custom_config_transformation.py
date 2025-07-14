@@ -25,11 +25,11 @@ class MockCustomConfigTransformation(ConfigTransformation):
         """
         # Only modify user config keys, avoid framework-injected keys
         # Check if there are any user keys (not starting with __)
-        has_user_keys = any(not key.startswith('__') for key in config.keys())
+        has_user_keys = any(not key.startswith("__") for key in config.keys())
         if has_user_keys:
-            config['transformed_field'] = 'transformed_value'
-            if self.parameters.get('additional_field'):
-                config['additional_field'] = self.parameters['additional_field']
+            config["transformed_field"] = "transformed_value"
+            if self.parameters.get("additional_field"):
+                config["additional_field"] = self.parameters["additional_field"]
 
 
 def test_given_valid_config_when_transform_then_config_is_transformed():
