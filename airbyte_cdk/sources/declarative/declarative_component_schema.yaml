@@ -4574,9 +4574,10 @@ definitions:
         description: Fully-qualified name of the class that will be implementing the custom config transformation. The format is `source_<name>.<package>.<class_name>`.
         examples:
           - "source_declarative_manifest.components.MyCustomConfigTransformation"
-      parameters:
+      $parameters:
         type: object
         description: Additional parameters to be passed to the custom config transformation.
+        additionalProperties: true
 interpolation:
   variables:
     - title: config
