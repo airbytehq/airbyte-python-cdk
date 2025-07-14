@@ -477,19 +477,19 @@ class RefreshTokenUpdater(BaseModel):
         title="Refresh Token Property Name",
     )
     access_token_config_path: Optional[List[str]] = Field(
-        ["access_token"],
+        ["credentials", "access_token"],
         description="Config path to the access token. Make sure the field actually exists in the config.",
         examples=[["credentials", "access_token"], ["access_token"]],
         title="Config Path To Access Token",
     )
     refresh_token_config_path: Optional[List[str]] = Field(
-        ["refresh_token"],
+        ["credentials", "refresh_token"],
         description="Config path to the access token. Make sure the field actually exists in the config.",
         examples=[["credentials", "refresh_token"], ["refresh_token"]],
         title="Config Path To Refresh Token",
     )
     token_expiry_date_config_path: Optional[List[str]] = Field(
-        ["token_expiry_date"],
+        ["credentials", "token_expiry_date"],
         description="Config path to the expiry date. Make sure actually exists in the config.",
         examples=[["credentials", "token_expiry_date"]],
         title="Config Path To Expiry Date",

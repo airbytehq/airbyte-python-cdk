@@ -1355,7 +1355,7 @@ definitions:
             type: array
             items:
               type: string
-            default: ["access_token"]
+            default: ["credentials", "access_token"]
             examples:
               - ["credentials", "access_token"]
               - ["access_token"]
@@ -1365,7 +1365,7 @@ definitions:
             type: array
             items:
               type: string
-            default: ["refresh_token"]
+            default: ["credentials", "refresh_token"]
             examples:
               - ["credentials", "refresh_token"]
               - ["refresh_token"]
@@ -1375,7 +1375,7 @@ definitions:
             type: array
             items:
               type: string
-            default: ["token_expiry_date"]
+            default: ["credentials", "token_expiry_date"]
             examples:
               - ["credentials", "token_expiry_date"]
           refresh_token_error_status_codes:
