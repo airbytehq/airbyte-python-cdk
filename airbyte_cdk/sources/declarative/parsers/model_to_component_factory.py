@@ -187,6 +187,9 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
     CustomBackoffStrategy as CustomBackoffStrategyModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    CustomConfigTransformation as CustomConfigTransformationModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     CustomDecoder as CustomDecoderModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
@@ -224,9 +227,6 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     CustomValidationStrategy as CustomValidationStrategyModel,
-)
-from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
-    CustomConfigTransformation as CustomConfigTransformationModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     DatetimeBasedCursor as DatetimeBasedCursorModel,

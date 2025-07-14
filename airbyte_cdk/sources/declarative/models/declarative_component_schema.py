@@ -2163,7 +2163,9 @@ class ConfigMigration(BaseModel):
     description: Optional[str] = Field(
         None, description="The description/purpose of the config migration."
     )
-    transformations: List[Union[ConfigRemapField, ConfigAddFields, ConfigRemoveFields, CustomConfigTransformation]] = Field(
+    transformations: List[
+        Union[ConfigRemapField, ConfigAddFields, ConfigRemoveFields, CustomConfigTransformation]
+    ] = Field(
         ...,
         description="The list of transformations that will attempt to be applied on an incoming unmigrated config. The transformations will be applied in the order they are defined.",
         title="Transformations",
@@ -2180,7 +2182,9 @@ class ConfigNormalizationRules(BaseModel):
         title="Config Migrations",
     )
     transformations: Optional[
-        List[Union[ConfigRemapField, ConfigAddFields, ConfigRemoveFields, CustomConfigTransformation]]
+        List[
+            Union[ConfigRemapField, ConfigAddFields, ConfigRemoveFields, CustomConfigTransformation]
+        ]
     ] = Field(
         [],
         description="The list of transformations that will be applied on the incoming config at the start of each sync. The transformations will be applied in the order they are defined.",
