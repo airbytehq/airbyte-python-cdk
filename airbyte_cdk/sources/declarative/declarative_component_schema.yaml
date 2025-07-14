@@ -3852,6 +3852,7 @@ definitions:
                 - "$ref": "#/definitions/ConfigRemapField"
                 - "$ref": "#/definitions/ConfigAddFields"
                 - "$ref": "#/definitions/ConfigRemoveFields"
+                - "$ref": "#/definitions/CustomConfigTransformation"
             default: []
           validations:
             title: Validations
@@ -3885,6 +3886,7 @@ definitions:
             - "$ref": "#/definitions/ConfigRemapField"
             - "$ref": "#/definitions/ConfigAddFields"
             - "$ref": "#/definitions/ConfigRemoveFields"
+            - "$ref": "#/definitions/CustomConfigTransformation"
         default: []
   SubstreamPartitionRouter:
     title: Substream Partition Router
@@ -4556,6 +4558,25 @@ definitions:
           - "{{ property is integer }}"
           - "{{ property|length > 5 }}"
           - "{{ property == 'some_string_to_match' }}"
+  CustomConfigTransformation:
+    title: Custom Config Transformation
+    description: A custom config transformation that can be used to transform the connector configuration.
+    type: object
+    required:
+      - type
+      - class_name
+    properties:
+      type:
+        type: string
+        enum: [CustomConfigTransformation]
+      class_name:
+        type: string
+        description: Fully-qualified name of the class that will be implementing the custom config transformation. The format is `source_<name>.<package>.<class_name>`.
+        examples:
+          - "source_declarative_manifest.components.MyCustomConfigTransformation"
+      parameters:
+        type: object
+        description: Additional parameters to be passed to the custom config transformation.
 interpolation:
   variables:
     - title: config
