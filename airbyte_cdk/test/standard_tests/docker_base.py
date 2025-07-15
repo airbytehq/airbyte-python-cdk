@@ -143,7 +143,7 @@ class DockerConnectorTestSuite:
         This has to be a separate function because pytest does not allow
         parametrization of fixtures with arguments from the test class itself.
         """
-        categories = ["connection", "spec"]
+        categories = ["spec", "connection", "basic_read"]
         try:
             all_tests_config = cls.acceptance_test_config
         except FileNotFoundError as e:
@@ -174,15 +174,19 @@ class DockerConnectorTestSuite:
 
                 scenario = ConnectorTestScenario.model_validate(test)
 
-                if scenario.config_path and scenario.config_path in [
-                    s.config_path for s in test_scenarios
-                ]:
-                    # Skip duplicate scenarios based on config_path
-                    continue
-
                 test_scenarios.append(scenario)
-        #import pdb; pdb.set_trace()  # noqa: T201
-        return test_scenarios
+
+        # Remove duplicate scenarios based on config_path.
+        deduped_test_scenarios = []
+        for scenario in test_scenarios:
+            for existing_scenario in deduped_test_scenarios:
+                if scenario.config_path == existing_scenario.config_path:
+                    break
+            else:
+                # If a scenario does not exist with the config, add the new scenario to the list.
+                deduped_test_scenarios.append(scenario)
+
+        return deduped_test_scenarios
 
     @pytest.mark.skipif(
         shutil.which("docker") is None,
@@ -385,13 +389,9 @@ class DockerConnectorTestSuite:
                 # If `read_from_streams` is a list, we filter the discovered streams.
                 streams_list = list(set(streams_list) & set(read_from_streams))
 
-            empty_streams = self._get_empty_streams()
-            if empty_streams:
+            if scenario.empty_streams:
                 # If there are empty streams, we remove them from the list of streams to read.
-                streams_list = list(set(streams_list) - set(empty_streams))
-
-            print("YOYOYOYOYO")
-            import pdb; pdb.set_trace()  # noqa: T201
+                streams_list = list(set(streams_list) - set(scenario.empty_streams))
 
             configured_catalog: ConfiguredAirbyteCatalog = ConfiguredAirbyteCatalog(
                 streams=[
