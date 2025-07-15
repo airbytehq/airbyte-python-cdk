@@ -64,13 +64,75 @@ class DockerConnectorTestSuite:
         return cast(str, cls.connector_name).startswith("destination-")
 
     @classproperty
-    def acceptance_test_config_path(cls) -> Path:
-        """Get the path to the acceptance test config file."""
-        result = cls.get_connector_root_dir() / ACCEPTANCE_TEST_CONFIG
-        if result.exists():
-            return result
+    def acceptance_test_config(cls) -> dict[str, object]:
+        """Get the contents of acceptance test config file.
+        
+        Also perform some basic validation that the file has the expected structure.
+        """
+        acceptance_test_config_path = cls.get_connector_root_dir() / ACCEPTANCE_TEST_CONFIG
+        if not acceptance_test_config_path.exists():
+            raise FileNotFoundError(f"Acceptance test config file not found at: {str(acceptance_test_config_path)}")
+        
+        tests_config = yaml.safe_load(acceptance_test_config_path.read_text())
 
-        raise FileNotFoundError(f"Acceptance test config file not found at: {str(result)}")
+        if "acceptance_tests" not in tests_config:
+            raise ValueError(
+                f"Acceptance tests config not found in {acceptance_test_config_path}."
+                f" Found only: {str(tests_config)}."
+            )
+        return tests_config
+
+    
+    @classmethod
+    def _get_empty_streams(cls) -> list[str]:
+        """Parse the acceptance test config file and return a list of stream names that are empty.
+        
+        In reality, the "empty" designation could indicate the stream has no data or that reading from
+        it could result in an error (e.g. our sandbox account doesn't not have access to that stream).
+
+        This method is used to tell the test suite to skip reading from those streams.
+        """
+        try:
+            all_tests_config = cls.acceptance_test_config
+        except FileNotFoundError as e:
+            # Destinations sometimes do not have an acceptance tests file.
+            warnings.warn(
+                f"Acceptance test config file not found: {e!s}. No streams will be skipped.",
+                category=UserWarning,
+                stacklevel=1,
+            )
+            return []
+        
+        if "basic_read" not in all_tests_config["acceptance_tests"]:
+            warnings.warn(
+                "No 'basic_read' section found in acceptance test config. No streams will be skipped.",
+                category=UserWarning,
+                stacklevel=1,
+            )
+            return []
+        basic_read_block = all_tests_config["acceptance_tests"]["basic_read"]
+
+        # there is some inconsistency in the acceptance test config file
+        # sometimes tests are defined under "tests" key, sometimes directly under the "basic_read" key.
+        # We will handle both cases.
+        basic_read_scenarios = basic_read_block.get("tests", basic_read_block)
+        if not isinstance(basic_read_scenarios, list) or len(basic_read_scenarios) == 0:
+            warnings.warn(
+                "No 'tests' key found in 'basic_read' section of acceptance test config. "
+                "No streams will be skipped.",
+                category=UserWarning,
+                stacklevel=1,
+            )
+            return []
+
+        empty_streams: list[str] = []
+        # Iterate through the scenarios and collect empty streams.
+        for scenario in basic_read_scenarios:
+            if "empty_streams" in scenario:
+                # If the scenario has an "empty_streams" key, return its value.
+                empty_streams.extend(scenario["empty_streams"]["name"])
+        
+        return empty_streams
 
     @classmethod
     def get_scenarios(
@@ -83,7 +145,7 @@ class DockerConnectorTestSuite:
         """
         categories = ["connection", "spec"]
         try:
-            cls.acceptance_test_config_path
+            all_tests_config = cls.acceptance_test_config
         except FileNotFoundError as e:
             # Destinations sometimes do not have an acceptance tests file.
             warnings.warn(
@@ -92,13 +154,6 @@ class DockerConnectorTestSuite:
                 stacklevel=1,
             )
             return []
-
-        all_tests_config = yaml.safe_load(cls.acceptance_test_config_path.read_text())
-        if "acceptance_tests" not in all_tests_config:
-            raise ValueError(
-                f"Acceptance tests config not found in {cls.acceptance_test_config_path}."
-                f" Found only: {str(all_tests_config)}."
-            )
 
         test_scenarios: list[ConnectorTestScenario] = []
         for category in categories:
@@ -126,7 +181,7 @@ class DockerConnectorTestSuite:
                     continue
 
                 test_scenarios.append(scenario)
-
+        #import pdb; pdb.set_trace()  # noqa: T201
         return test_scenarios
 
     @pytest.mark.skipif(
@@ -329,6 +384,14 @@ class DockerConnectorTestSuite:
             if isinstance(read_from_streams, list):
                 # If `read_from_streams` is a list, we filter the discovered streams.
                 streams_list = list(set(streams_list) & set(read_from_streams))
+
+            empty_streams = self._get_empty_streams()
+            if empty_streams:
+                # If there are empty streams, we remove them from the list of streams to read.
+                streams_list = list(set(streams_list) - set(empty_streams))
+
+            print("YOYOYOYOYO")
+            import pdb; pdb.set_trace()  # noqa: T201
 
             configured_catalog: ConfiguredAirbyteCatalog = ConfiguredAirbyteCatalog(
                 streams=[
