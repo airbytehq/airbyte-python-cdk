@@ -66,13 +66,15 @@ class DockerConnectorTestSuite:
     @classproperty
     def acceptance_test_config(cls) -> dict[str, object]:
         """Get the contents of acceptance test config file.
-        
+
         Also perform some basic validation that the file has the expected structure.
         """
         acceptance_test_config_path = cls.get_connector_root_dir() / ACCEPTANCE_TEST_CONFIG
         if not acceptance_test_config_path.exists():
-            raise FileNotFoundError(f"Acceptance test config file not found at: {str(acceptance_test_config_path)}")
-        
+            raise FileNotFoundError(
+                f"Acceptance test config file not found at: {str(acceptance_test_config_path)}"
+            )
+
         tests_config = yaml.safe_load(acceptance_test_config_path.read_text())
 
         if "acceptance_tests" not in tests_config:
@@ -130,7 +132,9 @@ class DockerConnectorTestSuite:
                 if scenario.config_path == existing_scenario.config_path:
                     # If a scenario with the same config_path already exists, we merge the empty streams.
                     # scenarios are immutable, so we create a new one.
-                    all_empty_streams = (existing_scenario.empty_streams or []) + (scenario.empty_streams or [])
+                    all_empty_streams = (existing_scenario.empty_streams or []) + (
+                        scenario.empty_streams or []
+                    )
                     new_scenario = existing_scenario.model_copy(
                         update={"empty_streams": all_empty_streams}
                     )
@@ -346,7 +350,9 @@ class DockerConnectorTestSuite:
 
             if scenario.empty_streams:
                 # If there are empty streams, we remove them from the list of streams to read.
-                streams_list = list(set(streams_list) - set(stream.name for stream in scenario.empty_streams))
+                streams_list = list(
+                    set(streams_list) - set(stream.name for stream in scenario.empty_streams)
+                )
 
             configured_catalog: ConfiguredAirbyteCatalog = ConfiguredAirbyteCatalog(
                 streams=[
