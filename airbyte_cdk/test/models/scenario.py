@@ -44,7 +44,7 @@ class ConnectorTestScenario(BaseModel):
         skip_test: bool
         bypass_reason: str
 
-    class AcceptanceTestEmptyStreams(BaseModel):
+    class AcceptanceTestEmptyStream(BaseModel):
         name: str
         bypass_reason: str | None = None
 
@@ -54,7 +54,7 @@ class ConnectorTestScenario(BaseModel):
     _id: str | None = None  # Used to override the default ID generation
 
     configured_catalog_path: Path | None = None
-    empty_streams: list[AcceptanceTestEmptyStreams] | list[str] | None = None
+    empty_streams: list[AcceptanceTestEmptyStream] | None = None
     timeout_seconds: int | None = None
     expect_records: AcceptanceTestExpectRecords | None = None
     file_types: AcceptanceTestFileTypes | None = None

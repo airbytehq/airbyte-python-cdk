@@ -346,7 +346,7 @@ class DockerConnectorTestSuite:
 
             if scenario.empty_streams:
                 # If there are empty streams, we remove them from the list of streams to read.
-                streams_list = list(set(streams_list) - set(scenario.empty_streams))
+                streams_list = list(set(streams_list) - set(stream.name for stream in scenario.empty_streams))
 
             configured_catalog: ConfiguredAirbyteCatalog = ConfiguredAirbyteCatalog(
                 streams=[
