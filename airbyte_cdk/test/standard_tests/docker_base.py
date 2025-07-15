@@ -82,58 +82,6 @@ class DockerConnectorTestSuite:
             )
         return tests_config
 
-    
-    @classmethod
-    def _get_empty_streams(cls) -> list[str]:
-        """Parse the acceptance test config file and return a list of stream names that are empty.
-        
-        In reality, the "empty" designation could indicate the stream has no data or that reading from
-        it could result in an error (e.g. our sandbox account doesn't not have access to that stream).
-
-        This method is used to tell the test suite to skip reading from those streams.
-        """
-        try:
-            all_tests_config = cls.acceptance_test_config
-        except FileNotFoundError as e:
-            # Destinations sometimes do not have an acceptance tests file.
-            warnings.warn(
-                f"Acceptance test config file not found: {e!s}. No streams will be skipped.",
-                category=UserWarning,
-                stacklevel=1,
-            )
-            return []
-        
-        if "basic_read" not in all_tests_config["acceptance_tests"]:
-            warnings.warn(
-                "No 'basic_read' section found in acceptance test config. No streams will be skipped.",
-                category=UserWarning,
-                stacklevel=1,
-            )
-            return []
-        basic_read_block = all_tests_config["acceptance_tests"]["basic_read"]
-
-        # there is some inconsistency in the acceptance test config file
-        # sometimes tests are defined under "tests" key, sometimes directly under the "basic_read" key.
-        # We will handle both cases.
-        basic_read_scenarios = basic_read_block.get("tests", basic_read_block)
-        if not isinstance(basic_read_scenarios, list) or len(basic_read_scenarios) == 0:
-            warnings.warn(
-                "No 'tests' key found in 'basic_read' section of acceptance test config. "
-                "No streams will be skipped.",
-                category=UserWarning,
-                stacklevel=1,
-            )
-            return []
-
-        empty_streams: list[str] = []
-        # Iterate through the scenarios and collect empty streams.
-        for scenario in basic_read_scenarios:
-            if "empty_streams" in scenario:
-                # If the scenario has an "empty_streams" key, return its value.
-                empty_streams.extend(scenario["empty_streams"]["name"])
-        
-        return empty_streams
-
     @classmethod
     def get_scenarios(
         cls,
@@ -143,7 +91,6 @@ class DockerConnectorTestSuite:
         This has to be a separate function because pytest does not allow
         parametrization of fixtures with arguments from the test class itself.
         """
-        categories = ["spec", "connection", "basic_read"]
         try:
             all_tests_config = cls.acceptance_test_config
         except FileNotFoundError as e:
@@ -156,7 +103,7 @@ class DockerConnectorTestSuite:
             return []
 
         test_scenarios: list[ConnectorTestScenario] = []
-        for category in categories:
+        for category in ["spec", "connection", "basic_read"]:
             if (
                 category not in all_tests_config["acceptance_tests"]
                 or "tests" not in all_tests_config["acceptance_tests"][category]
@@ -177,10 +124,18 @@ class DockerConnectorTestSuite:
                 test_scenarios.append(scenario)
 
         # Remove duplicate scenarios based on config_path.
-        deduped_test_scenarios = []
+        deduped_test_scenarios: list[ConnectorTestScenario] = []
         for scenario in test_scenarios:
             for existing_scenario in deduped_test_scenarios:
                 if scenario.config_path == existing_scenario.config_path:
+                    # If a scenario with the same config_path already exists, we merge the empty streams.
+                    # scenarios are immutable, so we create a new one.
+                    all_empty_streams = (existing_scenario.empty_streams or []) + (scenario.empty_streams or [])
+                    new_scenario = existing_scenario.model_copy(
+                        update={"empty_streams": all_empty_streams}
+                    )
+                    deduped_test_scenarios.remove(existing_scenario)
+                    deduped_test_scenarios.append(new_scenario)
                     break
             else:
                 # If a scenario does not exist with the config, add the new scenario to the list.
