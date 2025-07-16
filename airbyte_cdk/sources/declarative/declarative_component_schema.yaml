@@ -1245,7 +1245,7 @@ definitions:
         interpolation_context:
           - config
         examples:
-          - "{{ config['client_secret }}"
+          - "{{ config['client_secret'] }}"
           - "{{ config['credentials']['client_secret }}"
       refresh_token_name:
         title: Refresh Token Property Name
