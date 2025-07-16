@@ -123,9 +123,10 @@ class SourceTestSuiteBase(ConnectorTestSuiteBase):
         streams = discover_result.catalog.catalog.streams  # type: ignore [reportOptionalMemberAccess, union-attr]
 
         if scenario.empty_streams:
-            # Don't read from any streams marked as empty in the scenario.
-            streams = list(set(streams) - set(stream.name for stream in scenario.empty_streams))
-
+            # Filter out streams marked as empty in the scenario.
+            empty_stream_names = [stream.name for stream in scenario.empty_streams]
+            streams = [s for s in streams if s.name not in empty_stream_names]
+    
         configured_catalog = ConfiguredAirbyteCatalog(
             streams=[
                 ConfiguredAirbyteStream(
