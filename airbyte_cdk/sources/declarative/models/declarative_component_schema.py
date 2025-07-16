@@ -523,7 +523,10 @@ class OAuthAuthenticator(BaseModel):
     client_id: Optional[str] = Field(
         None,
         description="The OAuth client ID. Fill it in the user inputs.",
-        examples=["{{ config['client_id }}", "{{ config['credentials']['client_id }}"],
+        examples=[
+            "{{ config['client_id'] }}",
+            "{{ config['credentials']['client_id }}",
+        ],
         title="Client ID",
     )
     client_secret_name: Optional[str] = Field(
@@ -536,7 +539,7 @@ class OAuthAuthenticator(BaseModel):
         None,
         description="The OAuth client secret. Fill it in the user inputs.",
         examples=[
-            "{{ config['client_secret }}",
+            "{{ config['client_secret'] }}",
             "{{ config['credentials']['client_secret }}",
         ],
         title="Client Secret",
