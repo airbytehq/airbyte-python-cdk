@@ -2,6 +2,9 @@
 """Base class for source test suites."""
 
 from dataclasses import asdict
+from typing import TYPE_CHECKING
+
+import pytest
 
 from airbyte_cdk.models import (
     AirbyteMessage,
@@ -12,14 +15,16 @@ from airbyte_cdk.models import (
     SyncMode,
     Type,
 )
-from airbyte_cdk.test import entrypoint_wrapper
+from airbyte_cdk.test.models import (
+    ConnectorTestScenario,
+)
 from airbyte_cdk.test.standard_tests._job_runner import run_test_job
 from airbyte_cdk.test.standard_tests.connector_base import (
     ConnectorTestSuiteBase,
 )
-from airbyte_cdk.test.standard_tests.models import (
-    ConnectorTestScenario,
-)
+
+if TYPE_CHECKING:
+    from airbyte_cdk.test import entrypoint_wrapper
 
 
 class SourceTestSuiteBase(ConnectorTestSuiteBase):
@@ -43,14 +48,12 @@ class SourceTestSuiteBase(ConnectorTestSuiteBase):
             self.create_connector(scenario),
             "check",
             test_scenario=scenario,
+            connector_root=self.get_connector_root_dir(),
         )
-        conn_status_messages: list[AirbyteMessage] = [
-            msg for msg in result._messages if msg.type == Type.CONNECTION_STATUS
-        ]  # noqa: SLF001  # Non-public API
-        num_status_messages = len(conn_status_messages)
+        num_status_messages = len(result.connection_status_messages)
         assert num_status_messages == 1, (
             f"Expected exactly one CONNECTION_STATUS message. Got {num_status_messages}: \n"
-            + "\n".join([str(m) for m in result._messages])
+            + "\n".join([str(m) for m in result.get_message_iterator()])
         )
 
     def test_discover(
@@ -58,10 +61,43 @@ class SourceTestSuiteBase(ConnectorTestSuiteBase):
         scenario: ConnectorTestScenario,
     ) -> None:
         """Standard test for `discover`."""
+        if scenario.expected_outcome.expect_exception():
+            # If the scenario expects an exception, we can't ensure it specifically would fail
+            # in discover, because some discover implementations do not need to make a connection.
+            # We skip this test in that case.
+            pytest.skip("Skipping discover test for scenario that expects an exception.")
+            return
+
         run_test_job(
             self.create_connector(scenario),
             "discover",
+            connector_root=self.get_connector_root_dir(),
             test_scenario=scenario,
+        )
+
+    def test_spec(self) -> None:
+        """Standard test for `spec`.
+
+        This test does not require a `scenario` input, since `spec`
+        does not require any inputs.
+
+        We assume `spec` should always succeed and it should always generate
+        a valid `SPEC` message.
+
+        Note: the parsing of messages by type also implicitly validates that
+        the generated `SPEC` message is valid JSON.
+        """
+        result = run_test_job(
+            verb="spec",
+            test_scenario=None,
+            connector=self.create_connector(scenario=None),
+            connector_root=self.get_connector_root_dir(),
+        )
+        # If an error occurs, it will be raised above.
+
+        assert len(result.spec_messages) == 1, (
+            "Expected exactly 1 spec message but got {len(result.spec_messages)}",
+            result.errors,
         )
 
     def test_basic_read(
@@ -78,10 +114,11 @@ class SourceTestSuiteBase(ConnectorTestSuiteBase):
         discover_result = run_test_job(
             self.create_connector(scenario),
             "discover",
-            test_scenario=scenario,
+            connector_root=self.get_connector_root_dir(),
+            test_scenario=scenario.without_expected_outcome(),
         )
-        if scenario.expect_exception:
-            assert discover_result.errors, "Expected exception but got none."
+        if scenario.expected_outcome.expect_exception() and discover_result.errors:
+            # Failed as expected; we're done.
             return
 
         configured_catalog = ConfiguredAirbyteCatalog(
@@ -98,11 +135,12 @@ class SourceTestSuiteBase(ConnectorTestSuiteBase):
             self.create_connector(scenario),
             "read",
             test_scenario=scenario,
+            connector_root=self.get_connector_root_dir(),
             catalog=configured_catalog,
         )
 
-        if not result.records:
-            raise AssertionError("Expected records but got none.")  # noqa: TRY003
+        if scenario.expected_outcome.expect_success() and not result.records:
+            raise AssertionError("Expected records but got none.")
 
     def test_fail_read_with_bad_catalog(
         self,
@@ -125,15 +163,14 @@ class SourceTestSuiteBase(ConnectorTestSuiteBase):
                     ),
                     sync_mode="INVALID",  # type: ignore [reportArgumentType]
                     destination_sync_mode="INVALID",  # type: ignore [reportArgumentType]
-                )
-            ]
+                ),
+            ],
         )
-        # Set expected status to "failed" to ensure the test fails if the connector.
-        scenario.status = "failed"
         result: entrypoint_wrapper.EntrypointOutput = run_test_job(
             self.create_connector(scenario),
             "read",
-            test_scenario=scenario,
+            connector_root=self.get_connector_root_dir(),
+            test_scenario=scenario.with_expecting_failure(),  # Expect failure due to bad catalog
             catalog=asdict(invalid_configured_catalog),
         )
         assert result.errors, "Expected errors but got none."

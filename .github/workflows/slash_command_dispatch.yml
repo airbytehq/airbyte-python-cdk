@@ -6,8 +6,6 @@ on:
 
 jobs:
   slashCommandDispatch:
-    # Only allow slash commands on pull request (not on issues)
-    if: ${{ github.event.issue.pull_request }}
     runs-on: ubuntu-24.04
     steps:
       - name: Slash Command Dispatch
@@ -19,17 +17,25 @@ jobs:
           repository: ${{ github.repository }}
           token: ${{ secrets.GH_PAT_MAINTENANCE_OCTAVIA }}
           dispatch-type: workflow
-          issue-type: pull-request
+          issue-type: both
+
+          # Only run for users with 'write' permission on the main repository
+          permission: write
+
           commands: |
             autofix
             test
             poetry-lock
+            poe
+
+          # Notes regarding static-args:
+          # - Slash commands can be invoked from both issues and comments.
+          # - If the slash command is invoked from an issue, we intentionally pass 'null' as the PR number.
+          # - Comment ID will always be sent, and this is sufficient to post back status updates to the originating comment.
           static-args: |
-            pr=${{ github.event.issue.number }}
+            pr=${{ github.event.issue.pull_request != null && github.event.issue.number || '' }}
             comment-id=${{ github.event.comment.id }}
 
-          # Only run for users with 'write' permission on the main repository
-          permission: write
 
       - name: Edit comment with error message
         if: steps.dispatch.outputs.error-message

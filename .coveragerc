@@ -9,3 +9,13 @@ omit =
 
     # omit as unimplemented
     airbyte_cdk/base_python/cdk/streams/auth/jwt.py
+
+    # omit temporary files and test files
+    /tmp/tmp*.py
+    unit_tests/*
+
+[paths]
+# Reconcile file paths
+source =
+    ./
+    /tmp/

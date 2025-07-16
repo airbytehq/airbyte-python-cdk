@@ -8,6 +8,7 @@ from typing import Any, Mapping, Optional, Tuple, Type, Union
 from airbyte_cdk.sources.declarative.interpolation.interpolated_mapping import InterpolatedMapping
 from airbyte_cdk.sources.declarative.interpolation.interpolated_string import InterpolatedString
 from airbyte_cdk.sources.types import Config, StreamSlice, StreamState
+from airbyte_cdk.utils.mapping_helpers import get_interpolation_context
 
 
 @dataclass
@@ -51,10 +52,10 @@ class InterpolatedRequestInputProvider:
         :param valid_value_types: A tuple of types that the interpolator should allow
         :return: The request inputs to set on an outgoing HTTP request
         """
-        kwargs = {
-            "stream_slice": stream_slice,
-            "next_page_token": next_page_token,
-        }
+        kwargs = get_interpolation_context(
+            stream_slice=stream_slice,
+            next_page_token=next_page_token,
+        )
         interpolated_value = self._interpolator.eval(  # type: ignore # self._interpolator is always initialized with a value and will not be None
             self.config,
             valid_key_types=valid_key_types,

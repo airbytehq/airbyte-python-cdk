@@ -28,6 +28,7 @@ from airbyte_cdk.sources.declarative.incremental.per_partition_with_global impor
     PerPartitionWithGlobalCursor,
 )
 from airbyte_cdk.sources.declarative.manifest_declarative_source import ManifestDeclarativeSource
+from airbyte_cdk.sources.declarative.models import FileUploader
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     ConcurrencyLevel as ConcurrencyLevelModel,
 )
@@ -73,6 +74,7 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
         debug: bool = False,
         emit_connector_builder_messages: bool = False,
         component_factory: Optional[ModelToComponentFactory] = None,
+        config_path: Optional[str] = None,
         **kwargs: Any,
     ) -> None:
         # todo: We could remove state from initialization. Now that streams are grouped during the read(), a source
@@ -87,6 +89,7 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
             emit_connector_builder_messages=emit_connector_builder_messages,
             disable_resumable_full_refresh=True,
             connector_state_manager=self._connector_state_manager,
+            max_concurrent_async_job_count=source_config.get("max_concurrent_async_job_count"),
         )
 
         super().__init__(
@@ -95,6 +98,7 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
             debug=debug,
             emit_connector_builder_messages=emit_connector_builder_messages,
             component_factory=component_factory,
+            config_path=config_path,
         )
 
         concurrency_level_from_manifest = self._source_config.get("concurrency_level")
@@ -198,7 +202,7 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
 
         # Combine streams and dynamic_streams. Note: both cannot be empty at the same time,
         # and this is validated during the initialization of the source.
-        streams = self._stream_configs(self._source_config) + self._dynamic_stream_configs(
+        streams = self._stream_configs(self._source_config, config) + self._dynamic_stream_configs(
             self._source_config, config
         )
 
@@ -208,6 +212,11 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
             # Some low-code sources use a combination of DeclarativeStream and regular Python streams. We can't inspect
             # these legacy Python streams the way we do low-code streams to determine if they are concurrent compatible,
             # so we need to treat them as synchronous
+
+            supports_file_transfer = (
+                isinstance(declarative_stream, DeclarativeStream)
+                and "file_uploader" in name_to_stream_mapping[declarative_stream.name]
+            )
 
             if (
                 isinstance(declarative_stream, DeclarativeStream)
@@ -299,6 +308,7 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
                                 stream_name=declarative_stream.name,
                                 stream_namespace=declarative_stream.namespace,
                                 config=config or {},
+                                stream_state_migrations=declarative_stream.state_migrations,
                             )
                         partition_generator = StreamSlicerPartitionGenerator(
                             partition_factory=DeclarativePartitionFactory(
@@ -325,6 +335,7 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
                             else None,
                             logger=self.logger,
                             cursor=cursor,
+                            supports_file_transfer=supports_file_transfer,
                         )
                     )
                 elif (
@@ -356,6 +367,7 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
                             cursor_field=None,
                             logger=self.logger,
                             cursor=final_state_cursor,
+                            supports_file_transfer=supports_file_transfer,
                         )
                     )
                 elif (
@@ -410,6 +422,7 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
                             cursor_field=perpartition_cursor.cursor_field.cursor_field_key,
                             logger=self.logger,
                             cursor=perpartition_cursor,
+                            supports_file_transfer=supports_file_transfer,
                         )
                     )
                 else:

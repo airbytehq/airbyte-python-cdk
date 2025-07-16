@@ -8,7 +8,7 @@ import socket
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from io import BytesIO, StringIO
 from threading import Thread
-from typing import ClassVar, Iterable
+from typing import ClassVar, Iterable, List
 from unittest.mock import Mock, patch
 
 import pytest
@@ -41,16 +41,25 @@ def compress_with_gzip(data: str, encoding: str = "utf-8"):
 
 
 def generate_csv(
-    encoding: str = "utf-8", delimiter: str = ",", should_compress: bool = False
+    encoding: str = "utf-8",
+    delimiter: str = ",",
+    should_compress: bool = False,
+    add_extra_column: bool = False,
+    extra_column_value: str = "",
 ) -> bytes:
     data = [
         {"id": "1", "name": "John", "age": "28"},
         {"id": "2", "name": "Alice", "age": "34"},
         {"id": "3", "name": "Bob", "age": "25"},
     ]
+    fieldnames = ["id", "name", "age"]
+    if add_extra_column:
+        for row in data:
+            row["gender"] = extra_column_value
+        fieldnames.append("gender")
 
     output = StringIO()
-    writer = csv.DictWriter(output, fieldnames=["id", "name", "age"], delimiter=delimiter)
+    writer = csv.DictWriter(output, fieldnames=fieldnames, delimiter=delimiter)
     writer.writeheader()
     for row in data:
         writer.writerow(row)
@@ -253,6 +262,36 @@ def test_composite_raw_decoder_csv_parser_values(requests_mock, encoding: str, d
         {"id": "2", "name": "Alice", "age": "34"},
         {"id": "3", "name": "Bob", "age": "25"},
     ]
+
+    parsed_records = list(composite_raw_decoder.decode(response))
+    assert parsed_records == expected_data
+
+
+@pytest.mark.parametrize("set_values_to_none", [None, [""], ["--"]])
+def test_composite_raw_decoder_parse_empty_strings(
+    requests_mock, set_values_to_none: List[str] | None
+):
+    requests_mock.register_uri(
+        "GET",
+        "https://airbyte.io/",
+        content=generate_csv(
+            should_compress=False,
+            add_extra_column=True,
+            extra_column_value=set_values_to_none[0] if set_values_to_none else "random_value",
+        ),
+    )
+    response = requests.get("https://airbyte.io/", stream=True)
+
+    parser = CsvParser(set_values_to_none=set_values_to_none)
+    composite_raw_decoder = CompositeRawDecoder(parser=parser)
+
+    expected_data = [
+        {"id": "1", "name": "John", "age": "28"},
+        {"id": "2", "name": "Alice", "age": "34"},
+        {"id": "3", "name": "Bob", "age": "25"},
+    ]
+    for expected_record in expected_data:
+        expected_record["gender"] = None if set_values_to_none else "random_value"
 
     parsed_records = list(composite_raw_decoder.decode(response))
     assert parsed_records == expected_data

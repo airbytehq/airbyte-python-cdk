@@ -4,9 +4,11 @@ from typing import Any, Dict
 from serpyco_rs import CustomType, Serializer
 
 from .airbyte_protocol import (  # type: ignore[attr-defined] # all classes are imported to airbyte_protocol via *
+    AirbyteCatalog,
     AirbyteMessage,
     AirbyteStateBlob,
     AirbyteStateMessage,
+    AirbyteStream,
     AirbyteStreamState,
     ConfiguredAirbyteCatalog,
     ConfiguredAirbyteStream,
@@ -30,6 +32,8 @@ def custom_type_resolver(t: type) -> CustomType[AirbyteStateBlob, Dict[str, Any]
     return AirbyteStateBlobType() if t is AirbyteStateBlob else None
 
 
+AirbyteCatalogSerializer = Serializer(AirbyteCatalog, omit_none=True)
+AirbyteStreamSerializer = Serializer(AirbyteStream, omit_none=True)
 AirbyteStreamStateSerializer = Serializer(
     AirbyteStreamState, omit_none=True, custom_type_resolver=custom_type_resolver
 )

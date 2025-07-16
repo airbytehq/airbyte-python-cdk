@@ -2,9 +2,10 @@
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
 
+import logging
 from dataclasses import InitVar, dataclass, field
 from datetime import datetime, timedelta
-from typing import Any, List, Mapping, MutableMapping, Optional, Union
+from typing import Any, List, Mapping, Optional, Union
 
 from airbyte_cdk.sources.declarative.auth.declarative_authenticator import DeclarativeAuthenticator
 from airbyte_cdk.sources.declarative.interpolation.interpolated_boolean import InterpolatedBoolean
@@ -19,6 +20,8 @@ from airbyte_cdk.sources.streams.http.requests_native_auth.oauth import (
 )
 from airbyte_cdk.utils.datetime_helpers import AirbyteDateTime, ab_datetime_now, ab_datetime_parse
 
+logger = logging.getLogger("airbyte")
+
 
 @dataclass
 class DeclarativeOauth2Authenticator(AbstractOauth2Authenticator, DeclarativeAuthenticator):
@@ -30,7 +33,7 @@ class DeclarativeOauth2Authenticator(AbstractOauth2Authenticator, DeclarativeAut
     Attributes:
         token_refresh_endpoint (Union[InterpolatedString, str]): The endpoint to refresh the access token
         client_id (Union[InterpolatedString, str]): The client id
-        client_secret (Union[InterpolatedString, str]): Client secret
+        client_secret (Union[InterpolatedString, str]): Client secret (can be empty for APIs that support this)
         refresh_token (Union[InterpolatedString, str]): The token used to refresh the access token
         access_token_name (Union[InterpolatedString, str]): THe field to extract access token from in the response
         expires_in_name (Union[InterpolatedString, str]): The field to extract expires_in from in the response
@@ -201,8 +204,11 @@ class DeclarativeOauth2Authenticator(AbstractOauth2Authenticator, DeclarativeAut
             self._client_secret.eval(self.config) if self._client_secret else self._client_secret
         )
         if not client_secret:
-            raise ValueError("OAuthAuthenticator was unable to evaluate client_secret parameter")
-        return client_secret  # type: ignore # value will be returned as a string, or an error will be raised
+            # We've seen some APIs allowing empty client_secret so we will only log here
+            logger.warning(
+                "OAuthAuthenticator was unable to evaluate client_secret parameter hence it'll be empty"
+            )
+        return client_secret  # type: ignore # value will be returned as a string, which might be empty
 
     def get_refresh_token_name(self) -> str:
         return self._refresh_token_name.eval(self.config)  # type: ignore # eval returns a string in this context

@@ -1,0 +1,191 @@
+version: 2.0.0
+
+type: DeclarativeSource
+
+check:
+  type: CheckStream
+  stream_names:
+    - "articles"
+
+definitions:
+  bearer_authenticator:
+    type: BearerAuthenticator
+    api_token: "{{ config['credentials']['access_token'] }}"
+  basic_authenticator:
+    type: BasicHttpAuthenticator
+    username: "{{ config['credentials']['email'] + '/token' }}"
+    password: "{{ config['credentials']['api_token'] }}"
+
+  retriever:
+    type: SimpleRetriever
+    requester:
+      type: HttpRequester
+      url_base: https://{{ config['subdomain'] }}.zendesk.com/api/v2/
+      http_method: GET
+      authenticator:
+        type: SelectiveAuthenticator
+        authenticator_selection_path: ["credentials", "credentials"]
+        authenticators:
+          oauth2.0: "#/definitions/bearer_authenticator"
+          api_token: "#/definitions/basic_authenticator"
+    record_selector:
+      type: RecordSelector
+      extractor:
+        type: DpathExtractor
+        field_path:
+          ["{{ parameters.get('data_path') or parameters.get('name') }}"]
+      schema_normalization: Default
+    paginator:
+      type: DefaultPaginator
+      page_size_option:
+        type: RequestOption
+        field_name: "per_page"
+        inject_into: request_parameter
+      pagination_strategy:
+        type: CursorPagination
+        page_size: 100
+        cursor_value: '{{ response.get("next_page", {}) }}'
+        stop_condition: "{{ last_page_size == 0 }}"
+      page_token_option:
+        type: RequestPath
+
+  base_stream:
+    type: DeclarativeStream
+    schema_loader:
+      type: JsonFileSchemaLoader
+    retriever:
+      $ref: "#/definitions/retriever"
+
+  cursor_incremental_sync:
+    type: DatetimeBasedCursor
+    cursor_datetime_formats:
+      - "%s"
+      - "%Y-%m-%dT%H:%M:%SZ"
+      - "%Y-%m-%dT%H:%M:%S%z"
+    datetime_format: "%s"
+    cursor_field: "{{ parameters.get('cursor_field',  'updated_at') }}"
+    start_datetime:
+      datetime: "{{ timestamp(config.get('start_date')) | int if config.get('start_date') else day_delta(-730, '%s') }}"
+    start_time_option:
+      inject_into: request_parameter
+      field_name: "{{ parameters['cursor_filter'] }}"
+      type: RequestOption
+
+  base_incremental_stream:
+    $ref: "#/definitions/base_stream"
+    incremental_sync:
+      $ref: "#/definitions/cursor_incremental_sync"
+
+  # Incremental cursor-based streams
+  articles_stream:
+    $ref: "#/definitions/base_incremental_stream"
+    name: "articles"
+    primary_key: "id"
+    schema_loader:
+      type: InlineSchemaLoader
+      schema:
+        type: object
+        $schema: http://json-schema.org/schema#
+        properties:
+          id:
+            type: integer
+        additionalProperties: true
+    incremental_sync:
+      $ref: "#/definitions/cursor_incremental_sync"
+      start_time_option:
+        $ref: "#/definitions/cursor_incremental_sync/start_time_option"
+        field_name: "start_time"
+    retriever:
+      $ref: "#/definitions/retriever"
+      ignore_stream_slicer_parameters_on_paginated_requests: true
+      requester:
+        $ref: "#/definitions/retriever/requester"
+        path: "help_center/incremental/articles"
+      paginator:
+        type: DefaultPaginator
+        pagination_strategy:
+          type: CursorPagination
+          cursor_value: '{{ response.get("next_page", {}) }}'
+          stop_condition: "{{ config.get('ignore_pagination', False) or last_page_size == 0 }}"
+        page_token_option:
+          type: RequestPath
+      record_selector:
+        extractor:
+          type: DpathExtractor
+          field_path: ["articles"]
+
+  article_attachments_stream:
+    $ref: "#/definitions/base_incremental_stream"
+    name: "article_attachments"
+    primary_key: "id"
+    schema_loader:
+      type: InlineSchemaLoader
+      schema:
+        type: object
+        $schema: http://json-schema.org/schema#
+        properties:
+          id:
+            type: integer
+        additionalProperties: true
+    retriever:
+      $ref: "#/definitions/retriever"
+      ignore_stream_slicer_parameters_on_paginated_requests: true
+      requester:
+        $ref: "#/definitions/retriever/requester"
+        path: "help_center/articles/{{ stream_partition.article_id }}/attachments"
+      partition_router:
+        type: SubstreamPartitionRouter
+        parent_stream_configs:
+          - type: ParentStreamConfig
+            parent_key: "id"
+            partition_field: "article_id"
+            stream:
+              $ref: "#/definitions/articles_stream"
+            incremental_dependency: true
+      record_selector:
+        extractor:
+          type: DpathExtractor
+          field_path: ["article_attachments"]
+    file_uploader:
+      type: FileUploader
+      requester:
+        type: HttpRequester
+        url_base: "{{download_target}}"
+        http_method: GET
+        authenticator:
+          type: SelectiveAuthenticator
+          authenticator_selection_path: [ "credentials", "credentials" ]
+          authenticators:
+            oauth2.0: "#/definitions/bearer_authenticator"
+            api_token: "#/definitions/basic_authenticator"
+      download_target_extractor:
+        type: DpathExtractor
+        field_path: [ "content_url" ]
+      filename_extractor: "{{ record.id }}/{{ record.file_name }}/"
+
+
+streams:
+  - $ref: "#/definitions/articles_stream"
+  - $ref: "#/definitions/article_attachments_stream"
+
+spec:
+  type: Spec
+  connection_specification:
+    type: object
+    $schema: http://json-schema.org/draft-07/schema#
+    required:
+      - subdomain
+      - start_date
+    properties:
+      subdomain:
+        type: string
+        name: subdomain
+        order: 0
+        title: Subdomain
+      start_date:
+        type: string
+        order: 1
+        title: Start date
+        format: date-time
+        pattern: ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$
+    additionalProperties: true

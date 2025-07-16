@@ -3,7 +3,6 @@
 #
 
 import logging
-import os
 from dataclasses import InitVar, dataclass, field
 from typing import Any, Callable, Mapping, MutableMapping, Optional, Union
 from urllib.parse import urljoin
@@ -53,10 +52,11 @@ class HttpRequester(Requester):
     """
 
     name: str
-    url_base: Union[InterpolatedString, str]
     config: Config
     parameters: InitVar[Mapping[str, Any]]
 
+    url: Optional[Union[InterpolatedString, str]] = None
+    url_base: Optional[Union[InterpolatedString, str]] = None
     path: Optional[Union[InterpolatedString, str]] = None
     authenticator: Optional[DeclarativeAuthenticator] = None
     http_method: Union[str, HttpMethod] = HttpMethod.GET
@@ -71,7 +71,14 @@ class HttpRequester(Requester):
     decoder: Decoder = field(default_factory=lambda: JsonDecoder(parameters={}))
 
     def __post_init__(self, parameters: Mapping[str, Any]) -> None:
-        self._url_base = InterpolatedString.create(self.url_base, parameters=parameters)
+        self._url = InterpolatedString.create(
+            self.url if self.url else EmptyString, parameters=parameters
+        )
+        # deprecated
+        self._url_base = InterpolatedString.create(
+            self.url_base if self.url_base else EmptyString, parameters=parameters
+        )
+        # deprecated
         self._path = InterpolatedString.create(
             self.path if self.path else EmptyString, parameters=parameters
         )
@@ -119,6 +126,51 @@ class HttpRequester(Requester):
 
     def get_authenticator(self) -> DeclarativeAuthenticator:
         return self._authenticator
+
+    def get_url(
+        self,
+        *,
+        stream_state: Optional[StreamState] = None,
+        stream_slice: Optional[StreamSlice] = None,
+        next_page_token: Optional[Mapping[str, Any]] = None,
+    ) -> str:
+        interpolation_context = get_interpolation_context(
+            stream_state=stream_state,
+            stream_slice=stream_slice,
+            next_page_token=next_page_token,
+        )
+
+        return str(self._url.eval(self.config, **interpolation_context))
+
+    def _get_url(
+        self,
+        *,
+        path: Optional[str] = None,
+        stream_state: Optional[StreamState] = None,
+        stream_slice: Optional[StreamSlice] = None,
+        next_page_token: Optional[Mapping[str, Any]] = None,
+    ) -> str:
+        url = self.get_url(
+            stream_state=stream_state,
+            stream_slice=stream_slice,
+            next_page_token=next_page_token,
+        )
+
+        url_base = self.get_url_base(
+            stream_state=stream_state,
+            stream_slice=stream_slice,
+            next_page_token=next_page_token,
+        )
+
+        path = path or self.get_path(
+            stream_state=stream_state,
+            stream_slice=stream_slice,
+            next_page_token=next_page_token,
+        )
+
+        full_url = self._join_url(url_base, path) if url_base else url + path if path else url
+
+        return full_url
 
     def get_url_base(
         self,
@@ -349,7 +401,7 @@ class HttpRequester(Requester):
         return options
 
     @classmethod
-    def _join_url(cls, url_base: str, path: str) -> str:
+    def _join_url(cls, url_base: str, path: Optional[str] = None) -> str:
         """
         Joins a base URL with a given path and returns the resulting URL with any trailing slash removed.
 
@@ -358,7 +410,7 @@ class HttpRequester(Requester):
 
         Args:
             url_base (str): The base URL to which the path will be appended.
-            path (str): The path to join with the base URL.
+            path (Optional[str]): The path to join with the base URL.
 
         Returns:
             str: The resulting joined URL.
@@ -399,18 +451,11 @@ class HttpRequester(Requester):
     ) -> Optional[requests.Response]:
         request, response = self._http_client.send_request(
             http_method=self.get_method().value,
-            url=self._join_url(
-                self.get_url_base(
-                    stream_state=stream_state,
-                    stream_slice=stream_slice,
-                    next_page_token=next_page_token,
-                ),
-                path
-                or self.get_path(
-                    stream_state=stream_state,
-                    stream_slice=stream_slice,
-                    next_page_token=next_page_token,
-                ),
+            url=self._get_url(
+                path=path,
+                stream_state=stream_state,
+                stream_slice=stream_slice,
+                next_page_token=next_page_token,
             ),
             request_kwargs={"stream": self.stream_response},
             headers=self._request_headers(

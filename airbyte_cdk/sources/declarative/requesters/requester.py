@@ -35,6 +35,18 @@ class Requester(RequestOptionsProvider):
         pass
 
     @abstractmethod
+    def get_url(
+        self,
+        *,
+        stream_state: Optional[StreamState],
+        stream_slice: Optional[StreamSlice],
+        next_page_token: Optional[Mapping[str, Any]],
+    ) -> str:
+        """
+        :return: URL base for the  API endpoint e.g: if you wanted to hit https://myapi.com/v1/some_entity then this should return "https://myapi.com/v1/"
+        """
+
+    @abstractmethod
     def get_url_base(
         self,
         *,

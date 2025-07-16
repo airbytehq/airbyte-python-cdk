@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2023 Airbyte, Inc., all rights reserved.
+# Copyright (c) 2025 Airbyte, Inc., all rights reserved.
 #
 
 import pytest
@@ -37,7 +37,22 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     State as component_declarative_oauth_state,
 )
+from airbyte_cdk.sources.declarative.spec.spec import ConfigMigration
 from airbyte_cdk.sources.declarative.spec.spec import Spec as component_spec
+from airbyte_cdk.sources.declarative.transformations.add_fields import AddedFieldDefinition
+from airbyte_cdk.sources.declarative.transformations.config_transformations.add_fields import (
+    ConfigAddFields,
+)
+from airbyte_cdk.sources.declarative.transformations.config_transformations.remap_field import (
+    ConfigRemapField,
+)
+from airbyte_cdk.sources.declarative.transformations.config_transformations.remove_fields import (
+    ConfigRemoveFields,
+)
+from airbyte_cdk.sources.declarative.validators.dpath_validator import DpathValidator
+from airbyte_cdk.sources.declarative.validators.validate_adheres_to_schema import (
+    ValidateAdheresToSchema,
+)
 
 
 @pytest.mark.parametrize(
@@ -142,3 +157,116 @@ from airbyte_cdk.sources.declarative.spec.spec import Spec as component_spec
 )
 def test_spec(spec, expected_connection_specification) -> None:
     assert spec.generate_spec() == expected_connection_specification
+
+
+def test_given_list_of_transformations_when_transform_config_then_config_is_transformed() -> None:
+    input_config = {"planet_code": "CRSC"}
+    expected_config = {
+        "planet_name": "Coruscant",
+        "planet_population": 3_000_000_000_000,
+    }
+    spec = component_spec(
+        connection_specification={},
+        parameters={},
+        config_transformations=[
+            ConfigAddFields(
+                fields=[
+                    AddedFieldDefinition(
+                        path=["planet_name"],
+                        value="{{ config['planet_code'] }}",
+                        value_type=None,
+                        parameters={},
+                    ),
+                    AddedFieldDefinition(
+                        path=["planet_population"],
+                        value="{{ config['planet_code'] }}",
+                        value_type=None,
+                        parameters={},
+                    ),
+                ]
+            ),
+            ConfigRemapField(
+                map={
+                    "CRSC": "Coruscant",
+                },
+                field_path=["planet_name"],
+                config=input_config,
+            ),
+            ConfigRemapField(
+                map={
+                    "CRSC": 3_000_000_000_000,
+                },
+                field_path=["planet_population"],
+                config=input_config,
+            ),
+            ConfigRemoveFields(
+                field_pointers=["planet_code"],
+            ),
+        ],
+    )
+    spec.transform_config(input_config)
+
+    assert input_config == expected_config
+
+
+def test_given_valid_config_value_when_validating_then_no_exception_is_raised() -> None:
+    spec = component_spec(
+        connection_specification={},
+        parameters={},
+        config_validations=[
+            DpathValidator(
+                field_path=["test_field"],
+                strategy=ValidateAdheresToSchema(
+                    schema={
+                        "$schema": "http://json-schema.org/draft-07/schema#",
+                        "title": "Test Spec",
+                        "type": "object",
+                        "required": [],
+                        "additionalProperties": False,
+                        "properties": {
+                            "field_to_validate": {
+                                "type": "string",
+                                "title": "Name",
+                                "description": "The name of the test spec",
+                                "airbyte_secret": False,
+                            }
+                        },
+                    }
+                ),
+            )
+        ],
+    )
+    input_config = {"test_field": {"field_to_validate": "test"}}
+    spec.validate_config(input_config)
+
+
+def test_given_invalid_config_value_when_validating_then_exception_is_raised() -> None:
+    spec = component_spec(
+        connection_specification={},
+        parameters={},
+        config_validations=[
+            DpathValidator(
+                field_path=["test_field"],
+                strategy=ValidateAdheresToSchema(
+                    schema={
+                        "$schema": "http://json-schema.org/draft-07/schema#",
+                        "title": "Test Spec",
+                        "type": "object",
+                        "required": [],
+                        "properties": {
+                            "field_to_validate": {
+                                "type": "string",
+                                "title": "Name",
+                                "description": "The name of the test spec",
+                                "airbyte_secret": False,
+                            }
+                        },
+                    }
+                ),
+            )
+        ],
+    )
+    input_config = {"test_field": {"field_to_validate": 123}}
+
+    with pytest.raises(Exception):
+        spec.validate_config(input_config)

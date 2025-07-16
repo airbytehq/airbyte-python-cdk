@@ -7,7 +7,7 @@ import dataclasses
 import json
 import logging
 import os
-from typing import Literal
+from typing import List, Literal
 from unittest import mock
 from unittest.mock import MagicMock, patch
 
@@ -58,8 +58,8 @@ from airbyte_cdk.models import (
 from airbyte_cdk.models import Type as MessageType
 from airbyte_cdk.sources.declarative.declarative_stream import DeclarativeStream
 from airbyte_cdk.sources.declarative.manifest_declarative_source import ManifestDeclarativeSource
-from airbyte_cdk.sources.declarative.retrievers import SimpleRetrieverTestReadDecorator
 from airbyte_cdk.sources.declarative.retrievers.simple_retriever import SimpleRetriever
+from airbyte_cdk.sources.declarative.stream_slicers import StreamSlicerTestReadDecorator
 from airbyte_cdk.test.mock_http import HttpMocker, HttpRequest, HttpResponse
 from airbyte_cdk.utils.airbyte_secrets_utils import filter_secrets, update_secrets
 from unit_tests.connector_builder.utils import create_configured_catalog
@@ -503,7 +503,7 @@ def test_handle_resolve_manifest(valid_resolve_manifest_config_file, dummy_catal
                 str(valid_resolve_manifest_config_file),
                 "--catalog",
                 str(dummy_catalog),
-            ]
+            ],
         )
         assert patched_handle.call_count == 1
 
@@ -515,7 +515,13 @@ def test_handle_test_read(valid_read_config_file, configured_catalog):
         return_value=AirbyteMessage(type=MessageType.RECORD),
     ) as patch:
         handle_request(
-            ["read", "--config", str(valid_read_config_file), "--catalog", str(configured_catalog)]
+            [
+                "read",
+                "--config",
+                str(valid_read_config_file),
+                "--catalog",
+                str(configured_catalog),
+            ],
         )
         assert patch.call_count == 1
 
@@ -818,6 +824,9 @@ def test_read_returns_error_response(mock_from_exception):
             connector_specification.connectionSpecification = {}
             return connector_specification
 
+        def deprecation_warnings(self) -> List[AirbyteLogMessage]:
+            return []
+
         @property
         def check_config_against_spec(self) -> Literal[False]:
             return False
@@ -919,7 +928,13 @@ def test_missing_config(valid_resolve_manifest_config_file):
 def test_invalid_config_command(invalid_config_file, dummy_catalog):
     with pytest.raises(ValueError):
         handle_request(
-            ["read", "--config", str(invalid_config_file), "--catalog", str(dummy_catalog)]
+            [
+                "read",
+                "--config",
+                str(invalid_config_file),
+                "--catalog",
+                str(dummy_catalog),
+            ],
         )
 
 
@@ -1097,7 +1112,8 @@ def test_read_source(mock_http_stream):
 
     streams = source.streams(config)
     for s in streams:
-        assert isinstance(s.retriever, SimpleRetrieverTestReadDecorator)
+        assert isinstance(s.retriever, SimpleRetriever)
+        assert isinstance(s.retriever.stream_slicer, StreamSlicerTestReadDecorator)
 
 
 @patch.object(
@@ -1143,7 +1159,8 @@ def test_read_source_single_page_single_slice(mock_http_stream):
 
     streams = source.streams(config)
     for s in streams:
-        assert isinstance(s.retriever, SimpleRetrieverTestReadDecorator)
+        assert isinstance(s.retriever, SimpleRetriever)
+        assert isinstance(s.retriever.stream_slicer, StreamSlicerTestReadDecorator)
 
 
 @pytest.mark.parametrize(

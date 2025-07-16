@@ -86,7 +86,7 @@ class TestConcurrentReadProcessor(unittest.TestCase):
         self._record.partition = self._partition
         self._record.data = self._record_data
         self._record.stream_name = _STREAM_NAME
-        self._record.is_file_transfer_message = False
+        self._record.file_reference = None
 
     def test_stream_is_not_done_initially(self):
         stream_instances_to_read_from = [self._stream]

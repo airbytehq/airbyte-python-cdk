@@ -8,7 +8,7 @@ import logging
 import os
 import pkgutil
 from abc import ABC, abstractmethod
-from typing import Any, Generic, Mapping, Optional, Protocol, TypeVar
+from typing import Any, Generic, Mapping, MutableMapping, Optional, Protocol, TypeVar
 
 import yaml
 
@@ -41,9 +41,9 @@ class BaseConnector(ABC, Generic[TConfig]):
         """
 
     @staticmethod
-    def read_config(config_path: str) -> Mapping[str, Any]:
+    def read_config(config_path: str) -> MutableMapping[str, Any]:
         config = BaseConnector._read_json_file(config_path)
-        if isinstance(config, Mapping):
+        if isinstance(config, MutableMapping):
             return config
         else:
             raise ValueError(

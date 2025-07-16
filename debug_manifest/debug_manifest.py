@@ -5,7 +5,7 @@
 import sys
 from typing import Any, Mapping
 
-from airbyte_cdk.entrypoint import launch
+from airbyte_cdk.entrypoint import AirbyteEntrypoint, launch
 from airbyte_cdk.sources.declarative.yaml_declarative_source import (
     YamlDeclarativeSource,
 )
@@ -23,7 +23,17 @@ def debug_manifest(source: YamlDeclarativeSource, args: list[str]) -> None:
 
 
 if __name__ == "__main__":
+    args = sys.argv[1:]
+    catalog_path = AirbyteEntrypoint.extract_catalog(args)
+    config_path = AirbyteEntrypoint.extract_config(args)
+    state_path = AirbyteEntrypoint.extract_state(args)
+
     debug_manifest(
-        YamlDeclarativeSource(**configuration),
-        sys.argv[1:],
+        YamlDeclarativeSource(
+            path_to_yaml="resources/manifest.yaml",
+            catalog=YamlDeclarativeSource.read_catalog(catalog_path) if catalog_path else None,
+            config=YamlDeclarativeSource.read_config(config_path) if config_path else None,
+            state=YamlDeclarativeSource.read_state(state_path) if state_path else None,
+        ),
+        args,
     )

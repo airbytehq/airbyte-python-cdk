@@ -6,6 +6,7 @@ from __future__ import annotations
 
 from typing import Any, ItemsView, Iterator, KeysView, List, Mapping, Optional, ValuesView
 
+from airbyte_cdk.models import AirbyteRecordMessageFileReference
 from airbyte_cdk.utils.slice_hasher import SliceHasher
 
 # A FieldPointer designates a path to a field inside a mapping. For example, retrieving ["k1", "k1.2"] in the object {"k1" :{"k1.2":
@@ -23,12 +24,12 @@ class Record(Mapping[str, Any]):
         data: Mapping[str, Any],
         stream_name: str,
         associated_slice: Optional[StreamSlice] = None,
-        is_file_transfer_message: bool = False,
+        file_reference: Optional[AirbyteRecordMessageFileReference] = None,
     ):
         self._data = data
         self._associated_slice = associated_slice
         self.stream_name = stream_name
-        self.is_file_transfer_message = is_file_transfer_message
+        self._file_reference = file_reference
 
     @property
     def data(self) -> Mapping[str, Any]:
@@ -37,6 +38,14 @@ class Record(Mapping[str, Any]):
     @property
     def associated_slice(self) -> Optional[StreamSlice]:
         return self._associated_slice
+
+    @property
+    def file_reference(self) -> AirbyteRecordMessageFileReference:
+        return self._file_reference
+
+    @file_reference.setter
+    def file_reference(self, value: AirbyteRecordMessageFileReference) -> None:
+        self._file_reference = value
 
     def __repr__(self) -> str:
         return repr(self._data)

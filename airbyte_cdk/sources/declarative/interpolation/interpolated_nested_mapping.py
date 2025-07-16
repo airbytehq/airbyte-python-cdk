@@ -12,7 +12,7 @@ from airbyte_cdk.sources.types import Config
 NestedMappingEntry = Union[
     dict[str, "NestedMapping"], list["NestedMapping"], str, int, float, bool, None
 ]
-NestedMapping = Union[dict[str, NestedMappingEntry], str]
+NestedMapping = Union[dict[str, NestedMappingEntry], str, dict[str, Any]]
 
 
 @dataclass

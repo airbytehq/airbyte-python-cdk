@@ -4,8 +4,11 @@
 
 import logging
 from abc import abstractmethod
-from typing import Any, Mapping, Tuple
+from typing import Any, List, Mapping, Tuple
 
+from airbyte_cdk.connector_builder.models import (
+    LogMessage as ConnectorBuilderLogMessage,
+)
 from airbyte_cdk.sources.abstract_source import AbstractSource
 from airbyte_cdk.sources.declarative.checks.connection_checker import ConnectionChecker
 
@@ -34,3 +37,9 @@ class DeclarativeSource(AbstractSource):
           The error object will be cast to string to display the problem to the user.
         """
         return self.connection_checker.check_connection(self, logger, config)
+
+    def deprecation_warnings(self) -> List[ConnectorBuilderLogMessage]:
+        """
+        Returns a list of deprecation warnings for the source.
+        """
+        return []

@@ -11,6 +11,7 @@ from unittest.mock import patch
 
 import freezegun
 import isodate
+import pytest
 from typing_extensions import deprecated
 
 from airbyte_cdk.models import (
@@ -29,6 +30,7 @@ from airbyte_cdk.models import (
     StreamDescriptor,
     SyncMode,
 )
+from airbyte_cdk.sources.declarative.async_job.job_tracker import ConcurrentJobLimitReached
 from airbyte_cdk.sources.declarative.concurrent_declarative_source import (
     ConcurrentDeclarativeSource,
 )
@@ -1838,6 +1840,24 @@ def test_async_incremental_stream_uses_concurrent_cursor_with_state():
     assert async_job_partition_router.stream_slicer._concurrent_state == expected_state
 
 
+def test_max_concurrent_async_job_count_is_passed_to_job_tracker():
+    limit = 5
+    manifest_with_max_concurrent_async_job_count = copy.deepcopy(_MANIFEST)
+    manifest_with_max_concurrent_async_job_count["max_concurrent_async_job_count"] = str(limit)
+    source = ConcurrentDeclarativeSource(
+        source_config=manifest_with_max_concurrent_async_job_count,
+        config=_CONFIG,
+        catalog=_CATALOG,
+        state={},
+    )
+    source_job_tracker = source._constructor._job_tracker
+    assert source_job_tracker._limit == limit
+
+    [source_job_tracker.try_to_get_intent() for i in range(limit)]
+    with pytest.raises(ConcurrentJobLimitReached):
+        source_job_tracker.try_to_get_intent()
+
+
 def test_stream_using_is_client_side_incremental_has_cursor_state():
     expected_cursor_value = "2024-07-01"
     state = [
@@ -1874,6 +1894,69 @@ def test_stream_using_is_client_side_incremental_has_cursor_state():
     client_side_incremental_cursor_state = record_filter._cursor._cursor
 
     assert client_side_incremental_cursor_state == expected_cursor_value
+
+
+@pytest.mark.parametrize(
+    "expected_transform_before_filtering",
+    [
+        pytest.param(
+            True,
+            id="transform before filtering",
+        ),
+        pytest.param(
+            False,
+            id="transform after filtering",
+        ),
+        pytest.param(
+            None,
+            id="default transform before filtering",
+        ),
+    ],
+)
+def test_stream_using_is_client_side_incremental_has_transform_before_filtering_according_to_manifest(
+    expected_transform_before_filtering,
+):
+    expected_cursor_value = "2024-07-01"
+    state = [
+        AirbyteStateMessage(
+            type=AirbyteStateType.STREAM,
+            stream=AirbyteStreamState(
+                stream_descriptor=StreamDescriptor(name="locations", namespace=None),
+                stream_state=AirbyteStateBlob(updated_at=expected_cursor_value),
+            ),
+        )
+    ]
+
+    manifest_with_stream_state_interpolation = copy.deepcopy(_MANIFEST)
+
+    # Enable semi-incremental on the locations stream
+    manifest_with_stream_state_interpolation["definitions"]["locations_stream"]["incremental_sync"][
+        "is_client_side_incremental"
+    ] = True
+
+    if expected_transform_before_filtering is not None:
+        manifest_with_stream_state_interpolation["definitions"]["locations_stream"]["retriever"][
+            "record_selector"
+        ]["transform_before_filtering"] = expected_transform_before_filtering
+
+    source = ConcurrentDeclarativeSource(
+        source_config=manifest_with_stream_state_interpolation,
+        config=_CONFIG,
+        catalog=_CATALOG,
+        state=state,
+    )
+    concurrent_streams, synchronous_streams = source._group_streams(config=_CONFIG)
+
+    locations_stream = concurrent_streams[2]
+    assert isinstance(locations_stream, DefaultStream)
+
+    simple_retriever = locations_stream._stream_partition_generator._partition_factory._retriever
+    record_selector = simple_retriever.record_selector
+
+    if expected_transform_before_filtering is not None:
+        assert record_selector.transform_before_filtering == expected_transform_before_filtering
+    else:
+        assert record_selector.transform_before_filtering is True
 
 
 def create_wrapped_stream(stream: DeclarativeStream) -> Stream:

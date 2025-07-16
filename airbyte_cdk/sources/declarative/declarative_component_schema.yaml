@@ -25,6 +25,7 @@ properties:
     type: array
     items:
       anyOf:
+        - "$ref": "#/definitions/ConditionalStreams"
         - "$ref": "#/definitions/DeclarativeStream"
         - "$ref": "#/definitions/StateDelegatingStream"
   dynamic_streams:
@@ -296,12 +297,12 @@ definitions:
             - "$ref": "#/definitions/ApiKeyAuthenticator"
             - "$ref": "#/definitions/BasicHttpAuthenticator"
             - "$ref": "#/definitions/BearerAuthenticator"
-            - "$ref": "#/definitions/CustomAuthenticator"
             - "$ref": "#/definitions/OAuthAuthenticator"
             - "$ref": "#/definitions/JwtAuthenticator"
-            - "$ref": "#/definitions/NoAuth"
             - "$ref": "#/definitions/SessionTokenAuthenticator"
             - "$ref": "#/definitions/LegacySessionTokenAuthenticator"
+            - "$ref": "#/definitions/CustomAuthenticator"
+            - "$ref": "#/definitions/NoAuth"
         examples:
           - authenticators:
               token: "#/definitions/ApiKeyAuthenticator"
@@ -424,6 +425,36 @@ definitions:
       $parameters:
         type: object
         additionalProperties: true
+  ConditionalStreams:
+    title: Conditional Streams
+    description: Streams that are only available while performing a connector operation when the condition is met.
+    type: object
+    required:
+      - type
+      - streams
+      - condition
+    properties:
+      type:
+        type: string
+        enum: [ConditionalStreams]
+      condition:
+        title: Condition
+        description: Condition that will be evaluated to determine if a set of streams should be available.
+        type: string
+        interpolation_context:
+          - config
+          - parameters
+        examples:
+          - "{{ config['is_sandbox'] }}"
+      streams:
+        title: Streams
+        description: Streams that will be used during an operation based on the condition.
+        type: array
+        items:
+          "$ref": "#/definitions/DeclarativeStream"
+      $parameters:
+        type: object
+        additionalProperties: true
   ConstantBackoffStrategy:
     title: Constant Backoff
     description: Backoff strategy with a constant backoff interval.
@@ -440,7 +471,9 @@ definitions:
         description: Backoff time in seconds.
         anyOf:
           - type: number
+            title: Number of seconds
           - type: string
+            title: Interpolated Value
         interpolation_context:
           - config
         examples:
@@ -905,6 +938,49 @@ definitions:
         examples:
           - "created_at"
           - "{{ config['record_cursor'] }}"
+      cursor_datetime_formats:
+        title: Cursor Datetime Formats
+        description: The possible formats for the cursor field, in order of preference. The first format that matches the cursor field value will be used to parse it. If not provided, the `datetime_format` will be used.
+        type: array
+        items:
+          type: string
+          examples:
+            - "%Y-%m-%dT%H:%M:%S.%f%z"
+            - "%Y-%m-%d"
+            - "%s"
+      start_datetime:
+        title: Start Datetime
+        description: The datetime that determines the earliest record that should be synced.
+        anyOf:
+          - "$ref": "#/definitions/MinMaxDatetime"
+          - type: string
+            title: Interpolated Value
+        interpolation_context:
+          - config
+        examples:
+          - "2020-01-1T00:00:00Z"
+          - "{{ config['start_time'] }}"
+      start_time_option:
+        title: Inject Start Time Into Outgoing HTTP Request
+        description: Optionally configures how the start datetime will be sent in requests to the source API.
+        "$ref": "#/definitions/RequestOption"
+      end_datetime:
+        title: End Datetime
+        description: The datetime that determines the last record that should be synced. If not provided, `{{ now_utc() }}` will be used.
+        anyOf:
+          - "$ref": "#/definitions/MinMaxDatetime"
+          - type: string
+            title: Interpolated Value
+        interpolation_context:
+          - config
+        examples:
+          - "2021-01-1T00:00:00Z"
+          - "{{ now_utc() }}"
+          - "{{ day_delta(-1) }}"
+      end_time_option:
+        title: Inject End Time Into Outgoing HTTP Request
+        description: Optionally configures how the end datetime will be sent in requests to the source API.
+        "$ref": "#/definitions/RequestOption"
       datetime_format:
         title: Outgoing Datetime Format
         description: |
@@ -946,27 +1022,6 @@ definitions:
           - "%s"
           - "%ms"
           - "%s_as_float"
-      start_datetime:
-        title: Start Datetime
-        description: The datetime that determines the earliest record that should be synced.
-        anyOf:
-          - type: string
-          - "$ref": "#/definitions/MinMaxDatetime"
-        interpolation_context:
-          - config
-        examples:
-          - "2020-01-1T00:00:00Z"
-          - "{{ config['start_time'] }}"
-      cursor_datetime_formats:
-        title: Cursor Datetime Formats
-        description: The possible formats for the cursor field, in order of preference. The first format that matches the cursor field value will be used to parse it. If not provided, the `datetime_format` will be used.
-        type: array
-        items:
-          type: string
-          examples:
-            - "%Y-%m-%dT%H:%M:%S.%f%z"
-            - "%Y-%m-%d"
-            - "%s"
       cursor_granularity:
         title: Cursor Granularity
         description:
@@ -975,22 +1030,6 @@ definitions:
         type: string
         examples:
           - "PT1S"
-      end_datetime:
-        title: End Datetime
-        description: The datetime that determines the last record that should be synced. If not provided, `{{ now_utc() }}` will be used.
-        anyOf:
-          - type: string
-          - "$ref": "#/definitions/MinMaxDatetime"
-        interpolation_context:
-          - config
-        examples:
-          - "2021-01-1T00:00:00Z"
-          - "{{ now_utc() }}"
-          - "{{ day_delta(-1) }}"
-      end_time_option:
-        title: Inject End Time Into Outgoing HTTP Request
-        description: Optionally configures how the end datetime will be sent in requests to the source API.
-        "$ref": "#/definitions/RequestOption"
       is_data_feed:
         title: Whether the target API is formatted as a data feed
         description: A data feed API is an API that does not allow filtering and paginates the content from the most recent to the least recent. Given this, the CDK needs to know when to stop paginating and this field will generate a stop condition for pagination.
@@ -1030,10 +1069,6 @@ definitions:
         type: string
         examples:
           - "starting_time"
-      start_time_option:
-        title: Inject Start Time Into Outgoing HTTP Request
-        description: Optionally configures how the start datetime will be sent in requests to the source API.
-        "$ref": "#/definitions/RequestOption"
       step:
         title: Step
         description: The size of the time window (ISO8601 duration). Given this field is provided, `cursor_granularity` needs to be provided as well.
@@ -1057,15 +1092,18 @@ definitions:
         type: string
         enum: [JwtAuthenticator]
       secret_key:
+        title: Secret Key
         type: string
         description: Secret used to sign the JSON web token.
         examples:
           - "{{ config['secret_key'] }}"
       base64_encode_secret_key:
+        title: Base64-encode Secret Key
         type: boolean
         description: When set to true, the secret key will be base64 encoded prior to being encoded as part of the JWT. Only set to "true" when required by the API.
         default: False
       algorithm:
+        title: Algorithm
         type: string
         description: Algorithm used to sign the JSON web token.
         enum:
@@ -1301,8 +1339,8 @@ definitions:
         examples:
           - "%Y-%m-%d %H:%M:%S.%f+00:00"
       refresh_token_updater:
-        title: Token Updater
-        description: When the token updater is defined, new refresh tokens, access tokens and the access token expiry date are written back from the authentication response to the config object. This is important if the refresh token can only used once.
+        title: Refresh Token Updater
+        description: When the refresh token updater is defined, new refresh tokens, access tokens and the access token expiry date are written back from the authentication response to the config object. This is important if the refresh token can only used once.
         properties:
           refresh_token_name:
             title: Refresh Token Property Name
@@ -1389,20 +1427,6 @@ definitions:
       type:
         type: string
         enum: [DeclarativeStream]
-      retriever:
-        title: Retriever
-        description: Component used to coordinate how records are extracted across stream slices and request pages.
-        anyOf:
-          - "$ref": "#/definitions/AsyncRetriever"
-          - "$ref": "#/definitions/CustomRetriever"
-          - "$ref": "#/definitions/SimpleRetriever"
-      incremental_sync:
-        title: Incremental Sync
-        description: Component used to fetch data incrementally based on a time field in the data.
-        anyOf:
-          - "$ref": "#/definitions/CustomIncrementalSync"
-          - "$ref": "#/definitions/DatetimeBasedCursor"
-          - "$ref": "#/definitions/IncrementingCountCursor"
       name:
         title: Name
         description: The stream name.
@@ -1410,18 +1434,42 @@ definitions:
         default: ""
         example:
           - "Users"
+      retriever:
+        title: Retriever
+        description: Component used to coordinate how records are extracted across stream slices and request pages.
+        anyOf:
+          - "$ref": "#/definitions/SimpleRetriever"
+          - "$ref": "#/definitions/AsyncRetriever"
+          - "$ref": "#/definitions/CustomRetriever"
+      incremental_sync:
+        title: Incremental Sync
+        description: Component used to fetch data incrementally based on a time field in the data.
+        anyOf:
+          - "$ref": "#/definitions/DatetimeBasedCursor"
+          - "$ref": "#/definitions/IncrementingCountCursor"
+          - "$ref": "#/definitions/CustomIncrementalSync"
       primary_key:
         title: Primary Key
-        description: The primary key of the stream.
         "$ref": "#/definitions/PrimaryKey"
         default: ""
       schema_loader:
         title: Schema Loader
-        description: Component used to retrieve the schema for the current stream.
+        description:
+          One or many schema loaders can be used to retrieve the schema for the current stream. When
+          multiple schema loaders are defined, schema properties will be merged together. Schema
+          loaders defined first taking precedence in the event of a conflict.
         anyOf:
-          - "$ref": "#/definitions/DynamicSchemaLoader"
           - "$ref": "#/definitions/InlineSchemaLoader"
+          - "$ref": "#/definitions/DynamicSchemaLoader"
           - "$ref": "#/definitions/JsonFileSchemaLoader"
+          - title: Multiple Schema Loaders
+            type: array
+            items:
+              anyOf:
+                - "$ref": "#/definitions/InlineSchemaLoader"
+                - "$ref": "#/definitions/DynamicSchemaLoader"
+                - "$ref": "#/definitions/JsonFileSchemaLoader"
+                - "$ref": "#/definitions/CustomSchemaLoader"
           - "$ref": "#/definitions/CustomSchemaLoader"
       # TODO we have move the transformation to the RecordSelector level in the code but kept this here for
       # compatibility reason. We should eventually move this to align with the code.
@@ -1432,13 +1480,13 @@ definitions:
         items:
           anyOf:
             - "$ref": "#/definitions/AddFields"
-            - "$ref": "#/definitions/CustomTransformation"
             - "$ref": "#/definitions/RemoveFields"
             - "$ref": "#/definitions/KeysToLower"
             - "$ref": "#/definitions/KeysToSnakeCase"
             - "$ref": "#/definitions/FlattenFields"
             - "$ref": "#/definitions/DpathFlattenFields"
             - "$ref": "#/definitions/KeysReplace"
+            - "$ref": "#/definitions/CustomTransformation"
       state_migrations:
         title: State Migrations
         description: Array of state migrations to be applied on the input state
@@ -1448,6 +1496,45 @@ definitions:
             - "$ref": "#/definitions/LegacyToPerPartitionStateMigration"
             - "$ref": "#/definitions/CustomStateMigration"
         default: []
+      file_uploader:
+        title: File Uploader
+        description: (experimental) Describes how to fetch a file
+        type: object
+        required:
+          - type
+          - requester
+          - download_target_extractor
+        properties:
+          type:
+            type: string
+            enum: [FileUploader]
+          requester:
+            description: Requester component that describes how to prepare HTTP requests to send to the source API.
+            anyOf:
+              - "$ref": "#/definitions/HttpRequester"
+              - "$ref": "#/definitions/CustomRequester"
+          download_target_extractor:
+            description: Responsible for fetching the url where the file is located. This is applied on each records and not on the HTTP response
+            anyOf:
+              - "$ref": "#/definitions/DpathExtractor"
+              - "$ref": "#/definitions/CustomRecordExtractor"
+          file_extractor:
+            description: Responsible for fetching the content of the file. If not defined, the assumption is that the whole response body is the file content
+            anyOf:
+              - "$ref": "#/definitions/DpathExtractor"
+              - "$ref": "#/definitions/CustomRecordExtractor"
+          filename_extractor:
+            description: Defines the name to store the file. Stream name is automatically added to the file path. File unique ID can be used to avoid overwriting files. Random UUID will be used if the extractor is not provided.
+            type: string
+            interpolation_context:
+              - config
+              - record
+            examples:
+              - "{{ record.id }}/{{ record.file_name }}/"
+              - "{{ record.id }}_{{ record.file_name }}/"
+          $parameters:
+            type: object
+            additionalProperties: true
       $parameters:
         type: object
         additional_properties: true
@@ -1636,10 +1723,10 @@ definitions:
         items:
           anyOf:
             - "$ref": "#/definitions/ConstantBackoffStrategy"
-            - "$ref": "#/definitions/CustomBackoffStrategy"
             - "$ref": "#/definitions/ExponentialBackoffStrategy"
             - "$ref": "#/definitions/WaitTimeFromHeader"
             - "$ref": "#/definitions/WaitUntilTimeFromHeader"
+            - "$ref": "#/definitions/CustomBackoffStrategy"
       max_retries:
         title: Max Retry Count
         description: The maximum number of time to retry a retryable request before giving up and failing.
@@ -1673,13 +1760,15 @@ definitions:
         title: Pagination Strategy
         description: Strategy defining how records are paginated.
         anyOf:
+          - "$ref": "#/definitions/PageIncrement"
+          - "$ref": "#/definitions/OffsetIncrement"
           - "$ref": "#/definitions/CursorPagination"
           - "$ref": "#/definitions/CustomPaginationStrategy"
-          - "$ref": "#/definitions/OffsetIncrement"
-          - "$ref": "#/definitions/PageIncrement"
       page_size_option:
+        title: Inject Page Size Into Outgoing HTTP Request
         "$ref": "#/definitions/RequestOption"
       page_token_option:
+        title: Inject Page Token Into Outgoing HTTP Request
         anyOf:
           - "$ref": "#/definitions/RequestOption"
           - "$ref": "#/definitions/RequestPath"
@@ -1777,6 +1866,8 @@ definitions:
         type: object
         additionalProperties: true
   SessionTokenAuthenticator:
+    title: Session Token Authenticator
+    description: Authenticator for requests using the session token as an API key that's injected into the request.
     type: object
     required:
       - type
@@ -1863,14 +1954,16 @@ definitions:
     type: object
     required:
       - type
-      - url_base
     properties:
       type:
         type: string
         enum: [HttpRequester]
       url_base:
+        deprecated: true
+        deprecation_message: "Use `url` field instead."
         title: API Base URL
-        description: Base URL of the API source. Do not put sensitive information (e.g. API tokens) into this field - Use the Authentication component for this.
+        description: Deprecated, use the `url` instead. Base URL of the API source. Do not put sensitive information (e.g. API tokens) into this field - Use the Authenticator component for this.
+        linkable: true
         type: string
         interpolation_context:
           - config
@@ -1886,9 +1979,29 @@ definitions:
           - "{{ config['base_url'] or 'https://app.posthog.com'}}/api"
           - "https://connect.squareup.com/v2/quotes/{{ stream_partition['id'] }}/quote_line_groups"
           - "https://example.com/api/v1/resource/{{ next_page_token['id'] }}"
+      url:
+        title: API Endpoint URL
+        description: The URL of the source API endpoint. Do not put sensitive information (e.g. API tokens) into this field - Use the Authenticator component for this.
+        type: string
+        interpolation_context:
+          - config
+          - next_page_token
+          - stream_interval
+          - stream_partition
+          - stream_slice
+          - creation_response
+          - polling_response
+          - download_target
+        examples:
+          - "https://connect.squareup.com/v2"
+          - "{{ config['url'] or 'https://app.posthog.com'}}/api"
+          - "https://connect.squareup.com/v2/quotes/{{ stream_partition['id'] }}/quote_line_groups"
+          - "https://example.com/api/v1/resource/{{ next_page_token['id'] }}"
       path:
+        deprecated: true
+        deprecation_message: "Use `url` field instead."
         title: URL Path
-        description: Path the specific API endpoint that this stream represents. Do not put sensitive information (e.g. API tokens) into this field - Use the Authentication component for this.
+        description: Deprecated, use the `url` instead. Path the specific API endpoint that this stream represents. Do not put sensitive information (e.g. API tokens) into this field - Use the Authenticator component for this.
         type: string
         interpolation_context:
           - config
@@ -1903,27 +2016,6 @@ definitions:
           - "/products"
           - "/quotes/{{ stream_partition['id'] }}/quote_line_groups"
           - "/trades/{{ config['symbol_id'] }}/history"
-      authenticator:
-        title: Authenticator
-        description: Authentication method to use for requests sent to the API.
-        anyOf:
-          - "$ref": "#/definitions/ApiKeyAuthenticator"
-          - "$ref": "#/definitions/BasicHttpAuthenticator"
-          - "$ref": "#/definitions/BearerAuthenticator"
-          - "$ref": "#/definitions/CustomAuthenticator"
-          - "$ref": "#/definitions/OAuthAuthenticator"
-          - "$ref": "#/definitions/JwtAuthenticator"
-          - "$ref": "#/definitions/NoAuth"
-          - "$ref": "#/definitions/SessionTokenAuthenticator"
-          - "$ref": "#/definitions/LegacySessionTokenAuthenticator"
-          - "$ref": "#/definitions/SelectiveAuthenticator"
-      error_handler:
-        title: Error Handler
-        description: Error handler component that defines how to handle errors.
-        anyOf:
-          - "$ref": "#/definitions/DefaultErrorHandler"
-          - "$ref": "#/definitions/CustomErrorHandler"
-          - "$ref": "#/definitions/CompositeErrorHandler"
       http_method:
         title: HTTP Method
         description: The HTTP method used to fetch data from the source (can be GET or POST).
@@ -1935,14 +2027,81 @@ definitions:
         examples:
           - GET
           - POST
+      authenticator:
+        title: Authenticator
+        linkable: true
+        description: Authentication method to use for requests sent to the API.
+        anyOf:
+          - "$ref": "#/definitions/ApiKeyAuthenticator"
+          - "$ref": "#/definitions/BasicHttpAuthenticator"
+          - "$ref": "#/definitions/BearerAuthenticator"
+          - "$ref": "#/definitions/OAuthAuthenticator"
+          - "$ref": "#/definitions/JwtAuthenticator"
+          - "$ref": "#/definitions/SessionTokenAuthenticator"
+          - "$ref": "#/definitions/SelectiveAuthenticator"
+          - "$ref": "#/definitions/CustomAuthenticator"
+          - "$ref": "#/definitions/NoAuth"
+          - "$ref": "#/definitions/LegacySessionTokenAuthenticator"
+      fetch_properties_from_endpoint:
+        deprecated: true
+        deprecation_message: "Use `query_properties` field instead."
+        title: Fetch Properties from Endpoint
+        description: Allows for retrieving a dynamic set of properties from an API endpoint which can be injected into outbound request using the stream_partition.extra_fields.
+        "$ref": "#/definitions/PropertiesFromEndpoint"
+      query_properties:
+        title: Query Properties
+        description: For APIs that require explicit specification of the properties to query for, this component will take a static or dynamic set of properties (which can be optionally split into chunks) and allow them to be injected into an outbound request by accessing stream_partition.extra_fields.
+        "$ref": "#/definitions/QueryProperties"
+      request_parameters:
+        title: Query Parameters
+        description: Specifies the query parameters that should be set on an outgoing HTTP request given the inputs.
+        anyOf:
+          - type: object
+            title: Key/Value Pairs
+            additionalProperties:
+              anyOf:
+                - type: string
+                - $ref: "#/definitions/QueryProperties"
+          - type: string
+            title: Interpolated Value
+        interpolation_context:
+          - next_page_token
+          - stream_interval
+          - stream_partition
+          - stream_slice
+        examples:
+          - unit: "day"
+          - query: 'last_event_time BETWEEN TIMESTAMP "{{ stream_interval.start_time }}" AND TIMESTAMP "{{ stream_interval.end_time }}"'
+          - searchIn: "{{ ','.join(config.get('search_in', [])) }}"
+          - sort_by[asc]: updated_at
+      request_headers:
+        title: Request Headers
+        description: Return any non-auth headers. Authentication headers will overwrite any overlapping headers returned from this method.
+        anyOf:
+          - type: object
+            title: Key/Value Pairs
+            additionalProperties:
+              type: string
+          - type: string
+            title: Interpolated Value
+        interpolation_context:
+          - next_page_token
+          - stream_interval
+          - stream_partition
+          - stream_slice
+        examples:
+          - Output-Format: JSON
+          - Version: "{{ config['version'] }}"
       request_body_data:
+        deprecated: true
+        deprecation_message: "Use `request_body` field instead."
         title: Request Body Payload (Non-JSON)
         description: Specifies how to populate the body of the request with a non-JSON payload. Plain text will be sent as is, whereas objects will be converted to a urlencoded form.
         anyOf:
-          - type: string
           - type: object
             additionalProperties:
               type: string
+          - type: string
         interpolation_context:
           - next_page_token
           - stream_interval
@@ -1954,12 +2113,14 @@ definitions:
                 [{"value": {{ stream_interval['start_time'] | int * 1000 }} }]
               }, "orderBy": 1, "columnName": "Timestamp"}]/
       request_body_json:
+        deprecated: true
+        deprecation_message: "Use `request_body` field instead."
         title: Request Body JSON Payload
         description: Specifies how to populate the body of the request with a JSON payload. Can contain nested objects.
         anyOf:
-          - type: string
           - type: object
             additionalProperties: true
+          - type: string
         interpolation_context:
           - next_page_token
           - stream_interval
@@ -1972,42 +2133,26 @@ definitions:
           - sort:
               field: "updated_at"
               order: "ascending"
-      request_headers:
-        title: Request Headers
-        description: Return any non-auth headers. Authentication headers will overwrite any overlapping headers returned from this method.
+      request_body:
+        title: Request Body
+        description: Specifies how to populate the body of the request with a payload. Can contain nested objects.
         anyOf:
-          - type: string
-          - type: object
-            additionalProperties:
-              type: string
+          - "$ref": "#/definitions/RequestBodyPlainText"
+          - "$ref": "#/definitions/RequestBodyUrlEncodedForm"
+          - "$ref": "#/definitions/RequestBodyJsonObject"
+          - "$ref": "#/definitions/RequestBodyGraphQL"
         interpolation_context:
           - next_page_token
           - stream_interval
           - stream_partition
           - stream_slice
-        examples:
-          - Output-Format: JSON
-          - Version: "{{ config['version'] }}"
-      request_parameters:
-        title: Query Parameters
-        description: Specifies the query parameters that should be set on an outgoing HTTP request given the inputs.
+      error_handler:
+        title: Error Handler
+        description: Error handler component that defines how to handle errors.
         anyOf:
-          - type: string
-          - type: object
-            additionalProperties:
-              anyOf:
-                - type: string
-                - $ref": "#/definitions/QueryProperties"
-        interpolation_context:
-          - next_page_token
-          - stream_interval
-          - stream_partition
-          - stream_slice
-        examples:
-          - unit: "day"
-          - query: 'last_event_time BETWEEN TIMESTAMP "{{ stream_interval.start_time }}" AND TIMESTAMP "{{ stream_interval.end_time }}"'
-          - searchIn: "{{ ','.join(config.get('search_in', [])) }}"
-          - sort_by[asc]: updated_at
+          - "$ref": "#/definitions/DefaultErrorHandler"
+          - "$ref": "#/definitions/CompositeErrorHandler"
+          - "$ref": "#/definitions/CustomErrorHandler"
       use_cache:
         title: Use Cache
         description: Enables stream requests caching. This field is automatically set by the CDK.
@@ -2186,9 +2331,15 @@ definitions:
         title: Retriever
         description: Component used to coordinate how records are extracted across stream slices and request pages.
         anyOf:
+          - "$ref": "#/definitions/SimpleRetriever"
           - "$ref": "#/definitions/AsyncRetriever"
           - "$ref": "#/definitions/CustomRetriever"
-          - "$ref": "#/definitions/SimpleRetriever"
+      schema_filter:
+        title: Schema Filter
+        description: Responsible for filtering fields to be added to json schema.
+        anyOf:
+          - "$ref": "#/definitions/RecordFilter"
+          - "$ref": "#/definitions/CustomRecordFilter"
       schema_transformations:
         title: Schema Transformations
         description: A list of transformations to be applied to the schema.
@@ -2196,13 +2347,13 @@ definitions:
         items:
           anyOf:
             - "$ref": "#/definitions/AddFields"
-            - "$ref": "#/definitions/CustomTransformation"
             - "$ref": "#/definitions/RemoveFields"
             - "$ref": "#/definitions/KeysToLower"
             - "$ref": "#/definitions/KeysToSnakeCase"
             - "$ref": "#/definitions/FlattenFields"
             - "$ref": "#/definitions/DpathFlattenFields"
             - "$ref": "#/definitions/KeysReplace"
+            - "$ref": "#/definitions/CustomTransformation"
       schema_type_identifier:
         "$ref": "#/definitions/SchemaTypeIdentifier"
       $parameters:
@@ -2222,7 +2373,10 @@ definitions:
         title: Schema
         description: Describes a streams' schema. Refer to the <a href="https://docs.airbyte.com/understanding-airbyte/supported-data-types/">Data Types documentation</a> for more details on which types are valid.
         type: object
+        additionalProperties: true
   JsonFileSchemaLoader:
+    deprecated: true
+    deprecation_message: "Use `InlineSchemaLoader` instead."
     title: Json File Schema Loader
     description: Loads the schema from a json file.
     type: object
@@ -2315,7 +2469,7 @@ definitions:
     properties:
       type:
         type: string
-        enum: [ KeyTransformation ]
+        enum: [KeyTransformation]
       prefix:
         title: Key Prefix
         description: Prefix to add for object keys. If not provided original keys remain unchanged.
@@ -2903,7 +3057,9 @@ definitions:
         description: The number of records to include in each pages.
         anyOf:
           - type: integer
+            title: Number of Records
           - type: string
+            title: Interpolated Value
         interpolation_context:
           - config
           - response
@@ -2935,7 +3091,9 @@ definitions:
           - config
         anyOf:
           - type: integer
+            title: Number of Records
           - type: string
+            title: Interpolated Value
         examples:
           - 100
           - "100"
@@ -2969,15 +3127,12 @@ definitions:
       type:
         type: string
         enum: [ParentStreamConfig]
-      lazy_read_pointer:
-        title: Lazy Read Pointer
-        description: If set, this will enable lazy reading, using the initial read of parent records to extract child records.
-        type: array
-        default: []
-        items:
-          - type: string
-        interpolation_context:
-          - config
+      stream:
+        title: Parent Stream
+        description: Reference to the parent stream.
+        anyOf:
+          - "$ref": "#/definitions/DeclarativeStream"
+          - "$ref": "#/definitions/StateDelegatingStream"
       parent_key:
         title: Parent Key
         description: The primary key of records from the parent stream that will be used during the retrieval of records for the current substream. This parent identifier field is typically a characteristic of the child records being extracted from the source API.
@@ -2985,12 +3140,6 @@ definitions:
         examples:
           - "id"
           - "{{ config['parent_record_id'] }}"
-      stream:
-        title: Parent Stream
-        description: Reference to the parent stream.
-        anyOf:
-          - "$ref": "#/definitions/DeclarativeStream"
-          - "$ref": "#/definitions/StateDelegatingStream"
       partition_field:
         title: Current Parent Key Value Identifier
         description: While iterating over parent records during a sync, the parent_key value can be referenced by using this field.
@@ -3007,6 +3156,15 @@ definitions:
         description: Indicates whether the parent stream should be read incrementally based on updates in the child stream.
         type: boolean
         default: false
+      lazy_read_pointer:
+        title: Lazy Read Pointer
+        description: If set, this will enable lazy reading, using the initial read of parent records to extract child records.
+        type: array
+        default: []
+        items:
+          type: string
+        interpolation_context:
+          - config
       extra_fields:
         title: Extra Fields
         description: Array of field paths to include as additional fields in the stream slice. Each path is an array of strings representing keys to access fields in the respective parent record. Accessible via `stream_slice.extra_fields`. Missing fields are set to `None`.
@@ -3029,12 +3187,20 @@ definitions:
     description: The stream field to be used to distinguish unique records. Can either be a single field, an array of fields representing a composite key, or an array of arrays representing a composite key where the fields are nested fields.
     anyOf:
       - type: string
+        title: Single Key
+        description: The single top-level field to use as the primary key.
       - type: array
+        title: Composite Key
+        description: An array of top-level fields representing a composite primary key.
         items:
           type: string
       - type: array
+        title: Composite Key of Nested Fields
+        description: An array of arrays representing a composite primary key where the fields are nested fields.
         items:
           type: array
+          title: Nested Field Path
+          description: Path to the nested field in the record.
           items:
             type: string
     default: ""
@@ -3066,8 +3232,8 @@ definitions:
       retriever:
         description: Requester component that describes how to fetch the properties to query from a remote API endpoint.
         anyOf:
-          - "$ref": "#/definitions/CustomRetriever"
           - "$ref": "#/definitions/SimpleRetriever"
+          - "$ref": "#/definitions/CustomRetriever"
       $parameters:
         type: object
         additionalProperties: true
@@ -3142,6 +3308,7 @@ definitions:
         type: string
         enum: [RecordFilter]
       condition:
+        title: Condition
         description: The predicate to filter a record. Records will be removed if evaluated to False.
         type: string
         default: ""
@@ -3171,25 +3338,24 @@ definitions:
         enum: [RecordSelector]
       extractor:
         anyOf:
-          - "$ref": "#/definitions/CustomRecordExtractor"
           - "$ref": "#/definitions/DpathExtractor"
+          - "$ref": "#/definitions/CustomRecordExtractor"
       record_filter:
         title: Record Filter
         description: Responsible for filtering records to be emitted by the Source.
         anyOf:
-          - "$ref": "#/definitions/CustomRecordFilter"
           - "$ref": "#/definitions/RecordFilter"
+          - "$ref": "#/definitions/CustomRecordFilter"
       schema_normalization:
         title: Schema Normalization
         description: Responsible for normalization according to the schema.
         anyOf:
           - "$ref": "#/definitions/SchemaNormalization"
           - "$ref": "#/definitions/CustomSchemaNormalization"
-        default: None
       transform_before_filtering:
+        title: Transform Before Filtering
         description: If true, transformation will be applied before record filtering.
         type: boolean
-        default: false
       $parameters:
         type: object
         additionalProperties: true
@@ -3198,11 +3364,11 @@ definitions:
     description: Responsible for normalization according to the schema.
     type: string
     enum:
-      - None
       - Default
+      - None
     examples:
-      - None
       - Default
+      - None
   RemoveFields:
     title: Remove Fields
     description: A transformation which removes fields from a record. The fields removed are designated using FieldPointers. During transformation, if a field or any of its parents does not exist in the record, no error is thrown.
@@ -3258,6 +3424,19 @@ definitions:
       type:
         type: string
         enum: [RequestOption]
+      inject_into:
+        title: Inject Into
+        description: Configures where the descriptor should be set on the HTTP requests. Note that request parameters that are already encoded in the URL path will not be duplicated.
+        enum:
+          - request_parameter
+          - header
+          - body_data
+          - body_json
+        examples:
+          - request_parameter
+          - header
+          - body_data
+          - body_json
       field_name:
         title: Field Name
         description: Configures which key should be used in the location that the descriptor is being injected into. We hope to eventually deprecate this field in favor of `field_path` for all request_options, but must currently maintain it for backwards compatibility in the Builder.
@@ -3278,19 +3457,6 @@ definitions:
         interpolation_context:
           - config
           - parameters
-      inject_into:
-        title: Inject Into
-        description: Configures where the descriptor should be set on the HTTP requests. Note that request parameters that are already encoded in the URL path will not be duplicated.
-        enum:
-          - request_parameter
-          - header
-          - body_data
-          - body_json
-        examples:
-          - request_parameter
-          - header
-          - body_data
-          - body_json
   Schemas:
     title: Schemas
     description: The stream schemas representing the shape of the data emitted by the stream.
@@ -3298,6 +3464,7 @@ definitions:
     additionalProperties: true
   LegacySessionTokenAuthenticator:
     title: Session Token Authenticator
+    deprecated: true
     description: Deprecated - use SessionTokenAuthenticator instead. Authenticator for requests authenticated using session tokens. A session token is a random value generated by a server to identify a specific user for the duration of one interaction session.
     type: object
     required:
@@ -3358,6 +3525,7 @@ definitions:
         type: object
         additionalProperties: true
   StateDelegatingStream:
+    title: State Delegating Stream
     description: (This component is experimental. Use at your own risk.) Orchestrate the retriever's usage based on the state value.
     type: object
     required:
@@ -3377,17 +3545,18 @@ definitions:
         example:
           - "Users"
       full_refresh_stream:
-        title: Retriever
+        title: Full Refresh Stream
         description: Component used to coordinate how records are extracted across stream slices and request pages when the state is empty or not provided.
         "$ref": "#/definitions/DeclarativeStream"
       incremental_stream:
-        title: Retriever
+        title: Incremental Stream
         description: Component used to coordinate how records are extracted across stream slices and request pages when the state provided.
         "$ref": "#/definitions/DeclarativeStream"
       $parameters:
         type: object
         additionalProperties: true
   SimpleRetriever:
+    title: Synchronous Retriever
     description: Retrieves records by synchronously sending requests to fetch records. The retriever acts as an orchestrator between the requester, the record selector, the paginator, and the partition router.
     type: object
     required:
@@ -3398,14 +3567,26 @@ definitions:
       type:
         type: string
         enum: [SimpleRetriever]
-      record_selector:
-        description: Component that describes how to extract records from a HTTP response.
-        "$ref": "#/definitions/RecordSelector"
       requester:
         description: Requester component that describes how to prepare HTTP requests to send to the source API.
         anyOf:
-          - "$ref": "#/definitions/CustomRequester"
           - "$ref": "#/definitions/HttpRequester"
+          - "$ref": "#/definitions/CustomRequester"
+      decoder:
+        title: HTTP Response Format
+        description: Component decoding the response so records can be extracted.
+        anyOf:
+          - "$ref": "#/definitions/JsonDecoder"
+          - "$ref": "#/definitions/XmlDecoder"
+          - "$ref": "#/definitions/CsvDecoder"
+          - "$ref": "#/definitions/JsonlDecoder"
+          - "$ref": "#/definitions/GzipDecoder"
+          - "$ref": "#/definitions/IterableDecoder"
+          - "$ref": "#/definitions/ZipfileDecoder"
+          - "$ref": "#/definitions/CustomDecoder"
+      record_selector:
+        description: Component that describes how to extract records from a HTTP response.
+        "$ref": "#/definitions/RecordSelector"
       paginator:
         description: Paginator component that describes how to navigate through the API's pages.
         anyOf:
@@ -3417,32 +3598,20 @@ definitions:
         default: false
       partition_router:
         title: Partition Router
-        description: PartitionRouter component that describes how to partition the stream, enabling incremental syncs and checkpointing.
-        default: []
+        description: Used to iteratively execute requests over a set of values, such as a parent stream's records or a list of constant values.
         anyOf:
-          - "$ref": "#/definitions/CustomPartitionRouter"
-          - "$ref": "#/definitions/ListPartitionRouter"
           - "$ref": "#/definitions/SubstreamPartitionRouter"
+          - "$ref": "#/definitions/ListPartitionRouter"
           - "$ref": "#/definitions/GroupingPartitionRouter"
+          - "$ref": "#/definitions/CustomPartitionRouter"
           - type: array
+            title: Multiple Partition Routers
             items:
               anyOf:
-                - "$ref": "#/definitions/CustomPartitionRouter"
-                - "$ref": "#/definitions/ListPartitionRouter"
                 - "$ref": "#/definitions/SubstreamPartitionRouter"
+                - "$ref": "#/definitions/ListPartitionRouter"
                 - "$ref": "#/definitions/GroupingPartitionRouter"
-      decoder:
-        title: Decoder
-        description: Component decoding the response so records can be extracted.
-        anyOf:
-          - "$ref": "#/definitions/CustomDecoder"
-          - "$ref": "#/definitions/CsvDecoder"
-          - "$ref": "#/definitions/GzipDecoder"
-          - "$ref": "#/definitions/JsonDecoder"
-          - "$ref": "#/definitions/JsonlDecoder"
-          - "$ref": "#/definitions/IterableDecoder"
-          - "$ref": "#/definitions/XmlDecoder"
-          - "$ref": "#/definitions/ZipfileDecoder"
+                - "$ref": "#/definitions/CustomPartitionRouter"
       $parameters:
         type: object
         additionalProperties: true
@@ -3479,6 +3648,10 @@ definitions:
       delimiter:
         type: string
         default: ","
+      set_values_to_none:
+        type: array
+        items:
+          type: string
   AsyncJobStatusMap:
     description: Matches the api job status to Async Job Status.
     type: object
@@ -3508,6 +3681,7 @@ definitions:
         items:
           type: string
   AsyncRetriever:
+    title: Asynchronous Retriever
     description: "Retrieves records by Asynchronously sending requests to fetch records. The retriever acts as an orchestrator between the requester, the record selector, the paginator, and the partition router."
     type: object
     required:
@@ -3533,29 +3707,29 @@ definitions:
       status_extractor:
         description: Responsible for fetching the actual status of the async job.
         anyOf:
-          - "$ref": "#/definitions/CustomRecordExtractor"
           - "$ref": "#/definitions/DpathExtractor"
+          - "$ref": "#/definitions/CustomRecordExtractor"
       download_target_extractor:
         description: Responsible for fetching the final result `urls` provided by the completed / finished / ready async job.
         anyOf:
-          - "$ref": "#/definitions/CustomRecordExtractor"
           - "$ref": "#/definitions/DpathExtractor"
+          - "$ref": "#/definitions/CustomRecordExtractor"
       download_extractor:
         description: Responsible for fetching the records from provided urls.
         anyOf:
-          - "$ref": "#/definitions/CustomRecordExtractor"
           - "$ref": "#/definitions/DpathExtractor"
+          - "$ref": "#/definitions/CustomRecordExtractor"
           - "$ref": "#/definitions/ResponseToFileExtractor"
       creation_requester:
         description: Requester component that describes how to prepare HTTP requests to send to the source API to create the async server-side job.
         anyOf:
-          - "$ref": "#/definitions/CustomRequester"
           - "$ref": "#/definitions/HttpRequester"
+          - "$ref": "#/definitions/CustomRequester"
       polling_requester:
         description: Requester component that describes how to prepare HTTP requests to send to the source API to fetch the status of the running async job.
         anyOf:
-          - "$ref": "#/definitions/CustomRequester"
           - "$ref": "#/definitions/HttpRequester"
+          - "$ref": "#/definitions/CustomRequester"
       polling_job_timeout:
         description: The time in minutes after which the single Async Job should be considered as Timed Out.
         anyOf:
@@ -3566,13 +3740,13 @@ definitions:
       download_target_requester:
         description: Requester component that describes how to prepare HTTP requests to send to the source API to extract the url from polling response by the completed async job.
         anyOf:
-          - "$ref": "#/definitions/CustomRequester"
           - "$ref": "#/definitions/HttpRequester"
+          - "$ref": "#/definitions/CustomRequester"
       download_requester:
         description: Requester component that describes how to prepare HTTP requests to send to the source API to download the data provided by the completed async job.
         anyOf:
-          - "$ref": "#/definitions/CustomRequester"
           - "$ref": "#/definitions/HttpRequester"
+          - "$ref": "#/definitions/CustomRequester"
       download_paginator:
         description: Paginator component that describes how to navigate through the API's pages during download.
         anyOf:
@@ -3581,34 +3755,33 @@ definitions:
       abort_requester:
         description: Requester component that describes how to prepare HTTP requests to send to the source API to abort a job once it is timed out from the source's perspective.
         anyOf:
-          - "$ref": "#/definitions/CustomRequester"
           - "$ref": "#/definitions/HttpRequester"
+          - "$ref": "#/definitions/CustomRequester"
       delete_requester:
         description: Requester component that describes how to prepare HTTP requests to send to the source API to delete a job once the records are extracted.
         anyOf:
-          - "$ref": "#/definitions/CustomRequester"
           - "$ref": "#/definitions/HttpRequester"
+          - "$ref": "#/definitions/CustomRequester"
       partition_router:
         title: Partition Router
         description: PartitionRouter component that describes how to partition the stream, enabling incremental syncs and checkpointing.
         default: []
         anyOf:
-          - "$ref": "#/definitions/CustomPartitionRouter"
           - "$ref": "#/definitions/ListPartitionRouter"
           - "$ref": "#/definitions/SubstreamPartitionRouter"
           - "$ref": "#/definitions/GroupingPartitionRouter"
+          - "$ref": "#/definitions/CustomPartitionRouter"
           - type: array
             items:
               anyOf:
-                - "$ref": "#/definitions/CustomPartitionRouter"
                 - "$ref": "#/definitions/ListPartitionRouter"
                 - "$ref": "#/definitions/SubstreamPartitionRouter"
                 - "$ref": "#/definitions/GroupingPartitionRouter"
+                - "$ref": "#/definitions/CustomPartitionRouter"
       decoder:
-        title: Decoder
+        title: HTTP Response Format
         description: Component decoding the response so records can be extracted.
         anyOf:
-          - "$ref": "#/definitions/CustomDecoder"
           - "$ref": "#/definitions/CsvDecoder"
           - "$ref": "#/definitions/GzipDecoder"
           - "$ref": "#/definitions/JsonDecoder"
@@ -3616,11 +3789,11 @@ definitions:
           - "$ref": "#/definitions/IterableDecoder"
           - "$ref": "#/definitions/XmlDecoder"
           - "$ref": "#/definitions/ZipfileDecoder"
+          - "$ref": "#/definitions/CustomDecoder"
       download_decoder:
-        title: Download Decoder
+        title: Download HTTP Response Format
         description: Component decoding the download response so records can be extracted.
         anyOf:
-          - "$ref": "#/definitions/CustomDecoder"
           - "$ref": "#/definitions/CsvDecoder"
           - "$ref": "#/definitions/GzipDecoder"
           - "$ref": "#/definitions/JsonDecoder"
@@ -3628,6 +3801,7 @@ definitions:
           - "$ref": "#/definitions/IterableDecoder"
           - "$ref": "#/definitions/XmlDecoder"
           - "$ref": "#/definitions/ZipfileDecoder"
+          - "$ref": "#/definitions/CustomDecoder"
       $parameters:
         type: object
         additionalProperties: true
@@ -3657,6 +3831,68 @@ definitions:
         title: Advanced Auth
         description: Advanced specification for configuring the authentication flow.
         "$ref": "#/definitions/AuthFlow"
+      config_normalization_rules:
+        title: Config Normalization Rules
+        type: object
+        additionalProperties: false
+        required:
+          - type
+        properties:
+          type:
+            type: string
+            enum: [ConfigNormalizationRules]
+          config_migrations:
+            title: Config Migrations
+            description: The discrete migrations that will be applied on the incoming config. Each migration will be applied in the order they are defined.
+            type: array
+            items:
+              "$ref": "#/definitions/ConfigMigration"
+            default: []
+          transformations:
+            title: Transformations
+            description: The list of transformations that will be applied on the incoming config at the start of each sync. The transformations will be applied in the order they are defined.
+            type: array
+            items:
+              anyOf:
+                - "$ref": "#/definitions/ConfigRemapField"
+                - "$ref": "#/definitions/ConfigAddFields"
+                - "$ref": "#/definitions/ConfigRemoveFields"
+                - "$ref": "#/definitions/CustomConfigTransformation"
+            default: []
+          validations:
+            title: Validations
+            description: The list of validations that will be performed on the incoming config at the start of each sync.
+            type: array
+            items:
+              anyOf:
+                - "$ref": "#/definitions/DpathValidator"
+                - "$ref": "#/definitions/PredicateValidator"
+            default: []
+  ConfigMigration:
+    title: Config Migration
+    description: A config migration that will be applied on the incoming config at the start of a sync.
+    type: object
+    required:
+      - type
+      - transformations
+    properties:
+      type:
+        type: string
+        enum: [ConfigMigration]
+      description:
+        type: string
+        description: The description/purpose of the config migration.
+      transformations:
+        title: Transformations
+        description: The list of transformations that will attempt to be applied on an incoming unmigrated config. The transformations will be applied in the order they are defined.
+        type: array
+        items:
+          anyOf:
+            - "$ref": "#/definitions/ConfigRemapField"
+            - "$ref": "#/definitions/ConfigAddFields"
+            - "$ref": "#/definitions/ConfigRemoveFields"
+            - "$ref": "#/definitions/CustomConfigTransformation"
+        default: []
   SubstreamPartitionRouter:
     title: Substream Partition Router
     description: Partition router that is used to retrieve records that have been partitioned according to records from the specified parent streams. An example of a parent stream is automobile brands and the substream would be the various car models associated with each branch.
@@ -3747,9 +3983,9 @@ definitions:
         title: Underlying Partition Router
         description: The partition router whose output will be grouped. This can be any valid partition router component.
         anyOf:
-          - "$ref": "#/definitions/CustomPartitionRouter"
           - "$ref": "#/definitions/ListPartitionRouter"
           - "$ref": "#/definitions/SubstreamPartitionRouter"
+          - "$ref": "#/definitions/CustomPartitionRouter"
       deduplicate:
         title: Deduplicate Partitions
         description: If true, ensures that partitions are unique within each group by removing duplicates based on the partition key.
@@ -3848,11 +4084,17 @@ definitions:
         title: Value Type
         description: The expected data type of the value. If omitted, the type will be inferred from the value provided.
         "$ref": "#/definitions/ValueType"
+      create_or_update:
+        title: Create or Update
+        description: Determines whether to create a new path if it doesn't exist (true) or only update existing paths (false). When set to true, the resolver will create new paths in the stream template if they don't exist. When false (default), it will only update existing paths.
+        type: boolean
+        default: false
       $parameters:
         type: object
         additionalProperties: true
   HttpComponentsResolver:
     type: object
+    title: Http Components Resolver
     description: (This component is experimental. Use at your own risk.) Component resolve and populates stream templates with components fetched via an HTTP retriever.
     properties:
       type:
@@ -3862,9 +4104,9 @@ definitions:
         title: Retriever
         description: Component used to coordinate how records are extracted across stream slices and request pages.
         anyOf:
+          - "$ref": "#/definitions/SimpleRetriever"
           - "$ref": "#/definitions/AsyncRetriever"
           - "$ref": "#/definitions/CustomRetriever"
-          - "$ref": "#/definitions/SimpleRetriever"
       components_mapping:
         type: array
         items:
@@ -3899,18 +4141,29 @@ definitions:
           - ["data"]
           - ["data", "streams"]
           - ["data", "{{ parameters.name }}"]
+      default_values:
+        title: Default Values
+        description: A list of default values, each matching the structure expected from the parsed component value.
+        type: array
+        items:
+          type: object
       $parameters:
         type: object
         additionalProperties: true
   ConfigComponentsResolver:
     type: object
+    title: Config Components Resolver
     description: (This component is experimental. Use at your own risk.) Resolves and populates stream templates with components fetched from the source config.
     properties:
       type:
         type: string
         enum: [ConfigComponentsResolver]
       stream_config:
-        "$ref": "#/definitions/StreamConfig"
+        anyOf:
+          - type: array
+            items:
+              "$ref": "#/definitions/StreamConfig"
+          - "$ref": "#/definitions/StreamConfig"
       components_mapping:
         type: array
         items:
@@ -3921,6 +4174,52 @@ definitions:
     required:
       - type
       - stream_config
+      - components_mapping
+  StreamParametersDefinition:
+    title: Stream Parameters Definition
+    description: (This component is experimental. Use at your own risk.) Represents a stream parameters definition to set up dynamic streams from defined values in manifest.
+    type: object
+    required:
+      - type
+      - list_of_parameters_for_stream
+    properties:
+      type:
+        type: string
+        enum: [StreamParametersDefinition]
+      list_of_parameters_for_stream:
+        title: Stream Parameters
+        description: A list of object of parameters for stream, each object in the list represents params for one stream.
+        type: array
+        items:
+          type: object
+        examples:
+          - [
+              {
+                "name": "test stream",
+                "$parameters": { "entity": "test entity" },
+                "primary_key": "test key",
+              },
+            ]
+  ParametrizedComponentsResolver:
+    type: object
+    title: Parametrized Components Resolver
+    description: (This component is experimental. Use at your own risk.) Resolves and populates dynamic streams from defined parametrized values in manifest.
+    properties:
+      type:
+        type: string
+        enum: [ParametrizedComponentsResolver]
+      stream_parameters:
+        "$ref": "#/definitions/StreamParametersDefinition"
+      components_mapping:
+        type: array
+        items:
+          "$ref": "#/definitions/ComponentMappingDefinition"
+      $parameters:
+        type: object
+        additionalProperties: true
+    required:
+      - type
+      - stream_parameters
       - components_mapping
   DynamicDeclarativeStream:
     type: object
@@ -3939,17 +4238,351 @@ definitions:
       stream_template:
         title: Stream Template
         description: Reference to the stream template.
-        "$ref": "#/definitions/DeclarativeStream"
+        anyOf:
+          - "$ref": "#/definitions/DeclarativeStream"
+          - "$ref": "#/definitions/StateDelegatingStream"
       components_resolver:
         title: Components Resolver
         description: Component resolve and populates stream templates with components values.
         anyOf:
           - "$ref": "#/definitions/HttpComponentsResolver"
           - "$ref": "#/definitions/ConfigComponentsResolver"
+          - "$ref": "#/definitions/ParametrizedComponentsResolver"
+      use_parent_parameters:
+        title: Use Parent Parameters
+        description: Whether or not to prioritize parent parameters over component parameters when constructing dynamic streams. Defaults to true for backward compatibility.
+        type: boolean
+        default: true
     required:
       - type
       - stream_template
       - components_resolver
+  RequestBodyPlainText:
+    title: Plain-text Body
+    description: Request body value is sent as plain text
+    type: object
+    required:
+      - type
+      - value
+    properties:
+      type:
+        type: string
+        enum: [RequestBodyPlainText]
+      value:
+        type: string
+  RequestBodyUrlEncodedForm:
+    title: URL-encoded Body
+    description: Request body value is converted into a url-encoded form
+    type: object
+    required:
+      - type
+      - value
+    properties:
+      type:
+        type: string
+        enum: [RequestBodyUrlEncodedForm]
+      value:
+        type: object
+        additionalProperties:
+          type: string
+  RequestBodyJsonObject:
+    title: Json Object Body
+    description: Request body value converted into a JSON object
+    type: object
+    required:
+      - type
+      - value
+    properties:
+      type:
+        type: string
+        enum: [RequestBodyJsonObject]
+      value:
+        type: object
+        additionalProperties: true
+  RequestBodyGraphQL:
+    title: GraphQL Body
+    description: Request body value converted into a GraphQL query object
+    type: object
+    required:
+      - type
+      - value
+    properties:
+      type:
+        type: string
+        enum: [RequestBodyGraphQL]
+      value:
+        "$ref": "#/definitions/RequestBodyGraphQlQuery"
+  RequestBodyGraphQlQuery:
+    title: GraphQL Query Body
+    description: Request body GraphQL query object
+    type: object
+    required:
+      - query
+    properties:
+      query:
+        type: string
+        description: The GraphQL query to be executed
+        default: "query {\n    \n}"
+    additionalProperties: true
+  DpathValidator:
+    title: Dpath Validator
+    description: Validator that extracts the value located at a given field path.
+    type: object
+    required:
+      - type
+      - field_path
+      - validation_strategy
+    properties:
+      type:
+        type: string
+        enum: [DpathValidator]
+      field_path:
+        title: Field Path
+        description: List of potentially nested fields describing the full path of the field to validate. Use "*" to validate all values from an array.
+        type: array
+        items:
+          type: string
+        interpolation_context:
+          - config
+        examples:
+          - ["data"]
+          - ["data", "records"]
+          - ["data", "{{ parameters.name }}"]
+          - ["data", "*", "record"]
+      validation_strategy:
+        title: Validation Strategy
+        description: The condition that the specified config value will be evaluated against
+        anyOf:
+          - "$ref": "#/definitions/ValidateAdheresToSchema"
+          - "$ref": "#/definitions/CustomValidationStrategy"
+  PredicateValidator:
+    title: Predicate Validator
+    description: Validator that applies a validation strategy to a specified value.
+    type: object
+    required:
+      - type
+      - value
+      - validation_strategy
+    properties:
+      type:
+        type: string
+        enum: [PredicateValidator]
+      value:
+        title: Value
+        description: The value to be validated. Can be a literal value or interpolated from configuration.
+        type:
+          - string
+          - number
+          - object
+          - array
+          - boolean
+          - "null"
+        interpolation_context:
+          - config
+        examples:
+          - "test-value"
+          - "{{ config['api_version'] }}"
+          - "{{ config['tenant_id'] }}"
+          - 123
+      validation_strategy:
+        title: Validation Strategy
+        description: The validation strategy to apply to the value.
+        anyOf:
+          - "$ref": "#/definitions/ValidateAdheresToSchema"
+          - "$ref": "#/definitions/CustomValidationStrategy"
+  ValidateAdheresToSchema:
+    title: Validate Adheres To Schema
+    description: Validates that a user-provided schema adheres to a specified JSON schema.
+    type: object
+    required:
+      - type
+      - base_schema
+    properties:
+      type:
+        type: string
+        enum: [ValidateAdheresToSchema]
+      base_schema:
+        title: Base JSON Schema
+        description: The base JSON schema against which the user-provided schema will be validated.
+        type:
+          - string
+          - object
+        interpolation_context:
+          - config
+        examples:
+          - "{{ config['report_validation_schema'] }}"
+          - |
+            '{
+              "$schema": "http://json-schema.org/draft-07/schema#",
+              "title": "Person",
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "description": "The person's name"
+                },
+                "age": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "The person's age"
+                }
+              },
+              "required": ["name", "age"]
+            }'
+          - $schema: "http://json-schema.org/draft-07/schema#"
+            title: Person
+            type: object
+            properties:
+              name:
+                type: string
+                description: "The person's name"
+              age:
+                type: integer
+                minimum: 0
+                description: "The person's age"
+            required:
+              - name
+              - age
+  CustomValidationStrategy:
+    title: Custom Validation Strategy
+    description: Custom validation strategy that allows for custom validation logic.
+    type: object
+    additionalProperties: true
+    required:
+      - type
+      - class_name
+    properties:
+      type:
+        type: string
+        enum: [CustomValidationStrategy]
+      class_name:
+        title: Class Name
+        description: Fully-qualified name of the class that will be implementing the custom validation strategy. Has to be a sub class of ValidationStrategy. The format is `source_<name>.<package>.<class_name>`.
+        type: string
+        additionalProperties: true
+        examples:
+          - "source_declarative_manifest.components.MyCustomValidationStrategy"
+  ConfigRemapField:
+    title: Remap Field
+    description: Transformation that remaps a field's value to another value based on a static map.
+    type: object
+    required:
+      - type
+      - map
+      - field_path
+    properties:
+      type:
+        type: string
+        enum: [ConfigRemapField]
+      map:
+        title: Value Mapping
+        description: A mapping of original values to new values. When a field value matches a key in this map, it will be replaced with the corresponding value.
+        interpolation_context:
+          - config
+        type:
+          - object
+          - string
+        additionalProperties: true
+        examples:
+          - pending: "in_progress"
+            done: "completed"
+            cancelled: "terminated"
+          - "{{ config['status_mapping'] }}"
+      field_path:
+        title: Field Path
+        description: The path to the field whose value should be remapped. Specified as a list of path components to navigate through nested objects.
+        interpolation_context:
+          - config
+        type: array
+        items:
+          type: string
+        examples:
+          - ["status"]
+          - ["data", "status"]
+          - ["data", "{{ config.name }}", "status"]
+          - ["data", "*", "status"]
+  ConfigAddFields:
+    title: Config Add Fields
+    description: Transformation that adds fields to a config. The path of the added field can be nested.
+    type: object
+    required:
+      - type
+      - fields
+    properties:
+      type:
+        type: string
+        enum: [ConfigAddFields]
+      fields:
+        title: Fields
+        description: A list of transformations (path and corresponding value) that will be added to the config.
+        type: array
+        items:
+          "$ref": "#/definitions/AddedFieldDefinition"
+      condition:
+        description: Fields will be added if expression is evaluated to True.
+        type: string
+        default: ""
+        interpolation_context:
+          - config
+          - property
+        examples:
+          - "{{ config['environemnt'] == 'sandbox' }}"
+          - "{{ property is integer }}"
+          - "{{ property|length > 5 }}"
+          - "{{ property == 'some_string_to_match' }}"
+  ConfigRemoveFields:
+    title: Config Remove Fields
+    description: Transformation that removes a field from the config.
+    type: object
+    required:
+      - type
+      - field_pointers
+    properties:
+      type:
+        type: string
+        enum: [ConfigRemoveFields]
+      field_pointers:
+        title: Field Pointers
+        description: A list of field pointers to be removed from the config.
+        type: array
+        items:
+          items:
+            type: string
+        examples:
+          - ["tags"]
+          - [["content", "html"], ["content", "plain_text"]]
+      condition:
+        description: Fields will be removed if expression is evaluated to True.
+        type: string
+        default: ""
+        interpolation_context:
+          - config
+          - property
+        examples:
+          - "{{ config['environemnt'] == 'sandbox' }}"
+          - "{{ property is integer }}"
+          - "{{ property|length > 5 }}"
+          - "{{ property == 'some_string_to_match' }}"
+  CustomConfigTransformation:
+    title: Custom Config Transformation
+    description: A custom config transformation that can be used to transform the connector configuration.
+    type: object
+    required:
+      - type
+      - class_name
+    properties:
+      type:
+        type: string
+        enum: [CustomConfigTransformation]
+      class_name:
+        type: string
+        description: Fully-qualified name of the class that will be implementing the custom config transformation. The format is `source_<name>.<package>.<class_name>`.
+        examples:
+          - "source_declarative_manifest.components.MyCustomConfigTransformation"
+      $parameters:
+        type: object
+        description: Additional parameters to be passed to the custom config transformation.
+        additionalProperties: true
 interpolation:
   variables:
     - title: config

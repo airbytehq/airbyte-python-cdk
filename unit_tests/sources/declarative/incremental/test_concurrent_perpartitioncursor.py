@@ -309,12 +309,33 @@ SUBSTREAM_MANIFEST_NO_DEPENDENCY["definitions"]["post_comment_votes_stream"]["re
     "partition_router"
 ]["parent_stream_configs"][0]["incremental_dependency"] = False
 
+SUBSTREAM_MANIFEST_WITH_GLOBAL_CURSOR_AND_NO_DEPENDENCY = deepcopy(SUBSTREAM_MANIFEST)
+# Disable incremental_dependency
+SUBSTREAM_MANIFEST_WITH_GLOBAL_CURSOR_AND_NO_DEPENDENCY["definitions"]["post_comments_stream"][
+    "retriever"
+]["partition_router"]["parent_stream_configs"][0]["incremental_dependency"] = False
+SUBSTREAM_MANIFEST_WITH_GLOBAL_CURSOR_AND_NO_DEPENDENCY["definitions"]["post_comment_votes_stream"][
+    "retriever"
+]["partition_router"]["parent_stream_configs"][0]["incremental_dependency"] = False
+# Enable global_cursor
+SUBSTREAM_MANIFEST_WITH_GLOBAL_CURSOR_AND_NO_DEPENDENCY["definitions"]["cursor_incremental_sync"][
+    "global_substream_cursor"
+] = True
+
+
 import orjson
 import requests_mock
 
 
 def run_mocked_test(
-    mock_requests, manifest, config, stream_name, initial_state, expected_records, expected_state
+    mock_requests,
+    manifest,
+    config,
+    stream_name,
+    initial_state,
+    expected_records,
+    expected_state,
+    state_count=None,
 ):
     """
     Helper function to mock requests, run the test, and verify the results.
@@ -353,6 +374,8 @@ def run_mocked_test(
         assert sorted([r.record.data for r in output.records], key=lambda x: x["id"]) == sorted(
             expected_records, key=lambda x: x["id"]
         )
+
+        assert len(output.state_messages) == state_count if state_count else True
 
         # Verify state
         final_state = output.state_messages[-1].state.stream.stream_state
@@ -431,7 +454,7 @@ PARTITION_SYNC_START_TIME = "2024-01-02T00:00:00Z"
 
 
 @pytest.mark.parametrize(
-    "test_name, manifest, mock_requests, expected_records, initial_state, expected_state",
+    "test_name, manifest, mock_requests, expected_records, initial_state, expected_state, state_count",
     [
         (
             "test_incremental_parent_state",
@@ -739,11 +762,266 @@ PARTITION_SYNC_START_TIME = "2024-01-02T00:00:00Z"
                 "parent_state": {},
                 "state": {"created_at": VOTE_100_CREATED_AT},
             },
+            # State count
+            2,
+        ),
+        (
+            "test_incremental_parent_state_with",
+            SUBSTREAM_MANIFEST_WITH_GLOBAL_CURSOR_AND_NO_DEPENDENCY,
+            [
+                # Fetch the first page of posts
+                (
+                    f"https://api.example.com/community/posts?per_page=100&start_time={START_DATE}",
+                    {
+                        "posts": [
+                            {"id": 1, "updated_at": POST_1_UPDATED_AT},
+                            {"id": 2, "updated_at": POST_2_UPDATED_AT},
+                        ],
+                        "next_page": f"https://api.example.com/community/posts?per_page=100&start_time={START_DATE}&page=2",
+                    },
+                ),
+                # Fetch the second page of posts
+                (
+                    f"https://api.example.com/community/posts?per_page=100&start_time={START_DATE}&page=2",
+                    {"posts": [{"id": 3, "updated_at": POST_3_UPDATED_AT}]},
+                ),
+                # Fetch the first page of comments for post 1
+                (
+                    "https://api.example.com/community/posts/1/comments?per_page=100",
+                    {
+                        "comments": [
+                            {
+                                "id": 9,
+                                "post_id": 1,
+                                "updated_at": COMMENT_9_OLDEST,  # No requests for comment 9, filtered out due to the date
+                            },
+                            {
+                                "id": 10,
+                                "post_id": 1,
+                                "updated_at": COMMENT_10_UPDATED_AT,
+                            },
+                            {
+                                "id": 11,
+                                "post_id": 1,
+                                "updated_at": COMMENT_11_UPDATED_AT,
+                            },
+                        ],
+                        "next_page": "https://api.example.com/community/posts/1/comments?per_page=100&page=2",
+                    },
+                ),
+                # Fetch the second page of comments for post 1
+                (
+                    "https://api.example.com/community/posts/1/comments?per_page=100&page=2",
+                    {
+                        "comments": [
+                            {
+                                "id": 12,
+                                "post_id": 1,
+                                "updated_at": COMMENT_12_UPDATED_AT,
+                            }
+                        ]
+                    },
+                ),
+                # Fetch the first page of votes for comment 10 of post 1
+                (
+                    f"https://api.example.com/community/posts/1/comments/10/votes?per_page=100&start_time={INITIAL_STATE_PARTITION_10_CURSOR}",
+                    {
+                        "votes": [
+                            {
+                                "id": 100,
+                                "comment_id": 10,
+                                "created_at": VOTE_100_CREATED_AT,
+                            }
+                        ],
+                        "next_page": f"https://api.example.com/community/posts/1/comments/10/votes?per_page=100&page=2&start_time={INITIAL_STATE_PARTITION_10_CURSOR}",
+                    },
+                ),
+                # Fetch the second page of votes for comment 10 of post 1
+                (
+                    f"https://api.example.com/community/posts/1/comments/10/votes?per_page=100&page=2&start_time={INITIAL_STATE_PARTITION_10_CURSOR}",
+                    {
+                        "votes": [
+                            {
+                                "id": 101,
+                                "comment_id": 10,
+                                "created_at": VOTE_101_CREATED_AT,
+                            }
+                        ]
+                    },
+                ),
+                # Fetch the first page of votes for comment 11 of post 1
+                (
+                    f"https://api.example.com/community/posts/1/comments/11/votes?per_page=100&start_time={INITIAL_STATE_PARTITION_11_CURSOR}",
+                    {
+                        "votes": [
+                            {
+                                "id": 111,
+                                "comment_id": 11,
+                                "created_at": VOTE_111_CREATED_AT,
+                            }
+                        ]
+                    },
+                ),
+                # Fetch the first page of votes for comment 12 of post 1
+                (
+                    f"https://api.example.com/community/posts/1/comments/12/votes?per_page=100&start_time={LOOKBACK_DATE}",
+                    {"votes": []},
+                ),
+                # Fetch the first page of comments for post 2
+                (
+                    "https://api.example.com/community/posts/2/comments?per_page=100",
+                    {
+                        "comments": [
+                            {
+                                "id": 20,
+                                "post_id": 2,
+                                "updated_at": COMMENT_20_UPDATED_AT,
+                            }
+                        ],
+                        "next_page": "https://api.example.com/community/posts/2/comments?per_page=100&page=2",
+                    },
+                ),
+                # Fetch the second page of comments for post 2
+                (
+                    "https://api.example.com/community/posts/2/comments?per_page=100&page=2",
+                    {
+                        "comments": [
+                            {
+                                "id": 21,
+                                "post_id": 2,
+                                "updated_at": COMMENT_21_UPDATED_AT,
+                            }
+                        ]
+                    },
+                ),
+                # Fetch the first page of votes for comment 20 of post 2
+                (
+                    f"https://api.example.com/community/posts/2/comments/20/votes?per_page=100&start_time={LOOKBACK_DATE}",
+                    {
+                        "votes": [
+                            {
+                                "id": 200,
+                                "comment_id": 20,
+                                "created_at": VOTE_200_CREATED_AT,
+                            }
+                        ]
+                    },
+                ),
+                # Fetch the first page of votes for comment 21 of post 2
+                (
+                    f"https://api.example.com/community/posts/2/comments/21/votes?per_page=100&start_time={LOOKBACK_DATE}",
+                    {
+                        "votes": [
+                            {
+                                "id": 210,
+                                "comment_id": 21,
+                                "created_at": VOTE_210_CREATED_AT,
+                            }
+                        ]
+                    },
+                ),
+                # Fetch the first page of comments for post 3
+                (
+                    "https://api.example.com/community/posts/3/comments?per_page=100",
+                    {
+                        "comments": [
+                            {
+                                "id": 30,
+                                "post_id": 3,
+                                "updated_at": COMMENT_30_UPDATED_AT,
+                            }
+                        ]
+                    },
+                ),
+                # Fetch the first page of votes for comment 30 of post 3
+                (
+                    f"https://api.example.com/community/posts/3/comments/30/votes?per_page=100&start_time={LOOKBACK_DATE}",
+                    {
+                        "votes": [
+                            {
+                                "id": 300,
+                                "comment_id": 30,
+                                "created_at": VOTE_300_CREATED_AT_TIMESTAMP,
+                            }
+                        ]
+                    },
+                ),
+            ],
+            # Expected records
+            [
+                {
+                    "comment_id": 10,
+                    "comment_updated_at": COMMENT_10_UPDATED_AT,
+                    "created_at": VOTE_100_CREATED_AT,
+                    "id": 100,
+                },
+                {
+                    "comment_id": 10,
+                    "comment_updated_at": COMMENT_10_UPDATED_AT,
+                    "created_at": VOTE_101_CREATED_AT,
+                    "id": 101,
+                },
+                {
+                    "comment_id": 11,
+                    "comment_updated_at": COMMENT_11_UPDATED_AT,
+                    "created_at": VOTE_111_CREATED_AT,
+                    "id": 111,
+                },
+                {
+                    "comment_id": 20,
+                    "comment_updated_at": COMMENT_20_UPDATED_AT,
+                    "created_at": VOTE_200_CREATED_AT,
+                    "id": 200,
+                },
+                {
+                    "comment_id": 21,
+                    "comment_updated_at": COMMENT_21_UPDATED_AT,
+                    "created_at": VOTE_210_CREATED_AT,
+                    "id": 210,
+                },
+                {
+                    "comment_id": 30,
+                    "comment_updated_at": COMMENT_30_UPDATED_AT,
+                    "created_at": str(VOTE_300_CREATED_AT_TIMESTAMP),
+                    "id": 300,
+                },
+            ],
+            # Initial state
+            {
+                "parent_state": {},
+                "use_global_cursor": True,
+                "states": [
+                    {
+                        "partition": {
+                            "id": 10,
+                            "parent_slice": {"id": 1, "parent_slice": {}},
+                        },
+                        "cursor": {"created_at": INITIAL_STATE_PARTITION_10_CURSOR_TIMESTAMP},
+                    },
+                    {
+                        "partition": {
+                            "id": 11,
+                            "parent_slice": {"id": 1, "parent_slice": {}},
+                        },
+                        "cursor": {"created_at": INITIAL_STATE_PARTITION_11_CURSOR},
+                    },
+                ],
+                "state": {"created_at": INITIAL_STATE_PARTITION_11_CURSOR_TIMESTAMP},
+                "lookback_window": 86400,
+            },
+            # Expected state
+            {
+                "use_global_cursor": True,
+                "lookback_window": 1,
+                "parent_state": {},
+                "state": {"created_at": VOTE_100_CREATED_AT},
+            },
+            1,
         ),
     ],
 )
 def test_incremental_parent_state_no_incremental_dependency(
-    test_name, manifest, mock_requests, expected_records, initial_state, expected_state
+    test_name, manifest, mock_requests, expected_records, initial_state, expected_state, state_count
 ):
     """
     This is a pretty complicated test that syncs a low-code connector stream with three levels of substreams
@@ -765,6 +1043,7 @@ def test_incremental_parent_state_no_incremental_dependency(
         initial_state,
         expected_records,
         expected_state,
+        state_count=state_count,
     )
 
 
@@ -1177,6 +1456,279 @@ def run_incremental_parent_state_test(
                     {
                         "partition": {"id": 30, "parent_slice": {"id": 3, "parent_slice": {}}},
                         "cursor": {"created_at": VOTE_300_CREATED_AT},
+                    },
+                ],
+            },
+        ),
+        (
+            "test_incremental_parent_state_one_record_without_cursor",
+            SUBSTREAM_MANIFEST,
+            [
+                # Fetch the first page of posts
+                (
+                    f"https://api.example.com/community/posts?per_page=100&start_time={PARENT_POSTS_CURSOR}",
+                    {
+                        "posts": [
+                            {"id": 1, "updated_at": POST_1_UPDATED_AT},
+                        ]
+                    },
+                ),
+                # Fetch the first page of comments for post 1
+                (
+                    "https://api.example.com/community/posts/1/comments?per_page=100",
+                    {
+                        "comments": [
+                            {
+                                "id": 9,
+                                "post_id": 1,
+                                "updated_at": COMMENT_9_OLDEST,
+                            },
+                            {
+                                "id": 10,
+                                "post_id": 1,
+                                "updated_at": COMMENT_10_UPDATED_AT,
+                            },
+                            {
+                                "id": 11,
+                                "post_id": 1,
+                                "updated_at": COMMENT_11_UPDATED_AT,
+                            },
+                        ]
+                    },
+                ),
+                # Fetch the first page of votes for comment 10 of post 1 (vote without cursor field)
+                (
+                    f"https://api.example.com/community/posts/1/comments/10/votes?per_page=100&start_time={INITIAL_STATE_PARTITION_10_CURSOR}",
+                    {
+                        "votes": [
+                            {
+                                "id": 100,
+                                "comment_id": 10,
+                            }
+                        ],
+                    },
+                ),
+                # Fetch the first page of votes for comment 11 of post 1
+                (
+                    f"https://api.example.com/community/posts/1/comments/11/votes"
+                    f"?per_page=100&start_time={INITIAL_STATE_PARTITION_11_CURSOR}",
+                    {"votes": [{"id": 111, "comment_id": 11, "created_at": VOTE_111_CREATED_AT}]},
+                ),
+                # Requests with intermediate states
+                # Fetch votes for comment 11 of post 1
+                (
+                    f"https://api.example.com/community/posts/1/comments/11/votes?per_page=100&start_time={VOTE_111_CREATED_AT}",
+                    {
+                        "votes": [{"id": 111, "comment_id": 11, "created_at": VOTE_111_CREATED_AT}],
+                    },
+                ),
+            ],
+            # Expected records
+            [
+                {"comment_id": 10, "comment_updated_at": COMMENT_10_UPDATED_AT, "id": 100},
+                {
+                    "comment_id": 11,
+                    "comment_updated_at": COMMENT_11_UPDATED_AT,
+                    "created_at": "2024-01-13T00:00:00Z",
+                    "id": 111,
+                },
+            ],
+            # Number of intermediate states - 6 as number of parent partitions
+            2,
+            # Initial state
+            {
+                "parent_state": {
+                    "post_comments": {
+                        "states": [
+                            {
+                                "partition": {"id": 1, "parent_slice": {}},
+                                "cursor": {"updated_at": PARENT_COMMENT_CURSOR_PARTITION_1},
+                            }
+                        ],
+                        "parent_state": {"posts": {"updated_at": PARENT_POSTS_CURSOR}},
+                    }
+                },
+                "state": {"created_at": INITIAL_GLOBAL_CURSOR},
+                "states": [
+                    {
+                        "partition": {
+                            "id": 10,
+                            "parent_slice": {"id": 1, "parent_slice": {}},
+                        },
+                        "cursor": {"created_at": INITIAL_STATE_PARTITION_10_CURSOR},
+                    },
+                    {
+                        "partition": {
+                            "id": 11,
+                            "parent_slice": {"id": 1, "parent_slice": {}},
+                        },
+                        "cursor": {"created_at": INITIAL_STATE_PARTITION_11_CURSOR},
+                    },
+                ],
+                "lookback_window": 86400,
+            },
+            # Expected state
+            {
+                "state": {"created_at": VOTE_111_CREATED_AT},
+                "parent_state": {
+                    "post_comments": {
+                        "use_global_cursor": False,
+                        "state": {"updated_at": COMMENT_10_UPDATED_AT},  # 10 is the "latest"
+                        "parent_state": {
+                            "posts": {"updated_at": POST_1_UPDATED_AT}
+                        },  # post 1 is the latest
+                        "lookback_window": 1,
+                        "states": [
+                            {
+                                "partition": {"id": 1, "parent_slice": {}},
+                                "cursor": {"updated_at": COMMENT_10_UPDATED_AT},
+                            },
+                        ],
+                    }
+                },
+                "lookback_window": 1,
+                "use_global_cursor": False,
+                "states": [
+                    {
+                        "partition": {"id": 10, "parent_slice": {"id": 1, "parent_slice": {}}},
+                        # initial state because record doesn't have a cursor field
+                        "cursor": {"created_at": INITIAL_STATE_PARTITION_10_CURSOR},
+                    },
+                    {
+                        "partition": {"id": 11, "parent_slice": {"id": 1, "parent_slice": {}}},
+                        "cursor": {"created_at": VOTE_111_CREATED_AT},
+                    },
+                ],
+            },
+        ),
+        (
+            "test_incremental_parent_state_all_records_without_cursor",
+            SUBSTREAM_MANIFEST,
+            [
+                # Fetch the first page of posts
+                (
+                    f"https://api.example.com/community/posts?per_page=100&start_time={PARENT_POSTS_CURSOR}",
+                    {
+                        "posts": [
+                            {"id": 1, "updated_at": POST_1_UPDATED_AT},
+                        ]
+                    },
+                ),
+                # Fetch the first page of comments for post 1
+                (
+                    "https://api.example.com/community/posts/1/comments?per_page=100",
+                    {
+                        "comments": [
+                            {
+                                "id": 9,
+                                "post_id": 1,
+                                "updated_at": COMMENT_9_OLDEST,
+                            },
+                            {
+                                "id": 10,
+                                "post_id": 1,
+                                "updated_at": COMMENT_10_UPDATED_AT,
+                            },
+                            {
+                                "id": 11,
+                                "post_id": 1,
+                                "updated_at": COMMENT_11_UPDATED_AT,
+                            },
+                        ]
+                    },
+                ),
+                # Fetch the first page of votes for comment 10 of post 1 (vote without cursor field)
+                (
+                    f"https://api.example.com/community/posts/1/comments/10/votes?per_page=100&start_time={INITIAL_STATE_PARTITION_10_CURSOR}",
+                    {
+                        "votes": [
+                            {
+                                "id": 100,
+                                "comment_id": 10,
+                            }
+                        ],
+                    },
+                ),
+                # Fetch the first page of votes for comment 11 of post 1 (vote without cursor field)
+                (
+                    f"https://api.example.com/community/posts/1/comments/11/votes"
+                    f"?per_page=100&start_time={INITIAL_STATE_PARTITION_11_CURSOR}",
+                    {"votes": [{"id": 111, "comment_id": 11}]},
+                ),
+            ],
+            # Expected records
+            [
+                {"comment_id": 10, "comment_updated_at": COMMENT_10_UPDATED_AT, "id": 100},
+                {
+                    "comment_id": 11,
+                    "comment_updated_at": COMMENT_11_UPDATED_AT,
+                    "id": 111,
+                },
+            ],
+            # Number of intermediate states - 6 as number of parent partitions
+            2,
+            # Initial state
+            {
+                "parent_state": {
+                    "post_comments": {
+                        "states": [
+                            {
+                                "partition": {"id": 1, "parent_slice": {}},
+                                "cursor": {"updated_at": PARENT_COMMENT_CURSOR_PARTITION_1},
+                            }
+                        ],
+                        "parent_state": {"posts": {"updated_at": PARENT_POSTS_CURSOR}},
+                    }
+                },
+                "state": {"created_at": INITIAL_GLOBAL_CURSOR},
+                "states": [
+                    {
+                        "partition": {
+                            "id": 10,
+                            "parent_slice": {"id": 1, "parent_slice": {}},
+                        },
+                        "cursor": {"created_at": INITIAL_STATE_PARTITION_10_CURSOR},
+                    },
+                    {
+                        "partition": {
+                            "id": 11,
+                            "parent_slice": {"id": 1, "parent_slice": {}},
+                        },
+                        "cursor": {"created_at": INITIAL_STATE_PARTITION_11_CURSOR},
+                    },
+                ],
+                "lookback_window": 86400,
+            },
+            # Expected state
+            {
+                "state": {"created_at": INITIAL_STATE_PARTITION_11_CURSOR},
+                "parent_state": {
+                    "post_comments": {
+                        "use_global_cursor": False,
+                        "state": {"updated_at": COMMENT_10_UPDATED_AT},  # 10 is the "latest"
+                        "parent_state": {
+                            "posts": {"updated_at": POST_1_UPDATED_AT}
+                        },  # post 1 is the latest
+                        "lookback_window": 1,
+                        "states": [
+                            {
+                                "partition": {"id": 1, "parent_slice": {}},
+                                "cursor": {"updated_at": COMMENT_10_UPDATED_AT},
+                            },
+                        ],
+                    }
+                },
+                "lookback_window": 1,
+                "use_global_cursor": False,
+                "states": [
+                    {
+                        "partition": {"id": 10, "parent_slice": {"id": 1, "parent_slice": {}}},
+                        # initial state because record doesn't have a cursor field
+                        "cursor": {"created_at": INITIAL_STATE_PARTITION_10_CURSOR},
+                    },
+                    {
+                        "partition": {"id": 11, "parent_slice": {"id": 1, "parent_slice": {}}},
+                        "cursor": {"created_at": INITIAL_STATE_PARTITION_11_CURSOR},
                     },
                 ],
             },
@@ -2986,8 +3538,8 @@ def test_incremental_substream_request_options_provider(
 
 def test_state_throttling(mocker):
     """
-    Verifies that _emit_state_message does not emit a new state if less than 60s
-    have passed since last emission, and does emit once 60s or more have passed.
+    Verifies that _emit_state_message does not emit a new state if less than 600s
+    have passed since last emission, and does emit once 600s or more have passed.
     """
     cursor = ConcurrentPerPartitionCursor(
         cursor_factory=MagicMock(),
@@ -3009,20 +3561,20 @@ def test_state_throttling(mocker):
 
     mock_time = mocker.patch("time.time")
 
-    # First attempt: only 10 seconds passed => NO emission
-    mock_time.return_value = 10
+    # First attempt: only 100 seconds passed => NO emission
+    mock_time.return_value = 100
     cursor._emit_state_message()
     mock_connector_manager.update_state_for_stream.assert_not_called()
     mock_repo.emit_message.assert_not_called()
 
-    # Second attempt: 30 seconds passed => still NO emission
-    mock_time.return_value = 30
+    # Second attempt: 300 seconds passed => still NO emission
+    mock_time.return_value = 300
     cursor._emit_state_message()
     mock_connector_manager.update_state_for_stream.assert_not_called()
     mock_repo.emit_message.assert_not_called()
 
-    # Advance time: 70 seconds => exceed 60s => MUST emit
-    mock_time.return_value = 70
+    # Advance time: 700 seconds => exceed 600s => MUST emit
+    mock_time.return_value = 700
     cursor._emit_state_message()
     mock_connector_manager.update_state_for_stream.assert_called_once()
     mock_repo.emit_message.assert_called_once()
@@ -3157,7 +3709,11 @@ def test_given_unfinished_first_parent_partition_no_parent_state_update():
     }
     assert mock_cursor_1.stream_slices.call_count == 1  # Called once for each partition
     assert mock_cursor_2.stream_slices.call_count == 1  # Called once for each partition
-    assert len(cursor._semaphore_per_partition) == 2
+
+    assert len(cursor._semaphore_per_partition) == 1
+    assert len(cursor._partitions_done_generating_stream_slices) == 1
+    assert len(cursor._processing_partitions_indexes) == 1
+    assert len(cursor._partition_key_to_index) == 1
 
 
 def test_given_unfinished_last_parent_partition_with_partial_parent_state_update():
@@ -3241,7 +3797,11 @@ def test_given_unfinished_last_parent_partition_with_partial_parent_state_update
     }
     assert mock_cursor_1.stream_slices.call_count == 1  # Called once for each partition
     assert mock_cursor_2.stream_slices.call_count == 1  # Called once for each partition
+
     assert len(cursor._semaphore_per_partition) == 1
+    assert len(cursor._partitions_done_generating_stream_slices) == 1
+    assert len(cursor._processing_partitions_indexes) == 1
+    assert len(cursor._partition_key_to_index) == 1
 
 
 def test_given_all_partitions_finished_when_close_partition_then_final_state_emitted():
@@ -3316,7 +3876,12 @@ def test_given_all_partitions_finished_when_close_partition_then_final_state_emi
     assert final_state["lookback_window"] == 1
     assert cursor._message_repository.emit_message.call_count == 2
     assert mock_cursor.stream_slices.call_count == 2  # Called once for each partition
-    assert len(cursor._semaphore_per_partition) == 1
+
+    # Checks that all internal variables are cleaned up
+    assert len(cursor._semaphore_per_partition) == 0
+    assert len(cursor._partitions_done_generating_stream_slices) == 0
+    assert len(cursor._processing_partitions_indexes) == 0
+    assert len(cursor._partition_key_to_index) == 0
 
 
 def test_given_partition_limit_exceeded_when_close_partition_then_switch_to_global_cursor():
@@ -3435,18 +4000,20 @@ def test_semaphore_cleanup():
     # Verify initial state
     assert len(cursor._semaphore_per_partition) == 2
     assert len(cursor._partition_parent_state_map) == 2
-    assert cursor._partition_parent_state_map['{"id":"1"}'] == {"parent": {"state": "state1"}}
-    assert cursor._partition_parent_state_map['{"id":"2"}'] == {"parent": {"state": "state2"}}
+    assert len(cursor._processing_partitions_indexes) == 2
+    assert len(cursor._partition_key_to_index) == 2
+    assert cursor._partition_parent_state_map['{"id":"1"}'][0] == {"parent": {"state": "state1"}}
+    assert cursor._partition_parent_state_map['{"id":"2"}'][0] == {"parent": {"state": "state2"}}
 
     # Close partitions to acquire semaphores (value back to 0)
     for s in generated_slices:
         cursor.close_partition(DeclarativePartition("test_stream", {}, MagicMock(), MagicMock(), s))
 
     # Check state after closing partitions
-    assert len(cursor._finished_partitions) == 2
+    assert len(cursor._partitions_done_generating_stream_slices) == 0
     assert len(cursor._semaphore_per_partition) == 0
-    assert '{"id":"1"}' not in cursor._semaphore_per_partition
-    assert '{"id":"2"}' not in cursor._semaphore_per_partition
+    assert len(cursor._processing_partitions_indexes) == 0
+    assert len(cursor._partition_key_to_index) == 0
     assert len(cursor._partition_parent_state_map) == 0  # All parent states should be popped
     assert cursor._parent_state == {"parent": {"state": "state2"}}  # Last parent state
 
@@ -3494,3 +4061,196 @@ def test_given_global_state_when_read_then_state_is_not_per_partition() -> None:
             "use_global_cursor": True,  # ensures that it is running the Concurrent CDK version as this is not populated in the declarative implementation
         },  # this state does have per partition which would be under `states`
     )
+
+
+def _make_inner_cursor(ts: str) -> MagicMock:
+    """Return an inner cursor that yields exactly one slice and has a proper state."""
+    inner = MagicMock()
+    inner.stream_slices.side_effect = lambda: iter([{"dummy": "slice"}])
+    inner.state = {"updated_at": ts}
+    inner.close_partition.return_value = None
+    inner.observe.return_value = None
+    return inner
+
+
+def test_duplicate_partition_after_closing_partition_cursor_deleted():
+    inner_cursors = [
+        _make_inner_cursor("2024-01-01T00:00:00Z"),  # for first "1"
+        _make_inner_cursor("2024-01-02T00:00:00Z"),  # for "2"
+        _make_inner_cursor("2024-01-03T00:00:00Z"),  # for second "1"
+    ]
+    cursor_factory_mock = MagicMock()
+    cursor_factory_mock.create.side_effect = inner_cursors
+
+    converter = CustomFormatConcurrentStreamStateConverter(
+        datetime_format="%Y-%m-%dT%H:%M:%SZ",
+        input_datetime_formats=["%Y-%m-%dT%H:%M:%SZ"],
+        is_sequential_state=True,
+        cursor_granularity=timedelta(0),
+    )
+
+    cursor = ConcurrentPerPartitionCursor(
+        cursor_factory=cursor_factory_mock,
+        partition_router=MagicMock(),
+        stream_name="dup_stream",
+        stream_namespace=None,
+        stream_state={},
+        message_repository=MagicMock(),
+        connector_state_manager=MagicMock(),
+        connector_state_converter=converter,
+        cursor_field=CursorField(cursor_field_key="updated_at"),
+    )
+
+    cursor.DEFAULT_MAX_PARTITIONS_NUMBER = 1
+
+    # ── Partition sequence: 1 → 2 → 1 ──────────────────────────────────
+    partitions = [
+        StreamSlice(partition={"id": "1"}, cursor_slice={}, extra_fields={}),
+        StreamSlice(partition={"id": "2"}, cursor_slice={}, extra_fields={}),
+        StreamSlice(partition={"id": "1"}, cursor_slice={}, extra_fields={}),
+    ]
+    pr = cursor._partition_router
+    pr.stream_slices.return_value = iter(partitions)
+    pr.get_stream_state.return_value = {}
+
+    # Iterate lazily so that the first "1" gets cleaned before
+    # the second "1" arrives.
+    slice_gen = cursor.stream_slices()
+
+    first_1 = next(slice_gen)
+    cursor.close_partition(
+        DeclarativePartition("dup_stream", {}, MagicMock(), MagicMock(), first_1)
+    )
+
+    two = next(slice_gen)
+    cursor.close_partition(DeclarativePartition("dup_stream", {}, MagicMock(), MagicMock(), two))
+
+    second_1 = next(slice_gen)
+    cursor.close_partition(
+        DeclarativePartition("dup_stream", {}, MagicMock(), MagicMock(), second_1)
+    )
+
+    assert cursor._IS_PARTITION_DUPLICATION_LOGGED is False  # No duplicate detected
+    assert len(cursor._semaphore_per_partition) == 0
+    assert len(cursor._processing_partitions_indexes) == 0
+    assert len(cursor._partition_key_to_index) == 0
+    assert len(cursor._partitions_done_generating_stream_slices) == 0
+
+
+def test_duplicate_partition_after_closing_partition_cursor_exists():
+    inner_cursors = [
+        _make_inner_cursor("2024-01-01T00:00:00Z"),  # for first "1"
+        _make_inner_cursor("2024-01-02T00:00:00Z"),  # for "2"
+        _make_inner_cursor("2024-01-03T00:00:00Z"),  # for second "1"
+    ]
+    cursor_factory_mock = MagicMock()
+    cursor_factory_mock.create.side_effect = inner_cursors
+
+    converter = CustomFormatConcurrentStreamStateConverter(
+        datetime_format="%Y-%m-%dT%H:%M:%SZ",
+        input_datetime_formats=["%Y-%m-%dT%H:%M:%SZ"],
+        is_sequential_state=True,
+        cursor_granularity=timedelta(0),
+    )
+
+    cursor = ConcurrentPerPartitionCursor(
+        cursor_factory=cursor_factory_mock,
+        partition_router=MagicMock(),
+        stream_name="dup_stream",
+        stream_namespace=None,
+        stream_state={},
+        message_repository=MagicMock(),
+        connector_state_manager=MagicMock(),
+        connector_state_converter=converter,
+        cursor_field=CursorField(cursor_field_key="updated_at"),
+    )
+
+    # ── Partition sequence: 1 → 2 → 1 ──────────────────────────────────
+    partitions = [
+        StreamSlice(partition={"id": "1"}, cursor_slice={}, extra_fields={}),
+        StreamSlice(partition={"id": "2"}, cursor_slice={}, extra_fields={}),
+        StreamSlice(partition={"id": "1"}, cursor_slice={}, extra_fields={}),
+    ]
+    pr = cursor._partition_router
+    pr.stream_slices.return_value = iter(partitions)
+    pr.get_stream_state.return_value = {}
+
+    # Iterate lazily so that the first "1" gets cleaned before
+    # the second "1" arrives.
+    slice_gen = cursor.stream_slices()
+
+    first_1 = next(slice_gen)
+    cursor.close_partition(
+        DeclarativePartition("dup_stream", {}, MagicMock(), MagicMock(), first_1)
+    )
+
+    two = next(slice_gen)
+    cursor.close_partition(DeclarativePartition("dup_stream", {}, MagicMock(), MagicMock(), two))
+
+    # Second “1” should appear because the semaphore was cleaned up
+    second_1 = next(slice_gen)
+    cursor.close_partition(
+        DeclarativePartition("dup_stream", {}, MagicMock(), MagicMock(), second_1)
+    )
+
+    with pytest.raises(StopIteration):
+        next(slice_gen)
+
+    assert cursor._IS_PARTITION_DUPLICATION_LOGGED is False  # no duplicate warning
+    assert len(cursor._cursor_per_partition) == 2  # only “1” & “2” kept
+    assert len(cursor._semaphore_per_partition) == 0  # all semaphores cleaned
+    assert len(cursor._processing_partitions_indexes) == 0
+    assert len(cursor._partition_key_to_index) == 0
+    assert len(cursor._partitions_done_generating_stream_slices) == 0
+
+
+def test_duplicate_partition_while_processing():
+    inner_cursors = [
+        _make_inner_cursor("2024-01-01T00:00:00Z"),  # first “1”
+        _make_inner_cursor("2024-01-02T00:00:00Z"),  # “2”
+        _make_inner_cursor("2024-01-03T00:00:00Z"),  # for second "1"
+    ]
+
+    factory = MagicMock()
+    factory.create.side_effect = inner_cursors
+
+    cursor = ConcurrentPerPartitionCursor(
+        cursor_factory=factory,
+        partition_router=MagicMock(),
+        stream_name="dup_stream",
+        stream_namespace=None,
+        stream_state={},
+        message_repository=MagicMock(),
+        connector_state_manager=MagicMock(),
+        connector_state_converter=MagicMock(),
+        cursor_field=CursorField(cursor_field_key="updated_at"),
+    )
+
+    partitions = [
+        StreamSlice(partition={"id": "1"}, cursor_slice={}, extra_fields={}),
+        StreamSlice(partition={"id": "2"}, cursor_slice={}, extra_fields={}),
+        StreamSlice(partition={"id": "1"}, cursor_slice={}, extra_fields={}),
+    ]
+    pr = cursor._partition_router
+    pr.stream_slices.return_value = iter(partitions)
+    pr.get_stream_state.return_value = {}
+
+    generated = list(cursor.stream_slices())
+    # Only “1” and “2” emitted – duplicate “1” skipped
+    assert len(generated) == 2
+
+    # Close “2” first
+    cursor.close_partition(
+        DeclarativePartition("dup_stream", {}, MagicMock(), MagicMock(), generated[1])
+    )
+    # Now close the initial “1”
+    cursor.close_partition(
+        DeclarativePartition("dup_stream", {}, MagicMock(), MagicMock(), generated[0])
+    )
+
+    assert cursor._IS_PARTITION_DUPLICATION_LOGGED is True  # warning emitted
+    assert len(cursor._cursor_per_partition) == 2
+    assert len(cursor._semaphore_per_partition) == 0
+    assert len(cursor._processing_partitions_indexes) == 0
+    assert len(cursor._partition_key_to_index) == 0
+    assert len(cursor._partitions_done_generating_stream_slices) == 0

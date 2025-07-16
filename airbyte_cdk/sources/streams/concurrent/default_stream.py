@@ -29,6 +29,7 @@ class DefaultStream(AbstractStream):
         logger: Logger,
         cursor: Cursor,
         namespace: Optional[str] = None,
+        supports_file_transfer: bool = False,
     ) -> None:
         self._stream_partition_generator = partition_generator
         self._name = name
@@ -39,6 +40,7 @@ class DefaultStream(AbstractStream):
         self._logger = logger
         self._cursor = cursor
         self._namespace = namespace
+        self._supports_file_transfer = supports_file_transfer
 
     def generate_partitions(self) -> Iterable[Partition]:
         yield from self._stream_partition_generator.generate()
@@ -68,6 +70,7 @@ class DefaultStream(AbstractStream):
             json_schema=dict(self._json_schema),
             supported_sync_modes=[SyncMode.full_refresh],
             is_resumable=False,
+            is_file_based=self._supports_file_transfer,
         )
 
         if self._namespace:

@@ -75,6 +75,7 @@ class ThreadBasedConcurrentStreamTest(unittest.TestCase):
             source_defined_primary_key=None,
             namespace=None,
             is_resumable=False,
+            is_file_based=False,
         )
         actual_airbyte_stream = self._stream.as_airbyte_stream()
 
@@ -112,6 +113,7 @@ class ThreadBasedConcurrentStreamTest(unittest.TestCase):
             source_defined_primary_key=[["composite_key_1"], ["composite_key_2"]],
             namespace=None,
             is_resumable=False,
+            is_file_based=False,
         )
 
         airbyte_stream = stream.as_airbyte_stream()
@@ -149,6 +151,7 @@ class ThreadBasedConcurrentStreamTest(unittest.TestCase):
             source_defined_primary_key=[["id_a"], ["id_b"]],
             namespace=None,
             is_resumable=False,
+            is_file_based=False,
         )
 
         airbyte_stream = stream.as_airbyte_stream()
@@ -186,6 +189,7 @@ class ThreadBasedConcurrentStreamTest(unittest.TestCase):
             source_defined_primary_key=None,
             namespace=None,
             is_resumable=True,
+            is_file_based=False,
         )
 
         airbyte_stream = stream.as_airbyte_stream()
@@ -216,6 +220,39 @@ class ThreadBasedConcurrentStreamTest(unittest.TestCase):
             source_defined_primary_key=None,
             namespace="test",
             is_resumable=False,
+            is_file_based=False,
+        )
+        actual_airbyte_stream = stream.as_airbyte_stream()
+
+        assert actual_airbyte_stream == expected_airbyte_stream
+
+    def test_as_airbyte_stream_with_file_transfer_support(self):
+        stream = DefaultStream(
+            self._partition_generator,
+            self._name,
+            self._json_schema,
+            self._availability_strategy,
+            self._primary_key,
+            self._cursor_field,
+            self._logger,
+            FinalStateCursor(
+                stream_name=self._name,
+                stream_namespace=None,
+                message_repository=self._message_repository,
+            ),
+            namespace="test",
+            supports_file_transfer=True,
+        )
+        expected_airbyte_stream = AirbyteStream(
+            name=self._name,
+            json_schema=self._json_schema,
+            supported_sync_modes=[SyncMode.full_refresh],
+            source_defined_cursor=None,
+            default_cursor_field=None,
+            source_defined_primary_key=None,
+            namespace="test",
+            is_resumable=False,
+            is_file_based=True,
         )
         actual_airbyte_stream = stream.as_airbyte_stream()
 

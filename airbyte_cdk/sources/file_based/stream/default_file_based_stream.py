@@ -11,7 +11,7 @@ from functools import cache
 from os import path
 from typing import Any, Dict, Iterable, List, Mapping, MutableMapping, Optional, Set, Tuple, Union
 
-from airbyte_cdk.models import AirbyteLogMessage, AirbyteMessage, FailureType, Level
+from airbyte_cdk.models import AirbyteLogMessage, AirbyteMessage, AirbyteStream, FailureType, Level
 from airbyte_cdk.models import Type as MessageType
 from airbyte_cdk.sources.file_based.config.file_based_stream_config import PrimaryKeyType
 from airbyte_cdk.sources.file_based.exceptions import (
@@ -56,6 +56,7 @@ class DefaultFileBasedStream(AbstractFileBasedStream, IncrementalMixin):
     airbyte_columns = [ab_last_mod_col, ab_file_name_col]
     use_file_transfer = False
     preserve_directory_structure = True
+    _file_transfer = FileTransfer()
 
     def __init__(self, **kwargs: Any):
         if self.FILE_TRANSFER_KW in kwargs:
@@ -92,21 +93,6 @@ class DefaultFileBasedStream(AbstractFileBasedStream, IncrementalMixin):
         return self.config.primary_key or self.get_parser().get_parser_defined_primary_key(
             self.config
         )
-
-    def _filter_schema_invalid_properties(
-        self, configured_catalog_json_schema: Dict[str, Any]
-    ) -> Dict[str, Any]:
-        if self.use_file_transfer:
-            return {
-                "type": "object",
-                "properties": {
-                    "file_path": {"type": "string"},
-                    "file_size": {"type": "string"},
-                    self.ab_file_name_col: {"type": "string"},
-                },
-            }
-        else:
-            return super()._filter_schema_invalid_properties(configured_catalog_json_schema)
 
     def _duplicated_files_names(
         self, slices: List[dict[str, List[RemoteFile]]]
@@ -145,14 +131,6 @@ class DefaultFileBasedStream(AbstractFileBasedStream, IncrementalMixin):
         record[self.ab_file_name_col] = file.uri
         return record
 
-    def transform_record_for_file_transfer(
-        self, record: dict[str, Any], file: RemoteFile
-    ) -> dict[str, Any]:
-        # timstamp() returns a float representing the number of seconds since the unix epoch
-        record[self.modified] = int(file.last_modified.timestamp()) * 1000
-        record[self.source_file_url] = file.uri
-        return record
-
     def read_records_from_slice(self, stream_slice: StreamSlice) -> Iterable[AirbyteMessage]:
         """
         Yield all records from all remote files in `list_files_for_this_sync`.
@@ -173,19 +151,13 @@ class DefaultFileBasedStream(AbstractFileBasedStream, IncrementalMixin):
 
             try:
                 if self.use_file_transfer:
-                    self.logger.info(f"{self.name}: {file} file-based syncing")
-                    # todo: complete here the code to not rely on local parser
-                    file_transfer = FileTransfer()
-                    for record in file_transfer.get_file(
-                        self.config, file, self.stream_reader, self.logger
+                    for file_record_data, file_reference in self._file_transfer.upload(
+                        file=file, stream_reader=self.stream_reader, logger=self.logger
                     ):
-                        line_no += 1
-                        if not self.record_passes_validation_policy(record):
-                            n_skipped += 1
-                            continue
-                        record = self.transform_record_for_file_transfer(record, file)
                         yield stream_data_to_airbyte_message(
-                            self.name, record, is_file_transfer_message=True
+                            self.name,
+                            file_record_data.dict(exclude_none=True),
+                            file_reference=file_reference,
                         )
                 else:
                     for record in parser.parse_records(
@@ -259,6 +231,8 @@ class DefaultFileBasedStream(AbstractFileBasedStream, IncrementalMixin):
 
     @cache
     def get_json_schema(self) -> JsonSchema:
+        if self.use_file_transfer:
+            return file_transfer_schema
         extra_fields = {
             self.ab_last_mod_col: {"type": "string"},
             self.ab_file_name_col: {"type": "string"},
@@ -282,9 +256,7 @@ class DefaultFileBasedStream(AbstractFileBasedStream, IncrementalMixin):
             return {"type": "object", "properties": {**extra_fields, **schema["properties"]}}
 
     def _get_raw_json_schema(self) -> JsonSchema:
-        if self.use_file_transfer:
-            return file_transfer_schema
-        elif self.config.input_schema:
+        if self.config.input_schema:
             return self.config.get_input_schema()  # type: ignore
         elif self.config.schemaless:
             return schemaless_schema
@@ -340,6 +312,11 @@ class DefaultFileBasedStream(AbstractFileBasedStream, IncrementalMixin):
         return self.stream_reader.get_matching_files(
             self.config.globs or [], self.config.legacy_prefix, self.logger
         )
+
+    def as_airbyte_stream(self) -> AirbyteStream:
+        file_stream = super().as_airbyte_stream()
+        file_stream.is_file_based = self.use_file_transfer
+        return file_stream
 
     def infer_schema(self, files: List[RemoteFile]) -> Mapping[str, Any]:
         loop = asyncio.get_event_loop()

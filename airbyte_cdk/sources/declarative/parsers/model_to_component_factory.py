@@ -19,6 +19,7 @@ from typing import (
     Optional,
     Type,
     Union,
+    cast,
     get_args,
     get_origin,
     get_type_hints,
@@ -26,9 +27,14 @@ from typing import (
 
 from isodate import parse_duration
 from pydantic.v1 import BaseModel
+from requests import Response
 
+from airbyte_cdk.connector_builder.models import (
+    LogMessage as ConnectorBuilderLogMessage,
+)
 from airbyte_cdk.models import FailureType, Level
 from airbyte_cdk.sources.connector_state_manager import ConnectorStateManager
+from airbyte_cdk.sources.declarative import transformations
 from airbyte_cdk.sources.declarative.async_job.job_orchestrator import AsyncJobOrchestrator
 from airbyte_cdk.sources.declarative.async_job.job_tracker import JobTracker
 from airbyte_cdk.sources.declarative.async_job.repository import AsyncJobRepository
@@ -106,7 +112,10 @@ from airbyte_cdk.sources.declarative.migrations.legacy_to_per_partition_state_mi
 )
 from airbyte_cdk.sources.declarative.models import (
     CustomStateMigration,
-    GzipDecoder,
+)
+from airbyte_cdk.sources.declarative.models.base_model_with_deprecations import (
+    DEPRECATION_LOGS_TAG,
+    BaseModelWithDeprecations,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     AddedFieldDefinition as AddedFieldDefinitionModel,
@@ -148,7 +157,19 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
     ConcurrencyLevel as ConcurrencyLevelModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    ConfigAddFields as ConfigAddFieldsModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     ConfigComponentsResolver as ConfigComponentsResolverModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    ConfigMigration as ConfigMigrationModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    ConfigRemapField as ConfigRemapFieldModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    ConfigRemoveFields as ConfigRemoveFieldsModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     ConstantBackoffStrategy as ConstantBackoffStrategyModel,
@@ -164,6 +185,9 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     CustomBackoffStrategy as CustomBackoffStrategyModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    CustomConfigTransformation as CustomConfigTransformationModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     CustomDecoder as CustomDecoderModel,
@@ -202,6 +226,9 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
     CustomTransformation as CustomTransformationModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    CustomValidationStrategy as CustomValidationStrategyModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     DatetimeBasedCursor as DatetimeBasedCursorModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
@@ -220,6 +247,9 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
     DpathFlattenFields as DpathFlattenFieldsModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    DpathValidator as DpathValidatorModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     DynamicSchemaLoader as DynamicSchemaLoaderModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
@@ -227,6 +257,9 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     ExponentialBackoffStrategy as ExponentialBackoffStrategyModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    FileUploader as FileUploaderModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     FixedWindowCallRatePolicy as FixedWindowCallRatePolicyModel,
@@ -325,7 +358,13 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
     PageIncrement as PageIncrementModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    ParametrizedComponentsResolver as ParametrizedComponentsResolverModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     ParentStreamConfig as ParentStreamConfigModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    PredicateValidator as PredicateValidatorModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     PropertiesFromEndpoint as PropertiesFromEndpointModel,
@@ -390,6 +429,9 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     UnlimitedCallRatePolicy as UnlimitedCallRatePolicyModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    ValidateAdheresToSchema as ValidateAdheresToSchemaModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import ValueType
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
@@ -466,18 +508,26 @@ from airbyte_cdk.sources.declarative.requesters.request_options import (
     RequestOptionsProvider,
 )
 from airbyte_cdk.sources.declarative.requesters.request_path import RequestPath
-from airbyte_cdk.sources.declarative.requesters.requester import HttpMethod
+from airbyte_cdk.sources.declarative.requesters.requester import HttpMethod, Requester
 from airbyte_cdk.sources.declarative.resolvers import (
     ComponentMappingDefinition,
     ConfigComponentsResolver,
     HttpComponentsResolver,
+    ParametrizedComponentsResolver,
     StreamConfig,
+    StreamParametersDefinition,
 )
 from airbyte_cdk.sources.declarative.retrievers import (
     AsyncRetriever,
     LazySimpleRetriever,
     SimpleRetriever,
-    SimpleRetrieverTestReadDecorator,
+)
+from airbyte_cdk.sources.declarative.retrievers.file_uploader import (
+    ConnectorBuilderFileUploader,
+    DefaultFileUploader,
+    FileUploader,
+    LocalFileSystemFileWriter,
+    NoopFileWriter,
 )
 from airbyte_cdk.sources.declarative.schema import (
     ComplexFieldType,
@@ -488,14 +538,26 @@ from airbyte_cdk.sources.declarative.schema import (
     SchemaTypeIdentifier,
     TypesMap,
 )
-from airbyte_cdk.sources.declarative.spec import Spec
-from airbyte_cdk.sources.declarative.stream_slicers import StreamSlicer
+from airbyte_cdk.sources.declarative.schema.composite_schema_loader import CompositeSchemaLoader
+from airbyte_cdk.sources.declarative.spec import ConfigMigration, Spec
+from airbyte_cdk.sources.declarative.stream_slicers import (
+    StreamSlicer,
+    StreamSlicerTestReadDecorator,
+)
 from airbyte_cdk.sources.declarative.transformations import (
     AddFields,
     RecordTransformation,
     RemoveFields,
 )
 from airbyte_cdk.sources.declarative.transformations.add_fields import AddedFieldDefinition
+from airbyte_cdk.sources.declarative.transformations.config_transformations import (
+    ConfigAddFields,
+    ConfigRemapField,
+    ConfigRemoveFields,
+)
+from airbyte_cdk.sources.declarative.transformations.config_transformations.config_transformation import (
+    ConfigTransformation,
+)
 from airbyte_cdk.sources.declarative.transformations.dpath_flatten_fields import (
     DpathFlattenFields,
     KeyTransformation,
@@ -512,6 +574,12 @@ from airbyte_cdk.sources.declarative.transformations.keys_to_lower_transformatio
 from airbyte_cdk.sources.declarative.transformations.keys_to_snake_transformation import (
     KeysToSnakeCaseTransformation,
 )
+from airbyte_cdk.sources.declarative.validators import (
+    DpathValidator,
+    PredicateValidator,
+    ValidateAdheresToSchema,
+)
+from airbyte_cdk.sources.http_logger import format_http_message
 from airbyte_cdk.sources.message import (
     InMemoryMessageRepository,
     LogAppenderMessageRepositoryDecorator,
@@ -584,6 +652,8 @@ class ModelToComponentFactory:
         self._connector_state_manager = connector_state_manager or ConnectorStateManager()
         self._api_budget: Optional[Union[APIBudget, HttpAPIBudget]] = None
         self._job_tracker: JobTracker = JobTracker(max_concurrent_async_job_count or 1)
+        # placeholder for deprecation warnings
+        self._collected_deprecation_logs: List[ConnectorBuilderLogMessage] = []
 
     def _init_mappings(self) -> None:
         self.PYDANTIC_MODEL_TO_CONSTRUCTOR: Mapping[Type[BaseModel], Callable[..., Any]] = {
@@ -597,6 +667,10 @@ class ModelToComponentFactory:
             CheckDynamicStreamModel: self.create_check_dynamic_stream,
             CompositeErrorHandlerModel: self.create_composite_error_handler,
             ConcurrencyLevelModel: self.create_concurrency_level,
+            ConfigMigrationModel: self.create_config_migration,
+            ConfigAddFieldsModel: self.create_config_add_fields,
+            ConfigRemapFieldModel: self.create_config_remap_field,
+            ConfigRemoveFieldsModel: self.create_config_remove_fields,
             ConstantBackoffStrategyModel: self.create_constant_backoff_strategy,
             CsvDecoderModel: self.create_csv_decoder,
             CursorPaginationModel: self.create_cursor_pagination,
@@ -615,11 +689,14 @@ class ModelToComponentFactory:
             CustomPaginationStrategyModel: self.create_custom_component,
             CustomPartitionRouterModel: self.create_custom_component,
             CustomTransformationModel: self.create_custom_component,
+            CustomValidationStrategyModel: self.create_custom_component,
+            CustomConfigTransformationModel: self.create_custom_component,
             DatetimeBasedCursorModel: self.create_datetime_based_cursor,
             DeclarativeStreamModel: self.create_declarative_stream,
             DefaultErrorHandlerModel: self.create_default_error_handler,
             DefaultPaginatorModel: self.create_default_paginator,
             DpathExtractorModel: self.create_dpath_extractor,
+            DpathValidatorModel: self.create_dpath_validator,
             ResponseToFileExtractorModel: self.create_response_to_file_extractor,
             ExponentialBackoffStrategyModel: self.create_exponential_backoff_strategy,
             SessionTokenAuthenticatorModel: self.create_session_token_authenticator,
@@ -653,6 +730,7 @@ class ModelToComponentFactory:
             OffsetIncrementModel: self.create_offset_increment,
             PageIncrementModel: self.create_page_increment,
             ParentStreamConfigModel: self.create_parent_stream_config,
+            PredicateValidatorModel: self.create_predicate_validator,
             PropertiesFromEndpointModel: self.create_properties_from_endpoint,
             PropertyChunkingModel: self.create_property_chunking,
             QueryPropertiesModel: self.create_query_properties,
@@ -667,15 +745,18 @@ class ModelToComponentFactory:
             StateDelegatingStreamModel: self.create_state_delegating_stream,
             SpecModel: self.create_spec,
             SubstreamPartitionRouterModel: self.create_substream_partition_router,
+            ValidateAdheresToSchemaModel: self.create_validate_adheres_to_schema,
             WaitTimeFromHeaderModel: self.create_wait_time_from_header,
             WaitUntilTimeFromHeaderModel: self.create_wait_until_time_from_header,
             AsyncRetrieverModel: self.create_async_retriever,
             HttpComponentsResolverModel: self.create_http_components_resolver,
             ConfigComponentsResolverModel: self.create_config_components_resolver,
+            ParametrizedComponentsResolverModel: self.create_parametrized_components_resolver,
             StreamConfigModel: self.create_stream_config,
             ComponentMappingDefinitionModel: self.create_components_mapping_definition,
             ZipfileDecoderModel: self.create_zipfile_decoder,
             HTTPAPIBudgetModel: self.create_http_api_budget,
+            FileUploaderModel: self.create_file_uploader,
             FixedWindowCallRatePolicyModel: self.create_fixed_window_call_rate_policy,
             MovingWindowCallRatePolicyModel: self.create_moving_window_call_rate_policy,
             UnlimitedCallRatePolicyModel: self.create_unlimited_call_rate_policy,
@@ -730,7 +811,102 @@ class ModelToComponentFactory:
         component_constructor = self.PYDANTIC_MODEL_TO_CONSTRUCTOR.get(model.__class__)
         if not component_constructor:
             raise ValueError(f"Could not find constructor for {model.__class__}")
+
+        # collect deprecation warnings for supported models.
+        if isinstance(model, BaseModelWithDeprecations):
+            self._collect_model_deprecations(model)
+
         return component_constructor(model=model, config=config, **kwargs)
+
+    def get_model_deprecations(self) -> List[ConnectorBuilderLogMessage]:
+        """
+        Returns the deprecation warnings that were collected during the creation of components.
+        """
+        return self._collected_deprecation_logs
+
+    def _collect_model_deprecations(self, model: BaseModelWithDeprecations) -> None:
+        """
+        Collects deprecation logs from the given model and appends any new logs to the internal collection.
+
+        This method checks if the provided model has deprecation logs (identified by the presence of the DEPRECATION_LOGS_TAG attribute and a non-None `_deprecation_logs` property). It iterates through each deprecation log in the model and appends it to the `_collected_deprecation_logs` list if it has not already been collected, ensuring that duplicate logs are avoided.
+
+        Args:
+            model (BaseModelWithDeprecations): The model instance from which to collect deprecation logs.
+        """
+        if hasattr(model, DEPRECATION_LOGS_TAG) and model._deprecation_logs is not None:
+            for log in model._deprecation_logs:
+                # avoid duplicates for deprecation logs observed.
+                if log not in self._collected_deprecation_logs:
+                    self._collected_deprecation_logs.append(log)
+
+    def create_config_migration(
+        self, model: ConfigMigrationModel, config: Config
+    ) -> ConfigMigration:
+        transformations: List[ConfigTransformation] = [
+            self._create_component_from_model(transformation, config)
+            for transformation in model.transformations
+        ]
+
+        return ConfigMigration(
+            description=model.description,
+            transformations=transformations,
+        )
+
+    def create_config_add_fields(
+        self, model: ConfigAddFieldsModel, config: Config, **kwargs: Any
+    ) -> ConfigAddFields:
+        fields = [self._create_component_from_model(field, config) for field in model.fields]
+        return ConfigAddFields(
+            fields=fields,
+            condition=model.condition or "",
+        )
+
+    @staticmethod
+    def create_config_remove_fields(
+        model: ConfigRemoveFieldsModel, config: Config, **kwargs: Any
+    ) -> ConfigRemoveFields:
+        return ConfigRemoveFields(
+            field_pointers=model.field_pointers,
+            condition=model.condition or "",
+        )
+
+    @staticmethod
+    def create_config_remap_field(
+        model: ConfigRemapFieldModel, config: Config, **kwargs: Any
+    ) -> ConfigRemapField:
+        mapping = cast(Mapping[str, Any], model.map)
+        return ConfigRemapField(
+            map=mapping,
+            field_path=model.field_path,
+            config=config,
+        )
+
+    def create_dpath_validator(self, model: DpathValidatorModel, config: Config) -> DpathValidator:
+        strategy = self._create_component_from_model(model.validation_strategy, config)
+
+        return DpathValidator(
+            field_path=model.field_path,
+            strategy=strategy,
+        )
+
+    def create_predicate_validator(
+        self, model: PredicateValidatorModel, config: Config
+    ) -> PredicateValidator:
+        strategy = self._create_component_from_model(model.validation_strategy, config)
+
+        return PredicateValidator(
+            value=model.value,
+            strategy=strategy,
+        )
+
+    @staticmethod
+    def create_validate_adheres_to_schema(
+        model: ValidateAdheresToSchemaModel, config: Config, **kwargs: Any
+    ) -> ValidateAdheresToSchema:
+        base_schema = cast(Mapping[str, Any], model.base_schema)
+        return ValidateAdheresToSchema(
+            schema=base_schema,
+        )
 
     @staticmethod
     def create_added_field_definition(
@@ -880,9 +1056,9 @@ class ModelToComponentFactory:
         declarative_stream: DeclarativeStreamModel,
     ) -> LegacyToPerPartitionStateMigration:
         retriever = declarative_stream.retriever
-        if not isinstance(retriever, SimpleRetrieverModel):
+        if not isinstance(retriever, (SimpleRetrieverModel, AsyncRetrieverModel)):
             raise ValueError(
-                f"LegacyToPerPartitionStateMigrations can only be applied on a DeclarativeStream with a SimpleRetriever. Got {type(retriever)}"
+                f"LegacyToPerPartitionStateMigrations can only be applied on a DeclarativeStream with a SimpleRetriever or AsyncRetriever. Got {type(retriever)}"
             )
         partition_router = retriever.partition_router
         if not isinstance(
@@ -1436,8 +1612,8 @@ class ModelToComponentFactory:
                 stream_state_migrations=stream_state_migrations,
             )
         )
-        stream_state = self.apply_stream_state_migrations(stream_state_migrations, stream_state)
 
+        stream_state = self.apply_stream_state_migrations(stream_state_migrations, stream_state)
         # Per-partition state doesn't make sense for GroupingPartitionRouter, so force the global state
         use_global_cursor = isinstance(
             partition_router, GroupingPartitionRouter
@@ -1840,6 +2016,11 @@ class ModelToComponentFactory:
                 transformations.append(
                     self._create_component_from_model(model=transformation_model, config=config)
                 )
+        file_uploader = None
+        if model.file_uploader:
+            file_uploader = self._create_component_from_model(
+                model=model.file_uploader, config=config
+            )
 
         retriever = self._create_component_from_model(
             model=model.retriever,
@@ -1851,6 +2032,7 @@ class ModelToComponentFactory:
             stop_condition_on_cursor=stop_condition_on_cursor,
             client_side_incremental_sync=client_side_incremental_sync,
             transformations=transformations,
+            file_uploader=file_uploader,
             incremental_sync=model.incremental_sync,
         )
         cursor_field = model.incremental_sync.cursor_field if model.incremental_sync else None
@@ -1863,9 +2045,25 @@ class ModelToComponentFactory:
         else:
             state_transformations = []
 
-        if model.schema_loader:
+        schema_loader: Union[
+            CompositeSchemaLoader,
+            DefaultSchemaLoader,
+            DynamicSchemaLoader,
+            InlineSchemaLoader,
+            JsonFileSchemaLoader,
+        ]
+        if model.schema_loader and isinstance(model.schema_loader, list):
+            nested_schema_loaders = [
+                self._create_component_from_model(model=nested_schema_loader, config=config)
+                for nested_schema_loader in model.schema_loader
+            ]
+            schema_loader = CompositeSchemaLoader(
+                schema_loaders=nested_schema_loaders, parameters={}
+            )
+        elif model.schema_loader:
             schema_loader = self._create_component_from_model(
-                model=model.schema_loader, config=config
+                model=model.schema_loader,  # type: ignore # If defined, schema_loader is guaranteed not to be a list and will be one of the existing base models
+                config=config,
             )
         else:
             options = model.parameters or {}
@@ -1924,14 +2122,31 @@ class ModelToComponentFactory:
     ) -> Optional[StreamSlicer]:
         if model.incremental_sync and stream_slicer:
             if model.retriever.type == "AsyncRetriever":
+                stream_name = model.name or ""
+                stream_namespace = None
+                stream_state = self._connector_state_manager.get_stream_state(
+                    stream_name, stream_namespace
+                )
+                state_transformations = (
+                    [
+                        self._create_component_from_model(
+                            state_migration, config, declarative_stream=model
+                        )
+                        for state_migration in model.state_migrations
+                    ]
+                    if model.state_migrations
+                    else []
+                )
+
                 return self.create_concurrent_cursor_from_perpartition_cursor(  # type: ignore # This is a known issue that we are creating and returning a ConcurrentCursor which does not technically implement the (low-code) StreamSlicer. However, (low-code) StreamSlicer and ConcurrentCursor both implement StreamSlicer.stream_slices() which is the primary method needed for checkpointing
                     state_manager=self._connector_state_manager,
                     model_type=DatetimeBasedCursorModel,
                     component_definition=model.incremental_sync.__dict__,
-                    stream_name=model.name or "",
-                    stream_namespace=None,
+                    stream_name=stream_name,
+                    stream_namespace=stream_namespace,
                     config=config or {},
-                    stream_state={},
+                    stream_state=stream_state,
+                    stream_state_migrations=state_transformations,
                     partition_router=stream_slicer,
                 )
 
@@ -2164,7 +2379,7 @@ class ModelToComponentFactory:
             self._create_component_from_model(
                 model=model.authenticator,
                 config=config,
-                url_base=model.url_base,
+                url_base=model.url or model.url_base,
                 name=name,
                 decoder=decoder,
             )
@@ -2184,11 +2399,21 @@ class ModelToComponentFactory:
 
         api_budget = self._api_budget
 
+        # Removes QueryProperties components from the interpolated mappings because it has been designed
+        # to be used by the SimpleRetriever and will be resolved from the provider from the slice directly
+        # instead of through jinja interpolation
+        request_parameters: Optional[Union[str, Mapping[str, str]]]
+        if isinstance(model.request_parameters, Mapping):
+            request_parameters = self._remove_query_properties(model.request_parameters)
+        else:
+            request_parameters = model.request_parameters
+
         request_options_provider = InterpolatedRequestOptionsProvider(
+            request_body=model.request_body,
             request_body_data=model.request_body_data,
             request_body_json=model.request_body_json,
             request_headers=model.request_headers,
-            request_parameters=model.request_parameters,
+            request_parameters=request_parameters,
             query_properties_key=query_properties_key,
             config=config,
             parameters=model.parameters or {},
@@ -2201,6 +2426,7 @@ class ModelToComponentFactory:
 
         return HttpRequester(
             name=name,
+            url=model.url,
             url_base=model.url_base,
             path=model.path,
             authenticator=authenticator,
@@ -2312,23 +2538,41 @@ class ModelToComponentFactory:
                 schema_transformations.append(
                     self._create_component_from_model(model=transformation_model, config=config)
                 )
-
+        name = "dynamic_properties"
         retriever = self._create_component_from_model(
             model=model.retriever,
             config=config,
-            name="dynamic_properties",
+            name=name,
             primary_key=None,
             stream_slicer=combined_slicers,
             transformations=[],
             use_cache=True,
+            log_formatter=(
+                lambda response: format_http_message(
+                    response,
+                    f"Schema loader '{name}' request",
+                    f"Request performed in order to extract schema.",
+                    name,
+                    is_auxiliary=True,
+                )
+            ),
         )
         schema_type_identifier = self._create_component_from_model(
             model.schema_type_identifier, config=config, parameters=model.parameters or {}
         )
+        schema_filter = (
+            self._create_component_from_model(
+                model.schema_filter, config=config, parameters=model.parameters or {}
+            )
+            if model.schema_filter is not None
+            else None
+        )
+
         return DynamicSchemaLoader(
             retriever=retriever,
             config=config,
             schema_transformations=schema_transformations,
+            schema_filter=schema_filter,
             schema_type_identifier=schema_type_identifier,
             parameters=model.parameters or {},
         )
@@ -2418,7 +2662,11 @@ class ModelToComponentFactory:
         elif isinstance(model, JsonlDecoderModel):
             return JsonLineParser()
         elif isinstance(model, CsvDecoderModel):
-            return CsvParser(encoding=model.encoding, delimiter=model.delimiter)
+            return CsvParser(
+                encoding=model.encoding,
+                delimiter=model.delimiter,
+                set_values_to_none=model.set_values_to_none,
+            )
         elif isinstance(model, GzipDecoderModel):
             return GzipParser(
                 inner_parser=ModelToComponentFactory._get_parser(model.decoder, config)
@@ -2557,6 +2805,7 @@ class ModelToComponentFactory:
                 ).eval(config),
                 scopes=model.scopes,
                 token_expiry_date_format=model.token_expiry_date_format,
+                token_expiry_is_time_of_expiration=bool(model.token_expiry_date_format),
                 message_repository=self._message_repository,
                 refresh_token_error_status_codes=model.refresh_token_updater.refresh_token_error_status_codes,
                 refresh_token_error_key=model.refresh_token_updater.refresh_token_error_key,
@@ -2796,6 +3045,7 @@ class ModelToComponentFactory:
         transformations: List[RecordTransformation] | None = None,
         decoder: Decoder | None = None,
         client_side_incremental_sync: Dict[str, Any] | None = None,
+        file_uploader: Optional[DefaultFileUploader] = None,
         **kwargs: Any,
     ) -> RecordSelector:
         extractor = self._create_component_from_model(
@@ -2807,9 +3057,9 @@ class ModelToComponentFactory:
             else None
         )
 
-        assert model.transform_before_filtering is not None  # for mypy
-
-        transform_before_filtering = model.transform_before_filtering
+        transform_before_filtering = (
+            False if model.transform_before_filtering is None else model.transform_before_filtering
+        )
         if client_side_incremental_sync:
             record_filter = ClientSideIncrementalRecordFilterDecorator(
                 config=config,
@@ -2819,7 +3069,15 @@ class ModelToComponentFactory:
                 else None,
                 **client_side_incremental_sync,
             )
-            transform_before_filtering = True
+            transform_before_filtering = (
+                True
+                if model.transform_before_filtering is None
+                else model.transform_before_filtering
+            )
+
+        if model.schema_normalization is None:
+            # default to no schema normalization if not set
+            model.schema_normalization = SchemaNormalizationModel.None_
 
         schema_normalization = (
             TypeTransformer(SCHEMA_TRANSFORMER_TYPE_MAPPING[model.schema_normalization])
@@ -2833,6 +3091,7 @@ class ModelToComponentFactory:
             config=config,
             record_filter=record_filter,
             transformations=transformations or [],
+            file_uploader=file_uploader,
             schema_normalization=schema_normalization,
             parameters=model.parameters or {},
             transform_before_filtering=transform_before_filtering,
@@ -2890,14 +3149,35 @@ class ModelToComponentFactory:
         stop_condition_on_cursor: bool = False,
         client_side_incremental_sync: Optional[Dict[str, Any]] = None,
         transformations: List[RecordTransformation],
+        file_uploader: Optional[DefaultFileUploader] = None,
         incremental_sync: Optional[
             Union[
                 IncrementingCountCursorModel, DatetimeBasedCursorModel, CustomIncrementalSyncModel
             ]
         ] = None,
         use_cache: Optional[bool] = None,
+        log_formatter: Optional[Callable[[Response], Any]] = None,
         **kwargs: Any,
     ) -> SimpleRetriever:
+        def _get_url() -> str:
+            """
+            Closure to get the URL from the requester. This is used to get the URL in the case of a lazy retriever.
+            This is needed because the URL is not set until the requester is created.
+            """
+
+            _url: str = (
+                model.requester.url
+                if hasattr(model.requester, "url") and model.requester.url is not None
+                else requester.get_url()
+            )
+            _url_base: str = (
+                model.requester.url_base
+                if hasattr(model.requester, "url_base") and model.requester.url_base is not None
+                else requester.get_url_base()
+            )
+
+            return _url or _url_base
+
         decoder = (
             self._create_component_from_model(model=model.decoder, config=config)
             if model.decoder
@@ -2910,30 +3190,27 @@ class ModelToComponentFactory:
             decoder=decoder,
             transformations=transformations,
             client_side_incremental_sync=client_side_incremental_sync,
+            file_uploader=file_uploader,
         )
 
         query_properties: Optional[QueryProperties] = None
         query_properties_key: Optional[str] = None
-        if (
-            hasattr(model.requester, "request_parameters")
-            and model.requester.request_parameters
-            and isinstance(model.requester.request_parameters, Mapping)
-        ):
+        if self._query_properties_in_request_parameters(model.requester):
+            # It is better to be explicit about an error if PropertiesFromEndpoint is defined in multiple
+            # places instead of default to request_parameters which isn't clearly documented
+            if (
+                hasattr(model.requester, "fetch_properties_from_endpoint")
+                and model.requester.fetch_properties_from_endpoint
+            ):
+                raise ValueError(
+                    f"PropertiesFromEndpoint should only be specified once per stream, but found in {model.requester.type}.fetch_properties_from_endpoint and {model.requester.type}.request_parameters"
+                )
+
             query_properties_definitions = []
-            for key, request_parameter in model.requester.request_parameters.items():
-                # When translating JSON schema into Pydantic models, enforcing types for arrays containing both
-                # concrete string complex object definitions like QueryProperties would get resolved to Union[str, Any].
-                # This adds the extra validation that we couldn't get for free in Pydantic model generation
-                if (
-                    isinstance(request_parameter, Mapping)
-                    and request_parameter.get("type") == "QueryProperties"
-                ):
+            for key, request_parameter in model.requester.request_parameters.items():  # type: ignore # request_parameters is already validated to be a Mapping using _query_properties_in_request_parameters()
+                if isinstance(request_parameter, QueryPropertiesModel):
                     query_properties_key = key
                     query_properties_definitions.append(request_parameter)
-                elif not isinstance(request_parameter, str):
-                    raise ValueError(
-                        f"Each element of request_parameters should be of type str or QueryProperties, but received {request_parameter.get('type')}"
-                    )
 
             if len(query_properties_definitions) > 1:
                 raise ValueError(
@@ -2941,18 +3218,30 @@ class ModelToComponentFactory:
                 )
 
             if len(query_properties_definitions) == 1:
-                query_properties = self.create_component(
-                    model_type=QueryPropertiesModel,
-                    component_definition=query_properties_definitions[0],
-                    config=config,
+                query_properties = self._create_component_from_model(
+                    model=query_properties_definitions[0], config=config
                 )
+        elif (
+            hasattr(model.requester, "fetch_properties_from_endpoint")
+            and model.requester.fetch_properties_from_endpoint
+        ):
+            # todo: Deprecate this condition once dependent connectors migrate to query_properties
+            query_properties_definition = QueryPropertiesModel(
+                type="QueryProperties",
+                property_list=model.requester.fetch_properties_from_endpoint,
+                always_include_properties=None,
+                property_chunking=None,
+            )  # type: ignore # $parameters has a default value
 
-            # Removes QueryProperties components from the interpolated mappings because it will be resolved in
-            # the provider from the slice directly instead of through jinja interpolation
-            if isinstance(model.requester.request_parameters, Mapping):
-                model.requester.request_parameters = self._remove_query_properties(
-                    model.requester.request_parameters
-                )
+            query_properties = self.create_query_properties(
+                model=query_properties_definition,
+                config=config,
+            )
+        elif hasattr(model.requester, "query_properties") and model.requester.query_properties:
+            query_properties = self.create_query_properties(
+                model=model.requester.query_properties,
+                config=config,
+            )
 
         requester = self._create_component_from_model(
             model=model.requester,
@@ -2961,11 +3250,6 @@ class ModelToComponentFactory:
             query_properties_key=query_properties_key,
             use_cache=use_cache,
             config=config,
-        )
-        url_base = (
-            model.requester.url_base
-            if hasattr(model.requester, "url_base")
-            else requester.get_url_base()
         )
 
         # Define cursor only if per partition or common incremental support is needed
@@ -2984,13 +3268,21 @@ class ModelToComponentFactory:
             request_options_provider = DefaultRequestOptionsProvider(parameters={})
 
         stream_slicer = stream_slicer or SinglePartitionRouter(parameters={})
+        if self._should_limit_slices_fetched():
+            stream_slicer = cast(
+                StreamSlicer,
+                StreamSlicerTestReadDecorator(
+                    wrapped_slicer=stream_slicer,
+                    maximum_number_of_slices=self._limit_slices_fetched or 5,
+                ),
+            )
 
         cursor_used_for_stop_condition = cursor if stop_condition_on_cursor else None
         paginator = (
             self._create_component_from_model(
                 model=model.paginator,
                 config=config,
-                url_base=url_base,
+                url_base=_get_url(),
                 extractor_model=model.record_selector.extractor,
                 decoder=decoder,
                 cursor_used_for_stop_condition=cursor_used_for_stop_condition,
@@ -3042,21 +3334,6 @@ class ModelToComponentFactory:
                 parameters=model.parameters or {},
             )
 
-        if self._limit_slices_fetched or self._emit_connector_builder_messages:
-            return SimpleRetrieverTestReadDecorator(
-                name=name,
-                paginator=paginator,
-                primary_key=primary_key,
-                requester=requester,
-                record_selector=record_selector,
-                stream_slicer=stream_slicer,
-                request_option_provider=request_options_provider,
-                cursor=cursor,
-                config=config,
-                maximum_number_of_slices=self._limit_slices_fetched or 5,
-                ignore_stream_slicer_parameters_on_paginated_requests=ignore_stream_slicer_parameters_on_paginated_requests,
-                parameters=model.parameters or {},
-            )
         return SimpleRetriever(
             name=name,
             paginator=paginator,
@@ -3069,18 +3346,56 @@ class ModelToComponentFactory:
             config=config,
             ignore_stream_slicer_parameters_on_paginated_requests=ignore_stream_slicer_parameters_on_paginated_requests,
             additional_query_properties=query_properties,
+            log_formatter=self._get_log_formatter(log_formatter, name),
             parameters=model.parameters or {},
         )
 
+    def _get_log_formatter(
+        self, log_formatter: Callable[[Response], Any] | None, name: str
+    ) -> Callable[[Response], Any] | None:
+        if self._should_limit_slices_fetched():
+            return (
+                (
+                    lambda response: format_http_message(
+                        response,
+                        f"Stream '{name}' request",
+                        f"Request performed in order to extract records for stream '{name}'",
+                        name,
+                    )
+                )
+                if not log_formatter
+                else log_formatter
+            )
+        return None
+
+    def _should_limit_slices_fetched(self) -> bool:
+        """
+        Returns True if the number of slices fetched should be limited, False otherwise.
+        This is used to limit the number of slices fetched during tests.
+        """
+        return bool(self._limit_slices_fetched or self._emit_connector_builder_messages)
+
+    @staticmethod
+    def _query_properties_in_request_parameters(
+        requester: Union[HttpRequesterModel, CustomRequesterModel],
+    ) -> bool:
+        if not hasattr(requester, "request_parameters"):
+            return False
+        request_parameters = requester.request_parameters
+        if request_parameters and isinstance(request_parameters, Mapping):
+            for request_parameter in request_parameters.values():
+                if isinstance(request_parameter, QueryPropertiesModel):
+                    return True
+        return False
+
     @staticmethod
     def _remove_query_properties(
-        request_parameters: Mapping[str, Union[Any, str]],
-    ) -> Mapping[str, Union[Any, str]]:
+        request_parameters: Mapping[str, Union[str, QueryPropertiesModel]],
+    ) -> Mapping[str, str]:
         return {
             parameter_field: request_parameter
             for parameter_field, request_parameter in request_parameters.items()
-            if not isinstance(request_parameter, Mapping)
-            or not request_parameter.get("type") == "QueryProperties"
+            if not isinstance(request_parameter, QueryPropertiesModel)
         }
 
     def create_state_delegating_stream(
@@ -3150,12 +3465,15 @@ class ModelToComponentFactory:
         transformations: List[RecordTransformation],
         **kwargs: Any,
     ) -> AsyncRetriever:
-        def _get_download_retriever() -> SimpleRetrieverTestReadDecorator | SimpleRetriever:
+        def _get_download_retriever() -> SimpleRetriever:
+            # We create a record selector for the download retriever
+            # with no schema normalization and no transformations, neither record filter
+            # as all this occurs in the record_selector of the AsyncRetriever
             record_selector = RecordSelector(
                 extractor=download_extractor,
                 name=name,
                 record_filter=None,
-                transformations=transformations,
+                transformations=[],
                 schema_normalization=TypeTransformer(TransformConfig.NoTransform),
                 config=config,
                 parameters={},
@@ -3170,19 +3488,6 @@ class ModelToComponentFactory:
                 if model.download_paginator
                 else NoPagination(parameters={})
             )
-            maximum_number_of_slices = self._limit_slices_fetched or 5
-
-            if self._limit_slices_fetched or self._emit_connector_builder_messages:
-                return SimpleRetrieverTestReadDecorator(
-                    requester=download_requester,
-                    record_selector=record_selector,
-                    primary_key=None,
-                    name=job_download_components_name,
-                    paginator=paginator,
-                    config=config,
-                    parameters={},
-                    maximum_number_of_slices=maximum_number_of_slices,
-                )
 
             return SimpleRetriever(
                 requester=download_requester,
@@ -3228,7 +3533,17 @@ class ModelToComponentFactory:
             transformations=transformations,
             client_side_incremental_sync=client_side_incremental_sync,
         )
+
         stream_slicer = stream_slicer or SinglePartitionRouter(parameters={})
+        if self._should_limit_slices_fetched():
+            stream_slicer = cast(
+                StreamSlicer,
+                StreamSlicerTestReadDecorator(
+                    wrapped_slicer=stream_slicer,
+                    maximum_number_of_slices=self._limit_slices_fetched or 5,
+                ),
+            )
+
         creation_requester = self._create_component_from_model(
             model=model.creation_requester,
             decoder=decoder,
@@ -3346,13 +3661,49 @@ class ModelToComponentFactory:
             parameters=model.parameters or {},
         )
 
-    @staticmethod
-    def create_spec(model: SpecModel, config: Config, **kwargs: Any) -> Spec:
+    def create_spec(self, model: SpecModel, config: Config, **kwargs: Any) -> Spec:
+        config_migrations = [
+            self._create_component_from_model(migration, config)
+            for migration in (
+                model.config_normalization_rules.config_migrations
+                if (
+                    model.config_normalization_rules
+                    and model.config_normalization_rules.config_migrations
+                )
+                else []
+            )
+        ]
+        config_transformations = [
+            self._create_component_from_model(transformation, config)
+            for transformation in (
+                model.config_normalization_rules.transformations
+                if (
+                    model.config_normalization_rules
+                    and model.config_normalization_rules.transformations
+                )
+                else []
+            )
+        ]
+        config_validations = [
+            self._create_component_from_model(validation, config)
+            for validation in (
+                model.config_normalization_rules.validations
+                if (
+                    model.config_normalization_rules
+                    and model.config_normalization_rules.validations
+                )
+                else []
+            )
+        ]
+
         return Spec(
             connection_specification=model.connection_specification,
             documentation_url=model.documentation_url,
             advanced_auth=model.advanced_auth,
             parameters={},
+            config_migrations=config_migrations,
+            config_transformations=config_transformations,
+            config_validations=config_validations,
         )
 
     def create_substream_partition_router(
@@ -3448,6 +3799,7 @@ class ModelToComponentFactory:
             field_path=field_path,  # type: ignore[arg-type] # field_path can be str and InterpolatedString
             value=interpolated_value,
             value_type=ModelToComponentFactory._json_schema_type_name_to_type(model.value_type),
+            create_or_update=model.create_or_update,
             parameters=model.parameters or {},
         )
 
@@ -3494,15 +3846,23 @@ class ModelToComponentFactory:
 
         return StreamConfig(
             configs_pointer=model_configs_pointer,
+            default_values=model.default_values,
             parameters=model.parameters or {},
         )
 
     def create_config_components_resolver(
         self, model: ConfigComponentsResolverModel, config: Config
     ) -> Any:
-        stream_config = self._create_component_from_model(
-            model.stream_config, config=config, parameters=model.parameters or {}
+        model_stream_configs = (
+            model.stream_config if isinstance(model.stream_config, list) else [model.stream_config]
         )
+
+        stream_configs = [
+            self._create_component_from_model(
+                stream_config, config=config, parameters=model.parameters or {}
+            )
+            for stream_config in model_stream_configs
+        ]
 
         components_mapping = [
             self._create_component_from_model(
@@ -3516,7 +3876,30 @@ class ModelToComponentFactory:
         ]
 
         return ConfigComponentsResolver(
-            stream_config=stream_config,
+            stream_configs=stream_configs,
+            config=config,
+            components_mapping=components_mapping,
+            parameters=model.parameters or {},
+        )
+
+    def create_parametrized_components_resolver(
+        self, model: ParametrizedComponentsResolverModel, config: Config
+    ) -> ParametrizedComponentsResolver:
+        stream_parameters = StreamParametersDefinition(
+            list_of_parameters_for_stream=model.stream_parameters.list_of_parameters_for_stream
+        )
+        components_mapping = [
+            self._create_component_from_model(
+                model=components_mapping_definition_model,
+                value_type=ModelToComponentFactory._json_schema_type_name_to_type(
+                    components_mapping_definition_model.value_type
+                ),
+                config=config,
+            )
+            for components_mapping_definition_model in model.components_mapping
+        ]
+        return ParametrizedComponentsResolver(
+            stream_parameters=stream_parameters,
             config=config,
             components_mapping=components_mapping,
             parameters=model.parameters or {},
@@ -3574,6 +3957,40 @@ class ModelToComponentFactory:
             period=parse_duration(model.period),
             call_limit=model.call_limit,
             matchers=matchers,
+        )
+
+    def create_file_uploader(
+        self, model: FileUploaderModel, config: Config, **kwargs: Any
+    ) -> FileUploader:
+        name = "File Uploader"
+        requester = self._create_component_from_model(
+            model=model.requester,
+            config=config,
+            name=name,
+            **kwargs,
+        )
+        download_target_extractor = self._create_component_from_model(
+            model=model.download_target_extractor,
+            config=config,
+            name=name,
+            **kwargs,
+        )
+        emit_connector_builder_messages = self._emit_connector_builder_messages
+        file_uploader = DefaultFileUploader(
+            requester=requester,
+            download_target_extractor=download_target_extractor,
+            config=config,
+            file_writer=NoopFileWriter()
+            if emit_connector_builder_messages
+            else LocalFileSystemFileWriter(),
+            parameters=model.parameters or {},
+            filename_extractor=model.filename_extractor if model.filename_extractor else None,
+        )
+
+        return (
+            ConnectorBuilderFileUploader(file_uploader)
+            if emit_connector_builder_messages
+            else file_uploader
         )
 
     def create_moving_window_call_rate_policy(

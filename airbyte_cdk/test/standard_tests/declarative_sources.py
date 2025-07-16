@@ -9,10 +9,10 @@ from boltons.typeutils import classproperty
 from airbyte_cdk.sources.declarative.concurrent_declarative_source import (
     ConcurrentDeclarativeSource,
 )
+from airbyte_cdk.test.models import ConnectorTestScenario
 from airbyte_cdk.test.standard_tests._job_runner import IConnector
-from airbyte_cdk.test.standard_tests.connector_base import MANIFEST_YAML
-from airbyte_cdk.test.standard_tests.models import ConnectorTestScenario
 from airbyte_cdk.test.standard_tests.source_base import SourceTestSuiteBase
+from airbyte_cdk.utils.connector_paths import MANIFEST_YAML
 
 
 def md5_checksum(file_path: Path) -> str:
@@ -34,6 +34,8 @@ class DeclarativeSourceTestSuite(SourceTestSuiteBase):
     The class also automatically locates the `manifest.yaml` file and the
     `components.py` file (if it exists) in the connector's directory.
     """
+
+    connector: type[IConnector] | None = None
 
     @classproperty
     def manifest_yaml_path(cls) -> Path:
@@ -62,7 +64,7 @@ class DeclarativeSourceTestSuite(SourceTestSuiteBase):
     @classmethod
     def create_connector(
         cls,
-        scenario: ConnectorTestScenario,
+        scenario: ConnectorTestScenario | None,
     ) -> IConnector:
         """Create a connector scenario for the test suite.
 
@@ -71,9 +73,18 @@ class DeclarativeSourceTestSuite(SourceTestSuiteBase):
 
         Subclasses should not need to override this method.
         """
-        config: dict[str, Any] = scenario.get_config_dict()
-
+        scenario = scenario or ConnectorTestScenario()  # Use default (empty) scenario if None
         manifest_dict = yaml.safe_load(cls.manifest_yaml_path.read_text())
+        config = {
+            "__injected_manifest": manifest_dict,
+        }
+        config.update(
+            scenario.get_config_dict(
+                empty_if_missing=True,
+                connector_root=cls.get_connector_root_dir(),
+            ),
+        )
+
         if cls.components_py_path and cls.components_py_path.exists():
             os.environ["AIRBYTE_ENABLE_UNSAFE_CODE"] = "true"
             config["__injected_components_py"] = cls.components_py_path.read_text()
