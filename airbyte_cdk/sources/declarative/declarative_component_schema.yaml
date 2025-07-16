@@ -4547,6 +4547,7 @@ definitions:
         description: A list of field pointers to be removed from the config.
         type: array
         items:
+          type: array
           items:
             type: string
         examples:
