@@ -51,7 +51,6 @@ from airbyte_cdk.sources import Source
 from airbyte_cdk.test.models.scenario import ExpectedOutcome
 
 
-@dataclass
 class AirbyteEntrypointException(Exception):
     """Exception raised for errors in the AirbyteEntrypoint execution.
 
