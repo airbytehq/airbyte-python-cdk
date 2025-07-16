@@ -1229,7 +1229,7 @@ definitions:
         interpolation_context:
           - config
         examples:
-          - "{{ config['client_id }}"
+          - "{{ config['client_id'] }}"
           - "{{ config['credentials']['client_id }}"
       client_secret_name:
         title: Client Secret Property Name
