@@ -3398,6 +3398,7 @@ definitions:
         description: Array of paths defining the field to remove. Each item is an array whose field describe the path of a field to remove.
         type: array
         items:
+          type: array
           items:
             type: string
         examples:
