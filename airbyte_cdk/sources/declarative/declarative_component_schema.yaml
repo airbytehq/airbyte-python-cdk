@@ -1095,6 +1095,8 @@ definitions:
         title: Secret Key
         type: string
         description: Secret used to sign the JSON web token.
+        interpolation_context:
+          - config
         examples:
           - "{{ config['secret_key'] }}"
       base64_encode_secret_key:
@@ -1224,8 +1226,10 @@ definitions:
         title: Client ID
         description: The OAuth client ID. Fill it in the user inputs.
         type: string
+        interpolation_context:
+          - config
         examples:
-          - "{{ config['client_id }}"
+          - "{{ config['client_id'] }}"
           - "{{ config['credentials']['client_id }}"
       client_secret_name:
         title: Client Secret Property Name
@@ -1238,8 +1242,10 @@ definitions:
         title: Client Secret
         description: The OAuth client secret. Fill it in the user inputs.
         type: string
+        interpolation_context:
+          - config
         examples:
-          - "{{ config['client_secret }}"
+          - "{{ config['client_secret'] }}"
           - "{{ config['credentials']['client_secret }}"
       refresh_token_name:
         title: Refresh Token Property Name
@@ -1252,6 +1258,8 @@ definitions:
         title: Refresh Token
         description: Credential artifact used to get a new access token.
         type: string
+        interpolation_context:
+          - config
         examples:
           - "{{ config['refresh_token'] }}"
           - "{{ config['credentials]['refresh_token'] }}"
@@ -1272,6 +1280,8 @@ definitions:
         title: Access Token Value
         description: The value of the access_token to bypass the token refreshing using `refresh_token`.
         type: string
+        interpolation_context:
+          - config
         examples:
           - secret_access_token_value
       expires_in_name:
