@@ -10,7 +10,7 @@ import tempfile
 import warnings
 from dataclasses import asdict
 from pathlib import Path
-from typing import Literal, cast
+from typing import Any, Literal, cast
 
 import orjson
 import pytest
@@ -64,7 +64,7 @@ class DockerConnectorTestSuite:
         return cast(str, cls.connector_name).startswith("destination-")
 
     @classproperty
-    def acceptance_test_config(cls) -> dict[str, object]:
+    def acceptance_test_config(cls) -> Any:
         """Get the contents of acceptance test config file.
 
         Also perform some basic validation that the file has the expected structure.
