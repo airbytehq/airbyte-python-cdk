@@ -1081,21 +1081,21 @@ definitions:
         examples:
           - "PT1S"
       is_data_feed:
-        title: Whether the target API is formatted as a data feed
+        title: Data Feed API
         description: A data feed API is an API that does not allow filtering and paginates the content from the most recent to the least recent. Given this, the CDK needs to know when to stop paginating and this field will generate a stop condition for pagination.
         type: boolean
       is_client_side_incremental:
-        title: Whether the target API does not support filtering and returns all data (the cursor filters records in the client instead of the API side)
-        description: If the target API endpoint does not take cursor values to filter records and returns all records anyway, the connector with this cursor will filter out records locally, and only emit new records from the last sync, hence incremental. This means that all records would be read from the API, but only new records will be emitted to the destination.
+        title: Client-side Incremental Filtering
+        description: Set to True if the target API endpoint does not take cursor values to filter records and returns all records anyway. This will cause the connector to filter out records locally, and only emit new records from the last sync, hence incremental. This means that all records would be read from the API, but only new records will be emitted to the destination.
         type: boolean
       is_compare_strictly:
-        title: Whether to skip requests if the start time equals the end time
-        description: Set to True if the target API does not accept queries where the start time equal the end time.
+        title: Strict Start-End Time Comparison
+        description: Set to True if the target API does not accept queries where the start time equal the end time. This will cause those requests to be skipped.
         type: boolean
         default: False
       global_substream_cursor:
-        title: Whether to store cursor as one value instead of per partition
-        description: This setting optimizes performance when the parent stream has thousands of partitions by storing the cursor as a single value rather than per partition. Notably, the substream state is updated only at the end of the sync, which helps prevent data loss in case of a sync failure. See more info in the [docs](https://docs.airbyte.com/connector-development/config-based/understanding-the-yaml-file/incremental-syncs).
+        title: Global Substream Cursor
+        description: Setting to True causes the connector to store the cursor as one value, instead of per-partition. This setting optimizes performance when the parent stream has thousands of partitions. Notably, the substream state is updated only at the end of the sync, which helps prevent data loss in case of a sync failure. See more info in the [docs](https://docs.airbyte.com/connector-development/config-based/understanding-the-yaml-file/incremental-syncs).
         type: boolean
         default: false
       lookback_window:
