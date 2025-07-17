@@ -940,6 +940,9 @@ definitions:
           - "{{ config['record_cursor'] }}"
       cursor_datetime_formats:
         title: Cursor Datetime Formats
+        type: array
+        items:
+          type: string
         description: |
           The possible formats for the cursor field, in order of preference. The first format that matches the cursor field value will be used to parse it. If not provided, the Outgoing Datetime Format will be used.
           
@@ -974,20 +977,17 @@ definitions:
             * **%%**: Literal '%' character
 
             Some placeholders depend on the locale of the underlying system - in most cases this locale is configured as en/US. For more information see the [Python documentation](https://docs.python.org/3/library/datetime.html#strftime-and-strptime-format-codes).
-        type: array
-        items:
-          type: string
-          examples:
-            - "%Y-%m-%d"
-            - "%Y-%m-%d %H:%M:%S"
-            - "%Y-%m-%dT%H:%M:%S"
-            - "%Y-%m-%dT%H:%M:%SZ"
-            - "%Y-%m-%dT%H:%M:%S%z"
-            - "%Y-%m-%dT%H:%M:%S.%fZ"
-            - "%Y-%m-%dT%H:%M:%S.%f%z"
-            - "%Y-%m-%d %H:%M:%S.%f+00:00"
-            - "%s"
-            - "%ms"
+        examples:
+          - "%Y-%m-%d"
+          - "%Y-%m-%d %H:%M:%S"
+          - "%Y-%m-%dT%H:%M:%S"
+          - "%Y-%m-%dT%H:%M:%SZ"
+          - "%Y-%m-%dT%H:%M:%S%z"
+          - "%Y-%m-%dT%H:%M:%S.%fZ"
+          - "%Y-%m-%dT%H:%M:%S.%f%z"
+          - "%Y-%m-%d %H:%M:%S.%f+00:00"
+          - "%s"
+          - "%ms"
       start_datetime:
         title: Start Datetime
         description: The datetime that determines the earliest record that should be synced.
@@ -1068,9 +1068,15 @@ definitions:
           - "%s_as_float"
       cursor_granularity:
         title: Cursor Granularity
-        description:
+        description: |
           Smallest increment the datetime_format has (ISO 8601 duration) that is used to ensure the start of a slice does not overlap with the end of the previous one, e.g. for %Y-%m-%d the granularity should
           be P1D, for %Y-%m-%dT%H:%M:%SZ the granularity should be PT1S. Given this field is provided, `step` needs to be provided as well.
+            * **PT0.000001S**: 1 microsecond
+            * **PT0.001S**: 1 millisecond
+            * **PT1S**: 1 second
+            * **PT1M**: 1 minute
+            * **PT1H**: 1 hour
+            * **P1D**: 1 day
         type: string
         examples:
           - "PT1S"
@@ -1094,7 +1100,13 @@ definitions:
         default: false
       lookback_window:
         title: Lookback Window
-        description: Time interval before the start_datetime to read data for, e.g. P1M for looking back one month.
+        description: |
+          Time interval (ISO8601 duration) before the start_datetime to read data for, e.g. P1M for looking back one month.
+            * **PT1H**: 1 hour
+            * **P1D**: 1 day
+            * **PT1W**: 1 week
+            * **P1M**: 1 month
+            * **P1Y**: 1 year
         type: string
         interpolation_context:
           - config
@@ -1115,7 +1127,13 @@ definitions:
           - "starting_time"
       step:
         title: Step
-        description: The size of the time window (ISO8601 duration). Given this field is provided, `cursor_granularity` needs to be provided as well.
+        description: |
+          The size of the time window (ISO8601 duration). Given this field is provided, `cursor_granularity` needs to be provided as well.
+            * **PT1H**: 1 hour
+            * **P1D**: 1 day
+            * **PT1W**: 1 week
+            * **P1M**: 1 month
+            * **P1Y**: 1 year
         type: string
         examples:
           - "P1W"
@@ -1955,7 +1973,13 @@ definitions:
           type: string
       expiration_duration:
         title: Expiration Duration
-        description: The duration in ISO 8601 duration notation after which the session token expires, starting from the time it was obtained. Omitting it will result in the session token being refreshed for every request.
+        description: |
+          The duration in ISO 8601 duration notation after which the session token expires, starting from the time it was obtained. Omitting it will result in the session token being refreshed for every request.
+            * **PT1H**: 1 hour
+            * **P1D**: 1 day
+            * **PT1W**: 1 week
+            * **P1M**: 1 month
+            * **P1Y**: 1 year
         type: string
         examples:
           - "PT1H"
@@ -2737,6 +2761,7 @@ definitions:
           - 2021-01-01
           - 2021-01-01T00:00:00Z
           - "{{ config['start_time'] }}"
+          - "{{ now_utc().strftime('%Y-%m-%dT%H:%M:%SZ') }}"
       datetime_format:
         title: Datetime Format
         description: |
