@@ -84,6 +84,38 @@ class DockerConnectorTestSuite:
             )
         return tests_config
 
+    @staticmethod
+    def _dedup_scenarios(scenarios: list[ConnectorTestScenario]) -> list[ConnectorTestScenario]:
+        """
+        For FAST tests, we treat each config as a separate test scenario to run against, whereas CATs defined
+        a series of more granular scenarios specifying a config_path and empty_streams among other things.
+
+        This method deduplicates the CATs scenarios based on their config_path. In doing so, we choose to
+        take the union of any defined empty_streams, to have high confidence that runnning a read with the
+        config will not error on the lack of data in the empty streams or lack of permissions to read them.
+
+        """
+        deduped_scenarios: list[ConnectorTestScenario] = []
+
+        for scenario in scenarios:
+            for existing_scenario in deduped_scenarios:
+                if scenario.config_path == existing_scenario.config_path:
+                    # If a scenario with the same config_path already exists, we merge the empty streams.
+                    # scenarios are immutable, so we create a new one.
+                    all_empty_streams = (existing_scenario.empty_streams or []) + (
+                        scenario.empty_streams or []
+                    )
+                    merged_scenario = existing_scenario.model_copy(
+                        update={"empty_streams": list(set(all_empty_streams))}
+                    )
+                    deduped_scenarios.remove(existing_scenario)
+                    deduped_scenarios.append(merged_scenario)
+                    break
+            else:
+                # If a scenario does not exist with the config, add the new scenario to the list.
+                deduped_scenarios.append(scenario)
+        return deduped_scenarios
+
     @classmethod
     def get_scenarios(
         cls,
@@ -105,6 +137,7 @@ class DockerConnectorTestSuite:
             return []
 
         test_scenarios: list[ConnectorTestScenario] = []
+        # we look in the basic_read section to find any empty streams
         for category in ["spec", "connection", "basic_read"]:
             if (
                 category not in all_tests_config["acceptance_tests"]
@@ -125,25 +158,7 @@ class DockerConnectorTestSuite:
 
                 test_scenarios.append(scenario)
 
-        # Remove duplicate scenarios based on config_path.
-        deduped_test_scenarios: list[ConnectorTestScenario] = []
-        for scenario in test_scenarios:
-            for existing_scenario in deduped_test_scenarios:
-                if scenario.config_path == existing_scenario.config_path:
-                    # If a scenario with the same config_path already exists, we merge the empty streams.
-                    # scenarios are immutable, so we create a new one.
-                    all_empty_streams = (existing_scenario.empty_streams or []) + (
-                        scenario.empty_streams or []
-                    )
-                    new_scenario = existing_scenario.model_copy(
-                        update={"empty_streams": all_empty_streams}
-                    )
-                    deduped_test_scenarios.remove(existing_scenario)
-                    deduped_test_scenarios.append(new_scenario)
-                    break
-            else:
-                # If a scenario does not exist with the config, add the new scenario to the list.
-                deduped_test_scenarios.append(scenario)
+        deduped_test_scenarios = cls._dedup_scenarios(test_scenarios)
 
         return deduped_test_scenarios
 
@@ -347,12 +362,6 @@ class DockerConnectorTestSuite:
             if isinstance(read_from_streams, list):
                 # If `read_from_streams` is a list, we filter the discovered streams.
                 streams_list = list(set(streams_list) & set(read_from_streams))
-
-            if scenario.empty_streams:
-                # If there are empty streams, we remove them from the list of streams to read.
-                streams_list = list(
-                    set(streams_list) - set(stream.name for stream in scenario.empty_streams)
-                )
 
             if scenario.empty_streams:
                 # Filter out streams marked as empty in the scenario.

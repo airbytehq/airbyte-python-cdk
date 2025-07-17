@@ -48,6 +48,10 @@ class ConnectorTestScenario(BaseModel):
         name: str
         bypass_reason: str | None = None
 
+        # bypass reason does not affect equality
+        def __hash__(self) -> int:
+            return hash(self.name)
+
     config_path: Path | None = None
     config_dict: dict[str, Any] | None = None
 

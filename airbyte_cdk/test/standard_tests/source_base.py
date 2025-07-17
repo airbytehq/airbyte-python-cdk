@@ -126,7 +126,7 @@ class SourceTestSuiteBase(ConnectorTestSuiteBase):
             # Filter out streams marked as empty in the scenario.
             empty_stream_names = [stream.name for stream in scenario.empty_streams]
             streams = [s for s in streams if s.name not in empty_stream_names]
-    
+
         configured_catalog = ConfiguredAirbyteCatalog(
             streams=[
                 ConfiguredAirbyteStream(
