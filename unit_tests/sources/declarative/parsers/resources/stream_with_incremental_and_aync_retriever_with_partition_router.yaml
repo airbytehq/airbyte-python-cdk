@@ -20,11 +20,11 @@ requester:
     login_requester:
       path: /session
       type: HttpRequester
-      url_base: 'https://api.sendgrid.com'
+      url_base: "https://api.sendgrid.com"
       http_method: POST
       request_body_json:
-        password: '{{ config.apikey }}'
-        username: '{{ parameters.name }}'
+        password: "{{ config.apikey }}"
+        username: "{{ parameters.name }}"
     session_token_path:
       - id
     request_authentication:
@@ -109,7 +109,7 @@ list_stream:
               primary_key: "id"
               extractor:
                 $ref: "#/extractor"
-                field_path: [ "{{ parameters['name'] }}" ]
+                field_path: ["{{ parameters['name'] }}"]
     status_mapping:
       failed:
         - Error
@@ -117,7 +117,7 @@ list_stream:
         - Pending
       completed:
         - Success
-      timeout: [ ]
+      timeout: []
     status_extractor:
       type: DpathExtractor
       field_path:
