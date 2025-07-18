@@ -114,11 +114,11 @@ class SourceTestSuiteBase(ConnectorTestSuiteBase):
             self.create_connector(scenario),
             "check",
             test_scenario=scenario,
+            connector_root=self.get_connector_root_dir(),
         )
-        if scenario.expect_exception and check_result.errors:
+        if scenario.expected_outcome.expect_exception() and check_result.errors:
             # Expected failure and we got it. Return early.
             return
-
         discover_result = run_test_job(
             self.create_connector(scenario),
             "discover",
