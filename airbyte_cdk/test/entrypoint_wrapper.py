@@ -67,6 +67,10 @@ class AirbyteEntrypointException(Exception):
 
     message: str = ""
 
+    def __post_init__(self) -> None:
+        # Propagate the message to Exception so that `str(self)` and `.args`
+        # behave like a regular exception.
+        super().__init__(self.message)
 
 class EntrypointOutput:
     """A class to encapsulate the output of an Airbyte connector's execution.
