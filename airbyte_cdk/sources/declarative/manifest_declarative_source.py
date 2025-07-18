@@ -66,7 +66,6 @@ from airbyte_cdk.sources.declarative.parsers.model_to_component_factory import (
 from airbyte_cdk.sources.declarative.resolvers import COMPONENTS_RESOLVER_TYPE_MAPPING
 from airbyte_cdk.sources.declarative.spec.spec import Spec
 from airbyte_cdk.sources.message import MessageRepository
-from airbyte_cdk.sources.source import Source
 from airbyte_cdk.sources.streams.core import Stream
 from airbyte_cdk.sources.types import Config, ConnectionDefinition
 from airbyte_cdk.sources.utils.slice_logger import (
