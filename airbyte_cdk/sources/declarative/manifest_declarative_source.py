@@ -97,6 +97,9 @@ def _get_declarative_component_schema() -> Dict[str, Any]:
 class ManifestDeclarativeSource(DeclarativeSource):
     """Declarative source defined by a manifest of low-code components that define source connector behavior"""
 
+    check_config_during_discover: bool = False
+    """Declarative sources default to not checking config before discovery."""
+
     def __init__(
         self,
         source_config: ConnectionDefinition,
@@ -148,6 +151,7 @@ class ManifestDeclarativeSource(DeclarativeSource):
         # apply additional post-processing to the manifest
         self._post_process_manifest()
 
+        self.check_config_during_discover = self._uses_dynamic_schema_loader()
         spec: Optional[Mapping[str, Any]] = self._source_config.get("spec")
         self._spec_component: Optional[Spec] = (
             self._constructor.create_component(SpecModel, spec, dict()) if spec else None
@@ -600,3 +604,36 @@ class ManifestDeclarativeSource(DeclarativeSource):
 
     def _emit_manifest_debug_message(self, extra_args: dict[str, Any]) -> None:
         self.logger.debug("declarative source created from manifest", extra=extra_args)
+
+    def _uses_dynamic_schema_loader(self) -> bool:
+        """
+        Determines if any stream in the source uses a DynamicSchemaLoader.
+
+        DynamicSchemaLoader makes a separate call to retrieve schema information,
+        which might not require authentication, so we can skip config validation
+        during discovery when it's used.
+
+        Returns:
+            bool: True if any stream uses a DynamicSchemaLoader, False otherwise.
+        """
+        empty_config: Dict[str, Any] = {}
+        for stream_config in self._stream_configs(self._source_config, empty_config):
+            schema_loader = stream_config.get("schema_loader", {})
+            if (
+                isinstance(schema_loader, dict)
+                and schema_loader.get("type") == "DynamicSchemaLoader"
+            ):
+                return True
+
+        dynamic_streams = self._source_config.get("dynamic_streams", [])
+        if dynamic_streams:
+            for dynamic_stream in dynamic_streams:
+                stream_template = dynamic_stream.get("stream_template", {})
+                schema_loader = stream_template.get("schema_loader", {})
+                if (
+                    isinstance(schema_loader, dict)
+                    and schema_loader.get("type") == "DynamicSchemaLoader"
+                ):
+                    return True
+
+        return False
