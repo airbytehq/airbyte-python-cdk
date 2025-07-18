@@ -983,7 +983,12 @@ class MinMaxDatetime(BaseModel):
     datetime: str = Field(
         ...,
         description="Datetime value.",
-        examples=["2021-01-01", "2021-01-01T00:00:00Z", "{{ config['start_time'] }}"],
+        examples=[
+            "2021-01-01",
+            "2021-01-01T00:00:00Z",
+            "{{ config['start_time'] }}",
+            "{{ now_utc().strftime('%Y-%m-%dT%H:%M:%SZ') }}",
+        ],
         title="Datetime",
     )
     datetime_format: Optional[str] = Field(
@@ -1195,7 +1200,7 @@ class OffsetIncrement(BaseModel):
     inject_on_first_request: Optional[bool] = Field(
         False,
         description="Using the `offset` with value `0` during the first request",
-        title="Inject Offset",
+        title="Inject Offset on First Request",
     )
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
@@ -1217,7 +1222,7 @@ class PageIncrement(BaseModel):
     inject_on_first_request: Optional[bool] = Field(
         False,
         description="Using the `page number` with value defined by `start_from_page` during the first request",
-        title="Inject Page Number",
+        title="Inject Page Number on First Request",
     )
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
@@ -1797,7 +1802,19 @@ class DatetimeBasedCursor(BaseModel):
     )
     cursor_datetime_formats: Optional[List[str]] = Field(
         None,
-        description="The possible formats for the cursor field, in order of preference. The first format that matches the cursor field value will be used to parse it. If not provided, the `datetime_format` will be used.",
+        description="The possible formats for the cursor field, in order of preference. The first format that matches the cursor field value will be used to parse it. If not provided, the Outgoing Datetime Format will be used.\nUse placeholders starting with \"%\" to describe the format the API is using. The following placeholders are available:\n  * **%s**: Epoch unix timestamp - `1686218963`\n  * **%s_as_float**: Epoch unix timestamp in seconds as float with microsecond precision - `1686218963.123456`\n  * **%ms**: Epoch unix timestamp - `1686218963123`\n  * **%a**: Weekday (abbreviated) - `Sun`\n  * **%A**: Weekday (full) - `Sunday`\n  * **%w**: Weekday (decimal) - `0` (Sunday), `6` (Saturday)\n  * **%d**: Day of the month (zero-padded) - `01`, `02`, ..., `31`\n  * **%b**: Month (abbreviated) - `Jan`\n  * **%B**: Month (full) - `January`\n  * **%m**: Month (zero-padded) - `01`, `02`, ..., `12`\n  * **%y**: Year (without century, zero-padded) - `00`, `01`, ..., `99`\n  * **%Y**: Year (with century) - `0001`, `0002`, ..., `9999`\n  * **%H**: Hour (24-hour, zero-padded) - `00`, `01`, ..., `23`\n  * **%I**: Hour (12-hour, zero-padded) - `01`, `02`, ..., `12`\n  * **%p**: AM/PM indicator\n  * **%M**: Minute (zero-padded) - `00`, `01`, ..., `59`\n  * **%S**: Second (zero-padded) - `00`, `01`, ..., `59`\n  * **%f**: Microsecond (zero-padded to 6 digits) - `000000`, `000001`, ..., `999999`\n  * **%_ms**: Millisecond (zero-padded to 3 digits) - `000`, `001`, ..., `999`\n  * **%z**: UTC offset - `(empty)`, `+0000`, `-04:00`\n  * **%Z**: Time zone name - `(empty)`, `UTC`, `GMT`\n  * **%j**: Day of the year (zero-padded) - `001`, `002`, ..., `366`\n  * **%U**: Week number of the year (Sunday as first day) - `00`, `01`, ..., `53`\n  * **%W**: Week number of the year (Monday as first day) - `00`, `01`, ..., `53`\n  * **%c**: Date and time representation - `Tue Aug 16 21:30:00 1988`\n  * **%x**: Date representation - `08/16/1988`\n  * **%X**: Time representation - `21:30:00`\n  * **%%**: Literal '%' character\n\n  Some placeholders depend on the locale of the underlying system - in most cases this locale is configured as en/US. For more information see the [Python documentation](https://docs.python.org/3/library/datetime.html#strftime-and-strptime-format-codes).\n",
+        examples=[
+            "%Y-%m-%d",
+            "%Y-%m-%d %H:%M:%S",
+            "%Y-%m-%dT%H:%M:%S",
+            "%Y-%m-%dT%H:%M:%SZ",
+            "%Y-%m-%dT%H:%M:%S%z",
+            "%Y-%m-%dT%H:%M:%S.%fZ",
+            "%Y-%m-%dT%H:%M:%S.%f%z",
+            "%Y-%m-%d %H:%M:%S.%f+00:00",
+            "%s",
+            "%ms",
+        ],
         title="Cursor Datetime Formats",
     )
     start_datetime: Union[MinMaxDatetime, str] = Field(
@@ -1830,33 +1847,33 @@ class DatetimeBasedCursor(BaseModel):
     )
     cursor_granularity: Optional[str] = Field(
         None,
-        description="Smallest increment the datetime_format has (ISO 8601 duration) that is used to ensure the start of a slice does not overlap with the end of the previous one, e.g. for %Y-%m-%d the granularity should be P1D, for %Y-%m-%dT%H:%M:%SZ the granularity should be PT1S. Given this field is provided, `step` needs to be provided as well.",
+        description="Smallest increment the datetime_format has (ISO 8601 duration) that is used to ensure the start of a slice does not overlap with the end of the previous one, e.g. for %Y-%m-%d the granularity should\nbe P1D, for %Y-%m-%dT%H:%M:%SZ the granularity should be PT1S. Given this field is provided, `step` needs to be provided as well.\n  * **PT0.000001S**: 1 microsecond\n  * **PT0.001S**: 1 millisecond\n  * **PT1S**: 1 second\n  * **PT1M**: 1 minute\n  * **PT1H**: 1 hour\n  * **P1D**: 1 day\n",
         examples=["PT1S"],
         title="Cursor Granularity",
     )
     is_data_feed: Optional[bool] = Field(
         None,
         description="A data feed API is an API that does not allow filtering and paginates the content from the most recent to the least recent. Given this, the CDK needs to know when to stop paginating and this field will generate a stop condition for pagination.",
-        title="Whether the target API is formatted as a data feed",
+        title="Data Feed API",
     )
     is_client_side_incremental: Optional[bool] = Field(
         None,
-        description="If the target API endpoint does not take cursor values to filter records and returns all records anyway, the connector with this cursor will filter out records locally, and only emit new records from the last sync, hence incremental. This means that all records would be read from the API, but only new records will be emitted to the destination.",
-        title="Whether the target API does not support filtering and returns all data (the cursor filters records in the client instead of the API side)",
+        description="Set to True if the target API endpoint does not take cursor values to filter records and returns all records anyway. This will cause the connector to filter out records locally, and only emit new records from the last sync, hence incremental. This means that all records would be read from the API, but only new records will be emitted to the destination.",
+        title="Client-side Incremental Filtering",
     )
     is_compare_strictly: Optional[bool] = Field(
         False,
-        description="Set to True if the target API does not accept queries where the start time equal the end time.",
-        title="Whether to skip requests if the start time equals the end time",
+        description="Set to True if the target API does not accept queries where the start time equal the end time. This will cause those requests to be skipped.",
+        title="Strict Start-End Time Comparison",
     )
     global_substream_cursor: Optional[bool] = Field(
         False,
-        description="This setting optimizes performance when the parent stream has thousands of partitions by storing the cursor as a single value rather than per partition. Notably, the substream state is updated only at the end of the sync, which helps prevent data loss in case of a sync failure. See more info in the [docs](https://docs.airbyte.com/connector-development/config-based/understanding-the-yaml-file/incremental-syncs).",
-        title="Whether to store cursor as one value instead of per partition",
+        description="Setting to True causes the connector to store the cursor as one value, instead of per-partition. This setting optimizes performance when the parent stream has thousands of partitions. Notably, the substream state is updated only at the end of the sync, which helps prevent data loss in case of a sync failure. See more info in the [docs](https://docs.airbyte.com/connector-development/config-based/understanding-the-yaml-file/incremental-syncs).",
+        title="Global Substream Cursor",
     )
     lookback_window: Optional[str] = Field(
         None,
-        description="Time interval before the start_datetime to read data for, e.g. P1M for looking back one month.",
+        description="Time interval (ISO8601 duration) before the start_datetime to read data for, e.g. P1M for looking back one month.\n  * **PT1H**: 1 hour\n  * **P1D**: 1 day\n  * **P1W**: 1 week\n  * **P1M**: 1 month\n  * **P1Y**: 1 year\n",
         examples=["P1D", "P{{ config['lookback_days'] }}D"],
         title="Lookback Window",
     )
@@ -1874,7 +1891,7 @@ class DatetimeBasedCursor(BaseModel):
     )
     step: Optional[str] = Field(
         None,
-        description="The size of the time window (ISO8601 duration). Given this field is provided, `cursor_granularity` needs to be provided as well.",
+        description="The size of the time window (ISO8601 duration). Given this field is provided, `cursor_granularity` needs to be provided as well.\n  * **PT1H**: 1 hour\n  * **P1D**: 1 day\n  * **P1W**: 1 week\n  * **P1M**: 1 month\n  * **P1Y**: 1 year\n",
         examples=["P1W", "{{ config['step_increment'] }}"],
         title="Step",
     )
@@ -2492,7 +2509,7 @@ class SessionTokenAuthenticator(BaseModel):
     )
     expiration_duration: Optional[str] = Field(
         None,
-        description="The duration in ISO 8601 duration notation after which the session token expires, starting from the time it was obtained. Omitting it will result in the session token being refreshed for every request.",
+        description="The duration in ISO 8601 duration notation after which the session token expires, starting from the time it was obtained. Omitting it will result in the session token being refreshed for every request.\n  * **PT1H**: 1 hour\n  * **P1D**: 1 day\n  * **P1W**: 1 week\n  * **P1M**: 1 month\n  * **P1Y**: 1 year\n",
         examples=["PT1H", "P1D"],
         title="Expiration Duration",
     )

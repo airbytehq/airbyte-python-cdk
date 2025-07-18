@@ -940,14 +940,53 @@ definitions:
           - "{{ config['record_cursor'] }}"
       cursor_datetime_formats:
         title: Cursor Datetime Formats
-        description: The possible formats for the cursor field, in order of preference. The first format that matches the cursor field value will be used to parse it. If not provided, the `datetime_format` will be used.
         type: array
         items:
           type: string
-          examples:
-            - "%Y-%m-%dT%H:%M:%S.%f%z"
-            - "%Y-%m-%d"
-            - "%s"
+        description: |
+          The possible formats for the cursor field, in order of preference. The first format that matches the cursor field value will be used to parse it. If not provided, the Outgoing Datetime Format will be used.
+          Use placeholders starting with "%" to describe the format the API is using. The following placeholders are available:
+            * **%s**: Epoch unix timestamp - `1686218963`
+            * **%s_as_float**: Epoch unix timestamp in seconds as float with microsecond precision - `1686218963.123456`
+            * **%ms**: Epoch unix timestamp - `1686218963123`
+            * **%a**: Weekday (abbreviated) - `Sun`
+            * **%A**: Weekday (full) - `Sunday`
+            * **%w**: Weekday (decimal) - `0` (Sunday), `6` (Saturday)
+            * **%d**: Day of the month (zero-padded) - `01`, `02`, ..., `31`
+            * **%b**: Month (abbreviated) - `Jan`
+            * **%B**: Month (full) - `January`
+            * **%m**: Month (zero-padded) - `01`, `02`, ..., `12`
+            * **%y**: Year (without century, zero-padded) - `00`, `01`, ..., `99`
+            * **%Y**: Year (with century) - `0001`, `0002`, ..., `9999`
+            * **%H**: Hour (24-hour, zero-padded) - `00`, `01`, ..., `23`
+            * **%I**: Hour (12-hour, zero-padded) - `01`, `02`, ..., `12`
+            * **%p**: AM/PM indicator
+            * **%M**: Minute (zero-padded) - `00`, `01`, ..., `59`
+            * **%S**: Second (zero-padded) - `00`, `01`, ..., `59`
+            * **%f**: Microsecond (zero-padded to 6 digits) - `000000`, `000001`, ..., `999999`
+            * **%_ms**: Millisecond (zero-padded to 3 digits) - `000`, `001`, ..., `999`
+            * **%z**: UTC offset - `(empty)`, `+0000`, `-04:00`
+            * **%Z**: Time zone name - `(empty)`, `UTC`, `GMT`
+            * **%j**: Day of the year (zero-padded) - `001`, `002`, ..., `366`
+            * **%U**: Week number of the year (Sunday as first day) - `00`, `01`, ..., `53`
+            * **%W**: Week number of the year (Monday as first day) - `00`, `01`, ..., `53`
+            * **%c**: Date and time representation - `Tue Aug 16 21:30:00 1988`
+            * **%x**: Date representation - `08/16/1988`
+            * **%X**: Time representation - `21:30:00`
+            * **%%**: Literal '%' character
+
+            Some placeholders depend on the locale of the underlying system - in most cases this locale is configured as en/US. For more information see the [Python documentation](https://docs.python.org/3/library/datetime.html#strftime-and-strptime-format-codes).
+        examples:
+          - "%Y-%m-%d"
+          - "%Y-%m-%d %H:%M:%S"
+          - "%Y-%m-%dT%H:%M:%S"
+          - "%Y-%m-%dT%H:%M:%SZ"
+          - "%Y-%m-%dT%H:%M:%S%z"
+          - "%Y-%m-%dT%H:%M:%S.%fZ"
+          - "%Y-%m-%dT%H:%M:%S.%f%z"
+          - "%Y-%m-%d %H:%M:%S.%f+00:00"
+          - "%s"
+          - "%ms"
       start_datetime:
         title: Start Datetime
         description: The datetime that determines the earliest record that should be synced.
@@ -1024,33 +1063,45 @@ definitions:
           - "%s_as_float"
       cursor_granularity:
         title: Cursor Granularity
-        description:
+        description: |
           Smallest increment the datetime_format has (ISO 8601 duration) that is used to ensure the start of a slice does not overlap with the end of the previous one, e.g. for %Y-%m-%d the granularity should
           be P1D, for %Y-%m-%dT%H:%M:%SZ the granularity should be PT1S. Given this field is provided, `step` needs to be provided as well.
+            * **PT0.000001S**: 1 microsecond
+            * **PT0.001S**: 1 millisecond
+            * **PT1S**: 1 second
+            * **PT1M**: 1 minute
+            * **PT1H**: 1 hour
+            * **P1D**: 1 day
         type: string
         examples:
           - "PT1S"
       is_data_feed:
-        title: Whether the target API is formatted as a data feed
+        title: Data Feed API
         description: A data feed API is an API that does not allow filtering and paginates the content from the most recent to the least recent. Given this, the CDK needs to know when to stop paginating and this field will generate a stop condition for pagination.
         type: boolean
       is_client_side_incremental:
-        title: Whether the target API does not support filtering and returns all data (the cursor filters records in the client instead of the API side)
-        description: If the target API endpoint does not take cursor values to filter records and returns all records anyway, the connector with this cursor will filter out records locally, and only emit new records from the last sync, hence incremental. This means that all records would be read from the API, but only new records will be emitted to the destination.
+        title: Client-side Incremental Filtering
+        description: Set to True if the target API endpoint does not take cursor values to filter records and returns all records anyway. This will cause the connector to filter out records locally, and only emit new records from the last sync, hence incremental. This means that all records would be read from the API, but only new records will be emitted to the destination.
         type: boolean
       is_compare_strictly:
-        title: Whether to skip requests if the start time equals the end time
-        description: Set to True if the target API does not accept queries where the start time equal the end time.
+        title: Strict Start-End Time Comparison
+        description: Set to True if the target API does not accept queries where the start time equal the end time. This will cause those requests to be skipped.
         type: boolean
         default: False
       global_substream_cursor:
-        title: Whether to store cursor as one value instead of per partition
-        description: This setting optimizes performance when the parent stream has thousands of partitions by storing the cursor as a single value rather than per partition. Notably, the substream state is updated only at the end of the sync, which helps prevent data loss in case of a sync failure. See more info in the [docs](https://docs.airbyte.com/connector-development/config-based/understanding-the-yaml-file/incremental-syncs).
+        title: Global Substream Cursor
+        description: Setting to True causes the connector to store the cursor as one value, instead of per-partition. This setting optimizes performance when the parent stream has thousands of partitions. Notably, the substream state is updated only at the end of the sync, which helps prevent data loss in case of a sync failure. See more info in the [docs](https://docs.airbyte.com/connector-development/config-based/understanding-the-yaml-file/incremental-syncs).
         type: boolean
         default: false
       lookback_window:
         title: Lookback Window
-        description: Time interval before the start_datetime to read data for, e.g. P1M for looking back one month.
+        description: |
+          Time interval (ISO8601 duration) before the start_datetime to read data for, e.g. P1M for looking back one month.
+            * **PT1H**: 1 hour
+            * **P1D**: 1 day
+            * **P1W**: 1 week
+            * **P1M**: 1 month
+            * **P1Y**: 1 year
         type: string
         interpolation_context:
           - config
@@ -1071,7 +1122,13 @@ definitions:
           - "starting_time"
       step:
         title: Step
-        description: The size of the time window (ISO8601 duration). Given this field is provided, `cursor_granularity` needs to be provided as well.
+        description: |
+          The size of the time window (ISO8601 duration). Given this field is provided, `cursor_granularity` needs to be provided as well.
+            * **PT1H**: 1 hour
+            * **P1D**: 1 day
+            * **P1W**: 1 week
+            * **P1M**: 1 month
+            * **P1Y**: 1 year
         type: string
         examples:
           - "P1W"
@@ -1911,7 +1968,13 @@ definitions:
           type: string
       expiration_duration:
         title: Expiration Duration
-        description: The duration in ISO 8601 duration notation after which the session token expires, starting from the time it was obtained. Omitting it will result in the session token being refreshed for every request.
+        description: |
+          The duration in ISO 8601 duration notation after which the session token expires, starting from the time it was obtained. Omitting it will result in the session token being refreshed for every request.
+            * **PT1H**: 1 hour
+            * **P1D**: 1 day
+            * **P1W**: 1 week
+            * **P1M**: 1 month
+            * **P1Y**: 1 year
         type: string
         examples:
           - "PT1H"
@@ -2693,6 +2756,7 @@ definitions:
           - 2021-01-01
           - 2021-01-01T00:00:00Z
           - "{{ config['start_time'] }}"
+          - "{{ now_utc().strftime('%Y-%m-%dT%H:%M:%SZ') }}"
       datetime_format:
         title: Datetime Format
         description: |
@@ -3077,7 +3141,7 @@ definitions:
           - 100
           - "{{ config['page_size'] }}"
       inject_on_first_request:
-        title: Inject Offset
+        title: Inject Offset on First Request
         description: Using the `offset` with value `0` during the first request
         type: boolean
         default: false
@@ -3117,7 +3181,7 @@ definitions:
           - 0
           - 1
       inject_on_first_request:
-        title: Inject Page Number
+        title: Inject Page Number on First Request
         description: Using the `page number` with value defined by `start_from_page` during the first request
         type: boolean
         default: false
