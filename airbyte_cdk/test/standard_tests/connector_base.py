@@ -131,12 +131,11 @@ class ConnectorTestSuiteBase(DockerConnectorTestSuite):
             AirbyteConnectionStatus, result.connection_status_messages[0].connectionStatus
         )
         if (
-            scenario.expect_exception
+            scenario.expected_outcome.expect_exception()
             and conn_status.status == Status.SUCCEEDED
             and not result.errors
         ):
             raise AssertionError(f"Expected error in `check` but got success.")
-
     @classmethod
     def get_connector_root_dir(cls) -> Path:
         """Get the root directory of the connector."""
