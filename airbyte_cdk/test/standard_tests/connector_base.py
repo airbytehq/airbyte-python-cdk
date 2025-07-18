@@ -169,6 +169,8 @@ class ConnectorTestSuiteBase(DockerConnectorTestSuite):
             )
 
         test_scenarios: list[ConnectorTestScenario] = []
+        connector_root = cls.get_connector_root_dir().absolute()
+        
         for category in categories:
             if (
                 category not in all_tests_config["acceptance_tests"]
@@ -176,19 +178,13 @@ class ConnectorTestSuiteBase(DockerConnectorTestSuite):
             ):
                 continue
 
-            test_scenarios.extend(
-                [
-                    ConnectorTestScenario.model_validate(test)
-                    for test in all_tests_config["acceptance_tests"][category]["tests"]
-                    if "config_path" in test and "iam_role" not in test["config_path"]
-                ]
-            )
-
-        connector_root = cls.get_connector_root_dir().absolute()
-        for test in test_scenarios:
-            if test.config_path:
-                test.config_path = connector_root / test.config_path
-            if test.configured_catalog_path:
-                test.configured_catalog_path = connector_root / test.configured_catalog_path
+            for test in all_tests_config["acceptance_tests"][category]["tests"]:
+                if "config_path" in test and "iam_role" not in test["config_path"]:
+                    if "config_path" in test and test["config_path"]:
+                        test["config_path"] = str(connector_root / test["config_path"])
+                    if "configured_catalog_path" in test and test["configured_catalog_path"]:
+                        test["configured_catalog_path"] = str(connector_root / test["configured_catalog_path"])
+                    
+                    test_scenarios.append(ConnectorTestScenario.model_validate(test))
 
         return test_scenarios
