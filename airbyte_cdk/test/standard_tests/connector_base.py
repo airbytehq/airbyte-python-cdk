@@ -3,14 +3,10 @@
 
 from __future__ import annotations
 
-import abc
 import importlib
-import inspect
 import os
-import sys
-from collections.abc import Callable
 from pathlib import Path
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
 import yaml
 from airbyte_protocol_dataclasses.models.airbyte_protocol import AirbyteConnectionStatus
@@ -18,18 +14,24 @@ from boltons.typeutils import classproperty
 
 from airbyte_cdk.models import Status
 from airbyte_cdk.test import entrypoint_wrapper
-from airbyte_cdk.test.standard_tests._job_runner import IConnector, run_test_job
-from airbyte_cdk.test.standard_tests.models import (
+from airbyte_cdk.test.models import (
     ConnectorTestScenario,
 )
+from airbyte_cdk.test.standard_tests._job_runner import IConnector, run_test_job
+from airbyte_cdk.test.standard_tests.docker_base import DockerConnectorTestSuite
 from airbyte_cdk.utils.connector_paths import (
     ACCEPTANCE_TEST_CONFIG,
     find_connector_root,
 )
 
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
-class ConnectorTestSuiteBase(abc.ABC):
-    """Base class for connector test suites."""
+    from airbyte_cdk.test import entrypoint_wrapper
+
+
+class ConnectorTestSuiteBase(DockerConnectorTestSuite):
+    """Base class for Python connector test suites."""
 
     connector: type[IConnector] | Callable[[], IConnector] | None  # type: ignore [reportRedeclaration]
     """The connector class or a factory function that returns an scenario of IConnector."""
@@ -42,7 +44,7 @@ class ConnectorTestSuiteBase(abc.ABC):
         specific connector class to be tested.
         """
         connector_root = cls.get_connector_root_dir()
-        connector_name = connector_root.absolute().name
+        connector_name = cls.connector_name
 
         expected_module_name = connector_name.replace("-", "_").lower()
         expected_class_name = connector_name.replace("-", "_").title().replace("_", "")
@@ -56,7 +58,16 @@ class ConnectorTestSuiteBase(abc.ABC):
         try:
             module = importlib.import_module(expected_module_name)
         except ModuleNotFoundError as e:
-            raise ImportError(f"Could not import module '{expected_module_name}'.") from e
+            raise ImportError(
+                f"Could not import module '{expected_module_name}'. "
+                "Please ensure you are running from within the connector's virtual environment, "
+                "for instance by running `poetry run airbyte-cdk connector test` from the "
+                "connector directory. If the issue persists, check that the connector "
+                f"module matches the expected module name '{expected_module_name}' and that the "
+                f"connector class matches the expected class name '{expected_class_name}'. "
+                "Alternatively, you can run `airbyte-cdk image test` to run a subset of tests "
+                "against the connector's image."
+            ) from e
         finally:
             # Change back to the original working directory
             os.chdir(cwd_snapshot)
@@ -76,13 +87,6 @@ class ConnectorTestSuiteBase(abc.ABC):
                     f"Module '{expected_module_name}' does not have a class named '{expected_class_name}'."
                 ) from e
             return cast(type[IConnector], getattr(module, matching_class_name))
-
-    @classmethod
-    def get_test_class_dir(cls) -> Path:
-        """Get the file path that contains the class."""
-        module = sys.modules[cls.__module__]
-        # Get the directory containing the test file
-        return Path(inspect.getfile(module)).parent
 
     @classmethod
     def create_connector(
@@ -114,6 +118,7 @@ class ConnectorTestSuiteBase(abc.ABC):
             self.create_connector(scenario),
             "check",
             test_scenario=scenario,
+            connector_root=self.get_connector_root_dir(),
         )
         assert len(result.connection_status_messages) == 1, (
             f"Expected exactly one CONNECTION_STATUS message. Got {len(result.connection_status_messages)}: \n"

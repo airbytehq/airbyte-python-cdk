@@ -4,17 +4,20 @@ from __future__ import annotations
 
 import json
 import logging
-import os
+import platform
 import subprocess
 import sys
+from contextlib import ExitStack
 from dataclasses import dataclass
 from enum import Enum
+from io import TextIOWrapper
 from pathlib import Path
 
 import click
 import requests
 
 from airbyte_cdk.models.connector_metadata import ConnectorLanguage, MetadataFile
+from airbyte_cdk.test.entrypoint_wrapper import EntrypointOutput
 from airbyte_cdk.utils.connector_paths import resolve_airbyte_repo_root
 
 
@@ -56,11 +59,13 @@ def _build_image(
     """Build a Docker image for the specified architecture.
 
     Returns the tag of the built image.
+    We use buildx to ensure we can build multi-platform images.
 
     Raises: ConnectorImageBuildError if the build fails.
     """
     docker_args: list[str] = [
         "docker",
+        "buildx",
         "build",
         "--platform",
         f"linux/{arch.value}",
@@ -74,9 +79,10 @@ def _build_image(
     if build_args:
         for key, value in build_args.items():
             if value is not None:
-                docker_args.append(f"--build-arg={key}={value}")
+                docker_args.extend(["--build-arg", f"{key}={value}"])
             else:
-                docker_args.append(f"--build-arg={key}")
+                docker_args.extend(["--build-arg", key])
+
     docker_args.extend(
         [
             "-t",
@@ -89,7 +95,8 @@ def _build_image(
     try:
         run_docker_command(
             docker_args,
-            check=True,
+            raise_if_errors=True,
+            capture_stderr=True,
         )
     except subprocess.CalledProcessError as e:
         raise ConnectorImageBuildError(
@@ -125,7 +132,8 @@ def _tag_image(
         try:
             run_docker_command(
                 docker_args,
-                check=True,
+                raise_if_errors=True,
+                capture_stderr=True,
             )
         except subprocess.CalledProcessError as e:
             raise ConnectorImageBuildError(
@@ -137,12 +145,12 @@ def _tag_image(
 def build_connector_image(
     connector_name: str,
     connector_directory: Path,
+    *,
     metadata: MetadataFile,
     tag: str,
-    primary_arch: ArchEnum = ArchEnum.ARM64,  # Assume MacBook M series by default
     no_verify: bool = False,
     dockerfile_override: Path | None = None,
-) -> None:
+) -> str:
     """Build a connector Docker image.
 
     This command builds a Docker image for a connector, using either
@@ -154,22 +162,33 @@ def build_connector_image(
         connector_directory: The directory containing the connector code.
         metadata: The metadata of the connector.
         tag: The tag to apply to the built image.
-        primary_arch: The primary architecture for the build (default: arm64). This
-            architecture will be used for the same-named tag. Both AMD64 and ARM64
-            images will be built, with the suffixes '-amd64' and '-arm64'.
         no_verify: If True, skip verification of the built image.
 
     Raises:
         ValueError: If the connector build options are not defined in metadata.yaml.
         ConnectorImageBuildError: If the image build or tag operation fails.
     """
+    # Detect primary architecture based on the machine type.
+    primary_arch: ArchEnum = (
+        ArchEnum.ARM64
+        if platform.machine().lower().startswith(("arm", "aarch"))
+        else ArchEnum.AMD64
+    )
+    if not connector_name:
+        raise ValueError("Connector name must be provided.")
+    if not connector_directory:
+        raise ValueError("Connector directory must be provided.")
+    if not connector_directory.exists():
+        raise ValueError(f"Connector directory does not exist: {connector_directory}")
+
     connector_kebab_name = connector_name
+    connector_dockerfile_dir = connector_directory / "build" / "docker"
 
     if dockerfile_override:
         dockerfile_path = dockerfile_override
     else:
-        dockerfile_path = connector_directory / "build" / "docker" / "Dockerfile"
-        dockerignore_path = connector_directory / "build" / "docker" / "Dockerfile.dockerignore"
+        dockerfile_path = connector_dockerfile_dir / "Dockerfile"
+        dockerignore_path = connector_dockerfile_dir / "Dockerfile.dockerignore"
         try:
             dockerfile_text, dockerignore_text = get_dockerfile_templates(
                 metadata=metadata,
@@ -192,6 +211,8 @@ def build_connector_image(
                     ),
                 ) from e
 
+        # ensure the directory exists
+        connector_dockerfile_dir.mkdir(parents=True, exist_ok=True)
         dockerfile_path.write_text(dockerfile_text)
         dockerignore_path.write_text(dockerignore_text)
 
@@ -215,7 +236,6 @@ def build_connector_image(
     }
 
     base_tag = f"{metadata.data.dockerRepository}:{tag}"
-    arch_images: list[str] = []
 
     if metadata.data.language == ConnectorLanguage.JAVA:
         # This assumes that the repo root ('airbyte') is three levels above the
@@ -232,12 +252,18 @@ def build_connector_image(
             check=True,
         )
 
-    for arch in [ArchEnum.AMD64, ArchEnum.ARM64]:
+    # Always build for AMD64, and optionally for ARM64 if needed locally.
+    architectures = [ArchEnum.AMD64]
+    if primary_arch == ArchEnum.ARM64:
+        architectures += [ArchEnum.ARM64]
+
+    built_images: list[str] = []
+    for arch in architectures:
         docker_tag = f"{base_tag}-{arch.value}"
         docker_tag_parts = docker_tag.split("/")
         if len(docker_tag_parts) > 2:
             docker_tag = "/".join(docker_tag_parts[-1:])
-        arch_images.append(
+        built_images.append(
             _build_image(
                 context_dir=connector_directory,
                 dockerfile=dockerfile_path,
@@ -253,15 +279,18 @@ def build_connector_image(
         new_tags=[base_tag],
     )
     if not no_verify:
-        if verify_connector_image(base_tag):
-            click.echo(f"Build completed successfully: {base_tag}")
-            sys.exit(0)
-        else:
-            click.echo(f"Built image failed verification: {base_tag}", err=True)
-            sys.exit(1)
-    else:
-        click.echo(f"Build completed successfully (without verification): {base_tag}")
-        sys.exit(0)
+        success, error_message = verify_connector_image(base_tag)
+        if success:
+            click.echo(f"Build and verification completed successfully: {base_tag}")
+            return base_tag
+
+        click.echo(
+            f"Built image failed verification: {base_tag}\nError was:{error_message}", err=True
+        )
+        sys.exit(1)
+
+    click.echo(f"Build completed successfully: {base_tag}")
+    return base_tag
 
 
 def _download_dockerfile_defs(
@@ -363,32 +392,105 @@ def get_dockerfile_templates(
 def run_docker_command(
     cmd: list[str],
     *,
-    check: bool = True,
-    capture_output: bool = False,
+    raise_if_errors: bool = True,
+    capture_stdout: bool | Path = False,
+    capture_stderr: bool | Path = False,
 ) -> subprocess.CompletedProcess[str]:
     """Run a Docker command as a subprocess.
+
+    Note: When running Airbyte verbs such as `spec`, `discover`, `read`, etc.,
+    use `run_docker_airbyte_command` instead to get an `EntrypointOutput` object as
+    the return value and to better handle exceptions sent as messages.
 
     Args:
         cmd: The command to run as a list of strings.
         check: If True, raises an exception if the command fails. If False, the caller is
             responsible for checking the return code.
-        capture_output: If True, captures stdout and stderr and returns to the caller.
-            If False, the output is printed to the console.
+        capture_stdout: How to process stdout.
+        capture_stderr: If True, captures stderr in memory and returns to the caller.
+            If a Path is provided, the output is written to the specified file.
+
+    For stdout and stderr process:
+    - If False (the default), stdout is not captured.
+    - If True, output is captured in memory and returned within the `CompletedProcess` object.
+    - If a Path is provided, the output is written to the specified file. (Recommended for large syncs.)
 
     Raises:
         subprocess.CalledProcessError: If the command fails and check is True.
     """
     print(f"Running command: {' '.join(cmd)}")
 
-    process = subprocess.run(
+    with ExitStack() as stack:
+        # Shared context manager to handle file closing, if needed.
+        stderr: TextIOWrapper | int | None
+        stdout: TextIOWrapper | int | None
+
+        # If capture_stderr or capture_stdout is a Path, we open the file in write mode.
+        # If it's a boolean, we set it to either subprocess.PIPE or None.
+        if isinstance(capture_stderr, Path):
+            stderr = stack.enter_context(capture_stderr.open("w", encoding="utf-8"))
+        elif isinstance(capture_stderr, bool):
+            stderr = subprocess.PIPE if capture_stderr is True else None
+
+        if isinstance(capture_stdout, Path):
+            stdout = stack.enter_context(capture_stdout.open("w", encoding="utf-8"))
+        elif isinstance(capture_stdout, bool):
+            stdout = subprocess.PIPE if capture_stdout is True else None
+
+        completed_process: subprocess.CompletedProcess[str] = subprocess.run(
+            cmd,
+            text=True,
+            check=raise_if_errors,
+            stderr=stderr,
+            stdout=stdout,
+        )
+        return completed_process
+
+
+def run_docker_airbyte_command(
+    cmd: list[str],
+    *,
+    raise_if_errors: bool = False,
+) -> EntrypointOutput:
+    """Run an Airbyte command inside a Docker container.
+
+    This wraps the `run_docker_command` function to process its results and
+    return an `EntrypointOutput` object.
+
+    Args:
+        cmd: The command to run as a list of strings.
+        raise_if_errors: If True, raises an exception if the command fails. If False, the caller is
+            responsible for checking the for errors.
+
+    Returns:
+        The output of the command as an `EntrypointOutput` object.
+    """
+    process_result = run_docker_command(
         cmd,
-        text=True,
-        check=check,
-        # If capture_output=True, stderr and stdout are captured and returned to caller:
-        capture_output=capture_output,
-        env={**os.environ, "DOCKER_BUILDKIT": "1"},
+        capture_stdout=True,
+        capture_stderr=True,
+        raise_if_errors=False,  # We want to handle failures ourselves.
     )
-    return process
+    result_output = EntrypointOutput(
+        command=cmd,
+        messages=process_result.stdout.splitlines(),
+        uncaught_exception=(
+            subprocess.CalledProcessError(
+                cmd=cmd,
+                returncode=process_result.returncode,
+                output=process_result.stdout,
+                stderr=process_result.stderr,
+            )
+            if process_result.returncode != 0
+            else None
+        ),
+    )
+    if raise_if_errors:
+        # If check is True, we raise an exception if there are errors.
+        # This will do nothing if there are no errors.
+        result_output.raise_if_errors()
+
+    return result_output
 
 
 def verify_docker_installation() -> bool:
@@ -402,7 +504,7 @@ def verify_docker_installation() -> bool:
 
 def verify_connector_image(
     image_name: str,
-) -> bool:
+) -> tuple[bool, str]:
     """Verify the built image by running the spec command.
 
     Args:
@@ -413,36 +515,27 @@ def verify_connector_image(
     """
     logger.info(f"Verifying image {image_name} with 'spec' command...")
 
-    cmd = ["docker", "run", "--rm", image_name, "spec"]
-
     try:
-        result = run_docker_command(
-            cmd,
-            check=True,
-            capture_output=True,
+        result = run_docker_airbyte_command(
+            ["docker", "run", "--rm", image_name, "spec"],
         )
-        # check that the output is valid JSON
-        if result.stdout:
-            found_spec_output = False
-            for line in result.stdout.split("\n"):
-                if line.strip():
-                    try:
-                        # Check if the line is a valid JSON object
-                        msg = json.loads(line)
-                        if isinstance(msg, dict) and "type" in msg and msg["type"] == "SPEC":
-                            found_spec_output = True
+        if result.errors:
+            err_msg = result.get_formatted_error_message()
+            logger.error(err_msg)
+            return False, err_msg
 
-                    except json.JSONDecodeError as e:
-                        logger.warning(f"Invalid JSON output from spec command: {e}: {line}")
+        spec_messages = result.spec_messages
+        if not spec_messages:
+            err_msg = (
+                "The container failed to produce valid output for the `spec` command.\nLog output:\n"
+                + str(result.logs)
+            )
+            logger.error(err_msg)
+            return False, err_msg
 
-            if not found_spec_output:
-                logger.error("No valid JSON output found for spec command.")
-                return False
-        else:
-            logger.error("No output from spec command.")
-            return False
-    except subprocess.CalledProcessError as e:
-        logger.error(f"Image verification failed: {e.stderr}")
-        return False
+    except Exception as ex:
+        err_msg = f"Unexpected error during image verification: {ex}"
+        logger.error(err_msg)
+        return False, err_msg
 
-    return True
+    return True, ""

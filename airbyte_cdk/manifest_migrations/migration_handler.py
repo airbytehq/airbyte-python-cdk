@@ -5,9 +5,11 @@
 
 import copy
 import logging
+import re
 from datetime import datetime, timezone
-from typing import Type
+from typing import Tuple, Type
 
+from packaging.specifiers import SpecifierSet
 from packaging.version import Version
 
 from airbyte_cdk.manifest_migrations.exceptions import (
@@ -25,7 +27,7 @@ from airbyte_cdk.manifest_migrations.migrations_registry import (
 METADATA_TAG = "metadata"
 MANIFEST_VERSION_TAG = "version"
 APPLIED_MIGRATIONS_TAG = "applied_migrations"
-
+WILDCARD_VERSION_PATTERN = ".*"
 LOGGER = logging.getLogger("airbyte.cdk.manifest_migrations")
 
 
@@ -77,11 +79,14 @@ class ManifestMigrationHandler:
         """
         try:
             migration_instance = migration_class()
-            if self._version_is_valid_for_migration(manifest_version, migration_version):
+            can_apply_migration, should_bump_version = self._version_is_valid_for_migration(
+                manifest_version, migration_version
+            )
+            if can_apply_migration:
                 migration_instance._process_manifest(self._migrated_manifest)
                 if migration_instance.is_migrated:
-                    # set the updated manifest version, after migration has been applied
-                    self._set_manifest_version(migration_version)
+                    if should_bump_version:
+                        self._set_manifest_version(migration_version)
                     self._set_migration_trace(migration_class, manifest_version, migration_version)
             else:
                 LOGGER.info(
@@ -112,18 +117,30 @@ class ManifestMigrationHandler:
         self,
         manifest_version: str,
         migration_version: str,
-    ) -> bool:
+    ) -> Tuple[bool, bool]:
         """
-        Checks if the given manifest version is less than or equal to the specified migration version.
+        Decide whether *manifest_version* satisfies the *migration_version* rule.
 
-        Args:
-            manifest_version (str): The version of the manifest to check.
-            migration_version (str): The migration version to compare against.
-
-        Returns:
-            bool: True if the manifest version is less than or equal to the migration version, False otherwise.
+        Rules
+        -----
+        1. ``"*"``
+           – Wildcard: anything matches.
+        2. String starts with a PEP 440 operator (``==``, ``!=``, ``<=``, ``>=``,
+           ``<``, ``>``, ``~=``, etc.)
+           – Treat *migration_version* as a SpecifierSet and test the manifest
+             version against it.
+        3. Plain version
+           – Interpret both strings as concrete versions and return
+             ``manifest_version <= migration_version``.
         """
-        return Version(manifest_version) <= Version(migration_version)
+        if re.match(WILDCARD_VERSION_PATTERN, migration_version):
+            return True, False
+
+        if migration_version.startswith(("=", "!", ">", "<", "~")):
+            spec = SpecifierSet(migration_version)
+            return spec.contains(Version(manifest_version)), False
+
+        return Version(manifest_version) <= Version(migration_version), True
 
     def _set_manifest_version(self, version: str) -> None:
         """

@@ -58,6 +58,7 @@ class SourceLocalYaml(YamlDeclarativeSource):
         catalog: ConfiguredAirbyteCatalog | None,
         config: MutableMapping[str, Any] | None,
         state: TState,
+        config_path: str | None = None,
         **kwargs: Any,
     ) -> None:
         """
@@ -76,6 +77,7 @@ class SourceLocalYaml(YamlDeclarativeSource):
             config=config,
             state=state,  # type: ignore [arg-type]
             path_to_yaml="manifest.yaml",
+            config_path=config_path,
         )
 
 
@@ -95,7 +97,12 @@ def _get_local_yaml_source(args: list[str]) -> SourceLocalYaml:
     try:
         parsed_args = AirbyteEntrypoint.parse_args(args)
         config, catalog, state = _parse_inputs_into_config_catalog_state(parsed_args)
-        return SourceLocalYaml(config=config, catalog=catalog, state=state)
+        return SourceLocalYaml(
+            config=config,
+            catalog=catalog,
+            state=state,
+            config_path=parsed_args.config if hasattr(parsed_args, "config") else None,
+        )
     except Exception as error:
         print(
             orjson.dumps(
@@ -204,6 +211,7 @@ def create_declarative_source(
             catalog=catalog,
             state=state,
             source_config=cast(dict[str, Any], config["__injected_declarative_manifest"]),
+            config_path=parsed_args.config if hasattr(parsed_args, "config") else None,
         )
     except Exception as error:
         print(
@@ -291,5 +299,9 @@ def _register_components_from_file(filepath: str) -> None:
 
 
 def run() -> None:
+    """Run the `source-declarative-manifest` CLI.
+
+    Args are detected from the command line, and the appropriate command is executed.
+    """
     args: list[str] = sys.argv[1:]
     handle_command(args)

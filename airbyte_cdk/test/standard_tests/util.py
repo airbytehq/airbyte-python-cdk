@@ -11,19 +11,12 @@ from airbyte_cdk.test.standard_tests.declarative_sources import (
     DeclarativeSourceTestSuite,
 )
 from airbyte_cdk.test.standard_tests.destination_base import DestinationTestSuiteBase
+from airbyte_cdk.test.standard_tests.docker_base import DockerConnectorTestSuite
 from airbyte_cdk.test.standard_tests.source_base import SourceTestSuiteBase
 from airbyte_cdk.utils.connector_paths import (
     METADATA_YAML,
     find_connector_root_from_name,
 )
-
-TEST_CLASS_MAPPING: dict[
-    Literal["python", "manifest-only", "declarative"], type[ConnectorTestSuiteBase]
-] = {
-    "python": SourceTestSuiteBase,
-    "manifest-only": DeclarativeSourceTestSuite,
-    # "declarative": DeclarativeSourceTestSuite,
-}
 
 
 def create_connector_test_suite(
@@ -45,7 +38,7 @@ def create_connector_test_suite(
         # By here, we know that connector_directory is not None
         # but connector_name is None. Set the connector_name.
         assert connector_directory is not None, "connector_directory should not be None here."
-        connector_name = connector_directory.name
+        connector_name = connector_directory.absolute().name
 
     metadata_yaml_path = connector_directory / METADATA_YAML
     if not metadata_yaml_path.exists():
@@ -54,20 +47,28 @@ def create_connector_test_suite(
         )
     metadata_dict: dict[str, Any] = yaml.safe_load(metadata_yaml_path.read_text())
     metadata_tags = metadata_dict["data"].get("tags", [])
-    for language_option in TEST_CLASS_MAPPING:
-        if f"language:{language_option}" in metadata_tags:
-            language = language_option
-            test_suite_class = TEST_CLASS_MAPPING[language]
-            break
-    else:
+    language_tags: list[str] = [tag for tag in metadata_tags if tag.startswith("language:")]
+    if not language_tags:
         raise ValueError(
-            f"Unsupported connector type. "
-            f"Supported language values are: {', '.join(TEST_CLASS_MAPPING.keys())}. "
+            f"Metadata YAML file '{metadata_yaml_path}' does not contain a 'language' tag. "
+            "Please ensure the metadata file is correctly configured."
             f"Found tags: {', '.join(metadata_tags)}"
         )
+    language = language_tags[0].split(":")[1]
+
+    if language == "java":
+        test_suite_class = DockerConnectorTestSuite
+    elif language == "manifest-only":
+        test_suite_class = DeclarativeSourceTestSuite
+    elif language == "python" and connector_name.startswith("source-"):
+        test_suite_class = SourceTestSuiteBase
+    elif language == "python" and connector_name.startswith("destination-"):
+        test_suite_class = DestinationTestSuiteBase
+    else:
+        raise ValueError(f"Unsupported language for connector '{connector_name}': {language}")
 
     subclass_overrides: dict[str, Any] = {
-        "get_connector_root_dir": lambda: connector_directory,
+        "get_connector_root_dir": classmethod(lambda cls: connector_directory),
     }
 
     TestSuiteAuto = type(

@@ -3,6 +3,7 @@
 #
 
 import json
+from copy import deepcopy
 from unittest.mock import MagicMock
 
 import pytest
@@ -59,6 +60,68 @@ _CONFIG_WITH_STREAM_DUPLICATION = {
     ],
 }
 
+SCHEMA = {
+    "$schema": "http://json-schema.org/schema#",
+    "type": "object",
+    "properties": {
+        "ABC": {"type": "number"},
+        "AED": {"type": "number"},
+    },
+}
+
+REQUESTER = {
+    "type": "HttpRequester",
+    "$parameters": {"item_id": ""},
+    "url_base": "https://api.test.com",
+    "path": "/items/{{parameters['item_id']}}",
+    "http_method": "GET",
+    "authenticator": {
+        "type": "ApiKeyAuthenticator",
+        "header": "apikey",
+        "api_token": "{{ config['api_key'] }}",
+    },
+}
+
+RETRIEVER = {
+    "type": "SimpleRetriever",
+    "requester": REQUESTER,
+    "record_selector": {
+        "type": "RecordSelector",
+        "extractor": {"type": "DpathExtractor", "field_path": []},
+    },
+    "paginator": {"type": "NoPagination"},
+}
+
+STREAM_TEMPLATE = {
+    "type": "DeclarativeStream",
+    "primary_key": [],
+    "schema_loader": {
+        "type": "InlineSchemaLoader",
+        "schema": SCHEMA,
+    },
+    "retriever": RETRIEVER,
+}
+
+COMPONENTS_MAPPING = [
+    {
+        "type": "ComponentMappingDefinition",
+        "field_path": ["name"],
+        "create_or_update": True,
+        "value": "{{components_values['name']}}",
+    },
+    {
+        "type": "ComponentMappingDefinition",
+        "field_path": ["retriever", "requester", "$parameters", "item_id"],
+        "value": "{{components_values['id']}}",
+    },
+]
+
+STREAM_CONFIG = {
+    "type": "StreamConfig",
+    "configs_pointer": ["custom_streams"],
+    "default_values": [{"id": 4, "name": "default_item"}],
+}
+
 _MANIFEST = {
     "version": "6.7.0",
     "type": "DeclarativeSource",
@@ -66,95 +129,64 @@ _MANIFEST = {
     "dynamic_streams": [
         {
             "type": "DynamicDeclarativeStream",
-            "stream_template": {
-                "type": "DeclarativeStream",
-                "name": "",
-                "primary_key": [],
-                "schema_loader": {
-                    "type": "InlineSchemaLoader",
-                    "schema": {
-                        "$schema": "http://json-schema.org/schema#",
-                        "properties": {
-                            "ABC": {"type": "number"},
-                            "AED": {"type": "number"},
-                        },
-                        "type": "object",
-                    },
-                },
-                "retriever": {
-                    "type": "SimpleRetriever",
-                    "requester": {
-                        "type": "HttpRequester",
-                        "$parameters": {"item_id": ""},
-                        "url_base": "https://api.test.com",
-                        "path": "/items/{{parameters['item_id']}}",
-                        "http_method": "GET",
-                        "authenticator": {
-                            "type": "ApiKeyAuthenticator",
-                            "header": "apikey",
-                            "api_token": "{{ config['api_key'] }}",
-                        },
-                    },
-                    "record_selector": {
-                        "type": "RecordSelector",
-                        "extractor": {"type": "DpathExtractor", "field_path": []},
-                    },
-                    "paginator": {"type": "NoPagination"},
-                },
-            },
+            "stream_template": STREAM_TEMPLATE,
             "components_resolver": {
                 "type": "ConfigComponentsResolver",
-                "stream_config": {
-                    "type": "StreamConfig",
-                    "configs_pointer": ["custom_streams"],
-                },
-                "components_mapping": [
-                    {
-                        "type": "ComponentMappingDefinition",
-                        "field_path": ["name"],
-                        "value": "{{components_values['name']}}",
-                    },
-                    {
-                        "type": "ComponentMappingDefinition",
-                        "field_path": [
-                            "retriever",
-                            "requester",
-                            "$parameters",
-                            "item_id",
-                        ],
-                        "value": "{{components_values['id']}}",
-                    },
-                ],
+                "stream_config": STREAM_CONFIG,
+                "components_mapping": COMPONENTS_MAPPING,
             },
         }
     ],
 }
 
+# Manifest with a placeholder for custom stream config list override
+_MANIFEST_WITH_STREAM_CONFIGS_LIST = deepcopy(_MANIFEST)
+_MANIFEST_WITH_STREAM_CONFIGS_LIST["dynamic_streams"][0]["components_resolver"]["stream_config"] = [
+    STREAM_CONFIG
+]
+
+# Manifest with component definition with value that is fails when trying
+# to parse yaml in _parse_yaml_if_possible but generally contains valid string
+_MANIFEST_WITH_SCANNER_ERROR = deepcopy(_MANIFEST)
+_MANIFEST_WITH_SCANNER_ERROR["dynamic_streams"][0]["components_resolver"][
+    "components_mapping"
+].append(
+    {
+        "type": "ComponentMappingDefinition",
+        "create_or_update": True,
+        "field_path": ["retriever", "requester", "$parameters", "cursor_format"],
+        "value": "{{ '%Y-%m-%d' if components_values['name'] == 'default_item' else '%Y-%m-%dT%H:%M:%S' }}",
+    }
+)
+
 
 @pytest.mark.parametrize(
-    "config, expected_exception, expected_stream_names",
+    "manifest, config, expected_exception, expected_stream_names",
     [
-        (_CONFIG, None, ["item_1", "item_2"]),
+        (_MANIFEST, _CONFIG, None, ["item_1", "item_2", "default_item"]),
         (
+            _MANIFEST,
             _CONFIG_WITH_STREAM_DUPLICATION,
             "Dynamic streams list contains a duplicate name: item_2. Please check your configuration.",
             None,
         ),
+        (_MANIFEST_WITH_STREAM_CONFIGS_LIST, _CONFIG, None, ["item_1", "item_2", "default_item"]),
+        (_MANIFEST_WITH_SCANNER_ERROR, _CONFIG, None, ["item_1", "item_2", "default_item"]),
     ],
 )
 def test_dynamic_streams_read_with_config_components_resolver(
-    config, expected_exception, expected_stream_names
+    manifest, config, expected_exception, expected_stream_names
 ):
     if expected_exception:
         with pytest.raises(AirbyteTracedException) as exc_info:
             source = ConcurrentDeclarativeSource(
-                source_config=_MANIFEST, config=config, catalog=None, state=None
+                source_config=manifest, config=config, catalog=None, state=None
             )
             source.discover(logger=source.logger, config=config)
         assert str(exc_info.value) == expected_exception
     else:
         source = ConcurrentDeclarativeSource(
-            source_config=_MANIFEST, config=config, catalog=None, state=None
+            source_config=manifest, config=config, catalog=None, state=None
         )
 
         actual_catalog = source.discover(logger=source.logger, config=config)
@@ -174,6 +206,10 @@ def test_dynamic_streams_read_with_config_components_resolver(
                 HttpRequest(url="https://api.test.com/items/2"),
                 HttpResponse(body=json.dumps({"id": "2", "name": "item_2"})),
             )
+            http_mocker.get(
+                HttpRequest(url="https://api.test.com/items/4"),
+                HttpResponse(body=json.dumps({"id": "4", "name": "default_item"})),
+            )
 
             records = [
                 message.record
@@ -182,6 +218,8 @@ def test_dynamic_streams_read_with_config_components_resolver(
             ]
 
         assert len(actual_catalog.streams) == len(expected_stream_names)
-        assert [stream.name for stream in actual_catalog.streams] == expected_stream_names
+        # Use set comparison to avoid relying on deterministic ordering
+        assert set(stream.name for stream in actual_catalog.streams) == set(expected_stream_names)
         assert len(records) == len(expected_stream_names)
-        assert [record.stream for record in records] == expected_stream_names
+        # Use set comparison to avoid relying on deterministic ordering
+        assert set(record.stream for record in records) == set(expected_stream_names)

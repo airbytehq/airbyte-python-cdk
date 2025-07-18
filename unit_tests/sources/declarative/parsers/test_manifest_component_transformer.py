@@ -569,3 +569,177 @@ def test_propagate_property_chunking():
     transformer = ManifestComponentTransformer()
     actual_component = transformer.propagate_types_and_parameters("", component, {})
     assert actual_component == expected_component
+
+
+@pytest.mark.parametrize(
+    "use_parent_parameters, expected_retriever_name, expected_requester_name, expected_requester_params_name",
+    [
+        pytest.param(
+            True,
+            "parent_priority",
+            "component_priority",
+            "parent_priority",
+            id="use_parent_parameters_true",
+        ),
+        pytest.param(
+            False,
+            "parent_priority",
+            "component_priority",
+            "component_priority",
+            id="use_parent_parameters_false",
+        ),
+    ],
+)
+def test_use_parent_parameters_configuration(
+    use_parent_parameters,
+    expected_retriever_name,
+    expected_requester_name,
+    expected_requester_params_name,
+):
+    """Test that use_parent_parameters configuration controls parameter precedence."""
+    component_with_parent_priority = {
+        "type": "DeclarativeStream",
+        "retriever": {
+            "type": "SimpleRetriever",
+            "requester": {
+                "type": "HttpRequester",
+                "name": "component_priority",
+                "url_base": "https://coffee.example.io/v1/",
+                "http_method": "GET",
+                "primary_key": "id",
+                "$parameters": {
+                    "name": "component_priority",
+                },
+            },
+            "$parameters": {
+                "name": "parent_priority",
+            },
+        },
+    }
+
+    expected_component = {
+        "type": "DeclarativeStream",
+        "retriever": {
+            "type": "SimpleRetriever",
+            "name": expected_retriever_name,
+            "requester": {
+                "type": "HttpRequester",
+                "name": expected_requester_name,
+                "url_base": "https://coffee.example.io/v1/",
+                "http_method": "GET",
+                "primary_key": "id",
+                "$parameters": {
+                    "name": expected_requester_params_name,
+                },
+            },
+            "$parameters": {
+                "name": "parent_priority",
+            },
+        },
+    }
+
+    transformer = ManifestComponentTransformer()
+    actual_component = transformer.propagate_types_and_parameters(
+        "", component_with_parent_priority, {}, use_parent_parameters=use_parent_parameters
+    )
+    assert actual_component == expected_component
+
+
+def test_use_parent_parameters_none_behavior():
+    """Test that use_parent_parameters=None maintains backward compatibility."""
+    component = {
+        "type": "DeclarativeStream",
+        "retriever": {
+            "type": "SimpleRetriever",
+            "requester": {
+                "type": "HttpRequester",
+                "name": "component_priority",
+                "url_base": "https://coffee.example.io/v1/",
+                "http_method": "GET",
+                "primary_key": "id",
+                "$parameters": {
+                    "name": "component_priority",
+                },
+            },
+            "$parameters": {
+                "name": "parent_priority",
+            },
+        },
+    }
+
+    expected_component_priority = {
+        "type": "DeclarativeStream",
+        "retriever": {
+            "type": "SimpleRetriever",
+            "name": "parent_priority",  # Parent parameter takes precedence (default behavior)
+            "requester": {
+                "type": "HttpRequester",
+                "name": "component_priority",  # Component parameter takes precedence
+                "url_base": "https://coffee.example.io/v1/",
+                "http_method": "GET",
+                "primary_key": "id",
+                "$parameters": {
+                    "name": "component_priority",
+                },
+            },
+            "$parameters": {
+                "name": "parent_priority",
+            },
+        },
+    }
+
+    transformer = ManifestComponentTransformer()
+    actual = transformer.propagate_types_and_parameters(
+        "", component, {}, use_parent_parameters=None
+    )
+    assert actual == expected_component_priority
+
+
+def test_dynamic_stream_use_parent_parameters_configuration():
+    """Test that use_parent_parameters configuration is properly read from dynamic stream definitions."""
+
+    transformer = ManifestComponentTransformer()
+
+    # Only parent has $parameters
+    component = {
+        "type": "DeclarativeStream",
+        "retriever": {
+            "type": "SimpleRetriever",
+        },
+        "$parameters": {"name": "parent_name"},
+    }
+
+    # When use_parent_parameters=False, component parameters should take precedence (but there are none)
+    result_false = transformer.propagate_types_and_parameters(
+        "", component, {}, use_parent_parameters=False
+    )
+    # When use_parent_parameters=True, parent parameters should take precedence (and are used)
+    result_true = transformer.propagate_types_and_parameters(
+        "", component, {}, use_parent_parameters=True
+    )
+
+    # In both cases, since only the parent has $parameters, the retriever should get "parent_name"
+    assert result_false["retriever"]["name"] == "parent_name"
+    assert result_true["retriever"]["name"] == "parent_name"
+
+    # Now, add a $parameters to the retriever to see the difference
+    component_with_both = {
+        "type": "DeclarativeStream",
+        "retriever": {
+            "type": "SimpleRetriever",
+            "$parameters": {"name": "retriever_name"},
+        },
+        "$parameters": {"name": "parent_name"},
+    }
+
+    result_false = transformer.propagate_types_and_parameters(
+        "", component_with_both, {}, use_parent_parameters=False
+    )
+    result_true = transformer.propagate_types_and_parameters(
+        "", component_with_both, {}, use_parent_parameters=True
+    )
+
+    # When use_parent_parameters=False, retriever's own $parameters win
+    assert result_false["retriever"]["name"] == "retriever_name"
+    # When use_parent_parameters=True, parent's $parameters win
+    assert result_true["retriever"]["name"] == "parent_name"

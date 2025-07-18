@@ -4,8 +4,10 @@
 
 import builtins
 import datetime
+import re
 import typing
 from typing import Optional, Union
+from urllib.parse import quote_plus
 
 import isodate
 import pytz
@@ -182,6 +184,29 @@ def format_datetime(
     return DatetimeParser().format(dt=dt_datetime, format=format)
 
 
+def sanitize_url(value: str) -> str:
+    """
+    Sanitizes a value by via urllib.parse.quote_plus
+
+    Usage:
+    `"{{ sanitize_url('https://example.com/path?query=value') }}"`
+    """
+    sanitization_strategy = quote_plus
+    return sanitization_strategy(value)
+
+
+def camel_case_to_snake_case(value: str) -> str:
+    """
+     Converts CamelCase strings to snake_case format
+
+     Usage:
+    `"{{ camel_case_to_snake_case('CamelCase') }}"`
+     :param value: string to convert from CamelCase to snake_case
+     :return: snake_case formatted string
+    """
+    return re.sub(r"(?<!^)(?=[A-Z])", "_", value).lower()
+
+
 _macros_list = [
     now_utc,
     today_utc,
@@ -193,5 +218,7 @@ _macros_list = [
     format_datetime,
     today_with_timezone,
     str_to_datetime,
+    sanitize_url,
+    camel_case_to_snake_case,
 ]
 macros = {f.__name__: f for f in _macros_list}

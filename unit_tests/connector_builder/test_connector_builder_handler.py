@@ -58,8 +58,8 @@ from airbyte_cdk.models import (
 from airbyte_cdk.models import Type as MessageType
 from airbyte_cdk.sources.declarative.declarative_stream import DeclarativeStream
 from airbyte_cdk.sources.declarative.manifest_declarative_source import ManifestDeclarativeSource
-from airbyte_cdk.sources.declarative.retrievers import SimpleRetrieverTestReadDecorator
 from airbyte_cdk.sources.declarative.retrievers.simple_retriever import SimpleRetriever
+from airbyte_cdk.sources.declarative.stream_slicers import StreamSlicerTestReadDecorator
 from airbyte_cdk.test.mock_http import HttpMocker, HttpRequest, HttpResponse
 from airbyte_cdk.utils.airbyte_secrets_utils import filter_secrets, update_secrets
 from unit_tests.connector_builder.utils import create_configured_catalog
@@ -1112,7 +1112,8 @@ def test_read_source(mock_http_stream):
 
     streams = source.streams(config)
     for s in streams:
-        assert isinstance(s.retriever, SimpleRetrieverTestReadDecorator)
+        assert isinstance(s.retriever, SimpleRetriever)
+        assert isinstance(s.retriever.stream_slicer, StreamSlicerTestReadDecorator)
 
 
 @patch.object(
@@ -1158,7 +1159,8 @@ def test_read_source_single_page_single_slice(mock_http_stream):
 
     streams = source.streams(config)
     for s in streams:
-        assert isinstance(s.retriever, SimpleRetrieverTestReadDecorator)
+        assert isinstance(s.retriever, SimpleRetriever)
+        assert isinstance(s.retriever.stream_slicer, StreamSlicerTestReadDecorator)
 
 
 @pytest.mark.parametrize(

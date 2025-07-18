@@ -9,7 +9,7 @@ import sys
 from copy import deepcopy
 from pathlib import Path
 from typing import Any, List, Mapping
-from unittest.mock import call, patch
+from unittest.mock import Mock, call, mock_open, patch
 
 import pytest
 import requests
@@ -30,6 +30,9 @@ from airbyte_cdk.models import (
 )
 from airbyte_cdk.sources.declarative.declarative_stream import DeclarativeStream
 from airbyte_cdk.sources.declarative.manifest_declarative_source import ManifestDeclarativeSource
+from airbyte_cdk.sources.declarative.parsers.model_to_component_factory import (
+    ModelToComponentFactory,
+)
 from airbyte_cdk.sources.declarative.retrievers.simple_retriever import SimpleRetriever
 
 logger = logging.getLogger("airbyte")
@@ -1135,6 +1138,318 @@ class TestManifestDeclarativeSource:
 
         assert debug_logger.isEnabledFor(logging.DEBUG)
 
+    @pytest.mark.parametrize(
+        "is_sandbox, expected_stream_count",
+        [
+            pytest.param(True, 3, id="test_sandbox_config_includes_conditional_streams"),
+            pytest.param(False, 1, id="test_non_sandbox_config_skips_conditional_streams"),
+        ],
+    )
+    def test_conditional_streams_manifest(self, is_sandbox, expected_stream_count):
+        manifest = {
+            "version": "3.8.2",
+            "definitions": {},
+            "description": "This is a sample source connector that is very valid.",
+            "streams": [
+                {
+                    "type": "DeclarativeStream",
+                    "$parameters": {
+                        "name": "students",
+                        "primary_key": "id",
+                        "url_base": "https://api.yasogamihighschool.com",
+                    },
+                    "schema_loader": {
+                        "name": "{{ parameters.stream_name }}",
+                        "file_path": "./source_yasogami_high_school/schemas/{{ parameters.name }}.yaml",
+                    },
+                    "retriever": {
+                        "paginator": {
+                            "type": "DefaultPaginator",
+                            "page_size": 10,
+                            "page_size_option": {
+                                "type": "RequestOption",
+                                "inject_into": "request_parameter",
+                                "field_name": "page_size",
+                            },
+                            "page_token_option": {"type": "RequestPath"},
+                            "pagination_strategy": {
+                                "type": "CursorPagination",
+                                "cursor_value": "{{ response._metadata.next }}",
+                                "page_size": 10,
+                            },
+                        },
+                        "requester": {
+                            "path": "/v1/students",
+                            "authenticator": {
+                                "type": "BearerAuthenticator",
+                                "api_token": "{{ config.apikey }}",
+                            },
+                            "request_parameters": {"page_size": "{{ 10 }}"},
+                        },
+                        "record_selector": {"extractor": {"field_path": ["result"]}},
+                    },
+                },
+                {
+                    "type": "ConditionalStreams",
+                    "condition": "{{ config['is_sandbox'] }}",
+                    "streams": [
+                        {
+                            "type": "DeclarativeStream",
+                            "$parameters": {
+                                "name": "classrooms",
+                                "primary_key": "id",
+                                "url_base": "https://api.yasogamihighschool.com",
+                            },
+                            "schema_loader": {
+                                "name": "{{ parameters.stream_name }}",
+                                "file_path": "./source_yasogami_high_school/schemas/{{ parameters.name }}.yaml",
+                            },
+                            "retriever": {
+                                "paginator": {
+                                    "type": "DefaultPaginator",
+                                    "page_size": 10,
+                                    "page_size_option": {
+                                        "type": "RequestOption",
+                                        "inject_into": "request_parameter",
+                                        "field_name": "page_size",
+                                    },
+                                    "page_token_option": {"type": "RequestPath"},
+                                    "pagination_strategy": {
+                                        "type": "CursorPagination",
+                                        "cursor_value": "{{ response._metadata.next }}",
+                                        "page_size": 10,
+                                    },
+                                },
+                                "requester": {
+                                    "path": "/v1/classrooms",
+                                    "authenticator": {
+                                        "type": "BearerAuthenticator",
+                                        "api_token": "{{ config.apikey }}",
+                                    },
+                                    "request_parameters": {"page_size": "{{ 10 }}"},
+                                },
+                                "record_selector": {"extractor": {"field_path": ["result"]}},
+                            },
+                        },
+                        {
+                            "type": "DeclarativeStream",
+                            "$parameters": {
+                                "name": "clubs",
+                                "primary_key": "id",
+                                "url_base": "https://api.yasogamihighschool.com",
+                            },
+                            "schema_loader": {
+                                "name": "{{ parameters.stream_name }}",
+                                "file_path": "./source_yasogami_high_school/schemas/{{ parameters.name }}.yaml",
+                            },
+                            "retriever": {
+                                "paginator": {
+                                    "type": "DefaultPaginator",
+                                    "page_size": 10,
+                                    "page_size_option": {
+                                        "type": "RequestOption",
+                                        "inject_into": "request_parameter",
+                                        "field_name": "page_size",
+                                    },
+                                    "page_token_option": {"type": "RequestPath"},
+                                    "pagination_strategy": {
+                                        "type": "CursorPagination",
+                                        "cursor_value": "{{ response._metadata.next }}",
+                                        "page_size": 10,
+                                    },
+                                },
+                                "requester": {
+                                    "path": "/v1/clubs",
+                                    "authenticator": {
+                                        "type": "BearerAuthenticator",
+                                        "api_token": "{{ config.apikey }}",
+                                    },
+                                    "request_parameters": {"page_size": "{{ 10 }}"},
+                                },
+                                "record_selector": {"extractor": {"field_path": ["result"]}},
+                            },
+                        },
+                    ],
+                },
+            ],
+            "check": {"type": "CheckStream", "stream_names": ["students"]},
+        }
+
+        assert "unit_tests" in sys.modules
+        assert "unit_tests.sources" in sys.modules
+        assert "unit_tests.sources.declarative" in sys.modules
+        assert "unit_tests.sources.declarative.external_component" in sys.modules
+
+        config = {"is_sandbox": is_sandbox}
+
+        source = ManifestDeclarativeSource(source_config=manifest)
+
+        check_stream = source.connection_checker
+        check_stream.check_connection(source, logging.getLogger(""), config=config)
+
+        actual_streams = source.streams(config=config)
+        assert len(actual_streams) == expected_stream_count
+        assert isinstance(actual_streams[0], DeclarativeStream)
+        assert actual_streams[0].name == "students"
+
+        if is_sandbox:
+            assert isinstance(actual_streams[1], DeclarativeStream)
+            assert actual_streams[1].name == "classrooms"
+            assert isinstance(actual_streams[2], DeclarativeStream)
+            assert actual_streams[2].name == "clubs"
+
+        assert (
+            source.resolved_manifest["description"]
+            == "This is a sample source connector that is very valid."
+        )
+
+    @pytest.mark.parametrize(
+        "field_to_remove,expected_error",
+        [
+            pytest.param("condition", ValidationError, id="test_no_condition_raises_error"),
+            pytest.param("streams", ValidationError, id="test_no_streams_raises_error"),
+        ],
+    )
+    def test_conditional_streams_invalid_manifest(self, field_to_remove, expected_error):
+        manifest = {
+            "version": "3.8.2",
+            "definitions": {},
+            "description": "This is a sample source connector that is very valid.",
+            "streams": [
+                {
+                    "type": "DeclarativeStream",
+                    "$parameters": {
+                        "name": "students",
+                        "primary_key": "id",
+                        "url_base": "https://api.yasogamihighschool.com",
+                    },
+                    "schema_loader": {
+                        "name": "{{ parameters.stream_name }}",
+                        "file_path": "./source_yasogami_high_school/schemas/{{ parameters.name }}.yaml",
+                    },
+                    "retriever": {
+                        "paginator": {
+                            "type": "DefaultPaginator",
+                            "page_size": 10,
+                            "page_size_option": {
+                                "type": "RequestOption",
+                                "inject_into": "request_parameter",
+                                "field_name": "page_size",
+                            },
+                            "page_token_option": {"type": "RequestPath"},
+                            "pagination_strategy": {
+                                "type": "CursorPagination",
+                                "cursor_value": "{{ response._metadata.next }}",
+                                "page_size": 10,
+                            },
+                        },
+                        "requester": {
+                            "path": "/v1/students",
+                            "authenticator": {
+                                "type": "BearerAuthenticator",
+                                "api_token": "{{ config.apikey }}",
+                            },
+                            "request_parameters": {"page_size": "{{ 10 }}"},
+                        },
+                        "record_selector": {"extractor": {"field_path": ["result"]}},
+                    },
+                },
+                {
+                    "type": "ConditionalStreams",
+                    "condition": "{{ config['is_sandbox'] }}",
+                    "streams": [
+                        {
+                            "type": "DeclarativeStream",
+                            "$parameters": {
+                                "name": "classrooms",
+                                "primary_key": "id",
+                                "url_base": "https://api.yasogamihighschool.com",
+                            },
+                            "schema_loader": {
+                                "name": "{{ parameters.stream_name }}",
+                                "file_path": "./source_yasogami_high_school/schemas/{{ parameters.name }}.yaml",
+                            },
+                            "retriever": {
+                                "paginator": {
+                                    "type": "DefaultPaginator",
+                                    "page_size": 10,
+                                    "page_size_option": {
+                                        "type": "RequestOption",
+                                        "inject_into": "request_parameter",
+                                        "field_name": "page_size",
+                                    },
+                                    "page_token_option": {"type": "RequestPath"},
+                                    "pagination_strategy": {
+                                        "type": "CursorPagination",
+                                        "cursor_value": "{{ response._metadata.next }}",
+                                        "page_size": 10,
+                                    },
+                                },
+                                "requester": {
+                                    "path": "/v1/classrooms",
+                                    "authenticator": {
+                                        "type": "BearerAuthenticator",
+                                        "api_token": "{{ config.apikey }}",
+                                    },
+                                    "request_parameters": {"page_size": "{{ 10 }}"},
+                                },
+                                "record_selector": {"extractor": {"field_path": ["result"]}},
+                            },
+                        },
+                        {
+                            "type": "DeclarativeStream",
+                            "$parameters": {
+                                "name": "clubs",
+                                "primary_key": "id",
+                                "url_base": "https://api.yasogamihighschool.com",
+                            },
+                            "schema_loader": {
+                                "name": "{{ parameters.stream_name }}",
+                                "file_path": "./source_yasogami_high_school/schemas/{{ parameters.name }}.yaml",
+                            },
+                            "retriever": {
+                                "paginator": {
+                                    "type": "DefaultPaginator",
+                                    "page_size": 10,
+                                    "page_size_option": {
+                                        "type": "RequestOption",
+                                        "inject_into": "request_parameter",
+                                        "field_name": "page_size",
+                                    },
+                                    "page_token_option": {"type": "RequestPath"},
+                                    "pagination_strategy": {
+                                        "type": "CursorPagination",
+                                        "cursor_value": "{{ response._metadata.next }}",
+                                        "page_size": 10,
+                                    },
+                                },
+                                "requester": {
+                                    "path": "/v1/clubs",
+                                    "authenticator": {
+                                        "type": "BearerAuthenticator",
+                                        "api_token": "{{ config.apikey }}",
+                                    },
+                                    "request_parameters": {"page_size": "{{ 10 }}"},
+                                },
+                                "record_selector": {"extractor": {"field_path": ["result"]}},
+                            },
+                        },
+                    ],
+                },
+            ],
+            "check": {"type": "CheckStream", "stream_names": ["students"]},
+        }
+
+        assert "unit_tests" in sys.modules
+        assert "unit_tests.sources" in sys.modules
+        assert "unit_tests.sources.declarative" in sys.modules
+        assert "unit_tests.sources.declarative.external_component" in sys.modules
+
+        del manifest["streams"][1][field_to_remove]
+
+        with pytest.raises(ValidationError):
+            ManifestDeclarativeSource(source_config=manifest)
+
 
 def request_log_message(request: dict) -> AirbyteMessage:
     return AirbyteMessage(
@@ -2099,3 +2414,387 @@ def test_slice_checkpoint(test_name, manifest, pages, expected_states_qty):
     with patch.object(SimpleRetriever, "_fetch_next_page", side_effect=pages):
         states = [message.state for message in _run_read(manifest, _stream_name) if message.state]
         assert len(states) == expected_states_qty
+
+
+@pytest.fixture
+def migration_mocks(monkeypatch):
+    mock_message_repository = Mock()
+    mock_message_repository.consume_queue.return_value = [Mock()]
+
+    _mock_open = mock_open()
+    mock_json_dump = Mock()
+    mock_print = Mock()
+    mock_serializer_dump = Mock()
+
+    mock_decoded_bytes = Mock()
+    mock_decoded_bytes.decode.return_value = "decoded_message"
+    mock_orjson_dumps = Mock(return_value=mock_decoded_bytes)
+
+    monkeypatch.setattr("builtins.open", _mock_open)
+    monkeypatch.setattr("json.dump", mock_json_dump)
+    monkeypatch.setattr("builtins.print", mock_print)
+    monkeypatch.setattr(
+        "airbyte_cdk.models.airbyte_protocol_serializers.AirbyteMessageSerializer.dump",
+        mock_serializer_dump,
+    )
+    monkeypatch.setattr(
+        "airbyte_cdk.sources.declarative.manifest_declarative_source.orjson.dumps",
+        mock_orjson_dumps,
+    )
+
+    return {
+        "message_repository": mock_message_repository,
+        "open": _mock_open,
+        "json_dump": mock_json_dump,
+        "print": mock_print,
+        "serializer_dump": mock_serializer_dump,
+        "orjson_dumps": mock_orjson_dumps,
+        "decoded_bytes": mock_decoded_bytes,
+    }
+
+
+def test_given_unmigrated_config_when_migrating_then_config_is_migrated(migration_mocks) -> None:
+    input_config = {"planet": "CRSC"}
+
+    manifest = {
+        "version": "0.34.2",
+        "type": "DeclarativeSource",
+        "check": {"type": "CheckStream", "stream_names": ["Test"]},
+        "streams": [
+            {
+                "type": "DeclarativeStream",
+                "name": "Test",
+                "schema_loader": {
+                    "type": "InlineSchemaLoader",
+                    "schema": {"type": "object"},
+                },
+                "retriever": {
+                    "type": "SimpleRetriever",
+                    "requester": {
+                        "type": "HttpRequester",
+                        "url_base": "https://example.org",
+                        "path": "/test",
+                        "authenticator": {"type": "NoAuth"},
+                    },
+                    "record_selector": {
+                        "type": "RecordSelector",
+                        "extractor": {"type": "DpathExtractor", "field_path": []},
+                    },
+                },
+            }
+        ],
+        "spec": {
+            "type": "Spec",
+            "documentation_url": "https://example.org",
+            "connection_specification": {},
+            "config_normalization_rules": {
+                "type": "ConfigNormalizationRules",
+                "config_migrations": [
+                    {
+                        "type": "ConfigMigration",
+                        "description": "Test migration",
+                        "transformations": [
+                            {
+                                "type": "ConfigRemapField",
+                                "map": {"CRSC": "Coruscant"},
+                                "field_path": ["planet"],
+                            }
+                        ],
+                    }
+                ],
+            },
+        },
+    }
+
+    ManifestDeclarativeSource(
+        source_config=manifest,
+        config=input_config,
+        config_path="/fake/config/path",
+        component_factory=ModelToComponentFactory(
+            message_repository=migration_mocks["message_repository"],
+        ),
+    )
+
+    migration_mocks["message_repository"].emit_message.assert_called_once()
+    migration_mocks["open"].assert_called_once_with("/fake/config/path", "w")
+    migration_mocks["json_dump"].assert_called_once()
+    migration_mocks["print"].assert_called()
+    migration_mocks["serializer_dump"].assert_called()
+    migration_mocks["orjson_dumps"].assert_called()
+    migration_mocks["decoded_bytes"].decode.assert_called()
+
+
+def test_given_already_migrated_config_no_control_message_is_emitted(migration_mocks) -> None:
+    input_config = {"planet": "Coruscant"}
+
+    manifest = {
+        "version": "0.34.2",
+        "type": "DeclarativeSource",
+        "check": {"type": "CheckStream", "stream_names": ["Test"]},
+        "streams": [
+            {
+                "type": "DeclarativeStream",
+                "name": "Test",
+                "schema_loader": {
+                    "type": "InlineSchemaLoader",
+                    "schema": {"type": "object"},
+                },
+                "retriever": {
+                    "type": "SimpleRetriever",
+                    "requester": {
+                        "type": "HttpRequester",
+                        "url_base": "https://example.org",
+                        "path": "/test",
+                        "authenticator": {"type": "NoAuth"},
+                    },
+                    "record_selector": {
+                        "type": "RecordSelector",
+                        "extractor": {"type": "DpathExtractor", "field_path": []},
+                    },
+                },
+            }
+        ],
+        "spec": {
+            "type": "Spec",
+            "documentation_url": "https://example.org",
+            "connection_specification": {},
+            "config_normalization_rules": {
+                "type": "ConfigNormalizationRules",
+                "config_migrations": [
+                    {
+                        "type": "ConfigMigration",
+                        "description": "Test migration",
+                        "transformations": [
+                            {
+                                "type": "ConfigRemapField",
+                                "map": {"CRSC": "Coruscant"},
+                                "field_path": ["planet"],
+                            }
+                        ],
+                    }
+                ],
+            },
+        },
+    }
+
+    ManifestDeclarativeSource(
+        source_config=manifest,
+        config=input_config,
+        config_path="/fake/config/path",
+        component_factory=ModelToComponentFactory(
+            message_repository=migration_mocks["message_repository"],
+        ),
+    )
+
+    migration_mocks["message_repository"].emit_message.assert_not_called()
+    migration_mocks["open"].assert_not_called()
+    migration_mocks["json_dump"].assert_not_called()
+    migration_mocks["print"].assert_not_called()
+    migration_mocks["serializer_dump"].assert_not_called()
+    migration_mocks["orjson_dumps"].assert_not_called()
+    migration_mocks["decoded_bytes"].decode.assert_not_called()
+
+
+def test_given_transformations_config_is_transformed():
+    input_config = {"planet": "CRSC"}
+
+    manifest = {
+        "version": "0.34.2",
+        "type": "DeclarativeSource",
+        "check": {"type": "CheckStream", "stream_names": ["Test"]},
+        "streams": [
+            {
+                "type": "DeclarativeStream",
+                "name": "Test",
+                "schema_loader": {
+                    "type": "InlineSchemaLoader",
+                    "schema": {"type": "object"},
+                },
+                "retriever": {
+                    "type": "SimpleRetriever",
+                    "requester": {
+                        "type": "HttpRequester",
+                        "url_base": "https://example.org",
+                        "path": "/test",
+                        "authenticator": {"type": "NoAuth"},
+                    },
+                    "record_selector": {
+                        "type": "RecordSelector",
+                        "extractor": {"type": "DpathExtractor", "field_path": []},
+                    },
+                },
+            }
+        ],
+        "spec": {
+            "type": "Spec",
+            "documentation_url": "https://example.org",
+            "connection_specification": {},
+            "config_normalization_rules": {
+                "type": "ConfigNormalizationRules",
+                "transformations": [
+                    {
+                        "type": "ConfigAddFields",
+                        "fields": [
+                            {
+                                "type": "AddedFieldDefinition",
+                                "path": ["population"],
+                                "value": "{{ config['planet'] }}",
+                            }
+                        ],
+                    },
+                    {
+                        "type": "ConfigRemapField",
+                        "map": {"CRSC": "Coruscant"},
+                        "field_path": ["planet"],
+                    },
+                    {
+                        "type": "ConfigRemapField",
+                        "map": {"CRSC": 3_000_000_000_000},
+                        "field_path": ["population"],
+                    },
+                ],
+            },
+        },
+    }
+
+    source = ManifestDeclarativeSource(
+        source_config=manifest,
+        config=input_config,
+    )
+
+    source.write_config = Mock(return_value=None)
+
+    config = source.configure(input_config, "/fake/temp/dir")
+
+    assert config != input_config
+    assert config == {"planet": "Coruscant", "population": 3_000_000_000_000}
+
+
+def test_given_valid_config_streams_validates_config_and_does_not_raise():
+    input_config = {"schema_to_validate": {"planet": "Coruscant"}}
+
+    manifest = {
+        "version": "0.34.2",
+        "type": "DeclarativeSource",
+        "check": {"type": "CheckStream", "stream_names": ["Test"]},
+        "streams": [
+            {
+                "type": "DeclarativeStream",
+                "name": "Test",
+                "schema_loader": {
+                    "type": "InlineSchemaLoader",
+                    "schema": {"type": "object"},
+                },
+                "retriever": {
+                    "type": "SimpleRetriever",
+                    "requester": {
+                        "type": "HttpRequester",
+                        "url_base": "https://example.org",
+                        "path": "/test",
+                        "authenticator": {"type": "NoAuth"},
+                    },
+                    "record_selector": {
+                        "type": "RecordSelector",
+                        "extractor": {"type": "DpathExtractor", "field_path": []},
+                    },
+                },
+            }
+        ],
+        "spec": {
+            "type": "Spec",
+            "documentation_url": "https://example.org",
+            "connection_specification": {},
+            "parameters": {},
+            "config_normalization_rules": {
+                "type": "ConfigNormalizationRules",
+                "validations": [
+                    {
+                        "type": "DpathValidator",
+                        "field_path": ["schema_to_validate"],
+                        "validation_strategy": {
+                            "type": "ValidateAdheresToSchema",
+                            "base_schema": {
+                                "$schema": "http://json-schema.org/draft-07/schema#",
+                                "title": "Test Spec",
+                                "type": "object",
+                                "properties": {"planet": {"type": "string"}},
+                                "required": ["planet"],
+                                "additionalProperties": False,
+                            },
+                        },
+                    }
+                ],
+            },
+        },
+    }
+
+    source = ManifestDeclarativeSource(
+        source_config=manifest,
+    )
+
+    source.streams(input_config)
+
+
+def test_given_invalid_config_streams_validates_config_and_raises():
+    input_config = {"schema_to_validate": {"will_fail": "Coruscant"}}
+
+    manifest = {
+        "version": "0.34.2",
+        "type": "DeclarativeSource",
+        "check": {"type": "CheckStream", "stream_names": ["Test"]},
+        "streams": [
+            {
+                "type": "DeclarativeStream",
+                "name": "Test",
+                "schema_loader": {
+                    "type": "InlineSchemaLoader",
+                    "schema": {"type": "object"},
+                },
+                "retriever": {
+                    "type": "SimpleRetriever",
+                    "requester": {
+                        "type": "HttpRequester",
+                        "url_base": "https://example.org",
+                        "path": "/test",
+                        "authenticator": {"type": "NoAuth"},
+                    },
+                    "record_selector": {
+                        "type": "RecordSelector",
+                        "extractor": {"type": "DpathExtractor", "field_path": []},
+                    },
+                },
+            }
+        ],
+        "spec": {
+            "type": "Spec",
+            "documentation_url": "https://example.org",
+            "connection_specification": {},
+            "parameters": {},
+            "config_normalization_rules": {
+                "type": "ConfigNormalizationRules",
+                "validations": [
+                    {
+                        "type": "DpathValidator",
+                        "field_path": ["schema_to_validate"],
+                        "validation_strategy": {
+                            "type": "ValidateAdheresToSchema",
+                            "base_schema": {
+                                "$schema": "http://json-schema.org/draft-07/schema#",
+                                "title": "Test Spec",
+                                "type": "object",
+                                "properties": {"planet": {"type": "string"}},
+                                "required": ["planet"],
+                                "additionalProperties": False,
+                            },
+                        },
+                    }
+                ],
+            },
+        },
+    }
+    source = ManifestDeclarativeSource(
+        source_config=manifest,
+    )
+
+    with pytest.raises(ValueError):
+        source.streams(input_config)

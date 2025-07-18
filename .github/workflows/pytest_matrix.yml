@@ -93,6 +93,15 @@ jobs:
           poetry run coverage html -d htmlcov
           poetry run coverage xml -o htmlcov/coverage.xml
 
+      - name: Publish Test Results
+        uses: EnricoMi/publish-unit-test-result-action@v2
+        if: always() && !cancelled() && steps.changes.outputs.src == 'true' && matrix.python-version == '3.11'
+        continue-on-error: true
+        with:
+          check_name: "PyTest Results (Full)"
+          large_files: true
+          files: |
+            build/test-results/**/*.xml
       - name: Upload coverage to GitHub Artifacts
         if: always() && steps.changes.outputs.src == 'true'
         uses: actions/upload-artifact@v4

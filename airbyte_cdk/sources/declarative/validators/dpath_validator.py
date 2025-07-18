@@ -2,14 +2,17 @@
 # Copyright (c) 2025 Airbyte, Inc., all rights reserved.
 #
 
+import logging
 from dataclasses import dataclass
-from typing import Any, List, Union
+from typing import Any, List
 
 import dpath.util
 
 from airbyte_cdk.sources.declarative.interpolation.interpolated_string import InterpolatedString
 from airbyte_cdk.sources.declarative.validators.validation_strategy import ValidationStrategy
 from airbyte_cdk.sources.declarative.validators.validator import Validator
+
+logger = logging.getLogger("airbyte")
 
 
 @dataclass
@@ -19,7 +22,7 @@ class DpathValidator(Validator):
     and applies a validation strategy to it.
     """
 
-    field_path: List[Union[InterpolatedString, str]]
+    field_path: List[str]
     strategy: ValidationStrategy
 
     def __post_init__(self) -> None:
@@ -50,10 +53,13 @@ class DpathValidator(Validator):
                 for value in values:
                     self.strategy.validate(value)
             except KeyError as e:
-                raise ValueError(f"Error validating path '{self.field_path}': {e}")
+                logger.info(f"Validation skipped. Key not found: {e}")
+                return
+
         else:
             try:
                 value = dpath.get(input_data, path)
                 self.strategy.validate(value)
             except KeyError as e:
-                raise ValueError(f"Error validating path '{self.field_path}': {e}")
+                logger.info(f"Validation skipped. Key not found: {e}")
+                return

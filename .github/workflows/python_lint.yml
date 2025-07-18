@@ -26,7 +26,7 @@ jobs:
       - name: Install dependencies
         run: poetry install --all-extras
 
-      # Job-specifc step(s):
+      # Job-specific step(s):
       - name: Run lint check
         run: poetry run ruff check .
 
@@ -49,9 +49,9 @@ jobs:
       - name: Install dependencies
         run: poetry install --all-extras
 
-      # Job-specifc step(s):
+      # Job-specific step(s):
       - name: Check code format
-        run: poetry run ruff format --check .
+        run: poetry run ruff format --diff .
 
   mypy-check:
     name: MyPy Check

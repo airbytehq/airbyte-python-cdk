@@ -69,6 +69,9 @@ def resolve_airbyte_repo_root(
 
     current_dir = from_dir.resolve().absolute()
     while current_dir != current_dir.parent:  # abort when we reach file system root
+        if _is_airbyte_repo_root(current_dir):
+            return current_dir
+
         found_dir = _find_in_adjacent_dirs(current_dir)
         if found_dir:
             return found_dir
@@ -181,11 +184,11 @@ def find_connector_root(from_paths: list[Path]) -> Path:
         # Check if the manifest file exists in the current directory
         for parent in [path, *path.parents]:
             if (parent / METADATA_YAML).exists():
-                return parent
+                return parent.absolute()
             if (parent / MANIFEST_YAML).exists():
-                return parent
+                return parent.absolute()
             if (parent / ACCEPTANCE_TEST_CONFIG).exists():
-                return parent
+                return parent.absolute()
             if parent.name == "airbyte_cdk":
                 break
 

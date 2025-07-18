@@ -30,7 +30,7 @@ enable = true
 
 [tool.poetry.dependencies]
 python = ">=3.10,<3.13"
-airbyte-protocol-models-dataclasses = "^0.15"
+airbyte-protocol-models-dataclasses = "^0.17.1"
 
 backoff = "*"
 boltons = "^25.0.0"
@@ -90,6 +90,9 @@ sqlalchemy = {version = "^2.0,!=2.0.36", optional = true }
 xmltodict = ">=0.13,<0.15"
 anyascii = "^0.3.2"
 whenever = "^0.6.16"
+setuptools = "^80.9.0"  # Some connectors depend on this as an undeclared transitive dependency (e.g. source-shopify)
+unidecode = "^1.3.8"  # IMPORTANT: DO NOT USE. Added to support source-google-sheets migration. This dep is deprecated in favour of `anyascii` and is slated for removal.
+dateparser = "^1.2.2"
 
 [tool.poetry.group.dev.dependencies]
 freezegun = "*"
@@ -170,7 +173,7 @@ fix-and-check = {sequence = ["fix-all", "check-all"], help = "Lint-fix and forma
 
 # PyTest tasks
 pytest = {cmd = "poetry run coverage run -m pytest --durations=10", help = "Run all pytest tests."}
-pytest-fast = {cmd = "poetry run coverage run -m pytest --skipslow --durations=5 --exitfirst -m 'not flaky and not slow and not requires_creds'", help = "Run pytest tests, failing fast and excluding slow tests."}
+pytest-fast = {cmd = "poetry run coverage run -m pytest unit_tests --durations=5 --exitfirst -m 'not flaky and not slow and not requires_creds'", help = "Run pytest tests, failing fast and excluding slow tests."}
 unit-test-with-cov = {cmd = "poetry run pytest -s unit_tests --cov=airbyte_cdk --cov-report=term --cov-config ./pyproject.toml", help = "Run unit tests and create a coverage report."}
 
 # Combined check tasks (other)
@@ -193,14 +196,8 @@ ignore = [
   "W002"  # Duplicate files. (TODO: Fix the few duplicate files, mostly `__init__.py` files that have only copyright text.)
 ]
 
-[tool.pytest.ini_options]
-log_cli = true
-log_cli_level = "INFO"
-log_cli_format = "%(asctime)s [%(levelname)8s] %(message)s (%(filename)s:%(lineno)s)"
-log_cli_date_format = "%Y-%m-%d %H:%M:%S"
-filterwarnings = [
-    "ignore::airbyte_cdk.sources.source.ExperimentalClassWarning"
-]
+# [tool.pytest.ini_options]
+# NOTE: PyTest options moved to dedicated `pytest.ini`
 
 [tool.airbyte_ci]
 python_versions = ["3.10", "3.11"]
@@ -230,8 +227,11 @@ DEP001 = [
 # DEP002: Project should not contain unused dependencies.
 # https://deptry.com/rules-violations/#missing-dependencies-dep002
 DEP002 = [
+  "setuptools",  # Incorrectly used without declaring in some connectors (e.g. source-shopify)
   "cryptography",  # Constrained as transitive dependency due to a bug in newer versions
   "google-cloud-secret-manager",  # Deptry can't detect that `google.cloud.secretmanager_v1` uses this package
+  "dateparser",  # Used by `source-amazon-seller-partner` for parsing string-formatted dates w/ timezone abbreviations. May add to `AirbyteDateTime`.
+  "unidecode",  # IMPORTANT: DO NOT USE. Added to support source-google-sheets migration. This dep is deprecated in favour of `anyascii` and is slated for removal.
 
   # TODO: Remove these dependencies if not needed:
   "avro",  # Only imported in `unit_tests` code
