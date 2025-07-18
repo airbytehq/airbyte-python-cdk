@@ -44,12 +44,21 @@ class ConnectorTestScenario(BaseModel):
         skip_test: bool
         bypass_reason: str
 
+    class AcceptanceTestEmptyStream(BaseModel):
+        name: str
+        bypass_reason: str | None = None
+
+        # bypass reason does not affect equality
+        def __hash__(self) -> int:
+            return hash(self.name)
+
     config_path: Path | None = None
     config_dict: dict[str, Any] | None = None
 
     _id: str | None = None  # Used to override the default ID generation
 
     configured_catalog_path: Path | None = None
+    empty_streams: list[AcceptanceTestEmptyStream] | None = None
     timeout_seconds: int | None = None
     expect_records: AcceptanceTestExpectRecords | None = None
     file_types: AcceptanceTestFileTypes | None = None

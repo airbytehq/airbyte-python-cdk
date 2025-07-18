@@ -10,8 +10,7 @@ import tempfile
 import warnings
 from dataclasses import asdict
 from pathlib import Path
-from subprocess import CompletedProcess, SubprocessError
-from typing import Literal, cast
+from typing import Any, Literal, cast
 
 import orjson
 import pytest
@@ -35,7 +34,6 @@ from airbyte_cdk.utils.connector_paths import (
 from airbyte_cdk.utils.docker import (
     build_connector_image,
     run_docker_airbyte_command,
-    run_docker_command,
 )
 
 
@@ -66,13 +64,57 @@ class DockerConnectorTestSuite:
         return cast(str, cls.connector_name).startswith("destination-")
 
     @classproperty
-    def acceptance_test_config_path(cls) -> Path:
-        """Get the path to the acceptance test config file."""
-        result = cls.get_connector_root_dir() / ACCEPTANCE_TEST_CONFIG
-        if result.exists():
-            return result
+    def acceptance_test_config(cls) -> Any:
+        """Get the contents of acceptance test config file.
 
-        raise FileNotFoundError(f"Acceptance test config file not found at: {str(result)}")
+        Also perform some basic validation that the file has the expected structure.
+        """
+        acceptance_test_config_path = cls.get_connector_root_dir() / ACCEPTANCE_TEST_CONFIG
+        if not acceptance_test_config_path.exists():
+            raise FileNotFoundError(
+                f"Acceptance test config file not found at: {str(acceptance_test_config_path)}"
+            )
+
+        tests_config = yaml.safe_load(acceptance_test_config_path.read_text())
+
+        if "acceptance_tests" not in tests_config:
+            raise ValueError(
+                f"Acceptance tests config not found in {acceptance_test_config_path}."
+                f" Found only: {str(tests_config)}."
+            )
+        return tests_config
+
+    @staticmethod
+    def _dedup_scenarios(scenarios: list[ConnectorTestScenario]) -> list[ConnectorTestScenario]:
+        """
+        For FAST tests, we treat each config as a separate test scenario to run against, whereas CATs defined
+        a series of more granular scenarios specifying a config_path and empty_streams among other things.
+
+        This method deduplicates the CATs scenarios based on their config_path. In doing so, we choose to
+        take the union of any defined empty_streams, to have high confidence that runnning a read with the
+        config will not error on the lack of data in the empty streams or lack of permissions to read them.
+
+        """
+        deduped_scenarios: list[ConnectorTestScenario] = []
+
+        for scenario in scenarios:
+            for existing_scenario in deduped_scenarios:
+                if scenario.config_path == existing_scenario.config_path:
+                    # If a scenario with the same config_path already exists, we merge the empty streams.
+                    # scenarios are immutable, so we create a new one.
+                    all_empty_streams = (existing_scenario.empty_streams or []) + (
+                        scenario.empty_streams or []
+                    )
+                    merged_scenario = existing_scenario.model_copy(
+                        update={"empty_streams": list(set(all_empty_streams))}
+                    )
+                    deduped_scenarios.remove(existing_scenario)
+                    deduped_scenarios.append(merged_scenario)
+                    break
+            else:
+                # If a scenario does not exist with the config, add the new scenario to the list.
+                deduped_scenarios.append(scenario)
+        return deduped_scenarios
 
     @classmethod
     def get_scenarios(
@@ -83,9 +125,8 @@ class DockerConnectorTestSuite:
         This has to be a separate function because pytest does not allow
         parametrization of fixtures with arguments from the test class itself.
         """
-        categories = ["connection", "spec"]
         try:
-            acceptance_test_config_path = cls.acceptance_test_config_path
+            all_tests_config = cls.acceptance_test_config
         except FileNotFoundError as e:
             # Destinations sometimes do not have an acceptance tests file.
             warnings.warn(
@@ -95,15 +136,9 @@ class DockerConnectorTestSuite:
             )
             return []
 
-        all_tests_config = yaml.safe_load(cls.acceptance_test_config_path.read_text())
-        if "acceptance_tests" not in all_tests_config:
-            raise ValueError(
-                f"Acceptance tests config not found in {cls.acceptance_test_config_path}."
-                f" Found only: {str(all_tests_config)}."
-            )
-
         test_scenarios: list[ConnectorTestScenario] = []
-        for category in categories:
+        # we look in the basic_read section to find any empty streams
+        for category in ["spec", "connection", "basic_read"]:
             if (
                 category not in all_tests_config["acceptance_tests"]
                 or "tests" not in all_tests_config["acceptance_tests"][category]
@@ -121,15 +156,11 @@ class DockerConnectorTestSuite:
 
                 scenario = ConnectorTestScenario.model_validate(test)
 
-                if scenario.config_path and scenario.config_path in [
-                    s.config_path for s in test_scenarios
-                ]:
-                    # Skip duplicate scenarios based on config_path
-                    continue
-
                 test_scenarios.append(scenario)
 
-        return test_scenarios
+        deduped_test_scenarios = cls._dedup_scenarios(test_scenarios)
+
+        return deduped_test_scenarios
 
     @pytest.mark.skipif(
         shutil.which("docker") is None,
@@ -331,6 +362,11 @@ class DockerConnectorTestSuite:
             if isinstance(read_from_streams, list):
                 # If `read_from_streams` is a list, we filter the discovered streams.
                 streams_list = list(set(streams_list) & set(read_from_streams))
+
+            if scenario.empty_streams:
+                # Filter out streams marked as empty in the scenario.
+                empty_stream_names = [stream.name for stream in scenario.empty_streams]
+                streams_list = [s for s in streams_list if s.name not in empty_stream_names]
 
             configured_catalog: ConfiguredAirbyteCatalog = ConfiguredAirbyteCatalog(
                 streams=[
