@@ -3668,7 +3668,6 @@ definitions:
           - "$ref": "#/definitions/CustomDecoder"
       record_selector:
         description: Component that describes how to extract records from a HTTP response.
-        linkable: true
         "$ref": "#/definitions/RecordSelector"
       paginator:
         description: Paginator component that describes how to navigate through the API's pages.
