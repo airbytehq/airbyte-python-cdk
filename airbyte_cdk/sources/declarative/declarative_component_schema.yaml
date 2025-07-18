@@ -1007,6 +1007,10 @@ definitions:
       end_datetime:
         title: End Datetime
         description: The datetime that determines the last record that should be synced. If not provided, `{{ now_utc() }}` will be used.
+        default:
+          type: MinMaxDatetime
+          datetime: "{{ now_utc().strftime('%Y-%m-%dT%H:%M:%SZ') }}"
+          datetime_format: "%Y-%m-%dT%H:%M:%SZ"
         anyOf:
           - "$ref": "#/definitions/MinMaxDatetime"
           - type: string
@@ -1100,7 +1104,7 @@ definitions:
           Time interval (ISO8601 duration) before the start_datetime to read data for, e.g. P1M for looking back one month.
             * **PT1H**: 1 hour
             * **P1D**: 1 day
-            * **PT1W**: 1 week
+            * **P1W**: 1 week
             * **P1M**: 1 month
             * **P1Y**: 1 year
         type: string
@@ -1127,7 +1131,7 @@ definitions:
           The size of the time window (ISO8601 duration). Given this field is provided, `cursor_granularity` needs to be provided as well.
             * **PT1H**: 1 hour
             * **P1D**: 1 day
-            * **PT1W**: 1 week
+            * **P1W**: 1 week
             * **P1M**: 1 month
             * **P1Y**: 1 year
         type: string
@@ -1973,7 +1977,7 @@ definitions:
           The duration in ISO 8601 duration notation after which the session token expires, starting from the time it was obtained. Omitting it will result in the session token being refreshed for every request.
             * **PT1H**: 1 hour
             * **P1D**: 1 day
-            * **PT1W**: 1 week
+            * **P1W**: 1 week
             * **P1M**: 1 month
             * **P1Y**: 1 year
         type: string
