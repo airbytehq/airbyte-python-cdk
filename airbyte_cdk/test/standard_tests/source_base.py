@@ -7,7 +7,6 @@ from typing import TYPE_CHECKING
 import pytest
 
 from airbyte_cdk.models import (
-from airbyte_cdk.models import (
     AirbyteMessage,
     AirbyteStream,
     ConfiguredAirbyteCatalog,
