@@ -1007,10 +1007,6 @@ definitions:
       end_datetime:
         title: End Datetime
         description: The datetime that determines the last record that should be synced. If not provided, `{{ now_utc() }}` will be used.
-        default:
-          type: MinMaxDatetime
-          datetime: "{{ now_utc().strftime('%Y-%m-%dT%H:%M:%SZ') }}"
-          datetime_format: "%Y-%m-%dT%H:%M:%SZ"
         anyOf:
           - "$ref": "#/definitions/MinMaxDatetime"
           - type: string
