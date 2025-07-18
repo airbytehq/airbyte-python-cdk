@@ -1200,7 +1200,7 @@ class OffsetIncrement(BaseModel):
     inject_on_first_request: Optional[bool] = Field(
         False,
         description="Using the `offset` with value `0` during the first request",
-        title="Inject Offset",
+        title="Inject Offset on First Request",
     )
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
@@ -1222,7 +1222,7 @@ class PageIncrement(BaseModel):
     inject_on_first_request: Optional[bool] = Field(
         False,
         description="Using the `page number` with value defined by `start_from_page` during the first request",
-        title="Inject Page Number",
+        title="Inject Page Number on First Request",
     )
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
