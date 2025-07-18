@@ -617,7 +617,8 @@ class ManifestDeclarativeSource(DeclarativeSource):
         Returns:
             bool: True if any stream uses a DynamicSchemaLoader, False otherwise.
         """
-        for stream_config in self._stream_configs(self._source_config):
+        empty_config: Dict[str, Any] = {}
+        for stream_config in self._stream_configs(self._source_config, empty_config):
             schema_loader = stream_config.get("schema_loader", {})
             if (
                 isinstance(schema_loader, dict)

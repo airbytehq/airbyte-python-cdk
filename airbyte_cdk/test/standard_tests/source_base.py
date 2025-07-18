@@ -159,7 +159,7 @@ class SourceTestSuiteBase(ConnectorTestSuiteBase):
         # Recreate the scenario with the same config but set the status to "failed".
         scenario = ConnectorTestScenario(
             config_dict=scenario.get_config_dict(
-                connector_root=scenario.connector_root,
+                connector_root=self.get_connector_root_dir(),
                 empty_if_missing=False,
             ),
             status="failed",
