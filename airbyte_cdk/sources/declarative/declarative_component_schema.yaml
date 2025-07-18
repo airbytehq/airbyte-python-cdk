@@ -945,7 +945,6 @@ definitions:
           type: string
         description: |
           The possible formats for the cursor field, in order of preference. The first format that matches the cursor field value will be used to parse it. If not provided, the Outgoing Datetime Format will be used.
-          
           Use placeholders starting with "%" to describe the format the API is using. The following placeholders are available:
             * **%s**: Epoch unix timestamp - `1686218963`
             * **%s_as_float**: Epoch unix timestamp in seconds as float with microsecond precision - `1686218963.123456`
