@@ -146,10 +146,9 @@ class SourceTestSuiteBase(ConnectorTestSuiteBase):
             connector_root=self.get_connector_root_dir(),
             catalog=configured_catalog,
         )
-        if scenario.expect_exception and not result.errors:
+        if scenario.expected_outcome.expect_exception() and not result.errors:
             # By now we should have raised an exception.
             raise AssertionError("Expected an error but got none.")
-
         if scenario.expected_outcome.expect_success() and not result.records:
             raise AssertionError("Expected records but got none.")
 
