@@ -1511,6 +1511,7 @@ definitions:
       incremental_sync:
         title: Incremental Sync
         description: Component used to fetch data incrementally based on a time field in the data.
+        linkable: true
         anyOf:
           - "$ref": "#/definitions/DatetimeBasedCursor"
           - "$ref": "#/definitions/IncrementingCountCursor"
@@ -1543,6 +1544,7 @@ definitions:
       transformations:
         title: Transformations
         description: A list of transformations to be applied to each output record.
+        linkable: true
         type: array
         items:
           anyOf:
@@ -1566,6 +1568,7 @@ definitions:
       file_uploader:
         title: File Uploader
         description: (experimental) Describes how to fetch a file
+        linkable: true
         type: object
         required:
           - type
@@ -2128,6 +2131,7 @@ definitions:
       request_parameters:
         title: Query Parameters
         description: Specifies the query parameters that should be set on an outgoing HTTP request given the inputs.
+        linkable: true
         anyOf:
           - type: object
             title: Key/Value Pairs
@@ -2150,6 +2154,7 @@ definitions:
       request_headers:
         title: Request Headers
         description: Return any non-auth headers. Authentication headers will overwrite any overlapping headers returned from this method.
+        linkable: true
         anyOf:
           - type: object
             title: Key/Value Pairs
@@ -2209,6 +2214,7 @@ definitions:
       request_body:
         title: Request Body
         description: Specifies how to populate the body of the request with a payload. Can contain nested objects.
+        linkable: true
         anyOf:
           - "$ref": "#/definitions/RequestBodyPlainText"
           - "$ref": "#/definitions/RequestBodyUrlEncodedForm"
@@ -2222,6 +2228,7 @@ definitions:
       error_handler:
         title: Error Handler
         description: Error handler component that defines how to handle errors.
+        linkable: true
         anyOf:
           - "$ref": "#/definitions/DefaultErrorHandler"
           - "$ref": "#/definitions/CompositeErrorHandler"
@@ -3661,9 +3668,11 @@ definitions:
           - "$ref": "#/definitions/CustomDecoder"
       record_selector:
         description: Component that describes how to extract records from a HTTP response.
+        linkable: true
         "$ref": "#/definitions/RecordSelector"
       paginator:
         description: Paginator component that describes how to navigate through the API's pages.
+        linkable: true
         anyOf:
           - "$ref": "#/definitions/DefaultPaginator"
           - "$ref": "#/definitions/NoPagination"
@@ -3674,6 +3683,7 @@ definitions:
       partition_router:
         title: Partition Router
         description: Used to iteratively execute requests over a set of values, such as a parent stream's records or a list of constant values.
+        linkable: true
         anyOf:
           - "$ref": "#/definitions/SubstreamPartitionRouter"
           - "$ref": "#/definitions/ListPartitionRouter"
