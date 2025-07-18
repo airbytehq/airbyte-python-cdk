@@ -159,7 +159,10 @@ class SourceTestSuiteBase(ConnectorTestSuiteBase):
         """Standard test for `read` when passed a bad catalog file."""
         # Recreate the scenario with the same config but set the status to "failed".
         scenario = ConnectorTestScenario(
-            config_dict=scenario.get_config_dict(empty_if_missing=False),
+            config_dict=scenario.get_config_dict(
+                connector_root=scenario.connector_root,
+                empty_if_missing=False,
+            ),
             status="failed",
         )
         invalid_configured_catalog = ConfiguredAirbyteCatalog(
