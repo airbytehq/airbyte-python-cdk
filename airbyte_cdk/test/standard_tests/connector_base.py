@@ -136,6 +136,7 @@ class ConnectorTestSuiteBase(DockerConnectorTestSuite):
             and not result.errors
         ):
             raise AssertionError(f"Expected error in `check` but got success.")
+
     @classmethod
     def get_connector_root_dir(cls) -> Path:
         """Get the root directory of the connector."""
