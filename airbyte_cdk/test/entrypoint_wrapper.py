@@ -65,6 +65,8 @@ class AirbyteEntrypointException(Exception):
             raise output.as_exception()
     """
 
+    message: str = ""
+
 
 class EntrypointOutput:
     """A class to encapsulate the output of an Airbyte connector's execution.
