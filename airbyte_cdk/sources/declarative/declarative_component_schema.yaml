@@ -4175,13 +4175,16 @@ definitions:
         default: false
       condition:
         title: Condition
-        description: A condition that must be met for the mapping to be applied.
+        description: A condition that must be met for the mapping to be applied. This property is only supported for `ConfigComponentsResolver`.
         type: string
         interpolation_context:
           - config
           - stream_template_config
           - components_values
           - stream_slice
+        examples:
+          - "{{ components_values.get('cursor_field', None) }}"
+          - "{{ '_incremental' in components_values.get('stream_name', '') }}"
       $parameters:
         type: object
         additionalProperties: true

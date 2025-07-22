@@ -1496,7 +1496,11 @@ class ComponentMappingDefinition(BaseModel):
     )
     condition: Optional[str] = Field(
         None,
-        description="A condition that must be met for the mapping to be applied.",
+        description="A condition that must be met for the mapping to be applied. This property is only supported for `ConfigComponentsResolver`.",
+        examples=[
+            "{{ components_values.get('cursor_field', None) }}",
+            "{{ '_incremental' in components_values.get('stream_name', '') }}",
+        ],
         title="Condition",
     )
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")

@@ -12,7 +12,6 @@ from typing_extensions import deprecated
 from yaml.parser import ParserError
 
 from airbyte_cdk.sources.declarative.interpolation import InterpolatedString
-from airbyte_cdk.sources.declarative.interpolation.interpolated_boolean import InterpolatedBoolean
 from airbyte_cdk.sources.declarative.resolvers.components_resolver import (
     ComponentMappingDefinition,
     ComponentsResolver,
@@ -56,12 +55,6 @@ class ParametrizedComponentsResolver(ComponentsResolver):
         """
 
         for component_mapping in self.components_mapping:
-            interpolated_condition = (
-                InterpolatedBoolean(condition=component_mapping.condition, parameters=parameters)
-                if component_mapping.condition
-                else None
-            )
-
             if isinstance(component_mapping.value, (str, InterpolatedString)):
                 interpolated_value = (
                     InterpolatedString.create(component_mapping.value, parameters=parameters)
@@ -81,7 +74,6 @@ class ParametrizedComponentsResolver(ComponentsResolver):
                         value_type=component_mapping.value_type,
                         create_or_update=component_mapping.create_or_update,
                         parameters=parameters,
-                        condition=interpolated_condition,
                     )
                 )
             else:
@@ -98,12 +90,6 @@ class ParametrizedComponentsResolver(ComponentsResolver):
             updated_config = deepcopy(stream_template_config)
             kwargs["components_values"] = components_values  # type: ignore[assignment] # component_values will always be of type Mapping[str, Any]
             for resolved_component in self._resolved_components:
-                if (
-                    resolved_component.condition is not None
-                    and not resolved_component.condition.eval(self.config, **kwargs)
-                ):
-                    continue
-
                 valid_types = (
                     (resolved_component.value_type,) if resolved_component.value_type else None
                 )

@@ -10,7 +10,6 @@ import dpath
 from typing_extensions import deprecated
 
 from airbyte_cdk.sources.declarative.interpolation import InterpolatedString
-from airbyte_cdk.sources.declarative.interpolation.interpolated_boolean import InterpolatedBoolean
 from airbyte_cdk.sources.declarative.resolvers.components_resolver import (
     ComponentMappingDefinition,
     ComponentsResolver,
@@ -50,12 +49,6 @@ class HttpComponentsResolver(ComponentsResolver):
             parameters (Mapping[str, Any]): Parameters for interpolation.
         """
         for component_mapping in self.components_mapping:
-            interpolated_condition = (
-                InterpolatedBoolean(condition=component_mapping.condition, parameters=parameters)
-                if component_mapping.condition
-                else None
-            )
-
             if isinstance(component_mapping.value, (str, InterpolatedString)):
                 interpolated_value = (
                     InterpolatedString.create(component_mapping.value, parameters=parameters)
@@ -74,7 +67,6 @@ class HttpComponentsResolver(ComponentsResolver):
                         value=interpolated_value,
                         value_type=component_mapping.value_type,
                         parameters=parameters,
-                        condition=interpolated_condition,
                     )
                 )
             else:
@@ -105,12 +97,6 @@ class HttpComponentsResolver(ComponentsResolver):
                 kwargs["stream_slice"] = stream_slice  # type: ignore[assignment] # stream_slice will always be of type Mapping[str, Any]
 
                 for resolved_component in self._resolved_components:
-                    if (
-                        resolved_component.condition is not None
-                        and not resolved_component.condition.eval(self.config, **kwargs)
-                    ):
-                        continue
-
                     valid_types = (
                         (resolved_component.value_type,) if resolved_component.value_type else None
                     )
