@@ -145,7 +145,7 @@ _MANIFEST_WITH_STREAM_CONFIGS_LIST["dynamic_streams"][0]["components_resolver"][
     STREAM_CONFIG
 ]
 
-# Manifest with component definition with value that is fails when trying
+# Manifest with component definition with value that fails when trying
 # to parse yaml in _parse_yaml_if_possible but generally contains valid string
 _MANIFEST_WITH_SCANNER_ERROR = deepcopy(_MANIFEST)
 _MANIFEST_WITH_SCANNER_ERROR["dynamic_streams"][0]["components_resolver"][
@@ -173,6 +173,7 @@ _MANIFEST_WITH_SCANNER_ERROR["dynamic_streams"][0]["components_resolver"][
         (_MANIFEST_WITH_STREAM_CONFIGS_LIST, _CONFIG, None, ["item_1", "item_2", "default_item"]),
         (_MANIFEST_WITH_SCANNER_ERROR, _CONFIG, None, ["item_1", "item_2", "default_item"]),
     ],
+    ids=["no_duplicates", "duplicates", "stream_configs_list", "scanner_error"],
 )
 def test_dynamic_streams_read_with_config_components_resolver(
     manifest, config, expected_exception, expected_stream_names
@@ -223,3 +224,164 @@ def test_dynamic_streams_read_with_config_components_resolver(
         assert len(records) == len(expected_stream_names)
         # Use set comparison to avoid relying on deterministic ordering
         assert set(record.stream for record in records) == set(expected_stream_names)
+
+
+# Manifest with condition that always evaluates to true
+_MANIFEST_WITH_TRUE_CONDITION = deepcopy(_MANIFEST)
+_MANIFEST_WITH_TRUE_CONDITION["dynamic_streams"][0]["components_resolver"][
+    "components_mapping"
+].append(
+    {
+        "type": "ComponentMappingDefinition",
+        "field_path": ["retriever", "requester", "$parameters", "always_included"],
+        "value": "true_condition_value",
+        "create_or_update": True,
+        "condition": "{{ True }}",
+    }
+)
+
+# Manifest with condition that always evaluates to false
+_MANIFEST_WITH_FALSE_CONDITION = deepcopy(_MANIFEST)
+_MANIFEST_WITH_FALSE_CONDITION["dynamic_streams"][0]["components_resolver"][
+    "components_mapping"
+].append(
+    {
+        "type": "ComponentMappingDefinition",
+        "field_path": ["retriever", "requester", "$parameters", "never_included"],
+        "value": "false_condition_value",
+        "create_or_update": True,
+        "condition": "{{ False }}",
+    }
+)
+
+# Manifest with condition using components_values that evaluates to true for some items
+_MANIFEST_WITH_COMPONENTS_VALUES_TRUE_CONDITION = deepcopy(_MANIFEST)
+_MANIFEST_WITH_COMPONENTS_VALUES_TRUE_CONDITION["dynamic_streams"][0]["components_resolver"][
+    "components_mapping"
+].append(
+    {
+        "type": "ComponentMappingDefinition",
+        "field_path": ["retriever", "requester", "$parameters", "conditional_param"],
+        "value": "item_1_special_value",
+        "create_or_update": True,
+        "condition": "{{ components_values['name'] == 'item_1' }}",
+    }
+)
+
+# Manifest with condition using components_values that evaluates to false for all items
+_MANIFEST_WITH_COMPONENTS_VALUES_FALSE_CONDITION = deepcopy(_MANIFEST)
+_MANIFEST_WITH_COMPONENTS_VALUES_FALSE_CONDITION["dynamic_streams"][0]["components_resolver"][
+    "components_mapping"
+].append(
+    {
+        "type": "ComponentMappingDefinition",
+        "field_path": ["retriever", "requester", "$parameters", "never_matching"],
+        "value": "never_applied_value",
+        "create_or_update": True,
+        "condition": "{{ components_values['name'] == 'non_existent_item' }}",
+    }
+)
+
+# Manifest with multiple conditions - some true, some false
+_MANIFEST_WITH_MIXED_CONDITIONS = deepcopy(_MANIFEST)
+_MANIFEST_WITH_MIXED_CONDITIONS["dynamic_streams"][0]["components_resolver"][
+    "components_mapping"
+].extend(
+    [
+        {
+            "type": "ComponentMappingDefinition",
+            "field_path": ["retriever", "requester", "$parameters", "always_true"],
+            "value": "always_applied",
+            "create_or_update": True,
+            "condition": "{{ True }}",
+        },
+        {
+            "type": "ComponentMappingDefinition",
+            "field_path": ["retriever", "requester", "$parameters", "always_false"],
+            "value": "never_applied",
+            "create_or_update": True,
+            "condition": "{{ False }}",
+        },
+        {
+            "type": "ComponentMappingDefinition",
+            "field_path": ["retriever", "requester", "$parameters", "item_specific"],
+            "value": "applied_to_item_2",
+            "create_or_update": True,
+            "condition": "{{ components_values['id'] == 2 }}",
+        },
+    ]
+)
+
+
+@pytest.mark.parametrize(
+    "manifest, config, expected_conditional_params",
+    [
+        (
+            _MANIFEST_WITH_TRUE_CONDITION,
+            _CONFIG,
+            {
+                "item_1": {"always_included": "true_condition_value", "item_id": 1},
+                "item_2": {"always_included": "true_condition_value", "item_id": 2},
+                "default_item": {"always_included": "true_condition_value", "item_id": 4},
+            },
+        ),
+        (
+            _MANIFEST_WITH_FALSE_CONDITION,
+            _CONFIG,
+            {
+                "item_1": {"item_id": 1},  # never_included should not be present
+                "item_2": {"item_id": 2},
+                "default_item": {"item_id": 4},
+            },
+        ),
+        (
+            _MANIFEST_WITH_COMPONENTS_VALUES_TRUE_CONDITION,
+            _CONFIG,
+            {
+                "item_1": {"conditional_param": "item_1_special_value", "item_id": 1},
+                "item_2": {"item_id": 2},  # condition false for item_2
+                "default_item": {"item_id": 4},  # condition false for default_item
+            },
+        ),
+        (
+            _MANIFEST_WITH_COMPONENTS_VALUES_FALSE_CONDITION,
+            _CONFIG,
+            {
+                "item_1": {"item_id": 1},  # never_matching should not be present
+                "item_2": {"item_id": 2},
+                "default_item": {"item_id": 4},
+            },
+        ),
+        (
+            _MANIFEST_WITH_MIXED_CONDITIONS,
+            _CONFIG,
+            {
+                "item_1": {"always_true": "always_applied", "item_id": 1},
+                "item_2": {
+                    "always_true": "always_applied",
+                    "item_specific": "applied_to_item_2",
+                    "item_id": 2,
+                },
+                "default_item": {"always_true": "always_applied", "item_id": 4},
+            },
+        ),
+    ],
+    ids=[
+        "true_condition",
+        "false_condition",
+        "components_values_true_condition",
+        "components_values_false_condition",
+        "mixed_conditions",
+    ],
+)
+def test_component_mapping_conditions(manifest, config, expected_conditional_params):
+    """Test that ComponentMappingDefinition conditions work correctly for various scenarios."""
+    source = ConcurrentDeclarativeSource(
+        source_config=manifest, config=config, catalog=None, state=None
+    )
+
+    for stream in source.streams(config):
+        if stream.name in expected_conditional_params:
+            assert (
+                stream.retriever.requester._parameters == expected_conditional_params[stream.name]
+            )

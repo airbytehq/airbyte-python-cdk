@@ -4173,6 +4173,15 @@ definitions:
         description: Determines whether to create a new path if it doesn't exist (true) or only update existing paths (false). When set to true, the resolver will create new paths in the stream template if they don't exist. When false (default), it will only update existing paths.
         type: boolean
         default: false
+      condition:
+        title: Condition
+        description: A condition that must be met for the mapping to be applied.
+        type: string
+        interpolation_context:
+          - config
+          - stream_template_config
+          - components_values
+          - stream_slice
       $parameters:
         type: object
         additionalProperties: true

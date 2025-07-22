@@ -3800,6 +3800,7 @@ class ModelToComponentFactory:
             value=interpolated_value,
             value_type=ModelToComponentFactory._json_schema_type_name_to_type(model.value_type),
             create_or_update=model.create_or_update,
+            condition=model.condition,
             parameters=model.parameters or {},
         )
 
@@ -3851,7 +3852,9 @@ class ModelToComponentFactory:
         )
 
     def create_config_components_resolver(
-        self, model: ConfigComponentsResolverModel, config: Config
+        self,
+        model: ConfigComponentsResolverModel,
+        config: Config,
     ) -> Any:
         model_stream_configs = (
             model.stream_config if isinstance(model.stream_config, list) else [model.stream_config]
@@ -3871,6 +3874,7 @@ class ModelToComponentFactory:
                     components_mapping_definition_model.value_type
                 ),
                 config=config,
+                parameters=model.parameters,
             )
             for components_mapping_definition_model in model.components_mapping
         ]
