@@ -9,6 +9,7 @@ from typing import Any, Dict, Iterable, List, Mapping, Optional, Type, Union
 from typing_extensions import deprecated
 
 from airbyte_cdk.sources.declarative.interpolation import InterpolatedString
+from airbyte_cdk.sources.declarative.interpolation.interpolated_boolean import InterpolatedBoolean
 from airbyte_cdk.sources.source import ExperimentalClassWarning
 
 
@@ -22,6 +23,7 @@ class ComponentMappingDefinition:
     value: Union["InterpolatedString", str]
     value_type: Optional[Type[Any]]
     parameters: InitVar[Mapping[str, Any]]
+    condition: Optional[str] = None
     create_or_update: Optional[bool] = False
 
 
@@ -35,6 +37,7 @@ class ResolvedComponentMappingDefinition:
     value: "InterpolatedString"
     value_type: Optional[Type[Any]]
     parameters: InitVar[Mapping[str, Any]]
+    condition: Optional[InterpolatedBoolean] = None
     create_or_update: Optional[bool] = False
 
 

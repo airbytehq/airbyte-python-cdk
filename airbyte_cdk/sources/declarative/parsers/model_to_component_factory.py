@@ -3800,6 +3800,7 @@ class ModelToComponentFactory:
             value=interpolated_value,
             value_type=ModelToComponentFactory._json_schema_type_name_to_type(model.value_type),
             create_or_update=model.create_or_update,
+            condition=model.condition,
             parameters=model.parameters or {},
         )
 
@@ -3818,16 +3819,19 @@ class ModelToComponentFactory:
             transformations=[],
         )
 
-        components_mapping = [
-            self._create_component_from_model(
-                model=components_mapping_definition_model,
-                value_type=ModelToComponentFactory._json_schema_type_name_to_type(
-                    components_mapping_definition_model.value_type
-                ),
-                config=config,
+        components_mapping = []
+        for component_mapping_definition_model in model.components_mapping:
+            if component_mapping_definition_model.condition:
+                raise ValueError("`condition` is only supported for     `ConfigComponentsResolver`")
+            components_mapping.append(
+                self._create_component_from_model(
+                    model=component_mapping_definition_model,
+                    value_type=ModelToComponentFactory._json_schema_type_name_to_type(
+                        component_mapping_definition_model.value_type
+                    ),
+                    config=config,
+                )
             )
-            for components_mapping_definition_model in model.components_mapping
-        ]
 
         return HttpComponentsResolver(
             retriever=retriever,
@@ -3851,7 +3855,9 @@ class ModelToComponentFactory:
         )
 
     def create_config_components_resolver(
-        self, model: ConfigComponentsResolverModel, config: Config
+        self,
+        model: ConfigComponentsResolverModel,
+        config: Config,
     ) -> Any:
         model_stream_configs = (
             model.stream_config if isinstance(model.stream_config, list) else [model.stream_config]
@@ -3871,6 +3877,7 @@ class ModelToComponentFactory:
                     components_mapping_definition_model.value_type
                 ),
                 config=config,
+                parameters=model.parameters,
             )
             for components_mapping_definition_model in model.components_mapping
         ]
@@ -3888,16 +3895,20 @@ class ModelToComponentFactory:
         stream_parameters = StreamParametersDefinition(
             list_of_parameters_for_stream=model.stream_parameters.list_of_parameters_for_stream
         )
-        components_mapping = [
-            self._create_component_from_model(
-                model=components_mapping_definition_model,
-                value_type=ModelToComponentFactory._json_schema_type_name_to_type(
-                    components_mapping_definition_model.value_type
-                ),
-                config=config,
+
+        components_mapping = []
+        for components_mapping_definition_model in model.components_mapping:
+            if components_mapping_definition_model.condition:
+                raise ValueError("`condition` is only supported for `ConfigComponentsResolver`")
+            components_mapping.append(
+                self._create_component_from_model(
+                    model=components_mapping_definition_model,
+                    value_type=ModelToComponentFactory._json_schema_type_name_to_type(
+                        components_mapping_definition_model.value_type
+                    ),
+                    config=config,
+                )
             )
-            for components_mapping_definition_model in model.components_mapping
-        ]
         return ParametrizedComponentsResolver(
             stream_parameters=stream_parameters,
             config=config,
