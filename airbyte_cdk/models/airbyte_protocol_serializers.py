@@ -1,6 +1,15 @@
 # Copyright (c) 2024 Airbyte, Inc., all rights reserved.
 import sys
-from typing import Any, Dict
+from typing import TYPE_CHECKING, Any, Dict
+
+if TYPE_CHECKING:
+    from serpyco_rs import CustomType, Serializer
+else:
+    USE_RUST_BACKEND = sys.platform != "emscripten"
+    if USE_RUST_BACKEND:
+        from serpyco_rs import CustomType, Serializer
+    else:
+        from serpyco import CustomType, Serializer
 
 from .airbyte_protocol import (  # type: ignore[attr-defined] # all classes are imported to airbyte_protocol via *
     AirbyteCatalog,
@@ -14,13 +23,6 @@ from .airbyte_protocol import (  # type: ignore[attr-defined] # all classes are 
     ConnectorSpecification,
 )
 
-USE_RUST_BACKEND = sys.platform != "emscripten"
-"""When run in WASM, use the pure Python backend for serpyco."""
-
-if USE_RUST_BACKEND:
-    from serpyco_rs import CustomType, Serializer
-else:
-    from serpyco import CustomType, Serializer
 
 
 class AirbyteStateBlobType(CustomType[AirbyteStateBlob, Dict[str, Any]]):
