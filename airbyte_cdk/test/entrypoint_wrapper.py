@@ -17,6 +17,7 @@ than that, there are integrations point that are annoying to integrate with usin
 import json
 import logging
 import re
+import sys
 import tempfile
 import traceback
 from collections import deque
@@ -28,7 +29,11 @@ from typing import Any, List, Literal, Optional, Union, final, overload
 
 import orjson
 from pydantic import ValidationError as V2ValidationError
-from serpyco_rs import SchemaValidationError
+
+if sys.platform == 'emscripten':
+    from serpyco import SchemaValidationError
+else:
+    from serpyco_rs import SchemaValidationError
 
 from airbyte_cdk.entrypoint import AirbyteEntrypoint
 from airbyte_cdk.exception_handler import assemble_uncaught_exception

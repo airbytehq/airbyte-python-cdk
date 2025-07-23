@@ -4,13 +4,18 @@
 
 import json
 import logging
+import sys
 import tempfile
 from contextlib import nullcontext as does_not_raise
 from typing import Any, List, Mapping, MutableMapping, Optional, Tuple, Union
 
 import orjson
 import pytest
-from serpyco_rs import SchemaValidationError
+
+if sys.platform == 'emscripten':
+    from serpyco import SchemaValidationError
+else:
+    from serpyco_rs import SchemaValidationError
 
 from airbyte_cdk.models import (
     AirbyteGlobalState,

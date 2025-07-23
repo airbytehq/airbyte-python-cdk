@@ -1,7 +1,11 @@
 # Copyright (c) 2024 Airbyte, Inc., all rights reserved.
+import sys
 from typing import Any, Dict
 
-from serpyco_rs import CustomType, Serializer
+if sys.platform == 'emscripten':
+    from serpyco import CustomType, Serializer
+else:
+    from serpyco_rs import CustomType, Serializer
 
 from .airbyte_protocol import (  # type: ignore[attr-defined] # all classes are imported to airbyte_protocol via *
     AirbyteCatalog,
