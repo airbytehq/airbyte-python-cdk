@@ -45,7 +45,7 @@ Jinja2 = "~3.1.2"
 jsonref = "~0.2"
 jsonschema = "~4.17.3"  # 4.18 has some significant breaking changes: https://github.com/python-jsonschema/jsonschema/releases/tag/v4.18.0
 packaging = "*"  # Transitive dependency used directly in code
-pandas = "2.2.2"
+pandas = ">=2.2.2,<3.0.0"
 pydantic = "^2.7"
 pyrate-limiter = "~3.1.0"
 python-dateutil = "^2.9.0"
@@ -80,7 +80,7 @@ unstructured = { version = "0.10.27", extras = ["docx", "pptx"], optional = true
 "unstructured.pytesseract" = { version = ">=0.3.12", optional = true }
 pyjwt = "^2.8.0"
 cryptography = ">=44.0.0,<45.0.0"  # Constrained as transitive dependency due to a bug in newer versions
-pytz = "2024.2"
+pytz = ">=2024.2"
 pytest = {version = "^7", optional = true }
 orjson = "^3.10.7"
 serpyco-rs = {version = "^1.10.2", markers = "sys_platform != 'emscripten'"}
