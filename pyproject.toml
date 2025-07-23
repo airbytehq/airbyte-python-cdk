@@ -88,7 +88,7 @@ serpyco = {version = "^1.3.0", markers = "sys_platform == 'emscripten'"}
 sqlalchemy = {version = "^2.0,!=2.0.36", optional = true }
 xmltodict = ">=0.13,<0.15"
 anyascii = "^0.3.2"
-whenever = "^0.6.16"
+whenever = { version = "^0.6.16", markers = "sys_platform != 'emscripten'"}  # TODO: Find a way to actually bundle the pure-python version
 setuptools = "^80.9.0"  # Some connectors depend on this as an undeclared transitive dependency (e.g. source-shopify)
 unidecode = "^1.3.8"  # IMPORTANT: DO NOT USE. Added to support source-google-sheets migration. This dep is deprecated in favour of `anyascii` and is slated for removal.
 dateparser = "^1.2.2"
