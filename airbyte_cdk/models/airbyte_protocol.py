@@ -8,7 +8,7 @@ from typing import Annotated, Any, Dict, List, Mapping, Optional, Union
 
 from airbyte_protocol_dataclasses.models import *  # noqa: F403  # Allow '*'
 
-if sys.platform == 'emscripten':
+if sys.platform == "emscripten":
     from serpyco.metadata import Alias
 else:
     from serpyco_rs.metadata import Alias

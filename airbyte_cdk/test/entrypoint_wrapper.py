@@ -30,7 +30,7 @@ from typing import Any, List, Literal, Optional, Union, final, overload
 import orjson
 from pydantic import ValidationError as V2ValidationError
 
-if sys.platform == 'emscripten':
+if sys.platform == "emscripten":
     from serpyco import SchemaValidationError
 else:
     from serpyco_rs import SchemaValidationError

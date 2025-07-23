@@ -2,7 +2,7 @@
 import sys
 from typing import Any, Dict
 
-if sys.platform == 'emscripten':
+if sys.platform == "emscripten":
     from serpyco import CustomType, Serializer
 else:
     from serpyco_rs import CustomType, Serializer
