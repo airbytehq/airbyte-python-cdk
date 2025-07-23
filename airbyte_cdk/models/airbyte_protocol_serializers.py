@@ -2,11 +2,6 @@
 import sys
 from typing import Any, Dict
 
-if sys.platform == "emscripten":
-    from serpyco import CustomType, Serializer
-else:
-    from serpyco_rs import CustomType, Serializer
-
 from .airbyte_protocol import (  # type: ignore[attr-defined] # all classes are imported to airbyte_protocol via *
     AirbyteCatalog,
     AirbyteMessage,
@@ -18,6 +13,14 @@ from .airbyte_protocol import (  # type: ignore[attr-defined] # all classes are 
     ConfiguredAirbyteStream,
     ConnectorSpecification,
 )
+
+USE_RUST_BACKEND = sys.platform != "emscripten"
+"""When run in WASM, use the pure Python backend for serpyco."""
+
+if USE_RUST_BACKEND:
+    from serpyco_rs import CustomType, Serializer
+else:
+    from serpyco import CustomType, Serializer
 
 
 class AirbyteStateBlobType(CustomType[AirbyteStateBlob, Dict[str, Any]]):
