@@ -677,7 +677,7 @@ class ModelToComponentFactory:
 
     def _init_mappings(self) -> None:
         self.PYDANTIC_MODEL_TO_CONSTRUCTOR: Dict[
-            Type[BaseModel], Union[Type[ComponentConstructor], Callable[..., Any]]
+            Type[BaseModel], Union[Type[ComponentConstructor[Any]], Callable[..., Any]]
         ] = {
             AddedFieldDefinitionModel: self.create_added_field_definition,
             AddFieldsModel: self.create_add_fields,
@@ -826,8 +826,11 @@ class ModelToComponentFactory:
         )
 
     def _create_component_from_model(
-        self, model: BaseModel, config: Config, **kwargs: Any
-    ) -> ComponentConstructor[BaseModel]:
+        self,
+        model: BaseModel,
+        config: Config,
+        **kwargs: Any,
+    ) -> Any:  # TODO: change -> Any to -> ComponentConstructor[BaseModel] once all components are updated with ComponentConstructor logic
         if model.__class__ not in self.PYDANTIC_MODEL_TO_CONSTRUCTOR:
             raise ValueError(
                 f"{model.__class__} with attributes {model} is not a valid component type"
@@ -847,8 +850,12 @@ class ModelToComponentFactory:
                 **kwargs,
             )
             return component_instance
-        else:
+        if inspect.ismethod(component):
             return component(model=model, config=config, **kwargs)
+        raise ValueError(
+            f"Unexpected component mapping type for {model.__class__}. "
+            f"Instance shource be one of ComponentConstructor or method implemented in ModelToComponentFactory"
+        )
 
     def get_model_deprecations(self) -> List[ConnectorBuilderLogMessage]:
         """
