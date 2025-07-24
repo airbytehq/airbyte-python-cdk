@@ -197,12 +197,12 @@
             try {
                 specButton.disabled = true;
                 updateStatus("Testing SPEC command...", "loading");
-                
+
                 // Test CDK CLI functionality
                 addToOutput("\n" + "=".repeat(30));
                 addToOutput("Testing 'spec' functionality...");
                 addToOutput("=".repeat(30));
-                
+
                 const specResult = await pyodide.runPython(`
                     import sys
                     from io import StringIO
@@ -257,7 +257,7 @@
                     result
                 `);
                 addToOutput(specResult);
-                
+
                 updateStatus("SPEC test completed successfully!", "success");
 
             } catch (error) {
@@ -272,11 +272,11 @@
             try {
                 readButton.disabled = true;
                 updateStatus("Testing READ command...", "loading");
-                
+
                 addToOutput("\n" + "=".repeat(30));
                 addToOutput("Testing 'read' functionality...");
                 addToOutput("=".repeat(30));
-                
+
                 const readResult = await pyodide.runPython(`
                     import sys
                     from io import StringIO
