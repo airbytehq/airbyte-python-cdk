@@ -37,16 +37,19 @@ from airbyte_cdk.models import (
     AirbyteLogMessage,
     AirbyteMessage,
     AirbyteStateMessage,
-    AirbyteStateMessageSerializer,
     AirbyteStreamState,
     AirbyteStreamStatus,
     ConfiguredAirbyteCatalog,
-    ConfiguredAirbyteCatalogSerializer,
     Level,
     TraceType,
     Type,
+    ab_configured_catalog_from_string,
+    ab_configured_catalog_to_string,
+    ab_connector_spec_from_string,
+    ab_connector_spec_to_string,
     ab_message_from_string,
     ab_message_to_string,
+    ab_state_message_to_string,
 )
 from airbyte_cdk.sources import Source
 from airbyte_cdk.test.models.scenario import ExpectedOutcome
@@ -449,7 +452,7 @@ def read(
         config_file = make_file(tmp_directory_path / "config.json", config)
         catalog_file = make_file(
             tmp_directory_path / "catalog.json",
-            orjson.dumps(ConfiguredAirbyteCatalogSerializer.dump(catalog)).decode(),
+            ab_configured_catalog_to_string(catalog),
         )
         args = [
             "read",
@@ -461,15 +464,13 @@ def read(
         if debug:
             args.append("--debug")
         if state is not None:
-            args.extend(
-                [
-                    "--state",
-                    make_file(
-                        tmp_directory_path / "state.json",
-                        f"[{','.join([orjson.dumps(AirbyteStateMessageSerializer.dump(stream_state)).decode() for stream_state in state])}]",
-                    ),
-                ]
-            )
+            args.extend([
+                "--state",
+                make_file(
+                    tmp_directory_path / "state.json",
+                    f"[{','.join([ab_state_message_to_string(stream_state) for stream_state in state])}]",
+                ),
+            ])
 
         return _run_command(
             source,

@@ -16,8 +16,9 @@ from airbyte_cdk.exception_handler import init_uncaught_exception_handler
 from airbyte_cdk.models import (
     AirbyteMessage,
     ConfiguredAirbyteCatalog,
-    ConfiguredAirbyteCatalogSerializer,
     Type,
+    ab_configured_catalog_from_string,
+    ab_configured_catalog_to_string,
     ab_message_from_string,
     ab_message_to_string,
 )
@@ -59,9 +60,7 @@ class Destination(Connector, ABC):
         configured_catalog_path: str,
         input_stream: io.TextIOWrapper,
     ) -> Iterable[AirbyteMessage]:
-        catalog = ConfiguredAirbyteCatalogSerializer.load(
-            orjson.loads(open(configured_catalog_path).read())
-        )
+        catalog = ab_configured_catalog_from_string(open(configured_catalog_path).read())
         input_messages = self._parse_input_stream(input_stream)
         logger.info("Begin writing to the destination...")
         yield from self.write(

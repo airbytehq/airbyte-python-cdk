@@ -35,9 +35,9 @@ from airbyte_cdk.models import (
     AirbyteStateMessage,
     AirbyteTraceMessage,
     ConfiguredAirbyteCatalog,
-    ConnectorSpecificationSerializer,
     TraceType,
     Type,
+    ab_connector_spec_from_string,
     ab_message_to_string,
 )
 from airbyte_cdk.sources.declarative.concurrent_declarative_source import (
@@ -147,8 +147,7 @@ def handle_remote_manifest_command(args: list[str]) -> None:
                 "Could not find `spec.json` file for source-declarative-manifest"
             )
 
-        spec_obj = json.loads(json_spec)
-        spec = ConnectorSpecificationSerializer.load(spec_obj)
+        spec = ab_connector_spec_from_string(json_spec.decode("utf-8"))
 
         message = AirbyteMessage(type=Type.SPEC, spec=spec)
         print(ab_message_to_string(message))

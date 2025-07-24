@@ -9,6 +9,8 @@ import dacite
 import orjson
 from pydantic import ValidationError
 
+from airbyte_cdk.connector_builder.test_reader.helpers import airbyte_message_to_json
+
 from .airbyte_protocol import (  # type: ignore[attr-defined] # all classes are imported to airbyte_protocol via *
     AirbyteCatalog,
     AirbyteMessage,
@@ -31,101 +33,7 @@ T = TypeVar("T")
 
 logger = logging.getLogger("airbyte")
 
-
-class CustomSerializer:
-    """Custom serializer that mimics serpyco-rs Serializer API"""
-
-    def __init__(
-        self,
-        model_class: Type[T],
-        omit_none: bool = False,
-        custom_type_resolver: Callable | None = None,
-    ):
-        self.model_class = model_class
-        self.omit_none = omit_none
-        self.custom_type_resolver = custom_type_resolver
-
-    def dump(self, obj: T) -> Dict[str, Any]:
-        """Convert dataclass to dictionary, omitting None values if configured"""
-        if hasattr(obj, "__dict__"):
-            result = {}
-            for key, value in obj.__dict__.items():
-                if self.omit_none and value is None:
-                    continue
-                # Handle custom types like AirbyteStateBlob
-                if self.custom_type_resolver and hasattr(value, "__class__"):
-                    custom_handler = self.custom_type_resolver(value.__class__)
-                    if custom_handler:
-                        value = custom_handler.serialize(value)
-                # Recursively handle nested objects
-                if hasattr(value, "__dict__"):
-                    value = self._serialize_nested(value)
-                elif isinstance(value, list):
-                    value = [
-                        self._serialize_nested(item) if hasattr(item, "__dict__") else item
-                        for item in value
-                    ]
-                result[key] = value
-            return result
-        return obj.__dict__ if hasattr(obj, "__dict__") else {}
-
-    def load(self, data: Dict[str, Any]) -> T:
-        """Convert dictionary to dataclass instance"""
-        # Handle custom types
-        return dacite.from_dict(data_class=self.model_class, data=data)
-
-    def _serialize_nested(self, obj: Any) -> Any:
-        """Helper to serialize nested objects"""
-        if hasattr(obj, "__dict__"):
-            result = {}
-            for key, value in obj.__dict__.items():
-                if self.omit_none and value is None:
-                    continue
-                result[key] = value
-            return result
-        return obj
-
-
-if USE_RUST_BACKEND:
-    from serpyco_rs import CustomType, Serializer  # type: ignore[import]
-
-SERIALIZER = Serializer if USE_RUST_BACKEND else CustomSerializer
-
 # Making this a no-op for now:
-custom_type_resolver = None
-
-# No idea why this is here. Commenting out for now.
-# def custom_type_resolver(t: type) -> AirbyteStateBlobType | None:
-#     return AirbyteStateBlobType() if t is AirbyteStateBlob else None
-#
-# class AirbyteStateBlobType(CustomType[AirbyteStateBlob, Dict[str, Any]]):
-#     def serialize(self, value: AirbyteStateBlob) -> Dict[str, Any]:
-#         # cant use orjson.dumps() directly because private attributes are excluded, e.g. "__ab_full_refresh_sync_complete"
-#         return {k: v for k, v in value.__dict__.items()}
-
-#     def deserialize(self, value: Dict[str, Any]) -> AirbyteStateBlob:
-#         return AirbyteStateBlob(value)
-
-#     def get_json_schema(self) -> Dict[str, Any]:
-#         return {"type": "object"}
-
-# Create serializer instances maintaining the same API
-AirbyteStateMessageSerializer = SERIALIZER(
-    AirbyteStateMessage, omit_none=True, custom_type_resolver=custom_type_resolver
-)
-AirbyteMessageSerializer = SERIALIZER(
-    AirbyteMessage, omit_none=True, custom_type_resolver=custom_type_resolver
-)
-ConfiguredAirbyteCatalogSerializer = SERIALIZER(ConfiguredAirbyteCatalog, omit_none=True)
-ConnectorSpecificationSerializer = SERIALIZER(ConnectorSpecification, omit_none=True)
-
-
-def _custom_json_serializer(val: object) -> str:
-    """Handle custom serialization needs for AirbyteMessage."""
-    if isinstance(val, Enum):
-        return str(val.value)
-
-    return str(val)
 
 
 def ab_message_to_string(
@@ -140,28 +48,11 @@ def ab_message_to_string(
     Returns:
         str: JSON string representation of the AirbyteMessage.
     """
-    global _HAS_LOGGED_FOR_SERIALIZATION_ERROR
-    dict_obj = AirbyteMessageSerializer.dump(message)
-
-    try:
-        return orjson.dumps(
-            dict_obj,
-            default=_custom_json_serializer,
-        ).decode()
-    except Exception as exception:
-        if not _HAS_LOGGED_FOR_SERIALIZATION_ERROR:
-            logger.warning(
-                f"There was an error during the serialization of an AirbyteMessage: `{exception}`. This might impact the sync performances."
-            )
-            _HAS_LOGGED_FOR_SERIALIZATION_ERROR = True
-        return json.dumps(
-            dict_obj,
-            default=_custom_json_serializer,
-        )
+    return message.model_dump_json()
 
 
 def ab_message_from_string(
-    message_str: str,
+    message_json: str,
 ) -> AirbyteMessage:
     """
     Convert a JSON string to an AirbyteMessage.
@@ -173,9 +64,118 @@ def ab_message_from_string(
         AirbyteMessage: The deserialized AirbyteMessage.
     """
     try:
-        message_dict = orjson.loads(message_str)
-        return AirbyteMessageSerializer.load(message_dict)
+        return AirbyteMessage.model_validate_json(message_json)
     except ValidationError as e:
         raise ValueError(f"Invalid AirbyteMessage format: {e}") from e
+    except orjson.JSONDecodeError as e:
+        raise ValueError(f"Failed to decode JSON: {e}") from e
+
+
+def ab_connector_spec_from_string(
+    spec_json: str,
+) -> ConnectorSpecification:
+    """
+    Convert a JSON string to a ConnectorSpecification.
+
+    Args:
+        spec_str (str): The JSON string to convert.
+
+    Returns:
+        ConnectorSpecification: The deserialized ConnectorSpecification.
+    """
+    try:
+        return ConnectorSpecification.model_validate_json(spec_json)
+    except ValidationError as e:
+        raise ValueError(f"Invalid ConnectorSpecification format: {e}") from e
+    except orjson.JSONDecodeError as e:
+        raise ValueError(f"Failed to decode JSON: {e}") from e
+
+
+def ab_connector_spec_to_string(
+    spec: ConnectorSpecification,
+) -> str:
+    """
+    Convert a ConnectorSpecification to a JSON string.
+
+    Args:
+        spec (ConnectorSpecification): The ConnectorSpecification to convert.
+
+    Returns:
+        str: JSON string representation of the ConnectorSpecification.
+    """
+    return spec.model_dump_json()
+
+
+def ab_configured_catalog_to_string(
+    catalog: ConfiguredAirbyteCatalog,
+) -> str:
+    """
+    Convert a ConfiguredAirbyteCatalog to a JSON string.
+
+    Args:
+        catalog (ConfiguredAirbyteCatalog): The ConfiguredAirbyteCatalog to convert.
+
+    Returns:
+        str: JSON string representation of the ConfiguredAirbyteCatalog.
+    """
+    return catalog.model_dump_json()
+
+
+def ab_configured_catalog_from_string(
+    catalog_json: str,
+) -> ConfiguredAirbyteCatalog:
+    """
+    Convert a JSON string to a ConfiguredAirbyteCatalog.
+
+    Args:
+        catalog_json (str): The JSON string to convert.
+
+    Returns:
+        ConfiguredAirbyteCatalog: The deserialized ConfiguredAirbyteCatalog.
+    """
+    try:
+        return ConfiguredAirbyteCatalog.model_validate_json(catalog_json)
+    except ValidationError as e:
+        raise ValueError(f"Invalid ConfiguredAirbyteCatalog format: {e}") from e
+    except orjson.JSONDecodeError as e:
+        raise ValueError(f"Failed to decode JSON: {e}") from e
+
+
+def ab_state_message_from_string(
+    state_json: str,
+) -> AirbyteStateMessage:
+    """
+    Convert a JSON string to an AirbyteStateMessage.
+
+    Args:
+        state_json (str): The JSON string to convert.
+
+    Returns:
+        AirbyteStateMessage: The deserialized AirbyteStateMessage.
+    """
+    try:
+        return AirbyteStateMessage.model_validate_json(state_json)
+    except ValidationError as e:
+        raise ValueError(f"Invalid AirbyteStateMessage format: {e}") from e
+    except orjson.JSONDecodeError as e:
+        raise ValueError(f"Failed to decode JSON: {e}") from e
+
+
+def ab_state_blob_from_string(
+    state_blob_json: str,
+) -> AirbyteStateBlob:
+    """
+    Convert a JSON string to an AirbyteStateBlob.
+
+    Args:
+        state_blob_json (str): The JSON string to convert.
+
+    Returns:
+        AirbyteStateBlob: The deserialized AirbyteStateBlob.
+    """
+    try:
+        return AirbyteStateBlob.model_validate_json(state_blob_json)
+    except ValidationError as e:
+        raise ValueError(f"Invalid AirbyteStateBlob format: {e}") from e
     except orjson.JSONDecodeError as e:
         raise ValueError(f"Failed to decode JSON: {e}") from e

@@ -22,8 +22,6 @@ from airbyte_cdk.models import (
     AirbyteMessage,
     AirbyteStateMessage,
     ConfiguredAirbyteCatalog,
-    ConfiguredAirbyteCatalogSerializer,
-    ab_message_to_string,
 )
 from airbyte_cdk.sources.declarative.manifest_declarative_source import ManifestDeclarativeSource
 from airbyte_cdk.sources.source import Source
@@ -53,7 +51,7 @@ def get_config_and_catalog_from_args(
 
     command = config["__command"]
     if command == "test_read":
-        catalog = ConfiguredAirbyteCatalogSerializer.load(BaseConnector.read_config(catalog_path))
+        catalog = ConfiguredAirbyteCatalog.model_validate(BaseConnector.read_config(catalog_path))
         state = Source.read_state(state_path)
     else:
         catalog = None
