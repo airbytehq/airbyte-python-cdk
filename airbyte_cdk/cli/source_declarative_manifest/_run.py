@@ -298,10 +298,10 @@ def _register_components_from_file(filepath: str) -> None:
     spec.loader.exec_module(module)
 
 
-def run() -> None:
+def run(args: list[str] | None = None) -> None:
     """Run the `source-declarative-manifest` CLI.
 
     Args are detected from the command line, and the appropriate command is executed.
     """
-    args: list[str] = sys.argv[1:]
+    args = args or sys.argv[1:]
     handle_command(args)
