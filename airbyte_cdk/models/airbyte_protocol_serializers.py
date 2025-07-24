@@ -1,13 +1,12 @@
 # Copyright (c) 2024 Airbyte, Inc., all rights reserved.
 import json
+import logging
 import sys
 from enum import Enum
 from typing import Any, Callable, Dict, Type, TypeVar, cast
 
 import orjson
 from pydantic import ValidationError
-
-from airbyte_cdk.logger import init_logger
 
 from .airbyte_protocol import (  # type: ignore[attr-defined] # all classes are imported to airbyte_protocol via *
     AirbyteCatalog,
@@ -29,8 +28,7 @@ _HAS_LOGGED_FOR_SERIALIZATION_ERROR = False
 
 T = TypeVar("T")
 
-
-logger = init_logger("airbyte")
+logger = logging.getLogger("airbyte")
 
 
 class CustomSerializer:
