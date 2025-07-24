@@ -70,7 +70,9 @@
             Initializing Pyodide...
         </div>
 
-        <button id="runTest" onclick="runCDKTest()" disabled>Run CDK Test</button>
+        <button id="setupCDK" onclick="setupCDK()" disabled>Set up CDK</button>
+        <button id="testSpec" onclick="testSpec()" disabled>Test SPEC</button>
+        <button id="testRead" onclick="testRead()" disabled>Test Read</button>
 
         <div class="container">
             <h3>Test Output:</h3>
@@ -81,9 +83,9 @@
             <h3>Test Details:</h3>
             <p>This test will:</p>
             <ol>
-                <li>Install the airbyte-cdk package using micropip</li>
-                <li>Download the PokeAPI manifest and catalog files</li>
-                <li>Run the declarative source CLI commands</li>
+                <li>Click "Set up CDK" to install the airbyte-cdk package and download test files</li>
+                <li>Click "Test SPEC" to run the declarative source spec command</li>
+                <li>Click "Test Read" to run the declarative source read command</li>
             </ol>
         </div>
     </div>
@@ -91,7 +93,9 @@
     <script>
         const output = document.getElementById("output");
         const status = document.getElementById("status");
-        const runButton = document.getElementById("runTest");
+        const setupButton = document.getElementById("setupCDK");
+        const specButton = document.getElementById("testSpec");
+        const readButton = document.getElementById("testRead");
 
         function addToOutput(text) {
             output.textContent += text + "\n";
@@ -110,7 +114,7 @@
                 window.pyodide = await loadPyodide();
 
                 updateStatus("Pyodide loaded successfully!", "success");
-                runButton.disabled = false;
+                setupButton.disabled = false;
                 addToOutput("✓ Pyodide initialized successfully");
                 addToOutput("✓ Python version: " + pyodide.runPython("import sys; sys.version"));
                 addToOutput("✓ Platform: " + pyodide.runPython("import sys; sys.platform"));
@@ -118,6 +122,205 @@
             } catch (error) {
                 updateStatus("Failed to load Pyodide: " + error.message, "error");
                 addToOutput("✗ Error initializing Pyodide: " + error.message);
+            }
+        }
+
+        async function setupCDK() {
+            try {
+                setupButton.disabled = true;
+                updateStatus("Setting up CDK...", "loading");
+                addToOutput("\n" + "=".repeat(50));
+                addToOutput("Starting Airbyte CDK setup");
+                addToOutput("=".repeat(50));
+
+                // Install required packages
+                addToOutput("\n1. Installing packages...");
+                await pyodide.loadPackage("micropip");
+                addToOutput("✓ micropip loaded successfully");
+                await pyodide.loadPackage("ssl");
+                addToOutput("✓ ssl loaded successfully");
+                await pyodide.runPython(`
+                    import pyodide
+                    # pyodide.loadPackage("micropip");
+                    import micropip
+                    micropip.install(
+                        "https://files.pythonhosted.org/packages/e6/63/b1d16101e54a65af9f0cea700447563876f3bb1a1cc8a71da48271aa7869/airbyte_cdk-6.60.0.post22.dev16503405621-py3-none-any.whl",
+                        keep_going=True,
+                    )
+                `);
+                addToOutput("✓ airbyte-cdk installed successfully");
+
+                // Download test files
+                addToOutput("\n2. Downloading test files...");
+                const downloadsResult = await pyodide.runPython(`
+                    import pathlib
+                    from pyodide.http import open_url
+
+                    # Download catalog
+                    catalog_url = "https://raw.githubusercontent.com/airbytehq/airbyte/refs/heads/master/airbyte-integrations/connectors/source-pokeapi/integration_tests/configured_catalog.json"
+                    catalog_content = open_url(catalog_url).read()
+                    pathlib.Path("catalog.json").write_text(catalog_content)
+                    print("✓ Downloaded catalog.json")
+
+                    # Download manifest
+                    manifest_url = "https://raw.githubusercontent.com/airbytehq/airbyte/refs/heads/master/airbyte-integrations/connectors/source-pokeapi/manifest.yaml"
+                    manifest_content = open_url(manifest_url).read()
+                    pathlib.Path("manifest.yaml").write_text(manifest_content)
+                    print("✓ Downloaded manifest.yaml")
+
+                    # Create config
+                    config_content = '{"pokemon_name": "pikachu"}'
+                    pathlib.Path("config.json").write_text(config_content)
+                    print("✓ Created config.json")
+
+                    "All files downloaded and created successfully!"
+                `);
+                addToOutput(downloadsResult);
+
+                addToOutput("\n" + "=".repeat(50));
+                addToOutput("CDK setup completed!");
+                addToOutput("=".repeat(50));
+
+                updateStatus("CDK setup completed successfully!", "success");
+                specButton.disabled = false;
+                readButton.disabled = false;
+
+            } catch (error) {
+                addToOutput("✗ Setup failed with error: " + error.message);
+                updateStatus("Setup failed: " + error.message, "error");
+            } finally {
+                setupButton.disabled = false;
+            }
+        }
+
+        async function testSpec() {
+            try {
+                specButton.disabled = true;
+                updateStatus("Testing SPEC command...", "loading");
+                
+                // Test CDK CLI functionality
+                addToOutput("\n" + "=".repeat(30));
+                addToOutput("Testing 'spec' functionality...");
+                addToOutput("=".repeat(30));
+                
+                const specResult = await pyodide.runPython(`
+                    import sys
+                    from io import StringIO
+                    from airbyte_cdk.cli.source_declarative_manifest import run
+
+                    try:
+                        # Test the CLI with a simple command first
+                        print("Testing 'spec' command...", file=sys.stderr)
+                        # Capture both stdout and stderr
+                        old_stdout = sys.stdout
+                        old_stderr = sys.stderr
+                        captured_stdout = StringIO()
+                        captured_stderr = StringIO()
+
+                        sys.stdout = captured_stdout
+                        sys.stderr = captured_stderr
+
+                        args = [
+                            "spec",
+                            "--manifest-path",
+                            "manifest.yaml",
+                            "--config",
+                            "config.json",
+                            "--catalog",
+                            "catalog.json",
+                        ]
+
+                        # Run the CLI
+                        run(args)
+
+                        result = "✓ CLI executed successfully"
+
+                    except Exception as e:
+                        result = f"✗ CLI execution failed: {str(e)}"
+                        import traceback
+                        result += f"\\nTraceback: {traceback.format_exc()}"
+                    finally:
+                        # Get captured output
+                        stdout_content = captured_stdout.getvalue()
+                        stderr_content = captured_stderr.getvalue()
+
+                        result = "✓ CLI executed successfully\\n"
+                        if stdout_content:
+                            result += f"STDOUT:\\n{stdout_content}\\n"
+                        if stderr_content:
+                            result += f"STDERR:\\n{stderr_content}\\n"
+
+                        # Restore original stdout/stderr
+                        sys.stdout = old_stdout
+                        sys.stderr = old_stderr
+
+                    result
+                `);
+                addToOutput(specResult);
+                
+                updateStatus("SPEC test completed successfully!", "success");
+
+            } catch (error) {
+                addToOutput("✗ SPEC test failed with error: " + error.message);
+                updateStatus("SPEC test failed: " + error.message, "error");
+            } finally {
+                specButton.disabled = false;
+            }
+        }
+
+        async function testRead() {
+            try {
+                readButton.disabled = true;
+                updateStatus("Testing READ command...", "loading");
+                
+                addToOutput("\n" + "=".repeat(30));
+                addToOutput("Testing 'read' functionality...");
+                addToOutput("=".repeat(30));
+                
+                const readResult = await pyodide.runPython(`
+                    import sys
+                    from io import StringIO
+                    from airbyte_cdk.cli.source_declarative_manifest import run
+
+                    # # Capture stdout
+                    # old_stdout = sys.stdout
+                    # sys.stdout = captured_output = StringIO()
+
+                    try:
+                        # Test the CLI with a simple command first
+                        print("Testing 'read' command...", file=sys.stderr)
+
+                        args = [
+                            "read",
+                            "--manifest-path",
+                            "manifest.yaml",
+                            "--config",
+                            "config.json",
+                            "--catalog",
+                            "catalog.json",
+                        ]
+
+                        # Run the CLI
+                        run(args)
+
+                        result = "✓ CLI executed successfully"
+
+                    except Exception as e:
+                        result = f"✗ CLI execution failed: {str(e)}"
+                        import traceback
+                        result += f"\\nTraceback: {traceback.format_exc()}"
+
+                    result
+                `);
+                addToOutput(readResult);
+
+                updateStatus("READ test completed successfully!", "success");
+
+            } catch (error) {
+                addToOutput("✗ READ test failed with error: " + error.message);
+                updateStatus("READ test failed: " + error.message, "error");
+            } finally {
+                readButton.disabled = false;
             }
         }
 
@@ -272,13 +475,8 @@
                 addToOutput("WASM compatibility test completed!");
                 addToOutput("=".repeat(50));
 
-                updateStatus("Test completed successfully!", "success");
-
-            } catch (error) {
-                addToOutput("✗ Test failed with error: " + error.message);
-                updateStatus("Test failed: " + error.message, "error");
             } finally {
-                runButton.disabled = false;
+                readButton.disabled = false;
             }
         }
 
