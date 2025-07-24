@@ -850,7 +850,7 @@ class ModelToComponentFactory:
                 **kwargs,
             )
             return component_instance
-        if inspect.ismethod(component):
+        if inspect.ismethod(component) or inspect.isfunction(component):
             return component(model=model, config=config, **kwargs)
         raise ValueError(
             f"Unexpected component mapping type for {model.__class__}. "
