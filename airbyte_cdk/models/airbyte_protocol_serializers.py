@@ -1,6 +1,6 @@
 # Copyright (c) 2024 Airbyte, Inc., all rights reserved.
 import sys
-from typing import Any, Dict, Type, TypeVar
+from typing import Any, Callable, Dict, Type, TypeVar
 
 import orjson
 from pydantic import ValidationError
