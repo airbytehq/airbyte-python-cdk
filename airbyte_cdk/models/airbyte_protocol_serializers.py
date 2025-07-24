@@ -9,8 +9,6 @@ import dacite
 import orjson
 from pydantic import ValidationError
 
-from airbyte_cdk.connector_builder.test_reader.helpers import airbyte_message_to_json
-
 from .airbyte_protocol import (  # type: ignore[attr-defined] # all classes are imported to airbyte_protocol via *
     AirbyteCatalog,
     AirbyteMessage,
