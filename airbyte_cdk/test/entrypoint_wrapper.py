@@ -30,11 +30,6 @@ from typing import Any, List, Literal, Optional, Union, final, overload
 import orjson
 from pydantic import ValidationError as V2ValidationError
 
-if sys.platform == 'emscripten':
-    from serpyco import SchemaValidationError
-else:
-    from serpyco_rs import SchemaValidationError
-
 from airbyte_cdk.entrypoint import AirbyteEntrypoint
 from airbyte_cdk.exception_handler import assemble_uncaught_exception
 from airbyte_cdk.logger import AirbyteLogFormatter
@@ -54,6 +49,13 @@ from airbyte_cdk.models import (
 )
 from airbyte_cdk.sources import Source
 from airbyte_cdk.test.models.scenario import ExpectedOutcome
+
+JsonValidationErrors: tuple[type[Exception], ...] = (orjson.JSONDecodeError,)
+# Conditionally import and create a union type for exception handling
+if sys.platform != "emscripten":
+    from serpyco_rs import SchemaValidationError
+
+    JsonValidationErrors = (orjson.JSONDecodeError, SchemaValidationError)
 
 
 class AirbyteEntrypointException(Exception):
@@ -123,7 +125,7 @@ class EntrypointOutput:
     def _parse_message(message: str) -> AirbyteMessage:
         try:
             return AirbyteMessageSerializer.load(orjson.loads(message))
-        except (orjson.JSONDecodeError, SchemaValidationError):
+        except JsonValidationErrors:
             # The platform assumes that logs that are not of AirbyteMessage format are log messages
             return AirbyteMessage(
                 type=Type.LOG, log=AirbyteLogMessage(level=Level.INFO, message=message)
