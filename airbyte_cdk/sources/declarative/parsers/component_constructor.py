@@ -5,9 +5,10 @@
 from dataclasses import dataclass
 from typing import Any, Callable, Generic, Mapping, Optional, Type, TypeVar
 
+from pydantic.v1 import BaseModel
+
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import ValueType
 from airbyte_cdk.sources.types import Config
-from pydantic.v1 import BaseModel
 
 M = TypeVar("M", bound=BaseModel)
 

@@ -18,12 +18,12 @@ from typing import (
     MutableMapping,
     Optional,
     Type,
+    TypeVar,
     Union,
     cast,
     get_args,
     get_origin,
     get_type_hints,
-    TypeVar,
 )
 
 from isodate import parse_duration
@@ -447,6 +447,7 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     ZipfileDecoder as ZipfileDecoderModel,
 )
+from airbyte_cdk.sources.declarative.parsers.component_constructor import ComponentConstructor
 from airbyte_cdk.sources.declarative.parsers.custom_code_compiler import (
     COMPONENTS_MODULE_NAME,
     SDM_COMPONENTS_MODULE_NAME,
@@ -616,8 +617,6 @@ from airbyte_cdk.sources.streams.concurrent.state_converters.incrementing_count_
 from airbyte_cdk.sources.streams.http.error_handlers.response_models import ResponseAction
 from airbyte_cdk.sources.types import Config
 from airbyte_cdk.sources.utils.transform import TransformConfig, TypeTransformer
-from airbyte_cdk.sources.declarative.parsers.component_constructor import ComponentConstructor
-
 
 ComponentDefinition = Mapping[str, Any]
 
