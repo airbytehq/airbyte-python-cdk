@@ -96,13 +96,23 @@ def handle_request(args: List[str]) -> str:
         handle_connector_builder_request(source, command, config, catalog, state, limits)
     )
 
+def run(args: list[str] | None) -> None:
+    """Run the connector builder handler."""
+    if args is None:
+        args = sys.argv[1:]
 
-if __name__ == "__main__":
     try:
-        print(handle_request(sys.argv[1:]))
+        result = handle_request(args)
+        print(result)
     except Exception as exc:
         error = AirbyteTracedException.from_exception(
             exc, message=f"Error handling request: {str(exc)}"
         )
         m = error.as_airbyte_message()
         print(ab_message_to_string(m))
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    run(sys.argv[1:])
+    sys.exit(1)
