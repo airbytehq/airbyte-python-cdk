@@ -14,11 +14,12 @@ from airbyte_cdk.models import (
     AirbyteErrorTraceMessage,
     AirbyteLogMessage,
     AirbyteMessage,
-    AirbyteMessageSerializer,
     AirbyteTraceMessage,
     FailureType,
     Level,
     TraceType,
+    ab_message_from_string,
+    ab_message_to_string,
 )
 from airbyte_cdk.models import Type as MessageType
 from airbyte_cdk.sources.streams.concurrent.exceptions import ExceptionWithDisplayMessage
@@ -82,10 +83,10 @@ def test_uncaught_exception_handler():
 
     log_output, trace_output = stdout_lines
 
-    out_log_message = AirbyteMessageSerializer.load(json.loads(log_output))
+    out_log_message = ab_message_from_string(log_output)
     assert out_log_message == expected_log_message, "Log message should be emitted in expected form"
 
-    out_trace_message = AirbyteMessageSerializer.load(json.loads(trace_output))
+    out_trace_message = ab_message_from_string(trace_output)
     assert out_trace_message.trace.emitted_at > 0
     out_trace_message.trace.emitted_at = 0.0  # set a specific emitted_at value for testing
     assert out_trace_message == expected_trace_message, (

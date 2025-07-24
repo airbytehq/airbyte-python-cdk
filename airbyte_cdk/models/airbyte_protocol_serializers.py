@@ -1,9 +1,13 @@
 # Copyright (c) 2024 Airbyte, Inc., all rights reserved.
+import json
 import sys
-from typing import Any, Callable, Dict, Type, TypeVar
+from enum import Enum
+from typing import Any, Callable, Dict, Type, TypeVar, cast
 
 import orjson
 from pydantic import ValidationError
+
+from airbyte_cdk.logger import init_logger
 
 from .airbyte_protocol import (  # type: ignore[attr-defined] # all classes are imported to airbyte_protocol via *
     AirbyteCatalog,
@@ -20,8 +24,14 @@ from .airbyte_protocol import (  # type: ignore[attr-defined] # all classes are 
 USE_RUST_BACKEND = sys.platform != "emscripten"
 """When run in WASM, use the pure Python backend for serpyco."""
 
+_HAS_LOGGED_FOR_SERIALIZATION_ERROR = False
+"""Track if we have logged an error for serialization issues."""
 
 T = TypeVar("T")
+
+
+logger = init_logger("airbyte")
+
 
 class CustomSerializer:
     """Custom serializer that mimics serpyco-rs Serializer API"""
@@ -101,11 +111,6 @@ custom_type_resolver = None
 #         return {"type": "object"}
 
 # Create serializer instances maintaining the same API
-AirbyteCatalogSerializer = SERIALIZER(AirbyteCatalog, omit_none=True)
-AirbyteStreamSerializer = SERIALIZER(AirbyteStream, omit_none=True)
-AirbyteStreamStateSerializer = SERIALIZER(
-    AirbyteStreamState, omit_none=True, custom_type_resolver=custom_type_resolver
-)
 AirbyteStateMessageSerializer = SERIALIZER(
     AirbyteStateMessage, omit_none=True, custom_type_resolver=custom_type_resolver
 )
@@ -113,5 +118,65 @@ AirbyteMessageSerializer = SERIALIZER(
     AirbyteMessage, omit_none=True, custom_type_resolver=custom_type_resolver
 )
 ConfiguredAirbyteCatalogSerializer = SERIALIZER(ConfiguredAirbyteCatalog, omit_none=True)
-ConfiguredAirbyteStreamSerializer = SERIALIZER(ConfiguredAirbyteStream, omit_none=True)
 ConnectorSpecificationSerializer = SERIALIZER(ConnectorSpecification, omit_none=True)
+
+
+def _custom_json_serializer(val: object) -> str:
+    """Handle custom serialization needs for AirbyteMessage."""
+    if isinstance(val, Enum):
+        return str(val.value)
+
+    return str(val)
+
+
+def ab_message_to_string(
+    message: AirbyteMessage,
+) -> str:
+    """
+    Convert an AirbyteMessage to a JSON string.
+
+    Args:
+        message (AirbyteMessage): The Airbyte message to convert.
+
+    Returns:
+        str: JSON string representation of the AirbyteMessage.
+    """
+    global _HAS_LOGGED_FOR_SERIALIZATION_ERROR
+    dict_obj = AirbyteMessageSerializer.dump(message)
+
+    try:
+        return orjson.dumps(
+            dict_obj,
+            default=_custom_json_serializer,
+        ).decode()
+    except Exception as exception:
+        if not _HAS_LOGGED_FOR_SERIALIZATION_ERROR:
+            logger.warning(
+                f"There was an error during the serialization of an AirbyteMessage: `{exception}`. This might impact the sync performances."
+            )
+            _HAS_LOGGED_FOR_SERIALIZATION_ERROR = True
+        return json.dumps(
+            dict_obj,
+            default=_custom_json_serializer,
+        )
+
+
+def ab_message_from_string(
+    message_str: str,
+) -> AirbyteMessage:
+    """
+    Convert a JSON string to an AirbyteMessage.
+
+    Args:
+        message_str (str): The JSON string to convert.
+
+    Returns:
+        AirbyteMessage: The deserialized AirbyteMessage.
+    """
+    try:
+        message_dict = orjson.loads(message_str)
+        return AirbyteMessageSerializer.load(message_dict)
+    except ValidationError as e:
+        raise ValueError(f"Invalid AirbyteMessage format: {e}") from e
+    except orjson.JSONDecodeError as e:
+        raise ValueError(f"Failed to decode JSON: {e}") from e

@@ -36,7 +36,6 @@ from airbyte_cdk.logger import AirbyteLogFormatter
 from airbyte_cdk.models import (
     AirbyteLogMessage,
     AirbyteMessage,
-    AirbyteMessageSerializer,
     AirbyteStateMessage,
     AirbyteStateMessageSerializer,
     AirbyteStreamState,
@@ -46,6 +45,8 @@ from airbyte_cdk.models import (
     Level,
     TraceType,
     Type,
+    ab_message_from_string,
+    ab_message_to_string,
 )
 from airbyte_cdk.sources import Source
 from airbyte_cdk.test.models.scenario import ExpectedOutcome
@@ -124,7 +125,7 @@ class EntrypointOutput:
     @staticmethod
     def _parse_message(message: str) -> AirbyteMessage:
         try:
-            return AirbyteMessageSerializer.load(orjson.loads(message))
+            return ab_message_from_string(message)
         except JsonValidationErrors:
             # The platform assumes that logs that are not of AirbyteMessage format are log messages
             return AirbyteMessage(

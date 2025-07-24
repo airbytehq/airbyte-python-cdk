@@ -39,7 +39,6 @@ from airbyte_cdk.connector_builder.models import (
 from airbyte_cdk.models import (
     AirbyteLogMessage,
     AirbyteMessage,
-    AirbyteMessageSerializer,
     AirbyteRecordMessage,
     AirbyteStateBlob,
     AirbyteStateMessage,
@@ -54,6 +53,7 @@ from airbyte_cdk.models import (
     StreamDescriptor,
     SyncMode,
     Type,
+    ab_message_to_string,
 )
 from airbyte_cdk.models import Type as MessageType
 from airbyte_cdk.sources.declarative.declarative_stream import DeclarativeStream
@@ -756,10 +756,7 @@ def test_read():
             limits.max_records,
         )
         output_record.record.emitted_at = 1
-        assert (
-            orjson.dumps(AirbyteMessageSerializer.dump(output_record)).decode()
-            == orjson.dumps(AirbyteMessageSerializer.dump(expected_airbyte_message)).decode()
-        )
+        assert ab_message_to_string(output_record) == ab_message_to_string(expected_airbyte_message)
 
 
 def test_config_update() -> None:

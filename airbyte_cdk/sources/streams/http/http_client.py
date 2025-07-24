@@ -14,12 +14,12 @@ import requests_cache
 from requests.auth import AuthBase
 
 from airbyte_cdk.models import (
-    AirbyteMessageSerializer,
     AirbyteStreamStatus,
     AirbyteStreamStatusReason,
     AirbyteStreamStatusReasonType,
     Level,
     StreamDescriptor,
+    ab_message_to_string,
 )
 from airbyte_cdk.sources.http_config import MAX_CONNECTION_POOL_SIZE
 from airbyte_cdk.sources.message import MessageRepository
@@ -396,13 +396,11 @@ class HttpClient:
         if error_resolution.response_action == ResponseAction.RATE_LIMITED:
             # TODO: Update to handle with message repository when concurrent message repository is ready
             reasons = [AirbyteStreamStatusReason(type=AirbyteStreamStatusReasonType.RATE_LIMITED)]
-            message = orjson.dumps(
-                AirbyteMessageSerializer.dump(
-                    stream_status_as_airbyte_message(
-                        StreamDescriptor(name=self._name), AirbyteStreamStatus.RUNNING, reasons
-                    )
+            message = ab_message_to_string(
+                stream_status_as_airbyte_message(
+                    StreamDescriptor(name=self._name), AirbyteStreamStatus.RUNNING, reasons
                 )
-            ).decode()
+            )
 
             # Simply printing the stream status is a temporary solution and can cause future issues. Currently, the _send method is
             # wrapped with backoff decorators, and we can only emit messages by iterating record_iterator in the abstract source at the

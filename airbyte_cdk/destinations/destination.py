@@ -15,10 +15,11 @@ from airbyte_cdk.connector import Connector
 from airbyte_cdk.exception_handler import init_uncaught_exception_handler
 from airbyte_cdk.models import (
     AirbyteMessage,
-    AirbyteMessageSerializer,
     ConfiguredAirbyteCatalog,
     ConfiguredAirbyteCatalogSerializer,
     Type,
+    ab_message_from_string,
+    ab_message_to_string,
 )
 from airbyte_cdk.sources.utils.schema_helpers import check_config_against_spec_or_exit
 from airbyte_cdk.utils.traced_exception import AirbyteTracedException
@@ -46,7 +47,7 @@ class Destination(Connector, ABC):
         """Reads from stdin, converting to Airbyte messages"""
         for line in input_stream:
             try:
-                yield AirbyteMessageSerializer.load(orjson.loads(line))
+                yield ab_message_from_string(line)
             except orjson.JSONDecodeError:
                 logger.info(
                     f"ignoring input which can't be deserialized as Airbyte Message: {line}"
@@ -151,4 +152,4 @@ class Destination(Connector, ABC):
         parsed_args = self.parse_args(args)
         output_messages = self.run_cmd(parsed_args)
         for message in output_messages:
-            print(orjson.dumps(AirbyteMessageSerializer.dump(message)).decode())
+            print(ab_message_to_string(message))

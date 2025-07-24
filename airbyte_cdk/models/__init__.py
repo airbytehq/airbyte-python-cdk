@@ -50,12 +50,11 @@ from .airbyte_protocol import (
     Type,
 )
 from .airbyte_protocol_serializers import (
-    AirbyteMessageSerializer,
     AirbyteStateMessageSerializer,
-    AirbyteStreamStateSerializer,
     ConfiguredAirbyteCatalogSerializer,
-    ConfiguredAirbyteStreamSerializer,
     ConnectorSpecificationSerializer,
+    ab_message_from_string,
+    ab_message_to_string,
 )
 from .well_known_types import (
     BinaryData,

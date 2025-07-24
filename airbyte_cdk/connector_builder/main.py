@@ -20,10 +20,10 @@ from airbyte_cdk.connector_builder.connector_builder_handler import (
 from airbyte_cdk.entrypoint import AirbyteEntrypoint
 from airbyte_cdk.models import (
     AirbyteMessage,
-    AirbyteMessageSerializer,
     AirbyteStateMessage,
     ConfiguredAirbyteCatalog,
     ConfiguredAirbyteCatalogSerializer,
+    ab_message_to_string,
 )
 from airbyte_cdk.sources.declarative.manifest_declarative_source import ManifestDeclarativeSource
 from airbyte_cdk.sources.source import Source
@@ -92,11 +92,9 @@ def handle_request(args: List[str]) -> str:
     command, config, catalog, state = get_config_and_catalog_from_args(args)
     limits = get_limits(config)
     source = create_source(config, limits)
-    return orjson.dumps(
-        AirbyteMessageSerializer.dump(
-            handle_connector_builder_request(source, command, config, catalog, state, limits)
-        )
-    ).decode()  # type: ignore[no-any-return] # Serializer.dump() always returns AirbyteMessage
+    return ab_message_to_string(
+        handle_connector_builder_request(source, command, config, catalog, state, limits)
+    )
 
 
 if __name__ == "__main__":
@@ -107,4 +105,4 @@ if __name__ == "__main__":
             exc, message=f"Error handling request: {str(exc)}"
         )
         m = error.as_airbyte_message()
-        print(orjson.dumps(AirbyteMessageSerializer.dump(m)).decode())
+        print(ab_message_to_string(m))
