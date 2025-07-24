@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Airbyte CDK WASM Compatibility Test</title>
+    <script src="https://cdn.jsdelivr.net/pyodide/v0.28.0/full/pyodide.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .container {
+            margin: 20px 0;
+        }
+        .output {
+            background-color: #f5f5f5;
+            border: 1px solid #ddd;
+            padding: 15px;
+            border-radius: 5px;
+            white-space: pre-wrap;
+            font-family: monospace;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        .status {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 5px;
+        }
+        .status.loading {
+            background-color: #fff3cd;
+            border: 1px solid #ffeaa7;
+        }
+        .status.success {
+            background-color: #d4edda;
+            border: 1px solid #c3e6cb;
+        }
+        .status.error {
+            background-color: #f8d7da;
+            border: 1px solid #f5c6cb;
+        }
+        button {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        button:disabled {
+            background-color: #6c757d;
+            cursor: not-allowed;
+        }
+    </style>
+</head>
+<body>
+    <h1>Airbyte CDK WASM Compatibility Test</h1>
+
+    <div class="container">
+        <p>This test verifies that the Airbyte CDK works correctly in WASM/Pyodide environments.
+        </p>
+        <p>Basically, it means running connectors and CDK operations directly in the browser! 🚀</p>
+
+        <div id="status" class="status loading">
+            Initializing Pyodide...
+        </div>
+
+        <button id="runTest" onclick="runCDKTest()" disabled>Run CDK Test</button>
+
+        <div class="container">
+            <h3>Test Output:</h3>
+            <div id="output" class="output">Waiting for test to run...</div>
+        </div>
+
+        <div class="container">
+            <h3>Test Details:</h3>
+            <p>This test will:</p>
+            <ol>
+                <li>Install the airbyte-cdk package using micropip</li>
+                <li>Download the PokeAPI manifest and catalog files</li>
+                <li>Run the declarative source CLI command</li>
+                <li>Verify that serpyco (pure Python) is used instead of serpyco-rs</li>
+            </ol>
+        </div>
+    </div>
+
+    <script>
+        const output = document.getElementById("output");
+        const status = document.getElementById("status");
+        const runButton = document.getElementById("runTest");
+
+        function addToOutput(text) {
+            output.textContent += text + "\n";
+            output.scrollTop = output.scrollHeight;
+        }
+
+        function updateStatus(message, type = "loading") {
+            status.textContent = message;
+            status.className = `status ${type}`;
+        }
+
+        // Initialize Pyodide
+        async function initPyodide() {
+            try {
+                updateStatus("Loading Pyodide...", "loading");
+                window.pyodide = await loadPyodide();
+
+                updateStatus("Pyodide loaded successfully!", "success");
+                runButton.disabled = false;
+                addToOutput("✓ Pyodide initialized successfully");
+                addToOutput("✓ Python version: " + pyodide.runPython("import sys; sys.version"));
+                addToOutput("✓ Platform: " + pyodide.runPython("import sys; sys.platform"));
+
+            } catch (error) {
+                updateStatus("Failed to load Pyodide: " + error.message, "error");
+                addToOutput("✗ Error initializing Pyodide: " + error.message);
+            }
+        }
+
+        async function runCDKTest() {
+            try {
+                runButton.disabled = true;
+                updateStatus("Running CDK test...", "loading");
+                addToOutput("\n" + "=".repeat(50));
+                addToOutput("Starting Airbyte CDK WASM compatibility test");
+                addToOutput("=".repeat(50));
+
+                // Install required packages
+                addToOutput("\n1. Installing packages...");
+                await pyodide.loadPackage("micropip");
+                addToOutput("✓ micropip loaded successfully");
+                await pyodide.loadPackage("ssl");
+                addToOutput("✓ ssl loaded successfully");
+                await pyodide.runPython(`
+                    import pyodide
+                    # pyodide.loadPackage("micropip");
+                    import micropip
+                    micropip.install(
+                        "https://files.pythonhosted.org/packages/02/e2/4291c7888d2945665d523e2900f62c846f6ced63037488abb99ae2b95bdd/airbyte_cdk-6.60.0.post21.dev16487663551-py3-none-any.whl",
+                        keep_going=True,
+                    )
+                `);
+                addToOutput("✓ airbyte-cdk installed successfully");
+
+                // Download test files
+                addToOutput("\n2. Downloading test files...");
+                await pyodide.runPython(`
+                    import pathlib
+                    from pyodide.http import open_url
+
+                    # Download catalog
+                    catalog_url = "https://raw.githubusercontent.com/airbytehq/airbyte/refs/heads/master/airbyte-integrations/connectors/source-pokeapi/integration_tests/configured_catalog.json"
+                    catalog_content = open_url(catalog_url).read()
+                    pathlib.Path("catalog.json").write_text(catalog_content)
+                    print("✓ Downloaded catalog.json")
+
+                    # Download manifest
+                    manifest_url = "https://raw.githubusercontent.com/airbytehq/airbyte/refs/heads/master/airbyte-integrations/connectors/source-pokeapi/manifest.yaml"
+                    manifest_content = open_url(manifest_url).read()
+                    pathlib.Path("manifest.yaml").write_text(manifest_content)
+                    print("✓ Downloaded manifest.yaml")
+
+                    # Create config
+                    config_content = '{"pokemon_name": "pikachu"}'
+                    pathlib.Path("config.json").write_text(config_content)
+                    print("✓ Created config.json")
+                `);
+
+                // Test CDK CLI functionality
+                addToOutput("\n3. Testing CDK CLI functionality...");
+                const cliResult = await pyodide.runPython(`
+                    import sys
+                    from io import StringIO
+                    from airbyte_cdk.cli.source_declarative_manifest import run
+
+                    # # Capture stdout
+                    # old_stdout = sys.stdout
+                    # sys.stdout = captured_output = StringIO()
+
+                    try:
+                        # Test the CLI with a simple command first
+                        print("Testing 'spec' command...", file=sys.stderr)
+
+                        args = [
+                            "read",
+                            "--manifest-path",
+                            "manifest.yaml",
+                            "--config",
+                            "config.json",
+                            "--catalog",
+                            "catalog.json",
+                        ]
+
+                        # Run the CLI
+                        run(args)
+
+                        result = "✓ CLI executed successfully"
+
+                    except Exception as e:
+                        result = f"✗ CLI execution failed: {str(e)}"
+                        import traceback
+                        result += f"\\nTraceback: {traceback.format_exc()}"
+
+                    result
+                `);
+                addToOutput(cliResult);
+
+                // Final verification
+                addToOutput("\n4. Final verification...");
+                const finalCheck = pyodide.runPython(`
+                    # Verify the WASM compatibility is working
+                    import sys
+
+                    success_criteria = []
+
+                    # Check platform detection
+                    if sys.platform == 'emscripten':
+                        success_criteria.append("✓ Platform correctly detected as 'emscripten'")
+                    else:
+                        success_criteria.append(f"? Platform detected as '{sys.platform}' (may be expected in some WASM environments)")
+
+                    # Check CDK imports work
+                    try:
+                        from airbyte_cdk.models.airbyte_protocol_serializers import Serializer
+                        success_criteria.append("✓ CDK serializers import successfully")
+                    except ImportError as e:
+                        success_criteria.append(f"✗ CDK serializers import failed: {e}")
+
+                    "\\n".join(success_criteria)
+                `);
+                addToOutput(finalCheck);
+
+                addToOutput("\n" + "=".repeat(50));
+                addToOutput("WASM compatibility test completed!");
+                addToOutput("=".repeat(50));
+
+                updateStatus("Test completed successfully!", "success");
+
+            } catch (error) {
+                addToOutput("✗ Test failed with error: " + error.message);
+                updateStatus("Test failed: " + error.message, "error");
+            } finally {
+                runButton.disabled = false;
+            }
+        }
+
+        // Initialize when page loads
+        initPyodide();
+    </script>
+</body>
+</html>

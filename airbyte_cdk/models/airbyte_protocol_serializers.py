@@ -5,6 +5,7 @@ import sys
 from enum import Enum
 from typing import Any, Callable, Dict, Type, TypeVar, cast
 
+import dacite
 import orjson
 from pydantic import ValidationError
 
@@ -71,7 +72,7 @@ class CustomSerializer:
     def load(self, data: Dict[str, Any]) -> T:
         """Convert dictionary to dataclass instance"""
         # Handle custom types
-        return self.model_class(**data)
+        return dacite.from_dict(data_class=self.model_class, data=data)
 
     def _serialize_nested(self, obj: Any) -> Any:
         """Helper to serialize nested objects"""
