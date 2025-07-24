@@ -159,21 +159,16 @@ def ab_state_message_from_string(
         raise ValueError(f"Failed to decode JSON: {e}") from e
 
 
-def ab_state_blob_from_string(
-    state_blob_json: str,
-) -> AirbyteStateBlob:
+def ab_state_message_to_string(
+    state: AirbyteStateMessage,
+) -> str:
     """
-    Convert a JSON string to an AirbyteStateBlob.
+    Convert an AirbyteStateMessage to a JSON string.
 
     Args:
-        state_blob_json (str): The JSON string to convert.
+        state (AirbyteStateMessage): The AirbyteStateMessage to convert.
 
     Returns:
-        AirbyteStateBlob: The deserialized AirbyteStateBlob.
+        str: JSON string representation of the AirbyteStateMessage.
     """
-    try:
-        return AirbyteStateBlob.model_validate_json(state_blob_json)
-    except ValidationError as e:
-        raise ValueError(f"Invalid AirbyteStateBlob format: {e}") from e
-    except orjson.JSONDecodeError as e:
-        raise ValueError(f"Failed to decode JSON: {e}") from e
+    return state.model_dump_json()
