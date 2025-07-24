@@ -23,6 +23,7 @@ from typing import (
     get_args,
     get_origin,
     get_type_hints,
+    TypeVar,
 )
 
 from isodate import parse_duration
@@ -615,6 +616,8 @@ from airbyte_cdk.sources.streams.concurrent.state_converters.incrementing_count_
 from airbyte_cdk.sources.streams.http.error_handlers.response_models import ResponseAction
 from airbyte_cdk.sources.types import Config
 from airbyte_cdk.sources.utils.transform import TransformConfig, TypeTransformer
+from airbyte_cdk.sources.declarative.parsers.component_constructor import ComponentConstructor
+
 
 ComponentDefinition = Mapping[str, Any]
 
@@ -623,8 +626,17 @@ SCHEMA_TRANSFORMER_TYPE_MAPPING = {
     SchemaNormalizationModel.Default: TransformConfig.DefaultSchemaNormalization,
 }
 
+M = TypeVar("M", bound=BaseModel)
+D = TypeVar("D", bound=BaseModel)
+
 
 class ModelToComponentFactory:
+    """
+    The default Model > Component Factory implementation.
+    The Custom components are built separately from the default implementations,
+    to provide the reasonable decoupling from the standard and Custom implementation build technique.
+    """
+
     EPOCH_DATETIME_FORMAT = "%s"
 
     def __init__(
@@ -655,8 +667,19 @@ class ModelToComponentFactory:
         # placeholder for deprecation warnings
         self._collected_deprecation_logs: List[ConnectorBuilderLogMessage] = []
 
+        # support the dependency constructors with the re-usable parts from this Factory
+        self._flags = {
+            "_limit_pages_fetched_per_slice": self._limit_pages_fetched_per_slice,
+            "_limit_slices_fetched": self._limit_slices_fetched,
+            "_emit_connector_builder_messages": self._emit_connector_builder_messages,
+            "_disable_retries": self._disable_retries,
+            "_message_repository": self._message_repository,
+        }
+
     def _init_mappings(self) -> None:
-        self.PYDANTIC_MODEL_TO_CONSTRUCTOR: Mapping[Type[BaseModel], Callable[..., Any]] = {
+        self.PYDANTIC_MODEL_TO_CONSTRUCTOR: Dict[
+            Type[BaseModel], Union[Type[ComponentConstructor], Callable[..., Any]]
+        ] = {
             AddedFieldDefinitionModel: self.create_added_field_definition,
             AddFieldsModel: self.create_add_fields,
             ApiKeyAuthenticatorModel: self.create_api_key_authenticator,
@@ -734,7 +757,7 @@ class ModelToComponentFactory:
             PropertiesFromEndpointModel: self.create_properties_from_endpoint,
             PropertyChunkingModel: self.create_property_chunking,
             QueryPropertiesModel: self.create_query_properties,
-            RecordFilterModel: self.create_record_filter,
+            RecordFilterModel: RecordFilter,
             RecordSelectorModel: self.create_record_selector,
             RemoveFieldsModel: self.create_remove_fields,
             RequestPathModel: self.create_request_path,
@@ -803,20 +826,30 @@ class ModelToComponentFactory:
             model=declarative_component_model, config=config, **kwargs
         )
 
-    def _create_component_from_model(self, model: BaseModel, config: Config, **kwargs: Any) -> Any:
+    def _create_component_from_model(
+        self, model: BaseModel, config: Config, **kwargs: Any
+    ) -> ComponentConstructor[BaseModel]:
         if model.__class__ not in self.PYDANTIC_MODEL_TO_CONSTRUCTOR:
             raise ValueError(
                 f"{model.__class__} with attributes {model} is not a valid component type"
             )
-        component_constructor = self.PYDANTIC_MODEL_TO_CONSTRUCTOR.get(model.__class__)
-        if not component_constructor:
+
+        component = self.PYDANTIC_MODEL_TO_CONSTRUCTOR.get(model.__class__)
+        if not component:
             raise ValueError(f"Could not find constructor for {model.__class__}")
 
-        # collect deprecation warnings for supported models.
-        if isinstance(model, BaseModelWithDeprecations):
-            self._collect_model_deprecations(model)
-
-        return component_constructor(model=model, config=config, **kwargs)
+        if inspect.isclass(component) and issubclass(component, ComponentConstructor):
+            # Default components flow
+            component_instance: ComponentConstructor[BaseModel] = component.build(
+                model=model,
+                config=config,
+                dependency_constructor=self._create_component_from_model,
+                additional_flags=self._flags,
+                **kwargs,
+            )
+            return component_instance
+        else:
+            return component(model=model, config=config, **kwargs)
 
     def get_model_deprecations(self) -> List[ConnectorBuilderLogMessage]:
         """
@@ -2997,14 +3030,6 @@ class ModelToComponentFactory:
             property_chunking=property_chunking,
             config=config,
             parameters=model.parameters or {},
-        )
-
-    @staticmethod
-    def create_record_filter(
-        model: RecordFilterModel, config: Config, **kwargs: Any
-    ) -> RecordFilter:
-        return RecordFilter(
-            condition=model.condition or "", config=config, parameters=model.parameters or {}
         )
 
     @staticmethod
