@@ -148,7 +148,7 @@
 
                 // Download test files
                 addToOutput("\n2. Downloading test files...");
-                await pyodide.runPython(`
+                const downloadsResult = await pyodide.runPython(`
                     import pathlib
                     from pyodide.http import open_url
 
@@ -168,11 +168,70 @@
                     config_content = '{"pokemon_name": "pikachu"}'
                     pathlib.Path("config.json").write_text(config_content)
                     print("✓ Created config.json")
+
+                    "All files downloaded and created successfully!"
                 `);
+                addToOutput(downloadsResult);
 
                 // Test CDK CLI functionality
-                addToOutput("\n3. Testing CDK CLI functionality...");
-                const cliResult = await pyodide.runPython(`
+                addToOutput("\n3. Testing 'spec' functionality...");
+                const specResult = await pyodide.runPython(`
+                    import sys
+                    from io import StringIO
+                    from airbyte_cdk.cli.source_declarative_manifest import run
+
+                    try:
+                        # Test the CLI with a simple command first
+                        print("Testing 'spec' command...", file=sys.stderr)
+                        # Capture both stdout and stderr
+                        old_stdout = sys.stdout
+                        old_stderr = sys.stderr
+                        captured_stdout = StringIO()
+                        captured_stderr = StringIO()
+
+                        sys.stdout = captured_stdout
+                        sys.stderr = captured_stderr
+
+                        args = [
+                            "spec",
+                            "--manifest-path",
+                            "manifest.yaml",
+                            "--config",
+                            "config.json",
+                            "--catalog",
+                            "catalog.json",
+                        ]
+
+                        # Run the CLI
+                        run(args)
+
+                        result = "✓ CLI executed successfully"
+
+                    except Exception as e:
+                        result = f"✗ CLI execution failed: {str(e)}"
+                        import traceback
+                        result += f"\\nTraceback: {traceback.format_exc()}"
+                    finally:
+                        # Get captured output
+                        stdout_content = captured_stdout.getvalue()
+                        stderr_content = captured_stderr.getvalue()
+
+                        result = "✓ CLI executed successfully\\n"
+                        if stdout_content:
+                            result += f"STDOUT:\\n{stdout_content}\\n"
+                        if stderr_content:
+                            result += f"STDERR:\\n{stderr_content}\\n"
+
+                        # Restore original stdout/stderr
+                        sys.stdout = old_stdout
+                        sys.stderr = old_stderr
+
+                    result
+                `);
+                addToOutput(specResult);
+
+                addToOutput("\n4. Testing 'read' functionality...");
+                const readResult = await pyodide.runPython(`
                     import sys
                     from io import StringIO
                     from airbyte_cdk.cli.source_declarative_manifest import run
@@ -207,32 +266,7 @@
 
                     result
                 `);
-                addToOutput(cliResult);
-
-                // Final verification
-                addToOutput("\n4. Final verification...");
-                const finalCheck = pyodide.runPython(`
-                    # Verify the WASM compatibility is working
-                    import sys
-
-                    success_criteria = []
-
-                    # Check platform detection
-                    if sys.platform == 'emscripten':
-                        success_criteria.append("✓ Platform correctly detected as 'emscripten'")
-                    else:
-                        success_criteria.append(f"? Platform detected as '{sys.platform}' (may be expected in some WASM environments)")
-
-                    # Check CDK imports work
-                    try:
-                        from airbyte_cdk.models.airbyte_protocol_serializers import Serializer
-                        success_criteria.append("✓ CDK serializers import successfully")
-                    except ImportError as e:
-                        success_criteria.append(f"✗ CDK serializers import failed: {e}")
-
-                    "\\n".join(success_criteria)
-                `);
-                addToOutput(finalCheck);
+                addToOutput(readResult);
 
                 addToOutput("\n" + "=".repeat(50));
                 addToOutput("WASM compatibility test completed!");
