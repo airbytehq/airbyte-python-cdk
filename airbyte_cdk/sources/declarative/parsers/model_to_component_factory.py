@@ -447,7 +447,10 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     ZipfileDecoder as ZipfileDecoderModel,
 )
-from airbyte_cdk.sources.declarative.parsers.component_constructor import ComponentConstructor
+from airbyte_cdk.sources.declarative.parsers.component_constructor import (
+    ComponentConstructor,
+    AdditionalFlags,
+)
 from airbyte_cdk.sources.declarative.parsers.custom_code_compiler import (
     COMPONENTS_MODULE_NAME,
     SDM_COMPONENTS_MODULE_NAME,
@@ -667,13 +670,14 @@ class ModelToComponentFactory:
         self._collected_deprecation_logs: List[ConnectorBuilderLogMessage] = []
 
         # support the dependency constructors with the re-usable parts from this Factory
-        self._flags = {
-            "_limit_pages_fetched_per_slice": self._limit_pages_fetched_per_slice,
-            "_limit_slices_fetched": self._limit_slices_fetched,
-            "_emit_connector_builder_messages": self._emit_connector_builder_messages,
-            "_disable_retries": self._disable_retries,
-            "_message_repository": self._message_repository,
-        }
+        self._flags = AdditionalFlags(
+            emit_connector_builder_messages=self._emit_connector_builder_messages,
+            disable_retries=self._disable_retries,
+            message_repository=self._message_repository,
+            connector_state_manager=self._connector_state_manager,
+            limit_pages_fetched_per_slice=self._limit_pages_fetched_per_slice,
+            limit_slices_fetched=self._limit_slices_fetched,
+        )
 
     def _init_mappings(self) -> None:
         self.PYDANTIC_MODEL_TO_CONSTRUCTOR: Dict[
@@ -755,7 +759,7 @@ class ModelToComponentFactory:
             PredicateValidatorModel: self.create_predicate_validator,
             PropertiesFromEndpointModel: self.create_properties_from_endpoint,
             PropertyChunkingModel: self.create_property_chunking,
-            QueryPropertiesModel: self.create_query_properties,
+            QueryPropertiesModel: QueryProperties,
             RecordFilterModel: RecordFilter,
             RecordSelectorModel: self.create_record_selector,
             RemoveFieldsModel: self.create_remove_fields,
@@ -3012,32 +3016,6 @@ class ModelToComponentFactory:
             parameters=model.parameters or {},
         )
 
-    def create_query_properties(
-        self, model: QueryPropertiesModel, config: Config, **kwargs: Any
-    ) -> QueryProperties:
-        if isinstance(model.property_list, list):
-            property_list = model.property_list
-        else:
-            property_list = self._create_component_from_model(
-                model=model.property_list, config=config, **kwargs
-            )
-
-        property_chunking = (
-            self._create_component_from_model(
-                model=model.property_chunking, config=config, **kwargs
-            )
-            if model.property_chunking
-            else None
-        )
-
-        return QueryProperties(
-            property_list=property_list,
-            always_include_properties=model.always_include_properties,
-            property_chunking=property_chunking,
-            config=config,
-            parameters=model.parameters or {},
-        )
-
     @staticmethod
     def create_request_path(model: RequestPathModel, config: Config, **kwargs: Any) -> RequestPath:
         return RequestPath(parameters={})
@@ -3168,256 +3146,12 @@ class ModelToComponentFactory:
             parameters=model.parameters or {},
         )
 
-    def create_simple_retriever(
-        self,
-        model: SimpleRetrieverModel,
-        config: Config,
-        *,
-        name: str,
-        primary_key: Optional[Union[str, List[str], List[List[str]]]],
-        stream_slicer: Optional[StreamSlicer],
-        request_options_provider: Optional[RequestOptionsProvider] = None,
-        stop_condition_on_cursor: bool = False,
-        client_side_incremental_sync: Optional[Dict[str, Any]] = None,
-        transformations: List[RecordTransformation],
-        file_uploader: Optional[DefaultFileUploader] = None,
-        incremental_sync: Optional[
-            Union[
-                IncrementingCountCursorModel, DatetimeBasedCursorModel, CustomIncrementalSyncModel
-            ]
-        ] = None,
-        use_cache: Optional[bool] = None,
-        log_formatter: Optional[Callable[[Response], Any]] = None,
-        **kwargs: Any,
-    ) -> SimpleRetriever:
-        def _get_url() -> str:
-            """
-            Closure to get the URL from the requester. This is used to get the URL in the case of a lazy retriever.
-            This is needed because the URL is not set until the requester is created.
-            """
-
-            _url: str = (
-                model.requester.url
-                if hasattr(model.requester, "url") and model.requester.url is not None
-                else requester.get_url()
-            )
-            _url_base: str = (
-                model.requester.url_base
-                if hasattr(model.requester, "url_base") and model.requester.url_base is not None
-                else requester.get_url_base()
-            )
-
-            return _url or _url_base
-
-        decoder = (
-            self._create_component_from_model(model=model.decoder, config=config)
-            if model.decoder
-            else JsonDecoder(parameters={})
-        )
-        record_selector = self._create_component_from_model(
-            model=model.record_selector,
-            name=name,
-            config=config,
-            decoder=decoder,
-            transformations=transformations,
-            client_side_incremental_sync=client_side_incremental_sync,
-            file_uploader=file_uploader,
-        )
-
-        query_properties: Optional[QueryProperties] = None
-        query_properties_key: Optional[str] = None
-        if self._query_properties_in_request_parameters(model.requester):
-            # It is better to be explicit about an error if PropertiesFromEndpoint is defined in multiple
-            # places instead of default to request_parameters which isn't clearly documented
-            if (
-                hasattr(model.requester, "fetch_properties_from_endpoint")
-                and model.requester.fetch_properties_from_endpoint
-            ):
-                raise ValueError(
-                    f"PropertiesFromEndpoint should only be specified once per stream, but found in {model.requester.type}.fetch_properties_from_endpoint and {model.requester.type}.request_parameters"
-                )
-
-            query_properties_definitions = []
-            for key, request_parameter in model.requester.request_parameters.items():  # type: ignore # request_parameters is already validated to be a Mapping using _query_properties_in_request_parameters()
-                if isinstance(request_parameter, QueryPropertiesModel):
-                    query_properties_key = key
-                    query_properties_definitions.append(request_parameter)
-
-            if len(query_properties_definitions) > 1:
-                raise ValueError(
-                    f"request_parameters only supports defining one QueryProperties field, but found {len(query_properties_definitions)} usages"
-                )
-
-            if len(query_properties_definitions) == 1:
-                query_properties = self._create_component_from_model(
-                    model=query_properties_definitions[0], config=config
-                )
-        elif (
-            hasattr(model.requester, "fetch_properties_from_endpoint")
-            and model.requester.fetch_properties_from_endpoint
-        ):
-            # todo: Deprecate this condition once dependent connectors migrate to query_properties
-            query_properties_definition = QueryPropertiesModel(
-                type="QueryProperties",
-                property_list=model.requester.fetch_properties_from_endpoint,
-                always_include_properties=None,
-                property_chunking=None,
-            )  # type: ignore # $parameters has a default value
-
-            query_properties = self.create_query_properties(
-                model=query_properties_definition,
-                config=config,
-            )
-        elif hasattr(model.requester, "query_properties") and model.requester.query_properties:
-            query_properties = self.create_query_properties(
-                model=model.requester.query_properties,
-                config=config,
-            )
-
-        requester = self._create_component_from_model(
-            model=model.requester,
-            decoder=decoder,
-            name=name,
-            query_properties_key=query_properties_key,
-            use_cache=use_cache,
-            config=config,
-        )
-
-        # Define cursor only if per partition or common incremental support is needed
-        cursor = stream_slicer if isinstance(stream_slicer, DeclarativeCursor) else None
-
-        if (
-            not isinstance(stream_slicer, DatetimeBasedCursor)
-            or type(stream_slicer) is not DatetimeBasedCursor
-        ):
-            # Many of the custom component implementations of DatetimeBasedCursor override get_request_params() (or other methods).
-            # Because we're decoupling RequestOptionsProvider from the Cursor, custom components will eventually need to reimplement
-            # their own RequestOptionsProvider. However, right now the existing StreamSlicer/Cursor still can act as the SimpleRetriever's
-            # request_options_provider
-            request_options_provider = stream_slicer or DefaultRequestOptionsProvider(parameters={})
-        elif not request_options_provider:
-            request_options_provider = DefaultRequestOptionsProvider(parameters={})
-
-        stream_slicer = stream_slicer or SinglePartitionRouter(parameters={})
-        if self._should_limit_slices_fetched():
-            stream_slicer = cast(
-                StreamSlicer,
-                StreamSlicerTestReadDecorator(
-                    wrapped_slicer=stream_slicer,
-                    maximum_number_of_slices=self._limit_slices_fetched or 5,
-                ),
-            )
-
-        cursor_used_for_stop_condition = cursor if stop_condition_on_cursor else None
-        paginator = (
-            self._create_component_from_model(
-                model=model.paginator,
-                config=config,
-                url_base=_get_url(),
-                extractor_model=model.record_selector.extractor,
-                decoder=decoder,
-                cursor_used_for_stop_condition=cursor_used_for_stop_condition,
-            )
-            if model.paginator
-            else NoPagination(parameters={})
-        )
-
-        ignore_stream_slicer_parameters_on_paginated_requests = (
-            model.ignore_stream_slicer_parameters_on_paginated_requests or False
-        )
-
-        if (
-            model.partition_router
-            and isinstance(model.partition_router, SubstreamPartitionRouterModel)
-            and not bool(self._connector_state_manager.get_stream_state(name, None))
-            and any(
-                parent_stream_config.lazy_read_pointer
-                for parent_stream_config in model.partition_router.parent_stream_configs
-            )
-        ):
-            if incremental_sync:
-                if incremental_sync.type != "DatetimeBasedCursor":
-                    raise ValueError(
-                        f"LazySimpleRetriever only supports DatetimeBasedCursor. Found: {incremental_sync.type}."
-                    )
-
-                elif incremental_sync.step or incremental_sync.cursor_granularity:
-                    raise ValueError(
-                        f"Found more that one slice per parent. LazySimpleRetriever only supports single slice read for stream - {name}."
-                    )
-
-            if model.decoder and model.decoder.type != "JsonDecoder":
-                raise ValueError(
-                    f"LazySimpleRetriever only supports JsonDecoder. Found: {model.decoder.type}."
-                )
-
-            return LazySimpleRetriever(
-                name=name,
-                paginator=paginator,
-                primary_key=primary_key,
-                requester=requester,
-                record_selector=record_selector,
-                stream_slicer=stream_slicer,
-                request_option_provider=request_options_provider,
-                cursor=cursor,
-                config=config,
-                ignore_stream_slicer_parameters_on_paginated_requests=ignore_stream_slicer_parameters_on_paginated_requests,
-                parameters=model.parameters or {},
-            )
-
-        return SimpleRetriever(
-            name=name,
-            paginator=paginator,
-            primary_key=primary_key,
-            requester=requester,
-            record_selector=record_selector,
-            stream_slicer=stream_slicer,
-            request_option_provider=request_options_provider,
-            cursor=cursor,
-            config=config,
-            ignore_stream_slicer_parameters_on_paginated_requests=ignore_stream_slicer_parameters_on_paginated_requests,
-            additional_query_properties=query_properties,
-            log_formatter=self._get_log_formatter(log_formatter, name),
-            parameters=model.parameters or {},
-        )
-
-    def _get_log_formatter(
-        self, log_formatter: Callable[[Response], Any] | None, name: str
-    ) -> Callable[[Response], Any] | None:
-        if self._should_limit_slices_fetched():
-            return (
-                (
-                    lambda response: format_http_message(
-                        response,
-                        f"Stream '{name}' request",
-                        f"Request performed in order to extract records for stream '{name}'",
-                        name,
-                    )
-                )
-                if not log_formatter
-                else log_formatter
-            )
-        return None
-
     def _should_limit_slices_fetched(self) -> bool:
         """
         Returns True if the number of slices fetched should be limited, False otherwise.
         This is used to limit the number of slices fetched during tests.
         """
         return bool(self._limit_slices_fetched or self._emit_connector_builder_messages)
-
-    @staticmethod
-    def _query_properties_in_request_parameters(
-        requester: Union[HttpRequesterModel, CustomRequesterModel],
-    ) -> bool:
-        if not hasattr(requester, "request_parameters"):
-            return False
-        request_parameters = requester.request_parameters
-        if request_parameters and isinstance(request_parameters, Mapping):
-            for request_parameter in request_parameters.values():
-                if isinstance(request_parameter, QueryPropertiesModel):
-                    return True
-        return False
 
     @staticmethod
     def _remove_query_properties(
