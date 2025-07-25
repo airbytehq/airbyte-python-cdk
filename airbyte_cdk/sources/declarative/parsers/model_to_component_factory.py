@@ -3147,7 +3147,7 @@ class ModelToComponentFactory:
         )
 
     def _get_log_formatter(
-            self, log_formatter: Callable[[Response], Any] | None, name: str
+        self, log_formatter: Callable[[Response], Any] | None, name: str
     ) -> Callable[[Response], Any] | None:
         if self._should_limit_slices_fetched():
             return (

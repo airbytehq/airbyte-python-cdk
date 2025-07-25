@@ -386,9 +386,7 @@ class SimpleRetriever(Retriever, ComponentConstructor[SimpleRetrieverModel]):
             "parameters": model.parameters or {},
         }
 
-        if cls._should_use_lazy_simple_retriever(
-            name, model, additional_flags, incremental_sync
-        ):
+        if cls._should_use_lazy_simple_retriever(name, model, additional_flags, incremental_sync):
             return resolved_dependencies
 
         resolved_dependencies.update(
@@ -422,10 +420,10 @@ class SimpleRetriever(Retriever, ComponentConstructor[SimpleRetrieverModel]):
             **kwargs,
         )
         if cls._should_use_lazy_simple_retriever(
-                name=kwargs.get("name"),
-                model=model,
-                additional_flags=additional_flags,
-                incremental_sync=kwargs.get("incremental_sync"),
+            name=kwargs.get("name"),
+            model=model,
+            additional_flags=additional_flags,
+            incremental_sync=kwargs.get("incremental_sync"),
         ):
             return LazySimpleRetriever(**resolved_dependencies)
         return SimpleRetriever(**resolved_dependencies)
