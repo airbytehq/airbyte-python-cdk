@@ -763,7 +763,7 @@ class ModelToComponentFactory:
             RequestOptionModel: self.create_request_option,
             LegacySessionTokenAuthenticatorModel: self.create_legacy_session_token_authenticator,
             SelectiveAuthenticatorModel: self.create_selective_authenticator,
-            SimpleRetrieverModel: self.create_simple_retriever,
+            SimpleRetrieverModel: SimpleRetriever,
             StateDelegatingStreamModel: self.create_state_delegating_stream,
             SpecModel: self.create_spec,
             SubstreamPartitionRouterModel: self.create_substream_partition_router,
@@ -854,7 +854,7 @@ class ModelToComponentFactory:
             return component(model=model, config=config, **kwargs)
         raise ValueError(
             f"Unexpected component mapping type for {model.__class__}. "
-            f"Instance shource be one of ComponentConstructor or method implemented in ModelToComponentFactory"
+            f"Instance should be one of ComponentConstructor or method implemented in ModelToComponentFactory"
         )
 
     def get_model_deprecations(self) -> List[ConnectorBuilderLogMessage]:
