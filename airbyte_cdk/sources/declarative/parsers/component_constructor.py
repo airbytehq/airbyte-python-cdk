@@ -7,11 +7,10 @@ from typing import Any, Callable, Generic, Mapping, Optional, Type, TypeVar
 
 from pydantic.v1 import BaseModel
 
-from airbyte_cdk.sources.message import MessageRepository
-from airbyte_cdk.sources.declarative.models.declarative_component_schema import ValueType
-from airbyte_cdk.sources.types import Config
-
 from airbyte_cdk.sources.connector_state_manager import ConnectorStateManager
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import ValueType
+from airbyte_cdk.sources.message import MessageRepository
+from airbyte_cdk.sources.types import Config
 
 M = TypeVar("M", bound=BaseModel)
 

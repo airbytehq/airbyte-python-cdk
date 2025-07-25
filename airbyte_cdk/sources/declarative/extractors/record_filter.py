@@ -14,8 +14,8 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
     RecordFilter as RecordFilterModel,
 )
 from airbyte_cdk.sources.declarative.parsers.component_constructor import (
-    ComponentConstructor,
     AdditionalFlags,
+    ComponentConstructor,
 )
 from airbyte_cdk.sources.types import Config, Record, StreamSlice, StreamState
 

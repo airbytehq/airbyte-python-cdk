@@ -1,20 +1,20 @@
 # Copyright (c) 2025 Airbyte, Inc., all rights reserved.
 
 from dataclasses import InitVar, dataclass
-from typing import Any, Iterable, List, Mapping, Optional, Union, Callable
+from typing import Any, Callable, Iterable, List, Mapping, Optional, Union
 
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    QueryProperties as QueryPropertiesModel,
+)
+from airbyte_cdk.sources.declarative.parsers.component_constructor import (
+    AdditionalFlags,
+    ComponentConstructor,
+)
 from airbyte_cdk.sources.declarative.requesters.query_properties import (
     PropertiesFromEndpoint,
     PropertyChunking,
 )
 from airbyte_cdk.sources.types import Config, StreamSlice
-from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
-    QueryProperties as QueryPropertiesModel,
-)
-from airbyte_cdk.sources.declarative.parsers.component_constructor import (
-    ComponentConstructor,
-    AdditionalFlags,
-)
 
 
 @dataclass

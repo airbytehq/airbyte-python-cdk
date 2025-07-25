@@ -10,6 +10,7 @@ from itertools import islice
 from typing import (
     Any,
     Callable,
+    Dict,
     Iterable,
     List,
     Mapping,
@@ -18,18 +19,51 @@ from typing import (
     Set,
     Tuple,
     Union,
-    Dict,
     cast,
 )
 
 import requests
+from pydantic import BaseModel
+from requests import Response
 from typing_extensions import deprecated
 
 from airbyte_cdk.models import AirbyteMessage
+from airbyte_cdk.sources.declarative.decoders import JsonDecoder
 from airbyte_cdk.sources.declarative.extractors.http_selector import HttpSelector
-from airbyte_cdk.sources.declarative.incremental import ResumableFullRefreshCursor
+from airbyte_cdk.sources.declarative.incremental import (
+    DatetimeBasedCursor,
+    ResumableFullRefreshCursor,
+)
 from airbyte_cdk.sources.declarative.incremental.declarative_cursor import DeclarativeCursor
 from airbyte_cdk.sources.declarative.interpolation import InterpolatedString
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    CustomIncrementalSync as CustomIncrementalSyncModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    CustomRequester as CustomRequesterModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    DatetimeBasedCursor as DatetimeBasedCursorModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    HttpRequester as HttpRequesterModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    IncrementingCountCursor as IncrementingCountCursorModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    QueryProperties as QueryPropertiesModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    SimpleRetriever as SimpleRetrieverModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    SubstreamPartitionRouter as SubstreamPartitionRouterModel,
+)
+from airbyte_cdk.sources.declarative.parsers.component_constructor import (
+    AdditionalFlags,
+    ComponentConstructor,
+)
 from airbyte_cdk.sources.declarative.partition_routers.single_partition_router import (
     SinglePartitionRouter,
 )
@@ -41,50 +75,16 @@ from airbyte_cdk.sources.declarative.requesters.request_options import (
     RequestOptionsProvider,
 )
 from airbyte_cdk.sources.declarative.requesters.requester import Requester
+from airbyte_cdk.sources.declarative.retrievers.file_uploader import DefaultFileUploader
 from airbyte_cdk.sources.declarative.retrievers.retriever import Retriever
+from airbyte_cdk.sources.declarative.stream_slicers import StreamSlicerTestReadDecorator
 from airbyte_cdk.sources.declarative.stream_slicers.stream_slicer import StreamSlicer
+from airbyte_cdk.sources.declarative.transformations import RecordTransformation
 from airbyte_cdk.sources.http_logger import format_http_message
 from airbyte_cdk.sources.source import ExperimentalClassWarning
 from airbyte_cdk.sources.streams.core import StreamData
 from airbyte_cdk.sources.types import Config, Record, StreamSlice, StreamState
 from airbyte_cdk.utils.mapping_helpers import combine_mappings
-from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
-    SimpleRetriever as SimpleRetrieverModel,
-)
-from airbyte_cdk.sources.declarative.parsers.component_constructor import (
-    ComponentConstructor,
-    AdditionalFlags,
-)
-from airbyte_cdk.sources.declarative.transformations import RecordTransformation
-from airbyte_cdk.sources.declarative.decoders import JsonDecoder
-from pydantic import BaseModel
-from airbyte_cdk.sources.declarative.retrievers.file_uploader import DefaultFileUploader
-from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
-    IncrementingCountCursor as IncrementingCountCursorModel,
-)
-from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
-    DatetimeBasedCursor as DatetimeBasedCursorModel,
-)
-
-from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
-    CustomIncrementalSync as CustomIncrementalSyncModel,
-)
-from requests import Response
-from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
-    HttpRequester as HttpRequesterModel,
-)
-from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
-    CustomRequester as CustomRequesterModel,
-)
-from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
-    QueryProperties as QueryPropertiesModel,
-)
-from airbyte_cdk.sources.declarative.requesters.query_properties import QueryProperties
-from airbyte_cdk.sources.declarative.incremental import DatetimeBasedCursor
-from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
-    SubstreamPartitionRouter as SubstreamPartitionRouterModel,
-)
-from airbyte_cdk.sources.declarative.stream_slicers import StreamSlicerTestReadDecorator
 
 FULL_REFRESH_SYNC_COMPLETE_KEY = "__ab_full_refresh_sync_complete"
 

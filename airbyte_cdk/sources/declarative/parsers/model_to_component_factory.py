@@ -448,8 +448,8 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
     ZipfileDecoder as ZipfileDecoderModel,
 )
 from airbyte_cdk.sources.declarative.parsers.component_constructor import (
-    ComponentConstructor,
     AdditionalFlags,
+    ComponentConstructor,
 )
 from airbyte_cdk.sources.declarative.parsers.custom_code_compiler import (
     COMPONENTS_MODULE_NAME,
