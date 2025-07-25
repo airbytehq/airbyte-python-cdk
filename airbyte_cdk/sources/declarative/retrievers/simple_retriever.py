@@ -200,7 +200,7 @@ class SimpleRetriever(Retriever, ComponentConstructor[SimpleRetrieverModel]):
         log_formatter: Optional[Callable[[Response], Any]] = None,
         **kwargs: Any,
     ) -> Mapping[str, Any]:
-        if not name:
+        if name is None:
             raise ValueError(f"name argument is required to instance a {cls.__name__}")
 
         def _get_url() -> str:
