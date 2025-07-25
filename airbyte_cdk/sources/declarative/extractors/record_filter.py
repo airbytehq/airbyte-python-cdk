@@ -2,7 +2,7 @@
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
 from dataclasses import InitVar, dataclass
-from typing import Any, Iterable, Mapping, Optional, Union
+from typing import Any, Callable, Iterable, Mapping, Optional, Union
 
 from airbyte_cdk.sources.declarative.incremental import (
     DatetimeBasedCursor,
@@ -10,11 +10,18 @@ from airbyte_cdk.sources.declarative.incremental import (
     PerPartitionWithGlobalCursor,
 )
 from airbyte_cdk.sources.declarative.interpolation.interpolated_boolean import InterpolatedBoolean
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    RecordFilter as RecordFilterModel,
+)
+from airbyte_cdk.sources.declarative.parsers.component_constructor import (
+    AdditionalFlags,
+    ComponentConstructor,
+)
 from airbyte_cdk.sources.types import Config, Record, StreamSlice, StreamState
 
 
 @dataclass
-class RecordFilter:
+class RecordFilter(ComponentConstructor[RecordFilterModel]):
     """
     Filter applied on a list of Records
 
@@ -25,6 +32,21 @@ class RecordFilter:
     parameters: InitVar[Mapping[str, Any]]
     config: Config
     condition: str = ""
+
+    @classmethod
+    def resolve_dependencies(
+        cls,
+        model: RecordFilterModel,
+        config: Config,
+        dependency_constructor: Callable[..., Any],
+        additional_flags: AdditionalFlags,
+        **kwargs: Any,
+    ) -> Mapping[str, Any]:
+        return {
+            "condition": model.condition or "",
+            "config": config,
+            "parameters": model.parameters or {},
+        }
 
     def __post_init__(self, parameters: Mapping[str, Any]) -> None:
         self._filter_interpolator = InterpolatedBoolean(
