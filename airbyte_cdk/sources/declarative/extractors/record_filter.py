@@ -13,7 +13,10 @@ from airbyte_cdk.sources.declarative.interpolation.interpolated_boolean import I
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     RecordFilter as RecordFilterModel,
 )
-from airbyte_cdk.sources.declarative.parsers.component_constructor import ComponentConstructor
+from airbyte_cdk.sources.declarative.parsers.component_constructor import (
+    ComponentConstructor,
+    AdditionalFlags,
+)
 from airbyte_cdk.sources.types import Config, Record, StreamSlice, StreamState
 
 
@@ -36,7 +39,7 @@ class RecordFilter(ComponentConstructor[RecordFilterModel]):
         model: RecordFilterModel,
         config: Config,
         dependency_constructor: Callable[..., Any],
-        additional_flags: Optional[Mapping[str, Any]] = None,
+        additional_flags: AdditionalFlags,
         **kwargs: Any,
     ) -> Mapping[str, Any]:
         return {
