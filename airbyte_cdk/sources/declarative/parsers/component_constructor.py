@@ -7,10 +7,40 @@ from typing import Any, Callable, Generic, Mapping, Optional, Type, TypeVar
 
 from pydantic.v1 import BaseModel
 
+from airbyte_cdk.sources.message import MessageRepository
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import ValueType
 from airbyte_cdk.sources.types import Config
 
+from airbyte_cdk.sources.connector_state_manager import ConnectorStateManager
+
 M = TypeVar("M", bound=BaseModel)
+
+
+@dataclass
+class AdditionalFlags:
+    def __init__(
+        self,
+        emit_connector_builder_messages: bool,
+        disable_retries: bool,
+        message_repository: MessageRepository,
+        connector_state_manager: ConnectorStateManager,
+        limit_pages_fetched_per_slice: Optional[int],
+        limit_slices_fetched: Optional[int],
+    ):
+        self.emit_connector_builder_messages = emit_connector_builder_messages
+        self.disable_retries = disable_retries
+        self.message_repository = message_repository
+        self.connector_state_manager = connector_state_manager
+        self.limit_pages_fetched_per_slice = limit_pages_fetched_per_slice
+        self.limit_slices_fetched = limit_slices_fetched
+
+    @property
+    def should_limit_slices_fetched(self) -> bool:
+        """
+        Returns True if the number of slices fetched should be limited, False otherwise.
+        This is used to limit the number of slices fetched during tests.
+        """
+        return bool(self.limit_slices_fetched or self.emit_connector_builder_messages)
 
 
 @dataclass
@@ -21,7 +51,7 @@ class ComponentConstructor(Generic[M]):
         model: M,
         config: Config,
         dependency_constructor: Callable[..., Any],
-        additional_flags: Optional[Mapping[str, Any]] = None,
+        additional_flags: AdditionalFlags,
         **kwargs: Any,
     ) -> Mapping[str, Any]:
         """
@@ -37,7 +67,7 @@ class ComponentConstructor(Generic[M]):
         model: M,
         config: Config,
         dependency_constructor: Callable[..., Any],
-        additional_flags: Optional[Mapping[str, Any]],
+        additional_flags: AdditionalFlags,
         **kwargs: Any,
     ) -> "ComponentConstructor[M]":
         """
