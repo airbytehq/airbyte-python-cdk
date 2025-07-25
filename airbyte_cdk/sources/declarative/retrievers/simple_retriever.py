@@ -132,10 +132,9 @@ class SimpleRetriever(Retriever, ComponentConstructor[SimpleRetrieverModel]):
     ignore_stream_slicer_parameters_on_paginated_requests: bool = False
     additional_query_properties: Optional[QueryProperties] = None
     log_formatter: Optional[Callable[[requests.Response], Any]] = None
-    _should_use_lazy_simple_retriever: bool = False
 
     @classmethod
-    def _validate_if_lazy_simple_retriever_should_be_applied(
+    def _should_use_lazy_simple_retriever(
         cls,
         name: str,
         model: SimpleRetrieverModel,
@@ -170,7 +169,6 @@ class SimpleRetriever(Retriever, ComponentConstructor[SimpleRetrieverModel]):
                 raise ValueError(
                     f"LazySimpleRetriever only supports JsonDecoder. Found: {model.decoder.type}."
                 )
-            cls._should_use_lazy_simple_retriever = True
             return True
 
         return False
@@ -312,8 +310,6 @@ class SimpleRetriever(Retriever, ComponentConstructor[SimpleRetrieverModel]):
             query_properties = dependency_constructor(
                 model=query_properties_definition,
                 config=config,
-                dependency_constructor=dependency_constructor,
-                additional_flags=additional_flags,
                 **kwargs,
             )
 
@@ -321,8 +317,6 @@ class SimpleRetriever(Retriever, ComponentConstructor[SimpleRetrieverModel]):
             query_properties = dependency_constructor(
                 model=model.requester.query_properties,
                 config=config,
-                dependency_constructor=dependency_constructor,
-                additional_flags=additional_flags,
                 **kwargs,
             )
 
@@ -392,7 +386,7 @@ class SimpleRetriever(Retriever, ComponentConstructor[SimpleRetrieverModel]):
             "parameters": model.parameters or {},
         }
 
-        if cls._validate_if_lazy_simple_retriever_should_be_applied(
+        if cls._should_use_lazy_simple_retriever(
             name, model, additional_flags, incremental_sync
         ):
             return resolved_dependencies
@@ -427,8 +421,13 @@ class SimpleRetriever(Retriever, ComponentConstructor[SimpleRetrieverModel]):
             additional_flags=additional_flags,
             **kwargs,
         )
-        if cls._should_use_lazy_simple_retriever:
-            LazySimpleRetriever(**resolved_dependencies)
+        if cls._should_use_lazy_simple_retriever(
+                name=kwargs.get("name"),
+                model=model,
+                additional_flags=additional_flags,
+                incremental_sync=kwargs.get("incremental_sync"),
+        ):
+            return LazySimpleRetriever(**resolved_dependencies)
         return SimpleRetriever(**resolved_dependencies)
 
     def __post_init__(self, parameters: Mapping[str, Any]) -> None:

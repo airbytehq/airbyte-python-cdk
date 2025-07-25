@@ -3146,6 +3146,24 @@ class ModelToComponentFactory:
             parameters=model.parameters or {},
         )
 
+    def _get_log_formatter(
+            self, log_formatter: Callable[[Response], Any] | None, name: str
+    ) -> Callable[[Response], Any] | None:
+        if self._should_limit_slices_fetched():
+            return (
+                (
+                    lambda response: format_http_message(
+                        response,
+                        f"Stream '{name}' request",
+                        f"Request performed in order to extract records for stream '{name}'",
+                        name,
+                    )
+                )
+                if not log_formatter
+                else log_formatter
+            )
+        return None
+
     def _should_limit_slices_fetched(self) -> bool:
         """
         Returns True if the number of slices fetched should be limited, False otherwise.
