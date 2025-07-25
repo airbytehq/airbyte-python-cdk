@@ -136,7 +136,6 @@ class SimpleRetriever(Retriever, ComponentConstructor[SimpleRetrieverModel]):
     @classmethod
     def _should_use_lazy_simple_retriever(
         cls,
-        name: str,
         model: SimpleRetrieverModel,
         additional_flags: AdditionalFlags,
         incremental_sync: Optional[
@@ -144,7 +143,10 @@ class SimpleRetriever(Retriever, ComponentConstructor[SimpleRetrieverModel]):
                 IncrementingCountCursorModel, DatetimeBasedCursorModel, CustomIncrementalSyncModel
             ]
         ] = None,
+        name: Optional[str] = None,
     ) -> bool:
+        if name is None:
+            raise ValueError(f"name argument is required to instance a {cls.__name__}")
         if (
             model.partition_router
             and isinstance(model.partition_router, SubstreamPartitionRouterModel)
@@ -386,7 +388,7 @@ class SimpleRetriever(Retriever, ComponentConstructor[SimpleRetrieverModel]):
             "parameters": model.parameters or {},
         }
 
-        if cls._should_use_lazy_simple_retriever(name, model, additional_flags, incremental_sync):
+        if cls._should_use_lazy_simple_retriever(model, additional_flags, incremental_sync, name):
             return resolved_dependencies
 
         resolved_dependencies.update(
@@ -420,10 +422,10 @@ class SimpleRetriever(Retriever, ComponentConstructor[SimpleRetrieverModel]):
             **kwargs,
         )
         if cls._should_use_lazy_simple_retriever(
-            name=kwargs.get("name"),
             model=model,
             additional_flags=additional_flags,
             incremental_sync=kwargs.get("incremental_sync"),
+            name=kwargs.get("name"),
         ):
             return LazySimpleRetriever(**resolved_dependencies)
         return SimpleRetriever(**resolved_dependencies)
