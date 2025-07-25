@@ -18,6 +18,8 @@ from typing import (
     Set,
     Tuple,
     Union,
+    Dict,
+    cast,
 )
 
 import requests
@@ -46,12 +48,49 @@ from airbyte_cdk.sources.source import ExperimentalClassWarning
 from airbyte_cdk.sources.streams.core import StreamData
 from airbyte_cdk.sources.types import Config, Record, StreamSlice, StreamState
 from airbyte_cdk.utils.mapping_helpers import combine_mappings
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    SimpleRetriever as SimpleRetrieverModel,
+)
+from airbyte_cdk.sources.declarative.parsers.component_constructor import (
+    ComponentConstructor,
+    AdditionalFlags,
+)
+from airbyte_cdk.sources.declarative.transformations import RecordTransformation
+from airbyte_cdk.sources.declarative.decoders import JsonDecoder
+from pydantic import BaseModel
+from airbyte_cdk.sources.declarative.retrievers.file_uploader import DefaultFileUploader
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    IncrementingCountCursor as IncrementingCountCursorModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    DatetimeBasedCursor as DatetimeBasedCursorModel,
+)
+
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    CustomIncrementalSync as CustomIncrementalSyncModel,
+)
+from requests import Response
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    HttpRequester as HttpRequesterModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    CustomRequester as CustomRequesterModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    QueryProperties as QueryPropertiesModel,
+)
+from airbyte_cdk.sources.declarative.requesters.query_properties import QueryProperties
+from airbyte_cdk.sources.declarative.incremental import DatetimeBasedCursor
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    SubstreamPartitionRouter as SubstreamPartitionRouterModel,
+)
+from airbyte_cdk.sources.declarative.stream_slicers import StreamSlicerTestReadDecorator
 
 FULL_REFRESH_SYNC_COMPLETE_KEY = "__ab_full_refresh_sync_complete"
 
 
 @dataclass
-class SimpleRetriever(Retriever):
+class SimpleRetriever(Retriever, ComponentConstructor[SimpleRetrieverModel]):
     """
     Retrieves records by synchronously sending requests to fetch records.
 
@@ -93,6 +132,304 @@ class SimpleRetriever(Retriever):
     ignore_stream_slicer_parameters_on_paginated_requests: bool = False
     additional_query_properties: Optional[QueryProperties] = None
     log_formatter: Optional[Callable[[requests.Response], Any]] = None
+    _should_use_lazy_simple_retriever: bool = False
+
+    @classmethod
+    def _validate_if_lazy_simple_retriever_should_be_applied(
+        cls,
+        name: str,
+        model: SimpleRetrieverModel,
+        additional_flags: AdditionalFlags,
+        incremental_sync: Optional[
+            Union[
+                IncrementingCountCursorModel, DatetimeBasedCursorModel, CustomIncrementalSyncModel
+            ]
+        ] = None,
+    ) -> bool:
+        if (
+            model.partition_router
+            and isinstance(model.partition_router, SubstreamPartitionRouterModel)
+            and not bool(additional_flags.connector_state_manager.get_stream_state(name, None))
+            and any(
+                parent_stream_config.lazy_read_pointer
+                for parent_stream_config in model.partition_router.parent_stream_configs
+            )
+        ):
+            if incremental_sync:
+                if incremental_sync.type != "DatetimeBasedCursor":
+                    raise ValueError(
+                        f"LazySimpleRetriever only supports DatetimeBasedCursor. Found: {incremental_sync.type}."
+                    )
+
+                elif incremental_sync.step or incremental_sync.cursor_granularity:
+                    raise ValueError(
+                        f"Found more that one slice per parent. LazySimpleRetriever only supports single slice read for stream - {name}."
+                    )
+
+            if model.decoder and model.decoder.type != "JsonDecoder":
+                raise ValueError(
+                    f"LazySimpleRetriever only supports JsonDecoder. Found: {model.decoder.type}."
+                )
+            cls._should_use_lazy_simple_retriever = True
+            return True
+
+        return False
+
+    @classmethod
+    def resolve_dependencies(
+        cls,
+        model: SimpleRetrieverModel,
+        config: Config,
+        dependency_constructor: Callable[..., Any],
+        additional_flags: AdditionalFlags,
+        *,
+        name: Optional[str] = None,
+        primary_key: Optional[Union[str, List[str], List[List[str]]]] = None,
+        stream_slicer: Optional[StreamSlicer] = None,
+        request_options_provider: Optional[RequestOptionsProvider] = None,
+        stop_condition_on_cursor: bool = False,
+        client_side_incremental_sync: Optional[Dict[str, Any]] = None,
+        transformations: Optional[List[RecordTransformation]] = None,
+        file_uploader: Optional[DefaultFileUploader] = None,
+        incremental_sync: Optional[
+            Union[
+                IncrementingCountCursorModel, DatetimeBasedCursorModel, CustomIncrementalSyncModel
+            ]
+        ] = None,
+        use_cache: Optional[bool] = None,
+        log_formatter: Optional[Callable[[Response], Any]] = None,
+        **kwargs: Any,
+    ) -> Mapping[str, Any]:
+        if not name:
+            raise ValueError(f"name argument is required to instance a {cls.__name__}")
+
+        def _get_url() -> str:
+            """
+            Closure to get the URL from the requester. This is used to get the URL in the case of a lazy retriever.
+            This is needed because the URL is not set until the requester is created.
+            """
+
+            _url: str = (
+                model.requester.url
+                if hasattr(model.requester, "url") and model.requester.url is not None
+                else requester.get_url()
+            )
+            _url_base: str = (
+                model.requester.url_base
+                if hasattr(model.requester, "url_base") and model.requester.url_base is not None
+                else requester.get_url_base()
+            )
+
+            return _url or _url_base
+
+        def query_properties_in_request_parameters(
+            requester: Union[HttpRequesterModel, CustomRequesterModel],
+        ) -> bool:
+            if not hasattr(requester, "request_parameters"):
+                return False
+            request_parameters = requester.request_parameters
+            if request_parameters and isinstance(request_parameters, Mapping):
+                for request_parameter in request_parameters.values():
+                    if isinstance(request_parameter, QueryPropertiesModel):
+                        return True
+            return False
+
+        def _get_log_formatter(
+            log_formatter: Callable[[Response], Any] | None,
+            name: str,
+            additional_flags: AdditionalFlags,
+        ) -> Callable[[Response], Any] | None:
+            if additional_flags.should_limit_slices_fetched:
+                return (
+                    (
+                        lambda response: format_http_message(
+                            response,
+                            f"Stream '{name}' request",
+                            f"Request performed in order to extract records for stream '{name}'",
+                            name,
+                        )
+                    )
+                    if not log_formatter
+                    else log_formatter
+                )
+            return None
+
+        decoder = (
+            dependency_constructor(model=model.decoder, config=config)
+            if model.decoder
+            else JsonDecoder(parameters={})
+        )
+        record_selector = dependency_constructor(
+            model=model.record_selector,
+            name=name,
+            config=config,
+            decoder=decoder,
+            transformations=transformations,
+            client_side_incremental_sync=client_side_incremental_sync,
+            file_uploader=file_uploader,
+        )
+
+        query_properties: Optional[QueryProperties] = None
+        query_properties_key: Optional[str] = None
+        if query_properties_in_request_parameters(model.requester):
+            # It is better to be explicit about an error if PropertiesFromEndpoint is defined in multiple
+            # places instead of default to request_parameters which isn't clearly documented
+            if (
+                hasattr(model.requester, "fetch_properties_from_endpoint")
+                and model.requester.fetch_properties_from_endpoint
+            ):
+                raise ValueError(
+                    f"PropertiesFromEndpoint should only be specified once per stream, but found in {model.requester.type}.fetch_properties_from_endpoint and {model.requester.type}.request_parameters"
+                )
+
+            query_properties_definitions = []
+            for key, request_parameter in model.requester.request_parameters.items():  # type: ignore # request_parameters is already validated to be a Mapping using query_properties_in_request_parameters()
+                if isinstance(request_parameter, QueryPropertiesModel):
+                    query_properties_key = key
+                    query_properties_definitions.append(request_parameter)
+
+            if len(query_properties_definitions) > 1:
+                raise ValueError(
+                    f"request_parameters only supports defining one QueryProperties field, but found {len(query_properties_definitions)} usages"
+                )
+
+            if len(query_properties_definitions) == 1:
+                query_properties = dependency_constructor(
+                    model=query_properties_definitions[0], config=config
+                )
+        elif (
+            hasattr(model.requester, "fetch_properties_from_endpoint")
+            and model.requester.fetch_properties_from_endpoint
+        ):
+            # todo: Deprecate this condition once dependent connectors migrate to query_properties
+            query_properties_definition = QueryPropertiesModel(
+                type="QueryProperties",
+                property_list=model.requester.fetch_properties_from_endpoint,
+                always_include_properties=None,
+                property_chunking=None,
+            )  # type: ignore # $parameters has a default value
+
+            query_properties = dependency_constructor(
+                model=query_properties_definition,
+                config=config,
+                dependency_constructor=dependency_constructor,
+                additional_flags=additional_flags,
+                **kwargs,
+            )
+
+        elif hasattr(model.requester, "query_properties") and model.requester.query_properties:
+            query_properties = dependency_constructor(
+                model=model.requester.query_properties,
+                config=config,
+                dependency_constructor=dependency_constructor,
+                additional_flags=additional_flags,
+                **kwargs,
+            )
+
+        requester = dependency_constructor(
+            model=model.requester,
+            decoder=decoder,
+            name=name,
+            query_properties_key=query_properties_key,
+            use_cache=use_cache,
+            config=config,
+        )
+
+        # Define cursor only if per partition or common incremental support is needed
+        cursor = stream_slicer if isinstance(stream_slicer, DeclarativeCursor) else None
+
+        if (
+            not isinstance(stream_slicer, DatetimeBasedCursor)
+            or type(stream_slicer) is not DatetimeBasedCursor
+        ):
+            # Many of the custom component implementations of DatetimeBasedCursor override get_request_params() (or other methods).
+            # Because we're decoupling RequestOptionsProvider from the Cursor, custom components will eventually need to reimplement
+            # their own RequestOptionsProvider. However, right now the existing StreamSlicer/Cursor still can act as the SimpleRetriever's
+            # request_options_provider
+            request_options_provider = stream_slicer or DefaultRequestOptionsProvider(parameters={})
+        elif not request_options_provider:
+            request_options_provider = DefaultRequestOptionsProvider(parameters={})
+
+        stream_slicer = stream_slicer or SinglePartitionRouter(parameters={})
+        if additional_flags.should_limit_slices_fetched:
+            stream_slicer = cast(
+                StreamSlicer,
+                StreamSlicerTestReadDecorator(
+                    wrapped_slicer=stream_slicer,
+                    maximum_number_of_slices=additional_flags.limit_slices_fetched or 5,
+                ),
+            )
+
+        cursor_used_for_stop_condition = cursor if stop_condition_on_cursor else None
+        paginator = (
+            dependency_constructor(
+                model=model.paginator,
+                config=config,
+                url_base=_get_url(),
+                extractor_model=model.record_selector.extractor,
+                decoder=decoder,
+                cursor_used_for_stop_condition=cursor_used_for_stop_condition,
+            )
+            if model.paginator
+            else NoPagination(parameters={})
+        )
+
+        ignore_stream_slicer_parameters_on_paginated_requests = (
+            model.ignore_stream_slicer_parameters_on_paginated_requests or False
+        )
+
+        resolved_dependencies = {
+            "name": name,
+            "paginator": paginator,
+            "primary_key": primary_key,
+            "requester": requester,
+            "record_selector": record_selector,
+            "stream_slicer": stream_slicer,
+            "request_option_provider": request_options_provider,
+            "cursor": cursor,
+            "config": config,
+            "ignore_stream_slicer_parameters_on_paginated_requests": ignore_stream_slicer_parameters_on_paginated_requests,
+            "parameters": model.parameters or {},
+        }
+
+        if cls._validate_if_lazy_simple_retriever_should_be_applied(
+            name, model, additional_flags, incremental_sync
+        ):
+            return resolved_dependencies
+
+        resolved_dependencies.update(
+            {
+                "additional_query_properties": query_properties,
+                "log_formatter": _get_log_formatter(log_formatter, name, additional_flags),
+            }
+        )
+        return resolved_dependencies
+
+    @classmethod
+    def build(
+        cls,
+        model: SimpleRetrieverModel,
+        config: Config,
+        dependency_constructor: Callable[..., Any],
+        additional_flags: AdditionalFlags,
+        **kwargs: Any,
+    ) -> "SimpleRetriever":
+        """
+        Builds up the Component and it's component-specific dependencies.
+        Order of operations:
+        - build the dependencies first
+        - build the component with the resolved dependencies
+        """
+        resolved_dependencies: Mapping[str, Any] = cls.resolve_dependencies(
+            model=model,
+            config=config,
+            dependency_constructor=dependency_constructor,
+            additional_flags=additional_flags,
+            **kwargs,
+        )
+        if cls._should_use_lazy_simple_retriever:
+            LazySimpleRetriever(**resolved_dependencies)
+        return SimpleRetriever(**resolved_dependencies)
 
     def __post_init__(self, parameters: Mapping[str, Any]) -> None:
         self._paginator = self.paginator or NoPagination(parameters=parameters)
