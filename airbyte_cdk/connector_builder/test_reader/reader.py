@@ -86,6 +86,7 @@ class TestReader:
         source: DeclarativeSource,
         config: Mapping[str, Any],
         configured_catalog: ConfiguredAirbyteCatalog,
+        stream_name: str,
         state: List[AirbyteStateMessage],
         record_limit: Optional[int] = None,
     ) -> StreamRead:
@@ -112,7 +113,8 @@ class TestReader:
 
         record_limit = self._check_record_limit(record_limit)
         # The connector builder currently only supports reading from a single stream at a time
-        stream = source.streams(config)[0]
+        streams = source.streams(config)
+        stream = next(stream for stream in streams if stream.name == stream_name)
 
         # get any deprecation warnings during the component creation
         deprecation_warnings: List[LogMessage] = source.deprecation_warnings()
