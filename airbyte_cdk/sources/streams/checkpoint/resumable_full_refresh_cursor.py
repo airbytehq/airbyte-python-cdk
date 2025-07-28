@@ -40,12 +40,6 @@ class ResumableFullRefreshCursor(Cursor):
         """
         return True
 
-    def is_greater_than_or_equal(self, first: Record, second: Record) -> bool:
-        """
-        RFR record don't have ordering to be compared between one another.
-        """
-        return False
-
     def select_state(self, stream_slice: Optional[StreamSlice] = None) -> Optional[StreamState]:
         # A top-level RFR cursor only manages the state of a single partition
         return self._cursor
