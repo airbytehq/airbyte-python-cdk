@@ -377,7 +377,7 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
                     and hasattr(declarative_stream.retriever, "stream_slicer")
                     and isinstance(
                         declarative_stream.retriever.stream_slicer,
-                        (GlobalSubstreamCursor, PerPartitionWithGlobalCursor),
+                        ConcurrentPerPartitionCursor,
                     )
                 ):
                     stream_state = self._connector_state_manager.get_stream_state(
@@ -435,6 +435,8 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
                 and self.is_partially_declarative
             ):
                 concurrent_streams.append(declarative_stream.get_underlying_stream())
+            elif isinstance(declarative_stream, DefaultStream):  # FIXME added temporarily until the ConcurrentDeclarativeSource is cleaned up
+                concurrent_streams.append(declarative_stream)
             else:
                 synchronous_streams.append(declarative_stream)
 
