@@ -291,7 +291,9 @@ def is_page_http_request_for_different_stream(
     if not json_message or not is_page_http_request(json_message):
         return False
 
-    message_stream_name = json_message.get("airbyte_cdk", {}).get("stream", {}).get("name", None)
+    message_stream_name: str | None = (
+        json_message.get("airbyte_cdk", {}).get("stream", {}).get("name", None)
+    )
     if message_stream_name is None:
         return False
 
