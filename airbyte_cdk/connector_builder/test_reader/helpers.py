@@ -290,7 +290,7 @@ def is_page_http_request_for_different_stream(
     """
     return (
         is_page_http_request(json_message)
-        and json_message.get("airbyte_cdk", {}).get("stream", {}).get("name", {}) != stream_name
+        and json_message.get("airbyte_cdk", {}).get("stream", {}).get("name", "") != stream_name
     )
 
 
