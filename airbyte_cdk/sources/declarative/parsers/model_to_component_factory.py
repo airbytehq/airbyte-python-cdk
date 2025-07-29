@@ -3493,10 +3493,11 @@ class ModelToComponentFactory:
                 requester=download_requester,
                 record_selector=record_selector,
                 primary_key=None,
-                name=job_download_components_name,
+                name=name,
                 paginator=paginator,
                 config=config,
                 parameters={},
+                log_formatter=self._get_log_formatter(None, name),
             )
 
         def _get_job_timeout() -> datetime.timedelta:
