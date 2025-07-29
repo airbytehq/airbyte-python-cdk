@@ -546,7 +546,11 @@ class ManifestDeclarativeSource(DeclarativeSource):
                 COMPONENTS_RESOLVER_TYPE_MAPPING[resolver_type],
                 components_resolver_config,
                 config,
-                **({"stream_name": dynamic_definition.get("name")} if resolver_type == "HttpComponentsResolver" else {}),
+                **(
+                    {"stream_name": dynamic_definition.get("name")}
+                    if resolver_type == "HttpComponentsResolver"
+                    else {}
+                ),
             )
 
             stream_template_config = dynamic_definition["stream_template"]
