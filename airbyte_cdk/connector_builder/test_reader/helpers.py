@@ -289,6 +289,7 @@ def is_page_http_request_for_different_stream(
         bool: True if the JSON message is a page HTTP request for a different stream, False otherwise.
     """
     return (
+        json_message and
         is_page_http_request(json_message)
         and json_message.get("airbyte_cdk", {}).get("stream", {}).get("name", "") != stream_name
     )
