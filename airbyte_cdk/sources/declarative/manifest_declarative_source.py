@@ -546,6 +546,7 @@ class ManifestDeclarativeSource(DeclarativeSource):
                 COMPONENTS_RESOLVER_TYPE_MAPPING[resolver_type],
                 components_resolver_config,
                 config,
+                stream_name=dynamic_definition.get("name"),
             )
 
             stream_template_config = dynamic_definition["stream_template"]

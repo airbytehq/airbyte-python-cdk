@@ -3805,7 +3805,7 @@ class ModelToComponentFactory:
         )
 
     def create_http_components_resolver(
-        self, model: HttpComponentsResolverModel, config: Config
+        self, model: HttpComponentsResolverModel, config: Config, stream_name: Optional[str] = None
     ) -> Any:
         stream_slicer = self._build_stream_slicer_from_partition_router(model.retriever, config)
         combined_slicers = self._build_resumable_cursor(model.retriever, stream_slicer)
@@ -3813,7 +3813,7 @@ class ModelToComponentFactory:
         retriever = self._create_component_from_model(
             model=model.retriever,
             config=config,
-            name="",
+            name=f"{stream_name if stream_name else '__http_components_resolver'}",
             primary_key=None,
             stream_slicer=stream_slicer if stream_slicer else combined_slicers,
             transformations=[],

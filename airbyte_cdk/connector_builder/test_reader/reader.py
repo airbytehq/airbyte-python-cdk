@@ -130,6 +130,7 @@ class TestReader:
             schema_inferrer,
             datetime_format_inferrer,
             record_limit,
+            stream_name,
         )
 
         slices, log_messages, auxiliary_requests, latest_config_update = self._categorise_groups(
