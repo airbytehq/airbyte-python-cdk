@@ -812,7 +812,7 @@ def test_read_returns_error_response(mock_from_exception):
         @property
         def cursor_field(self):
             return []
-        
+
         @property
         def name(self):
             return _stream_name

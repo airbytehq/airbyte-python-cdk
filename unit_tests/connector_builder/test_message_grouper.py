@@ -867,7 +867,9 @@ def test_given_pk_then_ensure_pk_is_pass_to_schema_inferrence(mock_entrypoint_re
         mock_entrypoint_read,
         iter(
             [
-                request_response_log_message({"request": 1}, {"response": 2}, "http://any_url.com", stream_name),
+                request_response_log_message(
+                    {"request": 1}, {"response": 2}, "http://any_url.com", stream_name
+                ),
                 record_message(stream_name, {"id": "Shinobu Kocho", "date": "2023-03-03"}),
                 record_message(stream_name, {"id": "Muichiro Tokito", "date": "2023-03-04"}),
             ]
@@ -899,7 +901,9 @@ def test_given_cursor_field_then_ensure_cursor_field_is_pass_to_schema_inferrenc
         mock_entrypoint_read,
         iter(
             [
-                request_response_log_message({"request": 1}, {"response": 2}, "http://any_url.com", stream_name),
+                request_response_log_message(
+                    {"request": 1}, {"response": 2}, "http://any_url.com", stream_name
+                ),
                 record_message(stream_name, {"id": "Shinobu Kocho", "date": "2023-03-03"}),
                 record_message(stream_name, {"id": "Muichiro Tokito", "date": "2023-03-04"}),
             ]
@@ -1036,6 +1040,8 @@ def request_response_log_message(
 
 def any_request_and_response_with_a_record() -> List[AirbyteMessage]:
     return [
-        request_response_log_message({"request": 1}, {"response": 2}, "http://any_url.com", "hashiras"),
+        request_response_log_message(
+            {"request": 1}, {"response": 2}, "http://any_url.com", "hashiras"
+        ),
         record_message("hashiras", {"name": "Shinobu Kocho"}),
     ]
