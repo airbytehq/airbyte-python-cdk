@@ -3859,7 +3859,6 @@ class ModelToComponentFactory:
         self,
         model: ConfigComponentsResolverModel,
         config: Config,
-        stream_name: Optional[str] = None,
     ) -> Any:
         model_stream_configs = (
             model.stream_config if isinstance(model.stream_config, list) else [model.stream_config]
@@ -3895,7 +3894,6 @@ class ModelToComponentFactory:
         self,
         model: ParametrizedComponentsResolverModel,
         config: Config,
-        stream_name: Optional[str] = None,
     ) -> ParametrizedComponentsResolver:
         stream_parameters = StreamParametersDefinition(
             list_of_parameters_for_stream=model.stream_parameters.list_of_parameters_for_stream
