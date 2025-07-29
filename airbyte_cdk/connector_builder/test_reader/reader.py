@@ -121,7 +121,9 @@ class TestReader:
 
         schema_inferrer = SchemaInferrer(
             self._pk_to_nested_and_composite_field(stream.primary_key) if stream else None,
-            self._cursor_field_to_nested_and_composite_field(stream.cursor_field) if stream else None,
+            self._cursor_field_to_nested_and_composite_field(stream.cursor_field)
+            if stream
+            else None,
         )
         datetime_format_inferrer = DatetimeFormatInferrer()
 

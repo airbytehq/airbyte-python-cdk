@@ -108,7 +108,12 @@ def read_stream(
         stream_name = configured_catalog.streams[0].stream.name
 
         stream_read = test_read_handler.run_test_read(
-            source, config, configured_catalog, stream_name, state, limits.max_records, 
+            source,
+            config,
+            configured_catalog,
+            stream_name,
+            state,
+            limits.max_records,
         )
 
         return AirbyteMessage(

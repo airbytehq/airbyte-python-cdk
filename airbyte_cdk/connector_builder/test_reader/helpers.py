@@ -268,7 +268,10 @@ def should_close_page_for_slice(at_least_one_page_in_group: bool, message: Airby
     """
     return at_least_one_page_in_group and should_process_slice_descriptor(message)
 
-def is_page_http_request_for_different_stream(json_message: Optional[Dict[str, Any]], stream_name: str) -> bool:
+
+def is_page_http_request_for_different_stream(
+    json_message: Optional[Dict[str, Any]], stream_name: str
+) -> bool:
     """
     Determines whether a given JSON message represents a page HTTP request for a different stream.
 
@@ -285,8 +288,11 @@ def is_page_http_request_for_different_stream(json_message: Optional[Dict[str, A
     Returns:
         bool: True if the JSON message is a page HTTP request for a different stream, False otherwise.
     """
-    return is_page_http_request(json_message) and json_message.get("airbyte_cdk", {}).get("stream", {}).get("name", {}) != stream_name
-    
+    return (
+        is_page_http_request(json_message)
+        and json_message.get("airbyte_cdk", {}).get("stream", {}).get("name", {}) != stream_name
+    )
+
 
 def is_page_http_request(json_message: Optional[Dict[str, Any]]) -> bool:
     """
