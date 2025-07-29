@@ -3858,6 +3858,7 @@ class ModelToComponentFactory:
         self,
         model: ConfigComponentsResolverModel,
         config: Config,
+        stream_name: Optional[str] = None,
     ) -> Any:
         model_stream_configs = (
             model.stream_config if isinstance(model.stream_config, list) else [model.stream_config]
