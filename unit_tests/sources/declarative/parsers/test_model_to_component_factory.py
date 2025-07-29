@@ -7,6 +7,7 @@ from copy import deepcopy
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Iterable, Mapping, Optional, Union
+from unittest.mock import Mock
 
 import freezegun
 import pytest
@@ -168,6 +169,7 @@ from airbyte_cdk.sources.streams.concurrent.clamping import (
     WeekClampingStrategy,
 )
 from airbyte_cdk.sources.streams.concurrent.cursor import ConcurrentCursor, CursorField
+from airbyte_cdk.sources.streams.concurrent.default_stream import DefaultStream
 from airbyte_cdk.sources.streams.concurrent.state_converters.datetime_stream_state_converter import (
     CustomFormatConcurrentStreamStateConverter,
 )
@@ -188,7 +190,10 @@ resolver = ManifestReferenceResolver()
 
 transformer = ManifestComponentTransformer()
 
-input_config = {"apikey": "verysecrettoken", "repos": ["airbyte", "airbyte-cloud"]}
+# FIXME some manifest were interpolating config on start_time and end_time
+CONFIG_START_TIME = "2023-01-01T00:00:00.000000+00:00"
+CONFIG_END_TIME = "2024-01-01T00:00:00.000000+00:00"
+input_config = {"apikey": "verysecrettoken", "repos": ["airbyte", "airbyte-cloud"], "start_time": CONFIG_START_TIME, "end_time": CONFIG_END_TIME}
 
 
 def get_factory_with_parameters(
@@ -716,13 +721,14 @@ def test_create_substream_partition_router():
         model_type=SubstreamPartitionRouterModel,
         component_definition=partition_router_manifest,
         config=input_config,
+        stream_name="A",
     )
 
     assert isinstance(partition_router, SubstreamPartitionRouter)
     parent_stream_configs = partition_router.parent_stream_configs
     assert len(parent_stream_configs) == 2
-    assert isinstance(parent_stream_configs[0].stream, DeclarativeStream)
-    assert isinstance(parent_stream_configs[1].stream, DeclarativeStream)
+    assert isinstance(parent_stream_configs[0].stream, DefaultStream)
+    assert isinstance(parent_stream_configs[1].stream, DefaultStream)
 
     assert partition_router.parent_stream_configs[0].parent_key.eval({}) == "id"
     assert partition_router.parent_stream_configs[0].partition_field.eval({}) == "repository_id"
@@ -920,22 +926,19 @@ list_stream:
         model_type=DeclarativeStreamModel, component_definition=stream_manifest, config=input_config
     )
 
-    assert isinstance(stream, DeclarativeStream)
-    assert isinstance(stream.retriever, SimpleRetriever)
-    assert isinstance(stream.retriever.stream_slicer, PerPartitionWithGlobalCursor)
+    assert isinstance(stream, DefaultStream)
+    assert isinstance(stream._stream_partition_generator._partition_factory._retriever, SimpleRetriever)
+    stream_slicer = stream._stream_partition_generator._stream_slicer
+    assert isinstance(stream_slicer, ConcurrentPerPartitionCursor)
 
-    datetime_stream_slicer = (
-        stream.retriever.stream_slicer._per_partition_cursor._cursor_factory.create()
-    )
-    assert isinstance(datetime_stream_slicer, DatetimeBasedCursor)
-    assert isinstance(datetime_stream_slicer._start_datetime, MinMaxDatetime)
-    assert datetime_stream_slicer._start_datetime.datetime.string == "{{ config['start_time'] }}"
-    assert isinstance(datetime_stream_slicer._end_datetime, MinMaxDatetime)
-    assert datetime_stream_slicer._end_datetime.datetime.string == "{{ config['end_time'] }}"
-    assert datetime_stream_slicer.step == "P10D"
-    assert datetime_stream_slicer.cursor_field.string == "created"
+    partition_cursor = stream_slicer._cursor_factory.create({}, None)
+    assert isinstance(partition_cursor, ConcurrentCursor)
+    assert partition_cursor._start == ab_datetime_parse(CONFIG_START_TIME).to_datetime()
+    assert partition_cursor._end_provider() == ab_datetime_parse(CONFIG_END_TIME).to_datetime()
+    assert partition_cursor._slice_range == timedelta(days=10)
+    assert partition_cursor.cursor_field.cursor_field_key == "created"
 
-    list_stream_slicer = stream.retriever.stream_slicer._partition_router
+    list_stream_slicer = stream_slicer._partition_router
     assert isinstance(list_stream_slicer, ListPartitionRouter)
     assert list_stream_slicer.values == ["airbyte", "airbyte-cloud"]
     assert list_stream_slicer._cursor_field.string == "a_key"
@@ -1012,9 +1015,10 @@ def test_stream_with_incremental_and_async_retriever_with_partition_router(use_l
         config=connector_config,
     )
 
-    assert isinstance(stream, DeclarativeStream)
-    assert isinstance(stream.retriever, AsyncRetriever)
-    stream_slicer = stream.retriever.stream_slicer.stream_slicer
+    assert isinstance(stream, DefaultStream)
+    retriever = stream._stream_partition_generator._partition_factory._retriever
+    assert isinstance(retriever, AsyncRetriever)
+    stream_slicer = retriever.stream_slicer.stream_slicer
     assert isinstance(stream_slicer, ConcurrentPerPartitionCursor)
     assert stream_slicer.state == stream_state
     import json
@@ -1056,6 +1060,7 @@ def test_stream_with_incremental_and_async_retriever_with_partition_router(use_l
 
 
 def test_resumable_full_refresh_stream():
+    # FIXME do we agree we should remove RFR stuff?
     content = """
 decoder:
   type: JsonDecoder
@@ -1418,14 +1423,12 @@ list_stream:
         model_type=DeclarativeStreamModel, component_definition=stream_manifest, config=input_config
     )
 
+    record_selector = stream._stream_partition_generator._partition_factory._retriever.record_selector
     assert isinstance(
-        stream.retriever.record_selector.record_filter, ClientSideIncrementalRecordFilterDecorator
+        record_selector.record_filter, ClientSideIncrementalRecordFilterDecorator
     )
-    assert stream.retriever.record_selector.transform_before_filtering == True
-    assert isinstance(
-        stream.retriever.record_selector.record_filter._cursor,
-        PerPartitionWithGlobalCursor,
-    )
+    assert record_selector.transform_before_filtering == True
+    assert isinstance(record_selector.record_filter._cursor, ConcurrentPerPartitionCursor)
 
 
 def test_given_data_feed_and_client_side_incremental_then_raise_error():
@@ -1997,7 +2000,7 @@ def test_create_default_paginator():
             "subcomponent_field_with_hint",
             DpathExtractor(
                 field_path=[],
-                config={"apikey": "verysecrettoken", "repos": ["airbyte", "airbyte-cloud"]},
+                config=input_config,
                 decoder=JsonDecoder(parameters={}),
                 parameters={},
             ),
@@ -2013,7 +2016,7 @@ def test_create_default_paginator():
             "subcomponent_field_with_hint",
             DpathExtractor(
                 field_path=[],
-                config={"apikey": "verysecrettoken", "repos": ["airbyte", "airbyte-cloud"]},
+                config=input_config,
                 parameters={},
             ),
             None,
@@ -2102,11 +2105,11 @@ def test_create_default_paginator():
                 pagination_strategy=OffsetIncrement(
                     page_size=10,
                     extractor=None,
-                    config={"apikey": "verysecrettoken", "repos": ["airbyte", "airbyte-cloud"]},
+                    config=input_config,
                     parameters={},
                 ),
                 url_base="https://physical_100.com",
-                config={"apikey": "verysecrettoken", "repos": ["airbyte", "airbyte-cloud"]},
+                config=input_config,
                 parameters={"decoder": {"type": "JsonDecoder"}},
             ),
             None,
@@ -2582,7 +2585,7 @@ class TestCreateTransformations:
                 "cursor_granularity": "PT0.000001S",
             },
             None,
-            DatetimeBasedCursor,
+            ConcurrentCursor,
             id="test_create_simple_retriever_with_incremental",
         ),
         pytest.param(
@@ -2592,7 +2595,7 @@ class TestCreateTransformations:
                 "values": "{{config['repos']}}",
                 "cursor_field": "a_key",
             },
-            PerPartitionCursor,
+            ListPartitionRouter,  # FIXME I was surprised by this one but this is for RFR
             id="test_create_simple_retriever_with_partition_router",
         ),
         pytest.param(
@@ -2610,7 +2613,7 @@ class TestCreateTransformations:
                 "values": "{{config['repos']}}",
                 "cursor_field": "a_key",
             },
-            PerPartitionWithGlobalCursor,
+            ConcurrentPerPartitionCursor,
             id="test_create_simple_retriever_with_incremental_and_partition_router",
         ),
         pytest.param(
@@ -2635,13 +2638,13 @@ class TestCreateTransformations:
                     "cursor_field": "b_key",
                 },
             ],
-            PerPartitionWithGlobalCursor,
+            ConcurrentPerPartitionCursor,
             id="test_create_simple_retriever_with_partition_routers_multiple_components",
         ),
         pytest.param(
             None,
             None,
-            SinglePartitionRouter,
+            SinglePartitionRouter,  # FIXME I was surprised by this one but this is for RFR
             id="test_create_simple_retriever_with_no_incremental_or_partition_router",
         ),
     ],
@@ -2677,22 +2680,19 @@ def test_merge_incremental_and_partition_router(incremental, partition_router, e
         model_type=DeclarativeStreamModel, component_definition=stream_model, config=input_config
     )
 
-    assert isinstance(stream, DeclarativeStream)
-    assert isinstance(stream.retriever, SimpleRetriever)
-    assert isinstance(stream.retriever.stream_slicer, expected_type)
+    retriever = stream.retriever if isinstance(stream, DeclarativeStream) else stream._stream_partition_generator._partition_factory._retriever
+
+    assert isinstance(retriever, SimpleRetriever)
+    assert isinstance(retriever.stream_slicer, expected_type)
 
     if incremental and partition_router:
-        assert isinstance(stream.retriever.stream_slicer, PerPartitionWithGlobalCursor)
         if isinstance(partition_router, list) and len(partition_router) > 1:
             assert isinstance(
-                stream.retriever.stream_slicer._partition_router, CartesianProductStreamSlicer
+                retriever.stream_slicer._partition_router, CartesianProductStreamSlicer
             )
-            assert len(stream.retriever.stream_slicer._partition_router.stream_slicers) == len(
+            assert len(retriever.stream_slicer._partition_router.stream_slicers) == len(
                 partition_router
             )
-    elif partition_router and isinstance(partition_router, list) and len(partition_router) > 1:
-        assert isinstance(stream.retriever.stream_slicer, PerPartitionWithGlobalCursor)
-        assert len(stream.retriever.stream_slicer.stream_slicerS) == len(partition_router)
 
 
 def test_simple_retriever_emit_log_messages():
@@ -3044,15 +3044,17 @@ def test_use_request_options_provider_for_datetime_based_cursor():
         },
     }
 
-    datetime_based_cursor = DatetimeBasedCursor(
-        start_datetime=MinMaxDatetime(datetime="{{ config.start_time }}", parameters={}),
-        step="P5D",
-        cursor_field="updated_at",
-        datetime_format="%Y-%m-%dT%H:%M:%S.%f%z",
-        cursor_granularity="PT1S",
-        is_compare_strictly=True,
-        config=config,
-        parameters={},
+    datetime_based_cursor = ConcurrentCursor(
+        stream_name = "Test",
+        stream_namespace= None,
+        stream_state = {},
+        message_repository = Mock(),
+        connector_state_manager = Mock(),
+        connector_state_converter = Mock(),
+        cursor_field = Mock(),
+        slice_boundary_fields = None,
+        start = datetime.min,
+        end_provider = lambda: datetime.max,
     )
 
     datetime_based_request_options_provider = DatetimeBasedRequestOptionsProvider(
@@ -3085,10 +3087,6 @@ def test_use_request_options_provider_for_datetime_based_cursor():
     assert isinstance(retriever, SimpleRetriever)
     assert retriever.primary_key == "id"
     assert retriever.name == "Test"
-
-    assert isinstance(retriever.cursor, DatetimeBasedCursor)
-    assert isinstance(retriever.stream_slicer, StreamSlicerTestReadDecorator)
-    assert isinstance(retriever.stream_slicer.wrapped_slicer, DatetimeBasedCursor)
 
     assert isinstance(retriever.request_option_provider, DatetimeBasedRequestOptionsProvider)
     assert (
@@ -3175,8 +3173,8 @@ def test_do_not_separate_request_options_provider_for_non_datetime_based_cursor(
     assert retriever.primary_key == "id"
     assert retriever.name == "Test"
 
-    assert isinstance(retriever.cursor, PerPartitionCursor)
-    assert isinstance(retriever.stream_slicer, StreamSlicerTestReadDecorator)
+    assert retriever.cursor is None  # cursor has been deprecated
+    assert isinstance(retriever.stream_slicer, StreamSlicerTestReadDecorator)  # FIXME it seems like retriever.stream_slicer should also be deprecated
     assert isinstance(retriever.stream_slicer.wrapped_slicer, PerPartitionCursor)
 
     assert isinstance(retriever.request_option_provider, PerPartitionCursor)
@@ -4084,6 +4082,7 @@ def test_create_grouping_partition_router_with_underlying_router():
         model_type=GroupingPartitionRouterModel,
         component_definition=partition_router_manifest,
         config=input_config,
+        stream_name="B",
     )
 
     # Test the created partition router
@@ -4094,7 +4093,7 @@ def test_create_grouping_partition_router_with_underlying_router():
     # Test the underlying partition router
     parent_stream_configs = partition_router.underlying_partition_router.parent_stream_configs
     assert len(parent_stream_configs) == 1
-    assert isinstance(parent_stream_configs[0].stream, DeclarativeStream)
+    assert isinstance(parent_stream_configs[0].stream, DefaultStream)
     assert parent_stream_configs[0].parent_key.eval({}) == "id"
     assert parent_stream_configs[0].partition_field.eval({}) == "repository_id"
 
@@ -4142,6 +4141,7 @@ def test_create_grouping_partition_router_invalid_group_size():
             model_type=GroupingPartitionRouterModel,
             component_definition=partition_router_manifest,
             config=input_config,
+            stream_name="B",
         )
 
 
@@ -4193,6 +4193,7 @@ def test_create_grouping_partition_router_substream_with_request_option():
             model_type=GroupingPartitionRouterModel,
             component_definition=partition_router_manifest,
             config=input_config,
+            stream_name="B",
         )
 
 

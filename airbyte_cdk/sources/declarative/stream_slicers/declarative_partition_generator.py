@@ -3,6 +3,7 @@
 from typing import Any, Iterable, Mapping, Optional
 
 from airbyte_cdk.sources.declarative.retrievers import Retriever
+from airbyte_cdk.sources.declarative.schema import SchemaLoader
 from airbyte_cdk.sources.message import MessageRepository
 from airbyte_cdk.sources.streams.concurrent.partitions.partition import Partition
 from airbyte_cdk.sources.streams.concurrent.partitions.partition_generator import PartitionGenerator
@@ -15,7 +16,7 @@ class DeclarativePartitionFactory:
     def __init__(
         self,
         stream_name: str,
-        json_schema: Mapping[str, Any],
+        schema_loader: SchemaLoader,
         retriever: Retriever,
         message_repository: MessageRepository,
     ) -> None:
@@ -25,14 +26,14 @@ class DeclarativePartitionFactory:
         In order to avoid these problems, we will create one retriever per thread which should make the processing thread-safe.
         """
         self._stream_name = stream_name
-        self._json_schema = json_schema
+        self._schema_loader = schema_loader
         self._retriever = retriever
         self._message_repository = message_repository
 
     def create(self, stream_slice: StreamSlice) -> Partition:
         return DeclarativePartition(
             self._stream_name,
-            self._json_schema,
+            self._schema_loader,
             self._retriever,
             self._message_repository,
             stream_slice,
@@ -43,20 +44,22 @@ class DeclarativePartition(Partition):
     def __init__(
         self,
         stream_name: str,
-        json_schema: Mapping[str, Any],
+        schema_loader: SchemaLoader,
         retriever: Retriever,
         message_repository: MessageRepository,
         stream_slice: StreamSlice,
     ):
         self._stream_name = stream_name
-        self._json_schema = json_schema
+        self._schema_loader = schema_loader
         self._retriever = retriever
         self._message_repository = message_repository
         self._stream_slice = stream_slice
         self._hash = SliceHasher.hash(self._stream_name, self._stream_slice)
 
     def read(self) -> Iterable[Record]:
-        for stream_data in self._retriever.read_records(self._json_schema, self._stream_slice):
+        # FIXME TBD it seems odd that we take the schema from the schema_loader and not the schema from the catalog. Why do we need that?
+        # Also, the cache has been move from the DefaultStream to the
+        for stream_data in self._retriever.read_records(self._schema_loader.get_json_schema(), self._stream_slice):
             if isinstance(stream_data, Mapping):
                 record = (
                     stream_data

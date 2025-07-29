@@ -37,9 +37,6 @@ from airbyte_cdk.sources.declarative.checks.connection_checker import Connection
 from airbyte_cdk.sources.declarative.declarative_source import DeclarativeSource
 from airbyte_cdk.sources.declarative.interpolation import InterpolatedBoolean
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
-    ConditionalStreams as ConditionalStreamsModel,
-)
-from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     DeclarativeStream as DeclarativeStreamModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
@@ -297,7 +294,7 @@ class ManifestDeclarativeSource(DeclarativeSource):
                 f"Expected to generate a ConnectionChecker component, but received {check_stream.__class__}"
             )
 
-    def streams(self, config: Mapping[str, Any]) -> List[Stream]:
+    def streams(self, config: Mapping[str, Any]) -> List[Stream]:  # FIXME with the recent change, this method can return Stream and AbstractStream which means it does not align with AbstractSource interface anymore. How big of a deal is this?
         if self._spec_component:
             self._spec_component.validate_config(config)
 

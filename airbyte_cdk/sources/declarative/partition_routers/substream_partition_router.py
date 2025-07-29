@@ -23,7 +23,7 @@ from airbyte_cdk.sources.streams.concurrent.partitions.partition import Partitio
 from airbyte_cdk.sources.types import Config, StreamSlice, StreamState
 
 if TYPE_CHECKING:
-    from airbyte_cdk.sources.streams.concurrent.default_stream import DefaultStream
+    from airbyte_cdk.sources.streams.concurrent.abstract_stream import AbstractStream
 
 
 def iterate_with_last_flag(generator: Iterable[Partition]) -> Iterable[tuple[Partition, bool]]:
@@ -55,7 +55,7 @@ class ParentStreamConfig:
     incremental_dependency (bool): Indicates if the parent stream should be read incrementally.
     """
 
-    stream: "DefaultStream"
+    stream: "AbstractStream"
     parent_key: Union[InterpolatedString, str]
     partition_field: Union[InterpolatedString, str]
     config: Config

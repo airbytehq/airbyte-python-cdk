@@ -1620,7 +1620,6 @@ class ModelToComponentFactory:
                 stream_namespace=stream_namespace,
                 config=config,
                 message_repository=NoopMessageRepository(),
-                stream_state_migrations=stream_state_migrations,
             )
         )
 
@@ -1955,7 +1954,7 @@ class ModelToComponentFactory:
             )
             if combined_slicers and not isinstance(combined_slicers, Cursor):
                 raise ValueError(
-                    "Unsupported Slicer is used. PerPartitionWithGlobalCursor should be used here instead"
+                    "Unsupported Slicer is used. PerPartitionWithGlobalCursor should be used here instead"  # FIXME update error message
                 )
             cursor = (
                 combined_slicers
@@ -2090,7 +2089,7 @@ class ModelToComponentFactory:
                 options["name"] = model.name
             schema_loader = DefaultSchemaLoader(config=config, parameters=options)
 
-        if concurrent or (hasattr(model.retriever, "partition_router") and model.retriever.partition_router):
+        if concurrent or (hasattr(model.retriever, "partition_router") and model.retriever.partition_router and model.incremental_sync):
             stream_name = model.name or ""
             cursor = combined_slicers \
                 if combined_slicers and isinstance(combined_slicers, Cursor) \
@@ -2098,7 +2097,7 @@ class ModelToComponentFactory:
             partition_generator = StreamSlicerPartitionGenerator(
                 DeclarativePartitionFactory(
                     stream_name,
-                    schema_loader.get_json_schema(),
+                    schema_loader,
                     retriever,
                     self._message_repository,
                 ),
@@ -2107,12 +2106,13 @@ class ModelToComponentFactory:
             return DefaultStream(
                 partition_generator=partition_generator,
                 name=stream_name,
-                json_schema=schema_loader.get_json_schema(),
+                json_schema=lambda: schema_loader.get_json_schema(),
                 availability_strategy=AlwaysAvailableAvailabilityStrategy(),  # FIXME it seems this is what we do in the ConcurrentDeclarativeSource but it feels wrong
                 primary_key=get_primary_key_from_stream(primary_key),
                 cursor_field=cursor.cursor_field.cursor_field_key if hasattr(cursor, "cursor_field") else "",  # FIXME we should have the cursor field has part of the interface of cursor
                 logger=logging.getLogger(f"airbyte.{stream_name}"),  # FIXME this is a breaking change compared to the old implementation,
                 cursor=cursor,
+                supports_file_transfer=hasattr(model, "file_uploader") and bool(model.file_uploader)
             )
         return DeclarativeStream(
             name=model.name or "",
@@ -2188,14 +2188,26 @@ class ModelToComponentFactory:
                 partition_router=stream_slicer,
             )
         elif model.incremental_sync:
-            return self.create_concurrent_cursor_from_datetime_based_cursor(  # type: ignore # This is a known issue that we are creating and returning a ConcurrentCursor which does not technically implement the (low-code) StreamSlicer. However, (low-code) StreamSlicer and ConcurrentCursor both implement StreamSlicer.stream_slices() which is the primary method needed for checkpointing
-                model_type=DatetimeBasedCursorModel,
-                component_definition=model.incremental_sync.__dict__,
-                stream_name=model.name or "",
-                stream_namespace=None,
-                config=config or {},
-                stream_state_migrations=model.state_migrations,
-            )
+            if type(model.incremental_sync) == IncrementingCountCursorModel:
+                return self.create_concurrent_cursor_from_incrementing_count_cursor(
+                    model_type=IncrementingCountCursorModel,
+                    component_definition=model.incremental_sync.__dict__,
+                    stream_name=model.name or "",
+                    stream_namespace=None,
+                    config=config or {},
+                    stream_state_migrations=model.state_migrations,
+                )
+            elif type(model.incremental_sync) == DatetimeBasedCursorModel:
+                return self.create_concurrent_cursor_from_datetime_based_cursor(  # type: ignore # This is a known issue that we are creating and returning a ConcurrentCursor which does not technically implement the (low-code) StreamSlicer. However, (low-code) StreamSlicer and ConcurrentCursor both implement StreamSlicer.stream_slices() which is the primary method needed for checkpointing
+                    model_type=type(model.incremental_sync),
+                    component_definition=model.incremental_sync.__dict__,
+                    stream_name=model.name or "",
+                    stream_namespace=None,
+                    config=config or {},
+                    stream_state_migrations=model.state_migrations,
+                )
+            else:
+                raise ValueError(f"Incremental sync of type {type(model.incremental_sync)} is not supported")
         return None
 
     def _build_resumable_cursor(
@@ -3235,9 +3247,6 @@ class ModelToComponentFactory:
             config=config,
         )
 
-        # Define cursor only if per partition or common incremental support is needed
-        cursor = stream_slicer if isinstance(stream_slicer, DeclarativeCursor) else None
-
         if (
             not isinstance(stream_slicer, (ConcurrentCursor, ConcurrentPerPartitionCursor))
             or type(stream_slicer) not in [ConcurrentCursor, ConcurrentPerPartitionCursor]
@@ -3260,6 +3269,7 @@ class ModelToComponentFactory:
                 ),
             )
 
+        cursor = stream_slicer if isinstance(stream_slicer, (ConcurrentCursor, DeclarativeCursor)) else None
         cursor_used_for_stop_condition = cursor if stop_condition_on_cursor else None
         paginator = (
             self._create_component_from_model(
@@ -3311,7 +3321,7 @@ class ModelToComponentFactory:
                 record_selector=record_selector,
                 stream_slicer=stream_slicer,
                 request_option_provider=request_options_provider,
-                cursor=cursor,
+                cursor=None,
                 config=config,
                 ignore_stream_slicer_parameters_on_paginated_requests=ignore_stream_slicer_parameters_on_paginated_requests,
                 parameters=model.parameters or {},
@@ -3325,7 +3335,7 @@ class ModelToComponentFactory:
             record_selector=record_selector,
             stream_slicer=stream_slicer,
             request_option_provider=request_options_provider,
-            cursor=cursor,
+            cursor=None,
             config=config,
             ignore_stream_slicer_parameters_on_paginated_requests=ignore_stream_slicer_parameters_on_paginated_requests,
             additional_query_properties=query_properties,
@@ -3713,7 +3723,7 @@ class ModelToComponentFactory:
         self, model: ParentStreamConfigModel, config: Config, **kwargs: Any
     ) -> Any:
         # getting the parent state
-        child_state = self._connector_state_manager.get_stream_state(kwargs["stream_name"], None)
+        child_state = self._connector_state_manager.get_stream_state(kwargs["stream_name"], None)  # FIXME adding `stream_name` as a parameter means it will be a breaking change. I assume this is mostly called internally so I don't think we need to bother that much about this but still raising the flag
         if model.incremental_dependency and child_state:
             parent_stream_name = model.stream.name or ""
             parent_state = ConcurrentPerPartitionCursor.get_parent_state(child_state, parent_stream_name)
@@ -4070,7 +4080,7 @@ class ModelToComponentFactory:
         self, model: GroupingPartitionRouterModel, config: Config, **kwargs: Any
     ) -> GroupingPartitionRouter:
         underlying_router = self._create_component_from_model(
-            model=model.underlying_partition_router, config=config
+            model=model.underlying_partition_router, config=config, **kwargs,
         )
         if model.group_size < 1:
             raise ValueError(f"Group size must be greater than 0, got {model.group_size}")

@@ -97,7 +97,7 @@ class HttpClient:
         if session:
             self._session = session
         else:
-            self._use_cache = use_cache
+            self._use_cache = False  # FIXME I was getting systematic segfault on sqlite for test `test_read_with_concurrent_and_synchronous_streams`
             self._session = self._request_session()
             self._session.mount(
                 "https://",
