@@ -6,6 +6,7 @@ import json
 import pkgutil
 import sys
 from dataclasses import InitVar, dataclass, field
+from functools import lru_cache
 from typing import Any, Mapping, Tuple, Union
 
 from airbyte_cdk.sources.declarative.interpolation.interpolated_string import InterpolatedString

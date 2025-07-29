@@ -533,8 +533,6 @@ class SimpleRetriever(Retriever):
                 self.cursor.close_slice(_slice)
         return
 
-    # FIXME based on the comment above in SimpleRetriever.read_records, it seems like we can tackle https://github.com/airbytehq/airbyte-internal-issues/issues/6955 and remove this
-
     def _extract_record(
         self, stream_data: StreamData, stream_slice: StreamSlice
     ) -> Optional[Record]:

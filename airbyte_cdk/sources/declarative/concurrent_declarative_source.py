@@ -313,7 +313,7 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
                         partition_generator = StreamSlicerPartitionGenerator(
                             partition_factory=DeclarativePartitionFactory(
                                 declarative_stream.name,
-                                declarative_stream.get_json_schema(),
+                                declarative_stream.schema_loader,
                                 retriever,
                                 self.message_repository,
                             ),
@@ -344,7 +344,7 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
                     partition_generator = StreamSlicerPartitionGenerator(
                         DeclarativePartitionFactory(
                             declarative_stream.name,
-                            declarative_stream.get_json_schema(),
+                            declarative_stream.schema_loader,
                             declarative_stream.retriever,
                             self.message_repository,
                         ),
@@ -361,7 +361,7 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
                         DefaultStream(
                             partition_generator=partition_generator,
                             name=declarative_stream.name,
-                            json_schema=declarative_stream.get_json_schema(),
+                            json_schema=lambda: declarative_stream.schema_loader.get_json_schema(),
                             availability_strategy=AlwaysAvailableAvailabilityStrategy(),
                             primary_key=get_primary_key_from_stream(declarative_stream.primary_key),
                             cursor_field=None,
@@ -377,7 +377,7 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
                     and hasattr(declarative_stream.retriever, "stream_slicer")
                     and isinstance(
                         declarative_stream.retriever.stream_slicer,
-                        (GlobalSubstreamCursor, PerPartitionWithGlobalCursor),
+                        ConcurrentPerPartitionCursor,
                     )
                 ):
                     stream_state = self._connector_state_manager.get_stream_state(
@@ -435,6 +435,8 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
                 and self.is_partially_declarative
             ):
                 concurrent_streams.append(declarative_stream.get_underlying_stream())
+            elif isinstance(declarative_stream, DefaultStream):  # FIXME added temporarily until the ConcurrentDeclarativeSource is cleaned up
+                concurrent_streams.append(declarative_stream)
             else:
                 synchronous_streams.append(declarative_stream)
 
@@ -453,49 +455,14 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
                 in (DatetimeBasedCursorModel.__name__, IncrementingCountCursorModel.__name__)
             )
             and hasattr(declarative_stream.retriever, "stream_slicer")
-            and (
-                isinstance(declarative_stream.retriever.stream_slicer, DatetimeBasedCursor)
-                # IncrementingCountCursorModel is hardcoded to be of type DatetimeBasedCursor
-                # add isintance check here if we want to create a Declarative IncrementingCountCursor
-                # or isinstance(
-                #     declarative_stream.retriever.stream_slicer, IncrementingCountCursor
-                # )
-                or isinstance(declarative_stream.retriever.stream_slicer, AsyncJobPartitionRouter)
-            )
+            and isinstance(declarative_stream.retriever.stream_slicer, (ConcurrentCursor, AsyncJobPartitionRouter))
         )
 
     @staticmethod
     def _get_retriever(
         declarative_stream: DeclarativeStream, stream_state: Mapping[str, Any]
     ) -> Retriever:
-        retriever = declarative_stream.retriever
-
-        # This is an optimization so that we don't invoke any cursor or state management flows within the
-        # low-code framework because state management is handled through the ConcurrentCursor.
-        if declarative_stream and isinstance(retriever, SimpleRetriever):
-            # Also a temporary hack. In the legacy Stream implementation, as part of the read,
-            # set_initial_state() is called to instantiate incoming state on the cursor. Although we no
-            # longer rely on the legacy low-code cursor for concurrent checkpointing, low-code components
-            # like StopConditionPaginationStrategyDecorator still rely on a DatetimeBasedCursor that is
-            # properly initialized with state.
-            if retriever.cursor:
-                retriever.cursor.set_initial_state(stream_state=stream_state)
-
-            # Similar to above, the ClientSideIncrementalRecordFilterDecorator cursor is a separate instance
-            # from the one initialized on the SimpleRetriever, so it also must also have state initialized
-            # for semi-incremental streams using is_client_side_incremental to filter properly
-            if isinstance(retriever.record_selector, RecordSelector) and isinstance(
-                retriever.record_selector.record_filter, ClientSideIncrementalRecordFilterDecorator
-            ):
-                retriever.record_selector.record_filter._cursor.set_initial_state(
-                    stream_state=stream_state
-                )  # type: ignore  # After non-concurrent cursors are deprecated we can remove these cursor workarounds
-
-            # We zero it out here, but since this is a cursor reference, the state is still properly
-            # instantiated for the other components that reference it
-            retriever.cursor = None
-
-        return retriever
+        return declarative_stream.retriever
 
     @staticmethod
     def _select_streams(

@@ -9,13 +9,15 @@ import time
 from collections import OrderedDict
 from copy import deepcopy
 from datetime import timedelta
-from typing import Any, Callable, Iterable, List, Mapping, MutableMapping, Optional
+from typing import Any, Callable, Iterable, List, Mapping, MutableMapping, Optional, Union
 
+from airbyte_cdk.models import AirbyteStateMessage, AirbyteStateBlob, AirbyteStreamState, AirbyteStateType, StreamDescriptor
 from airbyte_cdk.sources.connector_state_manager import ConnectorStateManager
 from airbyte_cdk.sources.declarative.incremental.global_substream_cursor import (
     Timer,
     iterate_with_last_flag_and_state,
 )
+# It is interesting that this file depends on the declarative stuff. If we ever think that per partition cursors will ever be needed outside the declarative package, we would need to add an interface here to ensure that we avoid circular dependencies
 from airbyte_cdk.sources.declarative.partition_routers.partition_router import PartitionRouter
 from airbyte_cdk.sources.message import MessageRepository
 from airbyte_cdk.sources.streams.checkpoint.per_partition_key_serializer import (
@@ -124,6 +126,7 @@ class ConcurrentPerPartitionCursor(Cursor):
         self._timer = Timer()
 
         self._set_initial_state(stream_state)
+        self._synced_some_data = False
 
     @property
     def cursor_field(self) -> CursorField:
@@ -154,6 +157,7 @@ class ConcurrentPerPartitionCursor(Cursor):
 
     def close_partition(self, partition: Partition) -> None:
         # Attempt to retrieve the stream slice
+        logger.warning(f"GODO: stream {self._stream_name} closing partition {partition.to_slice()}")
         stream_slice: Optional[StreamSlice] = partition.to_slice()  # type: ignore[assignment]
 
         # Ensure stream_slice is not None
@@ -209,8 +213,10 @@ class ConcurrentPerPartitionCursor(Cursor):
         if not any(
             semaphore_item[1]._value for semaphore_item in self._semaphore_per_partition.items()
         ):
-            self._global_cursor = self._new_global_cursor
-            self._lookback_window = self._timer.finish()
+            if self._synced_some_data:
+                # we only update those if we actually synced some data
+                self._global_cursor = self._new_global_cursor
+                self._lookback_window = self._timer.finish()
             self._parent_state = self._partition_router.get_stream_state()
         self._emit_state_message(throttle=False)
 
@@ -454,6 +460,7 @@ class ConcurrentPerPartitionCursor(Cursor):
         except ValueError:
             return
 
+        self._synced_some_data = True
         record_cursor = self._connector_state_converter.output_format(
             self._connector_state_converter.parse_value(record_cursor_value)
         )
@@ -522,3 +529,23 @@ class ConcurrentPerPartitionCursor(Cursor):
 
     def limit_reached(self) -> bool:
         return self._number_of_partitions > self.SWITCH_TO_GLOBAL_LIMIT
+
+    @staticmethod
+    def get_parent_state(stream_state: Optional[StreamState], parent_stream_name: str) -> Optional[AirbyteStateMessage]:
+        return AirbyteStateMessage(
+            type=AirbyteStateType.STREAM,
+            stream=AirbyteStreamState(
+                stream_descriptor=StreamDescriptor(parent_stream_name, None),
+                stream_state=AirbyteStateBlob(stream_state["parent_state"][parent_stream_name])
+            )
+        ) if stream_state and "parent_state" in stream_state else None
+
+    @staticmethod
+    def get_global_state(stream_state: Optional[StreamState], parent_stream_name: str) -> Optional[AirbyteStateMessage]:
+        return AirbyteStateMessage(
+            type=AirbyteStateType.STREAM,
+            stream=AirbyteStreamState(
+                stream_descriptor=StreamDescriptor(parent_stream_name, None),
+                stream_state=AirbyteStateBlob(stream_state["state"])
+            )
+        ) if stream_state and "state" in stream_state else None

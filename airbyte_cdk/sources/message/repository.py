@@ -107,6 +107,8 @@ class LogAppenderMessageRepositoryDecorator(MessageRepository):
         self._log_level = log_level
 
     def emit_message(self, message: AirbyteMessage) -> None:
+        if message.type == Type.STATE:
+            return  # FIXME this is horribly dumb but allows me to test not emitting state messages. We can probably create another decorator that filters and set this only for substream partition router
         self._decorated.emit_message(message)
 
     def log_message(self, level: Level, message_provider: Callable[[], LogMessage]) -> None:

@@ -7,7 +7,7 @@ from typing import Any, Iterable, Mapping, Optional, Union
 from airbyte_cdk.sources.declarative.incremental import (
     DatetimeBasedCursor,
     GlobalSubstreamCursor,
-    PerPartitionWithGlobalCursor,
+    PerPartitionWithGlobalCursor, ConcurrentPerPartitionCursor,
 )
 from airbyte_cdk.sources.declarative.interpolation.interpolated_boolean import InterpolatedBoolean
 from airbyte_cdk.sources.types import Config, Record, StreamSlice, StreamState
