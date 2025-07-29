@@ -3892,7 +3892,10 @@ class ModelToComponentFactory:
         )
 
     def create_parametrized_components_resolver(
-        self, model: ParametrizedComponentsResolverModel, config: Config
+        self,
+        model: ParametrizedComponentsResolverModel,
+        config: Config,
+        stream_name: Optional[str] = None,
     ) -> ParametrizedComponentsResolver:
         stream_parameters = StreamParametersDefinition(
             list_of_parameters_for_stream=model.stream_parameters.list_of_parameters_for_stream
