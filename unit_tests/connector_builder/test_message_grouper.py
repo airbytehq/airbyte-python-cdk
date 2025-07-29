@@ -147,6 +147,7 @@ A_SOURCE = MagicMock()
 
 @patch("airbyte_cdk.connector_builder.test_reader.reader.AirbyteEntrypoint.read")
 def test_get_grouped_messages(mock_entrypoint_read: Mock) -> None:
+    stream_name = "hashiras"
     url = "https://demonslayers.com/api/v1/hashiras?era=taisho"
     request = {
         "headers": {"Content-Type": "application/json"},
@@ -194,11 +195,11 @@ def test_get_grouped_messages(mock_entrypoint_read: Mock) -> None:
         mock_entrypoint_read,
         iter(
             [
-                request_response_log_message(request, response, url),
-                record_message("hashiras", {"name": "Shinobu Kocho", "date": "2023-03-03"}),
-                record_message("hashiras", {"name": "Muichiro Tokito", "date": "2023-03-04"}),
-                request_response_log_message(request, response, url),
-                record_message("hashiras", {"name": "Mitsuri Kanroji", "date": "2023-03-05"}),
+                request_response_log_message(request, response, url, stream_name),
+                record_message(stream_name, {"name": "Shinobu Kocho", "date": "2023-03-03"}),
+                record_message(stream_name, {"name": "Muichiro Tokito", "date": "2023-03-04"}),
+                request_response_log_message(request, response, url, stream_name),
+                record_message(stream_name, {"name": "Mitsuri Kanroji", "date": "2023-03-05"}),
             ]
         ),
     )
@@ -207,7 +208,8 @@ def test_get_grouped_messages(mock_entrypoint_read: Mock) -> None:
     actual_response: StreamRead = connector_builder_handler.run_test_read(
         source=mock_source,
         config=CONFIG,
-        configured_catalog=create_configured_catalog("hashiras"),
+        configured_catalog=create_configured_catalog(stream_name),
+        stream_name=stream_name,
         state=_NO_STATE,
     )
 
@@ -221,6 +223,7 @@ def test_get_grouped_messages(mock_entrypoint_read: Mock) -> None:
 
 @patch("airbyte_cdk.connector_builder.test_reader.reader.AirbyteEntrypoint.read")
 def test_get_grouped_messages_with_logs(mock_entrypoint_read: Mock) -> None:
+    stream_name = "hashiras"
     url = "https://demonslayers.com/api/v1/hashiras?era=taisho"
     request = {
         "headers": {"Content-Type": "application/json"},
@@ -270,13 +273,13 @@ def test_get_grouped_messages_with_logs(mock_entrypoint_read: Mock) -> None:
                         level=Level.INFO, message="log message before the request"
                     ),
                 ),
-                request_response_log_message(request, response, url),
-                record_message("hashiras", {"name": "Shinobu Kocho"}),
+                request_response_log_message(request, response, url, stream_name),
+                record_message(stream_name, {"name": "Shinobu Kocho"}),
                 AirbyteMessage(
                     type=MessageType.LOG,
                     log=AirbyteLogMessage(level=Level.INFO, message="log message during the page"),
                 ),
-                record_message("hashiras", {"name": "Muichiro Tokito"}),
+                record_message(stream_name, {"name": "Muichiro Tokito"}),
                 AirbyteMessage(
                     type=MessageType.LOG,
                     log=AirbyteLogMessage(
@@ -292,7 +295,8 @@ def test_get_grouped_messages_with_logs(mock_entrypoint_read: Mock) -> None:
     actual_response: StreamRead = connector_builder_handler.run_test_read(
         source=mock_source,
         config=CONFIG,
-        configured_catalog=create_configured_catalog("hashiras"),
+        configured_catalog=create_configured_catalog(stream_name),
+        stream_name=stream_name,
         state=_NO_STATE,
     )
     single_slice = actual_response.slices[0]
@@ -314,6 +318,7 @@ def test_get_grouped_messages_with_logs(mock_entrypoint_read: Mock) -> None:
 def test_get_grouped_messages_record_limit(
     mock_entrypoint_read: Mock, request_record_limit: int, max_record_limit: int, should_fail: bool
 ) -> None:
+    stream_name = "hashiras"
     url = "https://demonslayers.com/api/v1/hashiras?era=taisho"
     request = {
         "headers": {"Content-Type": "application/json"},
@@ -329,11 +334,11 @@ def test_get_grouped_messages_record_limit(
         mock_entrypoint_read,
         iter(
             [
-                request_response_log_message(request, response, url),
-                record_message("hashiras", {"name": "Shinobu Kocho"}),
-                record_message("hashiras", {"name": "Muichiro Tokito"}),
-                request_response_log_message(request, response, url),
-                record_message("hashiras", {"name": "Mitsuri Kanroji"}),
+                request_response_log_message(request, response, url, stream_name),
+                record_message(stream_name, {"name": "Shinobu Kocho"}),
+                record_message(stream_name, {"name": "Muichiro Tokito"}),
+                request_response_log_message(request, response, url, stream_name),
+                record_message(stream_name, {"name": "Mitsuri Kanroji"}),
             ]
         ),
     )
@@ -347,7 +352,8 @@ def test_get_grouped_messages_record_limit(
             api.run_test_read(
                 mock_source,
                 config=CONFIG,
-                configured_catalog=create_configured_catalog("hashiras"),
+                configured_catalog=create_configured_catalog(stream_name),
+                stream_name=stream_name,
                 state=_NO_STATE,
                 record_limit=request_record_limit,
             )
@@ -355,7 +361,8 @@ def test_get_grouped_messages_record_limit(
         actual_response: StreamRead = api.run_test_read(
             mock_source,
             config=CONFIG,
-            configured_catalog=create_configured_catalog("hashiras"),
+            configured_catalog=create_configured_catalog(stream_name),
+            stream_name=stream_name,
             state=_NO_STATE,
             record_limit=request_record_limit,
         )
@@ -379,6 +386,7 @@ def test_get_grouped_messages_record_limit(
 def test_get_grouped_messages_default_record_limit(
     mock_entrypoint_read: Mock, max_record_limit: int
 ) -> None:
+    stream_name = "hashiras"
     url = "https://demonslayers.com/api/v1/hashiras?era=taisho"
     request = {
         "headers": {"Content-Type": "application/json"},
@@ -394,11 +402,11 @@ def test_get_grouped_messages_default_record_limit(
         mock_entrypoint_read,
         iter(
             [
-                request_response_log_message(request, response, url),
-                record_message("hashiras", {"name": "Shinobu Kocho"}),
-                record_message("hashiras", {"name": "Muichiro Tokito"}),
-                request_response_log_message(request, response, url),
-                record_message("hashiras", {"name": "Mitsuri Kanroji"}),
+                request_response_log_message(request, response, url, stream_name),
+                record_message(stream_name, {"name": "Shinobu Kocho"}),
+                record_message(stream_name, {"name": "Muichiro Tokito"}),
+                request_response_log_message(request, response, url, stream_name),
+                record_message(stream_name, {"name": "Mitsuri Kanroji"}),
             ]
         ),
     )
@@ -408,7 +416,8 @@ def test_get_grouped_messages_default_record_limit(
     actual_response: StreamRead = api.run_test_read(
         source=mock_source,
         config=CONFIG,
-        configured_catalog=create_configured_catalog("hashiras"),
+        configured_catalog=create_configured_catalog(stream_name),
+        stream_name=stream_name,
         state=_NO_STATE,
     )
     single_slice = actual_response.slices[0]
@@ -420,6 +429,7 @@ def test_get_grouped_messages_default_record_limit(
 
 @patch("airbyte_cdk.connector_builder.test_reader.reader.AirbyteEntrypoint.read")
 def test_get_grouped_messages_limit_0(mock_entrypoint_read: Mock) -> None:
+    stream_name = "hashiras"
     url = "https://demonslayers.com/api/v1/hashiras?era=taisho"
     request = {
         "headers": {"Content-Type": "application/json"},
@@ -435,11 +445,11 @@ def test_get_grouped_messages_limit_0(mock_entrypoint_read: Mock) -> None:
         mock_entrypoint_read,
         iter(
             [
-                request_response_log_message(request, response, url),
-                record_message("hashiras", {"name": "Shinobu Kocho"}),
-                record_message("hashiras", {"name": "Muichiro Tokito"}),
-                request_response_log_message(request, response, url),
-                record_message("hashiras", {"name": "Mitsuri Kanroji"}),
+                request_response_log_message(request, response, url, stream_name),
+                record_message(stream_name, {"name": "Shinobu Kocho"}),
+                record_message(stream_name, {"name": "Muichiro Tokito"}),
+                request_response_log_message(request, response, url, stream_name),
+                record_message(stream_name, {"name": "Mitsuri Kanroji"}),
             ]
         ),
     )
@@ -449,7 +459,8 @@ def test_get_grouped_messages_limit_0(mock_entrypoint_read: Mock) -> None:
         api.run_test_read(
             source=mock_source,
             config=CONFIG,
-            configured_catalog=create_configured_catalog("hashiras"),
+            configured_catalog=create_configured_catalog(stream_name),
+            stream_name=stream_name,
             state=_NO_STATE,
             record_limit=0,
         )
@@ -457,6 +468,7 @@ def test_get_grouped_messages_limit_0(mock_entrypoint_read: Mock) -> None:
 
 @patch("airbyte_cdk.connector_builder.test_reader.reader.AirbyteEntrypoint.read")
 def test_get_grouped_messages_no_records(mock_entrypoint_read: Mock) -> None:
+    stream_name = "hashiras"
     url = "https://demonslayers.com/api/v1/hashiras?era=taisho"
     request = {
         "headers": {"Content-Type": "application/json"},
@@ -495,8 +507,8 @@ def test_get_grouped_messages_no_records(mock_entrypoint_read: Mock) -> None:
         mock_entrypoint_read,
         iter(
             [
-                request_response_log_message(request, response, url),
-                request_response_log_message(request, response, url),
+                request_response_log_message(request, response, url, stream_name),
+                request_response_log_message(request, response, url, stream_name),
             ]
         ),
     )
@@ -506,7 +518,8 @@ def test_get_grouped_messages_no_records(mock_entrypoint_read: Mock) -> None:
     actual_response: StreamRead = message_grouper.run_test_read(
         source=mock_source,
         config=CONFIG,
-        configured_catalog=create_configured_catalog("hashiras"),
+        configured_catalog=create_configured_catalog(stream_name),
+        stream_name=stream_name,
         state=_NO_STATE,
     )
 
@@ -591,6 +604,7 @@ def test_create_response_from_log_message(
 
 @patch("airbyte_cdk.connector_builder.test_reader.reader.AirbyteEntrypoint.read")
 def test_get_grouped_messages_with_many_slices(mock_entrypoint_read: Mock) -> None:
+    stream_name = "hashiras"
     url = "http://a-url.com"
     request: Mapping[str, Any] = {}
     response = {"status_code": 200}
@@ -600,16 +614,16 @@ def test_get_grouped_messages_with_many_slices(mock_entrypoint_read: Mock) -> No
         iter(
             [
                 slice_message('{"descriptor": "first_slice"}'),
-                request_response_log_message(request, response, url),
-                record_message("hashiras", {"name": "Muichiro Tokito"}),
+                request_response_log_message(request, response, url, stream_name),
+                record_message(stream_name, {"name": "Muichiro Tokito"}),
                 slice_message('{"descriptor": "second_slice"}'),
-                request_response_log_message(request, response, url),
-                record_message("hashiras", {"name": "Shinobu Kocho"}),
-                record_message("hashiras", {"name": "Mitsuri Kanroji"}),
-                request_response_log_message(request, response, url),
-                record_message("hashiras", {"name": "Obanai Iguro"}),
-                request_response_log_message(request, response, url),
-                state_message("hashiras", {"a_timestamp": 123}),
+                request_response_log_message(request, response, url, stream_name),
+                record_message(stream_name, {"name": "Shinobu Kocho"}),
+                record_message(stream_name, {"name": "Mitsuri Kanroji"}),
+                request_response_log_message(request, response, url, stream_name),
+                record_message(stream_name, {"name": "Obanai Iguro"}),
+                request_response_log_message(request, response, url, stream_name),
+                state_message(stream_name, {"a_timestamp": 123}),
             ]
         ),
     )
@@ -619,7 +633,8 @@ def test_get_grouped_messages_with_many_slices(mock_entrypoint_read: Mock) -> No
     stream_read: StreamRead = connector_builder_handler.run_test_read(
         source=mock_source,
         config=CONFIG,
-        configured_catalog=create_configured_catalog("hashiras"),
+        configured_catalog=create_configured_catalog(stream_name),
+        stream_name=stream_name,
         state=_NO_STATE,
     )
 
@@ -647,13 +662,14 @@ def test_get_grouped_messages_with_many_slices(mock_entrypoint_read: Mock) -> No
 def test_get_grouped_messages_given_maximum_number_of_slices_then_test_read_limit_reached(
     mock_entrypoint_read: Mock,
 ) -> None:
+    stream_name = "hashiras"
     maximum_number_of_slices = 5
     request: Mapping[str, Any] = {}
     response = {"status_code": 200}
     mock_source = make_mock_source(
         mock_entrypoint_read,
         iter(
-            [slice_message(), request_response_log_message(request, response, "a_url")]
+            [slice_message(), request_response_log_message(request, response, "a_url", stream_name)]
             * maximum_number_of_slices
         ),
     )
@@ -663,7 +679,8 @@ def test_get_grouped_messages_given_maximum_number_of_slices_then_test_read_limi
     stream_read: StreamRead = api.run_test_read(
         source=mock_source,
         config=CONFIG,
-        configured_catalog=create_configured_catalog("hashiras"),
+        configured_catalog=create_configured_catalog(stream_name),
+        stream_name=stream_name,
         state=_NO_STATE,
     )
 
@@ -674,6 +691,7 @@ def test_get_grouped_messages_given_maximum_number_of_slices_then_test_read_limi
 def test_get_grouped_messages_given_maximum_number_of_pages_then_test_read_limit_reached(
     mock_entrypoint_read: Mock,
 ) -> None:
+    stream_name = "hashiras"
     maximum_number_of_pages_per_slice = 5
     request: Mapping[str, Any] = {}
     response = {"status_code": 200}
@@ -681,7 +699,7 @@ def test_get_grouped_messages_given_maximum_number_of_pages_then_test_read_limit
         mock_entrypoint_read,
         iter(
             [slice_message()]
-            + [request_response_log_message(request, response, "a_url")]
+            + [request_response_log_message(request, response, "a_url", stream_name)]
             * maximum_number_of_pages_per_slice
         ),
     )
@@ -691,7 +709,8 @@ def test_get_grouped_messages_given_maximum_number_of_pages_then_test_read_limit
     stream_read: StreamRead = api.run_test_read(
         source=mock_source,
         config=CONFIG,
-        configured_catalog=create_configured_catalog("hashiras"),
+        configured_catalog=create_configured_catalog(stream_name),
+        stream_name=stream_name,
         state=_NO_STATE,
     )
 
@@ -710,6 +729,7 @@ def test_read_stream_returns_error_if_stream_does_not_exist() -> None:
         source=mock_source,
         config=full_config,
         configured_catalog=create_configured_catalog("not_in_manifest"),
+        stream_name="not_in_manifest",
         state=_NO_STATE,
     )
 
@@ -722,6 +742,7 @@ def test_read_stream_returns_error_if_stream_does_not_exist() -> None:
 def test_given_control_message_then_stream_read_has_config_update(
     mock_entrypoint_read: Mock,
 ) -> None:
+    stream_name = "hashiras"
     updated_config = {"x": 1}
     mock_source = make_mock_source(
         mock_entrypoint_read,
@@ -734,7 +755,8 @@ def test_given_control_message_then_stream_read_has_config_update(
     stream_read: StreamRead = connector_builder_handler.run_test_read(
         source=mock_source,
         config=CONFIG,
-        configured_catalog=create_configured_catalog("hashiras"),
+        configured_catalog=create_configured_catalog(stream_name),
+        stream_name=stream_name,
         state=_NO_STATE,
     )
 
@@ -745,6 +767,7 @@ def test_given_control_message_then_stream_read_has_config_update(
 def test_given_multiple_control_messages_then_stream_read_has_latest_based_on_emitted_at(
     mock_entrypoint_read: Mock,
 ) -> None:
+    stream_name = "hashiras"
     earliest = 0
     earliest_config = {"earliest": 0}
     latest = 1
@@ -764,7 +787,8 @@ def test_given_multiple_control_messages_then_stream_read_has_latest_based_on_em
     stream_read: StreamRead = connector_builder_handler.run_test_read(
         source=mock_source,
         config=CONFIG,
-        configured_catalog=create_configured_catalog("hashiras"),
+        configured_catalog=create_configured_catalog(stream_name),
+        stream_name=stream_name,
         state=_NO_STATE,
     )
 
@@ -775,6 +799,7 @@ def test_given_multiple_control_messages_then_stream_read_has_latest_based_on_em
 def test_given_multiple_control_messages_with_same_timestamp_then_stream_read_has_latest_based_on_message_order(
     mock_entrypoint_read: Mock,
 ) -> None:
+    stream_name = "hashiras"
     emitted_at = 0
     earliest_config = {"earliest": 0}
     latest_config = {"latest": 1}
@@ -792,7 +817,8 @@ def test_given_multiple_control_messages_with_same_timestamp_then_stream_read_ha
     stream_read: StreamRead = connector_builder_handler.run_test_read(
         source=mock_source,
         config=CONFIG,
-        configured_catalog=create_configured_catalog("hashiras"),
+        configured_catalog=create_configured_catalog(stream_name),
+        stream_name=stream_name,
         state=_NO_STATE,
     )
 
@@ -801,6 +827,7 @@ def test_given_multiple_control_messages_with_same_timestamp_then_stream_read_ha
 
 @patch("airbyte_cdk.connector_builder.test_reader.reader.AirbyteEntrypoint.read")
 def test_given_auxiliary_requests_then_return_auxiliary_request(mock_entrypoint_read: Mock) -> None:
+    stream_name = "hashiras"
     mock_source = make_mock_source(
         mock_entrypoint_read,
         iter(any_request_and_response_with_a_record() + [auxiliary_request_log_message()]),
@@ -809,7 +836,8 @@ def test_given_auxiliary_requests_then_return_auxiliary_request(mock_entrypoint_
     stream_read: StreamRead = connector_builder_handler.run_test_read(
         source=mock_source,
         config=CONFIG,
-        configured_catalog=create_configured_catalog("hashiras"),
+        configured_catalog=create_configured_catalog(stream_name),
+        stream_name=stream_name,
         state=_NO_STATE,
     )
 
@@ -818,12 +846,14 @@ def test_given_auxiliary_requests_then_return_auxiliary_request(mock_entrypoint_
 
 @patch("airbyte_cdk.connector_builder.test_reader.reader.AirbyteEntrypoint.read")
 def test_given_no_slices_then_return_empty_slices(mock_entrypoint_read: Mock) -> None:
+    stream_name = "hashiras"
     mock_source = make_mock_source(mock_entrypoint_read, iter([auxiliary_request_log_message()]))
     connector_builder_handler = TestReader(MAX_PAGES_PER_SLICE, MAX_SLICES)
     stream_read: StreamRead = connector_builder_handler.run_test_read(
         source=mock_source,
         config=CONFIG,
-        configured_catalog=create_configured_catalog("hashiras"),
+        configured_catalog=create_configured_catalog(stream_name),
+        stream_name=stream_name,
         state=_NO_STATE,
     )
 
@@ -832,17 +862,19 @@ def test_given_no_slices_then_return_empty_slices(mock_entrypoint_read: Mock) ->
 
 @patch("airbyte_cdk.connector_builder.test_reader.reader.AirbyteEntrypoint.read")
 def test_given_pk_then_ensure_pk_is_pass_to_schema_inferrence(mock_entrypoint_read: Mock) -> None:
+    stream_name = "hashiras"
     mock_source = make_mock_source(
         mock_entrypoint_read,
         iter(
             [
-                request_response_log_message({"request": 1}, {"response": 2}, "http://any_url.com"),
-                record_message("hashiras", {"id": "Shinobu Kocho", "date": "2023-03-03"}),
-                record_message("hashiras", {"id": "Muichiro Tokito", "date": "2023-03-04"}),
+                request_response_log_message({"request": 1}, {"response": 2}, "http://any_url.com", stream_name),
+                record_message(stream_name, {"id": "Shinobu Kocho", "date": "2023-03-03"}),
+                record_message(stream_name, {"id": "Muichiro Tokito", "date": "2023-03-04"}),
             ]
         ),
     )
     mock_source.streams.return_value = [Mock()]
+    mock_source.streams.return_value[0].name = stream_name
     mock_source.streams.return_value[0].primary_key = [["id"]]
     mock_source.streams.return_value[0].cursor_field = _NO_CURSOR_FIELD
     connector_builder_handler = TestReader(MAX_PAGES_PER_SLICE, MAX_SLICES)
@@ -850,7 +882,8 @@ def test_given_pk_then_ensure_pk_is_pass_to_schema_inferrence(mock_entrypoint_re
     stream_read: StreamRead = connector_builder_handler.run_test_read(
         source=mock_source,
         config=CONFIG,
-        configured_catalog=create_configured_catalog("hashiras"),
+        configured_catalog=create_configured_catalog(stream_name),
+        stream_name=stream_name,
         state=_NO_STATE,
     )
 
@@ -861,17 +894,19 @@ def test_given_pk_then_ensure_pk_is_pass_to_schema_inferrence(mock_entrypoint_re
 def test_given_cursor_field_then_ensure_cursor_field_is_pass_to_schema_inferrence(
     mock_entrypoint_read: Mock,
 ) -> None:
+    stream_name = "hashiras"
     mock_source = make_mock_source(
         mock_entrypoint_read,
         iter(
             [
-                request_response_log_message({"request": 1}, {"response": 2}, "http://any_url.com"),
-                record_message("hashiras", {"id": "Shinobu Kocho", "date": "2023-03-03"}),
-                record_message("hashiras", {"id": "Muichiro Tokito", "date": "2023-03-04"}),
+                request_response_log_message({"request": 1}, {"response": 2}, "http://any_url.com", stream_name),
+                record_message(stream_name, {"id": "Shinobu Kocho", "date": "2023-03-03"}),
+                record_message(stream_name, {"id": "Muichiro Tokito", "date": "2023-03-04"}),
             ]
         ),
     )
     mock_source.streams.return_value = [Mock()]
+    mock_source.streams.return_value[0].name = stream_name
     mock_source.streams.return_value[0].primary_key = _NO_PK
     mock_source.streams.return_value[0].cursor_field = ["date"]
     connector_builder_handler = TestReader(MAX_PAGES_PER_SLICE, MAX_SLICES)
@@ -879,7 +914,8 @@ def test_given_cursor_field_then_ensure_cursor_field_is_pass_to_schema_inferrenc
     stream_read: StreamRead = connector_builder_handler.run_test_read(
         source=mock_source,
         config=CONFIG,
-        configured_catalog=create_configured_catalog("hashiras"),
+        configured_catalog=create_configured_catalog(stream_name),
+        stream_name=stream_name,
         state=_NO_STATE,
     )
 
@@ -976,7 +1012,7 @@ def auxiliary_request_log_message() -> AirbyteMessage:
 
 
 def request_response_log_message(
-    request: Mapping[str, Any], response: Mapping[str, Any], url: str
+    request: Mapping[str, Any], response: Mapping[str, Any], url: str, stream_name: str
 ) -> AirbyteMessage:
     return AirbyteMessage(
         type=MessageType.LOG,
@@ -984,7 +1020,7 @@ def request_response_log_message(
             level=Level.INFO,
             message=json.dumps(
                 {
-                    "airbyte_cdk": {"stream": {"name": "a stream name"}},
+                    "airbyte_cdk": {"stream": {"name": stream_name}},
                     "http": {
                         "title": "a title",
                         "description": "a description",
@@ -1000,6 +1036,6 @@ def request_response_log_message(
 
 def any_request_and_response_with_a_record() -> List[AirbyteMessage]:
     return [
-        request_response_log_message({"request": 1}, {"response": 2}, "http://any_url.com"),
+        request_response_log_message({"request": 1}, {"response": 2}, "http://any_url.com", "hashiras"),
         record_message("hashiras", {"name": "Shinobu Kocho"}),
     ]

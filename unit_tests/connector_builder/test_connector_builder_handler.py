@@ -752,6 +752,7 @@ def test_read():
             source,
             config,
             ConfiguredAirbyteCatalogSerializer.load(CONFIGURED_CATALOG),
+            _stream_name,
             _A_STATE,
             limits.max_records,
         )
