@@ -542,16 +542,19 @@ class ManifestDeclarativeSource(DeclarativeSource):
                 components_resolver_config["retriever"]["requester"]["use_cache"] = True
 
             # Create a resolver for dynamic components based on type
-            components_resolver = self._constructor.create_component(
-                COMPONENTS_RESOLVER_TYPE_MAPPING[resolver_type],
-                components_resolver_config,
-                config,
-                **(
-                    {"stream_name": dynamic_definition.get("name")}
-                    if resolver_type == "HttpComponentsResolver"
-                    else {}
-                ),
-            )
+            if resolver_type == "HttpComponentsResolver":
+                components_resolver = self._constructor.create_component(
+                    model_type=COMPONENTS_RESOLVER_TYPE_MAPPING[resolver_type],
+                    component_definition=components_resolver_config,
+                    config=config,
+                    stream_name=dynamic_definition.get("name"),
+                )
+            else:
+                components_resolver = self._constructor.create_component(
+                    model_type=COMPONENTS_RESOLVER_TYPE_MAPPING[resolver_type],
+                    component_definition=components_resolver_config,
+                    config=config,
+                )
 
             stream_template_config = dynamic_definition["stream_template"]
 
