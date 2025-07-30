@@ -104,18 +104,22 @@ class CursorPagination(BaseModel):
     type: Literal["CursorPagination"]
     cursor_value: str = Field(
         ...,
-        description="Value of the cursor defining the next page to fetch.",
+        description="Template string for the cursor value to be used in the next request. This should reference a field from the API response that indicates the next page position.",
         examples=[
             "{{ headers.link.next.cursor }}",
             "{{ last_record['key'] }}",
             "{{ response['nextPage'] }}",
+            "{{ response.next_cursor }}",
+            "{{ last_record['id'] }}",
+            "{{ headers['x-next-page'] }}",
+            "{{ response.pagination.next_token }}",
         ],
         title="Cursor Value",
     )
     page_size: Optional[int] = Field(
         None,
-        description="The number of records to include in each pages.",
-        examples=[100],
+        description="The number of records to include in each page. This value will be used with cursor-based pagination to control the amount of data returned per request. Choose a value that balances API rate limits with sync performance.",
+        examples=[10, 50, 100, 500, 1000],
         title="Page Size",
     )
     stop_condition: Optional[str] = Field(
@@ -185,7 +189,15 @@ class CustomIncrementalSync(BaseModel):
     )
     cursor_field: str = Field(
         ...,
-        description="The location of the value on a record that will be used as a bookmark during sync.",
+        description="The location of the value on a record that will be used as a bookmark during sync. This field should contain datetime values that increase over time to enable incremental syncing. The field must be at the top level of the record.",
+        examples=[
+            "updated_at",
+            "created_at",
+            "last_modified",
+            "timestamp",
+            "{{ config['cursor_field'] }}",
+        ],
+        title="Cursor Field",
     )
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
@@ -1201,8 +1213,8 @@ class OffsetIncrement(BaseModel):
     type: Literal["OffsetIncrement"]
     page_size: Optional[Union[int, str]] = Field(
         None,
-        description="The number of records to include in each pages.",
-        examples=[100, "{{ config['page_size'] }}"],
+        description="The number of records to include in each page. This value will be used to increment the offset for subsequent requests. Choose a value that balances API rate limits with sync performance.",
+        examples=[10, 50, 100, 500, 1000, "{{ config['page_size'] }}"],
         title="Limit",
     )
     inject_on_first_request: Optional[bool] = Field(
@@ -1217,8 +1229,8 @@ class PageIncrement(BaseModel):
     type: Literal["PageIncrement"]
     page_size: Optional[Union[int, str]] = Field(
         None,
-        description="The number of records to include in each pages.",
-        examples=[100, "100", "{{ config['page_size'] }}"],
+        description="The number of records to include in each page. This value will be used to increment the page number for subsequent requests. Choose a value that balances API rate limits with sync performance.",
+        examples=[10, 50, 100, 500, 1000, "100", "{{ config['page_size'] }}"],
         title="Page Size",
     )
     start_from_page: Optional[int] = Field(
@@ -1579,7 +1591,16 @@ class RequestBodyGraphQlQuery(BaseModel):
     class Config:
         extra = Extra.allow
 
-    query: str = Field(..., description="The GraphQL query to be executed")
+    query: str = Field(
+        ...,
+        description="The GraphQL query to be executed. This should be a valid GraphQL query string that will be sent in the request body.",
+        examples=[
+            "query { users { id name email } }",
+            "query GetUser($id: ID!) { user(id: $id) { name email } }",
+            "{ viewer { login repositories(first: 10) { nodes { name } } } }",
+            "mutation CreateUser($input: UserInput!) { createUser(input: $input) { id } }",
+        ],
+    )
 
 
 class ValidateAdheresToSchema(BaseModel):
@@ -1732,14 +1753,28 @@ class ApiKeyAuthenticator(BaseModel):
     type: Literal["ApiKeyAuthenticator"]
     api_token: Optional[str] = Field(
         None,
-        description="The API key to inject in the request. Fill it in the user inputs.",
-        examples=["{{ config['api_key'] }}", "Token token={{ config['api_key'] }}"],
+        description="The API key token that will be injected into requests for authentication. This should reference a configuration field that contains the user's API key. Can include formatting like 'Bearer' or 'Token' prefixes.",
+        examples=[
+            "{{ config['api_key'] }}",
+            "Token token={{ config['api_key'] }}",
+            "Bearer {{ config['access_token'] }}",
+            "{{ config['auth_token'] }}",
+            "{{ config['secret_key'] }}",
+        ],
         title="API Key",
     )
     header: Optional[str] = Field(
         None,
-        description="The name of the HTTP header that will be set to the API key. This setting is deprecated, use inject_into instead. Header and inject_into can not be defined at the same time.",
-        examples=["Authorization", "Api-Token", "X-Auth-Token"],
+        description="The name of the HTTP header where the API key will be injected. This setting is deprecated, use inject_into instead. Common headers include 'Authorization', 'X-API-Key', or custom headers specific to the API. Header and inject_into cannot be defined at the same time.",
+        examples=[
+            "Authorization",
+            "Api-Token",
+            "X-Auth-Token",
+            "X-API-Key",
+            "X-RapidAPI-Key",
+            "apikey",
+            "token",
+        ],
         title="Header Name",
     )
     inject_into: Optional[RequestOption] = Field(
@@ -2441,7 +2476,17 @@ class DeclarativeStream(BaseModel):
 
     type: Literal["DeclarativeStream"]
     name: Optional[str] = Field(
-        "", description="The stream name.", example=["Users"], title="Name"
+        "",
+        description="The name of the stream as it will appear in the connector. This should be descriptive and match the data being synced (e.g., 'users', 'orders', 'transactions'). Use lowercase with underscores for consistency.",
+        examples=[
+            "users",
+            "orders",
+            "transactions",
+            "events",
+            "user_profiles",
+            "order_items",
+        ],
+        title="Name",
     )
     retriever: Union[SimpleRetriever, AsyncRetriever, CustomRetriever] = Field(
         ...,
@@ -2808,7 +2853,17 @@ class QueryProperties(BaseModel):
 class StateDelegatingStream(BaseModel):
     type: Literal["StateDelegatingStream"]
     name: str = Field(
-        ..., description="The stream name.", example=["Users"], title="Name"
+        ...,
+        description="The name of the stream as it will appear in the connector. This should be descriptive and match the data being synced (e.g., 'users', 'orders', 'transactions'). Use lowercase with underscores for consistency.",
+        examples=[
+            "users",
+            "orders",
+            "transactions",
+            "events",
+            "user_profiles",
+            "order_items",
+        ],
+        title="Name",
     )
     full_refresh_stream: DeclarativeStream = Field(
         ...,
