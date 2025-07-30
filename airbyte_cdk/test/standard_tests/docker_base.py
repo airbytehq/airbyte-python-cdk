@@ -366,6 +366,7 @@ class DockerConnectorTestSuite:
             if scenario.empty_streams:
                 # Filter out streams marked as empty in the scenario.
                 empty_stream_names = [stream.name for stream in scenario.empty_streams]
+                # pyrefly: ignore  # missing-attribute
                 streams_list = [s for s in streams_list if s.name not in empty_stream_names]
 
             configured_catalog: ConfiguredAirbyteCatalog = ConfiguredAirbyteCatalog(

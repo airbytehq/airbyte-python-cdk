@@ -68,8 +68,11 @@ try:
     nltk.data.find("tokenizers/punkt_tab.zip")
     nltk.data.find("tokenizers/averaged_perceptron_tagger_eng.zip")
 except LookupError:
+    # pyrefly: ignore  # unbound-name
     nltk.download("punkt", download_dir=nltk_data_dir, quiet=True)
+    # pyrefly: ignore  # unbound-name
     nltk.download("punkt_tab", download_dir=nltk_data_dir, quiet=True)
+    # pyrefly: ignore  # unbound-name
     nltk.download("averaged_perceptron_tagger_eng", download_dir=nltk_data_dir, quiet=True)
 
 
@@ -205,6 +208,7 @@ class UnstructuredParser(FileTypeParser):
         remote_file: RemoteFile,
         format: UnstructuredFormat,
         logger: logging.Logger,
+    # pyrefly: ignore  # bad-return
     ) -> str:
         _import_unstructured()
         if (
@@ -410,6 +414,7 @@ class UnstructuredParser(FileTypeParser):
 
         # set name to none, otherwise unstructured will try to get the modified date from the local file system
         if hasattr(file, "name"):
+            # pyrefly: ignore  # missing-attribute
             file.name = None
 
         # detect_filetype is either using the file name or file content
@@ -427,6 +432,7 @@ class UnstructuredParser(FileTypeParser):
         if file_type and file_type != FileType.UNK:
             return file_type
 
+        # pyrefly: ignore  # bad-argument-type
         type_based_on_content = detect_filetype(file=file)
         file.seek(0)  # detect_filetype is reading to read the file content, so we need to reset
 

@@ -143,6 +143,7 @@ class HttpMocker(contextlib.ContextDecorator):
     def __call__(self, f):  # type: ignore
         @functools.wraps(f)
         def wrapper(*args, **kwargs):  # type: ignore  # this is a very generic wrapper that does not need to be typed
+            # pyrefly: ignore  # bad-context-manager
             with self:
                 assertion_error = None
 

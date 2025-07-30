@@ -24,6 +24,7 @@ class SeparatorSplitterConfigModel(BaseModel):
         description="Whether to keep the separator in the resulting chunks",
     )
 
+    # pyrefly: ignore  # bad-override
     class Config(OneOfOptionConfig):
         title = "By Separator"
         description = "Split the text by the list of separators until the chunk size is reached, using the earlier mentioned separators where possible. This is useful for splitting text fields by paragraphs, sentences, words, etc."
@@ -40,6 +41,7 @@ class MarkdownHeaderSplitterConfigModel(BaseModel):
         ge=1,
     )
 
+    # pyrefly: ignore  # bad-override
     class Config(OneOfOptionConfig):
         title = "By Markdown header"
         description = "Split the text by Markdown headers down to the specified header level. If the chunk size fits multiple sections, they will be combined into a single chunk."
@@ -71,6 +73,7 @@ class CodeSplitterConfigModel(BaseModel):
         ],
     )
 
+    # pyrefly: ignore  # bad-override
     class Config(OneOfOptionConfig):
         title = "By Programming Language"
         description = "Split the text by suitable delimiters based on the programming language. This is useful for splitting code into chunks."
@@ -129,6 +132,7 @@ class ProcessingConfigModel(BaseModel):
         description="List of fields to rename. Not applicable for nested fields, but can be used to rename fields already flattened via dot notation.",
     )
 
+    # pyrefly: ignore  # bad-override
     class Config:
         schema_extra = {"group": "processing"}
 
@@ -137,6 +141,7 @@ class OpenAIEmbeddingConfigModel(BaseModel):
     mode: Literal["openai"] = Field("openai", const=True)
     openai_key: str = Field(..., title="OpenAI API key", airbyte_secret=True)
 
+    # pyrefly: ignore  # bad-override
     class Config(OneOfOptionConfig):
         title = "OpenAI"
         description = "Use the OpenAI API to embed text. This option is using the text-embedding-ada-002 model with 1536 embedding dimensions."
@@ -164,6 +169,7 @@ class OpenAICompatibleEmbeddingConfigModel(BaseModel):
         examples=[1536, 384],
     )
 
+    # pyrefly: ignore  # bad-override
     class Config(OneOfOptionConfig):
         title = "OpenAI-compatible"
         description = "Use a service that's compatible with the OpenAI API to embed text."
@@ -191,6 +197,7 @@ class AzureOpenAIEmbeddingConfigModel(BaseModel):
         examples=["your-resource-name"],
     )
 
+    # pyrefly: ignore  # bad-override
     class Config(OneOfOptionConfig):
         title = "Azure OpenAI"
         description = "Use the Azure-hosted OpenAI API to embed text. This option is using the text-embedding-ada-002 model with 1536 embedding dimensions."
@@ -200,6 +207,7 @@ class AzureOpenAIEmbeddingConfigModel(BaseModel):
 class FakeEmbeddingConfigModel(BaseModel):
     mode: Literal["fake"] = Field("fake", const=True)
 
+    # pyrefly: ignore  # bad-override
     class Config(OneOfOptionConfig):
         title = "Fake"
         description = "Use a fake embedding made out of random vectors with 1536 embedding dimensions. This is useful for testing the data pipeline without incurring any costs."
@@ -221,6 +229,7 @@ class FromFieldEmbeddingConfigModel(BaseModel):
         examples=[1536, 384],
     )
 
+    # pyrefly: ignore  # bad-override
     class Config(OneOfOptionConfig):
         title = "From Field"
         description = "Use a field in the record as the embedding. This is useful if you already have an embedding for your data and want to store it in the vector store."
@@ -231,6 +240,7 @@ class CohereEmbeddingConfigModel(BaseModel):
     mode: Literal["cohere"] = Field("cohere", const=True)
     cohere_key: str = Field(..., title="Cohere API key", airbyte_secret=True)
 
+    # pyrefly: ignore  # bad-override
     class Config(OneOfOptionConfig):
         title = "Cohere"
         description = "Use the Cohere API to embed text."
@@ -273,6 +283,7 @@ class VectorDBConfigModel(BaseModel):
         description="Do not store the text that gets embedded along with the vector and the metadata in the destination. If set to true, only the vector and the metadata will be stored - in this case raw text for LLM use cases needs to be retrieved from another source.",
     )
 
+    # pyrefly: ignore  # bad-override
     class Config:
         title = "Destination Config"
         schema_extra = {

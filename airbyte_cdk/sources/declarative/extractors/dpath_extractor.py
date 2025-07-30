@@ -81,6 +81,7 @@ class DpathExtractor(RecordExtractor):
             if isinstance(extracted, list):
                 yield from extracted
             elif extracted:
+                # pyrefly: ignore  # invalid-yield
                 yield extracted
             else:
                 yield from []

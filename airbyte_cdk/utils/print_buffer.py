@@ -58,6 +58,7 @@ class PrintBuffer:
             self.buffer = StringIO()
 
     def __enter__(self) -> "PrintBuffer":
+        # pyrefly: ignore  # implicitly-defined-attribute
         self.old_stdout, self.old_stderr = sys.stdout, sys.stderr
         # Used to disable buffering during the pytest session, because it is not compatible with capsys
         if "pytest" not in str(type(sys.stdout)).lower():

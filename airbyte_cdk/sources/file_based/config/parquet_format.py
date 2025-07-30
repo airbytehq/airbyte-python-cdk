@@ -9,6 +9,7 @@ from airbyte_cdk.utils.oneof_option_config import OneOfOptionConfig
 
 
 class ParquetFormat(BaseModel):
+    # pyrefly: ignore  # bad-override
     class Config(OneOfOptionConfig):
         title = "Parquet Format"
         discriminator = "filetype"

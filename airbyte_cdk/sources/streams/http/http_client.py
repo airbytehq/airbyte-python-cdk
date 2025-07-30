@@ -101,6 +101,7 @@ class HttpClient:
             self._session = self._request_session()
             self._session.mount(
                 "https://",
+                # pyrefly: ignore  # implicit-import
                 requests.adapters.HTTPAdapter(
                     pool_connections=MAX_CONNECTION_POOL_SIZE, pool_maxsize=MAX_CONNECTION_POOL_SIZE
                 ),
@@ -153,6 +154,7 @@ class HttpClient:
             # * `If the application running SQLite crashes, the data will be safe, but the database [might become corrupted](https://www.sqlite.org/howtocorrupt.html#cfgerr) if the operating system crashes or the computer loses power before that data has been written to the disk surface.` in [this description](https://www.sqlite.org/pragma.html#pragma_synchronous).
             backend = requests_cache.SQLiteCache(sqlite_path, fast_save=True, wal=True)
             return CachedLimiterSession(
+                # pyrefly: ignore  # bad-argument-type
                 sqlite_path, backend=backend, api_budget=self._api_budget, match_headers=True
             )
         else:
@@ -176,7 +178,9 @@ class HttpClient:
         """
         if params is None:
             params = {}
+        # pyrefly: ignore  # implicit-import
         query_string = urllib.parse.urlparse(url).query
+        # pyrefly: ignore  # implicit-import
         query_dict = {k: v[0] for k, v in urllib.parse.parse_qs(query_string).items()}
 
         duplicate_keys_with_same_value = {
@@ -270,7 +274,9 @@ class HttpClient:
         response = backoff_handler(rate_limit_backoff_handler(user_backoff_handler))(
             request,
             request_kwargs,
+            # pyrefly: ignore  # unexpected-keyword
             log_formatter=log_formatter,
+            # pyrefly: ignore  # unexpected-keyword
             exit_on_rate_limit=exit_on_rate_limit,
         )  # type: ignore # mypy can't infer that backoff_handler wraps _send
 
@@ -334,6 +340,7 @@ class HttpClient:
             formatter = log_formatter
             self._message_repository.log_message(
                 Level.DEBUG,
+                # pyrefly: ignore  # bad-argument-type
                 lambda: formatter(response),
             )
 
@@ -427,6 +434,7 @@ class HttpClient:
             raise MessageRepresentationAirbyteTracedErrors(
                 internal_message=error_message,
                 message=error_resolution.error_message or error_message,
+                # pyrefly: ignore  # bad-argument-type
                 failure_type=error_resolution.failure_type,
             )
 

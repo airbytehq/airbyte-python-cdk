@@ -53,6 +53,7 @@ class ConcurrentSource:
             "It is required to have more workers than threads generating partitions"
         )
         threadpool = ThreadPoolManager(
+            # pyrefly: ignore  # implicit-import
             concurrent.futures.ThreadPoolExecutor(
                 max_workers=num_workers, thread_name_prefix="workerpool"
             ),

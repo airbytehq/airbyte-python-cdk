@@ -12,6 +12,7 @@ from airbyte_cdk.utils.oneof_option_config import OneOfOptionConfig
 class LocalProcessingConfigModel(BaseModel):
     mode: Literal["local"] = Field("local", const=True)
 
+    # pyrefly: ignore  # bad-override
     class Config(OneOfOptionConfig):
         title = "Local"
         description = (
@@ -57,6 +58,7 @@ class APIProcessingConfigModel(BaseModel):
         description="List of parameters send to the API",
     )
 
+    # pyrefly: ignore  # bad-override
     class Config(OneOfOptionConfig):
         title = "via API"
         description = "Process files via an API, using the `hi_res` mode. This option is useful for increased performance and accuracy, but requires an API key and a hosted instance of unstructured."
@@ -64,6 +66,7 @@ class APIProcessingConfigModel(BaseModel):
 
 
 class UnstructuredFormat(BaseModel):
+    # pyrefly: ignore  # bad-override
     class Config(OneOfOptionConfig):
         title = "Unstructured Document Format"
         description = "Extract text from document formats (.pdf, .docx, .md, .pptx) and emit as one record per file."

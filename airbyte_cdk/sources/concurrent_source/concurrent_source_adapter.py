@@ -99,6 +99,7 @@ class ConcurrentSourceAdapter(AbstractSource, ABC):
 
             stream.cursor = cursor  # type: ignore[assignment]  # cursor is of type ConcurrentCursor, which inherits from Cursor
             if hasattr(stream, "parent"):
+                # pyrefly: ignore  # missing-attribute
                 stream.parent.cursor = cursor
         else:
             cursor = FinalStateCursor(

@@ -191,6 +191,7 @@ class DeclarativeOauth2Authenticator(AbstractOauth2Authenticator, DeclarativeAut
         return self._client_id_name.eval(self.config)  # type: ignore # eval returns a string in this context
 
     def get_client_id(self) -> str:
+        # pyrefly: ignore  # missing-attribute
         client_id = self._client_id.eval(self.config) if self._client_id else self._client_id
         if not client_id:
             raise ValueError("OAuthAuthenticator was unable to evaluate client_id parameter")
@@ -201,6 +202,7 @@ class DeclarativeOauth2Authenticator(AbstractOauth2Authenticator, DeclarativeAut
 
     def get_client_secret(self) -> str:
         client_secret = (
+            # pyrefly: ignore  # missing-attribute
             self._client_secret.eval(self.config) if self._client_secret else self._client_secret
         )
         if not client_secret:
@@ -270,6 +272,7 @@ class DeclarativeOauth2Authenticator(AbstractOauth2Authenticator, DeclarativeAut
         return super().build_refresh_request_body()
 
     @property
+    # pyrefly: ignore  # bad-override
     def access_token(self) -> str:
         if self._access_token is None:
             raise ValueError("access_token is not set")

@@ -41,6 +41,7 @@ class Record(Mapping[str, Any]):
 
     @property
     def file_reference(self) -> AirbyteRecordMessageFileReference:
+        # pyrefly: ignore  # bad-return
         return self._file_reference
 
     @file_reference.setter
@@ -143,6 +144,7 @@ class StreamSlice(Mapping[str, Any]):
     def values(self) -> ValuesView[Any]:
         return self._stream_slice.values()
 
+    # pyrefly: ignore  # bad-override
     def get(self, key: str, default: Any = None) -> Optional[Any]:
         return self._stream_slice.get(key, default)
 

@@ -71,6 +71,7 @@ class DocumentProcessor:
     @staticmethod
     def check_config(config: ProcessingConfigModel) -> Optional[str]:
         if config.text_splitter is not None and config.text_splitter.mode == "separator":
+            # pyrefly: ignore  # missing-attribute
             for s in config.text_splitter.separators:
                 try:
                     separator = json.loads(s)
@@ -85,6 +86,7 @@ class DocumentProcessor:
         chunk_size: int,
         chunk_overlap: int,
         splitter_config: Optional[TextSplitterConfigModel],
+    # pyrefly: ignore  # bad-return
     ) -> RecursiveCharacterTextSplitter:
         if splitter_config is None:
             splitter_config = SeparatorSplitterConfigModel(mode="separator")
@@ -92,7 +94,9 @@ class DocumentProcessor:
             return RecursiveCharacterTextSplitter.from_tiktoken_encoder(
                 chunk_size=chunk_size,
                 chunk_overlap=chunk_overlap,
+                # pyrefly: ignore  # missing-attribute
                 separators=[json.loads(s) for s in splitter_config.separators],
+                # pyrefly: ignore  # missing-attribute
                 keep_separator=splitter_config.keep_separator,
                 disallowed_special=(),
             )
@@ -100,6 +104,7 @@ class DocumentProcessor:
             return RecursiveCharacterTextSplitter.from_tiktoken_encoder(
                 chunk_size=chunk_size,
                 chunk_overlap=chunk_overlap,
+                # pyrefly: ignore  # missing-attribute
                 separators=headers_to_split_on[: splitter_config.split_level],
                 is_separator_regex=True,
                 keep_separator=True,
@@ -110,6 +115,7 @@ class DocumentProcessor:
                 chunk_size=chunk_size,
                 chunk_overlap=chunk_overlap,
                 separators=RecursiveCharacterTextSplitter.get_separators_for_language(
+                    # pyrefly: ignore  # bad-argument-type, missing-attribute
                     Language(splitter_config.language)
                 ),
                 disallowed_special=(),
@@ -218,6 +224,7 @@ class DocumentProcessor:
         new_fields = fields.copy()
         for mapping in self.field_name_mappings:
             if mapping.from_field in new_fields:
+                # pyrefly: ignore  # missing-attribute
                 new_fields[mapping.to_field] = new_fields.pop(mapping.from_field)
 
         return new_fields

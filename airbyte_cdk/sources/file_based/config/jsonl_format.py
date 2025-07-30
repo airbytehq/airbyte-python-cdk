@@ -8,6 +8,7 @@ from airbyte_cdk.utils.oneof_option_config import OneOfOptionConfig
 
 
 class JsonlFormat(BaseModel):
+    # pyrefly: ignore  # bad-override
     class Config(OneOfOptionConfig):
         title = "Jsonl Format"
         discriminator = "filetype"

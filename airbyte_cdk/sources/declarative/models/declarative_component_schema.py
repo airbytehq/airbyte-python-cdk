@@ -133,6 +133,7 @@ class CursorPagination(BaseModel):
 
 
 class CustomAuthenticator(BaseModel):
+    # pyrefly: ignore  # bad-override
     class Config:
         extra = Extra.allow
 
@@ -147,6 +148,7 @@ class CustomAuthenticator(BaseModel):
 
 
 class CustomBackoffStrategy(BaseModel):
+    # pyrefly: ignore  # bad-override
     class Config:
         extra = Extra.allow
 
@@ -161,6 +163,7 @@ class CustomBackoffStrategy(BaseModel):
 
 
 class CustomErrorHandler(BaseModel):
+    # pyrefly: ignore  # bad-override
     class Config:
         extra = Extra.allow
 
@@ -175,6 +178,7 @@ class CustomErrorHandler(BaseModel):
 
 
 class CustomIncrementalSync(BaseModel):
+    # pyrefly: ignore  # bad-override
     class Config:
         extra = Extra.allow
 
@@ -193,6 +197,7 @@ class CustomIncrementalSync(BaseModel):
 
 
 class CustomPaginationStrategy(BaseModel):
+    # pyrefly: ignore  # bad-override
     class Config:
         extra = Extra.allow
 
@@ -207,6 +212,7 @@ class CustomPaginationStrategy(BaseModel):
 
 
 class CustomRecordExtractor(BaseModel):
+    # pyrefly: ignore  # bad-override
     class Config:
         extra = Extra.allow
 
@@ -221,6 +227,7 @@ class CustomRecordExtractor(BaseModel):
 
 
 class CustomRecordFilter(BaseModel):
+    # pyrefly: ignore  # bad-override
     class Config:
         extra = Extra.allow
 
@@ -235,6 +242,7 @@ class CustomRecordFilter(BaseModel):
 
 
 class CustomRequester(BaseModel):
+    # pyrefly: ignore  # bad-override
     class Config:
         extra = Extra.allow
 
@@ -249,6 +257,7 @@ class CustomRequester(BaseModel):
 
 
 class CustomRetriever(BaseModel):
+    # pyrefly: ignore  # bad-override
     class Config:
         extra = Extra.allow
 
@@ -263,6 +272,7 @@ class CustomRetriever(BaseModel):
 
 
 class CustomPartitionRouter(BaseModel):
+    # pyrefly: ignore  # bad-override
     class Config:
         extra = Extra.allow
 
@@ -277,6 +287,7 @@ class CustomPartitionRouter(BaseModel):
 
 
 class CustomSchemaLoader(BaseModel):
+    # pyrefly: ignore  # bad-override
     class Config:
         extra = Extra.allow
 
@@ -291,6 +302,7 @@ class CustomSchemaLoader(BaseModel):
 
 
 class CustomSchemaNormalization(BaseModel):
+    # pyrefly: ignore  # bad-override
     class Config:
         extra = Extra.allow
 
@@ -307,6 +319,7 @@ class CustomSchemaNormalization(BaseModel):
 
 
 class CustomStateMigration(BaseModel):
+    # pyrefly: ignore  # bad-override
     class Config:
         extra = Extra.allow
 
@@ -321,6 +334,7 @@ class CustomStateMigration(BaseModel):
 
 
 class CustomTransformation(BaseModel):
+    # pyrefly: ignore  # bad-override
     class Config:
         extra = Extra.allow
 
@@ -335,6 +349,7 @@ class CustomTransformation(BaseModel):
 
 
 class LegacyToPerPartitionStateMigration(BaseModel):
+    # pyrefly: ignore  # bad-override
     class Config:
         extra = Extra.allow
 
@@ -369,6 +384,7 @@ class Algorithm(Enum):
 
 
 class JwtHeaders(BaseModel):
+    # pyrefly: ignore  # bad-override
     class Config:
         extra = Extra.forbid
 
@@ -393,6 +409,7 @@ class JwtHeaders(BaseModel):
 
 
 class JwtPayload(BaseModel):
+    # pyrefly: ignore  # bad-override
     class Config:
         extra = Extra.forbid
 
@@ -657,6 +674,7 @@ class OAuthAuthenticator(BaseModel):
 
 
 class Rate(BaseModel):
+    # pyrefly: ignore  # bad-override
     class Config:
         extra = Extra.allow
 
@@ -674,6 +692,7 @@ class Rate(BaseModel):
 
 
 class HttpRequestRegexMatcher(BaseModel):
+    # pyrefly: ignore  # bad-override
     class Config:
         extra = Extra.allow
 
@@ -967,6 +986,7 @@ class XmlDecoder(BaseModel):
 
 
 class CustomDecoder(BaseModel):
+    # pyrefly: ignore  # bad-override
     class Config:
         extra = Extra.allow
 
@@ -1024,6 +1044,7 @@ class NoPagination(BaseModel):
 
 
 class State(BaseModel):
+    # pyrefly: ignore  # bad-override
     class Config:
         extra = Extra.allow
 
@@ -1032,6 +1053,7 @@ class State(BaseModel):
 
 
 class OauthConnectorInputSpecification(BaseModel):
+    # pyrefly: ignore  # bad-override
     class Config:
         extra = Extra.allow
 
@@ -1131,6 +1153,7 @@ class OauthConnectorInputSpecification(BaseModel):
 
 
 class OAuthConfigSpecification(BaseModel):
+    # pyrefly: ignore  # bad-override
     class Config:
         extra = Extra.allow
 
@@ -1338,6 +1361,7 @@ class RequestOption(BaseModel):
 class Schemas(BaseModel):
     pass
 
+    # pyrefly: ignore  # bad-override
     class Config:
         extra = Extra.allow
 
@@ -1570,6 +1594,7 @@ class RequestBodyJsonObject(BaseModel):
 
 
 class RequestBodyGraphQlQuery(BaseModel):
+    # pyrefly: ignore  # bad-override
     class Config:
         extra = Extra.allow
 
@@ -1604,6 +1629,7 @@ class ValidateAdheresToSchema(BaseModel):
 
 
 class CustomValidationStrategy(BaseModel):
+    # pyrefly: ignore  # bad-override
     class Config:
         extra = Extra.allow
 
@@ -1910,6 +1936,7 @@ class DatetimeBasedCursor(BaseModel):
 
 
 class FixedWindowCallRatePolicy(BaseModel):
+    # pyrefly: ignore  # bad-override
     class Config:
         extra = Extra.allow
 
@@ -1930,6 +1957,7 @@ class FixedWindowCallRatePolicy(BaseModel):
 
 
 class MovingWindowCallRatePolicy(BaseModel):
+    # pyrefly: ignore  # bad-override
     class Config:
         extra = Extra.allow
 
@@ -1947,6 +1975,7 @@ class MovingWindowCallRatePolicy(BaseModel):
 
 
 class UnlimitedCallRatePolicy(BaseModel):
+    # pyrefly: ignore  # bad-override
     class Config:
         extra = Extra.allow
 
@@ -2143,6 +2172,7 @@ class CompositeErrorHandler(BaseModel):
 
 
 class HTTPAPIBudget(BaseModel):
+    # pyrefly: ignore  # bad-override
     class Config:
         extra = Extra.allow
 
@@ -2176,6 +2206,7 @@ class HTTPAPIBudget(BaseModel):
 
 
 class ZipfileDecoder(BaseModel):
+    # pyrefly: ignore  # bad-override
     class Config:
         extra = Extra.allow
 
@@ -2207,6 +2238,7 @@ class ConfigMigration(BaseModel):
 
 
 class ConfigNormalizationRules(BaseModel):
+    # pyrefly: ignore  # bad-override
     class Config:
         extra = Extra.forbid
 
@@ -2261,6 +2293,7 @@ class Spec(BaseModel):
 
 
 class DeclarativeSource1(BaseModel):
+    # pyrefly: ignore  # bad-override
     class Config:
         extra = Extra.forbid
 
@@ -2294,6 +2327,7 @@ class DeclarativeSource1(BaseModel):
 
 
 class DeclarativeSource2(BaseModel):
+    # pyrefly: ignore  # bad-override
     class Config:
         extra = Extra.forbid
 
@@ -2329,6 +2363,7 @@ class DeclarativeSource2(BaseModel):
 
 
 class DeclarativeSource(BaseModel):
+    # pyrefly: ignore  # bad-override
     class Config:
         extra = Extra.forbid
 
@@ -2340,6 +2375,7 @@ class DeclarativeSource(BaseModel):
 
 
 class SelectiveAuthenticator(BaseModel):
+    # pyrefly: ignore  # bad-override
     class Config:
         extra = Extra.allow
 
@@ -2422,6 +2458,7 @@ class FileUploader(BaseModel):
 
 
 class DeclarativeStream(BaseModel):
+    # pyrefly: ignore  # bad-override
     class Config:
         extra = Extra.allow
 

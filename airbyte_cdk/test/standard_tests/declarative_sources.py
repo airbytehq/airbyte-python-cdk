@@ -35,6 +35,7 @@ class DeclarativeSourceTestSuite(SourceTestSuiteBase):
     `components.py` file (if it exists) in the connector's directory.
     """
 
+    # pyrefly: ignore  # bad-override
     connector: type[IConnector] | None = None
 
     @classproperty

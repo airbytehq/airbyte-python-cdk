@@ -87,10 +87,12 @@ class FileBasedConcurrentCursor(AbstractConcurrentFileBasedCursor):
                 if _slice is None:
                     continue
                 for file in _slice["files"]:
+                    # pyrefly: ignore  # missing-attribute
                     if file.uri in self._pending_files.keys():
                         raise RuntimeError(
                             f"Already found file {_slice} in pending files. This is unexpected. Please contact Support."
                         )
+                # pyrefly: ignore  # missing-attribute
                 self._pending_files.update({file.uri: file})
 
     def _compute_prev_sync_cursor(self, value: Optional[StreamState]) -> Tuple[datetime, str]:

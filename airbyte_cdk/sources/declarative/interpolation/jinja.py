@@ -55,7 +55,9 @@ _RESTRICTED_BUILTIN_FUNCTIONS = [
 ]  # The range function can cause very expensive computations
 
 _ENVIRONMENT = StreamPartitionAccessEnvironment()
+# pyrefly: ignore  # no-matching-overload
 _ENVIRONMENT.filters.update(**filters)
+# pyrefly: ignore  # no-matching-overload
 _ENVIRONMENT.globals.update(**macros)
 
 for extension in _RESTRICTED_EXTENSIONS:

@@ -93,6 +93,7 @@ class SecretString(str):
             raise exc.AirbyteInputError(
                 message="A valid `str` or `SecretString` object is required.",
             )
+        # pyrefly: ignore  # bad-return
         return cls(v)
 
     @classmethod

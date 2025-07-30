@@ -114,7 +114,9 @@ class AirbyteDateTime(datetime):
         """
         self = super().__new__(cls, *args, **kwargs)
         if self.tzinfo is None:
+            # pyrefly: ignore  # bad-return
             return self.replace(tzinfo=timezone.utc)
+        # pyrefly: ignore  # bad-return
         return self
 
     @classmethod

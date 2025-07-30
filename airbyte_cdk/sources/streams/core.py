@@ -613,6 +613,7 @@ class Stream(ABC):
             return [[keys]]
         elif isinstance(keys, list):
             wrapped_keys = []
+            # pyrefly: ignore  # bad-assignment
             for component in keys:
                 if isinstance(component, str):
                     wrapped_keys.append([component])
