@@ -2209,7 +2209,7 @@ class ModelToComponentFactory:
             )
         elif model.incremental_sync:
             if type(model.incremental_sync) == IncrementingCountCursorModel:
-                return self.create_concurrent_cursor_from_incrementing_count_cursor(    # type: ignore # This is a known issue that we are creating and returning a ConcurrentCursor which does not technically implement the (low-code) StreamSlicer. However, (low-code) StreamSlicer and ConcurrentCursor both implement StreamSlicer.stream_slices() which is the primary method needed for checkpointing
+                return self.create_concurrent_cursor_from_incrementing_count_cursor(  # type: ignore # This is a known issue that we are creating and returning a ConcurrentCursor which does not technically implement the (low-code) StreamSlicer. However, (low-code) StreamSlicer and ConcurrentCursor both implement StreamSlicer.stream_slices() which is the primary method needed for checkpointing
                     model_type=IncrementingCountCursorModel,
                     component_definition=model.incremental_sync.__dict__,
                     stream_name=model.name or "",
