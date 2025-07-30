@@ -1767,10 +1767,30 @@ class AuthFlow(BaseModel):
 
 class CheckStream(BaseModel):
     type: Literal["CheckStream"]
-    stream_names: Optional[List[str]] = Field(
+    stream_names: List[Union[str, "DeclarativeStream"]] = Field(
         None,
         description="Names of the streams to try reading from when running a check operation.",
-        examples=[["users"], ["users", "contacts"]],
+        examples=[
+            ["users"],
+            ["users", "contacts"],
+            [
+                {
+                    "name": "check_only_stream",
+                    "type": "DeclarativeStream",
+                    "retriever": {
+                        "type": "SimpleRetriever",
+                        "requester": {
+                            "type": "HttpRequester",
+                            "url_base": "https://api.example.com",
+                        },
+                        "record_selector": {
+                            "type": "RecordSelector",
+                            "extractor": {"type": "DpathExtractor", "field_path": []},
+                        },
+                    },
+                }
+            ],
+        ],
         title="Stream Names",
     )
     dynamic_streams_check_configs: Optional[List[DynamicStreamCheckConfig]] = None
@@ -3048,3 +3068,4 @@ ParentStreamConfig.update_forward_refs()
 PropertiesFromEndpoint.update_forward_refs()
 SimpleRetriever.update_forward_refs()
 AsyncRetriever.update_forward_refs()
+CheckStream.update_forward_refs()

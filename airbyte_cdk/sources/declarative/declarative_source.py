@@ -11,6 +11,12 @@ from airbyte_cdk.connector_builder.models import (
 )
 from airbyte_cdk.sources.abstract_source import AbstractSource
 from airbyte_cdk.sources.declarative.checks.connection_checker import ConnectionChecker
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    DeclarativeStream as DeclarativeStreamModel,
+)
+from airbyte_cdk.sources.declarative.parsers.model_to_component_factory import (
+    ModelToComponentFactory,
+)
 
 
 class DeclarativeSource(AbstractSource):
@@ -43,3 +49,14 @@ class DeclarativeSource(AbstractSource):
         Returns a list of deprecation warnings for the source.
         """
         return []
+
+    def _instantiate_stream_from_dict(self, stream_def: dict, config: Mapping[str, Any]):
+        """
+        Instantiates a stream from a stream definition dict (used for check-only streams).
+        """
+        factory = ModelToComponentFactory()
+        return factory.create_component(
+            model_type=DeclarativeStreamModel,
+            component_definition=stream_def,
+            config=config,
+        )
