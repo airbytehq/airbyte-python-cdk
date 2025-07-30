@@ -429,17 +429,6 @@ class DatetimeBasedCursor(DeclarativeCursor):
                 )
             )
 
-    def is_greater_than_or_equal(self, first: Record, second: Record) -> bool:
-        cursor_field = self.cursor_field.eval(self.config)  # type: ignore  # cursor_field is converted to an InterpolatedString in __post_init__
-        first_cursor_value = first.get(cursor_field)
-        second_cursor_value = second.get(cursor_field)
-        if first_cursor_value and second_cursor_value:
-            return self.parse_date(first_cursor_value) >= self.parse_date(second_cursor_value)
-        elif first_cursor_value:
-            return True
-        else:
-            return False
-
     def set_runtime_lookback_window(self, lookback_window_in_seconds: int) -> None:
         """
         Updates the lookback window based on a given number of seconds if the new duration
