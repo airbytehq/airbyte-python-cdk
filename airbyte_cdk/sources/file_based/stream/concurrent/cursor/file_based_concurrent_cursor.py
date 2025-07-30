@@ -28,7 +28,6 @@ _NULL_FILE = ""
 
 
 class FileBasedConcurrentCursor(AbstractConcurrentFileBasedCursor):
-
     CURSOR_FIELD = "_ab_source_file_last_modified"
     DEFAULT_DAYS_TO_SYNC_IF_HISTORY_IS_FULL = (
         DefaultFileBasedCursor.DEFAULT_DAYS_TO_SYNC_IF_HISTORY_IS_FULL

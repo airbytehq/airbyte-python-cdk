@@ -1561,7 +1561,6 @@ class ModelToComponentFactory:
         partition_router: PartitionRouter,
         stream_state_migrations: Optional[List[Any]] = None,
         attempt_to_create_cursor_if_not_provided: bool = False,
-
         **kwargs: Any,
     ) -> ConcurrentPerPartitionCursor:
         component_type = component_definition.get("type")
@@ -2188,7 +2187,9 @@ class ModelToComponentFactory:
             # FIXME should this be in create_concurrent_cursor_from_perpartition_cursor
             if model.state_migrations:
                 state_transformations = [
-                    self._create_component_from_model(state_migration, config, declarative_stream=model)
+                    self._create_component_from_model(
+                        state_migration, config, declarative_stream=model
+                    )
                     for state_migration in model.state_migrations
                 ]
             else:
@@ -2228,7 +2229,9 @@ class ModelToComponentFactory:
                     attempt_to_create_cursor_if_not_provided=True,
                 )
             else:
-                raise ValueError(f"Incremental sync of type {type(model.incremental_sync)} is not supported")
+                raise ValueError(
+                    f"Incremental sync of type {type(model.incremental_sync)} is not supported"
+                )
         return None
 
     def _build_resumable_cursor(

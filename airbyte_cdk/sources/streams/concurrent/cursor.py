@@ -206,9 +206,15 @@ class ConcurrentCursor(Cursor):
             if slices_from_partitioned_state:
                 # We assume here that the slices have been already merged
                 first_slice = slices_from_partitioned_state[0]
-                value_from_partitioned_state = first_slice[self._connector_state_converter.MOST_RECENT_RECORD_KEY] if self._connector_state_converter.MOST_RECENT_RECORD_KEY in first_slice else first_slice[self._connector_state_converter.END_KEY]
+                value_from_partitioned_state = (
+                    first_slice[self._connector_state_converter.MOST_RECENT_RECORD_KEY]
+                    if self._connector_state_converter.MOST_RECENT_RECORD_KEY in first_slice
+                    else first_slice[self._connector_state_converter.END_KEY]
+                )
             return (
-                value_from_partitioned_state or self._start or self._connector_state_converter.zero_value,
+                value_from_partitioned_state
+                or self._start
+                or self._connector_state_converter.zero_value,
                 partitioned_state,
             )
         return self._connector_state_converter.convert_from_sequential_state(

@@ -114,7 +114,6 @@ class _MockIncrementalStream(_MockStream, CheckpointMixin):
 
 
 class MockConcurrentCursor(Cursor):
-
     _state: MutableMapping[str, Any]
     _message_repository: MessageRepository
 

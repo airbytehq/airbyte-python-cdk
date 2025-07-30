@@ -81,7 +81,7 @@ class ConcurrentPerPartitionCursor(Cursor):
         connector_state_converter: AbstractStreamStateConverter,
         cursor_field: CursorField,
         use_global_cursor: bool = False,
-        attempt_to_create_cursor_if_not_provided: bool = False
+        attempt_to_create_cursor_if_not_provided: bool = False,
     ) -> None:
         self._global_cursor: Optional[StreamState] = {}
         self._stream_name = stream_name
@@ -517,7 +517,10 @@ class ConcurrentPerPartitionCursor(Cursor):
                 "Invalid state as stream slices that are emitted should refer to an existing cursor"
             )
         partition_key = self._to_partition_key(record.associated_slice.partition)
-        if partition_key not in self._cursor_per_partition and not self._attempt_to_create_cursor_if_not_provided:
+        if (
+            partition_key not in self._cursor_per_partition
+            and not self._attempt_to_create_cursor_if_not_provided
+        ):
             raise ValueError(
                 "Invalid state as stream slices that are emitted should refer to an existing cursor"
             )

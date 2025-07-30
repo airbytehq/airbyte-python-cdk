@@ -1780,6 +1780,8 @@ def test_close_partition_with_slice_range_granularity_concurrent_cursor_from_dat
 
 
 _SHOULD_BE_SYNCED_START = 10
+
+
 @pytest.mark.parametrize(
     "record, should_be_synced",
     [
@@ -1853,8 +1855,19 @@ def test_given_state_when_should_be_synced_then_use_cursor_value_to_filter():
         _NO_LOOKBACK_WINDOW,
     )
 
-    assert cursor.should_be_synced(Record(data={_A_CURSOR_FIELD_KEY: state_value - 1}, stream_name="test_stream")) == False
-    assert cursor.should_be_synced(Record(data={_A_CURSOR_FIELD_KEY: state_value}, stream_name="test_stream")) == True
+    assert (
+        cursor.should_be_synced(
+            Record(data={_A_CURSOR_FIELD_KEY: state_value - 1}, stream_name="test_stream")
+        )
+        == False
+    )
+    assert (
+        cursor.should_be_synced(
+            Record(data={_A_CURSOR_FIELD_KEY: state_value}, stream_name="test_stream")
+        )
+        == True
+    )
+
 
 def test_given_partitioned_state_without_slices_nor_start_when_should_be_synced_then_use_zero_value_to_filter():
     cursor = ConcurrentCursor(
@@ -1874,8 +1887,14 @@ def test_given_partitioned_state_without_slices_nor_start_when_should_be_synced_
         _NO_LOOKBACK_WINDOW,
     )
 
-    assert cursor.should_be_synced(Record(data={_A_CURSOR_FIELD_KEY: -1}, stream_name="test_stream")) == False
-    assert cursor.should_be_synced(Record(data={_A_CURSOR_FIELD_KEY: 0}, stream_name="test_stream")) == True
+    assert (
+        cursor.should_be_synced(Record(data={_A_CURSOR_FIELD_KEY: -1}, stream_name="test_stream"))
+        == False
+    )
+    assert (
+        cursor.should_be_synced(Record(data={_A_CURSOR_FIELD_KEY: 0}, stream_name="test_stream"))
+        == True
+    )
 
 
 def test_given_partitioned_state_without_slices_but_start_when_should_be_synced_then_use_start_value_to_filter():
@@ -1896,8 +1915,20 @@ def test_given_partitioned_state_without_slices_but_start_when_should_be_synced_
         _NO_LOOKBACK_WINDOW,
     )
 
-    assert cursor.should_be_synced(Record(data={_A_CURSOR_FIELD_KEY: _SHOULD_BE_SYNCED_START-1}, stream_name="test_stream")) == False
-    assert cursor.should_be_synced(Record(data={_A_CURSOR_FIELD_KEY: _SHOULD_BE_SYNCED_START}, stream_name="test_stream")) == True
+    assert (
+        cursor.should_be_synced(
+            Record(
+                data={_A_CURSOR_FIELD_KEY: _SHOULD_BE_SYNCED_START - 1}, stream_name="test_stream"
+            )
+        )
+        == False
+    )
+    assert (
+        cursor.should_be_synced(
+            Record(data={_A_CURSOR_FIELD_KEY: _SHOULD_BE_SYNCED_START}, stream_name="test_stream")
+        )
+        == True
+    )
 
 
 def test_given_partitioned_state_with_one_slice_and_most_recent_cursor_value_when_should_be_synced_then_use_most_recent_cursor_value_of_slice_to_filter():
@@ -1921,8 +1952,20 @@ def test_given_partitioned_state_with_one_slice_and_most_recent_cursor_value_whe
         _NO_LOOKBACK_WINDOW,
     )
 
-    assert cursor.should_be_synced(Record(data={_A_CURSOR_FIELD_KEY: most_recent_cursor_value - 1}, stream_name="test_stream")) == False
-    assert cursor.should_be_synced(Record(data={_A_CURSOR_FIELD_KEY: most_recent_cursor_value}, stream_name="test_stream")) == True
+    assert (
+        cursor.should_be_synced(
+            Record(
+                data={_A_CURSOR_FIELD_KEY: most_recent_cursor_value - 1}, stream_name="test_stream"
+            )
+        )
+        == False
+    )
+    assert (
+        cursor.should_be_synced(
+            Record(data={_A_CURSOR_FIELD_KEY: most_recent_cursor_value}, stream_name="test_stream")
+        )
+        == True
+    )
 
 
 def test_given_partitioned_state_with_one_slice_without_most_recent_cursor_value_when_should_be_synced_then_use_upper_boundary_of_slice_to_filter():
@@ -1946,8 +1989,18 @@ def test_given_partitioned_state_with_one_slice_without_most_recent_cursor_value
         _NO_LOOKBACK_WINDOW,
     )
 
-    assert cursor.should_be_synced(Record(data={_A_CURSOR_FIELD_KEY: slice_end - 1}, stream_name="test_stream")) == False
-    assert cursor.should_be_synced(Record(data={_A_CURSOR_FIELD_KEY: slice_end}, stream_name="test_stream")) == True
+    assert (
+        cursor.should_be_synced(
+            Record(data={_A_CURSOR_FIELD_KEY: slice_end - 1}, stream_name="test_stream")
+        )
+        == False
+    )
+    assert (
+        cursor.should_be_synced(
+            Record(data={_A_CURSOR_FIELD_KEY: slice_end}, stream_name="test_stream")
+        )
+        == True
+    )
 
 
 def test_given_partitioned_state_with_multiple_slices_when_should_be_synced_then_use_upper_boundary_of_first_slice_to_filter():
@@ -1973,8 +2026,23 @@ def test_given_partitioned_state_with_multiple_slices_when_should_be_synced_then
         _NO_LOOKBACK_WINDOW,
     )
 
-    assert cursor.should_be_synced(Record(data={_A_CURSOR_FIELD_KEY: first_slice_end - 1}, stream_name="test_stream")) == False
-    assert cursor.should_be_synced(Record(data={_A_CURSOR_FIELD_KEY: first_slice_end}, stream_name="test_stream")) == True
+    assert (
+        cursor.should_be_synced(
+            Record(data={_A_CURSOR_FIELD_KEY: first_slice_end - 1}, stream_name="test_stream")
+        )
+        == False
+    )
+    assert (
+        cursor.should_be_synced(
+            Record(data={_A_CURSOR_FIELD_KEY: first_slice_end}, stream_name="test_stream")
+        )
+        == True
+    )
     # even if this is within a boundary that has been synced, we don't take any chance and we sync it
     # anyway in most cases, it shouldn't be pulled because we query for specific slice boundaries to the API
-    assert cursor.should_be_synced(Record(data={_A_CURSOR_FIELD_KEY: second_slice_start}, stream_name="test_stream")) == True
+    assert (
+        cursor.should_be_synced(
+            Record(data={_A_CURSOR_FIELD_KEY: second_slice_start}, stream_name="test_stream")
+        )
+        == True
+    )
