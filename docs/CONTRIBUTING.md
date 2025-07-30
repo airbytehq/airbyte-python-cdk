@@ -30,6 +30,8 @@ The Airbyte CDK uses [Poe the Poet](https://poethepoet.natn.io/) to define commo
 
 Optionally, if you can [pre-install Poe](https://poethepoet.natn.io/installation.html) with `pipx install poethepoet` and then you will be able to run Poe tasks with the shorter `poe TASKNAME` syntax instead of `poetry run poe TASKNAME`.
 
+
+
 ## Running tests locally
 
 - Iterate on the CDK code locally.
@@ -93,6 +95,8 @@ To generate the documentation, run `poe docs-generate` or to build and open the 
 
 The `docs-generate` Poe task is mapped to the `run()` function of `docs/generate.py`. Documentation pages will be generated in the `docs/generated` folder (ignored by git). You can also download auto-generated API docs for any GitHub push by navigating to the "Summary" tab of the docs generation check in GitHub Actions.
 
+Note: in your PR, you can also run this with the slash command: `/poe build`.
+
 ## Release Management
 
 Please see the [Release Management](./RELEASES.md) guide for information on how to perform releases and pre-releases.
@@ -113,6 +117,7 @@ Only Airbyte CDK maintainers can run slash commands. The most common slash comma
 
 - `/autofix`- Corrects any linting or formatting issues and commits the change back to the repo.
 - `/poetry-lock` - Re-locks dependencies and updates the `poetry.lock` file, then commits the changes back to the repo. This is helpful after merging in updates from main, or when creating a PR in the browser - such as for version bumps or dependency updates directly in the PR.
+- `/poe ...` - Runs a Poe task in CI. If files are modified (e.g. as with `/poe build`) , they will be committed back to your branch.
 
 The full list of available slash commands can be found in the [slash command dispatch file](https://github.com/airbytehq/airbyte-python-cdk/blob/main/.github/workflows/slash_command_dispatch.yml#L21-L25).
 
