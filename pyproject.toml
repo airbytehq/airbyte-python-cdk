@@ -96,7 +96,7 @@ dateparser = "^1.2.2"
 
 [tool.poetry.group.dev.dependencies]
 freezegun = "*"
-mypy = "*"
+ty = "*"
 asyncio = "3.4.3"
 ruff = "^0.11.5"
 pdoc = "^15.0.0"
@@ -129,6 +129,9 @@ source-declarative-manifest = "airbyte_cdk.cli.source_declarative_manifest:run"
 
 # Ruff configuration moved to ruff.toml
 
+[tool.ty.src]
+exclude = ["bin", "docs", "unit_tests"]
+
 [tool.poe.tasks]
 # Installation
 install = { shell = "poetry install --all-extras", help = "Install all dependencies." }
@@ -154,7 +157,7 @@ _format-fix-prettier = {cmd = "npx prettier . --write", help = "Format with pret
 
 # Linting/Typing check tasks
 lint = {cmd = "poetry run ruff check .", help = "Lint with Ruff."}
-type-check = {cmd = "poetry run mypy airbyte_cdk", help = "Type check modified files with mypy."}
+type-check = {cmd = "poetry run ty check airbyte_cdk", help = "Type check with ty."}
 
 # Linting/Typing fix tasks
 lint-fix = { cmd = "poetry run ruff check --fix .", help = "Auto-fix any lint issues that Ruff can automatically resolve (excluding 'unsafe' fixes) with Ruff." }
