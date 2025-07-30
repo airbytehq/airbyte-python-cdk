@@ -1932,13 +1932,13 @@ class ModelToComponentFactory:
             and hasattr(model.incremental_sync, "is_data_feed")
             and model.incremental_sync.is_data_feed
         )
-        client_side_filetering_enabled = (
+        client_side_filtering_enabled = (
             model.incremental_sync
             and hasattr(model.incremental_sync, "is_client_side_incremental")
             and model.incremental_sync.is_client_side_incremental
         )
         concurrent_cursor = None
-        if stop_condition_on_cursor or client_side_filetering_enabled:
+        if stop_condition_on_cursor or client_side_filtering_enabled:
             stream_slicer = self._build_stream_slicer_from_partition_router(
                 model.retriever, config, stream_name=model.name
             )
@@ -2019,7 +2019,7 @@ class ModelToComponentFactory:
             request_options_provider=request_options_provider,
             stop_condition_cursor=concurrent_cursor,
             client_side_incremental_sync={"cursor": concurrent_cursor}
-            if client_side_filetering_enabled
+            if client_side_filtering_enabled
             else None,
             transformations=transformations,
             file_uploader=file_uploader,
