@@ -468,24 +468,11 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
     def _get_retriever(
         declarative_stream: DeclarativeStream, stream_state: Mapping[str, Any]
     ) -> Retriever:
-        retriever = declarative_stream.retriever
-
-        # This is an optimization so that we don't invoke any cursor or state management flows within the
-        # low-code framework because state management is handled through the ConcurrentCursor.
-        if declarative_stream and isinstance(retriever, SimpleRetriever):
-            # Also a temporary hack. In the legacy Stream implementation, as part of the read,
-            # set_initial_state() is called to instantiate incoming state on the cursor. Although we no
-            # longer rely on the legacy low-code cursor for concurrent checkpointing, low-code components
-            # like StopConditionPaginationStrategyDecorator still rely on a DatetimeBasedCursor that is
-            # properly initialized with state.
-            if retriever.cursor:
-                retriever.cursor.set_initial_state(stream_state=stream_state)
-
+        if declarative_stream and isinstance(declarative_stream.retriever, SimpleRetriever):
             # We zero it out here, but since this is a cursor reference, the state is still properly
             # instantiated for the other components that reference it
-            retriever.cursor = None
-
-        return retriever
+            declarative_stream.retriever.cursor = None
+        return declarative_stream.retriever
 
     @staticmethod
     def _select_streams(
