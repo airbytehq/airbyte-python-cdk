@@ -1779,59 +1779,48 @@ def test_close_partition_with_slice_range_granularity_concurrent_cursor_from_dat
     assert state_manager.update_state_for_stream.call_count == 3
 
 
+_SHOULD_BE_SYNCED_START = 10
 @pytest.mark.parametrize(
     "record, should_be_synced",
     [
         [
             Record(
-                data={_A_CURSOR_FIELD_KEY: 10},
+                data={_A_CURSOR_FIELD_KEY: _SHOULD_BE_SYNCED_START},
                 stream_name="test_stream",
-                associated_slice=_partition(
-                    {_LOWER_SLICE_BOUNDARY_FIELD: 0, _UPPER_SLICE_BOUNDARY_FIELD: 10}
-                ).to_slice(),
             ),
             True,
         ],
         [
             Record(
-                data={_A_CURSOR_FIELD_KEY: 9},
+                data={_A_CURSOR_FIELD_KEY: _SHOULD_BE_SYNCED_START - 1},
                 stream_name="test_stream",
-                associated_slice=_partition(
-                    {_LOWER_SLICE_BOUNDARY_FIELD: 0, _UPPER_SLICE_BOUNDARY_FIELD: 10}
-                ).to_slice(),
             ),
             False,
         ],
         [
             Record(
-                data={_A_CURSOR_FIELD_KEY: 21},
+                data={_A_CURSOR_FIELD_KEY: _SHOULD_BE_SYNCED_START + 1},
                 stream_name="test_stream",
-                associated_slice=_partition(
-                    {_LOWER_SLICE_BOUNDARY_FIELD: 0, _UPPER_SLICE_BOUNDARY_FIELD: 10}
-                ).to_slice(),
             ),
-            False,
+            True,
         ],
         [
             Record(
                 data={"not_a_cursor_field": "some_data"},
                 stream_name="test_stream",
-                associated_slice=_partition(
-                    {_LOWER_SLICE_BOUNDARY_FIELD: 0, _UPPER_SLICE_BOUNDARY_FIELD: 10}
-                ).to_slice(),
             ),
             True,
         ],
     ],
     ids=[
         "with_cursor_field_inside_range",
-        "with_cursor_field_lower_than_range",
-        "with_cursor_field_higher_than_range",
+        "with_cursor_field_lower_than_start",
+        "with_cursor_field_higher_than_end",
         "no_cursor",
     ],
 )
 @freezegun.freeze_time(time_to_freeze=datetime.fromtimestamp(20, timezone.utc))
-def test_should_be_synced(record: Record, should_be_synced: bool):
+def test_should_be_synced_non_partitioned_state_no_state(record: Record, should_be_synced: bool):
     cursor = ConcurrentCursor(
         _A_STREAM_NAME,
         _A_STREAM_NAMESPACE,
@@ -1841,8 +1830,151 @@ def test_should_be_synced(record: Record, should_be_synced: bool):
         EpochValueConcurrentStreamStateConverter(True),
         CursorField(_A_CURSOR_FIELD_KEY),
         _SLICE_BOUNDARY_FIELDS,
-        datetime.fromtimestamp(10, timezone.utc),
+        datetime.fromtimestamp(_SHOULD_BE_SYNCED_START, timezone.utc),
         EpochValueConcurrentStreamStateConverter.get_end_provider(),
         _NO_LOOKBACK_WINDOW,
     )
     assert cursor.should_be_synced(record) == should_be_synced
+
+
+def test_given_state_when_should_be_synced_then_use_cursor_value_to_filter():
+    state_value = _SHOULD_BE_SYNCED_START + 5
+    cursor = ConcurrentCursor(
+        _A_STREAM_NAME,
+        _A_STREAM_NAMESPACE,
+        {_A_CURSOR_FIELD_KEY: state_value},
+        Mock(spec=MessageRepository),
+        Mock(spec=ConnectorStateManager),
+        EpochValueConcurrentStreamStateConverter(True),
+        CursorField(_A_CURSOR_FIELD_KEY),
+        _SLICE_BOUNDARY_FIELDS,
+        datetime.fromtimestamp(_SHOULD_BE_SYNCED_START, timezone.utc),
+        EpochValueConcurrentStreamStateConverter.get_end_provider(),
+        _NO_LOOKBACK_WINDOW,
+    )
+
+    assert cursor.should_be_synced(Record(data={_A_CURSOR_FIELD_KEY: state_value - 1}, stream_name="test_stream")) == False
+    assert cursor.should_be_synced(Record(data={_A_CURSOR_FIELD_KEY: state_value}, stream_name="test_stream")) == True
+
+def test_given_partitioned_state_without_slices_nor_start_when_should_be_synced_then_use_zero_value_to_filter():
+    cursor = ConcurrentCursor(
+        _A_STREAM_NAME,
+        _A_STREAM_NAMESPACE,
+        {
+            "slices": [],
+            "state_type": "date-range",
+        },
+        Mock(spec=MessageRepository),
+        Mock(spec=ConnectorStateManager),
+        EpochValueConcurrentStreamStateConverter(True),
+        CursorField(_A_CURSOR_FIELD_KEY),
+        _SLICE_BOUNDARY_FIELDS,
+        None,
+        EpochValueConcurrentStreamStateConverter.get_end_provider(),
+        _NO_LOOKBACK_WINDOW,
+    )
+
+    assert cursor.should_be_synced(Record(data={_A_CURSOR_FIELD_KEY: -1}, stream_name="test_stream")) == False
+    assert cursor.should_be_synced(Record(data={_A_CURSOR_FIELD_KEY: 0}, stream_name="test_stream")) == True
+
+
+def test_given_partitioned_state_without_slices_but_start_when_should_be_synced_then_use_start_value_to_filter():
+    cursor = ConcurrentCursor(
+        _A_STREAM_NAME,
+        _A_STREAM_NAMESPACE,
+        {
+            "slices": [],
+            "state_type": "date-range",
+        },
+        Mock(spec=MessageRepository),
+        Mock(spec=ConnectorStateManager),
+        EpochValueConcurrentStreamStateConverter(True),
+        CursorField(_A_CURSOR_FIELD_KEY),
+        _SLICE_BOUNDARY_FIELDS,
+        datetime.fromtimestamp(_SHOULD_BE_SYNCED_START, timezone.utc),
+        EpochValueConcurrentStreamStateConverter.get_end_provider(),
+        _NO_LOOKBACK_WINDOW,
+    )
+
+    assert cursor.should_be_synced(Record(data={_A_CURSOR_FIELD_KEY: _SHOULD_BE_SYNCED_START-1}, stream_name="test_stream")) == False
+    assert cursor.should_be_synced(Record(data={_A_CURSOR_FIELD_KEY: _SHOULD_BE_SYNCED_START}, stream_name="test_stream")) == True
+
+
+def test_given_partitioned_state_with_one_slice_and_most_recent_cursor_value_when_should_be_synced_then_use_most_recent_cursor_value_of_slice_to_filter():
+    most_recent_cursor_value = 5
+    cursor = ConcurrentCursor(
+        _A_STREAM_NAME,
+        _A_STREAM_NAMESPACE,
+        {
+            "slices": [
+                {"end": 10, "most_recent_cursor_value": most_recent_cursor_value, "start": 0},
+            ],
+            "state_type": "date-range",
+        },
+        Mock(spec=MessageRepository),
+        Mock(spec=ConnectorStateManager),
+        EpochValueConcurrentStreamStateConverter(True),
+        CursorField(_A_CURSOR_FIELD_KEY),
+        _SLICE_BOUNDARY_FIELDS,
+        datetime.fromtimestamp(_SHOULD_BE_SYNCED_START, timezone.utc),
+        EpochValueConcurrentStreamStateConverter.get_end_provider(),
+        _NO_LOOKBACK_WINDOW,
+    )
+
+    assert cursor.should_be_synced(Record(data={_A_CURSOR_FIELD_KEY: most_recent_cursor_value - 1}, stream_name="test_stream")) == False
+    assert cursor.should_be_synced(Record(data={_A_CURSOR_FIELD_KEY: most_recent_cursor_value}, stream_name="test_stream")) == True
+
+
+def test_given_partitioned_state_with_one_slice_without_most_recent_cursor_value_when_should_be_synced_then_use_upper_boundary_of_slice_to_filter():
+    slice_end = 5
+    cursor = ConcurrentCursor(
+        _A_STREAM_NAME,
+        _A_STREAM_NAMESPACE,
+        {
+            "slices": [
+                {"end": slice_end, "start": 0},
+            ],
+            "state_type": "date-range",
+        },
+        Mock(spec=MessageRepository),
+        Mock(spec=ConnectorStateManager),
+        EpochValueConcurrentStreamStateConverter(True),
+        CursorField(_A_CURSOR_FIELD_KEY),
+        _SLICE_BOUNDARY_FIELDS,
+        datetime.fromtimestamp(_SHOULD_BE_SYNCED_START, timezone.utc),
+        EpochValueConcurrentStreamStateConverter.get_end_provider(),
+        _NO_LOOKBACK_WINDOW,
+    )
+
+    assert cursor.should_be_synced(Record(data={_A_CURSOR_FIELD_KEY: slice_end - 1}, stream_name="test_stream")) == False
+    assert cursor.should_be_synced(Record(data={_A_CURSOR_FIELD_KEY: slice_end}, stream_name="test_stream")) == True
+
+
+def test_given_partitioned_state_with_multiple_slices_when_should_be_synced_then_use_upper_boundary_of_first_slice_to_filter():
+    first_slice_end = 5
+    second_slice_start = first_slice_end + 10
+    cursor = ConcurrentCursor(
+        _A_STREAM_NAME,
+        _A_STREAM_NAMESPACE,
+        {
+            "slices": [
+                {"end": first_slice_end, "start": 0},
+                {"end": first_slice_end + 100, "start": second_slice_start},
+            ],
+            "state_type": "date-range",
+        },
+        Mock(spec=MessageRepository),
+        Mock(spec=ConnectorStateManager),
+        EpochValueConcurrentStreamStateConverter(True),
+        CursorField(_A_CURSOR_FIELD_KEY),
+        _SLICE_BOUNDARY_FIELDS,
+        datetime.fromtimestamp(_SHOULD_BE_SYNCED_START, timezone.utc),
+        EpochValueConcurrentStreamStateConverter.get_end_provider(),
+        _NO_LOOKBACK_WINDOW,
+    )
+
+    assert cursor.should_be_synced(Record(data={_A_CURSOR_FIELD_KEY: first_slice_end - 1}, stream_name="test_stream")) == False
+    assert cursor.should_be_synced(Record(data={_A_CURSOR_FIELD_KEY: first_slice_end}, stream_name="test_stream")) == True
+    # even if this is within a boundary that has been synced, we don't take any chance and we sync it
+    # anyway in most cases, it shouldn't be pulled because we query for specific slice boundaries to the API
+    assert cursor.should_be_synced(Record(data={_A_CURSOR_FIELD_KEY: second_slice_start}, stream_name="test_stream")) == True

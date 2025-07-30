@@ -34,7 +34,6 @@ from airbyte_cdk.connector_builder.models import (
 )
 from airbyte_cdk.models import FailureType, Level
 from airbyte_cdk.sources.connector_state_manager import ConnectorStateManager
-from airbyte_cdk.sources.declarative import transformations
 from airbyte_cdk.sources.declarative.async_job.job_orchestrator import AsyncJobOrchestrator
 from airbyte_cdk.sources.declarative.async_job.job_tracker import JobTracker
 from airbyte_cdk.sources.declarative.async_job.repository import AsyncJobRepository
@@ -1561,6 +1560,8 @@ class ModelToComponentFactory:
         stream_state: MutableMapping[str, Any],
         partition_router: PartitionRouter,
         stream_state_migrations: Optional[List[Any]] = None,
+        attempt_to_create_cursor_if_not_provided: bool = False,
+
         **kwargs: Any,
     ) -> ConcurrentPerPartitionCursor:
         component_type = component_definition.get("type")
@@ -1631,6 +1632,7 @@ class ModelToComponentFactory:
             connector_state_converter=connector_state_converter,
             cursor_field=cursor_field,
             use_global_cursor=use_global_cursor,
+            attempt_to_create_cursor_if_not_provided=attempt_to_create_cursor_if_not_provided,
         )
 
     @staticmethod
@@ -1937,23 +1939,10 @@ class ModelToComponentFactory:
             and hasattr(model.incremental_sync, "is_client_side_incremental")
             and model.incremental_sync.is_client_side_incremental
         ):
-            supported_slicers = (
-                DatetimeBasedCursor,
-                GlobalSubstreamCursor,
-                PerPartitionWithGlobalCursor,
+            stream_slicer = self._build_stream_slicer_from_partition_router(
+                model.retriever, config, stream_name=model.name
             )
-            if combined_slicers and not isinstance(combined_slicers, supported_slicers):
-                raise ValueError(
-                    "Unsupported Slicer is used. PerPartitionWithGlobalCursor should be used here instead"
-                )
-            cursor = (
-                combined_slicers
-                if isinstance(
-                    combined_slicers, (PerPartitionWithGlobalCursor, GlobalSubstreamCursor)
-                )
-                else self._create_component_from_model(model=model.incremental_sync, config=config)
-            )
-
+            cursor = self._build_concurrent_cursor(model, stream_slicer, config)
             client_side_incremental_sync = {"cursor": cursor}
 
         if model.incremental_sync and isinstance(model.incremental_sync, DatetimeBasedCursorModel):
@@ -2183,6 +2172,63 @@ class ModelToComponentFactory:
                     stream_state_migrations=model.state_migrations,
                 )
             return self._create_component_from_model(model=model.incremental_sync, config=config)  # type: ignore[no-any-return]  # Will be created Cursor as stream_slicer_model is model.incremental_sync
+        return None
+
+    def _build_concurrent_cursor(
+        self,
+        model: DeclarativeStreamModel,
+        stream_slicer: Optional[PartitionRouter],
+        config: Config,
+    ) -> Optional[StreamSlicer]:
+        stream_state = self._connector_state_manager.get_stream_state(
+            stream_name=model.name, namespace=None
+        )
+
+        if model.incremental_sync and stream_slicer:
+            # FIXME should this be in create_concurrent_cursor_from_perpartition_cursor
+            if model.state_migrations:
+                state_transformations = [
+                    self._create_component_from_model(state_migration, config, declarative_stream=model)
+                    for state_migration in model.state_migrations
+                ]
+            else:
+                state_transformations = []
+
+            return self.create_concurrent_cursor_from_perpartition_cursor(
+                # type: ignore # This is a known issue that we are creating and returning a ConcurrentCursor which does not technically implement the (low-code) StreamSlicer. However, (low-code) StreamSlicer and ConcurrentCursor both implement StreamSlicer.stream_slices() which is the primary method needed for checkpointing
+                state_manager=self._connector_state_manager,
+                model_type=DatetimeBasedCursorModel,
+                component_definition=model.incremental_sync.__dict__,
+                stream_name=model.name,
+                stream_namespace=None,
+                config=config or {},
+                stream_state=stream_state,
+                stream_state_migrations=state_transformations,
+                partition_router=stream_slicer,
+                attempt_to_create_cursor_if_not_provided=True,
+            )
+        elif model.incremental_sync:
+            if type(model.incremental_sync) == IncrementingCountCursorModel:
+                return self.create_concurrent_cursor_from_incrementing_count_cursor(
+                    model_type=IncrementingCountCursorModel,
+                    component_definition=model.incremental_sync.__dict__,
+                    stream_name=model.name or "",
+                    stream_namespace=None,
+                    config=config or {},
+                    stream_state_migrations=model.state_migrations,
+                )
+            elif type(model.incremental_sync) == DatetimeBasedCursorModel:
+                return self.create_concurrent_cursor_from_datetime_based_cursor(  # type: ignore # This is a known issue that we are creating and returning a ConcurrentCursor which does not technically implement the (low-code) StreamSlicer. However, (low-code) StreamSlicer and ConcurrentCursor both implement StreamSlicer.stream_slices() which is the primary method needed for checkpointing
+                    model_type=type(model.incremental_sync),
+                    component_definition=model.incremental_sync.__dict__,
+                    stream_name=model.name or "",
+                    stream_namespace=None,
+                    config=config or {},
+                    stream_state_migrations=model.state_migrations,
+                    attempt_to_create_cursor_if_not_provided=True,
+                )
+            else:
+                raise ValueError(f"Incremental sync of type {type(model.incremental_sync)} is not supported")
         return None
 
     def _build_resumable_cursor(

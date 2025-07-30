@@ -1424,7 +1424,7 @@ list_stream:
     assert stream.retriever.record_selector.transform_before_filtering == True
     assert isinstance(
         stream.retriever.record_selector.record_filter._cursor,
-        PerPartitionWithGlobalCursor,
+        ConcurrentPerPartitionCursor,
     )
 
 

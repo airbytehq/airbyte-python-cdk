@@ -81,6 +81,7 @@ class ConcurrentPerPartitionCursor(Cursor):
         connector_state_converter: AbstractStreamStateConverter,
         cursor_field: CursorField,
         use_global_cursor: bool = False,
+        attempt_to_create_cursor_if_not_provided: bool = False
     ) -> None:
         self._global_cursor: Optional[StreamState] = {}
         self._stream_name = stream_name
@@ -124,6 +125,9 @@ class ConcurrentPerPartitionCursor(Cursor):
         self._timer = Timer()
 
         self._set_initial_state(stream_state)
+
+        # FIXME this is a temporary field the time of the migration from declarative cursors to concurrent ones
+        self._attempt_to_create_cursor_if_not_provided = attempt_to_create_cursor_if_not_provided
 
     @property
     def cursor_field(self) -> CursorField:
@@ -513,12 +517,17 @@ class ConcurrentPerPartitionCursor(Cursor):
                 "Invalid state as stream slices that are emitted should refer to an existing cursor"
             )
         partition_key = self._to_partition_key(record.associated_slice.partition)
-        if partition_key not in self._cursor_per_partition:
+        if partition_key not in self._cursor_per_partition and not self._attempt_to_create_cursor_if_not_provided:
             raise ValueError(
                 "Invalid state as stream slices that are emitted should refer to an existing cursor"
             )
-        cursor = self._cursor_per_partition[partition_key]
-        return cursor
+        elif partition_key not in self._cursor_per_partition:
+            return self._create_cursor(
+                self._global_cursor,
+                self._lookback_window if self._global_cursor else 0,
+            )
+        else:
+            return self._cursor_per_partition[partition_key]
 
     def limit_reached(self) -> bool:
         return self._number_of_partitions > self.SWITCH_TO_GLOBAL_LIMIT

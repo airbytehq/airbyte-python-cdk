@@ -1891,9 +1891,7 @@ def test_stream_using_is_client_side_incremental_has_cursor_state():
     simple_retriever = locations_stream._stream_partition_generator._partition_factory._retriever
     record_filter = simple_retriever.record_selector.record_filter
     assert isinstance(record_filter, ClientSideIncrementalRecordFilterDecorator)
-    client_side_incremental_cursor_state = record_filter._cursor._cursor
-
-    assert client_side_incremental_cursor_state == expected_cursor_value
+    assert list(record_filter._cursor.state.values()) == [expected_cursor_value]
 
 
 @pytest.mark.parametrize(

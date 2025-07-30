@@ -481,16 +481,6 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
             if retriever.cursor:
                 retriever.cursor.set_initial_state(stream_state=stream_state)
 
-            # Similar to above, the ClientSideIncrementalRecordFilterDecorator cursor is a separate instance
-            # from the one initialized on the SimpleRetriever, so it also must also have state initialized
-            # for semi-incremental streams using is_client_side_incremental to filter properly
-            if isinstance(retriever.record_selector, RecordSelector) and isinstance(
-                retriever.record_selector.record_filter, ClientSideIncrementalRecordFilterDecorator
-            ):
-                retriever.record_selector.record_filter._cursor.set_initial_state(
-                    stream_state=stream_state
-                )  # type: ignore  # After non-concurrent cursors are deprecated we can remove these cursor workarounds
-
             # We zero it out here, but since this is a cursor reference, the state is still properly
             # instantiated for the other components that reference it
             retriever.cursor = None
