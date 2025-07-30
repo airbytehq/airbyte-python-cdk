@@ -516,6 +516,13 @@ class ConcurrentPerPartitionCursor(Cursor):
             raise ValueError(
                 "Invalid state as stream slices that are emitted should refer to an existing cursor"
             )
+
+        if self._use_global_cursor:
+            return self._create_cursor(
+                self._global_cursor,
+                self._lookback_window if self._global_cursor else 0,
+            )
+
         partition_key = self._to_partition_key(record.associated_slice.partition)
         if (
             partition_key not in self._cursor_per_partition

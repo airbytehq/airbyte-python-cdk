@@ -603,7 +603,7 @@ from airbyte_cdk.sources.streams.concurrent.clamping import (
     WeekClampingStrategy,
     Weekday,
 )
-from airbyte_cdk.sources.streams.concurrent.cursor import ConcurrentCursor, CursorField
+from airbyte_cdk.sources.streams.concurrent.cursor import ConcurrentCursor, CursorField, Cursor
 from airbyte_cdk.sources.streams.concurrent.state_converters.datetime_stream_state_converter import (
     CustomFormatConcurrentStreamStateConverter,
     DateTimeStreamStateConverter,
@@ -1932,17 +1932,17 @@ class ModelToComponentFactory:
             and hasattr(model.incremental_sync, "is_data_feed")
             and model.incremental_sync.is_data_feed
         )
-        client_side_incremental_sync = None
-        if (
+        client_side_filetering_enabled = (
             model.incremental_sync
             and hasattr(model.incremental_sync, "is_client_side_incremental")
             and model.incremental_sync.is_client_side_incremental
-        ):
+        )
+        concurrent_cursor = None
+        if stop_condition_on_cursor or client_side_filetering_enabled:
             stream_slicer = self._build_stream_slicer_from_partition_router(
                 model.retriever, config, stream_name=model.name
             )
-            cursor = self._build_concurrent_cursor(model, stream_slicer, config)
-            client_side_incremental_sync = {"cursor": cursor}
+            concurrent_cursor = self._build_concurrent_cursor(model, stream_slicer, config)
 
         if model.incremental_sync and isinstance(model.incremental_sync, DatetimeBasedCursorModel):
             cursor_model = model.incremental_sync
@@ -2017,8 +2017,10 @@ class ModelToComponentFactory:
             primary_key=primary_key,
             stream_slicer=combined_slicers,
             request_options_provider=request_options_provider,
-            stop_condition_on_cursor=stop_condition_on_cursor,
-            client_side_incremental_sync=client_side_incremental_sync,
+            stop_condition_cursor=concurrent_cursor,
+            client_side_incremental_sync={"cursor": concurrent_cursor}
+            if client_side_filetering_enabled
+            else None,
             transformations=transformations,
             file_uploader=file_uploader,
             incremental_sync=model.incremental_sync,
@@ -3194,7 +3196,7 @@ class ModelToComponentFactory:
         primary_key: Optional[Union[str, List[str], List[List[str]]]],
         stream_slicer: Optional[StreamSlicer],
         request_options_provider: Optional[RequestOptionsProvider] = None,
-        stop_condition_on_cursor: bool = False,
+        stop_condition_cursor: Optional[Cursor] = None,
         client_side_incremental_sync: Optional[Dict[str, Any]] = None,
         transformations: List[RecordTransformation],
         file_uploader: Optional[DefaultFileUploader] = None,
@@ -3325,7 +3327,7 @@ class ModelToComponentFactory:
                 ),
             )
 
-        cursor_used_for_stop_condition = cursor if stop_condition_on_cursor else None
+        cursor_used_for_stop_condition = cursor if stop_condition_cursor else None
         paginator = (
             self._create_component_from_model(
                 model=model.paginator,

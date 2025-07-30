@@ -492,7 +492,7 @@ class ConcurrentCursor(Cursor):
         except ValueError:
             self._log_for_record_without_cursor_value()
             return True
-        return self.start <= record_cursor_value
+        return self.start <= record_cursor_value <= self._end_provider()
 
     def _log_for_record_without_cursor_value(self) -> None:
         if not self._should_be_synced_logger_triggered:

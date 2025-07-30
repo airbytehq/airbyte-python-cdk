@@ -1,7 +1,9 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
+from datetime import datetime, timedelta, timezone
 from typing import List, Mapping, Optional
+from unittest.mock import Mock
 
 import pytest
 
@@ -11,11 +13,10 @@ from airbyte_cdk.sources.declarative.extractors.record_filter import (
     RecordFilter,
 )
 from airbyte_cdk.sources.declarative.incremental import (
-    CursorFactory,
-    DatetimeBasedCursor,
-    GlobalSubstreamCursor,
-    PerPartitionWithGlobalCursor,
+    ConcurrentPerPartitionCursor,
+    ConcurrentCursorFactory,
 )
+from airbyte_cdk.sources.streams.concurrent.cursor import ConcurrentCursor, CursorField
 from airbyte_cdk.sources.declarative.interpolation import InterpolatedString
 from airbyte_cdk.sources.declarative.models import (
     CustomRetriever,
@@ -24,7 +25,11 @@ from airbyte_cdk.sources.declarative.models import (
 )
 from airbyte_cdk.sources.declarative.partition_routers import SubstreamPartitionRouter
 from airbyte_cdk.sources.declarative.types import StreamSlice
+from airbyte_cdk.sources.streams.concurrent.state_converters.datetime_stream_state_converter import (
+    CustomFormatConcurrentStreamStateConverter,
+)
 from airbyte_cdk.sources.types import Record
+from airbyte_cdk.utils.datetime_helpers import ab_datetime_parse, ab_datetime_now
 
 DATE_FORMAT = "%Y-%m-%d"
 RECORDS_TO_FILTER_DATE_FORMAT = [
@@ -272,25 +277,27 @@ def test_client_side_record_filter_decorator_no_parent_stream(
     records_to_filter: List[Mapping],
     expected_record_ids: List[int],
 ):
-    date_time_based_cursor = DatetimeBasedCursor(
-        start_datetime=MinMaxDatetime(
-            datetime="2021-01-01", datetime_format=DATE_FORMAT, parameters={}
+    datetime_based_cursor = ConcurrentCursor(
+        stream_name="any_stream",
+        stream_namespace=None,
+        stream_state=stream_state,
+        message_repository=Mock(),
+        connector_state_manager=Mock(),
+        connector_state_converter=CustomFormatConcurrentStreamStateConverter(
+            datetime_format=datetime_format
         ),
-        end_datetime=MinMaxDatetime(datetime=end_datetime, parameters={}) if end_datetime else None,
-        step="P10Y",
-        cursor_field=InterpolatedString.create("created_at", parameters={}),
-        datetime_format=datetime_format,
-        cursor_granularity="P1D",
-        config={},
-        parameters={},
+        cursor_field=CursorField("created_at"),
+        slice_boundary_fields=("start", "end"),
+        start=datetime(2021, 1, 1, tzinfo=timezone.utc),
+        end_provider=lambda: ab_datetime_parse(end_datetime) if end_datetime else ab_datetime_now(),
+        slice_range=timedelta(days=365 * 10),
     )
-    date_time_based_cursor.set_initial_state(stream_state)
 
     record_filter_decorator = ClientSideIncrementalRecordFilterDecorator(
         config={},
         condition=record_filter_expression,
         parameters={},
-        cursor=date_time_based_cursor,
+        cursor=datetime_based_cursor,
     )
 
     filtered_records = list(
@@ -341,7 +348,7 @@ def test_client_side_record_filter_decorator_no_parent_stream(
                     }
                 ],
             },
-            "per_partition_with_global",
+            "global_substream",
             [2, 3],
         ),
         # Use PerPartitionWithGlobalCursor with partition state missing, global cursor used
@@ -363,23 +370,26 @@ def test_client_side_record_filter_decorator_no_parent_stream(
 def test_client_side_record_filter_decorator_with_cursor_types(
     stream_state: Optional[Mapping], cursor_type: str, expected_record_ids: List[int]
 ):
-    def date_time_based_cursor_factory() -> DatetimeBasedCursor:
-        return DatetimeBasedCursor(
-            start_datetime=MinMaxDatetime(
-                datetime="2021-01-01", datetime_format=DATE_FORMAT, parameters={}
+    def date_time_based_cursor_factory(stream_state, runtime_lookback_window) -> ConcurrentCursor:
+        return ConcurrentCursor(
+            stream_name="any_stream",
+            stream_namespace=None,
+            stream_state=stream_state,
+            message_repository=Mock(),
+            connector_state_manager=Mock(),
+            connector_state_converter=CustomFormatConcurrentStreamStateConverter(
+                datetime_format=DATE_FORMAT
             ),
-            end_datetime=MinMaxDatetime(
-                datetime="2021-01-05", datetime_format=DATE_FORMAT, parameters={}
-            ),
-            step="P10Y",
-            cursor_field=InterpolatedString.create("created_at", parameters={}),
-            datetime_format=DATE_FORMAT,
-            cursor_granularity="P1D",
-            config={},
-            parameters={},
+            cursor_field=CursorField("created_at"),
+            slice_boundary_fields=("start", "end"),
+            start=datetime(2021, 1, 1, tzinfo=timezone.utc),
+            end_provider=lambda: datetime(2021, 1, 5, tzinfo=timezone.utc),
+            slice_range=timedelta(days=365 * 10),
+            cursor_granularity=timedelta(days=1),
+            lookback_window=runtime_lookback_window,
         )
 
-    date_time_based_cursor = date_time_based_cursor_factory()
+    date_time_based_cursor = date_time_based_cursor_factory(stream_state, timedelta(0))
 
     substream_cursor = None
     partition_router = SubstreamPartitionRouter(
@@ -401,28 +411,25 @@ def test_client_side_record_filter_decorator_with_cursor_types(
     if cursor_type == "datetime":
         # Use only DatetimeBasedCursor
         pass  # No additional cursor needed
-    elif cursor_type == "global_substream":
+    elif cursor_type in ["global_substream", "per_partition_with_global"]:
         # Create GlobalSubstreamCursor instance
-        substream_cursor = GlobalSubstreamCursor(
-            stream_cursor=date_time_based_cursor,
+        substream_cursor = ConcurrentPerPartitionCursor(
+            cursor_factory=ConcurrentCursorFactory(date_time_based_cursor_factory),
             partition_router=partition_router,
-        )
-        if stream_state:
-            substream_cursor.set_initial_state(stream_state)
-    elif cursor_type == "per_partition_with_global":
-        # Create PerPartitionWithGlobalCursor instance
-        substream_cursor = PerPartitionWithGlobalCursor(
-            cursor_factory=CursorFactory(date_time_based_cursor_factory),
-            partition_router=partition_router,
-            stream_cursor=date_time_based_cursor,
+            stream_name="a_stream",
+            stream_namespace=None,
+            stream_state=stream_state,
+            message_repository=Mock(),
+            connector_state_manager=Mock(),
+            connector_state_converter=CustomFormatConcurrentStreamStateConverter(
+                datetime_format=DATE_FORMAT
+            ),
+            cursor_field=CursorField("created_at"),
+            use_global_cursor=cursor_type == "global_substream",
+            attempt_to_create_cursor_if_not_provided=True,
         )
     else:
         raise ValueError(f"Unsupported cursor type: {cursor_type}")
-
-    if substream_cursor and stream_state:
-        substream_cursor.set_initial_state(stream_state)
-    elif stream_state:
-        date_time_based_cursor.set_initial_state(stream_state)
 
     # Create the record_filter_decorator with appropriate cursor
     record_filter_decorator = ClientSideIncrementalRecordFilterDecorator(
