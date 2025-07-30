@@ -114,6 +114,7 @@ class _MockIncrementalStream(_MockStream, CheckpointMixin):
 
 
 class MockConcurrentCursor(Cursor):
+
     _state: MutableMapping[str, Any]
     _message_repository: MessageRepository
 
@@ -146,6 +147,9 @@ class MockConcurrentCursor(Cursor):
 
     def ensure_at_least_one_state_emitted(self) -> None:
         pass
+
+    def should_be_synced(self, record: Record) -> bool:
+        return True
 
 
 def _stream(slice_to_partition_mapping, slice_logger, logger, message_repository, json_schema=None):
