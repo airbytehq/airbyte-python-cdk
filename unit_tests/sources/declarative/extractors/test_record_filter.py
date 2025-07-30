@@ -13,10 +13,9 @@ from airbyte_cdk.sources.declarative.extractors.record_filter import (
     RecordFilter,
 )
 from airbyte_cdk.sources.declarative.incremental import (
-    ConcurrentPerPartitionCursor,
     ConcurrentCursorFactory,
+    ConcurrentPerPartitionCursor,
 )
-from airbyte_cdk.sources.streams.concurrent.cursor import ConcurrentCursor, CursorField
 from airbyte_cdk.sources.declarative.interpolation import InterpolatedString
 from airbyte_cdk.sources.declarative.models import (
     CustomRetriever,
@@ -25,11 +24,12 @@ from airbyte_cdk.sources.declarative.models import (
 )
 from airbyte_cdk.sources.declarative.partition_routers import SubstreamPartitionRouter
 from airbyte_cdk.sources.declarative.types import StreamSlice
+from airbyte_cdk.sources.streams.concurrent.cursor import ConcurrentCursor, CursorField
 from airbyte_cdk.sources.streams.concurrent.state_converters.datetime_stream_state_converter import (
     CustomFormatConcurrentStreamStateConverter,
 )
 from airbyte_cdk.sources.types import Record
-from airbyte_cdk.utils.datetime_helpers import ab_datetime_parse, ab_datetime_now
+from airbyte_cdk.utils.datetime_helpers import ab_datetime_now, ab_datetime_parse
 
 DATE_FORMAT = "%Y-%m-%d"
 RECORDS_TO_FILTER_DATE_FORMAT = [
