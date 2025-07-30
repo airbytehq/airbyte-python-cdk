@@ -79,8 +79,8 @@ class AirbyteLogFormatter(logging.Formatter):
             message = super().format(record)
             message = filter_secrets(message)
             log_message = AirbyteMessage(
-                # pyrefly: ignore  # bad-argument-type
-                type=Type.LOG, log=AirbyteLogMessage(level=airbyte_level, message=message)
+                type=Type.LOG,
+                log=AirbyteLogMessage(level=airbyte_level, message=message),  # pyrefly: ignore  # bad-argument-type
             )
             return orjson.dumps(AirbyteMessageSerializer.dump(log_message)).decode()
 

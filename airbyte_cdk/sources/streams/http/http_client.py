@@ -154,8 +154,10 @@ class HttpClient:
             # * `If the application running SQLite crashes, the data will be safe, but the database [might become corrupted](https://www.sqlite.org/howtocorrupt.html#cfgerr) if the operating system crashes or the computer loses power before that data has been written to the disk surface.` in [this description](https://www.sqlite.org/pragma.html#pragma_synchronous).
             backend = requests_cache.SQLiteCache(sqlite_path, fast_save=True, wal=True)
             return CachedLimiterSession(
-                # pyrefly: ignore  # bad-argument-type
-                sqlite_path, backend=backend, api_budget=self._api_budget, match_headers=True
+                sqlite_path,
+                backend=backend,  # pyrefly: ignore  # bad-argument-type
+                api_budget=self._api_budget,
+                match_headers=True,
             )
         else:
             return LimiterSession(api_budget=self._api_budget)

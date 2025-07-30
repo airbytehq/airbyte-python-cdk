@@ -208,7 +208,7 @@ class UnstructuredParser(FileTypeParser):
         remote_file: RemoteFile,
         format: UnstructuredFormat,
         logger: logging.Logger,
-    # pyrefly: ignore  # bad-return
+        # pyrefly: ignore  # bad-return
     ) -> str:
         _import_unstructured()
         if (

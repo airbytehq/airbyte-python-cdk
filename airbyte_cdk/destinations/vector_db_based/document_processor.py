@@ -86,7 +86,7 @@ class DocumentProcessor:
         chunk_size: int,
         chunk_overlap: int,
         splitter_config: Optional[TextSplitterConfigModel],
-    # pyrefly: ignore  # bad-return
+        # pyrefly: ignore  # bad-return
     ) -> RecursiveCharacterTextSplitter:
         if splitter_config is None:
             splitter_config = SeparatorSplitterConfigModel(mode="separator")

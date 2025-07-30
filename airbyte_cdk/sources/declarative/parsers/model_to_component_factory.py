@@ -1973,7 +1973,9 @@ class ModelToComponentFactory:
             end_time_option = (
                 self._create_component_from_model(
                     # pyrefly: ignore  # bad-argument-type
-                    cursor_model.end_time_option, config, parameters=cursor_model.parameters or {}
+                    cursor_model.end_time_option,
+                    config,
+                    parameters=cursor_model.parameters or {},
                 )
                 # pyrefly: ignore  # missing-attribute
                 if cursor_model.end_time_option
@@ -1982,7 +1984,9 @@ class ModelToComponentFactory:
             start_time_option = (
                 self._create_component_from_model(
                     # pyrefly: ignore  # bad-argument-type
-                    cursor_model.start_time_option, config, parameters=cursor_model.parameters or {}
+                    cursor_model.start_time_option,
+                    config,
+                    parameters=cursor_model.parameters or {},
                 )
                 # pyrefly: ignore  # missing-attribute
                 if cursor_model.start_time_option

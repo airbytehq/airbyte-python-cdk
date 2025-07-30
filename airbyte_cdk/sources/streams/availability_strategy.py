@@ -55,8 +55,9 @@ class AvailabilityStrategy(ABC):
 
     @staticmethod
     def get_first_record_for_slice(
-        stream: Stream, stream_slice: Optional[Mapping[str, Any]]
-    # pyrefly: ignore  # bad-return
+        stream: Stream,
+        stream_slice: Optional[Mapping[str, Any]],
+        # pyrefly: ignore  # bad-return
     ) -> StreamData:
         """
         Gets the first record for a stream_slice of a stream.
