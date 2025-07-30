@@ -4,8 +4,8 @@
 from dataclasses import InitVar, dataclass
 from typing import Any, Iterable, Mapping, Optional, Union
 
-from airbyte_cdk.sources.streams.concurrent.cursor import Cursor
 from airbyte_cdk.sources.declarative.interpolation.interpolated_boolean import InterpolatedBoolean
+from airbyte_cdk.sources.streams.concurrent.cursor import Cursor
 from airbyte_cdk.sources.types import Config, Record, StreamSlice, StreamState
 
 
