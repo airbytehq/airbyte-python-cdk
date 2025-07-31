@@ -1474,6 +1474,7 @@ class ModelToComponentFactory:
         stream_namespace: Optional[str],
         config: Config,
         message_repository: Optional[MessageRepository] = None,
+        stream_state_migrations: Optional[List[Any]] = None,
         **kwargs: Any,
     ) -> ConcurrentCursor:
         # Per-partition incremental streams can dynamically create child cursors which will pass their current
@@ -1484,6 +1485,7 @@ class ModelToComponentFactory:
             if "stream_state" not in kwargs
             else kwargs["stream_state"]
         )
+        stream_state = self.apply_stream_state_migrations(stream_state_migrations, stream_state)
 
         component_type = component_definition.get("type")
         if component_definition.get("type") != model_type.__name__:
@@ -2186,7 +2188,8 @@ class ModelToComponentFactory:
         )
 
         if model.incremental_sync and stream_slicer:
-            # FIXME should this be in create_concurrent_cursor_from_perpartition_cursor
+            # FIXME there is a discrepancy where this logic is applied on the create_*_cursor methods for
+            #   ConcurrentCursor but it is applied outside of create_concurrent_cursor_from_perpartition_cursor
             if model.state_migrations:
                 state_transformations = [
                     self._create_component_from_model(
@@ -3327,7 +3330,7 @@ class ModelToComponentFactory:
                 ),
             )
 
-        cursor_used_for_stop_condition = cursor if stop_condition_cursor else None
+        cursor_used_for_stop_condition = stop_condition_cursor or None
         paginator = (
             self._create_component_from_model(
                 model=model.paginator,
