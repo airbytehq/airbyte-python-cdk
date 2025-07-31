@@ -259,16 +259,22 @@ class ThreadBasedConcurrentStreamTest(unittest.TestCase):
         assert availability.is_available == False
         assert "no stream slices were found" in availability.reason
 
-    def test_given_AirbyteTracedException_when_generating_partitions_when_get_availability_then_unavailable(self) -> None:
+    def test_given_AirbyteTracedException_when_generating_partitions_when_get_availability_then_unavailable(
+        self,
+    ) -> None:
         error_message = "error while generating partitions"
-        self._partition_generator.generate.side_effect = AirbyteTracedException(message=error_message)
+        self._partition_generator.generate.side_effect = AirbyteTracedException(
+            message=error_message
+        )
 
         availability = self._stream.check_availability()
 
         assert availability.is_available == False
         assert error_message in availability.reason
 
-    def test_given_unknown_error_when_generating_partitions_when_get_availability_then_raise(self) -> None:
+    def test_given_unknown_error_when_generating_partitions_when_get_availability_then_raise(
+        self,
+    ) -> None:
         """
         I'm not sure why we handle AirbyteTracedException but not other exceptions but this is to keep feature compatibility with HttpAvailabilityStrategy
         """
@@ -292,7 +298,9 @@ class ThreadBasedConcurrentStreamTest(unittest.TestCase):
 
         assert availability.is_available == True
 
-    def test_given_AirbyteTracedException_when_reading_records_when_get_availability_then_unavailable(self) -> None:
+    def test_given_AirbyteTracedException_when_reading_records_when_get_availability_then_unavailable(
+        self,
+    ) -> None:
         self._partition_generator.generate.return_value = [self._partition]
         error_message = "error while reading records"
         self._partition.read.side_effect = AirbyteTracedException(message=error_message)

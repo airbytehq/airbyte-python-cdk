@@ -7,14 +7,16 @@ import traceback
 from dataclasses import InitVar, dataclass
 from typing import Any, Dict, List, Mapping, Optional, Tuple, Union
 
-from airbyte_cdk.sources.streams.core import Stream
 from airbyte_cdk.sources.abstract_source import AbstractSource
 from airbyte_cdk.sources.declarative.checks.connection_checker import ConnectionChecker
 from airbyte_cdk.sources.streams.concurrent.abstract_stream import AbstractStream
+from airbyte_cdk.sources.streams.core import Stream
 from airbyte_cdk.sources.streams.http.availability_strategy import HttpAvailabilityStrategy
 
 
-def evaluate_availability(stream: Union[Stream, AbstractStream], logger: logging.Logger) -> Tuple[bool, Optional[str]]:
+def evaluate_availability(
+    stream: Union[Stream, AbstractStream], logger: logging.Logger
+) -> Tuple[bool, Optional[str]]:
     """
     As a transition period, we want to support both Stream and AbstractStream until we migrate everything to AbstractStream.
     """
@@ -97,7 +99,10 @@ class CheckStream(ConnectionChecker):
         return True, None
 
     def _check_stream_availability(
-        self, stream_name_to_stream: Dict[str, Union[Stream, AbstractStream]], stream_name: str, logger: logging.Logger
+        self,
+        stream_name_to_stream: Dict[str, Union[Stream, AbstractStream]],
+        stream_name: str,
+        logger: logging.Logger,
     ) -> Tuple[bool, Any]:
         """Checks if streams are available."""
         try:
@@ -112,7 +117,10 @@ class CheckStream(ConnectionChecker):
         return True, None
 
     def _check_dynamic_streams_availability(
-        self, source: AbstractSource, stream_name_to_stream: Dict[str, Union[Stream, AbstractStream]], logger: logging.Logger
+        self,
+        source: AbstractSource,
+        stream_name_to_stream: Dict[str, Union[Stream, AbstractStream]],
+        logger: logging.Logger,
     ) -> Tuple[bool, Any]:
         """Checks the availability of dynamic streams."""
         dynamic_streams = source.resolved_manifest.get("dynamic_streams", [])  # type: ignore[attr-defined] # The source's resolved_manifest manifest is checked before calling this method

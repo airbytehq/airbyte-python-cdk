@@ -16,8 +16,8 @@ from airbyte_cdk.sources.declarative.checks.check_stream import CheckStream
 from airbyte_cdk.sources.declarative.concurrent_declarative_source import (
     ConcurrentDeclarativeSource,
 )
-from airbyte_cdk.sources.streams.http import HttpStream
 from airbyte_cdk.sources.streams.core import Stream
+from airbyte_cdk.sources.streams.http import HttpStream
 from airbyte_cdk.test.mock_http import HttpMocker, HttpRequest, HttpResponse
 
 logger = logging.getLogger("test")

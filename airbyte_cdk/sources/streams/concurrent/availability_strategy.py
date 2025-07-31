@@ -7,7 +7,6 @@ from typing import Optional
 
 
 class StreamAvailability:
-
     @classmethod
     def available(cls) -> "StreamAvailability":
         return cls(True)

@@ -16,7 +16,6 @@ from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 
 
 class DefaultStream(AbstractStream):
-
     def __init__(
         self,
         partition_generator: PartitionGenerator,
