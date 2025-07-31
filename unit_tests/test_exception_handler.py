@@ -47,11 +47,21 @@ def test_given_exception_with_display_message_when_assemble_uncaught_exception_t
 def test_uncaught_exception_handler():
     cmd = "from airbyte_cdk.logger import init_logger; from airbyte_cdk.exception_handler import init_uncaught_exception_handler; logger = init_logger('airbyte'); init_uncaught_exception_handler(logger); raise 1"
     exception_message = "exceptions must derive from BaseException"
-    exception_trace = (
-        "Traceback (most recent call last):\n"
-        '  File "<string>", line 1, in <module>\n'
-        "TypeError: exceptions must derive from BaseException"
-    )
+    
+    if sys.version_info >= (3, 13):
+        exception_trace = (
+            "Traceback (most recent call last):\n"
+            '  File "<string>", line 1, in <module>\n'
+            "    from airbyte_cdk.logger import init_logger; from airbyte_cdk.exception_handler import init_uncaught_exception_handler; logger = init_logger('airbyte'); init_uncaught_exception_handler(logger); raise 1\n"
+            "    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n"
+            "TypeError: exceptions must derive from BaseException"
+        )
+    else:
+        exception_trace = (
+            "Traceback (most recent call last):\n"
+            '  File "<string>", line 1, in <module>\n'
+            "TypeError: exceptions must derive from BaseException"
+        )
 
     expected_log_message = AirbyteMessage(
         type=MessageType.LOG,
