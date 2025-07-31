@@ -962,7 +962,10 @@ def mocked_init(self, is_sequential_state: bool = True):
     "airbyte_cdk.sources.streams.concurrent.state_converters.abstract_stream_state_converter.AbstractStreamStateConverter.__init__",
     mocked_init,
 )
-@pytest.mark.skipif(sys.version_info >= (3, 12), reason="Concurrent read failure compatibility issue with Python 3.12+")
+@pytest.mark.skipif(
+    sys.version_info >= (3, 12),
+    reason="Concurrent read failure compatibility issue with Python 3.12+",
+)
 def test_read_with_concurrent_and_synchronous_streams():
     """
     Verifies that a ConcurrentDeclarativeSource processes concurrent streams followed by synchronous streams
