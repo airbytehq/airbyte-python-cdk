@@ -8,12 +8,15 @@ from typing import Any, Iterable, List, Mapping, Optional
 
 from airbyte_cdk.models import AirbyteStream, SyncMode
 from airbyte_cdk.sources.streams.concurrent.abstract_stream import AbstractStream
+from airbyte_cdk.sources.streams.concurrent.availability_strategy import StreamAvailability
 from airbyte_cdk.sources.streams.concurrent.cursor import Cursor
 from airbyte_cdk.sources.streams.concurrent.partitions.partition import Partition
 from airbyte_cdk.sources.streams.concurrent.partitions.partition_generator import PartitionGenerator
+from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 
 
 class DefaultStream(AbstractStream):
+
     def __init__(
         self,
         partition_generator: PartitionGenerator,
@@ -91,3 +94,29 @@ class DefaultStream(AbstractStream):
     @property
     def cursor(self) -> Cursor:
         return self._cursor
+
+    def check_availability(self) -> StreamAvailability:
+        """
+        Check stream availability by attempting to read the first record of the stream.
+        """
+        try:
+            partition = next(iter(self.generate_partitions()))
+        except StopIteration:
+            # NOTE: The following comment was copied from legacy stuff and I don't know how relevant it is:
+            # If stream_slices has no `next()` item (Note - this is different from stream_slices returning [None]!)
+            # This can happen when a substream's `stream_slices` method does a `for record in parent_records: yield <something>`
+            # without accounting for the case in which the parent stream is empty.
+            return StreamAvailability.unavailable(
+                f"Cannot attempt to connect to stream {self.name} - no stream slices were found"
+            )
+        except AirbyteTracedException as error:
+            return StreamAvailability.unavailable(error.message)
+
+        try:
+            next(iter(partition.read()))
+            return StreamAvailability.available()
+        except StopIteration:
+            self._logger.info(f"Successfully connected to stream {self.name}, but got 0 records.")
+            return StreamAvailability.available()
+        except AirbyteTracedException as error:
+            return StreamAvailability.unavailable(error.message)
