@@ -128,7 +128,7 @@ jobs:
         if: steps.no_changes.outputs.status != 'cancelled'
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: "3.12"
 
       - name: Set up `uv`
         if: steps.no_changes.outputs.status != 'cancelled'
