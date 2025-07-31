@@ -18,7 +18,6 @@ from airbyte_cdk.models import (
 from airbyte_cdk.models import Type as MessageType
 from airbyte_cdk.sources.message import InMemoryMessageRepository
 from airbyte_cdk.sources.streams.concurrent.adapters import (
-    AvailabilityStrategyFacade,
     StreamFacade,
     StreamPartition,
     StreamPartitionGenerator,
@@ -40,28 +39,6 @@ _ANY_STATE = {"state_key": "state_value"}
 _ANY_CURSOR_FIELD = ["a", "cursor", "key"]
 _STREAM_NAME = "stream"
 _ANY_CURSOR = Mock(spec=Cursor)
-
-
-@pytest.mark.parametrize(
-    "stream_availability, expected_available, expected_message",
-    [
-        pytest.param(StreamAvailable(), True, None, id="test_stream_is_available"),
-        pytest.param(STREAM_AVAILABLE, True, None, id="test_stream_is_available_using_singleton"),
-        pytest.param(StreamUnavailable("message"), False, "message", id="test_stream_is_available"),
-    ],
-)
-def test_availability_strategy_facade(stream_availability, expected_available, expected_message):
-    strategy = Mock()
-    strategy.check_availability.return_value = stream_availability
-    facade = AvailabilityStrategyFacade(strategy)
-
-    logger = Mock()
-    available, message = facade.check_availability(Mock(), logger, Mock())
-
-    assert available == expected_available
-    assert message == expected_message
-
-    strategy.check_availability.assert_called_once_with(logger)
 
 
 @pytest.mark.parametrize(
@@ -318,15 +295,6 @@ class StreamFacadeTest(unittest.TestCase):
             Mock(spec=SliceLogger),
             Mock(spec=logging.Logger),
         ).supports_incremental
-
-    def test_check_availability_is_delegated_to_wrapped_stream(self):
-        availability = StreamAvailable()
-        self._abstract_stream.check_availability.return_value = availability
-        assert self._facade.check_availability(Mock(), Mock()) == (
-            availability.is_available(),
-            availability.message(),
-        )
-        self._abstract_stream.check_availability.assert_called_once_with()
 
     def test_full_refresh(self):
         expected_stream_data = [{"data": 1}, {"data": 2}]

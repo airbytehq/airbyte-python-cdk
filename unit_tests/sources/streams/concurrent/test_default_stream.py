@@ -16,7 +16,6 @@ class ThreadBasedConcurrentStreamTest(unittest.TestCase):
         self._partition_generator = Mock()
         self._name = "name"
         self._json_schema = {}
-        self._availability_strategy = Mock()
         self._primary_key = []
         self._cursor_field = None
         self._logger = Mock()
@@ -26,7 +25,6 @@ class ThreadBasedConcurrentStreamTest(unittest.TestCase):
             self._partition_generator,
             self._name,
             self._json_schema,
-            self._availability_strategy,
             self._primary_key,
             self._cursor_field,
             self._logger,
@@ -40,12 +38,6 @@ class ThreadBasedConcurrentStreamTest(unittest.TestCase):
     def test_get_json_schema(self):
         json_schema = self._stream.get_json_schema()
         assert json_schema == self._json_schema
-
-    def test_check_availability(self):
-        self._availability_strategy.check_availability.return_value = STREAM_AVAILABLE
-        availability = self._stream.check_availability()
-        assert availability == STREAM_AVAILABLE
-        self._availability_strategy.check_availability.assert_called_once_with(self._logger)
 
     def test_check_for_error_raises_an_exception_if_any_of_the_futures_are_not_done(self):
         futures = [Mock() for _ in range(3)]
@@ -93,7 +85,6 @@ class ThreadBasedConcurrentStreamTest(unittest.TestCase):
             self._partition_generator,
             self._name,
             json_schema,
-            self._availability_strategy,
             ["composite_key_1", "composite_key_2"],
             self._cursor_field,
             self._logger,
@@ -131,7 +122,6 @@ class ThreadBasedConcurrentStreamTest(unittest.TestCase):
             self._partition_generator,
             self._name,
             json_schema,
-            self._availability_strategy,
             ["id_a", "id_b"],
             self._cursor_field,
             self._logger,
@@ -169,7 +159,6 @@ class ThreadBasedConcurrentStreamTest(unittest.TestCase):
             self._partition_generator,
             self._name,
             json_schema,
-            self._availability_strategy,
             self._primary_key,
             "date",
             self._logger,
@@ -200,7 +189,6 @@ class ThreadBasedConcurrentStreamTest(unittest.TestCase):
             self._partition_generator,
             self._name,
             self._json_schema,
-            self._availability_strategy,
             self._primary_key,
             self._cursor_field,
             self._logger,
@@ -231,7 +219,6 @@ class ThreadBasedConcurrentStreamTest(unittest.TestCase):
             self._partition_generator,
             self._name,
             self._json_schema,
-            self._availability_strategy,
             self._primary_key,
             self._cursor_field,
             self._logger,

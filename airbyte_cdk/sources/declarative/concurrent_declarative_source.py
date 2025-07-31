@@ -52,9 +52,6 @@ from airbyte_cdk.sources.source import TState
 from airbyte_cdk.sources.streams import Stream
 from airbyte_cdk.sources.streams.concurrent.abstract_stream import AbstractStream
 from airbyte_cdk.sources.streams.concurrent.abstract_stream_facade import AbstractStreamFacade
-from airbyte_cdk.sources.streams.concurrent.availability_strategy import (
-    AlwaysAvailableAvailabilityStrategy,
-)
 from airbyte_cdk.sources.streams.concurrent.cursor import ConcurrentCursor, FinalStateCursor
 from airbyte_cdk.sources.streams.concurrent.default_stream import DefaultStream
 from airbyte_cdk.sources.streams.concurrent.helpers import get_primary_key_from_stream
@@ -325,7 +322,6 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
                             partition_generator=partition_generator,
                             name=declarative_stream.name,
                             json_schema=declarative_stream.get_json_schema(),
-                            availability_strategy=AlwaysAvailableAvailabilityStrategy(),
                             primary_key=get_primary_key_from_stream(declarative_stream.primary_key),
                             cursor_field=cursor.cursor_field.cursor_field_key
                             if hasattr(cursor, "cursor_field")
@@ -362,7 +358,6 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
                             partition_generator=partition_generator,
                             name=declarative_stream.name,
                             json_schema=declarative_stream.get_json_schema(),
-                            availability_strategy=AlwaysAvailableAvailabilityStrategy(),
                             primary_key=get_primary_key_from_stream(declarative_stream.primary_key),
                             cursor_field=None,
                             logger=self.logger,
@@ -417,7 +412,6 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
                             partition_generator=partition_generator,
                             name=declarative_stream.name,
                             json_schema=declarative_stream.get_json_schema(),
-                            availability_strategy=AlwaysAvailableAvailabilityStrategy(),
                             primary_key=get_primary_key_from_stream(declarative_stream.primary_key),
                             cursor_field=perpartition_cursor.cursor_field.cursor_field_key,
                             logger=self.logger,
