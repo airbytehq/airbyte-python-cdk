@@ -27,7 +27,12 @@ jobs:
       (github.event_name == 'push' && github.ref == 'refs/heads/main')
     strategy:
       matrix:
-        python-version: ["3.10", "3.11", "3.12", "3.13"]
+        python-version: [
+            "3.10",
+            "3.11",
+            "3.12",
+            "3.13",
+          ]
         os: [
             Ubuntu,
             # Windows,  # For now, we don't include Windows in the test matrix.
