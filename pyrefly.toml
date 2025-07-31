@@ -1,0 +1,3 @@
+project-excludes = ["**/unit_tests/"]
+ignore-missing-imports = ["*"]
+untyped-def-behavior = "check-and-infer-return-any"

@@ -129,10 +129,6 @@ source-declarative-manifest = "airbyte_cdk.cli.source_declarative_manifest:run"
 
 # Ruff configuration moved to ruff.toml
 
-[tool.pyrefly]
-python_version = "3.10"
-project_excludes = ["bin", "docs", "unit_tests"]
-
 [tool.poe.tasks]
 # Installation
 install = { shell = "poetry install --all-extras", help = "Install all dependencies." }
