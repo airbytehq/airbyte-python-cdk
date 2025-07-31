@@ -54,7 +54,7 @@ jobs:
         run: poetry run ruff format --diff .
 
   pyrefly-check:
-    name: Pyrefly Check
+    name: Python Type Checking
     runs-on: ubuntu-24.04
     steps:
       # Common steps:
