@@ -199,12 +199,6 @@ ignore = [
 # [tool.pytest.ini_options]
 # NOTE: PyTest options moved to dedicated `pytest.ini`
 
-[tool.airbyte_ci]
-python_versions = ["3.10", "3.11", "3.12", "3.13"]
-optional_poetry_groups = ["dev"]
-poetry_extras = ["file-based", "vector-db-based"]
-poe_tasks = ["check-ci"]
-mount_docker_socket = true
 
 [tool.deptry]
 exclude = [
