@@ -53,7 +53,7 @@ def test_uncaught_exception_handler():
             "Traceback (most recent call last):\n"
             '  File "<string>", line 1, in <module>\n'
             "    from airbyte_cdk.logger import init_logger; from airbyte_cdk.exception_handler import init_uncaught_exception_handler; logger = init_logger('airbyte'); init_uncaught_exception_handler(logger); raise 1\n"
-            "    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n"
+            "                                                                                                                                                                                                     ^^^^^^^\n"
             "TypeError: exceptions must derive from BaseException"
         )
     else:
