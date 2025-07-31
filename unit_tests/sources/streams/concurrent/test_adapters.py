@@ -22,11 +22,6 @@ from airbyte_cdk.sources.streams.concurrent.adapters import (
     StreamPartition,
     StreamPartitionGenerator,
 )
-from airbyte_cdk.sources.streams.concurrent.availability_strategy import (
-    STREAM_AVAILABLE,
-    StreamAvailable,
-    StreamUnavailable,
-)
 from airbyte_cdk.sources.streams.concurrent.cursor import Cursor
 from airbyte_cdk.sources.streams.concurrent.exceptions import ExceptionWithDisplayMessage
 from airbyte_cdk.sources.streams.core import Stream
