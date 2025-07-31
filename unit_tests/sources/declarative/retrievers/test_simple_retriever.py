@@ -722,56 +722,6 @@ def test_limit_stream_slices():
     assert truncated_slices == _generate_slices(maximum_number_of_slices)
 
 
-@pytest.mark.parametrize(
-    "test_name, first_greater_than_second",
-    [
-        ("test_first_greater_than_second", True),
-        ("test_second_greater_than_first", False),
-    ],
-)
-def test_when_read_records_then_cursor_close_slice_with_greater_record(
-    test_name, first_greater_than_second
-):
-    first_record = Record({"first": 1}, StreamSlice(cursor_slice={}, partition={}))
-    second_record = Record({"second": 2}, StreamSlice(cursor_slice={}, partition={}))
-    records = [first_record, second_record]
-    record_selector = MagicMock()
-    record_selector.select_records.return_value = records
-    cursor = MagicMock(spec=DeclarativeCursor)
-    cursor.is_greater_than_or_equal.return_value = first_greater_than_second
-    paginator = MagicMock()
-    paginator.get_request_headers.return_value = {}
-
-    retriever = SimpleRetriever(
-        name="stream_name",
-        primary_key=primary_key,
-        requester=MagicMock(),
-        paginator=paginator,
-        record_selector=record_selector,
-        stream_slicer=cursor,
-        cursor=cursor,
-        parameters={},
-        config={},
-    )
-    stream_slice = StreamSlice(cursor_slice={}, partition={"repository": "airbyte"})
-
-    def retriever_read_pages(_, __, ___):
-        return retriever._parse_records(
-            response=MagicMock(), stream_state={}, stream_slice=stream_slice, records_schema={}
-        )
-
-    with patch.object(
-        SimpleRetriever,
-        "_read_pages",
-        return_value=iter([first_record, second_record]),
-        side_effect=retriever_read_pages,
-    ):
-        list(retriever.read_records(stream_slice=stream_slice, records_schema={}))
-        cursor.close_slice.assert_called_once_with(
-            stream_slice, first_record if first_greater_than_second else second_record
-        )
-
-
 def test_given_stream_data_is_not_record_when_read_records_then_update_slice_with_optional_record():
     stream_data = [
         AirbyteMessage(
@@ -808,7 +758,7 @@ def test_given_stream_data_is_not_record_when_read_records_then_update_slice_wit
     ):
         list(retriever.read_records(stream_slice=stream_slice, records_schema={}))
         cursor.observe.assert_not_called()
-        cursor.close_slice.assert_called_once_with(stream_slice, None)
+        cursor.close_slice.assert_called_once_with(stream_slice)
 
 
 def test_given_initial_token_is_zero_when_read_records_then_pass_initial_token():

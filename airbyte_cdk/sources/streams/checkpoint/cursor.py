@@ -63,12 +63,6 @@ class Cursor(ABC):
         """
 
     @abstractmethod
-    def is_greater_than_or_equal(self, first: Record, second: Record) -> bool:
-        """
-        Evaluating which record is greater in terms of cursor. This is used to avoid having to capture all the records to close a slice
-        """
-
-    @abstractmethod
     def select_state(self, stream_slice: Optional[StreamSlice] = None) -> Optional[StreamState]:
         """
         Get the state value of a specific stream_slice. For incremental or resumable full refresh cursors which only manage state in
