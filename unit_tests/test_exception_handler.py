@@ -56,7 +56,9 @@ def test_uncaught_exception_handler():
 
     expected_log_message = AirbyteMessage(
         type=MessageType.LOG,
-        log=AirbyteLogMessage(level=Level.FATAL, message=f"{exception_message}\n{base_exception_trace}"),
+        log=AirbyteLogMessage(
+            level=Level.FATAL, message=f"{exception_message}\n{base_exception_trace}"
+        ),
     )
 
     expected_trace_message = AirbyteMessage(
@@ -84,10 +86,18 @@ def test_uncaught_exception_handler():
     log_output, trace_output = stdout_lines
 
     out_log_message = AirbyteMessageSerializer.load(json.loads(log_output))
-    assert base_exception_trace in out_log_message.log.message, "Log message should contain expected traceback format"
-    assert exception_message in out_log_message.log.message, "Log message should contain expected exception message"
+    assert base_exception_trace in out_log_message.log.message, (
+        "Log message should contain expected traceback format"
+    )
+    assert exception_message in out_log_message.log.message, (
+        "Log message should contain expected exception message"
+    )
 
     out_trace_message = AirbyteMessageSerializer.load(json.loads(trace_output))
     assert out_trace_message.trace.emitted_at > 0
-    assert base_exception_trace in out_trace_message.trace.error.stack_trace, "Trace message should contain expected traceback format"
-    assert out_trace_message.trace.error.internal_message == exception_message, "Trace message should contain expected exception message"
+    assert base_exception_trace in out_trace_message.trace.error.stack_trace, (
+        "Trace message should contain expected traceback format"
+    )
+    assert out_trace_message.trace.error.internal_message == exception_message, (
+        "Trace message should contain expected exception message"
+    )
