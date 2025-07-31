@@ -109,7 +109,9 @@ class DefaultStream(AbstractStream):
                 f"Cannot attempt to connect to stream {self.name} - no stream slices were found"
             )
         except AirbyteTracedException as error:
-            return StreamAvailability.unavailable(error.message or error.internal_message or "<no error message>")
+            return StreamAvailability.unavailable(
+                error.message or error.internal_message or "<no error message>"
+            )
 
         try:
             next(iter(partition.read()))
@@ -118,4 +120,6 @@ class DefaultStream(AbstractStream):
             self._logger.info(f"Successfully connected to stream {self.name}, but got 0 records.")
             return StreamAvailability.available()
         except AirbyteTracedException as error:
-            return StreamAvailability.unavailable(error.message or error.internal_message or "<no error message>")
+            return StreamAvailability.unavailable(
+                error.message or error.internal_message or "<no error message>"
+            )
