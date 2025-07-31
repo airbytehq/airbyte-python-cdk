@@ -3682,7 +3682,6 @@ definitions:
       partition_router:
         title: Partition Router
         description: Used to iteratively execute requests over a set of values, such as a parent stream's records or a list of constant values.
-        linkable: true
         anyOf:
           - "$ref": "#/definitions/SubstreamPartitionRouter"
           - "$ref": "#/definitions/ListPartitionRouter"
