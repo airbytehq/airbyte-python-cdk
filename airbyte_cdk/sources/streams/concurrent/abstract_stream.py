@@ -9,6 +9,7 @@ from typing_extensions import deprecated
 
 from airbyte_cdk.models import AirbyteStream
 from airbyte_cdk.sources.source import ExperimentalClassWarning
+from airbyte_cdk.sources.streams.concurrent.availability_strategy import StreamAvailability
 from airbyte_cdk.sources.streams.concurrent.cursor import Cursor
 from airbyte_cdk.sources.streams.concurrent.partitions.partition import Partition
 
@@ -86,4 +87,10 @@ class AbstractStream(ABC):
     def cursor(self) -> Cursor:
         """
         :return: The cursor associated with this stream.
+        """
+
+    @abstractmethod
+    def check_availability(self) -> StreamAvailability:
+        """
+        :return: If the stream is available and if not, why
         """
