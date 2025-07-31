@@ -3330,7 +3330,6 @@ class ModelToComponentFactory:
                 ),
             )
 
-        cursor_used_for_stop_condition = stop_condition_cursor or None
         paginator = (
             self._create_component_from_model(
                 model=model.paginator,
@@ -3338,7 +3337,7 @@ class ModelToComponentFactory:
                 url_base=_get_url(),
                 extractor_model=model.record_selector.extractor,
                 decoder=decoder,
-                cursor_used_for_stop_condition=cursor_used_for_stop_condition,
+                cursor_used_for_stop_condition=stop_condition_cursor or None,
             )
             if model.paginator
             else NoPagination(parameters={})
