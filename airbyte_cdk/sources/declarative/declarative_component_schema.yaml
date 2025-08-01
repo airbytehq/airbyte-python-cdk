@@ -1511,7 +1511,6 @@ definitions:
       incremental_sync:
         title: Incremental Sync
         description: Component used to fetch data incrementally based on a time field in the data.
-        linkable: true
         anyOf:
           - "$ref": "#/definitions/DatetimeBasedCursor"
           - "$ref": "#/definitions/IncrementingCountCursor"
@@ -2039,7 +2038,6 @@ definitions:
         deprecation_message: "Use `url` field instead."
         title: API Base URL
         description: Deprecated, use the `url` instead. Base URL of the API source. Do not put sensitive information (e.g. API tokens) into this field - Use the Authenticator component for this.
-        linkable: true
         type: string
         interpolation_context:
           - config
