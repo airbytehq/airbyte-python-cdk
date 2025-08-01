@@ -1511,7 +1511,6 @@ definitions:
       incremental_sync:
         title: Incremental Sync
         description: Component used to fetch data incrementally based on a time field in the data.
-        linkable: true
         anyOf:
           - "$ref": "#/definitions/DatetimeBasedCursor"
           - "$ref": "#/definitions/IncrementingCountCursor"
