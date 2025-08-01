@@ -16,9 +16,9 @@ from airbyte_cdk.models import (
     AirbyteControlConnectorConfigMessage,
     AirbyteControlMessage,
     AirbyteMessage,
-    AirbyteMessageSerializer,
     OrchestratorType,
     Type,
+    ab_message_to_string,
 )
 
 
@@ -92,7 +92,7 @@ def emit_configuration_as_airbyte_control_message(config: MutableMapping[str, An
     See the airbyte_cdk.sources.message package
     """
     airbyte_message = create_connector_config_control_message(config)
-    print(orjson.dumps(AirbyteMessageSerializer.dump(airbyte_message)).decode())
+    print(ab_message_to_string(airbyte_message))
 
 
 def create_connector_config_control_message(config: MutableMapping[str, Any]) -> AirbyteMessage:

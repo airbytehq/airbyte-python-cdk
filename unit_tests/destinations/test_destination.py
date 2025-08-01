@@ -19,7 +19,6 @@ from airbyte_cdk.models import (
     AirbyteCatalog,
     AirbyteConnectionStatus,
     AirbyteMessage,
-    AirbyteMessageSerializer,
     AirbyteRecordMessage,
     AirbyteStateMessage,
     AirbyteStream,
@@ -31,6 +30,7 @@ from airbyte_cdk.models import (
     Status,
     SyncMode,
     Type,
+    ab_message_to_string,
 )
 
 
@@ -288,12 +288,7 @@ class TestRun:
             _wrapped(_record("s1", {"k1": "v1"})),
             *expected_write_result,
         ]
-        mocked_stdin_string = "\n".join(
-            [
-                orjson.dumps(AirbyteMessageSerializer.dump(record)).decode()
-                for record in mocked_input
-            ]
-        )
+        mocked_stdin_string = "\n".join([ab_message_to_string(record) for record in mocked_input])
         mocked_stdin_string += "\n add this non-serializable string to verify the destination does not break on malformed input"
         mocked_stdin = io.TextIOWrapper(io.BytesIO(bytes(mocked_stdin_string, "utf-8")))
 

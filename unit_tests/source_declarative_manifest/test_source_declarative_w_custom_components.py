@@ -14,7 +14,7 @@ from typing import Any
 
 import pytest
 import yaml
-from airbyte_protocol_dataclasses.models.airbyte_protocol import AirbyteCatalog
+from airbyte_protocol.models.airbyte_protocol import AirbyteCatalog
 
 from airbyte_cdk.cli.source_declarative_manifest._run import (
     _register_components_from_file,
