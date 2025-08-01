@@ -17,7 +17,8 @@ from airbyte_cdk.sources.utils.slice_logger import SliceLogger
 
 class PartitionLogger:
     """
-    Helper class that provides a mechanism for passing a message
+    Helper class that provides a mechanism for passing a log message onto the current
+    partitions message repository
     """
 
     def __init__(
