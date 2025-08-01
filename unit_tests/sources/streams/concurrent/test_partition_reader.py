@@ -1,6 +1,5 @@
-#
-# Copyright (c) 2023 Airbyte, Inc., all rights reserved.
-#
+# Copyright (c) 2025 Airbyte, Inc., all rights reserved.
+
 import unittest
 from queue import Queue
 from typing import Callable, Iterable, List
@@ -57,7 +56,7 @@ class PartitionReaderTest(unittest.TestCase):
         cursor.observe.assert_called()
         cursor.close_partition.assert_called_once()
 
-    def test_given_exception_when_process_partition_then_queue_records_and_exception_and_sentinel(
+    def test_given_exception_from_read_when_process_partition_then_queue_records_and_exception_and_sentinel(
         self,
     ):
         partition = Mock()
@@ -73,6 +72,23 @@ class PartitionReaderTest(unittest.TestCase):
             PartitionCompleteSentinel(partition),
         ]
 
+    def test_given_exception_from_close_slice_when_process_partition_then_queue_records_and_exception_and_sentinel(
+        self,
+    ):
+        partition = self._a_partition(_RECORDS)
+        cursor = Mock()
+        exception = ValueError()
+        cursor.close_partition.side_effect = self._close_partition_with_exception(exception)
+        self._partition_reader.process_partition(partition, cursor)
+
+        queue_content = self._consume_queue()
+
+        # 4 total messages in queue. 2 records, 1 thread exception, 1 partition sentinel value
+        assert len(queue_content) == 4
+        assert queue_content[:2] == _RECORDS
+        assert isinstance(queue_content[2], StreamThreadException)
+        assert queue_content[3] == PartitionCompleteSentinel(partition)
+
     def _a_partition(self, records: List[Record]) -> Partition:
         partition = Mock(spec=Partition)
         partition.read.return_value = iter(records)
@@ -84,6 +100,13 @@ class PartitionReaderTest(unittest.TestCase):
     ) -> Callable[[], Iterable[Record]]:
         def mocked_function() -> Iterable[Record]:
             yield from records
+            raise exception
+
+        return mocked_function
+
+    @staticmethod
+    def _close_partition_with_exception(exception: Exception) -> Callable[[Partition], None]:
+        def mocked_function(partition: Partition) -> None:
             raise exception
 
         return mocked_function
