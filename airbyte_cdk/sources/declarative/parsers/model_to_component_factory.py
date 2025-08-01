@@ -1453,7 +1453,7 @@ class ModelToComponentFactory:
                         f"Invalid clamping target {evaluated_target}, expected DAY, WEEK, MONTH"
                     )
 
-        concurrent_cursor = ConcurrentCursor(
+        return ConcurrentCursor(
             stream_name=stream_name,
             stream_namespace=stream_namespace,
             stream_state=stream_state,
@@ -1469,17 +1469,6 @@ class ModelToComponentFactory:
             cursor_granularity=cursor_granularity,
             clamping_strategy=clamping_strategy,
         )
-
-        if self._should_limit_slices_fetched():
-            return cast(  # type: ignore  # For a test_read, this will return a StreamSlicer that wraps a cursor and should still work. Changing the signature creates even more type problems
-                StreamSlicer,
-                StreamSlicerTestReadDecorator(
-                    wrapped_slicer=concurrent_cursor,
-                    maximum_number_of_slices=self._limit_slices_fetched or 5,
-                ),
-            )
-        else:
-            return concurrent_cursor
 
     def create_concurrent_cursor_from_incrementing_count_cursor(
         self,
@@ -1534,7 +1523,7 @@ class ModelToComponentFactory:
             is_sequential_state=True,  # ConcurrentPerPartitionCursor only works with sequential state
         )
 
-        concurrent_cursor = ConcurrentCursor(
+        return ConcurrentCursor(
             stream_name=stream_name,
             stream_namespace=stream_namespace,
             stream_state=stream_state,
@@ -1546,17 +1535,6 @@ class ModelToComponentFactory:
             start=interpolated_start_value,  # type: ignore  # Having issues w/ inspection for GapType and CursorValueType as shown in existing tests. Confirmed functionality is working in practice
             end_provider=connector_state_converter.get_end_provider(),  # type: ignore  # Having issues w/ inspection for GapType and CursorValueType as shown in existing tests. Confirmed functionality is working in practice
         )
-
-        if self._should_limit_slices_fetched():
-            return cast(  # type: ignore  # For a test_read, this will return a StreamSlicer that wraps a cursor and should still work. Changing the signature creates even more type problems
-                StreamSlicer,
-                StreamSlicerTestReadDecorator(
-                    wrapped_slicer=concurrent_cursor,
-                    maximum_number_of_slices=self._limit_slices_fetched or MAX_SLICES,
-                ),
-            )
-        else:
-            return concurrent_cursor
 
     def _assemble_weekday(self, weekday: str) -> Weekday:
         match weekday:

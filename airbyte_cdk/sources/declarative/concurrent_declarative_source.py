@@ -128,6 +128,8 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
             disable_cache=True if limits else False,
         )
 
+        self._limits = limits
+
         super().__init__(
             source_config=source_config,
             config=config,
@@ -324,6 +326,9 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
                                 self.message_repository,
                             ),
                             stream_slicer=declarative_stream.retriever.stream_slicer,
+                            slice_limit=self._limits.max_slices
+                            if self._limits
+                            else None,  # technically not needed because create_declarative_stream() -> create_simple_retriever() will apply the decorator. But for consistency and depending how we build create_default_stream, this may be needed later
                         )
                     else:
                         if (
@@ -355,6 +360,7 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
                                 self.message_repository,
                             ),
                             stream_slicer=cursor,
+                            slice_limit=self._limits.max_slices if self._limits else None,
                         )
 
                     concurrent_streams.append(
@@ -386,6 +392,9 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
                             self.message_repository,
                         ),
                         declarative_stream.retriever.stream_slicer,
+                        slice_limit=self._limits.max_slices
+                        if self._limits
+                        else None,  # technically not needed because create_declarative_stream() -> create_simple_retriever() will apply the decorator. But for consistency and depending how we build create_default_stream, this may be needed later
                     )
 
                     final_state_cursor = FinalStateCursor(
@@ -447,6 +456,7 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
                             self.message_repository,
                         ),
                         perpartition_cursor,
+                        slice_limit=self._limits.max_slices if self._limits else None,
                     )
 
                     concurrent_streams.append(

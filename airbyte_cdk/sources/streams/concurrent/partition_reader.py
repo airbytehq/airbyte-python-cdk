@@ -15,6 +15,10 @@ from airbyte_cdk.sources.streams.concurrent.partitions.types import (
 from airbyte_cdk.sources.utils.slice_logger import SliceLogger
 
 
+# Since moving all the connector builder workflow to the concurrent CDK which required correct ordering
+# of grouping log messages onto the main write thread using the ConcurrentMessageRepository, this
+# separate flow and class that was used to log slices onto this partition's message_repository
+# should just be replaced by emitting messages directly onto the repository instead of an intermediary.
 class PartitionLogger:
     """
     Helper class that provides a mechanism for passing a log message onto the current

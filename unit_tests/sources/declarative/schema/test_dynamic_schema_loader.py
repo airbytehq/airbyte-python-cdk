@@ -4,23 +4,15 @@
 
 import json
 from copy import deepcopy
-from queue import Queue
 from unittest.mock import MagicMock
 
 import pytest
-from airbyte_protocol_dataclasses.models import Level
 
 from airbyte_cdk.sources.declarative.concurrent_declarative_source import (
     ConcurrentDeclarativeSource,
     TestLimits,
 )
-from airbyte_cdk.sources.declarative.parsers.model_to_component_factory import (
-    ModelToComponentFactory,
-)
 from airbyte_cdk.sources.declarative.schema import DynamicSchemaLoader, SchemaTypeIdentifier
-from airbyte_cdk.sources.message.concurrent_repository import ConcurrentMessageRepository
-from airbyte_cdk.sources.message.repository import InMemoryMessageRepository
-from airbyte_cdk.sources.streams.concurrent.partitions.types import QueueItem
 from airbyte_cdk.test.mock_http import HttpMocker, HttpRequest, HttpResponse
 
 _CONFIG = {
@@ -359,9 +351,6 @@ def test_dynamic_schema_loader_with_type_conditions():
             },
         },
     }
-
-    # queue: Queue[QueueItem] = Queue(maxsize=10_000)
-    # message_repository = InMemoryMessageRepository(Level.INFO)
 
     source = ConcurrentDeclarativeSource(
         source_config=_MANIFEST_WITH_TYPE_CONDITIONS,
