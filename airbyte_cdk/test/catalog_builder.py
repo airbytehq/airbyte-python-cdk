@@ -70,6 +70,7 @@ class CatalogBuilder:
             if isinstance(name_or_builder, ConfiguredAirbyteStreamBuilder)
             else ConfiguredAirbyteStreamBuilder()
             .with_name(name_or_builder)
+            # pyrefly: ignore  # bad-argument-type
             .with_sync_mode(sync_mode)
         )
         self._streams.append(builder)

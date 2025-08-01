@@ -65,6 +65,7 @@ def run() -> None:
         shutil.rmtree("docs/generated")
 
     pdoc.render.configure(
+        # pyrefly: ignore  # bad-argument-type
         template_directory="docs",
         show_source=True,
         search=True,

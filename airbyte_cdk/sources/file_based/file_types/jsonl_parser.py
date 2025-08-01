@@ -138,6 +138,7 @@ class JsonlParser(FileTypeParser):
                 )
 
     @staticmethod
+    # pyrefly: ignore  # bad-return
     def _instantiate_accumulator(line: Union[bytes, str]) -> Union[bytes, str]:
         if isinstance(line, bytes):
             return bytes("", json.detect_encoding(line))

@@ -1,4 +1,6 @@
 name: Linters
+permissions:
+  contents: read
 
 on:
   push:
@@ -53,8 +55,8 @@ jobs:
       - name: Check code format
         run: poetry run ruff format --diff .
 
-  mypy-check:
-    name: MyPy Check
+  pyrefly-check:
+    name: Python Type Checking
     runs-on: ubuntu-24.04
     steps:
       # Common steps:
@@ -74,5 +76,5 @@ jobs:
 
       # Job-specific step(s):
 
-      - name: Run mypy
-        run: poetry run mypy --config-file mypy.ini airbyte_cdk
+      - name: Run pyrefly
+        run: poetry run pyrefly check airbyte_cdk

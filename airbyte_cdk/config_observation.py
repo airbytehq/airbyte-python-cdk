@@ -67,6 +67,7 @@ class ConfigObserver:
     """
 
     def set_config(self, config: ObservedDict) -> None:
+        # pyrefly: ignore  # implicitly-defined-attribute
         self.config = config
 
     def update(self) -> None:
@@ -99,6 +100,7 @@ def create_connector_config_control_message(config: MutableMapping[str, Any]) ->
     control_message = AirbyteControlMessage(
         type=OrchestratorType.CONNECTOR_CONFIG,
         emitted_at=time.time() * 1000,
+        # pyrefly: ignore  # bad-argument-type
         connectorConfig=AirbyteControlConnectorConfigMessage(config=config),
     )
     return AirbyteMessage(type=Type.CONTROL, control=control_message)

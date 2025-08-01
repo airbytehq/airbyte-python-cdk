@@ -48,6 +48,7 @@ class InterpolatedString:
             evaluated = self._interpolation.eval(
                 self.string, config, self.default, parameters=self._parameters, **kwargs
             )
+            # pyrefly: ignore  # bad-assignment
             self._is_plain_string = self.string == evaluated
             return evaluated
         return self._interpolation.eval(

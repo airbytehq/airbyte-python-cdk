@@ -73,6 +73,7 @@ class DefaultFileUploader(FileUploader):
         files_directory = Path(get_files_directory())
 
         file_name = (
+            # pyrefly: ignore  # missing-attribute
             self.filename_extractor.eval(self.config, record=record)
             if self.filename_extractor
             else str(uuid.uuid4())
@@ -83,6 +84,7 @@ class DefaultFileUploader(FileUploader):
         full_path = files_directory / file_relative_path
         full_path.parent.mkdir(parents=True, exist_ok=True)
 
+        # pyrefly: ignore  # missing-attribute
         file_size_bytes = self.file_writer.write(full_path, content=response.content)
 
         logger.info("File uploaded successfully")

@@ -212,6 +212,7 @@ class HttpRequestRegexMatcher(RequestMatcher):
                 return False
 
         # Parse the URL.
+        # pyrefly: ignore  # no-matching-overload
         parsed_url = parse.urlsplit(prepared_request.url)
         # Reconstruct the base: scheme://netloc
         request_url_base = f"{str(parsed_url.scheme)}://{str(parsed_url.netloc)}"

@@ -119,6 +119,7 @@ def merge_schemas(schema1: SchemaType, schema2: SchemaType) -> SchemaType:
 
     merged_schema: Dict[str, Any] = deepcopy(schema1)  # type: ignore  # as of 2023-08-08, deepcopy can copy Mapping
     for k2, t2 in schema2.items():
+        # pyrefly: ignore  # missing-attribute
         t1 = merged_schema.get(k2)
         if t1 is None:
             merged_schema[k2] = t2

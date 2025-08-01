@@ -59,6 +59,7 @@ class PropertyChunking:
                 if self.property_limit_type == PropertyLimitType.characters
                 else 1
             )
+            # pyrefly: ignore  # unsupported-operation
             if chunk_size + property_field_size > self.property_limit:
                 yield current_chunk
                 current_chunk = list(always_include_properties) if always_include_properties else []

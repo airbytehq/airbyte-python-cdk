@@ -113,8 +113,11 @@ class AirbyteTracedException(Exception):
         :param stream_descriptor: describe the stream from which the exception comes from
         """
         return cls(
+            # pyrefly: ignore  # bad-keyword-argument
             internal_message=str(exc),
+            # pyrefly: ignore  # bad-keyword-argument
             exception=exc,
+            # pyrefly: ignore  # bad-keyword-argument
             stream_descriptor=stream_descriptor,
             *args,
             **kwargs,

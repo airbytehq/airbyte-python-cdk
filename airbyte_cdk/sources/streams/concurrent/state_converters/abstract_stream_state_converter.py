@@ -99,7 +99,8 @@ class AbstractStreamStateConverter(ABC):
     @staticmethod
     def is_state_message_compatible(state: MutableMapping[str, Any]) -> bool:
         return bool(state) and state.get("state_type") in [
-            t.value for t in ConcurrencyCompatibleStateType
+            t.value
+            for t in ConcurrencyCompatibleStateType  # pyrefly: ignore  # not-iterable
         ]
 
     @abstractmethod
