@@ -1818,8 +1818,8 @@ def _create_page(response_body):
             [
                 call({}, {}, None),
                 call(
-                    {"next_page_token": "next"},
-                    {"next_page_token": "next"},
+                    {},
+                    {},
                     {"next_page_token": "next"},
                 ),
             ],
@@ -1907,16 +1907,9 @@ def _create_page(response_body):
             ),
             [{"ABC": 0, "partition": 0}, {"AED": 1, "partition": 0}, {"ABC": 2, "partition": 1}],
             [
-                call({"states": []}, {"partition": "0"}, None),
+                call({}, {"partition": "0"}, None),
                 call(
-                    {
-                        "states": [
-                            {
-                                "partition": {"partition": "0"},
-                                "cursor": {"__ab_full_refresh_sync_complete": True},
-                            }
-                        ]
-                    },
+                    {},
                     {"partition": "1"},
                     None,
                 ),
@@ -2022,17 +2015,10 @@ def _create_page(response_body):
                 {"ABC": 2, "partition": 1},
             ],
             [
-                call({"states": []}, {"partition": "0"}, None),
-                call({"states": []}, {"partition": "0"}, {"next_page_token": "next"}),
+                call({}, {"partition": "0"}, None),
+                call({}, {"partition": "0"}, {"next_page_token": "next"}),
                 call(
-                    {
-                        "states": [
-                            {
-                                "partition": {"partition": "0"},
-                                "cursor": {"__ab_full_refresh_sync_complete": True},
-                            }
-                        ]
-                    },
+                    {},
                     {"partition": "1"},
                     None,
                 ),
@@ -2201,12 +2187,12 @@ def test_only_parent_streams_use_cache():
 
     # Parent stream created for substream
     assert (
-        streams[1].retriever.stream_slicer._partition_router.parent_stream_configs[0].stream.name
+        streams[1].retriever.stream_slicer.parent_stream_configs[0].stream.name
         == "applications"
     )
     assert (
         streams[1]
-        .retriever.stream_slicer._partition_router.parent_stream_configs[0]
+        .retriever.stream_slicer.parent_stream_configs[0]
         .stream.retriever.requester.use_cache
     )
 
