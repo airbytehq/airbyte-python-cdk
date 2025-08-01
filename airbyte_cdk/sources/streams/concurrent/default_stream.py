@@ -8,10 +8,6 @@ from typing import Any, Iterable, List, Mapping, Optional
 
 from airbyte_cdk.models import AirbyteStream, SyncMode
 from airbyte_cdk.sources.streams.concurrent.abstract_stream import AbstractStream
-from airbyte_cdk.sources.streams.concurrent.availability_strategy import (
-    AbstractAvailabilityStrategy,
-    StreamAvailability,
-)
 from airbyte_cdk.sources.streams.concurrent.cursor import Cursor
 from airbyte_cdk.sources.streams.concurrent.partitions.partition import Partition
 from airbyte_cdk.sources.streams.concurrent.partitions.partition_generator import PartitionGenerator
@@ -23,7 +19,6 @@ class DefaultStream(AbstractStream):
         partition_generator: PartitionGenerator,
         name: str,
         json_schema: Mapping[str, Any],
-        availability_strategy: AbstractAvailabilityStrategy,
         primary_key: List[str],
         cursor_field: Optional[str],
         logger: Logger,
@@ -34,7 +29,6 @@ class DefaultStream(AbstractStream):
         self._stream_partition_generator = partition_generator
         self._name = name
         self._json_schema = json_schema
-        self._availability_strategy = availability_strategy
         self._primary_key = primary_key
         self._cursor_field = cursor_field
         self._logger = logger
@@ -52,9 +46,6 @@ class DefaultStream(AbstractStream):
     @property
     def namespace(self) -> Optional[str]:
         return self._namespace
-
-    def check_availability(self) -> StreamAvailability:
-        return self._availability_strategy.check_availability(self._logger)
 
     @property
     def cursor_field(self) -> Optional[str]:

@@ -9,7 +9,6 @@ from typing_extensions import deprecated
 
 from airbyte_cdk.models import AirbyteStream
 from airbyte_cdk.sources.source import ExperimentalClassWarning
-from airbyte_cdk.sources.streams.concurrent.availability_strategy import StreamAvailability
 from airbyte_cdk.sources.streams.concurrent.cursor import Cursor
 from airbyte_cdk.sources.streams.concurrent.partitions.partition import Partition
 
@@ -62,12 +61,6 @@ class AbstractStream(ABC):
         """
         Override to return the default cursor field used by this stream e.g: an API entity might always use created_at as the cursor field.
         :return: The name of the field used as a cursor. Nested cursor fields are not supported.
-        """
-
-    @abstractmethod
-    def check_availability(self) -> StreamAvailability:
-        """
-        :return: The stream's availability
         """
 
     @abstractmethod
