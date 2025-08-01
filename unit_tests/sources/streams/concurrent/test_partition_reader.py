@@ -8,7 +8,9 @@ from unittest.mock import Mock
 
 import pytest
 
+from airbyte_cdk import InMemoryMessageRepository
 from airbyte_cdk.sources.concurrent_source.stream_thread_exception import StreamThreadException
+from airbyte_cdk.sources.streams.concurrent.cursor import FinalStateCursor
 from airbyte_cdk.sources.streams.concurrent.partition_reader import PartitionReader
 from airbyte_cdk.sources.streams.concurrent.partitions.partition import Partition
 from airbyte_cdk.sources.streams.concurrent.partitions.types import (
@@ -26,10 +28,15 @@ _RECORDS = [
 class PartitionReaderTest(unittest.TestCase):
     def setUp(self) -> None:
         self._queue: Queue[QueueItem] = Queue()
-        self._partition_reader = PartitionReader(self._queue)
+        self._partition_reader = PartitionReader(self._queue, None)
 
     def test_given_no_records_when_process_partition_then_only_emit_sentinel(self):
-        self._partition_reader.process_partition(self._a_partition([]))
+        cursor = FinalStateCursor(
+            stream_name="test",
+            stream_namespace=None,
+            message_repository=InMemoryMessageRepository(),
+        )
+        self._partition_reader.process_partition(self._a_partition([]), cursor)
 
         while queue_item := self._queue.get():
             if not isinstance(queue_item, PartitionCompleteSentinel):
@@ -40,19 +47,24 @@ class PartitionReaderTest(unittest.TestCase):
         self,
     ):
         partition = self._a_partition(_RECORDS)
-        self._partition_reader.process_partition(partition)
+        cursor = Mock()
+        self._partition_reader.process_partition(partition, cursor)
 
         queue_content = self._consume_queue()
 
         assert queue_content == _RECORDS + [PartitionCompleteSentinel(partition)]
 
+        cursor.observe.assert_called()
+        cursor.close_partition.assert_called_once()
+
     def test_given_exception_when_process_partition_then_queue_records_and_exception_and_sentinel(
         self,
     ):
         partition = Mock()
+        cursor = Mock()
         exception = ValueError()
         partition.read.side_effect = self._read_with_exception(_RECORDS, exception)
-        self._partition_reader.process_partition(partition)
+        self._partition_reader.process_partition(partition, cursor)
 
         queue_content = self._consume_queue()
 
