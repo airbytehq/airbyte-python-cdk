@@ -147,7 +147,10 @@ class ConcurrentSource:
                 airbyte_message_or_record_or_exception,
                 concurrent_stream_processor,
             )
-            if concurrent_stream_processor.is_done() and queue.empty():
+            # In the event that a partition raises an exception, anything remaining in
+            # the queue will be missed because is_done() can raise an exception and exit
+            # out of this loop before remaining items are consumed
+            if queue.empty() and concurrent_stream_processor.is_done():
                 # all partitions were generated and processed. we're done here
                 break
 
