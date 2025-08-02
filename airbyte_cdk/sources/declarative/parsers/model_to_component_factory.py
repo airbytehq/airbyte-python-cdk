@@ -2114,9 +2114,7 @@ class ModelToComponentFactory:
     ) -> Optional[StreamSlicer]:
         state_transformations = (
             [
-                self._create_component_from_model(
-                    state_migration, config, declarative_stream=model
-                )
+                self._create_component_from_model(state_migration, config, declarative_stream=model)
                 for state_migration in model.state_migrations
             ]
             if model.state_migrations
@@ -2190,9 +2188,7 @@ class ModelToComponentFactory:
 
         if model.state_migrations:
             state_transformations = [
-                self._create_component_from_model(
-                    state_migration, config, declarative_stream=model
-                )
+                self._create_component_from_model(state_migration, config, declarative_stream=model)
                 for state_migration in model.state_migrations
             ]
         else:
