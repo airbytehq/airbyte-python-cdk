@@ -11,6 +11,10 @@ from airbyte_cdk.models import AirbyteLogMessage, AirbyteMessage, Level
 from airbyte_cdk.models import Type as MessageType
 
 
+# Once everything runs on the concurrent CDK and we've cleaned up the legacy flows, we should try to remove
+# this class and write messages directly to the message_repository instead of through the logger because for
+# cases like the connector builder where ordering of messages is important, using the logger can cause
+# messages to be grouped out of order. Alas work for a different day.
 class SliceLogger(ABC):
     """
     SliceLogger is an interface that allows us to log slices of data in a uniform way.

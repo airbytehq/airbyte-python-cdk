@@ -10,9 +10,7 @@ import pytest
 
 from airbyte_cdk.sources.declarative.concurrent_declarative_source import (
     ConcurrentDeclarativeSource,
-)
-from airbyte_cdk.sources.declarative.parsers.model_to_component_factory import (
-    ModelToComponentFactory,
+    TestLimits,
 )
 from airbyte_cdk.sources.declarative.schema import DynamicSchemaLoader, SchemaTypeIdentifier
 from airbyte_cdk.test.mock_http import HttpMocker, HttpRequest, HttpResponse
@@ -353,14 +351,13 @@ def test_dynamic_schema_loader_with_type_conditions():
             },
         },
     }
+
     source = ConcurrentDeclarativeSource(
         source_config=_MANIFEST_WITH_TYPE_CONDITIONS,
         config=_CONFIG,
         catalog=None,
         state=None,
-        component_factory=ModelToComponentFactory(
-            disable_cache=True
-        ),  # Avoid caching on the HttpClient which could result in caching the requests/responses of other tests
+        limits=TestLimits(),  # Avoid caching on the HttpClient which could result in caching the requests/responses of other tests
     )
     with HttpMocker() as http_mocker:
         http_mocker.get(

@@ -4,7 +4,7 @@
 import concurrent
 import logging
 from queue import Queue
-from typing import Iterable, Iterator, List
+from typing import Iterable, Iterator, List, Optional
 
 from airbyte_cdk.models import AirbyteMessage
 from airbyte_cdk.sources.concurrent_source.concurrent_read_processor import ConcurrentReadProcessor
@@ -16,7 +16,7 @@ from airbyte_cdk.sources.concurrent_source.thread_pool_manager import ThreadPool
 from airbyte_cdk.sources.message import InMemoryMessageRepository, MessageRepository
 from airbyte_cdk.sources.streams.concurrent.abstract_stream import AbstractStream
 from airbyte_cdk.sources.streams.concurrent.partition_enqueuer import PartitionEnqueuer
-from airbyte_cdk.sources.streams.concurrent.partition_reader import PartitionReader
+from airbyte_cdk.sources.streams.concurrent.partition_reader import PartitionLogger, PartitionReader
 from airbyte_cdk.sources.streams.concurrent.partitions.partition import Partition
 from airbyte_cdk.sources.streams.concurrent.partitions.types import (
     PartitionCompleteSentinel,
@@ -43,6 +43,7 @@ class ConcurrentSource:
         logger: logging.Logger,
         slice_logger: SliceLogger,
         message_repository: MessageRepository,
+        queue: Optional[Queue[QueueItem]] = None,
         timeout_seconds: int = DEFAULT_TIMEOUT_SECONDS,
     ) -> "ConcurrentSource":
         is_single_threaded = initial_number_of_partitions_to_generate == 1 and num_workers == 1
@@ -59,12 +60,13 @@ class ConcurrentSource:
             logger,
         )
         return ConcurrentSource(
-            threadpool,
-            logger,
-            slice_logger,
-            message_repository,
-            initial_number_of_partitions_to_generate,
-            timeout_seconds,
+            threadpool=threadpool,
+            logger=logger,
+            slice_logger=slice_logger,
+            queue=queue,
+            message_repository=message_repository,
+            initial_number_partitions_to_generate=initial_number_of_partitions_to_generate,
+            timeout_seconds=timeout_seconds,
         )
 
     def __init__(
@@ -72,6 +74,7 @@ class ConcurrentSource:
         threadpool: ThreadPoolManager,
         logger: logging.Logger,
         slice_logger: SliceLogger = DebugSliceLogger(),
+        queue: Optional[Queue[QueueItem]] = None,
         message_repository: MessageRepository = InMemoryMessageRepository(),
         initial_number_partitions_to_generate: int = 1,
         timeout_seconds: int = DEFAULT_TIMEOUT_SECONDS,
@@ -91,25 +94,28 @@ class ConcurrentSource:
         self._initial_number_partitions_to_generate = initial_number_partitions_to_generate
         self._timeout_seconds = timeout_seconds
 
+        # We set a maxsize to for the main thread to process record items when the queue size grows. This assumes that there are less
+        # threads generating partitions that than are max number of workers. If it weren't the case, we could have threads only generating
+        # partitions which would fill the queue. This number is arbitrarily set to 10_000 but will probably need to be changed given more
+        # information and might even need to be configurable depending on the source
+        self._queue = queue or Queue(maxsize=10_000)
+
     def read(
         self,
         streams: List[AbstractStream],
     ) -> Iterator[AirbyteMessage]:
         self._logger.info("Starting syncing")
-
-        # We set a maxsize to for the main thread to process record items when the queue size grows. This assumes that there are less
-        # threads generating partitions that than are max number of workers. If it weren't the case, we could have threads only generating
-        # partitions which would fill the queue. This number is arbitrarily set to 10_000 but will probably need to be changed given more
-        # information and might even need to be configurable depending on the source
-        queue: Queue[QueueItem] = Queue(maxsize=10_000)
         concurrent_stream_processor = ConcurrentReadProcessor(
             streams,
-            PartitionEnqueuer(queue, self._threadpool),
+            PartitionEnqueuer(self._queue, self._threadpool),
             self._threadpool,
             self._logger,
             self._slice_logger,
             self._message_repository,
-            PartitionReader(queue),
+            PartitionReader(
+                self._queue,
+                PartitionLogger(self._slice_logger, self._logger, self._message_repository),
+            ),
         )
 
         # Enqueue initial partition generation tasks
@@ -117,7 +123,7 @@ class ConcurrentSource:
 
         # Read from the queue until all partitions were generated and read
         yield from self._consume_from_queue(
-            queue,
+            self._queue,
             concurrent_stream_processor,
         )
         self._threadpool.check_for_errors_and_shutdown()
@@ -141,7 +147,10 @@ class ConcurrentSource:
                 airbyte_message_or_record_or_exception,
                 concurrent_stream_processor,
             )
-            if concurrent_stream_processor.is_done() and queue.empty():
+            # In the event that a partition raises an exception, anything remaining in
+            # the queue will be missed because is_done() can raise an exception and exit
+            # out of this loop before remaining items are consumed
+            if queue.empty() and concurrent_stream_processor.is_done():
                 # all partitions were generated and processed. we're done here
                 break
 
@@ -161,5 +170,7 @@ class ConcurrentSource:
             yield from concurrent_stream_processor.on_partition_complete_sentinel(queue_item)
         elif isinstance(queue_item, Record):
             yield from concurrent_stream_processor.on_record(queue_item)
+        elif isinstance(queue_item, AirbyteMessage):
+            yield queue_item
         else:
             raise ValueError(f"Unknown queue item type: {type(queue_item)}")

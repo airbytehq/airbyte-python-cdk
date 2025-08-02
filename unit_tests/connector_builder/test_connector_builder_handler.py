@@ -17,9 +17,6 @@ import requests
 
 from airbyte_cdk import connector_builder
 from airbyte_cdk.connector_builder.connector_builder_handler import (
-    DEFAULT_MAXIMUM_NUMBER_OF_PAGES_PER_SLICE,
-    DEFAULT_MAXIMUM_NUMBER_OF_SLICES,
-    DEFAULT_MAXIMUM_RECORDS,
     TestLimits,
     create_source,
     get_limits,
@@ -56,8 +53,11 @@ from airbyte_cdk.models import (
     Type,
 )
 from airbyte_cdk.models import Type as MessageType
+from airbyte_cdk.sources.declarative.concurrent_declarative_source import (
+    ConcurrentDeclarativeSource,
+    TestLimits,
+)
 from airbyte_cdk.sources.declarative.declarative_stream import DeclarativeStream
-from airbyte_cdk.sources.declarative.manifest_declarative_source import ManifestDeclarativeSource
 from airbyte_cdk.sources.declarative.retrievers.simple_retriever import SimpleRetriever
 from airbyte_cdk.sources.declarative.stream_slicers import StreamSlicerTestReadDecorator
 from airbyte_cdk.test.mock_http import HttpMocker, HttpRequest, HttpResponse
@@ -530,7 +530,9 @@ def test_resolve_manifest(valid_resolve_manifest_config_file):
     config = copy.deepcopy(RESOLVE_MANIFEST_CONFIG)
     command = "resolve_manifest"
     config["__command"] = command
-    source = ManifestDeclarativeSource(source_config=MANIFEST)
+    source = ConcurrentDeclarativeSource(
+        catalog=None, config=config, state=None, source_config=MANIFEST
+    )
     limits = TestLimits()
     resolved_manifest = handle_connector_builder_request(
         source, command, config, create_configured_catalog("dummy_stream"), _A_STATE, limits
@@ -679,19 +681,21 @@ def test_resolve_manifest(valid_resolve_manifest_config_file):
 
 
 def test_resolve_manifest_error_returns_error_response():
-    class MockManifestDeclarativeSource:
+    class MockConcurrentDeclarativeSource:
         @property
         def resolved_manifest(self):
             raise ValueError
 
-    source = MockManifestDeclarativeSource()
+    source = MockConcurrentDeclarativeSource()
     response = resolve_manifest(source)
     assert "Error resolving manifest" in response.trace.error.message
 
 
 def test_read():
     config = TEST_READ_CONFIG
-    source = ManifestDeclarativeSource(source_config=MANIFEST)
+    source = ConcurrentDeclarativeSource(
+        catalog=None, config=config, state=None, source_config=MANIFEST
+    )
 
     real_record = AirbyteRecordMessage(
         data={"id": "1234", "key": "value"}, emitted_at=1, stream=_stream_name
@@ -780,7 +784,9 @@ def test_config_update() -> None:
         "client_secret": "a client secret",
         "refresh_token": "a refresh token",
     }
-    source = ManifestDeclarativeSource(source_config=manifest)
+    source = ConcurrentDeclarativeSource(
+        catalog=None, config=config, state=None, source_config=manifest
+    )
 
     refresh_request_response = {
         "access_token": "an updated access token",
@@ -817,7 +823,7 @@ def test_read_returns_error_response(mock_from_exception):
         def name(self):
             return _stream_name
 
-    class MockManifestDeclarativeSource:
+    class MockConcurrentDeclarativeSource:
         def streams(self, config):
             return [MockDeclarativeStream()]
 
@@ -839,7 +845,7 @@ def test_read_returns_error_response(mock_from_exception):
     stack_trace = "a stack trace"
     mock_from_exception.return_value = stack_trace
 
-    source = MockManifestDeclarativeSource()
+    source = MockConcurrentDeclarativeSource()
     limits = TestLimits()
     response = read_stream(
         source,
@@ -881,19 +887,22 @@ def test_handle_429_response():
 
     config = TEST_READ_CONFIG
     limits = TestLimits()
-    source = create_source(config, limits)
+    catalog = ConfiguredAirbyteCatalogSerializer.load(CONFIGURED_CATALOG)
+    source = create_source(config=config, limits=limits, catalog=catalog, state=None)
 
     with patch("requests.Session.send", return_value=response) as mock_send:
         response = handle_connector_builder_request(
             source,
             "test_read",
             config,
-            ConfiguredAirbyteCatalogSerializer.load(CONFIGURED_CATALOG),
+            catalog,
             _A_PER_PARTITION_STATE,
             limits,
         )
 
-        mock_send.assert_called_once()
+        # The test read will attempt a read for 5 partitions, and attempt 1 request
+        # each time that will not be retried
+        assert mock_send.call_count == 5
 
 
 @pytest.mark.parametrize(
@@ -945,7 +954,7 @@ def test_invalid_config_command(invalid_config_file, dummy_catalog):
 
 @pytest.fixture
 def manifest_declarative_source():
-    return mock.Mock(spec=ManifestDeclarativeSource, autospec=True)
+    return mock.Mock(spec=ConcurrentDeclarativeSource, autospec=True)
 
 
 def create_mock_retriever(name, url_base, path):
@@ -970,16 +979,16 @@ def create_mock_declarative_stream(http_stream):
         (
             "test_no_test_read_config",
             {},
-            DEFAULT_MAXIMUM_RECORDS,
-            DEFAULT_MAXIMUM_NUMBER_OF_SLICES,
-            DEFAULT_MAXIMUM_NUMBER_OF_PAGES_PER_SLICE,
+            TestLimits.DEFAULT_MAX_RECORDS,
+            TestLimits.DEFAULT_MAX_SLICES,
+            TestLimits.DEFAULT_MAX_PAGES_PER_SLICE,
         ),
         (
             "test_no_values_set",
             {"__test_read_config": {}},
-            DEFAULT_MAXIMUM_RECORDS,
-            DEFAULT_MAXIMUM_NUMBER_OF_SLICES,
-            DEFAULT_MAXIMUM_NUMBER_OF_PAGES_PER_SLICE,
+            TestLimits.DEFAULT_MAX_RECORDS,
+            TestLimits.DEFAULT_MAX_SLICES,
+            TestLimits.DEFAULT_MAX_PAGES_PER_SLICE,
         ),
         (
             "test_values_are_set",
@@ -1007,9 +1016,9 @@ def test_create_source():
 
     config = {"__injected_declarative_manifest": MANIFEST}
 
-    source = create_source(config, limits)
+    source = create_source(config=config, limits=limits, catalog=None, state=None)
 
-    assert isinstance(source, ManifestDeclarativeSource)
+    assert isinstance(source, ConcurrentDeclarativeSource)
     assert source._constructor._limit_pages_fetched_per_slice == limits.max_pages_per_slice
     assert source._constructor._limit_slices_fetched == limits.max_slices
     assert source._constructor._disable_cache
@@ -1101,7 +1110,7 @@ def test_read_source(mock_http_stream):
 
     config = {"__injected_declarative_manifest": MANIFEST}
 
-    source = create_source(config, limits)
+    source = create_source(config=config, limits=limits, catalog=catalog, state=None)
 
     output_data = read_stream(source, config, catalog, _A_PER_PARTITION_STATE, limits).record.data
     slices = output_data["slices"]
@@ -1149,7 +1158,7 @@ def test_read_source_single_page_single_slice(mock_http_stream):
 
     config = {"__injected_declarative_manifest": MANIFEST}
 
-    source = create_source(config, limits)
+    source = create_source(config=config, limits=limits, catalog=catalog, state=None)
 
     output_data = read_stream(source, config, catalog, _A_PER_PARTITION_STATE, limits).record.data
     slices = output_data["slices"]
@@ -1236,7 +1245,7 @@ def test_handle_read_external_requests(deployment_mode, url_base, expected_error
     test_manifest["streams"][0]["$parameters"]["url_base"] = url_base
     config = {"__injected_declarative_manifest": test_manifest}
 
-    source = create_source(config, limits)
+    source = create_source(config=config, limits=limits, catalog=catalog, state=None)
 
     with mock.patch.dict(os.environ, {"DEPLOYMENT_MODE": deployment_mode}, clear=False):
         output_data = read_stream(
@@ -1266,13 +1275,13 @@ def test_handle_read_external_requests(deployment_mode, url_base, expected_error
         pytest.param(
             "CLOUD",
             "https://10.0.27.27/tokens/bearer",
-            "AirbyteTracedException",
+            "StreamThreadException",
             id="test_cloud_read_with_private_endpoint",
         ),
         pytest.param(
             "CLOUD",
             "http://unsecured.protocol/tokens/bearer",
-            "InvalidSchema",
+            "StreamThreadException",
             id="test_cloud_read_with_unsecured_endpoint",
         ),
         pytest.param(
@@ -1332,7 +1341,7 @@ def test_handle_read_external_oauth_request(deployment_mode, token_url, expected
     )
     config = {"__injected_declarative_manifest": test_manifest}
 
-    source = create_source(config, limits)
+    source = create_source(config=config, limits=limits, catalog=catalog, state=None)
 
     with mock.patch.dict(os.environ, {"DEPLOYMENT_MODE": deployment_mode}, clear=False):
         output_data = read_stream(
@@ -1389,7 +1398,9 @@ def test_read_stream_exception_with_secrets():
 def test_full_resolve_manifest(valid_resolve_manifest_config_file):
     config = copy.deepcopy(RESOLVE_DYNAMIC_STREAM_MANIFEST_CONFIG)
     command = config["__command"]
-    source = ManifestDeclarativeSource(source_config=DYNAMIC_STREAM_MANIFEST)
+    source = ConcurrentDeclarativeSource(
+        catalog=None, config=config, state=None, source_config=DYNAMIC_STREAM_MANIFEST
+    )
     limits = TestLimits(max_streams=2)
     with HttpMocker() as http_mocker:
         http_mocker.get(

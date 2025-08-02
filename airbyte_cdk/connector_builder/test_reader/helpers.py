@@ -5,7 +5,7 @@
 import json
 from copy import deepcopy
 from json import JSONDecodeError
-from typing import Any, Dict, List, Mapping, Optional
+from typing import Any, Dict, List, Mapping, Optional, Union
 
 from airbyte_cdk.connector_builder.models import (
     AuxiliaryRequest,
@@ -17,6 +17,8 @@ from airbyte_cdk.connector_builder.models import (
 from airbyte_cdk.models import (
     AirbyteLogMessage,
     AirbyteMessage,
+    AirbyteStateBlob,
+    AirbyteStateMessage,
     OrchestratorType,
     TraceType,
 )
@@ -466,7 +468,7 @@ def handle_current_slice(
     return StreamReadSlices(
         pages=current_slice_pages,
         slice_descriptor=current_slice_descriptor,
-        state=[latest_state_message] if latest_state_message else [],
+        state=[convert_state_blob_to_mapping(latest_state_message)] if latest_state_message else [],
         auxiliary_requests=auxiliary_requests if auxiliary_requests else [],
     )
 
@@ -718,3 +720,23 @@ def get_auxiliary_request_type(stream: dict, http: dict) -> str:  # type: ignore
     Determines the type of the auxiliary request based on the stream and HTTP properties.
     """
     return "PARENT_STREAM" if stream.get("is_substream", False) else str(http.get("type", None))
+
+
+def convert_state_blob_to_mapping(
+    state_message: Union[AirbyteStateMessage, Dict[str, Any]],
+) -> Dict[str, Any]:
+    """
+    The AirbyteStreamState stores state as an AirbyteStateBlob which deceivingly is not
+    a dictionary, but rather a list of kwargs fields. This in turn causes it to not be
+    properly turned into a dictionary when translating this back into response output
+    by the connector_builder_handler using asdict()
+    """
+
+    if isinstance(state_message, AirbyteStateMessage) and state_message.stream:
+        state_value = state_message.stream.stream_state
+        if isinstance(state_value, AirbyteStateBlob):
+            state_value_mapping = {k: v for k, v in state_value.__dict__.items()}
+            state_message.stream.stream_state = state_value_mapping  # type: ignore  # we intentionally set this as a Dict so that StreamReadSlices is translated properly in the resulting HTTP response
+        return state_message  # type: ignore  # See above, but when this is an AirbyteStateMessage we must convert AirbyteStateBlob to a Dict
+    else:
+        return state_message  # type: ignore  # This is guaranteed to be a Dict since we check isinstance AirbyteStateMessage above
