@@ -28,12 +28,14 @@ from airbyte_cdk.models import (
     SyncMode,
     Type,
 )
+from airbyte_cdk.sources.declarative.concurrent_declarative_source import ConcurrentDeclarativeSource
 from airbyte_cdk.sources.declarative.declarative_stream import DeclarativeStream
 from airbyte_cdk.sources.declarative.manifest_declarative_source import ManifestDeclarativeSource
 from airbyte_cdk.sources.declarative.parsers.model_to_component_factory import (
     ModelToComponentFactory,
 )
 from airbyte_cdk.sources.declarative.retrievers.simple_retriever import SimpleRetriever
+from airbyte_cdk.sources.streams.concurrent.default_stream import DefaultStream
 
 logger = logging.getLogger("airbyte")
 
@@ -280,8 +282,8 @@ class TestManifestDeclarativeSource:
 
         streams = source.streams({})
         assert len(streams) == 2
-        assert isinstance(streams[0], DeclarativeStream)
-        assert isinstance(streams[1], DeclarativeStream)
+        assert isinstance(streams[0], DefaultStream)
+        assert isinstance(streams[1], DefaultStream)
         assert (
             source.resolved_manifest["description"]
             == "This is a sample source connector that is very valid."
@@ -1289,13 +1291,13 @@ class TestManifestDeclarativeSource:
 
         actual_streams = source.streams(config=config)
         assert len(actual_streams) == expected_stream_count
-        assert isinstance(actual_streams[0], DeclarativeStream)
+        assert isinstance(actual_streams[0], DefaultStream)
         assert actual_streams[0].name == "students"
 
         if is_sandbox:
-            assert isinstance(actual_streams[1], DeclarativeStream)
+            assert isinstance(actual_streams[1], DefaultStream)
             assert actual_streams[1].name == "classrooms"
-            assert isinstance(actual_streams[2], DeclarativeStream)
+            assert isinstance(actual_streams[2], DefaultStream)
             assert actual_streams[2].name == "clubs"
 
         assert (
@@ -2202,7 +2204,6 @@ def test_only_parent_streams_use_cache():
 
 
 def _run_read(manifest: Mapping[str, Any], stream_name: str) -> List[AirbyteMessage]:
-    source = ManifestDeclarativeSource(source_config=manifest)
     catalog = ConfiguredAirbyteCatalog(
         streams=[
             ConfiguredAirbyteStream(
@@ -2214,7 +2215,10 @@ def _run_read(manifest: Mapping[str, Any], stream_name: str) -> List[AirbyteMess
             )
         ]
     )
-    return list(source.read(logger, {}, catalog, {}))
+    config = {}
+    state = {}
+    source = ConcurrentDeclarativeSource(catalog, config, state, manifest)
+    return list(source.read(logger, {}, catalog, state))
 
 
 def test_declarative_component_schema_valid_ref_links():

@@ -209,6 +209,10 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
             # these legacy Python streams the way we do low-code streams to determine if they are concurrent compatible,
             # so we need to treat them as synchronous
 
+            if isinstance(declarative_stream, AbstractStream):
+                concurrent_streams.append(declarative_stream)
+                continue
+
             supports_file_transfer = (
                 isinstance(declarative_stream, DeclarativeStream)
                 and "file_uploader" in name_to_stream_mapping[declarative_stream.name]
@@ -278,7 +282,7 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
                         partition_generator = StreamSlicerPartitionGenerator(
                             partition_factory=DeclarativePartitionFactory(
                                 declarative_stream.name,
-                                declarative_stream.get_json_schema(),
+                                declarative_stream.schema_loader,
                                 retriever,
                                 self.message_repository,
                             ),
@@ -309,7 +313,7 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
                         partition_generator = StreamSlicerPartitionGenerator(
                             partition_factory=DeclarativePartitionFactory(
                                 declarative_stream.name,
-                                declarative_stream.get_json_schema(),
+                                declarative_stream.schema_loader,
                                 retriever,
                                 self.message_repository,
                             ),
@@ -339,7 +343,7 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
                     partition_generator = StreamSlicerPartitionGenerator(
                         DeclarativePartitionFactory(
                             declarative_stream.name,
-                            declarative_stream.get_json_schema(),
+                            declarative_stream.schema_loader,
                             declarative_stream.retriever,
                             self.message_repository,
                         ),
@@ -399,7 +403,7 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
                     partition_generator = StreamSlicerPartitionGenerator(
                         DeclarativePartitionFactory(
                             declarative_stream.name,
-                            declarative_stream.get_json_schema(),
+                            declarative_stream.schema_loader,
                             retriever,
                             self.message_repository,
                         ),

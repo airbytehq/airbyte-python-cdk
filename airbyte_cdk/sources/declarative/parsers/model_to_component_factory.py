@@ -598,6 +598,7 @@ from airbyte_cdk.sources.streams.call_rate import (
     Rate,
     UnlimitedCallRatePolicy,
 )
+from airbyte_cdk.sources.streams.concurrent.abstract_stream import AbstractStream
 from airbyte_cdk.sources.streams.concurrent.clamping import (
     ClampingEndProvider,
     ClampingStrategy,
@@ -1920,8 +1921,8 @@ class ModelToComponentFactory:
         )
 
     def create_declarative_stream(
-        self, model: DeclarativeStreamModel, config: Config, **kwargs: Any
-    ) -> DeclarativeStream:
+        self, model: DeclarativeStreamModel, config: Config, is_parent=False, **kwargs: Any
+    ) -> Union[DeclarativeStream, AbstractStream]:
         # When constructing a declarative stream, we assemble the incremental_sync component and retriever's partition_router field
         # components if they exist into a single CartesianProductStreamSlicer. This is then passed back as an argument when constructing the
         # Retriever. This is done in the declarative stream not the retriever to support custom retrievers. The custom create methods in
@@ -2065,8 +2066,38 @@ class ModelToComponentFactory:
                 options["name"] = model.name
             schema_loader = DefaultSchemaLoader(config=config, parameters=options)
 
-        cursor_field = model.incremental_sync.cursor_field if model.incremental_sync else None
+        if isinstance(combined_slicers, PartitionRouter) and not is_parent and not self._emit_connector_builder_messages:
+            # We are starting to migrate streams to instantiate directly the DefaultStream instead of instantiating the
+            # DeclarativeStream and assembling the DefaultStream from that. The plan is the following:
+            # * Streams without partition router nor cursors and streams with only partition router. This is the `isinstance(combined_slicers, PartitionRouter)` condition as the first kind with have a SinglePartitionRouter
+            # * Streams without partition router but with cursor
+            # * Streams with both partition router and cursor
+            # We specifically exclude parent streams here because SubstreamPartitionRouter has not been updated yet
+            # We specifically exclude Connector Builder stuff for now as Brian is working on this anyway
+            stream_name = model.name or ""
+            partition_generator = StreamSlicerPartitionGenerator(
+                DeclarativePartitionFactory(
+                    stream_name,
+                    schema_loader,
+                    retriever,
+                    self._message_repository,
+                ),
+                combined_slicers,
+            )
+            FinalStateCursor(stream_name, None, self._message_repository)
+            return DefaultStream(
+                partition_generator=partition_generator,
+                name=stream_name,
+                json_schema=schema_loader.get_json_schema,
+                primary_key=get_primary_key_from_stream(primary_key),
+                cursor_field=None,
+                # FIXME we should have the cursor field has part of the interface of cursor
+                logger=logging.getLogger(f"airbyte.{stream_name}"),
+                # FIXME this is a breaking change compared to the old implementation,
+                cursor=FinalStateCursor(stream_name, None, self._message_repository),
+            )
 
+        cursor_field = model.incremental_sync.cursor_field if model.incremental_sync else None
         if model.state_migrations:
             state_transformations = [
                 self._create_component_from_model(state_migration, config, declarative_stream=model)
@@ -2094,7 +2125,7 @@ class ModelToComponentFactory:
         ],
         config: Config,
         stream_name: Optional[str] = None,
-    ) -> Optional[PartitionRouter]:
+    ) -> PartitionRouter:
         if (
             hasattr(model, "partition_router")
             and isinstance(model, SimpleRetrieverModel | AsyncRetrieverModel)
@@ -2115,7 +2146,7 @@ class ModelToComponentFactory:
                 return self._create_component_from_model(  # type: ignore[no-any-return] # Will be created PartitionRouter as stream_slicer_model is model.partition_router
                     model=stream_slicer_model, config=config, stream_name=stream_name or ""
                 )
-        return None
+        return SinglePartitionRouter(parameters={})
 
     def _build_incremental_cursor(
         self,
@@ -2123,7 +2154,7 @@ class ModelToComponentFactory:
         stream_slicer: Optional[PartitionRouter],
         config: Config,
     ) -> Optional[StreamSlicer]:
-        if model.incremental_sync and stream_slicer:
+        if model.incremental_sync and (stream_slicer and not isinstance(stream_slicer, SinglePartitionRouter)):
             if model.retriever.type == "AsyncRetriever":
                 stream_name = model.name or ""
                 stream_namespace = None
@@ -2871,7 +2902,7 @@ class ModelToComponentFactory:
         self, model: ParentStreamConfigModel, config: Config, **kwargs: Any
     ) -> ParentStreamConfig:
         declarative_stream = self._create_component_from_model(
-            model.stream, config=config, **kwargs
+            model.stream, config=config, is_parent=True, **kwargs,
         )
         request_option = (
             self._create_component_from_model(model.request_option, config=config)
