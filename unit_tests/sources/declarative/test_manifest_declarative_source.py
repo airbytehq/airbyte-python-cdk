@@ -36,6 +36,7 @@ from airbyte_cdk.sources.declarative.parsers.model_to_component_factory import (
 )
 from airbyte_cdk.sources.declarative.retrievers.simple_retriever import SimpleRetriever
 from airbyte_cdk.sources.streams.concurrent.default_stream import DefaultStream
+from unit_tests.sources.declarative.parsers.test_model_to_component_factory import get_retriever
 
 logger = logging.getLogger("airbyte")
 
@@ -2181,26 +2182,27 @@ def test_only_parent_streams_use_cache():
 
     # Main stream with caching (parent for substream `applications_interviews`)
     assert streams[0].name == "applications"
-    assert streams[0].retriever.requester.use_cache
+    assert get_retriever(streams[0]).requester.use_cache
 
     # Substream
     assert streams[1].name == "applications_interviews"
-    assert not streams[1].retriever.requester.use_cache
+
+    stream_1_retriever = get_retriever(streams[1])
+    assert not stream_1_retriever.requester.use_cache
 
     # Parent stream created for substream
     assert (
-        streams[1].retriever.stream_slicer.parent_stream_configs[0].stream.name
-        == "applications"
+            stream_1_retriever.stream_slicer.parent_stream_configs[0].stream.name
+            == "applications"
     )
     assert (
-        streams[1]
-        .retriever.stream_slicer.parent_stream_configs[0]
+        stream_1_retriever.stream_slicer.parent_stream_configs[0]
         .stream.retriever.requester.use_cache
     )
 
     # Main stream without caching
     assert streams[2].name == "jobs"
-    assert not streams[2].retriever.requester.use_cache
+    assert not get_retriever(streams[2]).requester.use_cache
 
 
 def _run_read(manifest: Mapping[str, Any], stream_name: str) -> List[AirbyteMessage]:
