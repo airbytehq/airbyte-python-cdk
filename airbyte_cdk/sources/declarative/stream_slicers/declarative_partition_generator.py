@@ -13,7 +13,6 @@ from airbyte_cdk.utils.slice_hasher import SliceHasher
 
 
 class SchemaLoaderCachingDecorator(SchemaLoader):
-
     def __init__(self, schema_loader: SchemaLoader):
         self._decorated = schema_loader
         self._loaded_schema = None
@@ -21,6 +20,9 @@ class SchemaLoaderCachingDecorator(SchemaLoader):
     def get_json_schema(self) -> Mapping[str, Any]:
         if self._loaded_schema is None:
             self._loaded_schema = self._decorated.get_json_schema()
+
+        if self._loaded_schema is None:
+            raise ValueError("Could not load schema")
         return self._loaded_schema
 
 
@@ -69,7 +71,9 @@ class DeclarativePartition(Partition):
         self._hash = SliceHasher.hash(self._stream_name, self._stream_slice)
 
     def read(self) -> Iterable[Record]:
-        for stream_data in self._retriever.read_records(self._schema_loader.get_json_schema(), self._stream_slice):
+        for stream_data in self._retriever.read_records(
+            self._schema_loader.get_json_schema(), self._stream_slice
+        ):
             if isinstance(stream_data, Mapping):
                 record = (
                     stream_data

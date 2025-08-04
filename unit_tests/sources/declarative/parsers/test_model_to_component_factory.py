@@ -157,7 +157,9 @@ from airbyte_cdk.sources.declarative.schema.composite_schema_loader import Compo
 from airbyte_cdk.sources.declarative.schema.schema_loader import SchemaLoader
 from airbyte_cdk.sources.declarative.spec import Spec
 from airbyte_cdk.sources.declarative.stream_slicers import StreamSlicerTestReadDecorator
-from airbyte_cdk.sources.declarative.stream_slicers.declarative_partition_generator import SchemaLoaderCachingDecorator
+from airbyte_cdk.sources.declarative.stream_slicers.declarative_partition_generator import (
+    SchemaLoaderCachingDecorator,
+)
 from airbyte_cdk.sources.declarative.transformations import AddFields, RemoveFields
 from airbyte_cdk.sources.declarative.transformations.add_fields import AddedFieldDefinition
 from airbyte_cdk.sources.declarative.yaml_declarative_source import YamlDeclarativeSource
@@ -1768,14 +1770,8 @@ def test_config_with_defaults():
 
     schema_loader = get_schema_loader(stream)
     assert isinstance(schema_loader, JsonFileSchemaLoader)
-    assert (
-        schema_loader.file_path.string
-        == "./source_sendgrid/schemas/{{ parameters.name }}.yaml"
-    )
-    assert (
-        schema_loader.file_path.default
-        == "./source_sendgrid/schemas/{{ parameters.name }}.yaml"
-    )
+    assert schema_loader.file_path.string == "./source_sendgrid/schemas/{{ parameters.name }}.yaml"
+    assert schema_loader.file_path.default == "./source_sendgrid/schemas/{{ parameters.name }}.yaml"
 
     assert isinstance(retriever.requester, HttpRequester)
     assert retriever.requester.http_method == HttpMethod.GET
@@ -1785,9 +1781,9 @@ def test_config_with_defaults():
 
     assert isinstance(retriever.record_selector, RecordSelector)
     assert isinstance(retriever.record_selector.extractor, DpathExtractor)
-    assert [
-        fp.eval(input_config) for fp in retriever.record_selector.extractor._field_path
-    ] == ["result"]
+    assert [fp.eval(input_config) for fp in retriever.record_selector.extractor._field_path] == [
+        "result"
+    ]
 
     assert isinstance(retriever.paginator, DefaultPaginator)
     assert retriever.paginator.url_base.string == "https://api.sendgrid.com"
@@ -2508,7 +2504,9 @@ class TestCreateTransformations:
         ),
     ],
 )
-def test_merge_incremental_and_partition_router(incremental, partition_router, expected_router_type, expected_stream_type):
+def test_merge_incremental_and_partition_router(
+    incremental, partition_router, expected_router_type, expected_stream_type
+):
     stream_model = {
         "type": "DeclarativeStream",
         "retriever": {
@@ -2542,7 +2540,11 @@ def test_merge_incremental_and_partition_router(incremental, partition_router, e
     assert isinstance(stream, expected_stream_type)
     retriever = get_retriever(stream)
     assert isinstance(retriever, SimpleRetriever)
-    stream_slicer = retriever.stream_slicer if expected_stream_type == DeclarativeStream else stream._stream_partition_generator._stream_slicer
+    stream_slicer = (
+        retriever.stream_slicer
+        if expected_stream_type == DeclarativeStream
+        else stream._stream_partition_generator._stream_slicer
+    )
     assert isinstance(stream_slicer, expected_router_type)
 
     if incremental and partition_router:
@@ -2722,7 +2724,9 @@ def test_create_custom_retriever():
     )
 
     assert isinstance(stream, DefaultStream)
-    assert isinstance(stream._stream_partition_generator._partition_factory._retriever, MyCustomRetriever)
+    assert isinstance(
+        stream._stream_partition_generator._partition_factory._retriever, MyCustomRetriever
+    )
 
 
 @freezegun.freeze_time("2021-01-01 00:00:00")
@@ -4667,9 +4671,16 @@ def test_create_stream_with_multiple_schema_loaders():
 
 
 def get_schema_loader(stream: DefaultStream):
-    assert isinstance(stream._stream_partition_generator._partition_factory._schema_loader, SchemaLoaderCachingDecorator)
+    assert isinstance(
+        stream._stream_partition_generator._partition_factory._schema_loader,
+        SchemaLoaderCachingDecorator,
+    )
     return stream._stream_partition_generator._partition_factory._schema_loader._decorated
 
 
 def get_retriever(stream: Union[DeclarativeStream, DefaultStream]):
-    return stream.retriever if isinstance(stream, DeclarativeStream) else stream._stream_partition_generator._partition_factory._retriever
+    return (
+        stream.retriever
+        if isinstance(stream, DeclarativeStream)
+        else stream._stream_partition_generator._partition_factory._retriever
+    )

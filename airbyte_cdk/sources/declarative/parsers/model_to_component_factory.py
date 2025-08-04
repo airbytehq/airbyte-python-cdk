@@ -545,8 +545,10 @@ from airbyte_cdk.sources.declarative.stream_slicers import (
     StreamSlicer,
     StreamSlicerTestReadDecorator,
 )
-from airbyte_cdk.sources.declarative.stream_slicers.declarative_partition_generator import \
-    StreamSlicerPartitionGenerator, DeclarativePartitionFactory
+from airbyte_cdk.sources.declarative.stream_slicers.declarative_partition_generator import (
+    DeclarativePartitionFactory,
+    StreamSlicerPartitionGenerator,
+)
 from airbyte_cdk.sources.declarative.transformations import (
     AddFields,
     RecordTransformation,
@@ -608,7 +610,12 @@ from airbyte_cdk.sources.streams.concurrent.clamping import (
     WeekClampingStrategy,
     Weekday,
 )
-from airbyte_cdk.sources.streams.concurrent.cursor import ConcurrentCursor, CursorField, Cursor, FinalStateCursor
+from airbyte_cdk.sources.streams.concurrent.cursor import (
+    ConcurrentCursor,
+    Cursor,
+    CursorField,
+    FinalStateCursor,
+)
 from airbyte_cdk.sources.streams.concurrent.default_stream import DefaultStream
 from airbyte_cdk.sources.streams.concurrent.helpers import get_primary_key_from_stream
 from airbyte_cdk.sources.streams.concurrent.state_converters.datetime_stream_state_converter import (
@@ -2066,7 +2073,11 @@ class ModelToComponentFactory:
                 options["name"] = model.name
             schema_loader = DefaultSchemaLoader(config=config, parameters=options)
 
-        if isinstance(combined_slicers, PartitionRouter) and not is_parent and not self._emit_connector_builder_messages:
+        if (
+            isinstance(combined_slicers, PartitionRouter)
+            and not is_parent
+            and not self._emit_connector_builder_messages
+        ):
             # We are starting to migrate streams to instantiate directly the DefaultStream instead of instantiating the
             # DeclarativeStream and assembling the DefaultStream from that. The plan is the following:
             # * Streams without partition router nor cursors and streams with only partition router. This is the `isinstance(combined_slicers, PartitionRouter)` condition as the first kind with have a SinglePartitionRouter
@@ -2154,7 +2165,9 @@ class ModelToComponentFactory:
         stream_slicer: Optional[PartitionRouter],
         config: Config,
     ) -> Optional[StreamSlicer]:
-        if model.incremental_sync and (stream_slicer and not isinstance(stream_slicer, SinglePartitionRouter)):
+        if model.incremental_sync and (
+            stream_slicer and not isinstance(stream_slicer, SinglePartitionRouter)
+        ):
             if model.retriever.type == "AsyncRetriever":
                 stream_name = model.name or ""
                 stream_namespace = None
@@ -2902,7 +2915,10 @@ class ModelToComponentFactory:
         self, model: ParentStreamConfigModel, config: Config, **kwargs: Any
     ) -> ParentStreamConfig:
         declarative_stream = self._create_component_from_model(
-            model.stream, config=config, is_parent=True, **kwargs,
+            model.stream,
+            config=config,
+            is_parent=True,
+            **kwargs,
         )
         request_option = (
             self._create_component_from_model(model.request_option, config=config)

@@ -298,7 +298,7 @@ class ManifestDeclarativeSource(DeclarativeSource):
                 f"Expected to generate a ConnectionChecker component, but received {check_stream.__class__}"
             )
 
-    def streams(self, config: Mapping[str, Any]) -> List[Union[Stream, AbstractStream]]:
+    def streams(self, config: Mapping[str, Any]) -> List[Union[Stream, AbstractStream]]:  # type: ignore  # we are migrating away from the AbstractSource and are expecting that this will only be called by ConcurrentDeclarativeSource or the Connector Builder
         """
         As a migration step, this method will return both legacy stream (Stream) and concurrent stream (AbstractStream).
         Once the migration is done, we can probably have this method throw "not implemented" as we figure out how to
