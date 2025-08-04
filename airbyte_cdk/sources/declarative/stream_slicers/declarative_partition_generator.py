@@ -1,9 +1,12 @@
-# Copyright (c) 2024 Airbyte, Inc., all rights reserved.
+# Copyright (c) 2025 Airbyte, Inc., all rights reserved.
 
-from typing import Any, Iterable, Mapping, Optional
+from typing import Any, Iterable, Mapping, Optional, cast
 
 from airbyte_cdk.sources.declarative.retrievers import Retriever
 from airbyte_cdk.sources.declarative.schema import SchemaLoader
+from airbyte_cdk.sources.declarative.stream_slicers.stream_slicer_test_read_decorator import (
+    StreamSlicerTestReadDecorator,
+)
 from airbyte_cdk.sources.message import MessageRepository
 from airbyte_cdk.sources.streams.concurrent.partitions.partition import Partition
 from airbyte_cdk.sources.streams.concurrent.partitions.partition_generator import PartitionGenerator
@@ -98,10 +101,23 @@ class DeclarativePartition(Partition):
 
 class StreamSlicerPartitionGenerator(PartitionGenerator):
     def __init__(
-        self, partition_factory: DeclarativePartitionFactory, stream_slicer: StreamSlicer
+        self,
+        partition_factory: DeclarativePartitionFactory,
+        stream_slicer: StreamSlicer,
+        slice_limit: Optional[int] = None,
     ) -> None:
         self._partition_factory = partition_factory
-        self._stream_slicer = stream_slicer
+
+        if slice_limit:
+            self._stream_slicer = cast(
+                StreamSlicer,
+                StreamSlicerTestReadDecorator(
+                    wrapped_slicer=stream_slicer,
+                    maximum_number_of_slices=slice_limit,
+                ),
+            )
+        else:
+            self._stream_slicer = stream_slicer
 
     def generate(self) -> Iterable[Partition]:
         for stream_slice in self._stream_slicer.stream_slices():

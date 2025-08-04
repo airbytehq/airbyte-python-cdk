@@ -74,6 +74,10 @@ class Cursor(StreamSlicer, ABC):
         """
         raise NotImplementedError()
 
+    @abstractmethod
+    def should_be_synced(self, record: Record) -> bool:
+        pass
+
     def stream_slices(self) -> Iterable[StreamSlice]:
         """
         Default placeholder implementation of generate_slices.
@@ -122,6 +126,9 @@ class FinalStateCursor(Cursor):
             self._stream_name, self._stream_namespace
         )
         self._message_repository.emit_message(state_message)
+
+    def should_be_synced(self, record: Record) -> bool:
+        return True
 
 
 class ConcurrentCursor(Cursor):
@@ -192,9 +199,23 @@ class ConcurrentCursor(Cursor):
         self, state: MutableMapping[str, Any]
     ) -> Tuple[CursorValueType, MutableMapping[str, Any]]:
         if self._connector_state_converter.is_state_message_compatible(state):
+            partitioned_state = self._connector_state_converter.deserialize(state)
+            slices_from_partitioned_state = partitioned_state.get("slices", [])
+
+            value_from_partitioned_state = None
+            if slices_from_partitioned_state:
+                # We assume here that the slices have been already merged
+                first_slice = slices_from_partitioned_state[0]
+                value_from_partitioned_state = (
+                    first_slice[self._connector_state_converter.MOST_RECENT_RECORD_KEY]
+                    if self._connector_state_converter.MOST_RECENT_RECORD_KEY in first_slice
+                    else first_slice[self._connector_state_converter.END_KEY]
+                )
             return (
-                self._start or self._connector_state_converter.zero_value,
-                self._connector_state_converter.deserialize(state),
+                value_from_partitioned_state
+                or self._start
+                or self._connector_state_converter.zero_value,
+                partitioned_state,
             )
         return self._connector_state_converter.convert_from_sequential_state(
             self._cursor_field, state, self._start
