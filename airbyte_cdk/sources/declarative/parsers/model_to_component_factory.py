@@ -2170,7 +2170,7 @@ class ModelToComponentFactory:
         )
 
         if model.incremental_sync and (
-                stream_slicer and not isinstance(stream_slicer, SinglePartitionRouter)
+            stream_slicer and not isinstance(stream_slicer, SinglePartitionRouter)
         ):
             if model.retriever.type == "AsyncRetriever":
                 stream_name = model.name or ""
@@ -2244,7 +2244,11 @@ class ModelToComponentFactory:
         else:
             state_transformations = []
 
-        if model.incremental_sync and stream_slicer and not isinstance(stream_slicer, SinglePartitionRouter):
+        if (
+            model.incremental_sync
+            and stream_slicer
+            and not isinstance(stream_slicer, SinglePartitionRouter)
+        ):
             return self.create_concurrent_cursor_from_perpartition_cursor(  # type: ignore # This is a known issue that we are creating and returning a ConcurrentCursor which does not technically implement the (low-code) StreamSlicer. However, (low-code) StreamSlicer and ConcurrentCursor both implement StreamSlicer.stream_slices() which is the primary method needed for checkpointing
                 state_manager=self._connector_state_manager,
                 model_type=DatetimeBasedCursorModel,
