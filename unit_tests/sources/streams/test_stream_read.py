@@ -147,6 +147,9 @@ class MockConcurrentCursor(Cursor):
     def ensure_at_least_one_state_emitted(self) -> None:
         pass
 
+    def should_be_synced(self, record: Record) -> bool:
+        return True
+
 
 def _stream(slice_to_partition_mapping, slice_logger, logger, message_repository, json_schema=None):
     return _MockStream(slice_to_partition_mapping, json_schema=json_schema)
