@@ -53,9 +53,7 @@ class DefaultStream(AbstractStream):
         return self._cursor_field
 
     def get_json_schema(self) -> Mapping[str, Any]:
-        if isinstance(self._json_schema, Callable):
-            return self._json_schema()
-        return self._json_schema
+        return self._json_schema() if callable(self._json_schema) else self._json_schema
 
     def as_airbyte_stream(self) -> AirbyteStream:
         stream = AirbyteStream(

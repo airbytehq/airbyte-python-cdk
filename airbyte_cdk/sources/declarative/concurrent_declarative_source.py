@@ -3,7 +3,7 @@
 #
 
 import logging
-from typing import Any, Generic, Iterator, List, Mapping, MutableMapping, Optional, Tuple
+from typing import Any, Generic, Iterator, List, Mapping, MutableMapping, Optional, Tuple, Union
 
 from airbyte_cdk.models import (
     AirbyteCatalog,
@@ -28,7 +28,6 @@ from airbyte_cdk.sources.declarative.incremental.per_partition_with_global impor
     PerPartitionWithGlobalCursor,
 )
 from airbyte_cdk.sources.declarative.manifest_declarative_source import ManifestDeclarativeSource
-from airbyte_cdk.sources.declarative.models import FileUploader
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     ConcurrencyLevel as ConcurrencyLevelModel,
 )
@@ -179,7 +178,7 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
             ]
         )
 
-    def streams(self, config: Mapping[str, Any]) -> List[Stream]:
+    def streams(self, config: Mapping[str, Any]) -> List[Union[Stream, AbstractStream]]:   # type: ignore  # we are migrating away from the AbstractSource and are expecting that this will only be called by ConcurrentDeclarativeSource or the Connector Builder
         """
         The `streams` method is used as part of the AbstractSource in the following cases:
         * ConcurrentDeclarativeSource.check -> ManifestDeclarativeSource.check -> AbstractSource.check -> DeclarativeSource.check_connection -> CheckStream.check_connection -> streams
@@ -282,7 +281,7 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
                         partition_generator = StreamSlicerPartitionGenerator(
                             partition_factory=DeclarativePartitionFactory(
                                 declarative_stream.name,
-                                declarative_stream.schema_loader,
+                                declarative_stream._schema_loader,  # type: ignore  # I know it's private property but the public one is optional and we will remove this code soonish
                                 retriever,
                                 self.message_repository,
                             ),
@@ -313,7 +312,7 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
                         partition_generator = StreamSlicerPartitionGenerator(
                             partition_factory=DeclarativePartitionFactory(
                                 declarative_stream.name,
-                                declarative_stream.schema_loader,
+                                declarative_stream._schema_loader,  # type: ignore  # I know it's private property but the public one is optional and we will remove this code soonish
                                 retriever,
                                 self.message_repository,
                             ),
@@ -343,7 +342,7 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
                     partition_generator = StreamSlicerPartitionGenerator(
                         DeclarativePartitionFactory(
                             declarative_stream.name,
-                            declarative_stream.schema_loader,
+                            declarative_stream._schema_loader,  # type: ignore  # I know it's private property but the public one is optional and we will remove this code soonish
                             declarative_stream.retriever,
                             self.message_repository,
                         ),
@@ -403,7 +402,7 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
                     partition_generator = StreamSlicerPartitionGenerator(
                         DeclarativePartitionFactory(
                             declarative_stream.name,
-                            declarative_stream.schema_loader,
+                            declarative_stream._schema_loader,  # type: ignore  # I know it's private property but the public one is optional and we will remove this code soonish
                             retriever,
                             self.message_repository,
                         ),

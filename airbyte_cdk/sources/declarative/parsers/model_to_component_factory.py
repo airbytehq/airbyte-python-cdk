@@ -1928,7 +1928,7 @@ class ModelToComponentFactory:
         )
 
     def create_declarative_stream(
-        self, model: DeclarativeStreamModel, config: Config, is_parent=False, **kwargs: Any
+        self, model: DeclarativeStreamModel, config: Config, is_parent: bool = False, **kwargs: Any
     ) -> Union[DeclarativeStream, AbstractStream]:
         # When constructing a declarative stream, we assemble the incremental_sync component and retriever's partition_router field
         # components if they exist into a single CartesianProductStreamSlicer. This is then passed back as an argument when constructing the
