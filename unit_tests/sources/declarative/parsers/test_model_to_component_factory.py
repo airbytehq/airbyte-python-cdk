@@ -188,7 +188,12 @@ resolver = ManifestReferenceResolver()
 
 transformer = ManifestComponentTransformer()
 
-input_config = {"apikey": "verysecrettoken", "repos": ["airbyte", "airbyte-cloud"]}
+input_config = {
+    "apikey": "verysecrettoken",
+    "repos": ["airbyte", "airbyte-cloud"],
+    "start_time": "2024-01-01T00:00:00.000+00:00",
+    "end_time": "2025-01-01T00:00:00.000+00:00",
+}
 
 
 def get_factory_with_parameters(
@@ -1424,7 +1429,7 @@ list_stream:
     assert stream.retriever.record_selector.transform_before_filtering == True
     assert isinstance(
         stream.retriever.record_selector.record_filter._cursor,
-        PerPartitionWithGlobalCursor,
+        ConcurrentPerPartitionCursor,
     )
 
 
@@ -1997,7 +2002,7 @@ def test_create_default_paginator():
             "subcomponent_field_with_hint",
             DpathExtractor(
                 field_path=[],
-                config={"apikey": "verysecrettoken", "repos": ["airbyte", "airbyte-cloud"]},
+                config=input_config,
                 decoder=JsonDecoder(parameters={}),
                 parameters={},
             ),
@@ -2013,7 +2018,7 @@ def test_create_default_paginator():
             "subcomponent_field_with_hint",
             DpathExtractor(
                 field_path=[],
-                config={"apikey": "verysecrettoken", "repos": ["airbyte", "airbyte-cloud"]},
+                config=input_config,
                 parameters={},
             ),
             None,
@@ -2102,11 +2107,11 @@ def test_create_default_paginator():
                 pagination_strategy=OffsetIncrement(
                     page_size=10,
                     extractor=None,
-                    config={"apikey": "verysecrettoken", "repos": ["airbyte", "airbyte-cloud"]},
+                    config=input_config,
                     parameters={},
                 ),
                 url_base="https://physical_100.com",
-                config={"apikey": "verysecrettoken", "repos": ["airbyte", "airbyte-cloud"]},
+                config=input_config,
                 parameters={"decoder": {"type": "JsonDecoder"}},
             ),
             None,
