@@ -5,7 +5,18 @@
 import logging
 from dataclasses import dataclass, field
 from queue import Queue
-from typing import Any, ClassVar, Generic, Iterator, List, Mapping, MutableMapping, Optional, Tuple, Union
+from typing import (
+    Any,
+    ClassVar,
+    Generic,
+    Iterator,
+    List,
+    Mapping,
+    MutableMapping,
+    Optional,
+    Tuple,
+    Union,
+)
 
 from airbyte_protocol_dataclasses.models import Level
 
