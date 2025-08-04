@@ -861,6 +861,50 @@ def test_join_url(test_name, base_url, path, expected_full_url):
     assert sent_request.url == expected_full_url
 
 
+@pytest.mark.parametrize(
+    "test_name, url, path, expected_full_url",
+    [
+        ("test_no_path", "https://airbyte.io/my_endpoint", None, "https://airbyte.io/my_endpoint"),
+        (
+            "test_path_does_not_include_url",
+            "https://airbyte.io/my_endpoint",
+            "with_path",
+            "https://airbyte.io/my_endpoint/with_path",
+        ),
+        (
+            "test_path_does_include_url",
+            "https://airbyte.io/my_endpoint",
+            "https://airbyte.io/my_endpoint/with_path",
+            "https://airbyte.io/my_endpoint/with_path",
+        ),
+        (
+            "test_path_is_different_full_url",
+            "https://airbyte.io/my_endpoint",
+            "https://airbyte-paginated.io/my_paginated_endpoint",
+            "https://airbyte-paginated.io/my_paginated_endpoint",
+        ),
+    ],
+)
+def test_join_url_with_url_and_path(test_name, url, path, expected_full_url):
+    requester = HttpRequester(
+        name="name",
+        url=url,
+        path=path,
+        http_method=HttpMethod.GET,
+        request_options_provider=None,
+        config={},
+        parameters={},
+        error_handler=DefaultErrorHandler(parameters={}, config={}),
+    )
+    requester._http_client._session.send = MagicMock()
+    response = requests.Response()
+    response.status_code = 200
+    requester._http_client._session.send.return_value = response
+    requester.send_request()
+    sent_request: PreparedRequest = requester._http_client._session.send.call_args_list[0][0][0]
+    assert sent_request.url == expected_full_url
+
+
 @pytest.mark.usefixtures("mock_sleep")
 def test_request_attempt_count_is_tracked_across_retries(http_requester_factory):
     request_mock = MagicMock(spec=requests.PreparedRequest)
