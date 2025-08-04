@@ -2095,7 +2095,6 @@ class ModelToComponentFactory:
                 ),
                 combined_slicers,
             )
-            FinalStateCursor(stream_name, None, self._message_repository)
             return DefaultStream(
                 partition_generator=partition_generator,
                 name=stream_name,
