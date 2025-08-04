@@ -95,6 +95,8 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
         source_config: ConnectionDefinition,
         debug: bool = False,
         emit_connector_builder_messages: bool = False,
+        migrate_manifest: bool = False,
+        normalize_manifest: bool = False,
         limits: Optional[TestLimits] = None,
         config_path: Optional[str] = None,
         **kwargs: Any,
@@ -135,6 +137,8 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
             config=config,
             debug=debug,
             emit_connector_builder_messages=emit_connector_builder_messages,
+            migrate_manifest=migrate_manifest,
+            normalize_manifest=normalize_manifest,
             component_factory=component_factory,
             config_path=config_path,
         )
