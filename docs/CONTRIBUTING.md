@@ -113,7 +113,7 @@ Only Airbyte CDK maintainers can run slash commands. The most common slash comma
 
 - `/autofix`- Corrects any linting or formatting issues and commits the change back to the repo.
 - `/poetry-lock` - Re-locks dependencies and updates the `poetry.lock` file, then commits the changes back to the repo. This is helpful after merging in updates from main, or when creating a PR in the browser - such as for version bumps or dependency updates directly in the PR.
-- `/poe ...` - Runs a Poe task in CI. If files are modified (e.g. as with `/poe build`) , they will be committed back to your branch.
+- `/poe ...` - Runs a Poe task in CI. If files are modified (e.g. as with `/poe build`), they will be committed back to your branch.
 
 The full list of available slash commands can be found in the [slash command dispatch file](https://github.com/airbytehq/airbyte-python-cdk/blob/main/.github/workflows/slash_command_dispatch.yml#L21-L25).
 
