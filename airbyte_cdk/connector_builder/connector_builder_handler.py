@@ -83,8 +83,6 @@ def create_source(
         state=state,
         source_config=manifest,
         emit_connector_builder_messages=True,
-        migrate_manifest=should_migrate_manifest(config),
-        normalize_manifest=should_normalize_manifest(config),
         limits=limits,
     )
 
