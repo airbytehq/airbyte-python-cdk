@@ -610,7 +610,9 @@ from airbyte_cdk.sources.streams.concurrent.cursor import (
 )
 from airbyte_cdk.sources.streams.concurrent.default_stream import DefaultStream
 from airbyte_cdk.sources.streams.concurrent.helpers import get_primary_key_from_stream
-from airbyte_cdk.sources.streams.concurrent.partitions.stream_slicer import StreamSlicer as ConcurrentStreamSlicer
+from airbyte_cdk.sources.streams.concurrent.partitions.stream_slicer import (
+    StreamSlicer as ConcurrentStreamSlicer,
+)
 from airbyte_cdk.sources.streams.concurrent.state_converters.datetime_stream_state_converter import (
     CustomFormatConcurrentStreamStateConverter,
     DateTimeStreamStateConverter,
