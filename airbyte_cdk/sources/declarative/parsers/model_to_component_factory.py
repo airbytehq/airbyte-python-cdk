@@ -622,10 +622,6 @@ SCHEMA_TRANSFORMER_TYPE_MAPPING = {
     SchemaNormalizationModel.Default: TransformConfig.DefaultSchemaNormalization,
 }
 
-# Ideally this should use the value defined in ConcurrentDeclarativeSource, but
-# this would be a circular import
-MAX_SLICES = 5
-
 
 class ModelToComponentFactory:
     EPOCH_DATETIME_FORMAT = "%s"
