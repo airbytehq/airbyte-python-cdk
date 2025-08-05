@@ -2066,8 +2066,8 @@ class ModelToComponentFactory:
             # We specifically exclude Connector Builder stuff for now as Brian is working on this anyway
 
             stream_name = model.name or ""
-            stream_slicer = concurrent_cursor
-            cursor = FinalStateCursor(stream_name, None, self._message_repository)
+            stream_slicer: StreamSlicer = concurrent_cursor
+            cursor: Cursor = FinalStateCursor(stream_name, None, self._message_repository)
             if isinstance(retriever, AsyncRetriever):
                 # The AsyncRetriever only ever worked with a cursor from the concurrent package. Hence, the method
                 # `_build_incremental_cursor` which we would usually think would return only declarative stuff has a
@@ -2126,19 +2126,18 @@ class ModelToComponentFactory:
         )
 
     def _is_stop_condition_on_cursor(self, model: DeclarativeStreamModel) -> bool:
-        return (
+        return bool(
             model.incremental_sync
             and hasattr(model.incremental_sync, "is_data_feed")
             and model.incremental_sync.is_data_feed
         )
 
     def _is_client_side_filtering_enabled(self, model: DeclarativeStreamModel) -> bool:
-        client_side_filtering_enabled = (
+        return bool(
             model.incremental_sync
             and hasattr(model.incremental_sync, "is_client_side_incremental")
             and model.incremental_sync.is_client_side_incremental
         )
-        return client_side_filtering_enabled
 
     def _build_stream_slicer_from_partition_router(
         self,
