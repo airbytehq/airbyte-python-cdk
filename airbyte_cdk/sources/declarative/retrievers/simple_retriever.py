@@ -85,6 +85,8 @@ from airbyte_cdk.sources.source import ExperimentalClassWarning
 from airbyte_cdk.sources.streams.core import StreamData
 from airbyte_cdk.sources.types import Config, Record, StreamSlice, StreamState
 from airbyte_cdk.utils.mapping_helpers import combine_mappings
+from airbyte_cdk.sources.streams.concurrent.cursor import Cursor
+
 
 FULL_REFRESH_SYNC_COMPLETE_KEY = "__ab_full_refresh_sync_complete"
 
@@ -187,7 +189,7 @@ class SimpleRetriever(Retriever, ComponentConstructor[SimpleRetrieverModel]):
         primary_key: Optional[Union[str, List[str], List[List[str]]]] = None,
         stream_slicer: Optional[StreamSlicer] = None,
         request_options_provider: Optional[RequestOptionsProvider] = None,
-        stop_condition_on_cursor: bool = False,
+        stop_condition_cursor: Optional[Cursor] = None,
         client_side_incremental_sync: Optional[Dict[str, Any]] = None,
         transformations: Optional[List[RecordTransformation]] = None,
         file_uploader: Optional[DefaultFileUploader] = None,
@@ -356,7 +358,6 @@ class SimpleRetriever(Retriever, ComponentConstructor[SimpleRetrieverModel]):
                 ),
             )
 
-        cursor_used_for_stop_condition = cursor if stop_condition_on_cursor else None
         paginator = (
             dependency_constructor(
                 model=model.paginator,
@@ -364,7 +365,7 @@ class SimpleRetriever(Retriever, ComponentConstructor[SimpleRetrieverModel]):
                 url_base=_get_url(),
                 extractor_model=model.record_selector.extractor,
                 decoder=decoder,
-                cursor_used_for_stop_condition=cursor_used_for_stop_condition,
+                cursor_used_for_stop_condition=stop_condition_cursor or None,
             )
             if model.paginator
             else NoPagination(parameters={})
