@@ -36,7 +36,7 @@ from airbyte_cdk.sources.declarative.types import Record, StreamSlice, StreamSta
         (
             RequestPath(parameters={}),
             None,
-            "/next_url",
+            "https://airbyte.io/next_url",
             {"limit": 2},
             {},
             {},
@@ -128,7 +128,7 @@ from airbyte_cdk.sources.declarative.types import Record, StreamSlice, StreamSta
         (
             RequestPath(parameters={}),
             None,
-            "/next_url",
+            "https://airbyte.io/next_url",
             {"limit": 2},
             {},
             {},
