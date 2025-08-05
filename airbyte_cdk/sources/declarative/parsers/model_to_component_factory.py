@@ -610,6 +610,7 @@ from airbyte_cdk.sources.streams.concurrent.cursor import (
 )
 from airbyte_cdk.sources.streams.concurrent.default_stream import DefaultStream
 from airbyte_cdk.sources.streams.concurrent.helpers import get_primary_key_from_stream
+from airbyte_cdk.sources.streams.concurrent.partitions.stream_slicer import StreamSlicer as ConcurrentStreamSlicer
 from airbyte_cdk.sources.streams.concurrent.state_converters.datetime_stream_state_converter import (
     CustomFormatConcurrentStreamStateConverter,
     DateTimeStreamStateConverter,
@@ -2066,7 +2067,7 @@ class ModelToComponentFactory:
             # We specifically exclude Connector Builder stuff for now as Brian is working on this anyway
 
             stream_name = model.name or ""
-            stream_slicer: StreamSlicer = concurrent_cursor
+            stream_slicer: ConcurrentStreamSlicer = concurrent_cursor
             cursor: Cursor = FinalStateCursor(stream_name, None, self._message_repository)
             if isinstance(retriever, AsyncRetriever):
                 # The AsyncRetriever only ever worked with a cursor from the concurrent package. Hence, the method
