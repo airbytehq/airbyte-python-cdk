@@ -373,38 +373,33 @@ spec:
 
     assert isinstance(retriever.record_selector.extractor, DpathExtractor)
     assert isinstance(retriever.record_selector.extractor.decoder, JsonDecoder)
-    assert [
-        fp.eval(input_config) for fp in retriever.record_selector.extractor._field_path
-    ] == ["lists"]
+    assert [fp.eval(input_config) for fp in retriever.record_selector.extractor._field_path] == [
+        "lists"
+    ]
 
     assert isinstance(retriever.record_selector.record_filter, RecordFilter)
     assert (
-            retriever.record_selector.record_filter._filter_interpolator.condition
-            == "{{ record['id'] > stream_state['id'] }}"
+        retriever.record_selector.record_filter._filter_interpolator.condition
+        == "{{ record['id'] > stream_state['id'] }}"
     )
 
     assert isinstance(retriever.paginator, DefaultPaginator)
     assert isinstance(retriever.paginator.decoder, PaginationDecoderDecorator)
     assert retriever.paginator.page_size_option.field_name.eval(input_config) == "page_size"
-    assert (
-            retriever.paginator.page_size_option.inject_into
-            == RequestOptionType.request_parameter
-    )
+    assert retriever.paginator.page_size_option.inject_into == RequestOptionType.request_parameter
     assert isinstance(retriever.paginator.page_token_option, RequestPath)
     assert retriever.paginator.url_base.string == "https://api.sendgrid.com/v3/"
     assert retriever.paginator.url_base.default == "https://api.sendgrid.com/v3/"
 
     assert isinstance(retriever.paginator.pagination_strategy, CursorPaginationStrategy)
-    assert isinstance(
-        retriever.paginator.pagination_strategy.decoder, PaginationDecoderDecorator
+    assert isinstance(retriever.paginator.pagination_strategy.decoder, PaginationDecoderDecorator)
+    assert (
+        retriever.paginator.pagination_strategy._cursor_value.string
+        == "{{ response._metadata.next }}"
     )
     assert (
-            retriever.paginator.pagination_strategy._cursor_value.string
-            == "{{ response._metadata.next }}"
-    )
-    assert (
-            retriever.paginator.pagination_strategy._cursor_value.default
-            == "{{ response._metadata.next }}"
+        retriever.paginator.pagination_strategy._cursor_value.default
+        == "{{ response._metadata.next }}"
     )
     assert retriever.paginator.pagination_strategy.page_size == 10
 
@@ -416,24 +411,20 @@ spec:
 
     assert isinstance(retriever.request_option_provider, DatetimeBasedRequestOptionsProvider)
     assert (
-            retriever.request_option_provider.start_time_option.inject_into
-            == RequestOptionType.request_parameter
+        retriever.request_option_provider.start_time_option.inject_into
+        == RequestOptionType.request_parameter
     )
     assert (
-            retriever.request_option_provider.start_time_option.field_name.eval(
-            config=input_config
-        )
-            == "after"
+        retriever.request_option_provider.start_time_option.field_name.eval(config=input_config)
+        == "after"
     )
     assert (
-            retriever.request_option_provider.end_time_option.inject_into
-            == RequestOptionType.request_parameter
+        retriever.request_option_provider.end_time_option.inject_into
+        == RequestOptionType.request_parameter
     )
     assert (
-            retriever.request_option_provider.end_time_option.field_name.eval(
-            config=input_config
-        )
-            == "before"
+        retriever.request_option_provider.end_time_option.field_name.eval(config=input_config)
+        == "before"
     )
     assert retriever.request_option_provider._partition_field_start.string == "start_time"
     assert retriever.request_option_provider._partition_field_end.string == "end_time"
@@ -444,9 +435,7 @@ spec:
     assert isinstance(
         retriever.requester.request_options_provider, InterpolatedRequestOptionsProvider
     )
-    assert (
-            retriever.requester.request_options_provider.request_parameters.get("unit") == "day"
-    )
+    assert retriever.requester.request_options_provider.request_parameters.get("unit") == "day"
 
     checker = factory.create_component(
         model_type=CheckStreamModel, component_definition=manifest["check"], config=input_config
@@ -1118,7 +1107,8 @@ list_stream:
     )
 
     assert isinstance(
-        get_retriever(stream).paginator.pagination_strategy, StopConditionPaginationStrategyDecorator
+        get_retriever(stream).paginator.pagination_strategy,
+        StopConditionPaginationStrategyDecorator,
     )
 
 
@@ -4149,9 +4139,7 @@ def test_simple_retriever_with_query_properties():
     assert property_chunking.property_limit_type == PropertyLimitType.property_count
     assert property_chunking.property_limit == 3
 
-    merge_strategy = (
-        retriever.additional_query_properties.property_chunking.record_merge_strategy
-    )
+    merge_strategy = retriever.additional_query_properties.property_chunking.record_merge_strategy
     assert isinstance(merge_strategy, GroupByKey)
     assert merge_strategy.key == ["id"]
 

@@ -94,16 +94,13 @@ from airbyte_cdk.sources.declarative.extractors.record_filter import (
     ClientSideIncrementalRecordFilterDecorator,
 )
 from airbyte_cdk.sources.declarative.incremental import (
-    ChildPartitionResumableFullRefreshCursor,
     ConcurrentCursorFactory,
     ConcurrentPerPartitionCursor,
     CursorFactory,
     DatetimeBasedCursor,
     DeclarativeCursor,
     GlobalSubstreamCursor,
-    PerPartitionCursor,
     PerPartitionWithGlobalCursor,
-    ResumableFullRefreshCursor,
 )
 from airbyte_cdk.sources.declarative.interpolation import InterpolatedString
 from airbyte_cdk.sources.declarative.interpolation.interpolated_mapping import InterpolatedMapping
@@ -446,10 +443,6 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     ZipfileDecoder as ZipfileDecoderModel,
 )
-from airbyte_cdk.sources.declarative.parsers.custom_code_compiler import (
-    COMPONENTS_MODULE_NAME,
-    SDM_COMPONENTS_MODULE_NAME,
-)
 from airbyte_cdk.sources.declarative.partition_routers import (
     CartesianProductStreamSlicer,
     GroupingPartitionRouter,
@@ -508,7 +501,7 @@ from airbyte_cdk.sources.declarative.requesters.request_options import (
     RequestOptionsProvider,
 )
 from airbyte_cdk.sources.declarative.requesters.request_path import RequestPath
-from airbyte_cdk.sources.declarative.requesters.requester import HttpMethod, Requester
+from airbyte_cdk.sources.declarative.requesters.requester import HttpMethod
 from airbyte_cdk.sources.declarative.resolvers import (
     ComponentMappingDefinition,
     ConfigComponentsResolver,
@@ -1941,10 +1934,10 @@ class ModelToComponentFactory:
 
         primary_key = model.primary_key.__root__ if model.primary_key else None
 
-        stream_slicer = self._build_stream_slicer_from_partition_router(
+        partition_router = self._build_stream_slicer_from_partition_router(
             model.retriever, config, stream_name=model.name
         )
-        concurrent_cursor = self._build_concurrent_cursor(model, stream_slicer, config)
+        concurrent_cursor = self._build_concurrent_cursor(model, partition_router, config)
 
         if model.incremental_sync and isinstance(model.incremental_sync, DatetimeBasedCursorModel):
             cursor_model = model.incremental_sync
@@ -2019,7 +2012,9 @@ class ModelToComponentFactory:
             primary_key=primary_key,
             stream_slicer=combined_slicers,
             request_options_provider=request_options_provider,
-            stop_condition_cursor=concurrent_cursor if self._is_stop_condition_on_cursor(model) else None,
+            stop_condition_cursor=concurrent_cursor
+            if self._is_stop_condition_on_cursor(model)
+            else None,
             client_side_incremental_sync={"cursor": concurrent_cursor}
             if self._is_client_side_filtering_enabled(model)
             else None,
@@ -2055,7 +2050,10 @@ class ModelToComponentFactory:
             schema_loader = DefaultSchemaLoader(config=config, parameters=options)
 
         if (
-            (isinstance(combined_slicers, PartitionRouter) or isinstance(concurrent_cursor, ConcurrentCursor))
+            (
+                isinstance(combined_slicers, PartitionRouter)
+                or isinstance(concurrent_cursor, ConcurrentCursor)
+            )
             and not is_parent
             and not self._emit_connector_builder_messages
         ):
@@ -2067,7 +2065,9 @@ class ModelToComponentFactory:
             # We specifically exclude parent streams here because SubstreamPartitionRouter has not been updated yet
             # We specifically exclude Connector Builder stuff for now as Brian is working on this anyway
 
+            stream_name = model.name or ""
             stream_slicer = concurrent_cursor
+            cursor = FinalStateCursor(stream_name, None, self._message_repository)
             if isinstance(retriever, AsyncRetriever):
                 # The AsyncRetriever only ever worked with a cursor from the concurrent package. Hence, the method
                 # `_build_incremental_cursor` which we would usually think would return only declarative stuff has a
@@ -2076,10 +2076,13 @@ class ModelToComponentFactory:
                 # We can't re-use `concurrent_cursor` because it is a different instance than the one passed in
                 # AsyncJobPartitionRouter.
                 stream_slicer = retriever.stream_slicer
+                if isinstance(combined_slicers, Cursor):
+                    cursor = combined_slicers
             elif isinstance(combined_slicers, PartitionRouter):
                 stream_slicer = combined_slicers
+            else:
+                cursor = concurrent_cursor
 
-            stream_name = model.name or ""
             partition_generator = StreamSlicerPartitionGenerator(
                 DeclarativePartitionFactory(
                     stream_name,
@@ -2089,16 +2092,17 @@ class ModelToComponentFactory:
                 ),
                 stream_slicer,
             )
-            cursor = concurrent_cursor if concurrent_cursor else FinalStateCursor(stream_name, None, self._message_repository)
+
             return DefaultStream(
                 partition_generator=partition_generator,
                 name=stream_name,
                 json_schema=schema_loader.get_json_schema,
                 primary_key=get_primary_key_from_stream(primary_key),
-                cursor_field=cursor.cursor_field.cursor_field_key if hasattr(cursor, "cursor_field") else "",  # FIXME we should have the cursor field has part of the interface of cursor,
-                # FIXME we should have the cursor field has part of the interface of cursor
+                cursor_field=cursor.cursor_field.cursor_field_key
+                if hasattr(cursor, "cursor_field")
+                else "",  # FIXME we should have the cursor field has part of the interface of cursor,
                 logger=logging.getLogger(f"airbyte.{stream_name}"),
-                # FIXME this is a breaking change compared to the old implementation,
+                # FIXME this is a breaking change compared to the old implementation which used the source name instead
                 cursor=cursor,
             )
 
@@ -2121,18 +2125,18 @@ class ModelToComponentFactory:
             parameters=model.parameters or {},
         )
 
-    def _is_stop_condition_on_cursor(self, model):
+    def _is_stop_condition_on_cursor(self, model: DeclarativeStreamModel) -> bool:
         return (
-                model.incremental_sync
-                and hasattr(model.incremental_sync, "is_data_feed")
-                and model.incremental_sync.is_data_feed
+            model.incremental_sync
+            and hasattr(model.incremental_sync, "is_data_feed")
+            and model.incremental_sync.is_data_feed
         )
 
-    def _is_client_side_filtering_enabled(self, model):
+    def _is_client_side_filtering_enabled(self, model: DeclarativeStreamModel) -> bool:
         client_side_filtering_enabled = (
-                model.incremental_sync
-                and hasattr(model.incremental_sync, "is_client_side_incremental")
-                and model.incremental_sync.is_client_side_incremental
+            model.incremental_sync
+            and hasattr(model.incremental_sync, "is_client_side_incremental")
+            and model.incremental_sync.is_client_side_incremental
         )
         return client_side_filtering_enabled
 
