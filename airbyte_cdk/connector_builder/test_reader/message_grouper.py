@@ -95,7 +95,17 @@ def get_message_groups(
     latest_state_message: Optional[Dict[str, Any]] = None
     slice_auxiliary_requests: List[AuxiliaryRequest] = []
 
-    while records_count < limit and (message := next(messages, None)):
+    while message := next(messages, None):
+        # Even though we do not emit records beyond the limit in the message group response, we still
+        # need to process messages off the queue in order to avoid a deadlock occurs if the amount
+        # of extracted records exceeds the size of the queue (which has a default of 10,000)
+        #
+        # A few other options considered was killing the thread pool, but that doesn't kill in-progress
+        # in-progress threads. We also considered adding another event to the main queue, but this is
+        # the simplest solution for the time being.
+        if records_count >= limit:
+            continue
+
         json_message = airbyte_message_to_json(message)
 
         if is_page_http_request_for_different_stream(json_message, stream_name):
