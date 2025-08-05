@@ -350,101 +350,102 @@ spec:
         model_type=DeclarativeStreamModel, component_definition=stream_manifest, config=input_config
     )
 
-    assert isinstance(stream, DeclarativeStream)
-    assert stream.primary_key == "id"
+    assert isinstance(stream, DefaultStream)
     assert stream.name == "lists"
-    assert stream._stream_cursor_field.string == "created"
+    assert stream.cursor_field == "created"
 
-    assert isinstance(stream.schema_loader, JsonFileSchemaLoader)
-    assert stream.schema_loader._get_json_filepath() == "./source_sendgrid/schemas/lists.json"
+    schema_loader = get_schema_loader(stream)
+    assert isinstance(schema_loader, JsonFileSchemaLoader)
+    assert schema_loader._get_json_filepath() == "./source_sendgrid/schemas/lists.json"
 
-    assert len(stream.retriever.record_selector.transformations) == 1
-    add_fields = stream.retriever.record_selector.transformations[0]
+    retriever = get_retriever(stream)
+    assert len(retriever.record_selector.transformations) == 1
+    add_fields = retriever.record_selector.transformations[0]
     assert isinstance(add_fields, AddFields)
     assert add_fields.fields[0].path == ["extra"]
     assert add_fields.fields[0].value.string == "{{ response.to_add }}"
 
-    assert isinstance(stream.retriever, SimpleRetriever)
-    assert stream.retriever.primary_key == stream.primary_key
-    assert stream.retriever.name == stream.name
+    assert isinstance(retriever, SimpleRetriever)
+    assert retriever.primary_key == "id"
+    assert retriever.name == stream.name
 
-    assert isinstance(stream.retriever.record_selector, RecordSelector)
+    assert isinstance(retriever.record_selector, RecordSelector)
 
-    assert isinstance(stream.retriever.record_selector.extractor, DpathExtractor)
-    assert isinstance(stream.retriever.record_selector.extractor.decoder, JsonDecoder)
+    assert isinstance(retriever.record_selector.extractor, DpathExtractor)
+    assert isinstance(retriever.record_selector.extractor.decoder, JsonDecoder)
     assert [
-        fp.eval(input_config) for fp in stream.retriever.record_selector.extractor._field_path
+        fp.eval(input_config) for fp in retriever.record_selector.extractor._field_path
     ] == ["lists"]
 
-    assert isinstance(stream.retriever.record_selector.record_filter, RecordFilter)
+    assert isinstance(retriever.record_selector.record_filter, RecordFilter)
     assert (
-        stream.retriever.record_selector.record_filter._filter_interpolator.condition
-        == "{{ record['id'] > stream_state['id'] }}"
+            retriever.record_selector.record_filter._filter_interpolator.condition
+            == "{{ record['id'] > stream_state['id'] }}"
     )
 
-    assert isinstance(stream.retriever.paginator, DefaultPaginator)
-    assert isinstance(stream.retriever.paginator.decoder, PaginationDecoderDecorator)
-    assert stream.retriever.paginator.page_size_option.field_name.eval(input_config) == "page_size"
+    assert isinstance(retriever.paginator, DefaultPaginator)
+    assert isinstance(retriever.paginator.decoder, PaginationDecoderDecorator)
+    assert retriever.paginator.page_size_option.field_name.eval(input_config) == "page_size"
     assert (
-        stream.retriever.paginator.page_size_option.inject_into
-        == RequestOptionType.request_parameter
+            retriever.paginator.page_size_option.inject_into
+            == RequestOptionType.request_parameter
     )
-    assert isinstance(stream.retriever.paginator.page_token_option, RequestPath)
-    assert stream.retriever.paginator.url_base.string == "https://api.sendgrid.com/v3/"
-    assert stream.retriever.paginator.url_base.default == "https://api.sendgrid.com/v3/"
+    assert isinstance(retriever.paginator.page_token_option, RequestPath)
+    assert retriever.paginator.url_base.string == "https://api.sendgrid.com/v3/"
+    assert retriever.paginator.url_base.default == "https://api.sendgrid.com/v3/"
 
-    assert isinstance(stream.retriever.paginator.pagination_strategy, CursorPaginationStrategy)
+    assert isinstance(retriever.paginator.pagination_strategy, CursorPaginationStrategy)
     assert isinstance(
-        stream.retriever.paginator.pagination_strategy.decoder, PaginationDecoderDecorator
+        retriever.paginator.pagination_strategy.decoder, PaginationDecoderDecorator
     )
     assert (
-        stream.retriever.paginator.pagination_strategy._cursor_value.string
-        == "{{ response._metadata.next }}"
+            retriever.paginator.pagination_strategy._cursor_value.string
+            == "{{ response._metadata.next }}"
     )
     assert (
-        stream.retriever.paginator.pagination_strategy._cursor_value.default
-        == "{{ response._metadata.next }}"
+            retriever.paginator.pagination_strategy._cursor_value.default
+            == "{{ response._metadata.next }}"
     )
-    assert stream.retriever.paginator.pagination_strategy.page_size == 10
+    assert retriever.paginator.pagination_strategy.page_size == 10
 
-    assert isinstance(stream.retriever.requester, HttpRequester)
-    assert stream.retriever.requester.http_method == HttpMethod.GET
-    assert stream.retriever.requester.name == stream.name
-    assert stream.retriever.requester._path.string == "{{ next_page_token['next_page_url'] }}"
-    assert stream.retriever.requester._path.default == "{{ next_page_token['next_page_url'] }}"
+    assert isinstance(retriever.requester, HttpRequester)
+    assert retriever.requester.http_method == HttpMethod.GET
+    assert retriever.requester.name == stream.name
+    assert retriever.requester._path.string == "{{ next_page_token['next_page_url'] }}"
+    assert retriever.requester._path.default == "{{ next_page_token['next_page_url'] }}"
 
-    assert isinstance(stream.retriever.request_option_provider, DatetimeBasedRequestOptionsProvider)
+    assert isinstance(retriever.request_option_provider, DatetimeBasedRequestOptionsProvider)
     assert (
-        stream.retriever.request_option_provider.start_time_option.inject_into
-        == RequestOptionType.request_parameter
+            retriever.request_option_provider.start_time_option.inject_into
+            == RequestOptionType.request_parameter
     )
     assert (
-        stream.retriever.request_option_provider.start_time_option.field_name.eval(
+            retriever.request_option_provider.start_time_option.field_name.eval(
             config=input_config
         )
-        == "after"
+            == "after"
     )
     assert (
-        stream.retriever.request_option_provider.end_time_option.inject_into
-        == RequestOptionType.request_parameter
+            retriever.request_option_provider.end_time_option.inject_into
+            == RequestOptionType.request_parameter
     )
     assert (
-        stream.retriever.request_option_provider.end_time_option.field_name.eval(
+            retriever.request_option_provider.end_time_option.field_name.eval(
             config=input_config
         )
-        == "before"
+            == "before"
     )
-    assert stream.retriever.request_option_provider._partition_field_start.string == "start_time"
-    assert stream.retriever.request_option_provider._partition_field_end.string == "end_time"
+    assert retriever.request_option_provider._partition_field_start.string == "start_time"
+    assert retriever.request_option_provider._partition_field_end.string == "end_time"
 
-    assert isinstance(stream.retriever.requester.authenticator, BearerAuthenticator)
-    assert stream.retriever.requester.authenticator.token_provider.get_token() == "verysecrettoken"
+    assert isinstance(retriever.requester.authenticator, BearerAuthenticator)
+    assert retriever.requester.authenticator.token_provider.get_token() == "verysecrettoken"
 
     assert isinstance(
-        stream.retriever.requester.request_options_provider, InterpolatedRequestOptionsProvider
+        retriever.requester.request_options_provider, InterpolatedRequestOptionsProvider
     )
     assert (
-        stream.retriever.requester.request_options_provider.request_parameters.get("unit") == "day"
+            retriever.requester.request_options_provider.request_parameters.get("unit") == "day"
     )
 
     checker = factory.create_component(
@@ -1117,7 +1118,7 @@ list_stream:
     )
 
     assert isinstance(
-        stream.retriever.paginator.pagination_strategy, StopConditionPaginationStrategyDecorator
+        get_retriever(stream).paginator.pagination_strategy, StopConditionPaginationStrategyDecorator
     )
 
 
@@ -1198,11 +1199,12 @@ list_stream:
         model_type=DeclarativeStreamModel, component_definition=stream_manifest, config=input_config
     )
 
+    retriever = get_retriever(stream)
     assert isinstance(
-        stream.retriever.record_selector.record_filter, ClientSideIncrementalRecordFilterDecorator
+        retriever.record_selector.record_filter, ClientSideIncrementalRecordFilterDecorator
     )
 
-    assert stream.retriever.record_selector.transform_before_filtering == True
+    assert get_retriever(stream).record_selector.transform_before_filtering == True
 
 
 def test_client_side_incremental_with_partition_router():
@@ -2440,8 +2442,8 @@ class TestCreateTransformations:
                 "cursor_granularity": "PT0.000001S",
             },
             None,
-            DatetimeBasedCursor,
-            DeclarativeStream,
+            ConcurrentCursor,
+            DefaultStream,
             id="test_create_simple_retriever_with_incremental",
         ),
         pytest.param(
@@ -4130,7 +4132,8 @@ def test_simple_retriever_with_query_properties():
         model_type=DeclarativeStreamModel, component_definition=stream_manifest, config=input_config
     )
 
-    query_properties = stream.retriever.additional_query_properties
+    retriever = get_retriever(stream)
+    query_properties = retriever.additional_query_properties
     assert isinstance(query_properties, QueryProperties)
     assert query_properties.property_list == [
         "first_name",
@@ -4141,18 +4144,18 @@ def test_simple_retriever_with_query_properties():
     ]
     assert query_properties.always_include_properties == ["id"]
 
-    property_chunking = stream.retriever.additional_query_properties.property_chunking
+    property_chunking = retriever.additional_query_properties.property_chunking
     assert isinstance(property_chunking, PropertyChunking)
     assert property_chunking.property_limit_type == PropertyLimitType.property_count
     assert property_chunking.property_limit == 3
 
     merge_strategy = (
-        stream.retriever.additional_query_properties.property_chunking.record_merge_strategy
+        retriever.additional_query_properties.property_chunking.record_merge_strategy
     )
     assert isinstance(merge_strategy, GroupByKey)
     assert merge_strategy.key == ["id"]
 
-    request_options_provider = stream.retriever.requester.request_options_provider
+    request_options_provider = retriever.requester.request_options_provider
     assert isinstance(request_options_provider, InterpolatedRequestOptionsProvider)
     # For a better developer experience we allow QueryProperties to be defined on the requester.request_parameters,
     # but it actually is leveraged by the SimpleRetriever which is why it is not included in the RequestOptionsProvider
@@ -4232,27 +4235,28 @@ def test_simple_retriever_with_request_parameters_properties_from_endpoint():
         model_type=DeclarativeStreamModel, component_definition=stream_manifest, config=input_config
     )
 
-    query_properties = stream.retriever.additional_query_properties
+    retriever = get_retriever(stream)
+    query_properties = retriever.additional_query_properties
     assert isinstance(query_properties, QueryProperties)
     assert query_properties.always_include_properties is None
 
-    properties_from_endpoint = stream.retriever.additional_query_properties.property_list
+    properties_from_endpoint = retriever.additional_query_properties.property_list
     assert isinstance(properties_from_endpoint, PropertiesFromEndpoint)
     assert properties_from_endpoint.property_field_path == ["name"]
 
     properties_from_endpoint_retriever = (
-        stream.retriever.additional_query_properties.property_list.retriever
+        retriever.additional_query_properties.property_list.retriever
     )
     assert isinstance(properties_from_endpoint_retriever, SimpleRetriever)
 
     properties_from_endpoint_requester = (
-        stream.retriever.additional_query_properties.property_list.retriever.requester
+        retriever.additional_query_properties.property_list.retriever.requester
     )
     assert isinstance(properties_from_endpoint_requester, HttpRequester)
     assert properties_from_endpoint_requester.url_base == "https://api.hubapi.com"
     assert properties_from_endpoint_requester.path == "/properties/v2/dynamics/properties"
 
-    property_chunking = stream.retriever.additional_query_properties.property_chunking
+    property_chunking = retriever.additional_query_properties.property_chunking
     assert isinstance(property_chunking, PropertyChunking)
     assert property_chunking.property_limit_type == PropertyLimitType.property_count
     assert property_chunking.property_limit == 3
@@ -4320,22 +4324,23 @@ def test_simple_retriever_with_requester_properties_from_endpoint():
         model_type=DeclarativeStreamModel, component_definition=stream_manifest, config=input_config
     )
 
-    query_properties = stream.retriever.additional_query_properties
+    retriever = get_retriever(stream)
+    query_properties = retriever.additional_query_properties
     assert isinstance(query_properties, QueryProperties)
     assert query_properties.always_include_properties is None
     assert query_properties.property_chunking is None
 
-    properties_from_endpoint = stream.retriever.additional_query_properties.property_list
+    properties_from_endpoint = retriever.additional_query_properties.property_list
     assert isinstance(properties_from_endpoint, PropertiesFromEndpoint)
     assert properties_from_endpoint.property_field_path == ["name"]
 
     properties_from_endpoint_retriever = (
-        stream.retriever.additional_query_properties.property_list.retriever
+        retriever.additional_query_properties.property_list.retriever
     )
     assert isinstance(properties_from_endpoint_retriever, SimpleRetriever)
 
     properties_from_endpoint_requester = (
-        stream.retriever.additional_query_properties.property_list.retriever.requester
+        retriever.additional_query_properties.property_list.retriever.requester
     )
     assert isinstance(properties_from_endpoint_requester, HttpRequester)
     assert properties_from_endpoint_requester.url_base == "https://api.hubapi.com"

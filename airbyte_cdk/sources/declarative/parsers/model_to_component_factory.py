@@ -1940,22 +1940,11 @@ class ModelToComponentFactory:
         combined_slicers = self._merge_stream_slicers(model=model, config=config)
 
         primary_key = model.primary_key.__root__ if model.primary_key else None
-        stop_condition_on_cursor = (
-            model.incremental_sync
-            and hasattr(model.incremental_sync, "is_data_feed")
-            and model.incremental_sync.is_data_feed
+
+        stream_slicer = self._build_stream_slicer_from_partition_router(
+            model.retriever, config, stream_name=model.name
         )
-        client_side_filtering_enabled = (
-            model.incremental_sync
-            and hasattr(model.incremental_sync, "is_client_side_incremental")
-            and model.incremental_sync.is_client_side_incremental
-        )
-        concurrent_cursor = None
-        if stop_condition_on_cursor or client_side_filtering_enabled:
-            stream_slicer = self._build_stream_slicer_from_partition_router(
-                model.retriever, config, stream_name=model.name
-            )
-            concurrent_cursor = self._build_concurrent_cursor(model, stream_slicer, config)
+        concurrent_cursor = self._build_concurrent_cursor(model, stream_slicer, config)
 
         if model.incremental_sync and isinstance(model.incremental_sync, DatetimeBasedCursorModel):
             cursor_model = model.incremental_sync
@@ -2030,9 +2019,9 @@ class ModelToComponentFactory:
             primary_key=primary_key,
             stream_slicer=combined_slicers,
             request_options_provider=request_options_provider,
-            stop_condition_cursor=concurrent_cursor,
+            stop_condition_cursor=concurrent_cursor if self._is_stop_condition_on_cursor(model) else None,
             client_side_incremental_sync={"cursor": concurrent_cursor}
-            if client_side_filtering_enabled
+            if self._is_client_side_filtering_enabled(model)
             else None,
             transformations=transformations,
             file_uploader=file_uploader,
@@ -2066,17 +2055,30 @@ class ModelToComponentFactory:
             schema_loader = DefaultSchemaLoader(config=config, parameters=options)
 
         if (
-            isinstance(combined_slicers, PartitionRouter)
+            (isinstance(combined_slicers, PartitionRouter) or isinstance(concurrent_cursor, ConcurrentCursor))
             and not is_parent
             and not self._emit_connector_builder_messages
         ):
             # We are starting to migrate streams to instantiate directly the DefaultStream instead of instantiating the
             # DeclarativeStream and assembling the DefaultStream from that. The plan is the following:
             # * Streams without partition router nor cursors and streams with only partition router. This is the `isinstance(combined_slicers, PartitionRouter)` condition as the first kind with have a SinglePartitionRouter
-            # * Streams without partition router but with cursor
+            # * Streams without partition router but with cursor. This is the `isinstance(concurrent_cursor, ConcurrentCursor)` condition
             # * Streams with both partition router and cursor
             # We specifically exclude parent streams here because SubstreamPartitionRouter has not been updated yet
             # We specifically exclude Connector Builder stuff for now as Brian is working on this anyway
+
+            stream_slicer = concurrent_cursor
+            if isinstance(retriever, AsyncRetriever):
+                # The AsyncRetriever only ever worked with a cursor from the concurrent package. Hence, the method
+                # `_build_incremental_cursor` which we would usually think would return only declarative stuff has a
+                # special clause and return a concurrent cursor. This stream slicer is passed to AsyncRetriever when
+                # built because the async retriever has a specific partition router which relies on this stream slicer.
+                # We can't re-use `concurrent_cursor` because it is a different instance than the one passed in
+                # AsyncJobPartitionRouter.
+                stream_slicer = retriever.stream_slicer
+            elif isinstance(combined_slicers, PartitionRouter):
+                stream_slicer = combined_slicers
+
             stream_name = model.name or ""
             partition_generator = StreamSlicerPartitionGenerator(
                 DeclarativePartitionFactory(
@@ -2085,18 +2087,19 @@ class ModelToComponentFactory:
                     retriever,
                     self._message_repository,
                 ),
-                combined_slicers,
+                stream_slicer,
             )
+            cursor = concurrent_cursor if concurrent_cursor else FinalStateCursor(stream_name, None, self._message_repository)
             return DefaultStream(
                 partition_generator=partition_generator,
                 name=stream_name,
                 json_schema=schema_loader.get_json_schema,
                 primary_key=get_primary_key_from_stream(primary_key),
-                cursor_field=None,
+                cursor_field=cursor.cursor_field.cursor_field_key if hasattr(cursor, "cursor_field") else "",  # FIXME we should have the cursor field has part of the interface of cursor,
                 # FIXME we should have the cursor field has part of the interface of cursor
                 logger=logging.getLogger(f"airbyte.{stream_name}"),
                 # FIXME this is a breaking change compared to the old implementation,
-                cursor=FinalStateCursor(stream_name, None, self._message_repository),
+                cursor=cursor,
             )
 
         cursor_field = model.incremental_sync.cursor_field if model.incremental_sync else None
@@ -2117,6 +2120,21 @@ class ModelToComponentFactory:
             config=config,
             parameters=model.parameters or {},
         )
+
+    def _is_stop_condition_on_cursor(self, model):
+        return (
+                model.incremental_sync
+                and hasattr(model.incremental_sync, "is_data_feed")
+                and model.incremental_sync.is_data_feed
+        )
+
+    def _is_client_side_filtering_enabled(self, model):
+        client_side_filtering_enabled = (
+                model.incremental_sync
+                and hasattr(model.incremental_sync, "is_client_side_incremental")
+                and model.incremental_sync.is_client_side_incremental
+        )
+        return client_side_filtering_enabled
 
     def _build_stream_slicer_from_partition_router(
         self,
