@@ -30,8 +30,6 @@ The Airbyte CDK uses [Poe the Poet](https://poethepoet.natn.io/) to define commo
 
 Optionally, if you can [pre-install Poe](https://poethepoet.natn.io/installation.html) with `pipx install poethepoet` and then you will be able to run Poe tasks with the shorter `poe TASKNAME` syntax instead of `poetry run poe TASKNAME`.
 
-
-
 ## Running tests locally
 
 - Iterate on the CDK code locally.
