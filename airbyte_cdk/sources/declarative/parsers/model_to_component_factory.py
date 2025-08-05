@@ -1929,18 +1929,7 @@ class ModelToComponentFactory:
     def create_declarative_stream(
         self, model: DeclarativeStreamModel, config: Config, is_parent: bool = False, **kwargs: Any
     ) -> Union[DeclarativeStream, AbstractStream]:
-        # When constructing a declarative stream, we assemble the incremental_sync component and retriever's partition_router field
-        # components if they exist into a single CartesianProductStreamSlicer. This is then passed back as an argument when constructing the
-        # Retriever. This is done in the declarative stream not the retriever to support custom retrievers. The custom create methods in
-        # the factory only support passing arguments to the component constructors, whereas this performs a merge of all slicers into one.
-        combined_slicers = self._merge_stream_slicers(model=model, config=config)
-
         primary_key = model.primary_key.__root__ if model.primary_key else None
-
-        partition_router = self._build_stream_slicer_from_partition_router(
-            model.retriever, config, stream_name=model.name
-        )
-        concurrent_cursor = self._build_concurrent_cursor(model, partition_router, config)
 
         if model.incremental_sync and isinstance(model.incremental_sync, DatetimeBasedCursorModel):
             cursor_model = model.incremental_sync
@@ -2008,6 +1997,15 @@ class ModelToComponentFactory:
                 model=model.file_uploader, config=config
             )
 
+        # When constructing a declarative stream, we assemble the incremental_sync component and retriever's partition_router field
+        # components if they exist into a single CartesianProductStreamSlicer. This is then passed back as an argument when constructing the
+        # Retriever. This is done in the declarative stream not the retriever to support custom retrievers. The custom create methods in
+        # the factory only support passing arguments to the component constructors, whereas this performs a merge of all slicers into one.
+        combined_slicers = self._merge_stream_slicers(model=model, config=config)
+        partition_router = self._build_stream_slicer_from_partition_router(
+            model.retriever, config, stream_name=model.name
+        )
+        concurrent_cursor = self._build_concurrent_cursor(model, partition_router, config)
         retriever = self._create_component_from_model(
             model=model.retriever,
             config=config,
@@ -2085,7 +2083,7 @@ class ModelToComponentFactory:
                     cursor = combined_slicers
             elif isinstance(combined_slicers, PartitionRouter):
                 stream_slicer = combined_slicers
-            else:
+            elif concurrent_cursor:
                 cursor = concurrent_cursor
 
             partition_generator = StreamSlicerPartitionGenerator(
