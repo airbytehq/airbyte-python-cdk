@@ -752,6 +752,7 @@ def test_read():
             source,
             config,
             ConfiguredAirbyteCatalogSerializer.load(CONFIGURED_CATALOG),
+            _stream_name,
             _A_STATE,
             limits.max_records,
         )
@@ -811,6 +812,10 @@ def test_read_returns_error_response(mock_from_exception):
         @property
         def cursor_field(self):
             return []
+
+        @property
+        def name(self):
+            return _stream_name
 
     class MockManifestDeclarativeSource:
         def streams(self, config):

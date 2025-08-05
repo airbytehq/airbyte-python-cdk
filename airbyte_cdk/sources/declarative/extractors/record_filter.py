@@ -4,11 +4,6 @@
 from dataclasses import InitVar, dataclass
 from typing import Any, Callable, Iterable, Mapping, Optional, Union
 
-from airbyte_cdk.sources.declarative.incremental import (
-    DatetimeBasedCursor,
-    GlobalSubstreamCursor,
-    PerPartitionWithGlobalCursor,
-)
 from airbyte_cdk.sources.declarative.interpolation.interpolated_boolean import InterpolatedBoolean
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     RecordFilter as RecordFilterModel,
@@ -17,6 +12,7 @@ from airbyte_cdk.sources.declarative.parsers.component_constructor import (
     AdditionalFlags,
     ComponentConstructor,
 )
+from airbyte_cdk.sources.streams.concurrent.cursor import Cursor
 from airbyte_cdk.sources.types import Config, Record, StreamSlice, StreamState
 
 
@@ -75,13 +71,13 @@ class ClientSideIncrementalRecordFilterDecorator(RecordFilter):
     """
     Applies a filter to a list of records to exclude those that are older than the stream_state/start_date.
 
-    :param DatetimeBasedCursor date_time_based_cursor: Cursor used to extract datetime values
+    :param Cursor cursor: Cursor used to filter out values
     :param PerPartitionCursor per_partition_cursor: Optional Cursor used for mapping cursor value in nested stream_state
     """
 
     def __init__(
         self,
-        cursor: Union[DatetimeBasedCursor, PerPartitionWithGlobalCursor, GlobalSubstreamCursor],
+        cursor: Union[Cursor],
         **kwargs: Any,
     ):
         super().__init__(**kwargs)
@@ -99,7 +95,7 @@ class ClientSideIncrementalRecordFilterDecorator(RecordFilter):
             for record in records
             if self._cursor.should_be_synced(
                 # Record is created on the fly to align with cursors interface; stream name is ignored as we don't need it here
-                # Record stream name is empty cause it is not used durig the filtering
+                # Record stream name is empty because it is not used during the filtering
                 Record(data=record, associated_slice=stream_slice, stream_name="")
             )
         )

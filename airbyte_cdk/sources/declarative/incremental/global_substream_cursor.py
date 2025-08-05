@@ -338,12 +338,6 @@ class GlobalSubstreamCursor(DeclarativeCursor):
     def should_be_synced(self, record: Record) -> bool:
         return self._stream_cursor.should_be_synced(self._convert_record_to_cursor_record(record))
 
-    def is_greater_than_or_equal(self, first: Record, second: Record) -> bool:
-        return self._stream_cursor.is_greater_than_or_equal(
-            self._convert_record_to_cursor_record(first),
-            self._convert_record_to_cursor_record(second),
-        )
-
     @staticmethod
     def _convert_record_to_cursor_record(record: Record) -> Record:
         return Record(

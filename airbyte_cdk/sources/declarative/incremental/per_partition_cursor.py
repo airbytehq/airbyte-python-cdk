@@ -315,21 +315,6 @@ class PerPartitionCursor(DeclarativeCursor):
             self._convert_record_to_cursor_record(record)
         )
 
-    def is_greater_than_or_equal(self, first: Record, second: Record) -> bool:
-        if not first.associated_slice or not second.associated_slice:
-            raise ValueError(
-                f"Both records should have an associated slice but got {first.associated_slice} and {second.associated_slice}"
-            )
-        if first.associated_slice.partition != second.associated_slice.partition:
-            raise ValueError(
-                f"To compare records, partition should be the same but got {first.associated_slice.partition} and {second.associated_slice.partition}"
-            )
-
-        return self._get_cursor(first).is_greater_than_or_equal(
-            self._convert_record_to_cursor_record(first),
-            self._convert_record_to_cursor_record(second),
-        )
-
     @staticmethod
     def _convert_record_to_cursor_record(record: Record) -> Record:
         return Record(

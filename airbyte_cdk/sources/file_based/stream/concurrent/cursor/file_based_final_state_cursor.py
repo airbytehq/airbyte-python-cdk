@@ -81,3 +81,6 @@ class FileBasedFinalStateCursor(AbstractConcurrentFileBasedCursor):
             self._stream_name, self._stream_namespace
         )
         self._message_repository.emit_message(state_message)
+
+    def should_be_synced(self, record: Record) -> bool:
+        return True
