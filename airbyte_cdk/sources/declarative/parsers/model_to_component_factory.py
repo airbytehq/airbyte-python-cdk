@@ -2069,7 +2069,9 @@ class ModelToComponentFactory:
             # We specifically exclude Connector Builder stuff for now as Brian is working on this anyway
 
             stream_name = model.name or ""
-            stream_slicer: ConcurrentStreamSlicer = concurrent_cursor if concurrent_cursor else SinglePartitionRouter()
+            stream_slicer: ConcurrentStreamSlicer = (
+                concurrent_cursor if concurrent_cursor else SinglePartitionRouter(parameters={})
+            )
             cursor: Cursor = FinalStateCursor(stream_name, None, self._message_repository)
             if isinstance(retriever, AsyncRetriever):
                 # The AsyncRetriever only ever worked with a cursor from the concurrent package. Hence, the method
