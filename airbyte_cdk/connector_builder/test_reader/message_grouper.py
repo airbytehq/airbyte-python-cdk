@@ -97,11 +97,11 @@ def get_message_groups(
 
     while message := next(messages, None):
         # Even though we do not emit records beyond the limit in the message group response, we still
-        # need to process messages off the queue in order to avoid a deadlock occurs if the amount
+        # need to process messages off the queue in order to avoid a deadlock that occurs if the amount
         # of extracted records exceeds the size of the queue (which has a default of 10,000)
         #
         # A few other options considered was killing the thread pool, but that doesn't kill in-progress
-        # in-progress threads. We also considered adding another event to the main queue, but this is
+        # threads. We also considered adding another event to the main queue, but this is
         # the simplest solution for the time being.
         if records_count >= limit:
             continue
