@@ -13,7 +13,7 @@ class StreamAvailability:
 
     @classmethod
     def unavailable(cls, reason: str) -> "StreamAvailability":
-        return StreamAvailability(False, reason)
+        return cls(False, reason)
 
     def __init__(self, available: bool, reason: Optional[str] = None) -> None:
         self._available = available

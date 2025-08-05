@@ -334,7 +334,7 @@ class ThreadBasedConcurrentStreamTest(unittest.TestCase):
         """
         I'm not sure why we handle AirbyteTracedException but not other exceptions but this is to keep feature compatibility with HttpAvailabilityStrategy
         """
-        self._partition_generator.generate.side_effect = ValueError()
-        self._partition.read.return_value = []
+        self._partition_generator.generate.return_value = [self._partition]
+        self._partition.read.side_effect = ValueError()
         with pytest.raises(ValueError):
             self._stream.check_availability()
