@@ -95,8 +95,6 @@ To generate the documentation, run `poe docs-generate` or to build and open the 
 
 The `docs-generate` Poe task is mapped to the `run()` function of `docs/generate.py`. Documentation pages will be generated in the `docs/generated` folder (ignored by git). You can also download auto-generated API docs for any GitHub push by navigating to the "Summary" tab of the docs generation check in GitHub Actions.
 
-Note: in your PR, you can also run this with the slash command: `/poe build`.
-
 ## Release Management
 
 Please see the [Release Management](./RELEASES.md) guide for information on how to perform releases and pre-releases.
