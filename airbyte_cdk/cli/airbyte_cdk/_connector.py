@@ -123,11 +123,18 @@ def connector_cli_group() -> None:
     multiple=True,
     help="Additional argument(s) to pass to pytest. Can be specified multiple times.",
 )
+@click.option(
+    "--no-creds",
+    is_flag=True,
+    default=False,
+    help="Skip tests that require credentials (marked with 'requires_creds').",
+)
 def connector_test(
     connector: str | Path | None = None,
     *,
     collect_only: bool = False,
     pytest_args: list[str] | None = None,
+    no_creds: bool = False,
 ) -> None:
     """Run connector tests.
 
@@ -146,6 +153,9 @@ def connector_test(
     pytest_args = pytest_args or []
     if collect_only:
         pytest_args.append("--collect-only")
+
+    if no_creds:
+        pytest_args.extend(["-m", "not requires_creds"])
 
     run_connector_tests(
         connector_name=connector_name,
