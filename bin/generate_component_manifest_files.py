@@ -34,7 +34,7 @@ def generate_init_module_content() -> str:
 def generate_json_schema():
     """Generate JSON schema from the YAML file for schemastore.org registration."""
     yaml_file_path = f"{LOCAL_YAML_DIR_PATH}/declarative_component_schema.yaml"
-    json_file_path = f"{LOCAL_YAML_DIR_PATH}/declarative_component_schema.json"
+    json_file_path = f"{LOCAL_YAML_DIR_PATH}/generated/declarative_component_schema.json"
 
     with open(yaml_file_path, "r") as yaml_file:
         schema_data = yaml.safe_load(yaml_file)
@@ -45,6 +45,9 @@ def generate_json_schema():
                 return obj.isoformat()
             return super().default(obj)
 
+    import os
+    os.makedirs(os.path.dirname(json_file_path), exist_ok=True)
+    
     with open(json_file_path, "w") as json_file:
         json.dump(schema_data, json_file, indent=2, cls=DateTimeEncoder)
 
