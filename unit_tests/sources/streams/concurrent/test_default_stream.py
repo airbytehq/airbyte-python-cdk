@@ -4,19 +4,24 @@
 import unittest
 from unittest.mock import Mock
 
+import pytest
+
 from airbyte_cdk.models import AirbyteStream, SyncMode
 from airbyte_cdk.sources.message import InMemoryMessageRepository
-from airbyte_cdk.sources.streams.concurrent.availability_strategy import STREAM_AVAILABLE
 from airbyte_cdk.sources.streams.concurrent.cursor import Cursor, FinalStateCursor
 from airbyte_cdk.sources.streams.concurrent.default_stream import DefaultStream
+from airbyte_cdk.sources.streams.concurrent.partitions.partition import Partition
+from airbyte_cdk.sources.streams.concurrent.partitions.partition_generator import PartitionGenerator
+from airbyte_cdk.sources.types import Record
+from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 
 
 class ThreadBasedConcurrentStreamTest(unittest.TestCase):
     def setUp(self):
-        self._partition_generator = Mock()
+        self._partition_generator = Mock(spec=PartitionGenerator)
+        self._partition = Mock(spec=Partition)
         self._name = "name"
         self._json_schema = {}
-        self._availability_strategy = Mock()
         self._primary_key = []
         self._cursor_field = None
         self._logger = Mock()
@@ -26,7 +31,6 @@ class ThreadBasedConcurrentStreamTest(unittest.TestCase):
             self._partition_generator,
             self._name,
             self._json_schema,
-            self._availability_strategy,
             self._primary_key,
             self._cursor_field,
             self._logger,
@@ -40,12 +44,6 @@ class ThreadBasedConcurrentStreamTest(unittest.TestCase):
     def test_get_json_schema(self):
         json_schema = self._stream.get_json_schema()
         assert json_schema == self._json_schema
-
-    def test_check_availability(self):
-        self._availability_strategy.check_availability.return_value = STREAM_AVAILABLE
-        availability = self._stream.check_availability()
-        assert availability == STREAM_AVAILABLE
-        self._availability_strategy.check_availability.assert_called_once_with(self._logger)
 
     def test_check_for_error_raises_an_exception_if_any_of_the_futures_are_not_done(self):
         futures = [Mock() for _ in range(3)]
@@ -93,7 +91,6 @@ class ThreadBasedConcurrentStreamTest(unittest.TestCase):
             self._partition_generator,
             self._name,
             json_schema,
-            self._availability_strategy,
             ["composite_key_1", "composite_key_2"],
             self._cursor_field,
             self._logger,
@@ -131,7 +128,6 @@ class ThreadBasedConcurrentStreamTest(unittest.TestCase):
             self._partition_generator,
             self._name,
             json_schema,
-            self._availability_strategy,
             ["id_a", "id_b"],
             self._cursor_field,
             self._logger,
@@ -169,7 +165,6 @@ class ThreadBasedConcurrentStreamTest(unittest.TestCase):
             self._partition_generator,
             self._name,
             json_schema,
-            self._availability_strategy,
             self._primary_key,
             "date",
             self._logger,
@@ -200,7 +195,6 @@ class ThreadBasedConcurrentStreamTest(unittest.TestCase):
             self._partition_generator,
             self._name,
             self._json_schema,
-            self._availability_strategy,
             self._primary_key,
             self._cursor_field,
             self._logger,
@@ -231,7 +225,6 @@ class ThreadBasedConcurrentStreamTest(unittest.TestCase):
             self._partition_generator,
             self._name,
             self._json_schema,
-            self._availability_strategy,
             self._primary_key,
             self._cursor_field,
             self._logger,
@@ -257,3 +250,70 @@ class ThreadBasedConcurrentStreamTest(unittest.TestCase):
         actual_airbyte_stream = stream.as_airbyte_stream()
 
         assert actual_airbyte_stream == expected_airbyte_stream
+
+    def test_given_no_partitions_when_get_availability_then_unavailable(self) -> None:
+        self._partition_generator.generate.return_value = []
+
+        availability = self._stream.check_availability()
+
+        assert availability.is_available == False
+        assert "no stream slices were found" in availability.reason
+
+    def test_given_AirbyteTracedException_when_generating_partitions_when_get_availability_then_unavailable(
+        self,
+    ) -> None:
+        error_message = "error while generating partitions"
+        self._partition_generator.generate.side_effect = AirbyteTracedException(
+            message=error_message
+        )
+
+        availability = self._stream.check_availability()
+
+        assert availability.is_available == False
+        assert error_message in availability.reason
+
+    def test_given_unknown_error_when_generating_partitions_when_get_availability_then_raise(
+        self,
+    ) -> None:
+        """
+        I'm not sure why we handle AirbyteTracedException but not other exceptions but this is to keep feature compatibility with HttpAvailabilityStrategy
+        """
+        self._partition_generator.generate.side_effect = ValueError()
+        with pytest.raises(ValueError):
+            self._stream.check_availability()
+
+    def test_given_no_records_when_get_availability_then_available(self) -> None:
+        self._partition_generator.generate.return_value = [self._partition]
+        self._partition.read.return_value = []
+
+        availability = self._stream.check_availability()
+
+        assert availability.is_available == True
+
+    def test_given_records_when_get_availability_then_available(self) -> None:
+        self._partition_generator.generate.return_value = [self._partition]
+        self._partition.read.return_value = [Mock(spec=Record)]
+
+        availability = self._stream.check_availability()
+
+        assert availability.is_available == True
+
+    def test_given_AirbyteTracedException_when_reading_records_when_get_availability_then_unavailable(
+        self,
+    ) -> None:
+        self._partition_generator.generate.return_value = [self._partition]
+        error_message = "error while reading records"
+        self._partition.read.side_effect = AirbyteTracedException(message=error_message)
+
+        availability = self._stream.check_availability()
+
+        assert availability.is_available == False
+
+    def test_given_unknown_error_when_reading_record_when_get_availability_then_raise(self) -> None:
+        """
+        I'm not sure why we handle AirbyteTracedException but not other exceptions but this is to keep feature compatibility with HttpAvailabilityStrategy
+        """
+        self._partition_generator.generate.return_value = [self._partition]
+        self._partition.read.side_effect = ValueError()
+        with pytest.raises(ValueError):
+            self._stream.check_availability()

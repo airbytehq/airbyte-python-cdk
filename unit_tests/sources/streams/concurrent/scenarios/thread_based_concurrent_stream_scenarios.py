@@ -5,9 +5,6 @@
 import logging
 
 from airbyte_cdk.sources.message import InMemoryMessageRepository
-from airbyte_cdk.sources.streams.concurrent.availability_strategy import (
-    AlwaysAvailableAvailabilityStrategy,
-)
 from airbyte_cdk.sources.streams.concurrent.cursor import FinalStateCursor
 from airbyte_cdk.sources.streams.concurrent.default_stream import DefaultStream
 from airbyte_cdk.sources.types import Record
@@ -48,7 +45,6 @@ _id_only_stream = DefaultStream(
             "id": {"type": ["null", "string"]},
         },
     },
-    availability_strategy=AlwaysAvailableAvailabilityStrategy(),
     primary_key=[],
     cursor_field=None,
     logger=logging.getLogger("test_logger"),
@@ -84,7 +80,6 @@ _id_only_stream_with_slice_logger = DefaultStream(
             "id": {"type": ["null", "string"]},
         },
     },
-    availability_strategy=AlwaysAvailableAvailabilityStrategy(),
     primary_key=[],
     cursor_field=None,
     logger=logging.getLogger("test_logger"),
@@ -120,7 +115,6 @@ _id_only_stream_with_primary_key = DefaultStream(
             "id": {"type": ["null", "string"]},
         },
     },
-    availability_strategy=AlwaysAvailableAvailabilityStrategy(),
     primary_key=["id"],
     cursor_field=None,
     logger=logging.getLogger("test_logger"),
@@ -171,7 +165,6 @@ _id_only_stream_multiple_partitions = DefaultStream(
             "id": {"type": ["null", "string"]},
         },
     },
-    availability_strategy=AlwaysAvailableAvailabilityStrategy(),
     primary_key=[],
     cursor_field=None,
     logger=logging.getLogger("test_logger"),
@@ -222,7 +215,6 @@ _id_only_stream_multiple_partitions_concurrency_level_two = DefaultStream(
             "id": {"type": ["null", "string"]},
         },
     },
-    availability_strategy=AlwaysAvailableAvailabilityStrategy(),
     primary_key=[],
     cursor_field=None,
     logger=logging.getLogger("test_logger"),
@@ -255,7 +247,6 @@ _stream_raising_exception = DefaultStream(
             "id": {"type": ["null", "string"]},
         },
     },
-    availability_strategy=AlwaysAvailableAvailabilityStrategy(),
     primary_key=[],
     cursor_field=None,
     logger=logging.getLogger("test_logger"),
@@ -397,7 +388,6 @@ test_concurrent_cdk_multiple_streams = (
                             "key": {"type": ["null", "string"]},
                         },
                     },
-                    availability_strategy=AlwaysAvailableAvailabilityStrategy(),
                     primary_key=[],
                     cursor_field=None,
                     logger=logging.getLogger("test_logger"),
