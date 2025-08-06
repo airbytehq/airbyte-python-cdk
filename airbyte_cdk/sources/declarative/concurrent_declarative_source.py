@@ -170,6 +170,7 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
             slice_logger=self._slice_logger,
             queue=queue,
             message_repository=self.message_repository,
+            max_records_per_partition=limits.max_records if limits else None,
         )
 
     # TODO: Remove this. This property is necessary to safely migrate Stripe during the transition state.

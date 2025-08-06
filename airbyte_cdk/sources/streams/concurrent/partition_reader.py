@@ -50,13 +50,17 @@ class PartitionReader:
     _IS_SUCCESSFUL = True
 
     def __init__(
-        self, queue: Queue[QueueItem], partition_logger: Optional[PartitionLogger] = None
+        self,
+        queue: Queue[QueueItem],
+        partition_logger: Optional[PartitionLogger] = None,
+        max_records_per_partition: Optional[int] = None,
     ) -> None:
         """
         :param queue: The queue to put the records in.
         """
         self._queue = queue
         self._partition_logger = partition_logger
+        self._max_records_per_partition = max_records_per_partition
 
     def process_partition(self, partition: Partition, cursor: Cursor) -> None:
         """
@@ -74,9 +78,18 @@ class PartitionReader:
             if self._partition_logger:
                 self._partition_logger.log(partition)
 
+            record_count = 0
             for record in partition.read():
                 self._queue.put(record)
                 cursor.observe(record)
+                record_count += 1
+                if (
+                    self._max_records_per_partition
+                    and record_count >= self._max_records_per_partition
+                ):
+                    # We stop processing a partition after exceeding the max_records for Connector
+                    # Builder test reads. The record limit only applies to an individual partition
+                    break
             cursor.close_partition(partition)
             self._queue.put(PartitionCompleteSentinel(partition, self._IS_SUCCESSFUL))
         except Exception as e:

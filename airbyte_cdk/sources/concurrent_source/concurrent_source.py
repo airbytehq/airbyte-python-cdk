@@ -45,6 +45,7 @@ class ConcurrentSource:
         message_repository: MessageRepository,
         queue: Optional[Queue[QueueItem]] = None,
         timeout_seconds: int = DEFAULT_TIMEOUT_SECONDS,
+        max_records_per_partition: Optional[int] = None,
     ) -> "ConcurrentSource":
         is_single_threaded = initial_number_of_partitions_to_generate == 1 and num_workers == 1
         too_many_generator = (
@@ -67,6 +68,7 @@ class ConcurrentSource:
             message_repository=message_repository,
             initial_number_partitions_to_generate=initial_number_of_partitions_to_generate,
             timeout_seconds=timeout_seconds,
+            max_records_per_partition=max_records_per_partition,
         )
 
     def __init__(
@@ -78,6 +80,7 @@ class ConcurrentSource:
         message_repository: MessageRepository = InMemoryMessageRepository(),
         initial_number_partitions_to_generate: int = 1,
         timeout_seconds: int = DEFAULT_TIMEOUT_SECONDS,
+        max_records_per_partition: Optional[int] = None,
     ) -> None:
         """
         :param threadpool: The threadpool to submit tasks to
@@ -93,6 +96,7 @@ class ConcurrentSource:
         self._message_repository = message_repository
         self._initial_number_partitions_to_generate = initial_number_partitions_to_generate
         self._timeout_seconds = timeout_seconds
+        self._max_records_per_partition = max_records_per_partition
 
         # We set a maxsize to for the main thread to process record items when the queue size grows. This assumes that there are less
         # threads generating partitions that than are max number of workers. If it weren't the case, we could have threads only generating
@@ -115,6 +119,7 @@ class ConcurrentSource:
             PartitionReader(
                 self._queue,
                 PartitionLogger(self._slice_logger, self._logger, self._message_repository),
+                self._max_records_per_partition,
             ),
         )
 
