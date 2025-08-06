@@ -92,6 +92,7 @@ class SimpleRetriever(Retriever):
     ignore_stream_slicer_parameters_on_paginated_requests: bool = False
     additional_query_properties: Optional[QueryProperties] = None
     log_formatter: Optional[Callable[[requests.Response], Any]] = None
+    max_records: Optional[int] = None
 
     def __post_init__(self, parameters: Mapping[str, Any]) -> None:
         self._paginator = self.paginator or NoPagination(parameters=parameters)
@@ -101,6 +102,7 @@ class SimpleRetriever(Retriever):
             if isinstance(self._name, str)
             else self._name
         )
+        self._total_records_read = 0
 
     @property  # type: ignore
     def name(self) -> str:
@@ -501,6 +503,12 @@ class SimpleRetriever(Retriever):
         :param stream_slice: The stream slice to read data for
         :return: The records read from the API source
         """
+
+        # For Connector Builder test read operations, if the max number of records has already been
+        # reached, we just return without attempted to extract any more records
+        if self.max_records and self._total_records_read >= self.max_records:
+            return
+
         _slice = stream_slice or StreamSlice(partition={}, cursor_slice={})  # None-check
 
         most_recent_record_from_slice = None
@@ -528,6 +536,13 @@ class SimpleRetriever(Retriever):
                     self.cursor.observe(_slice, current_record)
 
                 yield stream_data
+
+                # For Connector Builder test read operations, if the max number of records is reached, we
+                # exit the process early without emitting more records or attempting to extract more
+                if self.max_records:
+                    self._total_records_read += 1
+                    if self._total_records_read >= self.max_records:
+                        break
 
             if self.cursor:
                 self.cursor.close_slice(_slice)

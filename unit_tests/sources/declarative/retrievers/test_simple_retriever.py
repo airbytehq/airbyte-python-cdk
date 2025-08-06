@@ -11,7 +11,14 @@ import pytest
 import requests
 
 from airbyte_cdk import YamlDeclarativeSource
-from airbyte_cdk.models import AirbyteLogMessage, AirbyteMessage, Level, SyncMode, Type
+from airbyte_cdk.models import (
+    AirbyteLogMessage,
+    AirbyteMessage,
+    AirbyteRecordMessage,
+    Level,
+    SyncMode,
+    Type,
+)
 from airbyte_cdk.sources.declarative.auth.declarative_authenticator import NoAuth
 from airbyte_cdk.sources.declarative.decoders import JsonDecoder
 from airbyte_cdk.sources.declarative.extractors import DpathExtractor, RecordSelector
@@ -1559,3 +1566,122 @@ def test_simple_retriever_still_emit_records_if_no_merge_key():
 
     assert len(actual_records) == 10
     assert actual_records == expected_records
+
+
+def test_simple_retriever_max_records_reached():
+    expected_records = [
+        Record(data={"id": 1, "name": "Max"}, stream_name="stream_name"),
+        Record(data={"id": 1, "name": "Oscar"}, stream_name="stream_name"),
+        Record(data={"id": 1, "name": "Charles"}, stream_name="stream_name"),
+        Record(data={"id": 1, "name": "Alex"}, stream_name="stream_name"),
+        Record(data={"id": 1, "name": "Yuki"}, stream_name="stream_name"),
+    ]
+
+    mock_records = expected_records + [
+        Record(data={"id": 1, "name": "Lewis"}, stream_name="stream_name"),
+        Record(data={"id": 1, "name": "Lando"}, stream_name="stream_name"),
+    ]
+
+    record_selector = MagicMock()
+    record_selector.select_records.return_value = []
+
+    retriever = SimpleRetriever(
+        name="stream_name",
+        primary_key=primary_key,
+        requester=MagicMock(),
+        paginator=Mock(),
+        record_selector=record_selector,
+        max_records=5,
+        parameters={},
+        config={},
+    )
+
+    stream_slice = StreamSlice(cursor_slice={}, partition={"repository": "airbyte"})
+
+    with patch.object(
+        SimpleRetriever,
+        "_read_pages",
+        return_value=iter(mock_records),
+        # side_effect=retriever_read_pages,
+    ):
+        actual_records = list(retriever.read_records(stream_slice=stream_slice, records_schema={}))
+
+        assert len(actual_records) == 5
+        assert actual_records == expected_records
+
+
+def test_simple_retriever_max_records_already_reached_on_previous_read():
+    mock_records = [
+        Record(data={"id": 1, "name": "Max"}, stream_name="stream_name"),
+        Record(data={"id": 1, "name": "Oscar"}, stream_name="stream_name"),
+        Record(data={"id": 1, "name": "Charles"}, stream_name="stream_name"),
+        Record(data={"id": 1, "name": "Alex"}, stream_name="stream_name"),
+        Record(data={"id": 1, "name": "Yuki"}, stream_name="stream_name"),
+    ]
+
+    record_selector = MagicMock()
+    record_selector.select_records.return_value = []
+
+    retriever = SimpleRetriever(
+        name="stream_name",
+        primary_key=primary_key,
+        requester=MagicMock(),
+        paginator=Mock(),
+        record_selector=record_selector,
+        max_records=5,
+        parameters={},
+        config={},
+    )
+    retriever._total_records_read = 5
+
+    stream_slice = StreamSlice(cursor_slice={}, partition={"repository": "airbyte"})
+
+    with patch.object(
+        SimpleRetriever,
+        "_read_pages",
+        return_value=iter(mock_records),
+        # side_effect=retriever_read_pages,
+    ):
+        actual_records = list(retriever.read_records(stream_slice=stream_slice, records_schema={}))
+
+        assert len(actual_records) == 0
+
+
+def test_simple_retriever_read_some_records():
+    expected_records = [
+        Record(data={"id": 1, "name": "Max"}, stream_name="stream_name"),
+        Record(data={"id": 1, "name": "Oscar"}, stream_name="stream_name"),
+        Record(data={"id": 1, "name": "Charles"}, stream_name="stream_name"),
+    ]
+
+    mock_records = expected_records + [
+        Record(data={"id": 1, "name": "Alex"}, stream_name="stream_name"),
+        Record(data={"id": 1, "name": "Yuki"}, stream_name="stream_name"),
+    ]
+
+    record_selector = MagicMock()
+    record_selector.select_records.return_value = []
+
+    retriever = SimpleRetriever(
+        name="stream_name",
+        primary_key=primary_key,
+        requester=MagicMock(),
+        paginator=Mock(),
+        record_selector=record_selector,
+        max_records=5,
+        parameters={},
+        config={},
+    )
+    retriever._total_records_read = 2
+
+    stream_slice = StreamSlice(cursor_slice={}, partition={"repository": "airbyte"})
+
+    with patch.object(
+        SimpleRetriever,
+        "_read_pages",
+        return_value=iter(mock_records),
+    ):
+        actual_records = list(retriever.read_records(stream_slice=stream_slice, records_schema={}))
+
+        assert len(actual_records) == 3
+        assert actual_records == expected_records
