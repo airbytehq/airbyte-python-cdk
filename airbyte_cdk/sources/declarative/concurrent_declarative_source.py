@@ -126,7 +126,6 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
             max_concurrent_async_job_count=source_config.get("max_concurrent_async_job_count"),
             limit_pages_fetched_per_slice=limits.max_pages_per_slice if limits else None,
             limit_slices_fetched=limits.max_slices if limits else None,
-            limit_max_records=limits.max_records if limits else None,
             disable_retries=True if limits else False,
             disable_cache=True if limits else False,
         )
@@ -325,10 +324,13 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
 
                         partition_generator = StreamSlicerPartitionGenerator(
                             partition_factory=DeclarativePartitionFactory(
-                                declarative_stream.name,
-                                declarative_stream.get_json_schema(),
-                                retriever,
-                                self.message_repository,
+                                stream_name=declarative_stream.name,
+                                json_schema=declarative_stream.get_json_schema(),
+                                retriever=retriever,
+                                message_repository=self.message_repository,
+                                max_records_limit=self._limits.max_records
+                                if self._limits
+                                else None,
                             ),
                             stream_slicer=declarative_stream.retriever.stream_slicer,
                             slice_limit=self._limits.max_slices
@@ -359,10 +361,13 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
                             )
                         partition_generator = StreamSlicerPartitionGenerator(
                             partition_factory=DeclarativePartitionFactory(
-                                declarative_stream.name,
-                                declarative_stream.get_json_schema(),
-                                retriever,
-                                self.message_repository,
+                                stream_name=declarative_stream.name,
+                                json_schema=declarative_stream.get_json_schema(),
+                                retriever=retriever,
+                                message_repository=self.message_repository,
+                                max_records_limit=self._limits.max_records
+                                if self._limits
+                                else None,
                             ),
                             stream_slicer=cursor,
                             slice_limit=self._limits.max_slices if self._limits else None,
@@ -391,10 +396,11 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
                 ) and hasattr(declarative_stream.retriever, "stream_slicer"):
                     partition_generator = StreamSlicerPartitionGenerator(
                         DeclarativePartitionFactory(
-                            declarative_stream.name,
-                            declarative_stream.get_json_schema(),
-                            declarative_stream.retriever,
-                            self.message_repository,
+                            stream_name=declarative_stream.name,
+                            json_schema=declarative_stream.get_json_schema(),
+                            retriever=declarative_stream.retriever,
+                            message_repository=self.message_repository,
+                            max_records_limit=self._limits.max_records if self._limits else None,
                         ),
                         declarative_stream.retriever.stream_slicer,
                         slice_limit=self._limits.max_slices
@@ -455,10 +461,11 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
 
                     partition_generator = StreamSlicerPartitionGenerator(
                         DeclarativePartitionFactory(
-                            declarative_stream.name,
-                            declarative_stream.get_json_schema(),
-                            retriever,
-                            self.message_repository,
+                            stream_name=declarative_stream.name,
+                            json_schema=declarative_stream.get_json_schema(),
+                            retriever=retriever,
+                            message_repository=self.message_repository,
+                            max_records_limit=self._limits.max_records if self._limits else None,
                         ),
                         perpartition_cursor,
                         slice_limit=self._limits.max_slices if self._limits else None,

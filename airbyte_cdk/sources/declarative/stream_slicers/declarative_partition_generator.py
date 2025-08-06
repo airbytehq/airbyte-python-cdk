@@ -13,6 +13,11 @@ from airbyte_cdk.sources.streams.concurrent.partitions.stream_slicer import Stre
 from airbyte_cdk.sources.types import Record, StreamSlice
 from airbyte_cdk.utils.slice_hasher import SliceHasher
 
+# For Connector Builder test read operations, we track the total number of records
+# read for the stream at the global level so that we can stop reading early if we
+# exceed the record limit
+total_record_counter = 0
+
 
 class DeclarativePartitionFactory:
     def __init__(
@@ -21,6 +26,7 @@ class DeclarativePartitionFactory:
         json_schema: Mapping[str, Any],
         retriever: Retriever,
         message_repository: MessageRepository,
+        max_records_limit: Optional[int] = None,
     ) -> None:
         """
         The DeclarativePartitionFactory takes a retriever_factory and not a retriever directly. The reason is that our components are not
@@ -31,14 +37,16 @@ class DeclarativePartitionFactory:
         self._json_schema = json_schema
         self._retriever = retriever
         self._message_repository = message_repository
+        self._max_records_limit = max_records_limit
 
     def create(self, stream_slice: StreamSlice) -> Partition:
         return DeclarativePartition(
-            self._stream_name,
-            self._json_schema,
-            self._retriever,
-            self._message_repository,
-            stream_slice,
+            stream_name=self._stream_name,
+            json_schema=self._json_schema,
+            retriever=self._retriever,
+            message_repository=self._message_repository,
+            max_records_limit=self._max_records_limit,
+            stream_slice=stream_slice,
         )
 
 
@@ -49,17 +57,24 @@ class DeclarativePartition(Partition):
         json_schema: Mapping[str, Any],
         retriever: Retriever,
         message_repository: MessageRepository,
+        max_records_limit: Optional[int],
         stream_slice: StreamSlice,
     ):
         self._stream_name = stream_name
         self._json_schema = json_schema
         self._retriever = retriever
         self._message_repository = message_repository
+        self._max_records_limit = max_records_limit
         self._stream_slice = stream_slice
         self._hash = SliceHasher.hash(self._stream_name, self._stream_slice)
 
     def read(self) -> Iterable[Record]:
         for stream_data in self._retriever.read_records(self._json_schema, self._stream_slice):
+            if self._max_records_limit:
+                global total_record_counter
+                if total_record_counter >= self._max_records_limit:
+                    break
+
             if isinstance(stream_data, Mapping):
                 record = (
                     stream_data
@@ -73,6 +88,9 @@ class DeclarativePartition(Partition):
                 yield record
             else:
                 self._message_repository.emit_message(stream_data)
+
+            if self._max_records_limit:
+                total_record_counter += 1
 
     def to_slice(self) -> Optional[Mapping[str, Any]]:
         return self._stream_slice
@@ -90,6 +108,7 @@ class StreamSlicerPartitionGenerator(PartitionGenerator):
         partition_factory: DeclarativePartitionFactory,
         stream_slicer: StreamSlicer,
         slice_limit: Optional[int] = None,
+        max_records_limit: Optional[int] = None,
     ) -> None:
         self._partition_factory = partition_factory
 

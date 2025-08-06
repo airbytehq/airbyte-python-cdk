@@ -634,7 +634,6 @@ class ModelToComponentFactory:
         self,
         limit_pages_fetched_per_slice: Optional[int] = None,
         limit_slices_fetched: Optional[int] = None,
-        limit_max_records: Optional[int] = None,
         emit_connector_builder_messages: bool = False,
         disable_retries: bool = False,
         disable_cache: bool = False,
@@ -646,7 +645,6 @@ class ModelToComponentFactory:
         self._init_mappings()
         self._limit_pages_fetched_per_slice = limit_pages_fetched_per_slice
         self._limit_slices_fetched = limit_slices_fetched
-        self._limit_max_records = limit_max_records
         self._emit_connector_builder_messages = emit_connector_builder_messages
         self._disable_retries = disable_retries
         self._disable_cache = disable_cache
@@ -3400,7 +3398,6 @@ class ModelToComponentFactory:
             ignore_stream_slicer_parameters_on_paginated_requests=ignore_stream_slicer_parameters_on_paginated_requests,
             additional_query_properties=query_properties,
             log_formatter=self._get_log_formatter(log_formatter, name),
-            max_records=self._limit_max_records,
             parameters=model.parameters or {},
         )
 
