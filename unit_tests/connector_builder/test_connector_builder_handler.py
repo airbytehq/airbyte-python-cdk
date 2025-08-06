@@ -780,7 +780,7 @@ def test_config_update() -> None:
         "client_secret": "a client secret",
         "refresh_token": "a refresh token",
     }
-    source = ManifestDeclarativeSource(source_config=manifest)
+    source = ManifestDeclarativeSource(source_config=manifest, emit_connector_builder_messages=True)
 
     refresh_request_response = {
         "access_token": "an updated access token",

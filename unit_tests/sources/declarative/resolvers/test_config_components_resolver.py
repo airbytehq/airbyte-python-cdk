@@ -383,5 +383,6 @@ def test_component_mapping_conditions(manifest, config, expected_conditional_par
     for stream in source.streams(config):
         if stream.name in expected_conditional_params:
             assert (
-                stream.retriever.requester._parameters == expected_conditional_params[stream.name]
+                stream._stream_partition_generator._partition_factory._retriever.requester._parameters
+                == expected_conditional_params[stream.name]
             )
