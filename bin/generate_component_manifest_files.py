@@ -1,5 +1,6 @@
 # Copyright (c) 2024 Airbyte, Inc., all rights reserved.
 
+import json
 import re
 import sys
 from glob import glob
@@ -7,6 +8,7 @@ from pathlib import Path
 
 import anyio
 import dagger
+import yaml
 
 PYTHON_IMAGE = "python:3.10"
 LOCAL_YAML_DIR_PATH = "airbyte_cdk/sources/declarative"
@@ -27,6 +29,26 @@ def generate_init_module_content() -> str:
     for module_name in get_all_yaml_files_without_ext():
         header += f"from .{module_name} import *\n"
     return header
+
+
+def generate_json_schema():
+    """Generate JSON schema from the YAML file for schemastore.org registration."""
+    yaml_file_path = f"{LOCAL_YAML_DIR_PATH}/declarative_component_schema.yaml"
+    json_file_path = f"{LOCAL_YAML_DIR_PATH}/declarative_component_schema.json"
+
+    with open(yaml_file_path, "r") as yaml_file:
+        schema_data = yaml.safe_load(yaml_file)
+
+    class DateTimeEncoder(json.JSONEncoder):
+        def default(self, obj):
+            if hasattr(obj, "isoformat"):
+                return obj.isoformat()
+            return super().default(obj)
+
+    with open(json_file_path, "w") as json_file:
+        json.dump(schema_data, json_file, indent=2, cls=DateTimeEncoder)
+
+    print(f"Generated JSON schema: {json_file_path}")
 
 
 def replace_base_model_for_classes_with_deprecated_fields(post_processed_content: str) -> str:
@@ -111,6 +133,7 @@ async def post_process_codegen(codegen_container: dagger.Container):
 
 
 async def main():
+    generate_json_schema()
     init_module_content = generate_init_module_content()
 
     async with dagger.Connection(dagger.Config(log_output=sys.stderr)) as dagger_client:
