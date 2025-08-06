@@ -2097,7 +2097,8 @@ class ModelToComponentFactory:
                 logger=logging.getLogger(f"airbyte.{stream_name}"),
                 # FIXME this is a breaking change compared to the old implementation,
                 cursor=FinalStateCursor(stream_name, None, self._message_repository),
-                supports_file_transfer=hasattr(model, "file_uploader") and bool(model.file_uploader),
+                supports_file_transfer=hasattr(model, "file_uploader")
+                and bool(model.file_uploader),
             )
 
         cursor_field = model.incremental_sync.cursor_field if model.incremental_sync else None
