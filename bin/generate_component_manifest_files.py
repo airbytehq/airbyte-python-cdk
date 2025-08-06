@@ -46,8 +46,9 @@ def generate_json_schema():
             return super().default(obj)
 
     import os
+
     os.makedirs(os.path.dirname(json_file_path), exist_ok=True)
-    
+
     with open(json_file_path, "w") as json_file:
         json.dump(schema_data, json_file, indent=2, cls=DateTimeEncoder)
 
