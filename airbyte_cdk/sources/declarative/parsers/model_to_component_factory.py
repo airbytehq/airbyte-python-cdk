@@ -1707,7 +1707,7 @@ class ModelToComponentFactory:
 
             if self._is_component(model_value):
                 model_args[model_field] = self._create_nested_component(
-                    model, model_field, model_value, config
+                    model, model_field, model_value, config, **kwargs,
                 )
             elif isinstance(model_value, list):
                 vals = []
@@ -1809,7 +1809,7 @@ class ModelToComponentFactory:
             return []
 
     def _create_nested_component(
-        self, model: Any, model_field: str, model_value: Any, config: Config
+        self, model: Any, model_field: str, model_value: Any, config: Config, **kwargs
     ) -> Any:
         type_name = model_value.get("type", None)
         if not type_name:
@@ -1834,8 +1834,14 @@ class ModelToComponentFactory:
                     for kwarg in constructor_kwargs
                     if kwarg in model_parameters
                 }
+                matching_kwargs = {
+                    kwarg: kwargs[kwarg]
+                    for kwarg in constructor_kwargs
+                    if kwarg in kwargs
+                }
+
                 return self._create_component_from_model(
-                    model=parsed_model, config=config, **matching_parameters
+                    model=parsed_model, config=config, **(matching_parameters | matching_kwargs)
                 )
             except TypeError as error:
                 missing_parameters = self._extract_missing_parameters(error)
