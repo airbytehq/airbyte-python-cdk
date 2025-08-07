@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+#
+# Usage:
+# > uv run ‎bin/generate_component_manifest_files.py
+#
 # /// script
 # dependencies = [
 #   "datamodel-code-generator==0.26.3",
