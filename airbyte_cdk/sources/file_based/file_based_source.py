@@ -77,9 +77,9 @@ from airbyte_cdk.sources.streams.concurrent.cursor import CursorField
 from airbyte_cdk.utils.analytics_message import create_analytics_message
 from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 
-DEFAULT_CONCURRENCY = 100
-MAX_CONCURRENCY = 100
-INITIAL_N_PARTITIONS = MAX_CONCURRENCY // 2
+DEFAULT_CONCURRENCY = 1.0  # TODO: Revert me: 100
+MAX_CONCURRENCY = 1  # TODO: Revert me: 100
+INITIAL_N_PARTITIONS = max(MAX_CONCURRENCY // 2, 1)
 IDENTITIES_STREAM = "identities"
 
 

@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING, Any, final
 import pandas as pd
 import sqlalchemy
 import ulid
-from airbyte_protocol_dataclasses.models import AirbyteStateMessage
+from airbyte_protocol.models import AirbyteStateMessage
 from pandas import Index
 from pydantic import BaseModel, Field
 from sqlalchemy import Column, Table, and_, create_engine, insert, null, select, text, update

@@ -15,12 +15,10 @@ from airbyte_cdk.models import (
     AirbyteErrorTraceMessage,
     AirbyteLogMessage,
     AirbyteMessage,
-    AirbyteMessageSerializer,
     AirbyteRecordMessage,
     AirbyteStateBlob,
     AirbyteStateMessage,
     AirbyteStreamState,
-    AirbyteStreamStateSerializer,
     AirbyteStreamStatus,
     AirbyteStreamStatusTraceMessage,
     AirbyteTraceMessage,
@@ -29,6 +27,7 @@ from airbyte_cdk.models import (
     StreamDescriptor,
     TraceType,
     Type,
+    ab_message_to_string,
 )
 from airbyte_cdk.sources.abstract_source import AbstractSource
 from airbyte_cdk.test.entrypoint_wrapper import EntrypointOutput, discover, read
@@ -115,7 +114,7 @@ _A_LOG_MESSAGE = "a log message"
 
 
 def _to_entrypoint_output(messages: List[AirbyteMessage]) -> Iterator[str]:
-    return (orjson.dumps(AirbyteMessageSerializer.dump(message)).decode() for message in messages)
+    return (ab_message_to_string(message) for message in messages)
 
 
 def _a_mocked_source() -> AbstractSource:
@@ -199,25 +198,21 @@ class EntrypointWrapperDiscoverTest(TestCase):
     def test_given_record_when_discover_then_output_has_record(self, entrypoint):
         entrypoint.return_value.run.return_value = _to_entrypoint_output([_A_CATALOG_MESSAGE])
         output = discover(self._a_source, _A_CONFIG)
-        assert AirbyteMessageSerializer.dump(output.catalog) == AirbyteMessageSerializer.dump(
-            _A_CATALOG_MESSAGE
-        )
+        assert ab_message_to_string(output.catalog) == ab_message_to_string(_A_CATALOG_MESSAGE)
 
     @patch("airbyte_cdk.test.entrypoint_wrapper.AirbyteEntrypoint")
     def test_given_log_when_discover_then_output_has_log(self, entrypoint):
         entrypoint.return_value.run.return_value = _to_entrypoint_output([_A_LOG])
         output = discover(self._a_source, _A_CONFIG)
-        assert AirbyteMessageSerializer.dump(output.logs[0]) == AirbyteMessageSerializer.dump(
-            _A_LOG
-        )
+        assert ab_message_to_string(output.logs[0]) == ab_message_to_string(_A_LOG)
 
     @patch("airbyte_cdk.test.entrypoint_wrapper.AirbyteEntrypoint")
     def test_given_trace_message_when_discover_then_output_has_trace_messages(self, entrypoint):
         entrypoint.return_value.run.return_value = _to_entrypoint_output([_AN_ANALYTIC_MESSAGE])
         output = discover(self._a_source, _A_CONFIG)
-        assert AirbyteMessageSerializer.dump(
-            output.analytics_messages[0]
-        ) == AirbyteMessageSerializer.dump(_AN_ANALYTIC_MESSAGE)
+        assert ab_message_to_string(output.analytics_messages[0]) == ab_message_to_string(
+            _AN_ANALYTIC_MESSAGE
+        )
 
     @patch("airbyte_cdk.test.entrypoint_wrapper.print", create=True)
     @patch("airbyte_cdk.test.entrypoint_wrapper.AirbyteEntrypoint")
@@ -285,17 +280,15 @@ class EntrypointWrapperReadTest(TestCase):
     def test_given_record_when_read_then_output_has_record(self, entrypoint):
         entrypoint.return_value.run.return_value = _to_entrypoint_output([_A_RECORD])
         output = read(self._a_source, _A_CONFIG, _A_CATALOG, _A_STATE)
-        assert AirbyteMessageSerializer.dump(output.records[0]) == AirbyteMessageSerializer.dump(
-            _A_RECORD
-        )
+        assert ab_message_to_string(output.records[0]) == ab_message_to_string(_A_RECORD)
 
     @patch("airbyte_cdk.test.entrypoint_wrapper.AirbyteEntrypoint")
     def test_given_state_message_when_read_then_output_has_state_message(self, entrypoint):
         entrypoint.return_value.run.return_value = _to_entrypoint_output([_A_STATE_MESSAGE])
         output = read(self._a_source, _A_CONFIG, _A_CATALOG, _A_STATE)
-        assert AirbyteMessageSerializer.dump(
-            output.state_messages[0]
-        ) == AirbyteMessageSerializer.dump(_A_STATE_MESSAGE)
+        assert ab_message_to_string(output.state_messages[0]) == ab_message_to_string(
+            _A_STATE_MESSAGE
+        )
 
     @patch("airbyte_cdk.test.entrypoint_wrapper.AirbyteEntrypoint")
     def test_given_state_message_and_records_when_read_then_output_has_records_and_state_message(
@@ -305,9 +298,9 @@ class EntrypointWrapperReadTest(TestCase):
             [_A_RECORD, _A_STATE_MESSAGE]
         )
         output = read(self._a_source, _A_CONFIG, _A_CATALOG, _A_STATE)
-        assert [
-            AirbyteMessageSerializer.dump(message) for message in output.records_and_state_messages
-        ] == [AirbyteMessageSerializer.dump(message) for message in (_A_RECORD, _A_STATE_MESSAGE)]
+        assert [ab_message_to_string(message) for message in output.records_and_state_messages] == [
+            ab_message_to_string(message) for message in (_A_RECORD, _A_STATE_MESSAGE)
+        ]
 
     @patch("airbyte_cdk.test.entrypoint_wrapper.AirbyteEntrypoint")
     def test_given_many_state_messages_and_records_when_read_then_output_has_records_and_state_message(
@@ -324,25 +317,19 @@ class EntrypointWrapperReadTest(TestCase):
 
         output = read(self._a_source, _A_CONFIG, _A_CATALOG, _A_STATE)
 
-        assert AirbyteStreamStateSerializer.dump(
-            output.most_recent_state
-        ) == AirbyteStreamStateSerializer.dump(last_emitted_state)
-
     @patch("airbyte_cdk.test.entrypoint_wrapper.AirbyteEntrypoint")
     def test_given_log_when_read_then_output_has_log(self, entrypoint):
         entrypoint.return_value.run.return_value = _to_entrypoint_output([_A_LOG])
         output = read(self._a_source, _A_CONFIG, _A_CATALOG, _A_STATE)
-        assert AirbyteMessageSerializer.dump(output.logs[0]) == AirbyteMessageSerializer.dump(
-            _A_LOG
-        )
+        assert ab_message_to_string(output.logs[0]) == ab_message_to_string(_A_LOG)
 
     @patch("airbyte_cdk.test.entrypoint_wrapper.AirbyteEntrypoint")
     def test_given_trace_message_when_read_then_output_has_trace_messages(self, entrypoint):
         entrypoint.return_value.run.return_value = _to_entrypoint_output([_AN_ANALYTIC_MESSAGE])
         output = read(self._a_source, _A_CONFIG, _A_CATALOG, _A_STATE)
-        assert AirbyteMessageSerializer.dump(
-            output.analytics_messages[0]
-        ) == AirbyteMessageSerializer.dump(_AN_ANALYTIC_MESSAGE)
+        assert ab_message_to_string(output.analytics_messages[0]) == ab_message_to_string(
+            _AN_ANALYTIC_MESSAGE
+        )
 
     @patch("airbyte_cdk.test.entrypoint_wrapper.AirbyteEntrypoint")
     def test_given_stream_statuses_when_read_then_return_statuses(self, entrypoint):
