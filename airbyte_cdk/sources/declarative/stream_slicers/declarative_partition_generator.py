@@ -69,9 +69,12 @@ class DeclarativePartition(Partition):
         self._hash = SliceHasher.hash(self._stream_name, self._stream_slice)
 
     def read(self) -> Iterable[Record]:
+        if self._max_records_limit:
+            global total_record_counter
+            if total_record_counter >= self._max_records_limit:
+                return
         for stream_data in self._retriever.read_records(self._json_schema, self._stream_slice):
             if self._max_records_limit:
-                global total_record_counter
                 if total_record_counter >= self._max_records_limit:
                     break
 

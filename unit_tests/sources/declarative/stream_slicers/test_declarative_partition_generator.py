@@ -142,6 +142,11 @@ class StreamSlicerPartitionGeneratorTest(TestCase):
         second_partition_records = list(partition.read())
         assert len(second_partition_records) == 0
 
+        # The DeclarativePartition exits out of the read before attempting to read_records() if
+        # the max_records_limit has already been reached. So we only expect to see read_records()
+        # called for the first partition read and not the second
+        retriever.read_records.assert_called_once()
+
     @staticmethod
     def _mock_retriever(read_return_value: List[StreamData]) -> Mock:
         retriever = Mock(spec=Retriever)
