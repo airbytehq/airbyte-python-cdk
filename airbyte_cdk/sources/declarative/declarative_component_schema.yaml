@@ -1838,6 +1838,7 @@ definitions:
         "$ref": "#/definitions/RequestOption"
       page_token_option:
         title: Inject Page Token Into Outgoing HTTP Request
+        description: Inject the page token into the outgoing HTTP requests by inserting it into either the request URL path or a field on the request.
         anyOf:
           - "$ref": "#/definitions/RequestOption"
           - "$ref": "#/definitions/RequestPath"
@@ -3486,7 +3487,7 @@ definitions:
           - [["content", "html"], ["content", "plain_text"]]
   RequestPath:
     title: Request Path
-    description: Specifies where in the request path a component's value should be inserted.
+    description: The URL path to be used for the HTTP request.
     type: object
     required:
       - type
