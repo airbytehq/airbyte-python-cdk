@@ -946,6 +946,58 @@ list_stream:
     assert list_stream_slicer._cursor_field.string == "a_key"
 
 
+def test_stream_with_custom_retriever_and_transformations():
+    content = """
+a_stream:
+  type: DeclarativeStream
+  primary_key: id
+  schema_loader:
+    type: InlineSchemaLoader
+    schema:
+      $schema: "http://json-schema.org/draft-07/schema"
+      type: object
+      properties:
+        id:
+          type: string
+  retriever:
+    type: CustomRetriever
+    class_name: unit_tests.sources.declarative.parsers.testing_components.TestingCustomRetriever
+    name: "{{ parameters['name'] }}"
+    decoder:
+      type: JsonDecoder
+    requester:
+      type: HttpRequester
+      name: "{{ parameters['name'] }}"
+      url_base: "https://api.sendgrid.com/v3/"
+      http_method: "GET"
+    record_selector:
+      type: RecordSelector
+      extractor:
+        type: DpathExtractor
+        field_path: ["records"]
+  transformations:
+    - type: AddFields
+      fields:
+        - path: ["extra"]
+          value: "{{ response.to_add }}"
+  $parameters:
+   name: a_stream
+"""
+
+    parsed_manifest = YamlDeclarativeSource._parse(content)
+    resolved_manifest = resolver.preprocess_manifest(parsed_manifest)
+    stream_manifest = transformer.propagate_types_and_parameters(
+        "", resolved_manifest["a_stream"], {}
+    )
+
+    stream = factory.create_component(
+        model_type=DeclarativeStreamModel, component_definition=stream_manifest, config=input_config
+    )
+
+    assert isinstance(stream, DeclarativeStream)
+    assert stream.retriever.record_selector.transformations
+
+
 @pytest.mark.parametrize(
     "use_legacy_state",
     [
