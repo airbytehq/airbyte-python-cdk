@@ -3,7 +3,11 @@
 #
 
 import logging
-from typing import Any, Generic, Iterator, List, Mapping, MutableMapping, Optional, Tuple
+from dataclasses import dataclass, field
+from queue import Queue
+from typing import Any, ClassVar, Generic, Iterator, List, Mapping, MutableMapping, Optional, Tuple
+
+from airbyte_protocol_dataclasses.models import Level
 
 from airbyte_cdk.models import (
     AirbyteCatalog,
@@ -48,6 +52,8 @@ from airbyte_cdk.sources.declarative.stream_slicers.declarative_partition_genera
     StreamSlicerPartitionGenerator,
 )
 from airbyte_cdk.sources.declarative.types import ConnectionDefinition
+from airbyte_cdk.sources.message.concurrent_repository import ConcurrentMessageRepository
+from airbyte_cdk.sources.message.repository import InMemoryMessageRepository, MessageRepository
 from airbyte_cdk.sources.source import TState
 from airbyte_cdk.sources.streams import Stream
 from airbyte_cdk.sources.streams.concurrent.abstract_stream import AbstractStream
@@ -55,6 +61,22 @@ from airbyte_cdk.sources.streams.concurrent.abstract_stream_facade import Abstra
 from airbyte_cdk.sources.streams.concurrent.cursor import ConcurrentCursor, FinalStateCursor
 from airbyte_cdk.sources.streams.concurrent.default_stream import DefaultStream
 from airbyte_cdk.sources.streams.concurrent.helpers import get_primary_key_from_stream
+from airbyte_cdk.sources.streams.concurrent.partitions.types import QueueItem
+
+
+@dataclass
+class TestLimits:
+    __test__: ClassVar[bool] = False  # Tell Pytest this is not a Pytest class, despite its name
+
+    DEFAULT_MAX_PAGES_PER_SLICE: ClassVar[int] = 5
+    DEFAULT_MAX_SLICES: ClassVar[int] = 5
+    DEFAULT_MAX_RECORDS: ClassVar[int] = 100
+    DEFAULT_MAX_STREAMS: ClassVar[int] = 100
+
+    max_records: int = field(default=DEFAULT_MAX_RECORDS)
+    max_pages_per_slice: int = field(default=DEFAULT_MAX_PAGES_PER_SLICE)
+    max_slices: int = field(default=DEFAULT_MAX_SLICES)
+    max_streams: int = field(default=DEFAULT_MAX_STREAMS)
 
 
 class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
@@ -70,7 +92,9 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
         source_config: ConnectionDefinition,
         debug: bool = False,
         emit_connector_builder_messages: bool = False,
-        component_factory: Optional[ModelToComponentFactory] = None,
+        migrate_manifest: bool = False,
+        normalize_manifest: bool = False,
+        limits: Optional[TestLimits] = None,
         config_path: Optional[str] = None,
         **kwargs: Any,
     ) -> None:
@@ -78,22 +102,40 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
         #  no longer needs to store the original incoming state. But maybe there's an edge case?
         self._connector_state_manager = ConnectorStateManager(state=state)  # type: ignore  # state is always in the form of List[AirbyteStateMessage]. The ConnectorStateManager should use generics, but this can be done later
 
+        # We set a maxsize to for the main thread to process record items when the queue size grows. This assumes that there are less
+        # threads generating partitions that than are max number of workers. If it weren't the case, we could have threads only generating
+        # partitions which would fill the queue. This number is arbitrarily set to 10_000 but will probably need to be changed given more
+        # information and might even need to be configurable depending on the source
+        queue: Queue[QueueItem] = Queue(maxsize=10_000)
+        message_repository = InMemoryMessageRepository(
+            Level.DEBUG if emit_connector_builder_messages else Level.INFO
+        )
+
         # To reduce the complexity of the concurrent framework, we are not enabling RFR with synthetic
         # cursors. We do this by no longer automatically instantiating RFR cursors when converting
         # the declarative models into runtime components. Concurrent sources will continue to checkpoint
         # incremental streams running in full refresh.
-        component_factory = component_factory or ModelToComponentFactory(
+        component_factory = ModelToComponentFactory(
             emit_connector_builder_messages=emit_connector_builder_messages,
             disable_resumable_full_refresh=True,
+            message_repository=ConcurrentMessageRepository(queue, message_repository),
             connector_state_manager=self._connector_state_manager,
             max_concurrent_async_job_count=source_config.get("max_concurrent_async_job_count"),
+            limit_pages_fetched_per_slice=limits.max_pages_per_slice if limits else None,
+            limit_slices_fetched=limits.max_slices if limits else None,
+            disable_retries=True if limits else False,
+            disable_cache=True if limits else False,
         )
+
+        self._limits = limits
 
         super().__init__(
             source_config=source_config,
             config=config,
             debug=debug,
             emit_connector_builder_messages=emit_connector_builder_messages,
+            migrate_manifest=migrate_manifest,
+            normalize_manifest=normalize_manifest,
             component_factory=component_factory,
             config_path=config_path,
         )
@@ -123,6 +165,7 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
             initial_number_of_partitions_to_generate=initial_number_of_partitions_to_generate,
             logger=self.logger,
             slice_logger=self._slice_logger,
+            queue=queue,
             message_repository=self.message_repository,
         )
 
@@ -278,12 +321,18 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
 
                         partition_generator = StreamSlicerPartitionGenerator(
                             partition_factory=DeclarativePartitionFactory(
-                                declarative_stream.name,
-                                declarative_stream.get_json_schema(),
-                                retriever,
-                                self.message_repository,
+                                stream_name=declarative_stream.name,
+                                json_schema=declarative_stream.get_json_schema(),
+                                retriever=retriever,
+                                message_repository=self.message_repository,
+                                max_records_limit=self._limits.max_records
+                                if self._limits
+                                else None,
                             ),
                             stream_slicer=declarative_stream.retriever.stream_slicer,
+                            slice_limit=self._limits.max_slices
+                            if self._limits
+                            else None,  # technically not needed because create_declarative_stream() -> create_simple_retriever() will apply the decorator. But for consistency and depending how we build create_default_stream, this may be needed later
                         )
                     else:
                         if (
@@ -309,12 +358,16 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
                             )
                         partition_generator = StreamSlicerPartitionGenerator(
                             partition_factory=DeclarativePartitionFactory(
-                                declarative_stream.name,
-                                declarative_stream.get_json_schema(),
-                                retriever,
-                                self.message_repository,
+                                stream_name=declarative_stream.name,
+                                json_schema=declarative_stream.get_json_schema(),
+                                retriever=retriever,
+                                message_repository=self.message_repository,
+                                max_records_limit=self._limits.max_records
+                                if self._limits
+                                else None,
                             ),
                             stream_slicer=cursor,
+                            slice_limit=self._limits.max_slices if self._limits else None,
                         )
 
                     concurrent_streams.append(
@@ -339,12 +392,16 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
                 ) and hasattr(declarative_stream.retriever, "stream_slicer"):
                     partition_generator = StreamSlicerPartitionGenerator(
                         DeclarativePartitionFactory(
-                            declarative_stream.name,
-                            declarative_stream.get_json_schema(),
-                            declarative_stream.retriever,
-                            self.message_repository,
+                            stream_name=declarative_stream.name,
+                            json_schema=declarative_stream.get_json_schema(),
+                            retriever=declarative_stream.retriever,
+                            message_repository=self.message_repository,
+                            max_records_limit=self._limits.max_records if self._limits else None,
                         ),
                         declarative_stream.retriever.stream_slicer,
+                        slice_limit=self._limits.max_slices
+                        if self._limits
+                        else None,  # technically not needed because create_declarative_stream() -> create_simple_retriever() will apply the decorator. But for consistency and depending how we build create_default_stream, this may be needed later
                     )
 
                     final_state_cursor = FinalStateCursor(
@@ -399,12 +456,14 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
 
                     partition_generator = StreamSlicerPartitionGenerator(
                         DeclarativePartitionFactory(
-                            declarative_stream.name,
-                            declarative_stream.get_json_schema(),
-                            retriever,
-                            self.message_repository,
+                            stream_name=declarative_stream.name,
+                            json_schema=declarative_stream.get_json_schema(),
+                            retriever=retriever,
+                            message_repository=self.message_repository,
+                            max_records_limit=self._limits.max_records if self._limits else None,
                         ),
                         perpartition_cursor,
+                        slice_limit=self._limits.max_slices if self._limits else None,
                     )
 
                     concurrent_streams.append(
