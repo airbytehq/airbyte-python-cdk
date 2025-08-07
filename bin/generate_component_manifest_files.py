@@ -33,8 +33,8 @@ def generate_init_module_content() -> str:
 
 def generate_json_schema():
     """Generate JSON schema from the YAML file for schemastore.org registration.
-    
-    When registered with schemastore.org, a number of IDEs and libraries 
+
+    When registered with schemastore.org, a number of IDEs and libraries
     automatically apply the JSON Schema validation features such as:
     - auto-complete for keys and enums
     - hover-tooltips for descriptions and examples
