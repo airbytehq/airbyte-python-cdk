@@ -45,6 +45,7 @@ class HttpStatusErrorHandler(ErrorHandler):
     def max_time(self) -> Optional[int]:
         return self._max_time
 
+    # pyrefly: ignore  # bad-override
     def interpret_response(
         self, response_or_exception: Optional[Union[requests.Response, Exception]] = None
     ) -> ErrorResolution:

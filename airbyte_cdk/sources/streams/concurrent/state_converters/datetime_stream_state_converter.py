@@ -37,12 +37,14 @@ class DateTimeStreamStateConverter(AbstractStreamStateConverter):
         return ab_datetime_now
 
     @abstractmethod
+    # pyrefly: ignore  # bad-override
     def increment(self, timestamp: datetime) -> datetime: ...
 
     @abstractmethod
     def parse_timestamp(self, timestamp: Any) -> datetime: ...
 
     @abstractmethod
+    # pyrefly: ignore  # bad-override
     def output_format(self, timestamp: datetime) -> Any: ...
 
     def parse_value(self, value: Any) -> Any:

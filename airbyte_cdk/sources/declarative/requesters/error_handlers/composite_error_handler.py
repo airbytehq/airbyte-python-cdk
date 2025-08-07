@@ -56,6 +56,7 @@ class CompositeErrorHandler(ErrorHandler):
     def max_time(self) -> Optional[int]:
         return max([error_handler.max_time or 0 for error_handler in self.error_handlers])
 
+    # pyrefly: ignore  # bad-override
     def interpret_response(
         self, response_or_exception: Optional[Union[requests.Response, Exception]]
     ) -> ErrorResolution:
@@ -96,6 +97,8 @@ class CompositeErrorHandler(ErrorHandler):
         """
         all_strategies = []
         for handler in self.error_handlers:
+            # pyrefly: ignore  # missing-attribute
             if hasattr(handler, "backoff_strategies") and handler.backoff_strategies:
+                # pyrefly: ignore  # bad-argument-type
                 all_strategies.extend(handler.backoff_strategies)
         return all_strategies if all_strategies else None

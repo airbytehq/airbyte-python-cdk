@@ -105,6 +105,7 @@ class ParquetParser(FileTypeParser):
             raise RecordParseError(
                 FileBasedSourceError.ERROR_PARSING_RECORD,
                 filename=file.uri,
+                # pyrefly: ignore  # unbound-name
                 lineno=f"{row_group=}, {line_no=}",
             ) from exc
 

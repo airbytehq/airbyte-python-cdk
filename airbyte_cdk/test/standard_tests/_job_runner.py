@@ -56,6 +56,7 @@ def run_test_job(
     connector_obj: IConnector
     if isinstance(connector, type) or callable(connector):
         # If the connector is a class or a factory lambda, instantiate it.
+        # pyrefly: ignore  # bad-instantiation
         connector_obj = connector()
     elif isinstance(connector, IConnector):
         connector_obj = connector

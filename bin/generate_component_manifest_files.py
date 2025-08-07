@@ -155,4 +155,5 @@ async def main():
         )
 
 
+# pyrefly: ignore  # bad-argument-type
 anyio.run(main)

@@ -208,6 +208,7 @@ class TypeTransformer:
                 for k, subschema in property_value.items():
                     if k in instance:
                         subschema = resolve(subschema)
+                        # pyrefly: ignore  # unsupported-operation
                         instance[k] = self.__normalize(instance[k], subschema)
             # Recursively normalize every item of the "instance" sub-array,
             # if "instance" is an incorrect type - skip recursive normalization of "instance"
@@ -238,6 +239,7 @@ class TypeTransformer:
         """
         if TransformConfig.NoTransform in self._config:
             return
+        # pyrefly: ignore  # bad-argument-count
         normalizer = self._normalizer(schema)
         for e in normalizer.iter_errors(record):
             """

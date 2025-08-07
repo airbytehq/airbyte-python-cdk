@@ -10,6 +10,7 @@ from airbyte_cdk import OneOfOptionConfig
 
 
 class DeliverPermissions(BaseModel):
+    # pyrefly: ignore  # bad-override
     class Config(OneOfOptionConfig):
         title = "Replicate Permissions ACL"
         description = "Sends one identity stream and one for more permissions (ACL) streams to the destination. This data can be used in downstream systems to recreate permission restrictions mirroring the original source."

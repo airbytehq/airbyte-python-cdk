@@ -17,6 +17,7 @@ from .source import Source
 # might not need dpath leading to longer initialization time.
 # There is a downside in using dpath as a library since the options are global: if we have two pieces of code that want different options,
 # this will not be thread-safe.
+# pyrefly: ignore  # bad-assignment
 dpath.options.ALLOW_EMPTY_STRING_KEYS = True
 
 __all__ = [

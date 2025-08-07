@@ -109,6 +109,7 @@ def rename_key(schema: Any, old_key: str, new_key: str) -> None:
     for key, value in schema.items():
         rename_key(value, old_key, new_key)
         if old_key in schema:
+            # pyrefly: ignore  # missing-attribute
             schema[new_key] = schema.pop(old_key)
 
 

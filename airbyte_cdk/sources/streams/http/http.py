@@ -395,6 +395,7 @@ class HttpStream(Stream, CheckpointMixin, ABC):
         cursor = self.get_cursor()
         if cursor:
             cursor.set_initial_state(value)
+        # pyrefly: ignore  # implicitly-defined-attribute
         self._state = value
 
     def get_cursor(self) -> Optional[Cursor]:

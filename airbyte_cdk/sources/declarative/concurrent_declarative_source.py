@@ -398,6 +398,7 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
                             message_repository=self.message_repository,
                             max_records_limit=self._limits.max_records if self._limits else None,
                         ),
+                        # pyrefly: ignore  # missing-attribute
                         declarative_stream.retriever.stream_slicer,
                         slice_limit=self._limits.max_slices
                         if self._limits
@@ -428,6 +429,7 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
                     == DatetimeBasedCursorModel.__name__
                     and hasattr(declarative_stream.retriever, "stream_slicer")
                     and isinstance(
+                        # pyrefly: ignore  # missing-attribute
                         declarative_stream.retriever.stream_slicer,
                         (GlobalSubstreamCursor, PerPartitionWithGlobalCursor),
                     )
@@ -507,6 +509,7 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
             )
             and hasattr(declarative_stream.retriever, "stream_slicer")
             and (
+                # pyrefly: ignore  # missing-attribute
                 isinstance(declarative_stream.retriever.stream_slicer, DatetimeBasedCursor)
                 # IncrementingCountCursorModel is hardcoded to be of type DatetimeBasedCursor
                 # add isintance check here if we want to create a Declarative IncrementingCountCursor
@@ -562,4 +565,5 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
                 # The state variable is expected to be mutable but the migrate method returns an immutable mapping.
                 stream_state = dict(state_migration.migrate(stream_state))
 
+        # pyrefly: ignore  # bad-return
         return stream_state
