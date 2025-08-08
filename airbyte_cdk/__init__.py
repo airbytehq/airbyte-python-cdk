@@ -107,7 +107,6 @@ from .sources.declarative.extractors.record_extractor import RecordExtractor
 from .sources.declarative.extractors.record_filter import RecordFilter
 from .sources.declarative.incremental import DatetimeBasedCursor
 from .sources.declarative.interpolation import InterpolatedBoolean, InterpolatedString
-from .sources.declarative.manifest_declarative_source import ManifestDeclarativeSource
 from .sources.declarative.migrations.legacy_to_per_partition_state_migration import (
     LegacyToPerPartitionStateMigration,
 )
@@ -253,7 +252,6 @@ __all__ = [
     "JsonDecoder",
     "JsonFileSchemaLoader",
     "LegacyToPerPartitionStateMigration",
-    "ManifestDeclarativeSource",
     "MinMaxDatetime",
     "NoAuth",
     "OffsetIncrement",
