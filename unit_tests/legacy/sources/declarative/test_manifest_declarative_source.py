@@ -17,6 +17,9 @@ import yaml
 from jsonschema.exceptions import ValidationError
 
 import unit_tests.sources.declarative.external_component  # Needed for dynamic imports to work
+from airbyte_cdk.legacy.sources.declarative.manifest_declarative_source import (
+    ManifestDeclarativeSource,
+)
 from airbyte_cdk.models import (
     AirbyteLogMessage,
     AirbyteMessage,
@@ -29,7 +32,6 @@ from airbyte_cdk.models import (
     Type,
 )
 from airbyte_cdk.sources.declarative.declarative_stream import DeclarativeStream
-from airbyte_cdk.sources.declarative.manifest_declarative_source import ManifestDeclarativeSource
 from airbyte_cdk.sources.declarative.parsers.model_to_component_factory import (
     ModelToComponentFactory,
 )
@@ -62,7 +64,7 @@ class TestManifestDeclarativeSource:
         module = sys.modules[__name__]
         module_path = os.path.abspath(module.__file__)
         test_path = os.path.dirname(module_path)
-        spec_root = test_path.split("/sources/declarative")[0]
+        spec_root = test_path.split("/legacy/sources/declarative")[0]
 
         spec = {
             "documentationUrl": "https://airbyte.com/#yaml-from-external",
@@ -1018,7 +1020,7 @@ class TestManifestDeclarativeSource:
         with pytest.raises(FileNotFoundError):
             source.spec(logger)
 
-    @patch("airbyte_cdk.sources.declarative.declarative_source.DeclarativeSource.read")
+    @patch("airbyte_cdk.legacy.sources.declarative.declarative_source.DeclarativeSource.read")
     def test_given_debug_when_read_then_set_log_level(self, declarative_source_read):
         any_valid_manifest = {
             "version": "0.29.3",
@@ -2268,7 +2270,7 @@ def test_declarative_component_schema_valid_ref_links():
         return invalid_refs
 
     yaml_file_path = (
-        Path(__file__).resolve().parent.parent.parent.parent
+        Path(__file__).resolve().parent.parent.parent.parent.parent
         / "airbyte_cdk/sources/declarative/declarative_component_schema.yaml"
     )
     assert not validate_refs(yaml_file_path)
@@ -2438,7 +2440,7 @@ def migration_mocks(monkeypatch):
         mock_serializer_dump,
     )
     monkeypatch.setattr(
-        "airbyte_cdk.sources.declarative.manifest_declarative_source.orjson.dumps",
+        "airbyte_cdk.legacy.sources.declarative.manifest_declarative_source.orjson.dumps",
         mock_orjson_dumps,
     )
 

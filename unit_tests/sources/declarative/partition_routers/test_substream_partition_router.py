@@ -8,16 +8,15 @@ from typing import Any, Iterable, List, Mapping, MutableMapping, Optional, Union
 
 import pytest as pytest
 
+from airbyte_cdk.legacy.sources.declarative.incremental.per_partition_cursor import (
+    CursorFactory,
+    PerPartitionCursor,
+)
 from airbyte_cdk.models import AirbyteMessage, AirbyteRecordMessage, SyncMode, Type
 from airbyte_cdk.sources.declarative.declarative_stream import DeclarativeStream
 from airbyte_cdk.sources.declarative.incremental import (
     ChildPartitionResumableFullRefreshCursor,
     ResumableFullRefreshCursor,
-)
-from airbyte_cdk.sources.declarative.incremental.per_partition_cursor import (
-    CursorFactory,
-    PerPartitionCursor,
-    StreamSlice,
 )
 from airbyte_cdk.sources.declarative.interpolation import InterpolatedString
 from airbyte_cdk.sources.declarative.partition_routers import (
@@ -33,7 +32,7 @@ from airbyte_cdk.sources.declarative.requesters.request_option import (
     RequestOptionType,
 )
 from airbyte_cdk.sources.streams.checkpoint import Cursor
-from airbyte_cdk.sources.types import Record
+from airbyte_cdk.sources.types import Record, StreamSlice
 from airbyte_cdk.utils import AirbyteTracedException
 
 parent_records = [{"id": 1, "data": "data1"}, {"id": 2, "data": "data2"}]
