@@ -309,7 +309,7 @@ jobs:
           base: master
           delete-branch: true
       - name: Post success to Slack channel dev-connectors-extensibility
-        uses: slackapi/slack-github-action@v1.23.0
+        uses: slackapi/slack-github-action@v2.1.0
         continue-on-error: true
         env:
           SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN_AIRBYTE_TEAM }}
@@ -346,7 +346,7 @@ jobs:
             }
       - name: Post failure to Slack channel dev-connectors-extensibility
         if: failure()
-        uses: slackapi/slack-github-action@v1.23.0
+        uses: slackapi/slack-github-action@v2.1.0
         continue-on-error: true
         env:
           SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN_AIRBYTE_TEAM }}
