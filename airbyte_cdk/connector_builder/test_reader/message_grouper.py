@@ -95,7 +95,7 @@ def get_message_groups(
     latest_state_message: Optional[Dict[str, Any]] = None
     slice_auxiliary_requests: List[AuxiliaryRequest] = []
 
-    while records_count < limit and (message := next(messages, None)):
+    while message := next(messages, None):
         json_message = airbyte_message_to_json(message)
 
         if is_page_http_request_for_different_stream(json_message, stream_name):

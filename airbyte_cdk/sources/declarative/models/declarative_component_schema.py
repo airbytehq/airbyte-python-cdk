@@ -2002,7 +2002,9 @@ class DefaultPaginator(BaseModel):
         None, title="Inject Page Size Into Outgoing HTTP Request"
     )
     page_token_option: Optional[Union[RequestOption, RequestPath]] = Field(
-        None, title="Inject Page Token Into Outgoing HTTP Request"
+        None,
+        description="Inject the page token into the outgoing HTTP requests by inserting it into either the request URL path or a field on the request.",
+        title="Inject Page Token Into Outgoing HTTP Request",
     )
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 

@@ -161,7 +161,7 @@ def pytest_generate_tests(metafunc: pytest.Metafunc) -> None:
         if test_class is None:
             return
 
-        # Get the 'scenarios' attribute from the class
+        # Check that the class is compatible with our test suite
         scenarios_attr = getattr(test_class, "get_scenarios", None)
         if scenarios_attr is None:
             raise ValueError(
@@ -169,6 +169,21 @@ def pytest_generate_tests(metafunc: pytest.Metafunc) -> None:
                 "Please define the 'scenarios' attribute in the test class."
             )
 
+        # Get the scenarios defined or discovered in the test class
         scenarios = test_class.get_scenarios()
-        ids = [str(scenario) for scenario in scenarios]
-        metafunc.parametrize("scenario", scenarios, ids=ids)
+
+        # Create pytest.param objects with special marks as needed
+        parametrized_scenarios = [
+            pytest.param(
+                scenario,
+                marks=[pytest.mark.requires_creds] if scenario.requires_creds else [],
+            )
+            for scenario in scenarios
+        ]
+
+        # Parametrize the 'scenario' argument with the scenarios
+        metafunc.parametrize(
+            "scenario",
+            parametrized_scenarios,
+            ids=[str(scenario) for scenario in scenarios],
+        )

@@ -20,6 +20,7 @@ from airbyte_cdk.sources.declarative.concurrent_declarative_source import (
     ConcurrentDeclarativeSource,
 )
 from airbyte_cdk.sources.declarative.incremental import ConcurrentPerPartitionCursor
+from airbyte_cdk.sources.declarative.schema import InlineSchemaLoader
 from airbyte_cdk.sources.declarative.stream_slicers.declarative_partition_generator import (
     DeclarativePartition,
 )
@@ -30,6 +31,8 @@ from airbyte_cdk.sources.streams.concurrent.state_converters.datetime_stream_sta
 from airbyte_cdk.sources.types import StreamSlice
 from airbyte_cdk.test.catalog_builder import CatalogBuilder, ConfiguredAirbyteStreamBuilder
 from airbyte_cdk.test.entrypoint_wrapper import EntrypointOutput, read
+
+_EMPTY_SCHEMA_LOADER = InlineSchemaLoader(schema={}, parameters={})
 
 SUBSTREAM_MANIFEST: MutableMapping[str, Any] = {
     "version": "0.51.42",
@@ -3636,7 +3639,14 @@ def test_given_no_partitions_processed_when_close_partition_then_no_state_update
     slices = list(cursor.stream_slices())  # Call once
     for slice in slices:
         cursor.close_partition(
-            DeclarativePartition("test_stream", {}, MagicMock(), MagicMock(), slice)
+            DeclarativePartition(
+                stream_name="test_stream",
+                schema_loader=_EMPTY_SCHEMA_LOADER,
+                retriever=MagicMock(),
+                message_repository=MagicMock(),
+                max_records_limit=None,
+                stream_slice=slice,
+            )
         )
 
     assert cursor.state == {
@@ -3714,7 +3724,14 @@ def test_given_unfinished_first_parent_partition_no_parent_state_update():
     # Close all partitions except from the first one
     for slice in slices[1:]:
         cursor.close_partition(
-            DeclarativePartition("test_stream", {}, MagicMock(), MagicMock(), slice)
+            DeclarativePartition(
+                stream_name="test_stream",
+                schema_loader=_EMPTY_SCHEMA_LOADER,
+                retriever=MagicMock(),
+                message_repository=MagicMock(),
+                max_records_limit=None,
+                stream_slice=slice,
+            )
         )
     cursor.ensure_at_least_one_state_emitted()
 
@@ -3802,7 +3819,14 @@ def test_given_unfinished_last_parent_partition_with_partial_parent_state_update
     # Close all partitions except from the first one
     for slice in slices[:-1]:
         cursor.close_partition(
-            DeclarativePartition("test_stream", {}, MagicMock(), MagicMock(), slice)
+            DeclarativePartition(
+                stream_name="test_stream",
+                schema_loader=_EMPTY_SCHEMA_LOADER,
+                retriever=MagicMock(),
+                message_repository=MagicMock(),
+                max_records_limit=None,
+                stream_slice=slice,
+            )
         )
     cursor.ensure_at_least_one_state_emitted()
 
@@ -3885,7 +3909,14 @@ def test_given_all_partitions_finished_when_close_partition_then_final_state_emi
     slices = list(cursor.stream_slices())
     for slice in slices:
         cursor.close_partition(
-            DeclarativePartition("test_stream", {}, MagicMock(), MagicMock(), slice)
+            DeclarativePartition(
+                stream_name="test_stream",
+                schema_loader=_EMPTY_SCHEMA_LOADER,
+                retriever=MagicMock(),
+                message_repository=MagicMock(),
+                max_records_limit=None,
+                stream_slice=slice,
+            )
         )
 
     cursor.ensure_at_least_one_state_emitted()
@@ -3952,7 +3983,14 @@ def test_given_partition_limit_exceeded_when_close_partition_then_switch_to_glob
     slices = list(cursor.stream_slices())
     for slice in slices:
         cursor.close_partition(
-            DeclarativePartition("test_stream", {}, MagicMock(), MagicMock(), slice)
+            DeclarativePartition(
+                stream_name="test_stream",
+                schema_loader=_EMPTY_SCHEMA_LOADER,
+                retriever=MagicMock(),
+                message_repository=MagicMock(),
+                max_records_limit=None,
+                stream_slice=slice,
+            )
         )
     cursor.ensure_at_least_one_state_emitted()
 
@@ -4029,7 +4067,16 @@ def test_semaphore_cleanup():
 
     # Close partitions to acquire semaphores (value back to 0)
     for s in generated_slices:
-        cursor.close_partition(DeclarativePartition("test_stream", {}, MagicMock(), MagicMock(), s))
+        cursor.close_partition(
+            DeclarativePartition(
+                stream_name="test_stream",
+                schema_loader=_EMPTY_SCHEMA_LOADER,
+                retriever=MagicMock(),
+                message_repository=MagicMock(),
+                max_records_limit=None,
+                stream_slice=s,
+            )
+        )
 
     # Check state after closing partitions
     assert len(cursor._partitions_done_generating_stream_slices) == 0
@@ -4141,15 +4188,38 @@ def test_duplicate_partition_after_closing_partition_cursor_deleted():
 
     first_1 = next(slice_gen)
     cursor.close_partition(
-        DeclarativePartition("dup_stream", {}, MagicMock(), MagicMock(), first_1)
+        DeclarativePartition(
+            stream_name="dup_stream",
+            schema_loader=_EMPTY_SCHEMA_LOADER,
+            retriever=MagicMock(),
+            message_repository=MagicMock(),
+            max_records_limit=None,
+            stream_slice=first_1,
+        )
     )
 
     two = next(slice_gen)
-    cursor.close_partition(DeclarativePartition("dup_stream", {}, MagicMock(), MagicMock(), two))
+    cursor.close_partition(
+        DeclarativePartition(
+            stream_name="dup_stream",
+            schema_loader=_EMPTY_SCHEMA_LOADER,
+            retriever=MagicMock(),
+            message_repository=MagicMock(),
+            max_records_limit=None,
+            stream_slice=two,
+        )
+    )
 
     second_1 = next(slice_gen)
     cursor.close_partition(
-        DeclarativePartition("dup_stream", {}, MagicMock(), MagicMock(), second_1)
+        DeclarativePartition(
+            stream_name="dup_stream",
+            schema_loader=_EMPTY_SCHEMA_LOADER,
+            retriever=MagicMock(),
+            message_repository=MagicMock(),
+            max_records_limit=None,
+            stream_slice=second_1,
+        )
     )
 
     assert cursor._IS_PARTITION_DUPLICATION_LOGGED is False  # No duplicate detected
@@ -4203,16 +4273,39 @@ def test_duplicate_partition_after_closing_partition_cursor_exists():
 
     first_1 = next(slice_gen)
     cursor.close_partition(
-        DeclarativePartition("dup_stream", {}, MagicMock(), MagicMock(), first_1)
+        DeclarativePartition(
+            stream_name="dup_stream",
+            schema_loader=_EMPTY_SCHEMA_LOADER,
+            retriever=MagicMock(),
+            message_repository=MagicMock(),
+            max_records_limit=None,
+            stream_slice=first_1,
+        )
     )
 
     two = next(slice_gen)
-    cursor.close_partition(DeclarativePartition("dup_stream", {}, MagicMock(), MagicMock(), two))
+    cursor.close_partition(
+        DeclarativePartition(
+            stream_name="dup_stream",
+            schema_loader=_EMPTY_SCHEMA_LOADER,
+            retriever=MagicMock(),
+            message_repository=MagicMock(),
+            max_records_limit=None,
+            stream_slice=two,
+        )
+    )
 
     # Second “1” should appear because the semaphore was cleaned up
     second_1 = next(slice_gen)
     cursor.close_partition(
-        DeclarativePartition("dup_stream", {}, MagicMock(), MagicMock(), second_1)
+        DeclarativePartition(
+            stream_name="dup_stream",
+            schema_loader=_EMPTY_SCHEMA_LOADER,
+            retriever=MagicMock(),
+            message_repository=MagicMock(),
+            max_records_limit=None,
+            stream_slice=second_1,
+        )
     )
 
     with pytest.raises(StopIteration):
@@ -4263,11 +4356,25 @@ def test_duplicate_partition_while_processing():
 
     # Close “2” first
     cursor.close_partition(
-        DeclarativePartition("dup_stream", {}, MagicMock(), MagicMock(), generated[1])
+        DeclarativePartition(
+            stream_name="dup_stream",
+            schema_loader=_EMPTY_SCHEMA_LOADER,
+            retriever=MagicMock(),
+            message_repository=MagicMock(),
+            max_records_limit=None,
+            stream_slice=generated[1],
+        )
     )
     # Now close the initial “1”
     cursor.close_partition(
-        DeclarativePartition("dup_stream", {}, MagicMock(), MagicMock(), generated[0])
+        DeclarativePartition(
+            stream_name="dup_stream",
+            schema_loader=_EMPTY_SCHEMA_LOADER,
+            retriever=MagicMock(),
+            message_repository=MagicMock(),
+            max_records_limit=None,
+            stream_slice=generated[0],
+        )
     )
 
     assert cursor._IS_PARTITION_DUPLICATION_LOGGED is True  # warning emitted

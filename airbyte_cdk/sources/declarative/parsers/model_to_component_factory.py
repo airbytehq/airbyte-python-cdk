@@ -520,7 +520,6 @@ from airbyte_cdk.sources.declarative.retrievers import (
 from airbyte_cdk.sources.declarative.retrievers.file_uploader import (
     ConnectorBuilderFileUploader,
     DefaultFileUploader,
-    FileUploader,
     LocalFileSystemFileWriter,
     NoopFileWriter,
 )
@@ -545,7 +544,6 @@ from airbyte_cdk.sources.declarative.stream_slicers.declarative_partition_genera
 )
 from airbyte_cdk.sources.declarative.transformations import (
     AddFields,
-    RecordTransformation,
     RemoveFields,
 )
 from airbyte_cdk.sources.declarative.transformations.add_fields import AddedFieldDefinition
@@ -634,6 +632,10 @@ SCHEMA_TRANSFORMER_TYPE_MAPPING = {
     SchemaNormalizationModel.Default: TransformConfig.DefaultSchemaNormalization,
 }
 _NO_STREAM_SLICING = SinglePartitionRouter(parameters={})
+
+# Ideally this should use the value defined in ConcurrentDeclarativeSource, but
+# this would be a circular import
+MAX_SLICES = 5
 
 
 class ModelToComponentFactory:
@@ -2075,6 +2077,7 @@ class ModelToComponentFactory:
                     self._message_repository,
                 ),
                 stream_slicer,
+                self._limit_slices_fetched or 5 if self._should_limit_slices_fetched() else None,
             ),
             name=stream_name,
             json_schema=schema_loader.get_json_schema,
@@ -2086,7 +2089,7 @@ class ModelToComponentFactory:
             # FIXME this is a breaking change compared to the old implementation which used the source name instead
             cursor=concurrent_cursor,
             supports_file_transfer=hasattr(model, "file_uploader")
-            and bool(model.file_uploader),
+                                   and bool(model.file_uploader),
         )
 
     def _is_stop_condition_on_cursor(self, model: DeclarativeStreamModel) -> bool:
