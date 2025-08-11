@@ -186,3 +186,8 @@ class ConnectorTestScenario(BaseModel):
             **self.model_dump(exclude={"status"}),
             status="succeed",
         )
+
+    @property
+    def requires_creds(self) -> bool:
+        """Return True if the scenario requires credentials to run."""
+        return bool(self.config_path and "secrets" in self.config_path.parts)
