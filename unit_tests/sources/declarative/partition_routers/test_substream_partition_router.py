@@ -9,8 +9,15 @@ from unittest.mock import Mock
 import pytest as pytest
 from airbyte_protocol_dataclasses.models import AirbyteStream
 
-from airbyte_cdk.sources.declarative.incremental import ConcurrentPerPartitionCursor, ConcurrentCursorFactory
-from airbyte_cdk.sources.streams.concurrent.cursor import ConcurrentCursor, CursorField, FinalStateCursor
+from airbyte_cdk.sources.declarative.incremental import (
+    ConcurrentPerPartitionCursor,
+    ConcurrentCursorFactory,
+)
+from airbyte_cdk.sources.streams.concurrent.cursor import (
+    ConcurrentCursor,
+    CursorField,
+    FinalStateCursor,
+)
 from airbyte_cdk.sources.declarative.incremental.per_partition_cursor import StreamSlice
 from airbyte_cdk.sources.declarative.partition_routers import (
     CartesianProductStreamSlicer,
@@ -28,12 +35,14 @@ from airbyte_cdk.sources.streams.checkpoint import Cursor
 from airbyte_cdk.sources.streams.concurrent.abstract_stream import AbstractStream
 from airbyte_cdk.sources.streams.concurrent.availability_strategy import StreamAvailability
 from airbyte_cdk.sources.streams.concurrent.partitions.partition import Partition
-from airbyte_cdk.sources.streams.concurrent.state_converters.datetime_stream_state_converter import \
-    CustomFormatConcurrentStreamStateConverter
+from airbyte_cdk.sources.streams.concurrent.state_converters.datetime_stream_state_converter import (
+    CustomFormatConcurrentStreamStateConverter,
+)
 from airbyte_cdk.sources.types import Record
 from airbyte_cdk.utils.datetime_helpers import ab_datetime_now, ab_datetime_parse
-from unit_tests.sources.streams.concurrent.scenarios.thread_based_concurrent_stream_source_builder import \
-    InMemoryPartition
+from unit_tests.sources.streams.concurrent.scenarios.thread_based_concurrent_stream_source_builder import (
+    InMemoryPartition,
+)
 
 parent_records = [{"id": 1, "data": "data1"}, {"id": 2, "data": "data2"}]
 more_records = [
@@ -54,9 +63,15 @@ parent_slices = [
     StreamSlice(partition={"slice": "third"}, cursor_slice={}),
 ]
 parent_slices_with_cursor = [
-    StreamSlice(partition={"slice": "first"}, cursor_slice={"start": "2021-01-01", "end": "2023-01-01"}),
-    StreamSlice(partition={"slice": "second"}, cursor_slice={"start": "2021-01-01", "end": "2023-01-01"}),
-    StreamSlice(partition={"slice": "third"}, cursor_slice={"start": "2021-01-01", "end": "2023-01-01"}),
+    StreamSlice(
+        partition={"slice": "first"}, cursor_slice={"start": "2021-01-01", "end": "2023-01-01"}
+    ),
+    StreamSlice(
+        partition={"slice": "second"}, cursor_slice={"start": "2021-01-01", "end": "2023-01-01"}
+    ),
+    StreamSlice(
+        partition={"slice": "third"}, cursor_slice={"start": "2021-01-01", "end": "2023-01-01"}
+    ),
 ]
 second_parent_stream_slice = [StreamSlice(partition={"slice": "second_parent"}, cursor_slice={})]
 
@@ -122,7 +137,10 @@ class MockStream(AbstractStream):
         (
             [
                 ParentStreamConfig(
-                    stream=MockStream([InMemoryPartition("partition_name", "first_stream", _EMPTY_SLICE, [])], "first_stream"),
+                    stream=MockStream(
+                        [InMemoryPartition("partition_name", "first_stream", _EMPTY_SLICE, [])],
+                        "first_stream",
+                    ),
                     parent_key="id",
                     partition_field="first_stream_id",
                     parameters={},
@@ -140,10 +158,10 @@ class MockStream(AbstractStream):
                                 "partition_name",
                                 "first_stream",
                                 _EMPTY_SLICE,
-                                _build_records_for_slice(parent_records, _EMPTY_SLICE)
+                                _build_records_for_slice(parent_records, _EMPTY_SLICE),
                             )
                         ],
-                        "first_stream"
+                        "first_stream",
                     ),
                     parent_key="id",
                     partition_field="first_stream_id",
@@ -171,16 +189,18 @@ class MockStream(AbstractStream):
                                 "partition_2",
                                 "first_stream",
                                 parent_slices[1],
-                                _build_records_for_slice(data_second_parent_slice, parent_slices[1]),
+                                _build_records_for_slice(
+                                    data_second_parent_slice, parent_slices[1]
+                                ),
                             ),
                             InMemoryPartition(
                                 "partition_3",
                                 "first_stream",
                                 parent_slices[2],
-                                _build_records_for_slice(data_third_parent_slice, parent_slices[2])
+                                _build_records_for_slice(data_third_parent_slice, parent_slices[2]),
                             ),
                         ],
-                        "first_stream"
+                        "first_stream",
                     ),
                     parent_key="id",
                     partition_field="first_stream_id",
@@ -203,22 +223,24 @@ class MockStream(AbstractStream):
                                 "partition_1",
                                 "first_stream",
                                 parent_slices[0],
-                                _build_records_for_slice(data_first_parent_slice, parent_slices[0])
+                                _build_records_for_slice(data_first_parent_slice, parent_slices[0]),
                             ),
                             InMemoryPartition(
                                 "partition_2",
                                 "first_stream",
                                 parent_slices[1],
-                                _build_records_for_slice(data_second_parent_slice, parent_slices[1])
+                                _build_records_for_slice(
+                                    data_second_parent_slice, parent_slices[1]
+                                ),
                             ),
                             InMemoryPartition(
                                 "partition_3",
                                 "first_stream",
                                 parent_slices[2],
-                                _build_records_for_slice(data_third_parent_slice, parent_slices[2])
+                                _build_records_for_slice(data_third_parent_slice, parent_slices[2]),
                             ),
                         ],
-                        "first_stream"
+                        "first_stream",
                     ),
                     parent_key="id",
                     partition_field="first_stream_id",
@@ -241,13 +263,15 @@ class MockStream(AbstractStream):
                                 "partition_1",
                                 "first_stream",
                                 parent_slices[0],
-                                _build_records_for_slice(data_first_parent_slice, parent_slices[0])
+                                _build_records_for_slice(data_first_parent_slice, parent_slices[0]),
                             ),
                             InMemoryPartition(
                                 "partition_2",
                                 "first_stream",
                                 parent_slices[1],
-                                _build_records_for_slice(data_second_parent_slice, parent_slices[1])
+                                _build_records_for_slice(
+                                    data_second_parent_slice, parent_slices[1]
+                                ),
                             ),
                             InMemoryPartition(
                                 "partition_3",
@@ -256,7 +280,7 @@ class MockStream(AbstractStream):
                                 [],
                             ),
                         ],
-                        "first_stream"
+                        "first_stream",
                     ),
                     parent_key="id",
                     partition_field="first_stream_id",
@@ -270,10 +294,12 @@ class MockStream(AbstractStream):
                                 "partition_1",
                                 "first_stream",
                                 second_parent_stream_slice[0],
-                                _build_records_for_slice(more_records, second_parent_stream_slice[0])
+                                _build_records_for_slice(
+                                    more_records, second_parent_stream_slice[0]
+                                ),
                             ),
                         ],
-                        "first_stream"
+                        "first_stream",
                     ),
                     parent_key="id",
                     partition_field="second_stream_id",
@@ -298,10 +324,12 @@ class MockStream(AbstractStream):
                                 "partition_1",
                                 "first_stream",
                                 _EMPTY_SLICE,
-                                _build_records_for_slice([{"id": 0}, {"id": 1}, {"_id": 2}, {"id": 3}], _EMPTY_SLICE)
+                                _build_records_for_slice(
+                                    [{"id": 0}, {"id": 1}, {"_id": 2}, {"id": 3}], _EMPTY_SLICE
+                                ),
                             ),
                         ],
-                        "first_stream"
+                        "first_stream",
                     ),
                     parent_key="id",
                     partition_field="first_stream_id",
@@ -324,10 +352,18 @@ class MockStream(AbstractStream):
                                 "partition_1",
                                 "first_stream",
                                 _EMPTY_SLICE,
-                                _build_records_for_slice([{"a": {"b": 0}}, {"a": {"b": 1}}, {"a": {"c": 2}}, {"a": {"b": 3}}], _EMPTY_SLICE)
+                                _build_records_for_slice(
+                                    [
+                                        {"a": {"b": 0}},
+                                        {"a": {"b": 1}},
+                                        {"a": {"c": 2}},
+                                        {"a": {"b": 3}},
+                                    ],
+                                    _EMPTY_SLICE,
+                                ),
                             ),
                         ],
-                        "first_stream"
+                        "first_stream",
                     ),
                     parent_key="a/b",
                     partition_field="first_stream_id",
@@ -648,19 +684,23 @@ def test_request_option(
                             "partition_1",
                             "first_stream",
                             parent_slices_with_cursor[0],
-                            _build_records_for_slice(data_first_parent_slice_with_cursor, parent_slices_with_cursor[0])
+                            _build_records_for_slice(
+                                data_first_parent_slice_with_cursor, parent_slices_with_cursor[0]
+                            ),
                         ),
                         InMemoryPartition(
                             "partition_2",
                             "first_stream",
                             parent_slices_with_cursor[1],
-                            _build_records_for_slice(data_second_parent_slice_with_cursor, parent_slices_with_cursor[1])
+                            _build_records_for_slice(
+                                data_second_parent_slice_with_cursor, parent_slices_with_cursor[1]
+                            ),
                         ),
                         InMemoryPartition(
                             "partition_3",
                             "first_stream",
                             parent_slices_with_cursor[2],
-                            _build_records_for_slice([], parent_slices_with_cursor[2])
+                            _build_records_for_slice([], parent_slices_with_cursor[2]),
                         ),
                     ],
                     "first_stream",
@@ -672,7 +712,9 @@ def test_request_option(
                                 stream_state=stream_state,
                                 message_repository=Mock(),
                                 connector_state_manager=Mock(),
-                                connector_state_converter=CustomFormatConcurrentStreamStateConverter("%Y-%m-%d"),
+                                connector_state_converter=CustomFormatConcurrentStreamStateConverter(
+                                    "%Y-%m-%d"
+                                ),
                                 cursor_field=CursorField("cursor"),
                                 slice_boundary_fields=("start", "end"),
                                 start=ab_datetime_parse("2021-01-01").to_datetime(),
@@ -691,9 +733,11 @@ def test_request_option(
                         stream_state={},
                         message_repository=Mock(),
                         connector_state_manager=Mock(),
-                        connector_state_converter=CustomFormatConcurrentStreamStateConverter("%Y-%m-%d"),
+                        connector_state_converter=CustomFormatConcurrentStreamStateConverter(
+                            "%Y-%m-%d"
+                        ),
                         cursor_field=CursorField("cursor"),
-                    )
+                    ),
                 ),
                 parent_key="id",
                 partition_field="first_stream_id",
@@ -701,14 +745,17 @@ def test_request_option(
                 config={},
                 incremental_dependency=True,
             ),
-            {"first_stream": {"lookback_window": 0,
-                              "states": [{"cursor": {"cursor": "2021-01-02"},
-                                          "partition": {"slice": "first"}},
-                                         {"cursor": {"cursor": "2022-01-01"},
-                                          "partition": {"slice": "second"}},
-                                         {"cursor": {"cursor": "2021-01-01"},
-                                          "partition": {"slice": "third"}}],
-                              "use_global_cursor": False}},
+            {
+                "first_stream": {
+                    "lookback_window": 0,
+                    "states": [
+                        {"cursor": {"cursor": "2021-01-02"}, "partition": {"slice": "first"}},
+                        {"cursor": {"cursor": "2022-01-01"}, "partition": {"slice": "second"}},
+                        {"cursor": {"cursor": "2021-01-01"}, "partition": {"slice": "third"}},
+                    ],
+                    "use_global_cursor": False,
+                }
+            },
         ),
     ],
     ids=[
@@ -825,23 +872,37 @@ def test_substream_using_incremental_parent_stream():
                             "first_stream",
                             mock_slices[0],
                             [
-                                Record({"id": "may_record_0", "updated_at": "2024-05-15"}, "first_stream", mock_slices[0]),
-                                Record({"id": "may_record_1", "updated_at": "2024-05-16"}, "first_stream", mock_slices[0]),
-                            ]
+                                Record(
+                                    {"id": "may_record_0", "updated_at": "2024-05-15"},
+                                    "first_stream",
+                                    mock_slices[0],
+                                ),
+                                Record(
+                                    {"id": "may_record_1", "updated_at": "2024-05-16"},
+                                    "first_stream",
+                                    mock_slices[0],
+                                ),
+                            ],
                         ),
                         InMemoryPartition(
                             "partition_1",
                             "first_stream",
                             mock_slices[1],
                             [
-                                Record({"id": "jun_record_0", "updated_at": "2024-06-15"}, "first_stream",
-                                       mock_slices[1]),
-                                Record({"id": "jun_record_1", "updated_at": "2024-06-16"}, "first_stream",
-                                       mock_slices[1]),
-                            ]
+                                Record(
+                                    {"id": "jun_record_0", "updated_at": "2024-06-15"},
+                                    "first_stream",
+                                    mock_slices[1],
+                                ),
+                                Record(
+                                    {"id": "jun_record_1", "updated_at": "2024-06-16"},
+                                    "first_stream",
+                                    mock_slices[1],
+                                ),
+                            ],
                         ),
                     ],
-                    "first_stream"
+                    "first_stream",
                 ),
                 parent_key="id",
                 partition_field="partition_field",
@@ -897,22 +958,34 @@ def test_substream_checkpoints_after_each_parent_partition():
                             "first_stream",
                             mock_slices[0],
                             [
-                                Record({"id": "may_record_0", "updated_at": "2024-05-15"}, "first_stream",
-                                       mock_slices[0]),
-                                Record({"id": "may_record_1", "updated_at": "2024-05-16"}, "first_stream",
-                                       mock_slices[0]),
-                            ]
+                                Record(
+                                    {"id": "may_record_0", "updated_at": "2024-05-15"},
+                                    "first_stream",
+                                    mock_slices[0],
+                                ),
+                                Record(
+                                    {"id": "may_record_1", "updated_at": "2024-05-16"},
+                                    "first_stream",
+                                    mock_slices[0],
+                                ),
+                            ],
                         ),
                         InMemoryPartition(
                             "partition_1",
                             "first_stream",
                             mock_slices[1],
                             [
-                                Record({"id": "jun_record_0", "updated_at": "2024-06-15"}, "first_stream",
-                                       mock_slices[1]),
-                                Record({"id": "jun_record_1", "updated_at": "2024-06-16"}, "first_stream",
-                                       mock_slices[1]),
-                            ]
+                                Record(
+                                    {"id": "jun_record_0", "updated_at": "2024-06-15"},
+                                    "first_stream",
+                                    mock_slices[1],
+                                ),
+                                Record(
+                                    {"id": "jun_record_1", "updated_at": "2024-06-16"},
+                                    "first_stream",
+                                    mock_slices[1],
+                                ),
+                            ],
                         ),
                     ],
                     "first_stream",
@@ -923,7 +996,9 @@ def test_substream_checkpoints_after_each_parent_partition():
                         stream_state={},
                         message_repository=Mock(),
                         connector_state_manager=Mock(),
-                        connector_state_converter=CustomFormatConcurrentStreamStateConverter("%Y-%m-%d"),
+                        connector_state_converter=CustomFormatConcurrentStreamStateConverter(
+                            "%Y-%m-%d"
+                        ),
                         cursor_field=CursorField("updated_at"),
                         slice_boundary_fields=("start_time", "end_time"),
                         start=ab_datetime_parse(mock_slices[0]["start_time"]).to_datetime(),
@@ -974,11 +1049,11 @@ def test_substream_checkpoints_after_each_parent_partition():
                                             "field_2": {"nested_field": "nested_value_2"},
                                         },
                                     ],
-                                    _EMPTY_SLICE
-                                )
+                                    _EMPTY_SLICE,
+                                ),
                             )
                         ],
-                        "first_stream"
+                        "first_stream",
                     ),
                     parent_key="id",
                     partition_field="first_stream_id",
@@ -995,19 +1070,22 @@ def test_substream_checkpoints_after_each_parent_partition():
         (
             [
                 ParentStreamConfig(
-stream=MockStream(
+                    stream=MockStream(
                         [
                             InMemoryPartition(
                                 "partition_name",
                                 "first_stream",
                                 _EMPTY_SLICE,
                                 _build_records_for_slice(
-                                    [{"id": 1, "field_1": "value_1"}, {"id": 2, "field_1": "value_2"}],
-                                    _EMPTY_SLICE
-                                )
+                                    [
+                                        {"id": 1, "field_1": "value_1"},
+                                        {"id": 2, "field_1": "value_2"},
+                                    ],
+                                    _EMPTY_SLICE,
+                                ),
                             )
                         ],
-                        "first_stream"
+                        "first_stream",
                     ),
                     parent_key="id",
                     partition_field="first_stream_id",

@@ -928,7 +928,9 @@ list_stream:
     assert isinstance(stream.cursor, ConcurrentPerPartitionCursor)
 
     concurrent_cursor = (
-        stream.cursor._cursor_factory.create({}, timedelta(0))  # FIXME should we be allowed to pass `None` instead of `{}`
+        stream.cursor._cursor_factory.create(
+            {}, timedelta(0)
+        )  # FIXME should we be allowed to pass `None` instead of `{}`
     )
     assert isinstance(concurrent_cursor, ConcurrentCursor)
     assert concurrent_cursor._start == CONFIG_START_TIME
@@ -2551,12 +2553,8 @@ def test_merge_incremental_and_partition_router(
     if incremental and partition_router:
         assert isinstance(stream.cursor, ConcurrentPerPartitionCursor)
         if isinstance(partition_router, list) and len(partition_router) > 1:
-            assert isinstance(
-                stream.cursor._partition_router, CartesianProductStreamSlicer
-            )
-            assert len(stream.cursor._partition_router.stream_slicers) == len(
-                partition_router
-            )
+            assert isinstance(stream.cursor._partition_router, CartesianProductStreamSlicer)
+            assert len(stream.cursor._partition_router.stream_slicers) == len(partition_router)
 
 
 def test_simple_retriever_emit_log_messages():

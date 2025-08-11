@@ -33,7 +33,15 @@ from requests import Response
 from airbyte_cdk.connector_builder.models import (
     LogMessage as ConnectorBuilderLogMessage,
 )
-from airbyte_cdk.models import FailureType, Level, AirbyteStateMessage, AirbyteStreamState, AirbyteStateBlob, AirbyteStateType, StreamDescriptor
+from airbyte_cdk.models import (
+    FailureType,
+    Level,
+    AirbyteStateMessage,
+    AirbyteStreamState,
+    AirbyteStateBlob,
+    AirbyteStateType,
+    StreamDescriptor,
+)
 from airbyte_cdk.sources.connector_state_manager import ConnectorStateManager
 from airbyte_cdk.sources.declarative.async_job.job_orchestrator import AsyncJobOrchestrator
 from airbyte_cdk.sources.declarative.async_job.job_tracker import JobTracker
@@ -500,8 +508,9 @@ from airbyte_cdk.sources.declarative.requesters.request_options import (
     InterpolatedRequestOptionsProvider,
     RequestOptionsProvider,
 )
-from airbyte_cdk.sources.declarative.requesters.request_options.per_partition_request_option_provider import \
-    PerPartitionRequestOptionsProvider
+from airbyte_cdk.sources.declarative.requesters.request_options.per_partition_request_option_provider import (
+    PerPartitionRequestOptionsProvider,
+)
 from airbyte_cdk.sources.declarative.requesters.request_path import RequestPath
 from airbyte_cdk.sources.declarative.requesters.requester import HttpMethod
 from airbyte_cdk.sources.declarative.resolvers import (
@@ -1282,7 +1291,9 @@ class ModelToComponentFactory:
 
         # TODO validate and explain why we need to do this...
         component_definition["$parameters"] = component_definition.get("parameters", {})
-        parameters = component_definition.get("parameters", component_definition.get("$parameters", {}))
+        parameters = component_definition.get(
+            "parameters", component_definition.get("$parameters", {})
+        )
         datetime_based_cursor_model = model_type.parse_obj(component_definition)
 
         if not isinstance(datetime_based_cursor_model, DatetimeBasedCursorModel):
@@ -1596,7 +1607,9 @@ class ModelToComponentFactory:
 
         interpolated_cursor_field = InterpolatedString.create(
             datetime_based_cursor_model.cursor_field,
-            parameters=component_definition.get("parameters", component_definition.get("$parameters", {})),  # FIXME validate and explain why we need to do this
+            parameters=component_definition.get(
+                "parameters", component_definition.get("$parameters", {})
+            ),  # FIXME validate and explain why we need to do this
         )
         cursor_field = CursorField(interpolated_cursor_field.eval(config=config))
 
@@ -1973,13 +1986,17 @@ class ModelToComponentFactory:
             request_options_provider = (
                 datetime_request_options_provider
                 if not isinstance(concurrent_cursor, ConcurrentPerPartitionCursor)
-                else PerPartitionRequestOptionsProvider(partition_router, datetime_request_options_provider)
+                else PerPartitionRequestOptionsProvider(
+                    partition_router, datetime_request_options_provider
+                )
             )
         elif model.incremental_sync and isinstance(
             model.incremental_sync, IncrementingCountCursorModel
         ):
             if isinstance(concurrent_cursor, ConcurrentPerPartitionCursor):
-                raise ValueError("PerPartition does not support per partition states because switching to global state is time based")
+                raise ValueError(
+                    "PerPartition does not support per partition states because switching to global state is time based"
+                )
 
             cursor_model: IncrementingCountCursorModel = model.incremental_sync  # type: ignore
 
@@ -2019,7 +2036,9 @@ class ModelToComponentFactory:
             )
 
         stream_slicer: ConcurrentStreamSlicer = (
-            partition_router if isinstance(concurrent_cursor, FinalStateCursor) else concurrent_cursor
+            partition_router
+            if isinstance(concurrent_cursor, FinalStateCursor)
+            else concurrent_cursor
         )
         retriever = self._create_component_from_model(
             model=model.retriever,
@@ -2088,8 +2107,7 @@ class ModelToComponentFactory:
             logger=logging.getLogger(f"airbyte.{stream_name}"),
             # FIXME this is a breaking change compared to the old implementation which used the source name instead
             cursor=concurrent_cursor,
-            supports_file_transfer=hasattr(model, "file_uploader")
-                                   and bool(model.file_uploader),
+            supports_file_transfer=hasattr(model, "file_uploader") and bool(model.file_uploader),
         )
 
     def _is_stop_condition_on_cursor(self, model: DeclarativeStreamModel) -> bool:
@@ -3768,14 +3786,20 @@ class ModelToComponentFactory:
         self, model: ParentStreamConfigModel, config: Config, **kwargs: Any
     ) -> Any:
         # getting the parent state
-        child_state = self._connector_state_manager.get_stream_state(kwargs["stream_name"], None)  # FIXME adding `stream_name` as a parameter means it will be a breaking change. I assume this is mostly called internally so I don't think we need to bother that much about this but still raising the flag
+        child_state = self._connector_state_manager.get_stream_state(
+            kwargs["stream_name"], None
+        )  # FIXME adding `stream_name` as a parameter means it will be a breaking change. I assume this is mostly called internally so I don't think we need to bother that much about this but still raising the flag
         if model.incremental_dependency and child_state:
             parent_stream_name = model.stream.name or ""
-            parent_state = ConcurrentPerPartitionCursor.get_parent_state(child_state, parent_stream_name)
+            parent_state = ConcurrentPerPartitionCursor.get_parent_state(
+                child_state, parent_stream_name
+            )
 
             if not parent_state:
                 # there are two migration cases: state value from child stream or from global state
-                parent_state = ConcurrentPerPartitionCursor.get_global_state(child_state, parent_stream_name)
+                parent_state = ConcurrentPerPartitionCursor.get_global_state(
+                    child_state, parent_stream_name
+                )
 
                 if not parent_state and not isinstance(parent_state, dict):
                     cursor_field = InterpolatedString.create(
@@ -3787,8 +3811,12 @@ class ModelToComponentFactory:
                         parent_state = AirbyteStateMessage(
                             type=AirbyteStateType.STREAM,
                             stream=AirbyteStreamState(
-                                stream_descriptor=StreamDescriptor(name=parent_stream_name, namespace=None),
-                                stream_state=AirbyteStateBlob({cursor_field: list(cursor_values)[0]}),
+                                stream_descriptor=StreamDescriptor(
+                                    name=parent_stream_name, namespace=None
+                                ),
+                                stream_state=AirbyteStateBlob(
+                                    {cursor_field: list(cursor_values)[0]}
+                                ),
                             ),
                         )
             connector_state_manager = ConnectorStateManager([parent_state] if parent_state else [])
@@ -3804,7 +3832,10 @@ class ModelToComponentFactory:
             disable_cache=self._disable_cache,
             message_repository=StateFilteringMessageRepository(
                 LogAppenderMessageRepositoryDecorator(
-                    {"airbyte_cdk": {"stream": {"is_substream": True}}, "http": {"is_auxiliary": True}},
+                    {
+                        "airbyte_cdk": {"stream": {"is_substream": True}},
+                        "http": {"is_auxiliary": True},
+                    },
                     self._message_repository,
                     self._evaluate_log_level(self._emit_connector_builder_messages),
                 ),
@@ -4127,7 +4158,9 @@ class ModelToComponentFactory:
         self, model: GroupingPartitionRouterModel, config: Config, **kwargs: Any
     ) -> GroupingPartitionRouter:
         underlying_router = self._create_component_from_model(
-            model=model.underlying_partition_router, config=config, **kwargs,
+            model=model.underlying_partition_router,
+            config=config,
+            **kwargs,
         )
         if model.group_size < 1:
             raise ValueError(f"Group size must be greater than 0, got {model.group_size}")

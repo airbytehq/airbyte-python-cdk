@@ -1185,8 +1185,8 @@ def run_incremental_parent_state_test(
                 ),
                 # FIXME this is an interesting case. The previous solution would not update the parent state until `ensure_at_least_one_state_emitted` but the concurrent cursor does just before which is probably fine too
                 (
-                        f"https://api.example.com/community/posts?per_page=100&start_time={POST_1_UPDATED_AT}",
-                        {"posts": [{"id": 1, "updated_at": POST_1_UPDATED_AT}]},
+                    f"https://api.example.com/community/posts?per_page=100&start_time={POST_1_UPDATED_AT}",
+                    {"posts": [{"id": 1, "updated_at": POST_1_UPDATED_AT}]},
                 ),
                 # Fetch the first page of comments for post 1
                 (
@@ -1483,8 +1483,8 @@ def run_incremental_parent_state_test(
                 ),
                 # FIXME this is an interesting case. The previous solution would not update the parent state until `ensure_at_least_one_state_emitted` but the concurrent cursor does just before which is probably fine too
                 (
-                        f"https://api.example.com/community/posts?per_page=100&start_time={POST_1_UPDATED_AT}",
-                        {"posts": [{"id": 1, "updated_at": POST_1_UPDATED_AT}]},
+                    f"https://api.example.com/community/posts?per_page=100&start_time={POST_1_UPDATED_AT}",
+                    {"posts": [{"id": 1, "updated_at": POST_1_UPDATED_AT}]},
                 ),
                 # Fetch the first page of comments for post 1
                 (
@@ -1629,8 +1629,8 @@ def run_incremental_parent_state_test(
                 ),
                 # FIXME this is an interesting case. The previous solution would not update the parent state until `ensure_at_least_one_state_emitted` but the concurrent cursor does just before which is probably fine too
                 (
-                        f"https://api.example.com/community/posts?per_page=100&start_time={POST_1_UPDATED_AT}",
-                        {"posts": [{"id": 1, "updated_at": POST_1_UPDATED_AT}]},
+                    f"https://api.example.com/community/posts?per_page=100&start_time={POST_1_UPDATED_AT}",
+                    {"posts": [{"id": 1, "updated_at": POST_1_UPDATED_AT}]},
                 ),
                 # Fetch the first page of comments for post 1
                 (
@@ -2130,7 +2130,9 @@ def test_incremental_parent_state_migration(
                         "states": [
                             {
                                 "partition": {"id": 1, "parent_slice": {}},
-                                "cursor": {"updated_at": START_DATE},  # FIXME this happens because the concurrent framework gets the start date as the max between the state value and the start value. In this case, the start value is higher
+                                "cursor": {
+                                    "updated_at": START_DATE
+                                },  # FIXME this happens because the concurrent framework gets the start date as the max between the state value and the start value. In this case, the start value is higher
                             }
                         ],
                         "lookback_window": 0,  # FIXME the concurrent framework sets the lookback window to 0 as opposed to the declarative framework which would set not define it

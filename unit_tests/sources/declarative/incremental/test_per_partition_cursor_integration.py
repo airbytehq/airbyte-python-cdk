@@ -19,7 +19,9 @@ from airbyte_cdk.models import (
     StreamDescriptor,
     SyncMode,
 )
-from airbyte_cdk.sources.declarative.concurrent_declarative_source import ConcurrentDeclarativeSource
+from airbyte_cdk.sources.declarative.concurrent_declarative_source import (
+    ConcurrentDeclarativeSource,
+)
 from airbyte_cdk.sources.declarative.incremental import ConcurrentPerPartitionCursor
 from airbyte_cdk.sources.declarative.incremental.per_partition_cursor import (
     PerPartitionCursor,
@@ -172,23 +174,27 @@ class ManifestBuilder:
 def test_given_state_for_only_some_partition_when_stream_slices_then_create_slices_using_state_or_start_from_start_datetime():
     source = ConcurrentDeclarativeSource(
         state=[
-                AirbyteStateMessage(
+            AirbyteStateMessage(
                 type=AirbyteStateType.STREAM,
                 stream=AirbyteStreamState(
                     stream_descriptor=StreamDescriptor(name="Rates"),
-                    stream_state=AirbyteStateBlob({
-                        "states": [
-                            {
-                                "partition": {"partition_field": "1"},
-                                "cursor": {CURSOR_FIELD: "2022-02-01"},
-                            }
-                        ]
-                    }),
+                    stream_state=AirbyteStateBlob(
+                        {
+                            "states": [
+                                {
+                                    "partition": {"partition_field": "1"},
+                                    "cursor": {CURSOR_FIELD: "2022-02-01"},
+                                }
+                            ]
+                        }
+                    ),
                 ),
             ),
         ],
         config={},
-        catalog=CatalogBuilder().with_stream(ConfiguredAirbyteStreamBuilder().with_name("Rates")).build(),
+        catalog=CatalogBuilder()
+        .with_stream(ConfiguredAirbyteStreamBuilder().with_name("Rates"))
+        .build(),
         source_config=ManifestBuilder()
         .with_list_partition_router("Rates", "partition_field", ["1", "2"])
         .with_incremental_sync(
@@ -200,7 +206,7 @@ def test_given_state_for_only_some_partition_when_stream_slices_then_create_slic
             step="P1M",
             cursor_granularity="P1D",
         )
-        .build()
+        .build(),
     )
     stream_instance = source.streams({})[0]
 
@@ -217,7 +223,9 @@ def test_given_record_for_partition_when_read_then_update_state():
     source = ConcurrentDeclarativeSource(
         state=[],
         config={},
-        catalog=CatalogBuilder().with_stream(ConfiguredAirbyteStreamBuilder().with_name("Rates")).build(),
+        catalog=CatalogBuilder()
+        .with_stream(ConfiguredAirbyteStreamBuilder().with_name("Rates"))
+        .build(),
         source_config=ManifestBuilder()
         .with_list_partition_router("Rates", "partition_field", ["1", "2"])
         .with_incremental_sync(
@@ -229,7 +237,7 @@ def test_given_record_for_partition_when_read_then_update_state():
             step="P1M",
             cursor_granularity="P1D",
         )
-        .build()
+        .build(),
     )
     stream_instance = source.streams({})[0]
     partition = next(iter(stream_instance.generate_partitions()))
@@ -242,7 +250,13 @@ def test_given_record_for_partition_when_read_then_update_state():
         SimpleRetriever,
         "_read_pages",
         side_effect=[
-            [Record({"a record key": "a record value", CURSOR_FIELD: "2022-01-15"}, "Rates", stream_slice)]
+            [
+                Record(
+                    {"a record key": "a record value", CURSOR_FIELD: "2022-01-15"},
+                    "Rates",
+                    stream_slice,
+                )
+            ]
         ],
     ):
         for record in partition.read():
@@ -265,7 +279,10 @@ def test_substream_without_input_state():
     test_source = ConcurrentDeclarativeSource(
         state=[],
         config={},
-        catalog=CatalogBuilder().with_stream(ConfiguredAirbyteStreamBuilder().with_name("Rates")).with_stream(ConfiguredAirbyteStreamBuilder().with_name("AnotherStream")).build(),
+        catalog=CatalogBuilder()
+        .with_stream(ConfiguredAirbyteStreamBuilder().with_name("Rates"))
+        .with_stream(ConfiguredAirbyteStreamBuilder().with_name("AnotherStream"))
+        .build(),
         source_config=ManifestBuilder()
         .with_substream_partition_router("AnotherStream")
         .with_incremental_sync(
@@ -286,7 +303,7 @@ def test_substream_without_input_state():
             step="P1M",
             cursor_granularity="P1D",
         )
-        .build()
+        .build(),
     )
 
     stream_instance = test_source.streams({})[1]
@@ -303,7 +320,9 @@ def test_substream_without_input_state():
             [Record({"id": "2", CURSOR_FIELD: "2022-01-15"}, "AnotherStream", parent_stream_slice)],
         ],
     ):
-        partition = list(map(lambda partition: partition.to_slice(), stream_instance.generate_partitions()))
+        partition = list(
+            map(lambda partition: partition.to_slice(), stream_instance.generate_partitions())
+        )
 
         assert partition == [
             StreamSlice(
@@ -349,7 +368,9 @@ def test_partition_limitation(caplog):
     source = ConcurrentDeclarativeSource(
         state=[],
         config={},
-        catalog=CatalogBuilder().with_stream(ConfiguredAirbyteStreamBuilder().with_name("Rates")).build(),
+        catalog=CatalogBuilder()
+        .with_stream(ConfiguredAirbyteStreamBuilder().with_name("Rates"))
+        .build(),
         source_config=ManifestBuilder()
         .with_list_partition_router(
             stream_name=stream_name, cursor_field="partition_field", partitions=["1", "2", "3"]
@@ -363,7 +384,7 @@ def test_partition_limitation(caplog):
             step="P1M",
             cursor_granularity="P1D",
         )
-        .build()
+        .build(),
     )
 
     partition_slices = [
@@ -490,7 +511,11 @@ def test_perpartition_with_fallback(caplog):
     This test also checks that the appropriate warning logs are emitted when the partition limit is exceeded.
     """
     stream_name = "Rates"
-    catalog = CatalogBuilder().with_stream(ConfiguredAirbyteStreamBuilder().with_name(stream_name)).build()
+    catalog = (
+        CatalogBuilder()
+        .with_stream(ConfiguredAirbyteStreamBuilder().with_name(stream_name))
+        .build()
+    )
     initial_state = [
         AirbyteStateMessage(
             type=AirbyteStateType.STREAM,
@@ -532,7 +557,7 @@ def test_perpartition_with_fallback(caplog):
             step="P1M",
             cursor_granularity="P1D",
         )
-        .build()
+        .build(),
     )
 
     partition_slices = [
@@ -654,7 +679,11 @@ def test_per_partition_cursor_within_limit(caplog):
     This test also checks that no warning logs are emitted when the partition limit is not exceeded.
     """
     stream_name = "Rates"
-    catalog = CatalogBuilder().with_stream(ConfiguredAirbyteStreamBuilder().with_name(stream_name)).build()
+    catalog = (
+        CatalogBuilder()
+        .with_stream(ConfiguredAirbyteStreamBuilder().with_name(stream_name))
+        .build()
+    )
     initial_state = {}
     source = ConcurrentDeclarativeSource(
         state=initial_state,
@@ -671,57 +700,81 @@ def test_per_partition_cursor_within_limit(caplog):
             step="P1M",
             cursor_granularity="P1D",
         )
-        .build()
+        .build(),
     )
 
     partition_slices = [
-        StreamSlice(partition={"partition_field": str(i)}, cursor_slice=cursor_slice) for i in range(1, 4) for cursor_slice in [{"start_time": "2022-01-01", "end_time": "2022-01-31"}, {"start_time": "2022-02-01", "end_time": "2022-02-28"}, {"start_time": "2022-03-01", "end_time": "2022-03-31"}]
+        StreamSlice(partition={"partition_field": str(i)}, cursor_slice=cursor_slice)
+        for i in range(1, 4)
+        for cursor_slice in [
+            {"start_time": "2022-01-01", "end_time": "2022-01-31"},
+            {"start_time": "2022-02-01", "end_time": "2022-02-28"},
+            {"start_time": "2022-03-01", "end_time": "2022-03-31"},
+        ]
     ]
 
     records_list = [
         [
             Record(
-                {"a record key": "a record value", CURSOR_FIELD: "2022-01-15"}, stream_name, partition_slices[0]
+                {"a record key": "a record value", CURSOR_FIELD: "2022-01-15"},
+                stream_name,
+                partition_slices[0],
             )
         ],
         [
             Record(
-                {"a record key": "a record value", CURSOR_FIELD: "2022-02-20"}, stream_name, partition_slices[1]
+                {"a record key": "a record value", CURSOR_FIELD: "2022-02-20"},
+                stream_name,
+                partition_slices[1],
             )
         ],
         [
             Record(
-                {"a record key": "a record value", CURSOR_FIELD: "2022-03-25"}, stream_name, partition_slices[2]
+                {"a record key": "a record value", CURSOR_FIELD: "2022-03-25"},
+                stream_name,
+                partition_slices[2],
             )
         ],
         [
             Record(
-                {"a record key": "a record value", CURSOR_FIELD: "2022-01-16"}, stream_name, partition_slices[3]
+                {"a record key": "a record value", CURSOR_FIELD: "2022-01-16"},
+                stream_name,
+                partition_slices[3],
             )
         ],
         [
             Record(
-                {"a record key": "a record value", CURSOR_FIELD: "2022-02-18"}, stream_name, partition_slices[4]
+                {"a record key": "a record value", CURSOR_FIELD: "2022-02-18"},
+                stream_name,
+                partition_slices[4],
             )
         ],
         [
             Record(
-                {"a record key": "a record value", CURSOR_FIELD: "2022-03-28"}, stream_name, partition_slices[5]
+                {"a record key": "a record value", CURSOR_FIELD: "2022-03-28"},
+                stream_name,
+                partition_slices[5],
             )
         ],
         [
             Record(
-                {"a record key": "a record value", CURSOR_FIELD: "2022-01-17"}, stream_name, partition_slices[6]
+                {"a record key": "a record value", CURSOR_FIELD: "2022-01-17"},
+                stream_name,
+                partition_slices[6],
             )
         ],
         [
             Record(
-                {"a record key": "a record value", CURSOR_FIELD: "2022-02-19"}, stream_name, partition_slices[7]
+                {"a record key": "a record value", CURSOR_FIELD: "2022-02-19"},
+                stream_name,
+                partition_slices[7],
             )
         ],
         [
             Record(
-                {"a record key": "a record value", CURSOR_FIELD: "2022-03-29"}, stream_name, partition_slices[8]
+                {"a record key": "a record value", CURSOR_FIELD: "2022-03-29"},
+                stream_name,
+                partition_slices[8],
             )
         ],
     ]

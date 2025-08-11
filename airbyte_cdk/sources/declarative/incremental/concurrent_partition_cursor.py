@@ -11,7 +11,13 @@ from copy import deepcopy
 from datetime import timedelta
 from typing import Any, Callable, Iterable, List, Mapping, MutableMapping, Optional
 
-from airbyte_cdk.models import AirbyteStateMessage, AirbyteStateBlob, AirbyteStreamState, AirbyteStateType, StreamDescriptor
+from airbyte_cdk.models import (
+    AirbyteStateMessage,
+    AirbyteStateBlob,
+    AirbyteStreamState,
+    AirbyteStateType,
+    StreamDescriptor,
+)
 from airbyte_cdk.sources.connector_state_manager import ConnectorStateManager
 from airbyte_cdk.sources.declarative.incremental.global_substream_cursor import (
     Timer,
@@ -548,21 +554,33 @@ class ConcurrentPerPartitionCursor(Cursor):
         return self._number_of_partitions > self.SWITCH_TO_GLOBAL_LIMIT
 
     @staticmethod
-    def get_parent_state(stream_state: Optional[StreamState], parent_stream_name: str) -> Optional[AirbyteStateMessage]:
-        return AirbyteStateMessage(
-            type=AirbyteStateType.STREAM,
-            stream=AirbyteStreamState(
-                stream_descriptor=StreamDescriptor(parent_stream_name, None),
-                stream_state=AirbyteStateBlob(stream_state["parent_state"][parent_stream_name])
+    def get_parent_state(
+        stream_state: Optional[StreamState], parent_stream_name: str
+    ) -> Optional[AirbyteStateMessage]:
+        return (
+            AirbyteStateMessage(
+                type=AirbyteStateType.STREAM,
+                stream=AirbyteStreamState(
+                    stream_descriptor=StreamDescriptor(parent_stream_name, None),
+                    stream_state=AirbyteStateBlob(stream_state["parent_state"][parent_stream_name]),
+                ),
             )
-        ) if stream_state and "parent_state" in stream_state else None
+            if stream_state and "parent_state" in stream_state
+            else None
+        )
 
     @staticmethod
-    def get_global_state(stream_state: Optional[StreamState], parent_stream_name: str) -> Optional[AirbyteStateMessage]:
-        return AirbyteStateMessage(
-            type=AirbyteStateType.STREAM,
-            stream=AirbyteStreamState(
-                stream_descriptor=StreamDescriptor(parent_stream_name, None),
-                stream_state=AirbyteStateBlob(stream_state["state"])
+    def get_global_state(
+        stream_state: Optional[StreamState], parent_stream_name: str
+    ) -> Optional[AirbyteStateMessage]:
+        return (
+            AirbyteStateMessage(
+                type=AirbyteStateType.STREAM,
+                stream=AirbyteStreamState(
+                    stream_descriptor=StreamDescriptor(parent_stream_name, None),
+                    stream_state=AirbyteStateBlob(stream_state["state"]),
+                ),
             )
-        ) if stream_state and "state" in stream_state else None
+            if stream_state and "state" in stream_state
+            else None
+        )

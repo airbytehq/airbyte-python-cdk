@@ -7,7 +7,17 @@ import copy
 import json
 import logging
 from dataclasses import InitVar, dataclass
-from typing import TYPE_CHECKING, Any, Iterable, List, Mapping, MutableMapping, Optional, Union, TypeVar
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Iterable,
+    List,
+    Mapping,
+    MutableMapping,
+    Optional,
+    Union,
+    TypeVar,
+)
 
 import dpath
 import requests
@@ -27,7 +37,6 @@ if TYPE_CHECKING:
 
 
 def iterate_with_last_flag(generator: Iterable[Partition]) -> Iterable[tuple[Partition, bool]]:
-
     iterator = iter(generator)
 
     try:
@@ -191,8 +200,12 @@ class SubstreamPartitionRouter(PartitionRouter):
                         for field_path in parent_stream_config.extra_fields
                     ]
 
-                for partition, is_last_slice in iterate_with_last_flag(parent_stream.generate_partitions()):
-                    for parent_record, is_last_record_in_slice in iterate_with_last_flag(partition.read()):
+                for partition, is_last_slice in iterate_with_last_flag(
+                    parent_stream.generate_partitions()
+                ):
+                    for parent_record, is_last_record_in_slice in iterate_with_last_flag(
+                        partition.read()
+                    ):
                         parent_stream.cursor.observe(parent_record)
                         parent_partition = (
                             parent_record.associated_slice.partition
@@ -211,7 +224,9 @@ class SubstreamPartitionRouter(PartitionRouter):
                             continue
 
                         # Add extra fields
-                        extracted_extra_fields = self._extract_extra_fields(record_data, extra_fields)
+                        extracted_extra_fields = self._extract_extra_fields(
+                            record_data, extra_fields
+                        )
 
                         if parent_stream_config.lazy_read_pointer:
                             extracted_extra_fields = {
@@ -421,7 +436,9 @@ class SubstreamPartitionRouter(PartitionRouter):
         parent_state = {}
         for parent_config in self.parent_stream_configs:
             if parent_config.incremental_dependency:
-                parent_state[parent_config.stream.name] = copy.deepcopy(parent_config.stream.cursor.state)
+                parent_state[parent_config.stream.name] = copy.deepcopy(
+                    parent_config.stream.cursor.state
+                )
         return parent_state
 
     @property

@@ -19,8 +19,9 @@ from unit_tests.sources.declarative.partition_routers.test_substream_partition_r
     MockStream,
     parent_slices,
 )  # Reuse MockStream and parent_slices
-from unit_tests.sources.streams.concurrent.scenarios.thread_based_concurrent_stream_source_builder import \
-    InMemoryPartition
+from unit_tests.sources.streams.concurrent.scenarios.thread_based_concurrent_stream_source_builder import (
+    InMemoryPartition,
+)
 
 _EMPTY_SLICE = StreamSlice(partition={}, cursor_slice={})
 
@@ -52,12 +53,15 @@ def mock_underlying_router(mock_config):
                             "owner": "User0 Duplicate",
                         },
                     ]  # Duplicate board_id
-                    + [{"board_id": i, "name": f"Board {i}", "owner": f"User{i}"} for i in range(1, 5)],
-                    _EMPTY_SLICE
-                )
+                    + [
+                        {"board_id": i, "name": f"Board {i}", "owner": f"User{i}"}
+                        for i in range(1, 5)
+                    ],
+                    _EMPTY_SLICE,
+                ),
             )
         ],
-        "first_stream"
+        "first_stream",
     )
     return SubstreamPartitionRouter(
         parent_stream_configs=[
@@ -108,7 +112,7 @@ def mock_underlying_router_with_parent_slices(mock_config):
                 ),
             ),
         ],
-        "first_stream"
+        "first_stream",
     )
     return SubstreamPartitionRouter(
         parent_stream_configs=[
@@ -221,7 +225,7 @@ def test_stream_slices_empty_underlying_router(mock_config):
                 [],
             )
         ],
-        "first_stream"
+        "first_stream",
     )
     underlying_router = SubstreamPartitionRouter(
         parent_stream_configs=[
@@ -376,7 +380,7 @@ def test_stream_slices_extra_fields_varied(mock_config):
                 ),
             )
         ],
-        "first_stream"
+        "first_stream",
     )
     underlying_router = SubstreamPartitionRouter(
         parent_stream_configs=[
@@ -423,12 +427,15 @@ def test_grouping_with_complex_partitions_and_extra_fields(mock_config):
                 "first_stream",
                 _EMPTY_SLICE,
                 _build_records_for_slice(
-                    [{"board_id": i, "extra": f"extra_{i}", "name": f"Board {i}"} for i in range(3)],
+                    [
+                        {"board_id": i, "extra": f"extra_{i}", "name": f"Board {i}"}
+                        for i in range(3)
+                    ],
                     _EMPTY_SLICE,
                 ),
             )
         ],
-        "first_stream"
+        "first_stream",
     )
     underlying_router = SubstreamPartitionRouter(
         parent_stream_configs=[
