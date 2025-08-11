@@ -120,7 +120,7 @@ class TestReader:
         deprecation_warnings: List[LogMessage] = source.deprecation_warnings()
 
         schema_inferrer = SchemaInferrer(
-            self._pk_to_nested_and_composite_field(stream.primary_key) if stream else None,
+            self._pk_to_nested_and_composite_field(stream.primary_key if hasattr(stream, "primary_key") else stream._primary_key) if stream else None,
             self._cursor_field_to_nested_and_composite_field(stream.cursor_field)
             if stream
             else None,

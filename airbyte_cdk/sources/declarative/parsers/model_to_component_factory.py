@@ -2072,7 +2072,6 @@ class ModelToComponentFactory:
         if (
             isinstance(combined_slicers, PartitionRouter)
             and not is_parent
-            and not self._emit_connector_builder_messages
         ):
             # We are starting to migrate streams to instantiate directly the DefaultStream instead of instantiating the
             # DeclarativeStream and assembling the DefaultStream from that. The plan is the following:
@@ -2089,7 +2088,13 @@ class ModelToComponentFactory:
                     retriever,
                     self._message_repository,
                 ),
-                combined_slicers,
+                stream_slicer=cast(
+                    StreamSlicer,
+                    StreamSlicerTestReadDecorator(
+                        wrapped_slicer=combined_slicers,
+                        maximum_number_of_slices=self._limit_slices_fetched or 5,
+                    ),
+                ),
             )
             return DefaultStream(
                 partition_generator=partition_generator,
