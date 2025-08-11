@@ -238,7 +238,7 @@ EXCLUDED_CONNECTORS: List[Tuple[str, str]] = [
     ("source-zoom", "6.44.0"),
     ("source-zuora", "6.44.0"),
     ("source-ahrefs", "4.6.2"),
-    ("source-aircall", "4.6.2"),
+    ("source-aircall", "4.5.4"),
     ("source-alpha-vantage", "4.6.2"),
     ("source-appcues", "4.6.2"),
     ("source-appstore-singer", "4.6.2"),
