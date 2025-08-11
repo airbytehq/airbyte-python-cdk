@@ -16,6 +16,7 @@ from airbyte_cdk.connector_builder.models import LogMessage as ConnectorBuilderL
 
 # format the warning message
 warnings.formatwarning = (
+    # pyrefly: ignore  # bad-assignment
     lambda message, category, *args, **kwargs: f"{category.__name__}: {message}\n"
 )
 
@@ -41,6 +42,7 @@ class BaseModelWithDeprecations(BaseModel):
     since the deprecation warnings are already handled in the model itself.
     """
 
+    # pyrefly: ignore  # bad-override
     class Config:
         """
         Allow extra fields in the model. In case the model restricts extra fields.

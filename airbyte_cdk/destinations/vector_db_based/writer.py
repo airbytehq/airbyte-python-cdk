@@ -42,8 +42,11 @@ class Writer:
         self._init_batch()
 
     def _init_batch(self) -> None:
+        # pyrefly: ignore  # implicitly-defined-attribute
         self.chunks: Dict[Tuple[str, str], List[Chunk]] = defaultdict(list)
+        # pyrefly: ignore  # implicitly-defined-attribute
         self.ids_to_delete: Dict[Tuple[str, str], List[str]] = defaultdict(list)
+        # pyrefly: ignore  # implicitly-defined-attribute
         self.number_of_chunks = 0
 
     def _convert_to_document(self, chunk: Chunk) -> Document:
@@ -73,6 +76,7 @@ class Writer:
     def write(
         self, configured_catalog: ConfiguredAirbyteCatalog, input_messages: Iterable[AirbyteMessage]
     ) -> Iterable[AirbyteMessage]:
+        # pyrefly: ignore  # implicitly-defined-attribute
         self.processor = DocumentProcessor(self.processing_config, configured_catalog)
         self.indexer.pre_sync(configured_catalog)
         for message in input_messages:
@@ -82,6 +86,7 @@ class Writer:
                 self._process_batch()
                 yield message
             elif message.type == Type.RECORD:
+                # pyrefly: ignore  # bad-argument-type
                 record_chunks, record_id_to_delete = self.processor.process(message.record)
                 self.chunks[
                     (  # type: ignore [index] # expected "tuple[str, str]", got "tuple[str | Any | None, str | Any]"

@@ -363,7 +363,9 @@ class AirbyteEntrypoint(object):
         return None
 
     def _emit_queued_messages(self, source: Source) -> Iterable[AirbyteMessage]:
+        # pyrefly: ignore  # missing-attribute
         if hasattr(source, "message_repository") and source.message_repository:
+            # pyrefly: ignore  # missing-attribute
             yield from source.message_repository.consume_queue()
         return
 
@@ -373,6 +375,7 @@ def launch(source: Source, args: List[str]) -> None:
     parsed_args = source_entrypoint.parse_args(args)
     # temporarily removes the PrintBuffer because we're seeing weird print behavior for concurrent syncs
     # Refer to: https://github.com/airbytehq/oncall/issues/6235
+    # pyrefly: ignore  # bad-context-manager
     with PRINT_BUFFER:
         for message in source_entrypoint.run(parsed_args):
             # simply printing is creating issues for concurrent CDK as Python uses different two instructions to print: one for the message and
@@ -388,6 +391,7 @@ def _init_internal_request_filter() -> None:
 
     @wraps(wrapped_fn)
     def filtered_send(self: Any, request: PreparedRequest, **kwargs: Any) -> Response:
+        # pyrefly: ignore  # no-matching-overload
         parsed_url = urlparse(request.url)
 
         if parsed_url.scheme not in VALID_URL_SCHEMES:

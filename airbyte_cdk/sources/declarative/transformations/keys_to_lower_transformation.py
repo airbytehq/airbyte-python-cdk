@@ -19,4 +19,5 @@ class KeysToLowerTransformation(RecordTransformation):
         stream_slice: Optional[StreamSlice] = None,
     ) -> None:
         for key in set(record.keys()):
+            # pyrefly: ignore  # missing-attribute
             record[key.lower()] = record.pop(key)

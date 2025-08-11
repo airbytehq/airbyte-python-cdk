@@ -428,11 +428,13 @@ def run_docker_command(
         # If capture_stderr or capture_stdout is a Path, we open the file in write mode.
         # If it's a boolean, we set it to either subprocess.PIPE or None.
         if isinstance(capture_stderr, Path):
+            # pyrefly: ignore  # bad-assignment
             stderr = stack.enter_context(capture_stderr.open("w", encoding="utf-8"))
         elif isinstance(capture_stderr, bool):
             stderr = subprocess.PIPE if capture_stderr is True else None
 
         if isinstance(capture_stdout, Path):
+            # pyrefly: ignore  # bad-assignment
             stdout = stack.enter_context(capture_stdout.open("w", encoding="utf-8"))
         elif isinstance(capture_stdout, bool):
             stdout = subprocess.PIPE if capture_stdout is True else None
@@ -441,7 +443,9 @@ def run_docker_command(
             cmd,
             text=True,
             check=raise_if_errors,
+            # pyrefly: ignore  # unbound-name
             stderr=stderr,
+            # pyrefly: ignore  # unbound-name
             stdout=stdout,
         )
         return completed_process

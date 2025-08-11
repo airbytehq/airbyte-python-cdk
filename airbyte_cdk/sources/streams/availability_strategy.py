@@ -56,7 +56,9 @@ class AvailabilityStrategy(ABC):
 
     @staticmethod
     def get_first_record_for_slice(
-        stream: Stream, stream_slice: Optional[Mapping[str, Any]]
+        stream: Stream,
+        stream_slice: Optional[Mapping[str, Any]],
+        # pyrefly: ignore  # bad-return
     ) -> StreamData:
         """
         Gets the first record for a stream_slice of a stream.
@@ -71,6 +73,7 @@ class AvailabilityStrategy(ABC):
 
         try:
             # Ensure exit_on_rate_limit is safely set to True if possible
+            # pyrefly: ignore  # implicitly-defined-attribute
             stream.exit_on_rate_limit = True
 
             # We wrap the return output of read_records() because some implementations return types that are iterable,

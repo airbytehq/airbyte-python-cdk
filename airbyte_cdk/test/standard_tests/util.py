@@ -71,6 +71,7 @@ def create_connector_test_suite(
         "get_connector_root_dir": classmethod(lambda cls: connector_directory),
     }
 
+    # pyrefly: ignore  # no-matching-overload
     TestSuiteAuto = type(
         "TestSuiteAuto",
         (test_suite_class,),

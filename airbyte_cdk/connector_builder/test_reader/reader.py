@@ -249,6 +249,7 @@ class TestReader:
         if record_limit is None:
             record_limit = self._max_record_limit
         else:
+            # pyrefly: ignore  # no-matching-overload
             record_limit = min(record_limit, self._max_record_limit)
 
         return record_limit

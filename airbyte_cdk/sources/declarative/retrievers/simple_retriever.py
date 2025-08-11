@@ -384,6 +384,7 @@ class SimpleRetriever(Retriever):
             last_page_size = 0
             last_record: Optional[Record] = None
             response: Optional[requests.Response] = None
+            # pyrefly: ignore  # bad-assignment
             for properties in property_chunks:
                 if len(properties) > 0:
                     stream_slice = StreamSlice(

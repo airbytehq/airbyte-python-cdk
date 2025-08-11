@@ -132,6 +132,7 @@ class Oauth2Authenticator(AbstractOauth2Authenticator):
         return self._token_expiry_date_format
 
     @property
+    # pyrefly: ignore  # bad-override
     def access_token(self) -> str:
         return self._access_token  # type: ignore[return-value]
 
@@ -237,6 +238,7 @@ class SingleUseRefreshTokenOauth2Authenticator(Oauth2Authenticator):
         )
 
     @property
+    # pyrefly: ignore  # bad-override
     def access_token(self) -> str:
         """
         Retrieve the access token from the configuration.

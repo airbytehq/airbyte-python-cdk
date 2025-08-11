@@ -133,6 +133,7 @@ class DeclarativeStream(Stream):
     def is_resumable(self) -> bool:
         # Declarative sources always implement state getter/setter, but whether it supports checkpointing is based on
         # if the retriever has a cursor defined.
+        # pyrefly: ignore  # missing-attribute
         return self.retriever.cursor is not None if hasattr(self.retriever, "cursor") else False
 
     def read_records(

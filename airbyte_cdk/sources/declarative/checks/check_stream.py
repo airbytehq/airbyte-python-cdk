@@ -136,6 +136,7 @@ class CheckStream(ConnectionChecker):
                     f"Dynamic stream {check_config.dynamic_stream_name} is not found in manifest.",
                 )
 
+            # pyrefly: ignore  # no-matching-overload
             generated = generated_streams.get(check_config.dynamic_stream_name, [])
             stream_availability, message = self._check_generated_streams_availability(
                 generated, stream_name_to_stream, logger, check_config.stream_count

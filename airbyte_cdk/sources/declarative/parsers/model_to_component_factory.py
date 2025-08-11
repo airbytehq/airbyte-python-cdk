@@ -655,6 +655,7 @@ class ModelToComponentFactory:
         self._collected_deprecation_logs: List[ConnectorBuilderLogMessage] = []
 
     def _init_mappings(self) -> None:
+        # pyrefly: ignore  # implicitly-defined-attribute
         self.PYDANTIC_MODEL_TO_CONSTRUCTOR: Mapping[Type[BaseModel], Callable[..., Any]] = {
             AddedFieldDefinitionModel: self.create_added_field_definition,
             AddFieldsModel: self.create_add_fields,
@@ -765,6 +766,7 @@ class ModelToComponentFactory:
         }
 
         # Needed for the case where we need to perform a second parse on the fields of a custom component
+        # pyrefly: ignore  # implicitly-defined-attribute
         self.TYPE_NAME_TO_MODEL = {cls.__name__: cls for cls in self.PYDANTIC_MODEL_TO_CONSTRUCTOR}
 
     def create_component(
@@ -1118,6 +1120,7 @@ class ModelToComponentFactory:
                 ApiKeyAuthenticatorModel(
                     type="ApiKeyAuthenticator",
                     api_token="",
+                    # pyrefly: ignore  # missing-attribute
                     inject_into=model.request_authentication.inject_into,
                 ),  # type: ignore # $parameters and headers default to None
                 config=config,
@@ -1321,6 +1324,7 @@ class ModelToComponentFactory:
             datetime_format=datetime_format,
             input_datetime_formats=datetime_based_cursor_model.cursor_datetime_formats,
             is_sequential_state=True,  # ConcurrentPerPartitionCursor only works with sequential state
+            # pyrefly: ignore  # bad-argument-type
             cursor_granularity=cursor_granularity,
         )
 
@@ -1418,6 +1422,7 @@ class ModelToComponentFactory:
                     end_date_provider = ClampingEndProvider(
                         DayClampingStrategy(is_ceiling=False),
                         end_date_provider,  # type: ignore  # Having issues w/ inspection for GapType and CursorValueType as shown in existing tests. Confirmed functionality is working in practice
+                        # pyrefly: ignore  # bad-argument-type
                         granularity=cursor_granularity or datetime.timedelta(seconds=1),
                     )
                 case "WEEK":
@@ -1435,6 +1440,7 @@ class ModelToComponentFactory:
                     end_date_provider = ClampingEndProvider(
                         WeekClampingStrategy(weekday, is_ceiling=False),
                         end_date_provider,  # type: ignore  # Having issues w/ inspection for GapType and CursorValueType as shown in existing tests. Confirmed functionality is working in practice
+                        # pyrefly: ignore  # bad-argument-type
                         granularity=cursor_granularity or datetime.timedelta(days=1),
                     )
                 case "MONTH":
@@ -1442,6 +1448,7 @@ class ModelToComponentFactory:
                     end_date_provider = ClampingEndProvider(
                         MonthClampingStrategy(is_ceiling=False),
                         end_date_provider,  # type: ignore  # Having issues w/ inspection for GapType and CursorValueType as shown in existing tests. Confirmed functionality is working in practice
+                        # pyrefly: ignore  # bad-argument-type
                         granularity=cursor_granularity or datetime.timedelta(days=1),
                     )
                 case _:
@@ -1597,6 +1604,7 @@ class ModelToComponentFactory:
             datetime_format=datetime_format,
             input_datetime_formats=datetime_based_cursor_model.cursor_datetime_formats,
             is_sequential_state=True,  # ConcurrentPerPartitionCursor only works with sequential state
+            # pyrefly: ignore  # bad-argument-type
             cursor_granularity=cursor_granularity,
         )
 
@@ -1932,11 +1940,13 @@ class ModelToComponentFactory:
         stop_condition_on_cursor = (
             model.incremental_sync
             and hasattr(model.incremental_sync, "is_data_feed")
+            # pyrefly: ignore  # missing-attribute
             and model.incremental_sync.is_data_feed
         )
         client_side_filtering_enabled = (
             model.incremental_sync
             and hasattr(model.incremental_sync, "is_client_side_incremental")
+            # pyrefly: ignore  # missing-attribute
             and model.incremental_sync.is_client_side_incremental
         )
         concurrent_cursor = None
@@ -1947,19 +1957,28 @@ class ModelToComponentFactory:
             concurrent_cursor = self._build_concurrent_cursor(model, stream_slicer, config)
 
         if model.incremental_sync and isinstance(model.incremental_sync, DatetimeBasedCursorModel):
+            # pyrefly: ignore  # bad-assignment
             cursor_model = model.incremental_sync
 
             end_time_option = (
                 self._create_component_from_model(
-                    cursor_model.end_time_option, config, parameters=cursor_model.parameters or {}
+                    # pyrefly: ignore  # bad-argument-type
+                    cursor_model.end_time_option,
+                    config,
+                    parameters=cursor_model.parameters or {},
                 )
+                # pyrefly: ignore  # missing-attribute
                 if cursor_model.end_time_option
                 else None
             )
             start_time_option = (
                 self._create_component_from_model(
-                    cursor_model.start_time_option, config, parameters=cursor_model.parameters or {}
+                    # pyrefly: ignore  # bad-argument-type
+                    cursor_model.start_time_option,
+                    config,
+                    parameters=cursor_model.parameters or {},
                 )
+                # pyrefly: ignore  # missing-attribute
                 if cursor_model.start_time_option
                 else None
             )
@@ -1967,7 +1986,9 @@ class ModelToComponentFactory:
             request_options_provider = DatetimeBasedRequestOptionsProvider(
                 start_time_option=start_time_option,
                 end_time_option=end_time_option,
+                # pyrefly: ignore  # missing-attribute
                 partition_field_start=cursor_model.partition_field_end,
+                # pyrefly: ignore  # missing-attribute
                 partition_field_end=cursor_model.partition_field_end,
                 config=config,
                 parameters=model.parameters or {},
@@ -2064,7 +2085,9 @@ class ModelToComponentFactory:
             schema_loader = DefaultSchemaLoader(config=config, parameters=options)
 
         return DeclarativeStream(
+            # pyrefly: ignore  # bad-argument-type
             name=model.name or "",
+            # pyrefly: ignore  # bad-argument-type
             primary_key=primary_key,
             retriever=retriever,
             schema_loader=schema_loader,
@@ -2147,6 +2170,7 @@ class ModelToComponentFactory:
             )
             is_global_cursor = (
                 hasattr(incremental_sync_model, "global_substream_cursor")
+                # pyrefly: ignore  # missing-attribute
                 and incremental_sync_model.global_substream_cursor
             )
 
@@ -2242,6 +2266,7 @@ class ModelToComponentFactory:
         ],
         stream_slicer: Optional[PartitionRouter],
     ) -> Optional[StreamSlicer]:
+        # pyrefly: ignore  # missing-attribute
         if hasattr(model, "paginator") and model.paginator and not stream_slicer:
             # For the regular Full-Refresh streams, we use the high level `ResumableFullRefreshCursor`
             return ResumableFullRefreshCursor(parameters={})
@@ -2271,6 +2296,7 @@ class ModelToComponentFactory:
                 else None
             )
             is_partition_router = (
+                # pyrefly: ignore  # missing-attribute
                 bool(retriever_model.partition_router) if model.incremental_sync else None
             )
 
@@ -2780,6 +2806,7 @@ class ModelToComponentFactory:
     ) -> MinMaxDatetime:
         return MinMaxDatetime(
             datetime=model.datetime,
+            # pyrefly: ignore  # bad-argument-type
             datetime_format=model.datetime_format or "",
             max_datetime=model.max_datetime or "",
             min_datetime=model.min_datetime or "",
@@ -3011,6 +3038,7 @@ class ModelToComponentFactory:
             case PropertyLimitTypeModel.characters:
                 property_limit_type = PropertyLimitType.characters
             case _:
+                # pyrefly: ignore  # unbound-name
                 raise ValueError(f"Invalid PropertyLimitType {property_limit_type}")
 
         return PropertyChunking(
@@ -3112,6 +3140,7 @@ class ModelToComponentFactory:
             record_filter = ClientSideIncrementalRecordFilterDecorator(
                 config=config,
                 parameters=model.parameters,
+                # pyrefly: ignore  # missing-attribute
                 condition=model.record_filter.condition
                 if (model.record_filter and hasattr(model.record_filter, "condition"))
                 else None,
@@ -3135,6 +3164,7 @@ class ModelToComponentFactory:
 
         return RecordSelector(
             extractor=extractor,
+            # pyrefly: ignore  # bad-argument-type
             name=name,
             config=config,
             record_filter=record_filter,
@@ -3214,12 +3244,16 @@ class ModelToComponentFactory:
             """
 
             _url: str = (
+                # pyrefly: ignore  # bad-assignment
                 model.requester.url
+                # pyrefly: ignore  # missing-attribute
                 if hasattr(model.requester, "url") and model.requester.url is not None
                 else requester.get_url()
             )
             _url_base: str = (
+                # pyrefly: ignore  # bad-assignment
                 model.requester.url_base
+                # pyrefly: ignore  # missing-attribute
                 if hasattr(model.requester, "url_base") and model.requester.url_base is not None
                 else requester.get_url_base()
             )
@@ -3248,6 +3282,7 @@ class ModelToComponentFactory:
             # places instead of default to request_parameters which isn't clearly documented
             if (
                 hasattr(model.requester, "fetch_properties_from_endpoint")
+                # pyrefly: ignore  # missing-attribute
                 and model.requester.fetch_properties_from_endpoint
             ):
                 raise ValueError(
@@ -3271,6 +3306,7 @@ class ModelToComponentFactory:
                 )
         elif (
             hasattr(model.requester, "fetch_properties_from_endpoint")
+            # pyrefly: ignore  # missing-attribute
             and model.requester.fetch_properties_from_endpoint
         ):
             # todo: Deprecate this condition once dependent connectors migrate to query_properties
@@ -3285,8 +3321,10 @@ class ModelToComponentFactory:
                 model=query_properties_definition,
                 config=config,
             )
+        # pyrefly: ignore  # missing-attribute
         elif hasattr(model.requester, "query_properties") and model.requester.query_properties:
             query_properties = self.create_query_properties(
+                # pyrefly: ignore  # bad-argument-type
                 model=model.requester.query_properties,
                 config=config,
             )
@@ -3357,6 +3395,7 @@ class ModelToComponentFactory:
                         f"LazySimpleRetriever only supports DatetimeBasedCursor. Found: {incremental_sync.type}."
                     )
 
+                # pyrefly: ignore  # missing-attribute
                 elif incremental_sync.step or incremental_sync.cursor_granularity:
                     raise ValueError(
                         f"Found more that one slice per parent. LazySimpleRetriever only supports single slice read for stream - {name}."
@@ -3368,8 +3407,10 @@ class ModelToComponentFactory:
                 )
 
             return LazySimpleRetriever(
+                # pyrefly: ignore  # bad-argument-type
                 name=name,
                 paginator=paginator,
+                # pyrefly: ignore  # bad-argument-type
                 primary_key=primary_key,
                 requester=requester,
                 record_selector=record_selector,
@@ -3382,8 +3423,10 @@ class ModelToComponentFactory:
             )
 
         return SimpleRetriever(
+            # pyrefly: ignore  # bad-argument-type
             name=name,
             paginator=paginator,
+            # pyrefly: ignore  # bad-argument-type
             primary_key=primary_key,
             requester=requester,
             record_selector=record_selector,
@@ -3428,6 +3471,7 @@ class ModelToComponentFactory:
     ) -> bool:
         if not hasattr(requester, "request_parameters"):
             return False
+        # pyrefly: ignore  # missing-attribute
         request_parameters = requester.request_parameters
         if request_parameters and isinstance(request_parameters, Mapping):
             for request_parameter in request_parameters.values():
@@ -3518,6 +3562,7 @@ class ModelToComponentFactory:
             # as all this occurs in the record_selector of the AsyncRetriever
             record_selector = RecordSelector(
                 extractor=download_extractor,
+                # pyrefly: ignore  # bad-argument-type
                 name=name,
                 record_filter=None,
                 transformations=[],
@@ -3539,7 +3584,9 @@ class ModelToComponentFactory:
             return SimpleRetriever(
                 requester=download_requester,
                 record_selector=record_selector,
+                # pyrefly: ignore  # bad-argument-type
                 primary_key=None,
+                # pyrefly: ignore  # bad-argument-type
                 name=name,
                 paginator=paginator,
                 config=config,
@@ -4015,6 +4062,7 @@ class ModelToComponentFactory:
         # This value will be updated by the first request.
         return FixedWindowCallRatePolicy(
             next_reset_ts=datetime.datetime.now() + datetime.timedelta(days=10),
+            # pyrefly: ignore  # bad-argument-type
             period=parse_duration(model.period),
             call_limit=model.call_limit,
             matchers=matchers,
@@ -4085,6 +4133,7 @@ class ModelToComponentFactory:
         interpolated_limit = InterpolatedString.create(str(model.limit), parameters={})
         return Rate(
             limit=int(interpolated_limit.eval(config=config)),
+            # pyrefly: ignore  # bad-argument-type
             interval=parse_duration(model.interval),
         )
 
