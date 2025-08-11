@@ -466,7 +466,7 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
                     partition_generator = StreamSlicerPartitionGenerator(
                         DeclarativePartitionFactory(
                             stream_name=declarative_stream.name,
-                            schema_loader=declarative_stream._schema_loader,   # type: ignore  # We are accessing the private property but the public one is optional and we will remove this code soonish
+                            schema_loader=declarative_stream._schema_loader,  # type: ignore  # We are accessing the private property but the public one is optional and we will remove this code soonish
                             retriever=retriever,
                             message_repository=self.message_repository,
                             max_records_limit=self._limits.max_records if self._limits else None,

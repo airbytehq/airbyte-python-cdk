@@ -785,7 +785,11 @@ def test_config_update() -> None:
         "refresh_token": "a refresh token",
     }
     source = ConcurrentDeclarativeSource(
-        catalog=None, config=config, state=None, source_config=manifest, emit_connector_builder_messages=True,
+        catalog=None,
+        config=config,
+        state=None,
+        source_config=manifest,
+        emit_connector_builder_messages=True,
     )
 
     refresh_request_response = {
