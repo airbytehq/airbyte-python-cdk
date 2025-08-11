@@ -2055,13 +2055,9 @@ class ModelToComponentFactory:
             schema_loader = DefaultSchemaLoader(config=config, parameters=options)
 
         if (
-            (
-                isinstance(combined_slicers, PartitionRouter)
-                or isinstance(concurrent_cursor, ConcurrentCursor)
-            )
-            and not is_parent
-            and not self._emit_connector_builder_messages
-        ):
+            isinstance(combined_slicers, PartitionRouter)
+            or isinstance(concurrent_cursor, ConcurrentCursor)
+        ) and not is_parent:
             # We are starting to migrate streams to instantiate directly the DefaultStream instead of instantiating the
             # DeclarativeStream and assembling the DefaultStream from that. The plan is the following:
             # * Streams without partition router nor cursors and streams with only partition router. This is the `isinstance(combined_slicers, PartitionRouter)` condition as the first kind with have a SinglePartitionRouter
@@ -2097,7 +2093,13 @@ class ModelToComponentFactory:
                     retriever,
                     self._message_repository,
                 ),
-                stream_slicer,
+                stream_slicer=cast(
+                    StreamSlicer,
+                    StreamSlicerTestReadDecorator(
+                        wrapped_slicer=stream_slicer,
+                        maximum_number_of_slices=self._limit_slices_fetched or 5,
+                    ),
+                ),
             )
 
             return DefaultStream(
