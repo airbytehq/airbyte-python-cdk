@@ -6,7 +6,7 @@ import traceback
 from abc import ABC, abstractmethod
 from typing import Any, Dict, Iterable, List, Mapping, MutableMapping, Optional
 
-from airbyte_protocol_dataclasses.models import SyncMode
+from airbyte_protocol.models import SyncMode
 
 from airbyte_cdk.models import AirbyteLogMessage, AirbyteMessage, Level
 from airbyte_cdk.models import Type as MessageType

@@ -5,7 +5,6 @@ from typing import Any, Dict, List, Union, overload
 from airbyte_cdk.models import (
     ConfiguredAirbyteCatalog,
     ConfiguredAirbyteStream,
-    ConfiguredAirbyteStreamSerializer,
     SyncMode,
 )
 
@@ -42,7 +41,7 @@ class ConfiguredAirbyteStreamBuilder:
         return self
 
     def build(self) -> ConfiguredAirbyteStream:
-        return ConfiguredAirbyteStreamSerializer.load(self._stream)
+        return ConfiguredAirbyteStream(**self._stream)
 
 
 class CatalogBuilder:

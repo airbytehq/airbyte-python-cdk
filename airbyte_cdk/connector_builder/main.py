@@ -20,11 +20,10 @@ from airbyte_cdk.connector_builder.connector_builder_handler import (
 from airbyte_cdk.entrypoint import AirbyteEntrypoint
 from airbyte_cdk.models import (
     AirbyteMessage,
-    AirbyteMessageSerializer,
     AirbyteStateMessage,
     ConfiguredAirbyteCatalog,
-    ConfiguredAirbyteCatalogSerializer,
 )
+from airbyte_cdk.models.airbyte_protocol_serializers import ab_message_to_string
 from airbyte_cdk.sources.declarative.manifest_declarative_source import ManifestDeclarativeSource
 from airbyte_cdk.sources.source import Source
 from airbyte_cdk.utils.traced_exception import AirbyteTracedException
@@ -53,7 +52,7 @@ def get_config_and_catalog_from_args(
 
     command = config["__command"]
     if command == "test_read":
-        catalog = ConfiguredAirbyteCatalogSerializer.load(BaseConnector.read_config(catalog_path))
+        catalog = ConfiguredAirbyteCatalog.model_validate(BaseConnector.read_config(catalog_path))
         state = Source.read_state(state_path)
     else:
         catalog = None
@@ -92,19 +91,27 @@ def handle_request(args: List[str]) -> str:
     command, config, catalog, state = get_config_and_catalog_from_args(args)
     limits = get_limits(config)
     source = create_source(config, limits)
-    return orjson.dumps(
-        AirbyteMessageSerializer.dump(
-            handle_connector_builder_request(source, command, config, catalog, state, limits)
-        )
-    ).decode()  # type: ignore[no-any-return] # Serializer.dump() always returns AirbyteMessage
+    return ab_message_to_string(
+        handle_connector_builder_request(source, command, config, catalog, state, limits)
+    )
 
+def run(args: list[str] | None) -> None:
+    """Run the connector builder handler."""
+    if args is None:
+        args = sys.argv[1:]
 
-if __name__ == "__main__":
     try:
-        print(handle_request(sys.argv[1:]))
+        result = handle_request(args)
+        print(result)
     except Exception as exc:
         error = AirbyteTracedException.from_exception(
             exc, message=f"Error handling request: {str(exc)}"
         )
         m = error.as_airbyte_message()
-        print(orjson.dumps(AirbyteMessageSerializer.dump(m)).decode())
+        print(ab_message_to_string(m))
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    run(sys.argv[1:])
+    sys.exit(1)
