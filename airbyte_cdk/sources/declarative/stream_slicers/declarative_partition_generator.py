@@ -126,7 +126,6 @@ class StreamSlicerPartitionGenerator(PartitionGenerator):
         partition_factory: DeclarativePartitionFactory,
         stream_slicer: StreamSlicer,
         slice_limit: Optional[int] = None,
-        max_records_limit: Optional[int] = None,
     ) -> None:
         self._partition_factory = partition_factory
 

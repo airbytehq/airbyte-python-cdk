@@ -95,6 +95,21 @@ class InMemoryMessageRepository(MessageRepository):
             yield self._message_queue.popleft()
 
 
+class StateFilteringMessageRepository(MessageRepository):
+    def __init__(self, decorated: MessageRepository) -> None:
+        self._decorated = decorated
+
+    def emit_message(self, message: AirbyteMessage) -> None:
+        if message.type != Type.STATE:
+            self._decorated.emit_message(message)
+
+    def log_message(self, level: Level, message_provider: Callable[[], LogMessage]) -> None:
+        self._decorated.log_message(level, message_provider)
+
+    def consume_queue(self) -> Iterable[AirbyteMessage]:
+        yield from self._decorated.consume_queue()
+
+
 class LogAppenderMessageRepositoryDecorator(MessageRepository):
     def __init__(
         self,

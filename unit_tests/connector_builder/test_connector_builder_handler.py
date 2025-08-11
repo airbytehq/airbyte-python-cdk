@@ -1140,7 +1140,9 @@ def test_read_source(mock_http_stream):
     for s in streams:
         retriever = get_retriever(s)
         assert isinstance(retriever, SimpleRetriever)
-        assert isinstance(retriever.stream_slicer, StreamSlicerTestReadDecorator)
+        assert isinstance(
+            s._stream_partition_generator._stream_slicer, StreamSlicerTestReadDecorator
+        )
 
 
 @patch.object(
@@ -1188,7 +1190,9 @@ def test_read_source_single_page_single_slice(mock_http_stream):
     for s in streams:
         retriever = get_retriever(s)
         assert isinstance(retriever, SimpleRetriever)
-        assert isinstance(retriever.stream_slicer, StreamSlicerTestReadDecorator)
+        assert isinstance(
+            s._stream_partition_generator._stream_slicer, StreamSlicerTestReadDecorator
+        )
 
 
 @pytest.mark.parametrize(
