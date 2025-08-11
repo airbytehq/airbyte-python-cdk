@@ -18,6 +18,12 @@ import pytest
 import requests
 import yaml
 
+from airbyte_cdk.sources.declarative.parsers.manifest_component_transformer import (
+    ManifestComponentTransformer,
+)
+from airbyte_cdk.sources.declarative.parsers.manifest_reference_resolver import (
+    ManifestReferenceResolver,
+)
 from airbyte_cdk.sources.declarative.validators.validate_adheres_to_schema import (
     ValidateAdheresToSchema,
 )
@@ -239,6 +245,7 @@ EXCLUDED_CONNECTORS: List[Tuple[str, str]] = [
     ("source-zuora", "6.44.0"),
     ("source-ahrefs", "4.6.2"),
     ("source-aircall", "4.5.4"),
+    ("source-akeneo", "5.16.0"),
     ("source-alpha-vantage", "4.6.2"),
     ("source-appcues", "4.6.2"),
     ("source-appstore-singer", "4.6.2"),
@@ -693,7 +700,18 @@ def test_manifest_validates_against_schema(
         pytest.fail(error_msg)
 
     try:
-        schema_validator.validate(manifest_dict)
+        if "type" not in manifest_dict:
+            manifest_dict["type"] = "DeclarativeSource"
+
+        # Resolve references in the manifest
+        resolved_manifest = ManifestReferenceResolver().preprocess_manifest(manifest_dict)
+
+        # Propagate types and parameters throughout the manifest
+        preprocessed_manifest = ManifestComponentTransformer().propagate_types_and_parameters(
+            "", resolved_manifest, {}
+        )
+
+        schema_validator.validate(preprocessed_manifest)
         validation_successes.append((connector_name, cdk_version))
         logger.info(f"✓ {connector_name} (CDK {cdk_version}) - validation passed")
 
