@@ -428,6 +428,10 @@ EXCLUDED_CONNECTORS: List[Tuple[str, str]] = [
     ("source-zonka-feedback", "5.17.0"),
 ]
 
+RECHECK_EXCLUSION_LIST = False
+
+USE_GIT_SPARSE_CHECKOUT = False
+
 CONNECTOR_REGISTRY_URL = "https://connectors.airbyte.com/files/registries/v0/oss_registry.json"
 MANIFEST_URL_TEMPLATE = (
     "https://connectors.airbyte.com/files/metadata/airbyte/{connector_name}/latest/manifest.yaml"
@@ -462,8 +466,18 @@ def schema_validator() -> ValidateAdheresToSchema:
 @pytest.fixture(scope="session")
 def manifest_connector_names() -> List[str]:
     """Cached list of manifest-only connector names to avoid repeated registry calls."""
-    connectors = get_manifest_only_connectors()
-    return [connector_name for connector_name, _ in connectors]
+    if USE_GIT_SPARSE_CHECKOUT:
+        # Use git sparse-checkout to get all available manifest connectors
+        try:
+            manifests = download_manifests_via_git()
+            return list(manifests.keys())
+        except Exception as e:
+            logger.warning(f"Git sparse-checkout failed, falling back to registry: {e}")
+            connectors = get_manifest_only_connectors()
+            return [connector_name for connector_name, _ in connectors]
+    else:
+        connectors = get_manifest_only_connectors()
+        return [connector_name for connector_name, _ in connectors]
 
 
 def load_declarative_component_schema() -> Dict[str, Any]:
@@ -504,6 +518,10 @@ def get_manifest_only_connectors() -> List[Tuple[str, str]]:
         pytest.fail(f"Failed to fetch connector registry: {e}")
 
 
+# Global cache for git-downloaded manifests
+_git_manifest_cache: Dict[str, Tuple[str, str]] = {}
+
+
 def download_manifest(
     connector_name: str, download_failures: List[Tuple[str, str]]
 ) -> Tuple[str, str]:
@@ -514,6 +532,19 @@ def download_manifest(
         Tuple of (manifest_content, cdk_version) where cdk_version is extracted
         from the manifest's version field.
     """
+    global _git_manifest_cache
+
+    if USE_GIT_SPARSE_CHECKOUT and not _git_manifest_cache:
+        try:
+            logger.info("Initializing git sparse-checkout cache...")
+            _git_manifest_cache = download_manifests_via_git()
+            logger.info(f"Cached {len(_git_manifest_cache)} manifests from git")
+        except Exception as e:
+            logger.warning(f"Git sparse-checkout failed, using HTTP fallback: {e}")
+
+    if connector_name in _git_manifest_cache:
+        return _git_manifest_cache[connector_name]
+
     url = MANIFEST_URL_TEMPLATE.format(connector_name=connector_name)
     try:
         response = requests.get(url, timeout=30)
@@ -542,20 +573,24 @@ def download_manifests_via_git() -> Dict[str, Tuple[str, str]]:
         repo_path = Path(temp_dir) / "airbyte"
 
         try:
+            logger.info("Cloning airbyte repo with sparse-checkout...")
             subprocess.run(
                 [
                     "git",
                     "clone",
                     "--filter=blob:none",
                     "--sparse",
+                    "--depth=1",
                     "https://github.com/airbytehq/airbyte.git",
                     str(repo_path),
                 ],
                 check=True,
                 capture_output=True,
                 text=True,
+                timeout=120,
             )
 
+            logger.info("Setting sparse-checkout pattern...")
             subprocess.run(
                 [
                     "git",
@@ -568,12 +603,19 @@ def download_manifests_via_git() -> Dict[str, Tuple[str, str]]:
                 check=True,
                 capture_output=True,
                 text=True,
+                timeout=30,
             )
 
-            manifest_files = repo_path.glob("airbyte-integrations/connectors/*/manifest.yaml")
+            logger.info("Processing manifest files...")
+            manifest_files = list(repo_path.glob("airbyte-integrations/connectors/*/manifest.yaml"))
+            logger.info(f"Found {len(manifest_files)} manifest files")
 
-            for manifest_path in manifest_files:
+            for i, manifest_path in enumerate(manifest_files):
                 connector_name = manifest_path.parent.name
+                if i % 50 == 0:
+                    logger.info(
+                        f"Processing manifest {i + 1}/{len(manifest_files)}: {connector_name}"
+                    )
                 try:
                     with open(manifest_path, "r") as f:
                         manifest_content = f.read()
@@ -584,10 +626,19 @@ def download_manifests_via_git() -> Dict[str, Tuple[str, str]]:
                 except Exception as e:
                     logger.warning(f"Failed to process manifest for {connector_name}: {e}")
 
+        except subprocess.TimeoutExpired:
+            logger.error("Git sparse-checkout timed out. Falling back to HTTP downloads.")
+            return {}
         except subprocess.CalledProcessError as e:
             logger.warning(f"Git sparse-checkout failed: {e}. Falling back to HTTP downloads.")
             return {}
+        except Exception as e:
+            logger.error(
+                f"Unexpected error in git sparse-checkout: {e}. Falling back to HTTP downloads."
+            )
+            return {}
 
+    logger.info(f"Successfully cached {len(manifests)} manifests from git")
     return manifests
 
 
@@ -622,11 +673,17 @@ def test_manifest_validates_against_schema(
     except Exception as e:
         pytest.fail(f"Failed to download manifest for {connector_name}: {e}")
 
-    if (connector_name, cdk_version) in EXCLUDED_CONNECTORS:
-        pytest.skip(
-            f"Skipping {connector_name} - connector declares it is compatible with "
-            f"CDK version {cdk_version} but is known to fail validation"
-        )
+    is_excluded = (connector_name, cdk_version) in EXCLUDED_CONNECTORS
+
+    if RECHECK_EXCLUSION_LIST:
+        expected_to_fail = is_excluded
+    else:
+        # Normal mode: skip excluded connectors
+        if is_excluded:
+            pytest.skip(
+                f"Skipping {connector_name} - connector declares it is compatible with "
+                f"CDK version {cdk_version} but is known to fail validation"
+            )
 
     try:
         manifest_dict = yaml.safe_load(manifest_content)
@@ -639,6 +696,13 @@ def test_manifest_validates_against_schema(
         schema_validator.validate(manifest_dict)
         validation_successes.append((connector_name, cdk_version))
         logger.info(f"✓ {connector_name} (CDK {cdk_version}) - validation passed")
+
+        if RECHECK_EXCLUSION_LIST and expected_to_fail:
+            pytest.fail(
+                f"EXCLUSION LIST ERROR: {connector_name} (CDK {cdk_version}) was expected to fail "
+                f"but passed validation. Remove from EXCLUDED_CONNECTORS."
+            )
+
     except ValueError as e:
         error_msg = (
             f"Manifest validation failed for {connector_name} "
@@ -646,7 +710,14 @@ def test_manifest_validates_against_schema(
         )
         validation_failures.append((connector_name, cdk_version, str(e)))
         logger.error(f"✗ {connector_name} (CDK {cdk_version}) - validation failed: {e}")
-        pytest.fail(error_msg)
+
+        if RECHECK_EXCLUSION_LIST and not expected_to_fail:
+            pytest.fail(
+                f"EXCLUSION LIST ERROR: {connector_name} (CDK {cdk_version}) was expected to pass "
+                f"but failed validation. Add to EXCLUDED_CONNECTORS: {error_msg}"
+            )
+        elif not RECHECK_EXCLUSION_LIST:
+            pytest.fail(error_msg)
 
 
 def test_schema_loads_successfully() -> None:
