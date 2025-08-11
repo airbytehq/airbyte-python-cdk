@@ -19,6 +19,8 @@ from airbyte_cdk.models import (
     StreamDescriptor,
     SyncMode,
 )
+from airbyte_cdk.sources.declarative.concurrent_declarative_source import ConcurrentDeclarativeSource
+from airbyte_cdk.sources.declarative.incremental import ConcurrentPerPartitionCursor
 from airbyte_cdk.sources.declarative.incremental.per_partition_cursor import (
     PerPartitionCursor,
     StreamSlice,
@@ -26,6 +28,7 @@ from airbyte_cdk.sources.declarative.incremental.per_partition_cursor import (
 from airbyte_cdk.sources.declarative.manifest_declarative_source import ManifestDeclarativeSource
 from airbyte_cdk.sources.declarative.retrievers.simple_retriever import SimpleRetriever
 from airbyte_cdk.sources.types import Record
+from airbyte_cdk.test.catalog_builder import CatalogBuilder, ConfiguredAirbyteStreamBuilder
 
 CURSOR_FIELD = "cursor_field"
 SYNC_MODE = SyncMode.incremental
@@ -84,6 +87,7 @@ class ManifestBuilder:
         manifest = {
             "version": "0.34.2",
             "type": "DeclarativeSource",
+            "concurrency_level": {"type": "ConcurrencyLevel", "default_concurrency": 1},
             "check": {"type": "CheckStream", "stream_names": ["Rates"]},
             "definitions": {
                 "AnotherStream": {
@@ -166,7 +170,25 @@ class ManifestBuilder:
 
 
 def test_given_state_for_only_some_partition_when_stream_slices_then_create_slices_using_state_or_start_from_start_datetime():
-    source = ManifestDeclarativeSource(
+    source = ConcurrentDeclarativeSource(
+        state=[
+                AirbyteStateMessage(
+                type=AirbyteStateType.STREAM,
+                stream=AirbyteStreamState(
+                    stream_descriptor=StreamDescriptor(name="Rates"),
+                    stream_state=AirbyteStateBlob({
+                        "states": [
+                            {
+                                "partition": {"partition_field": "1"},
+                                "cursor": {CURSOR_FIELD: "2022-02-01"},
+                            }
+                        ]
+                    }),
+                ),
+            ),
+        ],
+        config={},
+        catalog=CatalogBuilder().with_stream(ConfiguredAirbyteStreamBuilder().with_name("Rates")).build(),
         source_config=ManifestBuilder()
         .with_list_partition_router("Rates", "partition_field", ["1", "2"])
         .with_incremental_sync(
@@ -181,21 +203,10 @@ def test_given_state_for_only_some_partition_when_stream_slices_then_create_slic
         .build()
     )
     stream_instance = source.streams({})[0]
-    stream_instance.state = {
-        "states": [
-            {
-                "partition": {"partition_field": "1"},
-                "cursor": {CURSOR_FIELD: "2022-02-01"},
-            }
-        ]
-    }
 
-    slices = stream_instance.stream_slices(
-        sync_mode=SYNC_MODE,
-        stream_state={},
-    )
+    partitions = stream_instance.generate_partitions()
 
-    assert list(slices) == [
+    assert list(map(lambda partition: partition.to_slice(), partitions)) == [
         {"partition_field": "1", "start_time": "2022-02-01", "end_time": "2022-02-28"},
         {"partition_field": "2", "start_time": "2022-01-01", "end_time": "2022-01-31"},
         {"partition_field": "2", "start_time": "2022-02-01", "end_time": "2022-02-28"},
@@ -203,7 +214,10 @@ def test_given_state_for_only_some_partition_when_stream_slices_then_create_slic
 
 
 def test_given_record_for_partition_when_read_then_update_state():
-    source = ManifestDeclarativeSource(
+    source = ConcurrentDeclarativeSource(
+        state=[],
+        config={},
+        catalog=CatalogBuilder().with_stream(ConfiguredAirbyteStreamBuilder().with_name("Rates")).build(),
         source_config=ManifestBuilder()
         .with_list_partition_router("Rates", "partition_field", ["1", "2"])
         .with_incremental_sync(
@@ -218,7 +232,7 @@ def test_given_record_for_partition_when_read_then_update_state():
         .build()
     )
     stream_instance = source.streams({})[0]
-    list(stream_instance.stream_slices(sync_mode=SYNC_MODE))
+    partition = next(iter(stream_instance.generate_partitions()))
 
     stream_slice = StreamSlice(
         partition={"partition_field": "1"},
@@ -228,20 +242,15 @@ def test_given_record_for_partition_when_read_then_update_state():
         SimpleRetriever,
         "_read_pages",
         side_effect=[
-            [Record({"a record key": "a record value", CURSOR_FIELD: "2022-01-15"}, stream_slice)]
+            [Record({"a record key": "a record value", CURSOR_FIELD: "2022-01-15"}, "Rates", stream_slice)]
         ],
     ):
-        list(
-            stream_instance.read_records(
-                sync_mode=SYNC_MODE,
-                stream_slice=stream_slice,
-                stream_state={"states": []},
-                cursor_field=CURSOR_FIELD,
-            )
-        )
+        for record in partition.read():
+            stream_instance.cursor.observe(record)
+        stream_instance.cursor.close_partition(partition)
 
-    assert stream_instance.state == {
-        "state": {},
+    assert stream_instance.cursor.state == {
+        "lookback_window": 0,
         "use_global_cursor": False,
         "states": [
             {
@@ -253,7 +262,10 @@ def test_given_record_for_partition_when_read_then_update_state():
 
 
 def test_substream_without_input_state():
-    test_source = ManifestDeclarativeSource(
+    test_source = ConcurrentDeclarativeSource(
+        state=[],
+        config={},
+        catalog=CatalogBuilder().with_stream(ConfiguredAirbyteStreamBuilder().with_name("Rates")).with_stream(ConfiguredAirbyteStreamBuilder().with_name("AnotherStream")).build(),
         source_config=ManifestBuilder()
         .with_substream_partition_router("AnotherStream")
         .with_incremental_sync(
@@ -278,7 +290,6 @@ def test_substream_without_input_state():
     )
 
     stream_instance = test_source.streams({})[1]
-
     parent_stream_slice = StreamSlice(
         partition={}, cursor_slice={"start_time": "2022-01-01", "end_time": "2022-01-31"}
     )
@@ -288,12 +299,13 @@ def test_substream_without_input_state():
         SimpleRetriever,
         "_read_pages",
         side_effect=[
-            [Record({"id": "1", CURSOR_FIELD: "2022-01-15"}, parent_stream_slice)],
-            [Record({"id": "2", CURSOR_FIELD: "2022-01-15"}, parent_stream_slice)],
+            [Record({"id": "1", CURSOR_FIELD: "2022-01-15"}, "AnotherStream", parent_stream_slice)],
+            [Record({"id": "2", CURSOR_FIELD: "2022-01-15"}, "AnotherStream", parent_stream_slice)],
         ],
     ):
-        slices = list(stream_instance.stream_slices(sync_mode=SYNC_MODE))
-        assert list(slices) == [
+        partition = list(map(lambda partition: partition.to_slice(), stream_instance.generate_partitions()))
+
+        assert partition == [
             StreamSlice(
                 partition={
                     "parent_id": "1",
@@ -334,7 +346,10 @@ def test_partition_limitation(caplog):
     We verify that the state only retains information for the two most recent partitions.
     """
     stream_name = "Rates"
-    source = ManifestDeclarativeSource(
+    source = ConcurrentDeclarativeSource(
+        state=[],
+        config={},
+        catalog=CatalogBuilder().with_stream(ConfiguredAirbyteStreamBuilder().with_name("Rates")).build(),
         source_config=ManifestBuilder()
         .with_list_partition_router(
             stream_name=stream_name, cursor_field="partition_field", partitions=["1", "2", "3"]
@@ -437,7 +452,7 @@ def test_partition_limitation(caplog):
     # Use caplog to capture logs
     with caplog.at_level(logging.WARNING, logger="airbyte"):
         with patch.object(SimpleRetriever, "_read_pages", side_effect=records_list):
-            with patch.object(PerPartitionCursor, "DEFAULT_MAX_PARTITIONS_NUMBER", 2):
+            with patch.object(ConcurrentPerPartitionCursor, "DEFAULT_MAX_PARTITIONS_NUMBER", 2):
                 output = list(source.read(logger, {}, catalog, initial_state))
 
     # Check if the warning was logged
@@ -475,7 +490,37 @@ def test_perpartition_with_fallback(caplog):
     This test also checks that the appropriate warning logs are emitted when the partition limit is exceeded.
     """
     stream_name = "Rates"
-    source = ManifestDeclarativeSource(
+    catalog = CatalogBuilder().with_stream(ConfiguredAirbyteStreamBuilder().with_name(stream_name)).build()
+    initial_state = [
+        AirbyteStateMessage(
+            type=AirbyteStateType.STREAM,
+            stream=AirbyteStreamState(
+                stream_descriptor=StreamDescriptor(name=stream_name, namespace=None),
+                stream_state=AirbyteStateBlob(
+                    {
+                        "states": [
+                            {
+                                "partition": {"partition_field": "1"},
+                                "cursor": {CURSOR_FIELD: "2022-01-01"},
+                            },
+                            {
+                                "partition": {"partition_field": "2"},
+                                "cursor": {CURSOR_FIELD: "2022-01-02"},
+                            },
+                            {
+                                "partition": {"partition_field": "3"},
+                                "cursor": {CURSOR_FIELD: "2022-01-03"},
+                            },
+                        ]
+                    }
+                ),
+            ),
+        )
+    ]
+    source = ConcurrentDeclarativeSource(
+        state=initial_state,
+        config={},
+        catalog=catalog,
         source_config=ManifestBuilder()
         .with_list_partition_router("Rates", "partition_field", ["1", "2", "3", "4", "5", "6"])
         .with_incremental_sync(
@@ -568,49 +613,12 @@ def test_perpartition_with_fallback(caplog):
         ],
     ]
 
-    configured_stream = ConfiguredAirbyteStream(
-        stream=AirbyteStream(
-            name=stream_name,
-            json_schema={},
-            supported_sync_modes=[SyncMode.full_refresh, SyncMode.incremental],
-        ),
-        sync_mode=SyncMode.incremental,
-        destination_sync_mode=DestinationSyncMode.append,
-    )
-    catalog = ConfiguredAirbyteCatalog(streams=[configured_stream])
-
-    initial_state = [
-        AirbyteStateMessage(
-            type=AirbyteStateType.STREAM,
-            stream=AirbyteStreamState(
-                stream_descriptor=StreamDescriptor(name=stream_name, namespace=None),
-                stream_state=AirbyteStateBlob(
-                    {
-                        "states": [
-                            {
-                                "partition": {"partition_field": "1"},
-                                "cursor": {CURSOR_FIELD: "2022-01-01"},
-                            },
-                            {
-                                "partition": {"partition_field": "2"},
-                                "cursor": {CURSOR_FIELD: "2022-01-02"},
-                            },
-                            {
-                                "partition": {"partition_field": "3"},
-                                "cursor": {CURSOR_FIELD: "2022-01-03"},
-                            },
-                        ]
-                    }
-                ),
-            ),
-        )
-    ]
     logger = MagicMock()
 
     # Use caplog to capture logs
     with caplog.at_level(logging.WARNING, logger="airbyte"):
         with patch.object(SimpleRetriever, "_read_pages", side_effect=records_list):
-            with patch.object(PerPartitionCursor, "DEFAULT_MAX_PARTITIONS_NUMBER", 2):
+            with patch.object(ConcurrentPerPartitionCursor, "DEFAULT_MAX_PARTITIONS_NUMBER", 2):
                 output = list(source.read(logger, {}, catalog, initial_state))
 
     # Check if the warnings were logged
@@ -645,9 +653,15 @@ def test_per_partition_cursor_within_limit(caplog):
 
     This test also checks that no warning logs are emitted when the partition limit is not exceeded.
     """
-    source = ManifestDeclarativeSource(
+    stream_name = "Rates"
+    catalog = CatalogBuilder().with_stream(ConfiguredAirbyteStreamBuilder().with_name(stream_name)).build()
+    initial_state = {}
+    source = ConcurrentDeclarativeSource(
+        state=initial_state,
+        config={},
+        catalog=catalog,
         source_config=ManifestBuilder()
-        .with_list_partition_router("Rates", "partition_field", ["1", "2", "3"])
+        .with_list_partition_router(stream_name, "partition_field", ["1", "2", "3"])
         .with_incremental_sync(
             "Rates",
             start_datetime="2022-01-01",
@@ -661,75 +675,62 @@ def test_per_partition_cursor_within_limit(caplog):
     )
 
     partition_slices = [
-        StreamSlice(partition={"partition_field": str(i)}, cursor_slice={}) for i in range(1, 4)
+        StreamSlice(partition={"partition_field": str(i)}, cursor_slice=cursor_slice) for i in range(1, 4) for cursor_slice in [{"start_time": "2022-01-01", "end_time": "2022-01-31"}, {"start_time": "2022-02-01", "end_time": "2022-02-28"}, {"start_time": "2022-03-01", "end_time": "2022-03-31"}]
     ]
 
     records_list = [
         [
             Record(
-                {"a record key": "a record value", CURSOR_FIELD: "2022-01-15"}, partition_slices[0]
+                {"a record key": "a record value", CURSOR_FIELD: "2022-01-15"}, stream_name, partition_slices[0]
             )
         ],
         [
             Record(
-                {"a record key": "a record value", CURSOR_FIELD: "2022-02-20"}, partition_slices[0]
+                {"a record key": "a record value", CURSOR_FIELD: "2022-02-20"}, stream_name, partition_slices[1]
             )
         ],
         [
             Record(
-                {"a record key": "a record value", CURSOR_FIELD: "2022-03-25"}, partition_slices[0]
+                {"a record key": "a record value", CURSOR_FIELD: "2022-03-25"}, stream_name, partition_slices[2]
             )
         ],
         [
             Record(
-                {"a record key": "a record value", CURSOR_FIELD: "2022-01-16"}, partition_slices[1]
+                {"a record key": "a record value", CURSOR_FIELD: "2022-01-16"}, stream_name, partition_slices[3]
             )
         ],
         [
             Record(
-                {"a record key": "a record value", CURSOR_FIELD: "2022-02-18"}, partition_slices[1]
+                {"a record key": "a record value", CURSOR_FIELD: "2022-02-18"}, stream_name, partition_slices[4]
             )
         ],
         [
             Record(
-                {"a record key": "a record value", CURSOR_FIELD: "2022-03-28"}, partition_slices[1]
+                {"a record key": "a record value", CURSOR_FIELD: "2022-03-28"}, stream_name, partition_slices[5]
             )
         ],
         [
             Record(
-                {"a record key": "a record value", CURSOR_FIELD: "2022-01-17"}, partition_slices[2]
+                {"a record key": "a record value", CURSOR_FIELD: "2022-01-17"}, stream_name, partition_slices[6]
             )
         ],
         [
             Record(
-                {"a record key": "a record value", CURSOR_FIELD: "2022-02-19"}, partition_slices[2]
+                {"a record key": "a record value", CURSOR_FIELD: "2022-02-19"}, stream_name, partition_slices[7]
             )
         ],
         [
             Record(
-                {"a record key": "a record value", CURSOR_FIELD: "2022-03-29"}, partition_slices[2]
+                {"a record key": "a record value", CURSOR_FIELD: "2022-03-29"}, stream_name, partition_slices[8]
             )
         ],
     ]
-
-    configured_stream = ConfiguredAirbyteStream(
-        stream=AirbyteStream(
-            name="Rates",
-            json_schema={},
-            supported_sync_modes=[SyncMode.full_refresh, SyncMode.incremental],
-        ),
-        sync_mode=SyncMode.incremental,
-        destination_sync_mode=DestinationSyncMode.append,
-    )
-    catalog = ConfiguredAirbyteCatalog(streams=[configured_stream])
-
-    initial_state = {}
     logger = MagicMock()
 
     # Use caplog to capture logs
     with caplog.at_level(logging.WARNING, logger="airbyte"):
         with patch.object(SimpleRetriever, "_read_pages", side_effect=records_list):
-            with patch.object(PerPartitionCursor, "DEFAULT_MAX_PARTITIONS_NUMBER", 5):
+            with patch.object(ConcurrentPerPartitionCursor, "DEFAULT_MAX_PARTITIONS_NUMBER", 5):
                 output = list(source.read(logger, {}, catalog, initial_state))
 
     # Since the partition limit is not exceeded, we expect no warnings

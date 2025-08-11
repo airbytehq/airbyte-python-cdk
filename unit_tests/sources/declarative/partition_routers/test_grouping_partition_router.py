@@ -14,11 +14,19 @@ from airbyte_cdk.sources.declarative.partition_routers import (
 from airbyte_cdk.sources.declarative.partition_routers.substream_partition_router import (
     ParentStreamConfig,
 )
-from airbyte_cdk.sources.types import StreamSlice
+from airbyte_cdk.sources.types import StreamSlice, Record
 from unit_tests.sources.declarative.partition_routers.test_substream_partition_router import (
     MockStream,
     parent_slices,
 )  # Reuse MockStream and parent_slices
+from unit_tests.sources.streams.concurrent.scenarios.thread_based_concurrent_stream_source_builder import \
+    InMemoryPartition
+
+_EMPTY_SLICE = StreamSlice(partition={}, cursor_slice={})
+
+
+def _build_records_for_slice(records: List[Mapping[str, Any]], _slice: StreamSlice):
+    return [Record(record, "stream_name", _slice) for record in records]
 
 
 @pytest.fixture
@@ -30,17 +38,26 @@ def mock_config():
 def mock_underlying_router(mock_config):
     """Fixture for a simple underlying router with predefined slices and extra fields."""
     parent_stream = MockStream(
-        slices=[{}],  # Single empty slice, parent_partition will be {}
-        records=[
-            {"board_id": 0, "name": "Board 0", "owner": "User0"},
-            {
-                "board_id": 0,
-                "name": "Board 0 Duplicate",
-                "owner": "User0 Duplicate",
-            },  # Duplicate board_id
-        ]
-        + [{"board_id": i, "name": f"Board {i}", "owner": f"User{i}"} for i in range(1, 5)],
-        name="mock_parent",
+        [
+            InMemoryPartition(
+                "partition_name",
+                "first_stream",
+                _EMPTY_SLICE,
+                _build_records_for_slice(
+                    [
+                        {"board_id": 0, "name": "Board 0", "owner": "User0"},
+                        {
+                            "board_id": 0,
+                            "name": "Board 0 Duplicate",
+                            "owner": "User0 Duplicate",
+                        },
+                    ]  # Duplicate board_id
+                    + [{"board_id": i, "name": f"Board {i}", "owner": f"User{i}"} for i in range(1, 5)],
+                    _EMPTY_SLICE
+                )
+            )
+        ],
+        "first_stream"
     )
     return SubstreamPartitionRouter(
         parent_stream_configs=[
@@ -62,13 +79,36 @@ def mock_underlying_router(mock_config):
 def mock_underlying_router_with_parent_slices(mock_config):
     """Fixture with varied parent slices for testing non-empty parent_slice."""
     parent_stream = MockStream(
-        slices=parent_slices,  # [{"slice": "first"}, {"slice": "second"}, {"slice": "third"}]
-        records=[
-            {"board_id": 1, "name": "Board 1", "owner": "User1", "slice": "first"},
-            {"board_id": 2, "name": "Board 2", "owner": "User2", "slice": "second"},
-            {"board_id": 3, "name": "Board 3", "owner": "User3", "slice": "third"},
+        [
+            InMemoryPartition(
+                "partition_1",
+                "first_stream",
+                parent_slices[0],
+                _build_records_for_slice(
+                    [{"board_id": 1, "name": "Board 1", "owner": "User1", "slice": "first"}],
+                    parent_slices[0],
+                ),
+            ),
+            InMemoryPartition(
+                "partition_2",
+                "first_stream",
+                parent_slices[1],
+                _build_records_for_slice(
+                    [{"board_id": 2, "name": "Board 2", "owner": "User2", "slice": "second"}],
+                    parent_slices[1],
+                ),
+            ),
+            InMemoryPartition(
+                "partition_3",
+                "first_stream",
+                parent_slices[2],
+                _build_records_for_slice(
+                    [{"board_id": 3, "name": "Board 3", "owner": "User3", "slice": "third"}],
+                    parent_slices[2],
+                ),
+            ),
         ],
-        name="mock_parent",
+        "first_stream"
     )
     return SubstreamPartitionRouter(
         parent_stream_configs=[
@@ -173,9 +213,15 @@ def test_stream_slices_grouping(
 def test_stream_slices_empty_underlying_router(mock_config):
     """Test behavior when the underlying router yields no slices."""
     parent_stream = MockStream(
-        slices=[{}],
-        records=[],
-        name="mock_parent",
+        [
+            InMemoryPartition(
+                "partition_name",
+                "first_stream",
+                _EMPTY_SLICE,
+                [],
+            )
+        ],
+        "first_stream"
     )
     underlying_router = SubstreamPartitionRouter(
         parent_stream_configs=[
@@ -315,13 +361,22 @@ def test_set_initial_state_delegation(mock_config, mock_underlying_router):
 def test_stream_slices_extra_fields_varied(mock_config):
     """Test grouping with varied extra fields across partitions."""
     parent_stream = MockStream(
-        slices=[{}],
-        records=[
-            {"board_id": 1, "name": "Board 1", "owner": "User1"},
-            {"board_id": 2, "name": "Board 2"},  # Missing owner
-            {"board_id": 3, "owner": "User3"},  # Missing name
+        [
+            InMemoryPartition(
+                "partition_name",
+                "first_stream",
+                _EMPTY_SLICE,
+                _build_records_for_slice(
+                    [
+                        {"board_id": 1, "name": "Board 1", "owner": "User1"},
+                        {"board_id": 2, "name": "Board 2"},  # Missing owner
+                        {"board_id": 3, "owner": "User3"},  # Missing name
+                    ],
+                    _EMPTY_SLICE,
+                ),
+            )
         ],
-        name="mock_parent",
+        "first_stream"
     )
     underlying_router = SubstreamPartitionRouter(
         parent_stream_configs=[
@@ -362,9 +417,18 @@ def test_stream_slices_extra_fields_varied(mock_config):
 def test_grouping_with_complex_partitions_and_extra_fields(mock_config):
     """Test grouping with partitions containing multiple keys and extra fields."""
     parent_stream = MockStream(
-        slices=[{}],
-        records=[{"board_id": i, "extra": f"extra_{i}", "name": f"Board {i}"} for i in range(3)],
-        name="mock_parent",
+        [
+            InMemoryPartition(
+                "partition_name",
+                "first_stream",
+                _EMPTY_SLICE,
+                _build_records_for_slice(
+                    [{"board_id": i, "extra": f"extra_{i}", "name": f"Board {i}"} for i in range(3)],
+                    _EMPTY_SLICE,
+                ),
+            )
+        ],
+        "first_stream"
     )
     underlying_router = SubstreamPartitionRouter(
         parent_stream_configs=[

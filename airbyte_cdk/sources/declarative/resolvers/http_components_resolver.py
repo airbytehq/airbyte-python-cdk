@@ -17,6 +17,7 @@ from airbyte_cdk.sources.declarative.resolvers.components_resolver import (
 )
 from airbyte_cdk.sources.declarative.retrievers.retriever import Retriever
 from airbyte_cdk.sources.source import ExperimentalClassWarning
+from airbyte_cdk.sources.streams.concurrent.partitions.stream_slicer import StreamSlicer
 from airbyte_cdk.sources.types import Config
 
 
@@ -28,12 +29,14 @@ class HttpComponentsResolver(ComponentsResolver):
 
     Attributes:
         retriever (Retriever): The retriever used to fetch data from an API.
+        stream_slicer (StreamSlicer): The how the data is sliced.
         config (Config): Configuration object for the resolver.
         components_mapping (List[ComponentMappingDefinition]): List of mappings to resolve.
         parameters (InitVar[Mapping[str, Any]]): Additional parameters for interpolation.
     """
 
     retriever: Retriever
+    stream_slicer: StreamSlicer
     config: Config
     components_mapping: List[ComponentMappingDefinition]
     parameters: InitVar[Mapping[str, Any]]
@@ -88,7 +91,7 @@ class HttpComponentsResolver(ComponentsResolver):
         """
         kwargs = {"stream_template_config": stream_template_config}
 
-        for stream_slice in self.retriever.stream_slices():
+        for stream_slice in self.stream_slicer.stream_slices():
             for components_values in self.retriever.read_records(
                 records_schema={}, stream_slice=stream_slice
             ):

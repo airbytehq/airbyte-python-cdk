@@ -295,10 +295,6 @@ SUBSTREAM_MANIFEST: MutableMapping[str, Any] = {
 }
 
 STREAM_NAME = "post_comment_votes"
-CONFIG = {
-    "start_date": "2024-01-01T00:00:01Z",
-    "credentials": {"email": "email", "api_token": "api_token"},
-}
 
 SUBSTREAM_MANIFEST_NO_DEPENDENCY = deepcopy(SUBSTREAM_MANIFEST)
 # Disable incremental_dependency
@@ -451,6 +447,10 @@ LOOKBACK_DATE = (
 ).isoformat() + "Z"
 
 PARTITION_SYNC_START_TIME = "2024-01-02T00:00:00Z"
+CONFIG = {
+    "start_date": START_DATE,
+    "credentials": {"email": "email", "api_token": "api_token"},
+}
 
 
 @pytest.mark.parametrize(
@@ -1180,6 +1180,11 @@ def run_incremental_parent_state_test(
                     f"https://api.example.com/community/posts?per_page=100&start_time={PARENT_POSTS_CURSOR}&page=2",
                     {"posts": [{"id": 3, "updated_at": POST_3_UPDATED_AT}]},
                 ),
+                # FIXME this is an interesting case. The previous solution would not update the parent state until `ensure_at_least_one_state_emitted` but the concurrent cursor does just before which is probably fine too
+                (
+                        f"https://api.example.com/community/posts?per_page=100&start_time={POST_1_UPDATED_AT}",
+                        {"posts": [{"id": 1, "updated_at": POST_1_UPDATED_AT}]},
+                ),
                 # Fetch the first page of comments for post 1
                 (
                     "https://api.example.com/community/posts/1/comments?per_page=100",
@@ -1473,6 +1478,11 @@ def run_incremental_parent_state_test(
                         ]
                     },
                 ),
+                # FIXME this is an interesting case. The previous solution would not update the parent state until `ensure_at_least_one_state_emitted` but the concurrent cursor does just before which is probably fine too
+                (
+                        f"https://api.example.com/community/posts?per_page=100&start_time={POST_1_UPDATED_AT}",
+                        {"posts": [{"id": 1, "updated_at": POST_1_UPDATED_AT}]},
+                ),
                 # Fetch the first page of comments for post 1
                 (
                     "https://api.example.com/community/posts/1/comments?per_page=100",
@@ -1614,6 +1624,11 @@ def run_incremental_parent_state_test(
                         ]
                     },
                 ),
+                # FIXME this is an interesting case. The previous solution would not update the parent state until `ensure_at_least_one_state_emitted` but the concurrent cursor does just before which is probably fine too
+                (
+                        f"https://api.example.com/community/posts?per_page=100&start_time={POST_1_UPDATED_AT}",
+                        {"posts": [{"id": 1, "updated_at": POST_1_UPDATED_AT}]},
+                ),
                 # Fetch the first page of comments for post 1
                 (
                     "https://api.example.com/community/posts/1/comments?per_page=100",
@@ -1718,7 +1733,7 @@ def run_incremental_parent_state_test(
                         ],
                     }
                 },
-                "lookback_window": 1,
+                "lookback_window": 86400,  # FIXME this run only sync one record without cursor value hence why it might make sense not to update the lookback window
                 "use_global_cursor": False,
                 "states": [
                     {
@@ -2112,10 +2127,11 @@ def test_incremental_parent_state_migration(
                         "states": [
                             {
                                 "partition": {"id": 1, "parent_slice": {}},
-                                "cursor": {"updated_at": PARENT_COMMENT_CURSOR_PARTITION_1},
+                                "cursor": {"updated_at": START_DATE},  # FIXME this happens because the concurrent framework gets the start date as the max between the state value and the start value. In this case, the start value is higher
                             }
                         ],
-                        "state": {},
+                        "lookback_window": 0,  # FIXME the concurrent framework sets the lookback window to 0 as opposed to the declarative framework which would set not define it
+                        # FIXME the concurrent framework does not set the global state if there are none as opposed to the declarative framework which would set an empty global state
                         "use_global_cursor": False,
                         "parent_state": {"posts": {"updated_at": PARENT_POSTS_CURSOR}},
                     }
@@ -2312,7 +2328,7 @@ def test_incremental_parent_state_no_slices(
             },
             # Expected state
             {
-                "lookback_window": 1,
+                "lookback_window": 0,  # FIXME maybe I'm wrong but I don't think it makes sense to have a lookback window being added from the state of "not having a lookback window" before
                 "use_global_cursor": False,
                 "state": {"created_at": INITIAL_STATE_PARTITION_11_CURSOR},
                 "states": [
@@ -2577,16 +2593,22 @@ def test_incremental_parent_state_no_records(
             },
             # Expected state
             {
-                # The global state, lookback window and the parent state are the same because sync failed for comment 20
+                # The global state and lookback window are the same because sync failed for comment 20.
+                # The parent state will be updated up until the child records that were successful i.t. until post 2.
+                # Note that we still have an entry for the partition with post 2 but it is populated with the start date.
                 "parent_state": {
                     "post_comments": {
                         "states": [
                             {
                                 "partition": {"id": 1, "parent_slice": {}},
-                                "cursor": {"updated_at": PARENT_COMMENT_CURSOR_PARTITION_1},
-                            }
+                                "cursor": {"updated_at": COMMENT_10_UPDATED_AT},
+                            },
+                            {
+                                "partition": {"id": 2, "parent_slice": {}},
+                                "cursor": {"updated_at": START_DATE},
+                            },
                         ],
-                        "state": {},
+                        "lookback_window": 0,
                         "use_global_cursor": False,
                         "parent_state": {"posts": {"updated_at": PARENT_POSTS_CURSOR}},
                     }
@@ -3873,7 +3895,7 @@ def test_given_all_partitions_finished_when_close_partition_then_final_state_emi
     assert len(final_state["states"]) == 2
     assert final_state["state"]["updated_at"] == "2024-01-02T00:00:00Z"
     assert final_state["parent_state"] == {"posts": {"updated_at": "2024-01-06T00:00:00Z"}}
-    assert final_state["lookback_window"] == 1
+    assert final_state["lookback_window"] == 86400
     assert cursor._message_repository.emit_message.call_count == 2
     assert mock_cursor.stream_slices.call_count == 2  # Called once for each partition
 

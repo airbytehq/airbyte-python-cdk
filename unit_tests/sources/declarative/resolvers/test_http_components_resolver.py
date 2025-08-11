@@ -392,11 +392,13 @@ def test_http_components_resolver(
 ):
     mock_retriever = MagicMock()
     mock_retriever.read_records.return_value = retriever_data
-    mock_retriever.stream_slices.return_value = [{}]
+    stream_slicer = MagicMock()
+    stream_slicer.stream_slices.return_value = [{}]
     config = {}
 
     resolver = HttpComponentsResolver(
         retriever=mock_retriever,
+        stream_slicer=stream_slicer,
         config=config,
         components_mapping=components_mapping,
         parameters={},
@@ -457,11 +459,13 @@ def test_http_components_resolver_with_stream_slices(
 ):
     mock_retriever = MagicMock()
     mock_retriever.read_records.return_value = retriever_data
-    mock_retriever.stream_slices.return_value = [{"parent_id": 1}, {"parent_id": 2}]
+    stream_slicer = MagicMock()
+    stream_slicer.stream_slices.return_value = [{"parent_id": 1}, {"parent_id": 2}]
     config = {}
 
     resolver = HttpComponentsResolver(
         retriever=mock_retriever,
+        stream_slicer=stream_slicer,
         config=config,
         components_mapping=components_mapping,
         parameters={},
