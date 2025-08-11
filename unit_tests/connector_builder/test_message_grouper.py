@@ -307,6 +307,126 @@ def test_get_grouped_messages_with_logs(mock_entrypoint_read: Mock) -> None:
         assert actual_log == expected_logs[i]
 
 
+@pytest.mark.parametrize(
+    "request_record_limit, max_record_limit, should_fail",
+    [
+        pytest.param(1, 3, False, id="test_create_request_with_record_limit"),
+        pytest.param(3, 1, True, id="test_create_request_record_limit_exceeds_max"),
+    ],
+)
+@patch("airbyte_cdk.connector_builder.test_reader.reader.AirbyteEntrypoint.read")
+def test_get_grouped_messages_record_limit(
+    mock_entrypoint_read: Mock, request_record_limit: int, max_record_limit: int, should_fail: bool
+) -> None:
+    stream_name = "hashiras"
+    url = "https://demonslayers.com/api/v1/hashiras?era=taisho"
+    request = {
+        "headers": {"Content-Type": "application/json"},
+        "method": "GET",
+        "body": {"content": '{"custom": "field"}'},
+    }
+    response = {
+        "status_code": 200,
+        "headers": {"field": "value"},
+        "body": {"content": '{"name": "field"}'},
+    }
+    mock_source = make_mock_source(
+        mock_entrypoint_read,
+        iter(
+            [
+                request_response_log_message(request, response, url, stream_name),
+                record_message(stream_name, {"name": "Shinobu Kocho"}),
+                record_message(stream_name, {"name": "Muichiro Tokito"}),
+                request_response_log_message(request, response, url, stream_name),
+                record_message(stream_name, {"name": "Mitsuri Kanroji"}),
+            ]
+        ),
+    )
+    n_records = 2
+    record_limit = min(request_record_limit, max_record_limit)
+
+    api = TestReader(MAX_PAGES_PER_SLICE, MAX_SLICES, max_record_limit=max_record_limit)
+    # this is the call we expect to raise an exception
+    if should_fail:
+        with pytest.raises(ValueError):
+            api.run_test_read(
+                mock_source,
+                config=CONFIG,
+                configured_catalog=create_configured_catalog(stream_name),
+                stream_name=stream_name,
+                state=_NO_STATE,
+                record_limit=request_record_limit,
+            )
+    else:
+        actual_response: StreamRead = api.run_test_read(
+            mock_source,
+            config=CONFIG,
+            configured_catalog=create_configured_catalog(stream_name),
+            stream_name=stream_name,
+            state=_NO_STATE,
+            record_limit=request_record_limit,
+        )
+        single_slice = actual_response.slices[0]
+        total_records = 0
+        for i, actual_page in enumerate(single_slice.pages):
+            total_records += len(actual_page.records)
+        assert total_records == min([record_limit, n_records])
+
+        assert (total_records >= max_record_limit) == actual_response.test_read_limit_reached
+
+
+@pytest.mark.parametrize(
+    "max_record_limit",
+    [
+        pytest.param(2, id="test_create_request_no_record_limit"),
+        pytest.param(1, id="test_create_request_no_record_limit_n_records_exceed_max"),
+    ],
+)
+@patch("airbyte_cdk.connector_builder.test_reader.reader.AirbyteEntrypoint.read")
+def test_get_grouped_messages_default_record_limit(
+    mock_entrypoint_read: Mock, max_record_limit: int
+) -> None:
+    stream_name = "hashiras"
+    url = "https://demonslayers.com/api/v1/hashiras?era=taisho"
+    request = {
+        "headers": {"Content-Type": "application/json"},
+        "method": "GET",
+        "body": {"content": '{"custom": "field"}'},
+    }
+    response = {
+        "status_code": 200,
+        "headers": {"field": "value"},
+        "body": {"content": '{"name": "field"}'},
+    }
+    mock_source = make_mock_source(
+        mock_entrypoint_read,
+        iter(
+            [
+                request_response_log_message(request, response, url, stream_name),
+                record_message(stream_name, {"name": "Shinobu Kocho"}),
+                record_message(stream_name, {"name": "Muichiro Tokito"}),
+                request_response_log_message(request, response, url, stream_name),
+                record_message(stream_name, {"name": "Mitsuri Kanroji"}),
+            ]
+        ),
+    )
+    n_records = 2
+
+    api = TestReader(MAX_PAGES_PER_SLICE, MAX_SLICES, max_record_limit=max_record_limit)
+    actual_response: StreamRead = api.run_test_read(
+        source=mock_source,
+        config=CONFIG,
+        configured_catalog=create_configured_catalog(stream_name),
+        stream_name=stream_name,
+        state=_NO_STATE,
+    )
+    single_slice = actual_response.slices[0]
+    total_records = 0
+    for i, actual_page in enumerate(single_slice.pages):
+        total_records += len(actual_page.records)
+    assert total_records == min([max_record_limit, n_records])
+
+
 @patch("airbyte_cdk.connector_builder.test_reader.reader.AirbyteEntrypoint.read")
 def test_get_grouped_messages_limit_0(mock_entrypoint_read: Mock) -> None:
     stream_name = "hashiras"

@@ -4,10 +4,10 @@
 
 from dataclasses import dataclass
 from itertools import islice
-from typing import Any, Iterable
+from typing import Any, Iterable, Mapping, Optional, Union
 
 from airbyte_cdk.sources.streams.concurrent.partitions.stream_slicer import StreamSlicer
-from airbyte_cdk.sources.types import StreamSlice
+from airbyte_cdk.sources.types import StreamSlice, StreamState
 
 
 @dataclass
