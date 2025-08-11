@@ -3,6 +3,7 @@
 from typing import Any, Iterable, Mapping, Optional, cast
 
 from airbyte_cdk.sources.declarative.retrievers import Retriever
+from airbyte_cdk.sources.declarative.schema import SchemaLoader
 from airbyte_cdk.sources.declarative.stream_slicers.stream_slicer_test_read_decorator import (
     StreamSlicerTestReadDecorator,
 )
@@ -19,11 +20,23 @@ from airbyte_cdk.utils.slice_hasher import SliceHasher
 total_record_counter = 0
 
 
+class SchemaLoaderCachingDecorator(SchemaLoader):
+    def __init__(self, schema_loader: SchemaLoader):
+        self._decorated = schema_loader
+        self._loaded_schema: Optional[Mapping[str, Any]] = None
+
+    def get_json_schema(self) -> Mapping[str, Any]:
+        if self._loaded_schema is None:
+            self._loaded_schema = self._decorated.get_json_schema()
+
+        return self._loaded_schema  # type: ignore  # at that point, we assume the schema will be populated
+
+
 class DeclarativePartitionFactory:
     def __init__(
         self,
         stream_name: str,
-        json_schema: Mapping[str, Any],
+        schema_loader: SchemaLoader,
         retriever: Retriever,
         message_repository: MessageRepository,
         max_records_limit: Optional[int] = None,
@@ -34,7 +47,7 @@ class DeclarativePartitionFactory:
         In order to avoid these problems, we will create one retriever per thread which should make the processing thread-safe.
         """
         self._stream_name = stream_name
-        self._json_schema = json_schema
+        self._schema_loader = SchemaLoaderCachingDecorator(schema_loader)
         self._retriever = retriever
         self._message_repository = message_repository
         self._max_records_limit = max_records_limit
@@ -42,7 +55,7 @@ class DeclarativePartitionFactory:
     def create(self, stream_slice: StreamSlice) -> Partition:
         return DeclarativePartition(
             stream_name=self._stream_name,
-            json_schema=self._json_schema,
+            schema_loader=self._schema_loader,
             retriever=self._retriever,
             message_repository=self._message_repository,
             max_records_limit=self._max_records_limit,
@@ -54,14 +67,14 @@ class DeclarativePartition(Partition):
     def __init__(
         self,
         stream_name: str,
-        json_schema: Mapping[str, Any],
+        schema_loader: SchemaLoader,
         retriever: Retriever,
         message_repository: MessageRepository,
         max_records_limit: Optional[int],
         stream_slice: StreamSlice,
     ):
         self._stream_name = stream_name
-        self._json_schema = json_schema
+        self._schema_loader = schema_loader
         self._retriever = retriever
         self._message_repository = message_repository
         self._max_records_limit = max_records_limit
@@ -73,7 +86,9 @@ class DeclarativePartition(Partition):
             global total_record_counter
             if total_record_counter >= self._max_records_limit:
                 return
-        for stream_data in self._retriever.read_records(self._json_schema, self._stream_slice):
+        for stream_data in self._retriever.read_records(
+            self._schema_loader.get_json_schema(), self._stream_slice
+        ):
             if self._max_records_limit:
                 if total_record_counter >= self._max_records_limit:
                     break

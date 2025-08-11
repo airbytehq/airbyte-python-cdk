@@ -120,7 +120,11 @@ class TestReader:
         deprecation_warnings: List[LogMessage] = source.deprecation_warnings()
 
         schema_inferrer = SchemaInferrer(
-            self._pk_to_nested_and_composite_field(stream.primary_key) if stream else None,
+            self._pk_to_nested_and_composite_field(
+                stream.primary_key if hasattr(stream, "primary_key") else stream._primary_key  # type: ignore  # We are accessing the private property here as the primary key is not exposed. We should either expose it or use `as_airbyte_stream` to retrieve it as this is the "official" way where it is exposed in the Airbyte protocol
+            )
+            if stream
+            else None,
             self._cursor_field_to_nested_and_composite_field(stream.cursor_field)
             if stream
             else None,

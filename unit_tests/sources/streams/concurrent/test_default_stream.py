@@ -45,6 +45,27 @@ class ThreadBasedConcurrentStreamTest(unittest.TestCase):
         json_schema = self._stream.get_json_schema()
         assert json_schema == self._json_schema
 
+    def test_json_schema_is_callable(self):
+        expected = {"schema": "is callable"}
+        json_schema_callable = lambda: expected
+        stream = DefaultStream(
+            self._partition_generator,
+            self._name,
+            json_schema_callable,
+            self._primary_key,
+            self._cursor_field,
+            self._logger,
+            FinalStateCursor(
+                stream_name=self._name,
+                stream_namespace=None,
+                message_repository=self._message_repository,
+            ),
+        )
+
+        result = stream.get_json_schema()
+
+        assert result == expected
+
     def test_check_for_error_raises_an_exception_if_any_of_the_futures_are_not_done(self):
         futures = [Mock() for _ in range(3)]
         for f in futures:

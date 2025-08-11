@@ -28,12 +28,17 @@ from airbyte_cdk.models import (
     SyncMode,
     Type,
 )
+from airbyte_cdk.sources.declarative.concurrent_declarative_source import (
+    ConcurrentDeclarativeSource,
+)
 from airbyte_cdk.sources.declarative.declarative_stream import DeclarativeStream
 from airbyte_cdk.sources.declarative.manifest_declarative_source import ManifestDeclarativeSource
 from airbyte_cdk.sources.declarative.parsers.model_to_component_factory import (
     ModelToComponentFactory,
 )
 from airbyte_cdk.sources.declarative.retrievers.simple_retriever import SimpleRetriever
+from airbyte_cdk.sources.streams.concurrent.default_stream import DefaultStream
+from unit_tests.sources.declarative.parsers.test_model_to_component_factory import get_retriever
 
 logger = logging.getLogger("airbyte")
 
@@ -280,8 +285,8 @@ class TestManifestDeclarativeSource:
 
         streams = source.streams({})
         assert len(streams) == 2
-        assert isinstance(streams[0], DeclarativeStream)
-        assert isinstance(streams[1], DeclarativeStream)
+        assert isinstance(streams[0], DefaultStream)
+        assert isinstance(streams[1], DefaultStream)
         assert (
             source.resolved_manifest["description"]
             == "This is a sample source connector that is very valid."
@@ -1289,13 +1294,13 @@ class TestManifestDeclarativeSource:
 
         actual_streams = source.streams(config=config)
         assert len(actual_streams) == expected_stream_count
-        assert isinstance(actual_streams[0], DeclarativeStream)
+        assert isinstance(actual_streams[0], DefaultStream)
         assert actual_streams[0].name == "students"
 
         if is_sandbox:
-            assert isinstance(actual_streams[1], DeclarativeStream)
+            assert isinstance(actual_streams[1], DefaultStream)
             assert actual_streams[1].name == "classrooms"
-            assert isinstance(actual_streams[2], DeclarativeStream)
+            assert isinstance(actual_streams[2], DefaultStream)
             assert actual_streams[2].name == "clubs"
 
         assert (
@@ -1818,8 +1823,8 @@ def _create_page(response_body):
             [
                 call({}, {}, None),
                 call(
-                    {"next_page_token": "next"},
-                    {"next_page_token": "next"},
+                    {},
+                    {},
                     {"next_page_token": "next"},
                 ),
             ],
@@ -1907,16 +1912,9 @@ def _create_page(response_body):
             ),
             [{"ABC": 0, "partition": 0}, {"AED": 1, "partition": 0}, {"ABC": 2, "partition": 1}],
             [
-                call({"states": []}, {"partition": "0"}, None),
+                call({}, {"partition": "0"}, None),
                 call(
-                    {
-                        "states": [
-                            {
-                                "partition": {"partition": "0"},
-                                "cursor": {"__ab_full_refresh_sync_complete": True},
-                            }
-                        ]
-                    },
+                    {},
                     {"partition": "1"},
                     None,
                 ),
@@ -2022,17 +2020,10 @@ def _create_page(response_body):
                 {"ABC": 2, "partition": 1},
             ],
             [
-                call({"states": []}, {"partition": "0"}, None),
-                call({"states": []}, {"partition": "0"}, {"next_page_token": "next"}),
+                call({}, {"partition": "0"}, None),
+                call({}, {"partition": "0"}, {"next_page_token": "next"}),
                 call(
-                    {
-                        "states": [
-                            {
-                                "partition": {"partition": "0"},
-                                "cursor": {"__ab_full_refresh_sync_complete": True},
-                            }
-                        ]
-                    },
+                    {},
                     {"partition": "1"},
                     None,
                 ),
@@ -2193,30 +2184,26 @@ def test_only_parent_streams_use_cache():
 
     # Main stream with caching (parent for substream `applications_interviews`)
     assert streams[0].name == "applications"
-    assert streams[0].retriever.requester.use_cache
+    assert get_retriever(streams[0]).requester.use_cache
 
     # Substream
     assert streams[1].name == "applications_interviews"
-    assert not streams[1].retriever.requester.use_cache
+
+    stream_1_retriever = get_retriever(streams[1])
+    assert not stream_1_retriever.requester.use_cache
 
     # Parent stream created for substream
-    assert (
-        streams[1].retriever.stream_slicer._partition_router.parent_stream_configs[0].stream.name
-        == "applications"
-    )
-    assert (
-        streams[1]
-        .retriever.stream_slicer._partition_router.parent_stream_configs[0]
-        .stream.retriever.requester.use_cache
-    )
+    assert stream_1_retriever.stream_slicer.parent_stream_configs[0].stream.name == "applications"
+    assert stream_1_retriever.stream_slicer.parent_stream_configs[
+        0
+    ].stream.retriever.requester.use_cache
 
     # Main stream without caching
     assert streams[2].name == "jobs"
-    assert not streams[2].retriever.requester.use_cache
+    assert not get_retriever(streams[2]).requester.use_cache
 
 
 def _run_read(manifest: Mapping[str, Any], stream_name: str) -> List[AirbyteMessage]:
-    source = ManifestDeclarativeSource(source_config=manifest)
     catalog = ConfiguredAirbyteCatalog(
         streams=[
             ConfiguredAirbyteStream(
@@ -2228,7 +2215,10 @@ def _run_read(manifest: Mapping[str, Any], stream_name: str) -> List[AirbyteMess
             )
         ]
     )
-    return list(source.read(logger, {}, catalog, {}))
+    config = {}
+    state = {}
+    source = ConcurrentDeclarativeSource(catalog, config, state, manifest)
+    return list(source.read(logger, {}, catalog, state))
 
 
 def test_declarative_component_schema_valid_ref_links():
