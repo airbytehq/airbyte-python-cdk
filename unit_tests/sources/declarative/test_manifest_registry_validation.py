@@ -32,7 +32,6 @@ logger = logging.getLogger(__name__)
 
 # List of connectors to exclude from validation.
 EXCLUDED_CONNECTORS: List[Tuple[str, str]] = [
-    ("source-amazon-seller-partner", "6.44.0"),
     ("source-amazon-sqs", "6.44.0"),
     ("source-apify-dataset", "6.44.0"),
     ("source-appfollow", "6.44.0"),
@@ -411,8 +410,6 @@ EXCLUDED_CONNECTORS: List[Tuple[str, str]] = [
     ("source-zendesk-talk", "4.6.2"),
     ("source-zenloop", "4.6.2"),
     ("source-zoho-crm", "4.6.2"),
-    ("source-zoom", "4.6.2"),
-    ("source-zuora", "4.6.2"),
 ]
 
 RECHECK_EXCLUSION_LIST = False
