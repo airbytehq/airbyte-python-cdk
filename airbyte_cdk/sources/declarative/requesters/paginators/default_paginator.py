@@ -159,14 +159,7 @@ class DefaultPaginator(Paginator):
     ) -> Optional[str]:
         token = next_page_token.get("next_page_token") if next_page_token else None
         if token and self.page_token_option and isinstance(self.page_token_option, RequestPath):
-            # make additional interpolation context
-            interpolation_context = get_interpolation_context(
-                stream_state=stream_state,
-                stream_slice=stream_slice,
-                next_page_token=next_page_token,
-            )
-            # Replace url base to only return the path
-            return str(token).replace(self.url_base.eval(self.config, **interpolation_context), "")  # type: ignore # url_base is casted to a InterpolatedString in __post_init__
+            return str(token)
         else:
             return None
 

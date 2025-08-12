@@ -65,12 +65,6 @@ class AbstractStream(ABC):
         """
 
     @abstractmethod
-    def check_availability(self) -> StreamAvailability:
-        """
-        :return: The stream's availability
-        """
-
-    @abstractmethod
     def get_json_schema(self) -> Mapping[str, Any]:
         """
         :return: A dict of the JSON schema representing this stream.
@@ -93,4 +87,10 @@ class AbstractStream(ABC):
     def cursor(self) -> Cursor:
         """
         :return: The cursor associated with this stream.
+        """
+
+    @abstractmethod
+    def check_availability(self) -> StreamAvailability:
+        """
+        :return: If the stream is available and if not, why
         """
