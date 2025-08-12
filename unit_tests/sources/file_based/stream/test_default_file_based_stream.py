@@ -15,7 +15,6 @@ import pytest
 from airbyte_cdk.models import (
     AirbyteLogMessage,
     AirbyteMessage,
-    AirbyteRecordMessageFileReference,
     AirbyteStream,
     Level,
 )
@@ -289,11 +288,7 @@ class DefaultFileBasedStreamFileTransferTest(unittest.TestCase):
         bytes=10,
         source_uri="file:///absolute/path/file.csv",
     )
-    _A_FILE_REFERENCE_MESSAGE = AirbyteRecordMessageFileReference(
-        file_size_bytes=10,
-        source_file_relative_path="relative/path/file.csv",
-        staging_file_url="/absolute/path/file.csv",
-    )
+    _A_FILE_REFERENCE_MESSAGE = None  # AirbyteRecordMessageFileReference removed
 
     def setUp(self) -> None:
         self._stream_config = Mock()
@@ -475,11 +470,7 @@ class DefaultFileBasedStreamFileTransferTestNotMirroringDirectories(unittest.Tes
 
 class DefaultFileBasedStreamSchemaTest(unittest.TestCase):
     _NOW = datetime(2022, 10, 22, tzinfo=timezone.utc)
-    _A_FILE_REFERENCE_MESSAGE = AirbyteRecordMessageFileReference(
-        file_size_bytes=10,
-        source_file_relative_path="relative/path/file.csv",
-        staging_file_url="/absolute/path/file.csv",
-    )
+    _A_FILE_REFERENCE_MESSAGE = None  # AirbyteRecordMessageFileReference removed
 
     def setUp(self) -> None:
         self._stream_config = Mock(spec=FileBasedStreamConfig)

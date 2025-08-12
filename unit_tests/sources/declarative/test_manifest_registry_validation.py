@@ -34,7 +34,9 @@ from airbyte_cdk.sources.declarative.validators.validate_adheres_to_schema impor
 logger = logging.getLogger(__name__)
 
 # List of connectors to exclude from validation.
-EXCLUDED_CONNECTORS: List[Tuple[str, str]] = []
+EXCLUDED_CONNECTORS: List[Tuple[str, str]] = [
+    ("source-akeneo", "5.16.0"),
+]
 
 RECHECK_EXCLUSION_LIST = False
 

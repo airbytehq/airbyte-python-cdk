@@ -3,6 +3,7 @@
 #
 import logging
 from typing import Any, Iterable, Optional, Tuple
+
 from airbyte_cdk.sources.file_based.file_based_stream_reader import AbstractFileBasedStreamReader
 from airbyte_cdk.sources.file_based.file_record_data import FileRecordData
 from airbyte_cdk.sources.file_based.remote_file import RemoteFile
