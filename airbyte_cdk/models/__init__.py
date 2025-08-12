@@ -19,7 +19,6 @@ from .airbyte_protocol import (
     AirbyteMessage,
     AirbyteProtocol,
     AirbyteRecordMessage,
-    AirbyteRecordMessageFileReference,
     AirbyteStateBlob,
     AirbyteStateMessage,
     AirbyteStateStats,

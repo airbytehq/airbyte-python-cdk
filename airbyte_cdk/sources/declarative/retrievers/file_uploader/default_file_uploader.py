@@ -9,7 +9,6 @@ from dataclasses import InitVar, dataclass, field
 from pathlib import Path
 from typing import Any, Mapping, Optional, Union
 
-from airbyte_cdk.models import AirbyteRecordMessageFileReference
 from airbyte_cdk.sources.declarative.extractors.record_extractor import RecordExtractor
 from airbyte_cdk.sources.declarative.interpolation.interpolated_string import (
     InterpolatedString,
@@ -90,8 +89,8 @@ class DefaultFileUploader(FileUploader):
         logger.info(f"File size: {file_size_bytes / 1024} KB")
         logger.info(f"File relative path: {str(file_relative_path)}")
 
-        record.file_reference = AirbyteRecordMessageFileReference(
-            staging_file_url=str(full_path),
-            source_file_relative_path=str(file_relative_path),
-            file_size_bytes=file_size_bytes,
-        )
+        # record.file_reference = AirbyteRecordMessageFileReference(
+        #     staging_file_url=str(full_path),
+        #     source_file_relative_path=str(file_relative_path),
+        #     file_size_bytes=file_size_bytes,
+        # )
