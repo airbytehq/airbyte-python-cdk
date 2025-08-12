@@ -88,15 +88,3 @@ class ComponentConstructor(Generic[M]):
         # returns the instance of the component class,
         # with resolved dependencies and model-specific arguments.
         return cls(**resolved_dependencies)
-
-    @staticmethod
-    def _json_schema_type_name_to_type(value_type: Optional[ValueType]) -> Optional[Type[Any]]:
-        if not value_type:
-            return None
-        names_to_types = {
-            ValueType.string: str,
-            ValueType.number: float,
-            ValueType.integer: int,
-            ValueType.boolean: bool,
-        }
-        return names_to_types[value_type]
