@@ -297,7 +297,7 @@ def test_manifest_validates_against_schema(
     is_ci = os.getenv("CI") == "true" or os.getenv("GITHUB_ACTIONS") == "true"
     if SKIP_COMPREHENSIVE_VALIDATION_IN_CI and is_ci:
         pytest.skip("Skipping comprehensive validation in CI to avoid timeouts")
-    
+
     # Download manifest first to get CDK version
     try:
         manifest_content, cdk_version = download_manifest(connector_name, download_failures)
