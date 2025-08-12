@@ -18,6 +18,9 @@ import pytest
 import requests
 import yaml
 
+from airbyte_cdk.sources.declarative.manifest_declarative_source import (
+    ManifestDeclarativeSource,
+)
 from airbyte_cdk.sources.declarative.parsers.manifest_component_transformer import (
     ManifestComponentTransformer,
 )
@@ -26,9 +29,6 @@ from airbyte_cdk.sources.declarative.parsers.manifest_reference_resolver import 
 )
 from airbyte_cdk.sources.declarative.validators.validate_adheres_to_schema import (
     ValidateAdheresToSchema,
-)
-from airbyte_cdk.sources.declarative.manifest_declarative_source import (
-    ManifestDeclarativeSource,
 )
 
 logger = logging.getLogger(__name__)
@@ -473,4 +473,10 @@ def pytest_sessionfinish(session: Any, exitstatus: Any) -> None:
     download_failures = getattr(session, "_download_failures", [])
     cdk_validation_failures = getattr(session, "_cdk_validation_failures", [])
     spec_execution_failures = getattr(session, "_spec_execution_failures", [])
-    log_test_results(validation_successes, validation_failures, download_failures, cdk_validation_failures, spec_execution_failures)
+    log_test_results(
+        validation_successes,
+        validation_failures,
+        download_failures,
+        cdk_validation_failures,
+        spec_execution_failures,
+    )
