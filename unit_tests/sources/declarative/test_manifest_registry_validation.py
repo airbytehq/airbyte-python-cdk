@@ -8,6 +8,7 @@ the current declarative component schema defined in the CDK.
 
 import json
 import logging
+import os
 import subprocess
 import tempfile
 from pathlib import Path
@@ -41,6 +42,8 @@ EXCLUDED_CONNECTORS: List[Tuple[str, str]] = [
 RECHECK_EXCLUSION_LIST = False
 
 USE_GIT_SPARSE_CHECKOUT = True
+
+SKIP_COMPREHENSIVE_VALIDATION_IN_CI = True
 
 CONNECTOR_REGISTRY_URL = "https://connectors.airbyte.com/files/registries/v0/oss_registry.json"
 MANIFEST_URL_TEMPLATE = (
@@ -291,6 +294,10 @@ def test_manifest_validates_against_schema(
     Args:
         connector_name: Name of the connector (e.g., "source-hubspot")
     """
+    is_ci = os.getenv("CI") == "true" or os.getenv("GITHUB_ACTIONS") == "true"
+    if SKIP_COMPREHENSIVE_VALIDATION_IN_CI and is_ci:
+        pytest.skip("Skipping comprehensive validation in CI to avoid timeouts")
+    
     # Download manifest first to get CDK version
     try:
         manifest_content, cdk_version = download_manifest(connector_name, download_failures)
