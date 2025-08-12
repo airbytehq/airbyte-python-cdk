@@ -9,6 +9,7 @@ from airbyte_cdk.models import (
     AirbyteLogMessage,
     AirbyteMessage,
     AirbyteRecordMessage,
+    AirbyteRecordMessageFileReference,
     AirbyteTraceMessage,
 )
 from airbyte_cdk.models import Type as MessageType
@@ -21,7 +22,7 @@ def stream_data_to_airbyte_message(
     data_or_message: StreamData,
     transformer: TypeTransformer = TypeTransformer(TransformConfig.NoTransform),
     schema: Optional[Mapping[str, Any]] = None,
-    file_reference: Optional[Any] = None,
+    file_reference: Optional[AirbyteRecordMessageFileReference] = None,
 ) -> AirbyteMessage:
     if schema is None:
         schema = {}
