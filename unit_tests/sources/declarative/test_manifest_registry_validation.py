@@ -27,6 +27,9 @@ from airbyte_cdk.sources.declarative.parsers.manifest_reference_resolver import 
 from airbyte_cdk.sources.declarative.validators.validate_adheres_to_schema import (
     ValidateAdheresToSchema,
 )
+from airbyte_cdk.sources.declarative.manifest_declarative_source import (
+    ManifestDeclarativeSource,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +38,7 @@ EXCLUDED_CONNECTORS: List[Tuple[str, str]] = []
 
 RECHECK_EXCLUSION_LIST = False
 
-USE_GIT_SPARSE_CHECKOUT = False
+USE_GIT_SPARSE_CHECKOUT = True
 
 CONNECTOR_REGISTRY_URL = "https://connectors.airbyte.com/files/registries/v0/oss_registry.json"
 MANIFEST_URL_TEMPLATE = (
@@ -58,6 +61,18 @@ def validation_failures() -> List[Tuple[str, str, str]]:
 @pytest.fixture(scope="session")
 def download_failures() -> List[Tuple[str, str]]:
     """Thread-safe list for tracking download failures."""
+    return []
+
+
+@pytest.fixture(scope="session")
+def cdk_validation_failures() -> List[Tuple[str, str, str]]:
+    """Thread-safe list for tracking CDK validation failures."""
+    return []
+
+
+@pytest.fixture(scope="session")
+def spec_execution_failures() -> List[Tuple[str, str, str]]:
+    """Thread-safe list for tracking SPEC execution failures."""
     return []
 
 
@@ -265,6 +280,8 @@ def test_manifest_validates_against_schema(
     validation_successes: List[Tuple[str, str]],
     validation_failures: List[Tuple[str, str, str]],
     download_failures: List[Tuple[str, str]],
+    cdk_validation_failures: List[Tuple[str, str, str]],
+    spec_execution_failures: List[Tuple[str, str, str]],
 ) -> None:
     """
     Test that manifest.yaml files from the registry validate against the CDK schema.
@@ -310,8 +327,29 @@ def test_manifest_validates_against_schema(
         )
 
         schema_validator.validate(preprocessed_manifest)
+        logger.info(f"✓ {connector_name} (CDK {cdk_version}) - JSON schema validation passed")
+
+        try:
+            manifest_source = ManifestDeclarativeSource(source_config=preprocessed_manifest)
+            logger.info(f"✓ {connector_name} (CDK {cdk_version}) - CDK validation passed")
+        except Exception as e:
+            error_msg = f"CDK validation failed: {e}"
+            cdk_validation_failures.append((connector_name, cdk_version, error_msg))
+            logger.warning(f"⚠ {connector_name} (CDK {cdk_version}) - CDK validation failed: {e}")
+
+        try:
+            manifest_source = ManifestDeclarativeSource(source_config=preprocessed_manifest)
+            spec_result = manifest_source.spec(logger)
+            if spec_result is None:
+                raise ValueError("SPEC command returned None")
+            logger.info(f"✓ {connector_name} (CDK {cdk_version}) - SPEC execution passed")
+        except Exception as e:
+            error_msg = f"SPEC execution failed: {e}"
+            spec_execution_failures.append((connector_name, cdk_version, error_msg))
+            logger.warning(f"⚠ {connector_name} (CDK {cdk_version}) - SPEC execution failed: {e}")
+
         validation_successes.append((connector_name, cdk_version))
-        logger.info(f"✓ {connector_name} (CDK {cdk_version}) - validation passed")
+        logger.info(f"✓ {connector_name} (CDK {cdk_version}) - comprehensive validation completed")
 
         if RECHECK_EXCLUSION_LIST and expected_to_fail:
             pytest.fail(
@@ -391,6 +429,8 @@ def log_test_results(
     validation_successes: List[Tuple[str, str]],
     validation_failures: List[Tuple[str, str, str]],
     download_failures: List[Tuple[str, str]],
+    cdk_validation_failures: List[Tuple[str, str, str]],
+    spec_execution_failures: List[Tuple[str, str, str]],
 ) -> None:
     """Log comprehensive test results for analysis."""
     print("\n" + "=" * 80)
@@ -409,9 +449,19 @@ def log_test_results(
     for connector_name, error in download_failures:
         print(f"  - {connector_name}: {error}")
 
+    print(f"\n⚠ CDK VALIDATION FAILURES ({len(cdk_validation_failures)}):")
+    for connector_name, cdk_version, error in cdk_validation_failures:
+        print(f"  - {connector_name} (CDK {cdk_version}): {error}")
+
+    print(f"\n⚠ SPEC EXECUTION FAILURES ({len(spec_execution_failures)}):")
+    for connector_name, cdk_version, error in spec_execution_failures:
+        print(f"  - {connector_name} (CDK {cdk_version}): {error}")
+
     print("\n" + "=" * 80)
     print(
-        f"TOTAL: {len(validation_successes)} passed, {len(validation_failures)} failed, {len(download_failures)} download errors"
+        f"TOTAL: {len(validation_successes)} passed, {len(validation_failures)} failed, "
+        f"{len(download_failures)} download errors, {len(cdk_validation_failures)} CDK validation failures, "
+        f"{len(spec_execution_failures)} SPEC execution failures"
     )
     print("=" * 80)
 
@@ -421,4 +471,6 @@ def pytest_sessionfinish(session: Any, exitstatus: Any) -> None:
     validation_successes = getattr(session, "_validation_successes", [])
     validation_failures = getattr(session, "_validation_failures", [])
     download_failures = getattr(session, "_download_failures", [])
-    log_test_results(validation_successes, validation_failures, download_failures)
+    cdk_validation_failures = getattr(session, "_cdk_validation_failures", [])
+    spec_execution_failures = getattr(session, "_spec_execution_failures", [])
+    log_test_results(validation_successes, validation_failures, download_failures, cdk_validation_failures, spec_execution_failures)
