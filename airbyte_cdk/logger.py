@@ -40,7 +40,7 @@ LOGGING_CONFIG = {
 }
 
 
-def is_platform_debug_log_enabled():
+def is_platform_debug_log_enabled() -> bool:
     return os.environ.get("LOG_LEVEL", "info").lower() == "debug"
 
 
@@ -86,7 +86,9 @@ class AirbyteLogFormatter(logging.Formatter):
                 # the `log.message` field and figure out where in this field is the response while the current solution
                 # have a specific field that is structured for extras.
                 message = f"{filter_secrets(record.getMessage())} ///\nExtra logs: {filter_secrets(json.dumps(extras))}"
-                log_message = AirbyteMessage(type=Type.LOG, log=AirbyteLogMessage(level=airbyte_level, message=message))
+                log_message = AirbyteMessage(
+                    type=Type.LOG, log=AirbyteLogMessage(level=airbyte_level, message=message)
+                )
                 return orjson.dumps(AirbyteMessageSerializer.dump(log_message)).decode()
             else:
                 debug_dict = {"type": "DEBUG", "message": record.getMessage(), "data": extras}
