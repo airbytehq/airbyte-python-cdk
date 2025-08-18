@@ -1,10 +1,10 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
-
 import json
 import logging
 import logging.config
+import os
 from typing import Any, Callable, Mapping, Optional, Tuple
 
 import orjson
@@ -40,6 +40,10 @@ LOGGING_CONFIG = {
 }
 
 
+def is_platform_debug_log_enabled():
+    return os.environ.get("LOG_LEVEL", "info").lower() == "debug"
+
+
 def init_logger(name: Optional[str] = None) -> logging.Logger:
     """Initial set up of logger"""
     logger = logging.getLogger(name)
@@ -73,8 +77,20 @@ class AirbyteLogFormatter(logging.Formatter):
         airbyte_level = self.level_mapping.get(record.levelno, "INFO")
         if airbyte_level == Level.DEBUG:
             extras = self.extract_extra_args_from_record(record)
-            debug_dict = {"type": "DEBUG", "message": record.getMessage(), "data": extras}
-            return filter_secrets(json.dumps(debug_dict))
+            if is_platform_debug_log_enabled():
+                # We have a different behavior between debug logs enabled through `--debug` argument and debug logs
+                # enabled through environment variable. The reason is that for platform logs, we need to have these
+                # printed as AirbyteMessage which is not the case with the current previous implementation.
+                # Why not migrate both to AirbyteMessages then? AirbyteMessages do not support having structured logs.
+                # which means that the DX would be degraded compared to the current solution (devs will need to identify
+                # the `log.message` field and figure out where in this field is the response while the current solution
+                # have a specific field that is structured for extras.
+                message = f"{filter_secrets(record.getMessage())} ///\nExtra logs: {filter_secrets(json.dumps(extras))}"
+                log_message = AirbyteMessage(type=Type.LOG, log=AirbyteLogMessage(level=airbyte_level, message=message))
+                return orjson.dumps(AirbyteMessageSerializer.dump(log_message)).decode()
+            else:
+                debug_dict = {"type": "DEBUG", "message": record.getMessage(), "data": extras}
+                return filter_secrets(json.dumps(debug_dict))
         else:
             message = super().format(record)
             message = filter_secrets(message)
