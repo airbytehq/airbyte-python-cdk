@@ -97,7 +97,11 @@ class AirbyteLogFormatter(logging.Formatter):
             message = super().format(record)
             message = filter_secrets(message)
             log_message = AirbyteMessage(
-                type=Type.LOG, log=AirbyteLogMessage(level=airbyte_level, message=message)
+                type=Type.LOG,
+                log=AirbyteLogMessage(
+                    level=airbyte_level,  # pyrefly: ignore  # bad-argument-type
+                    message=message,
+                ),
             )
             return orjson.dumps(AirbyteMessageSerializer.dump(log_message)).decode()
 
@@ -118,6 +122,7 @@ def log_by_prefix(msg: str, default_level: str) -> Tuple[int, str]:
     split_line = msg.split()
     first_word = next(iter(split_line), None)
     if first_word in valid_log_types:
+        # pyrefly: ignore  # no-matching-overload
         log_level = logging.getLevelName(first_word)
         rendered_message = " ".join(split_line[1:])
     else:

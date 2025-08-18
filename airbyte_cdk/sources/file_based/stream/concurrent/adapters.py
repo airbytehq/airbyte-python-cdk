@@ -199,6 +199,7 @@ class FileBasedStreamFacade(AbstractStreamFacade[DefaultStream], AbstractFileBas
             yield from self._read_records()
         except Exception as exc:
             if hasattr(self._cursor, "state"):
+                # pyrefly: ignore  # missing-attribute
                 state = str(self._cursor.state)
             else:
                 # This shouldn't happen if the ConcurrentCursor was used

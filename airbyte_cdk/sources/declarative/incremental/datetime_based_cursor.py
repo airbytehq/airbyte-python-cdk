@@ -229,6 +229,7 @@ class DatetimeBasedCursor(DeclarativeCursor):
             # cursor_datetime defers to the minimum date if it does not exist in the state. Trying to subtract
             # a timedelta from the minimum datetime results in an OverflowError
             cursor_datetime = self._calculate_cursor_datetime_from_state(self.get_stream_state())
+        # pyrefly: ignore  # no-matching-overload
         return max(earliest_possible_start_datetime, cursor_datetime)
 
     def select_best_end_datetime(self) -> datetime.datetime:
@@ -266,7 +267,9 @@ class DatetimeBasedCursor(DeclarativeCursor):
         dates = []
 
         while self._is_within_date_range(start, end):
+            # pyrefly: ignore  # bad-argument-type
             next_start = self._evaluate_next_start_date_safely(start, step)
+            # pyrefly: ignore  # bad-argument-type
             end_date = self._get_date(next_start - self._cursor_granularity, end, min)
             dates.append(
                 StreamSlice(

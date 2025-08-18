@@ -155,13 +155,16 @@ class ManifestComponentTransformer:
         # both exist
         for parameter_key, parameter_value in current_parameters.items():
             propagated_component[parameter_key] = (
+                # pyrefly: ignore  # missing-attribute
                 propagated_component.get(parameter_key) or parameter_value
             )
 
         for field_name, field_value in propagated_component.items():
             if isinstance(field_value, dict):
                 # We exclude propagating a parameter that matches the current field name because that would result in an infinite cycle
+                # pyrefly: ignore  # missing-attribute
                 excluded_parameter = current_parameters.pop(field_name, None)
+                # pyrefly: ignore  # missing-attribute
                 parent_type_field_identifier = f"{propagated_component.get('type')}.{field_name}"
                 propagated_component[field_name] = self.propagate_types_and_parameters(
                     parent_type_field_identifier,

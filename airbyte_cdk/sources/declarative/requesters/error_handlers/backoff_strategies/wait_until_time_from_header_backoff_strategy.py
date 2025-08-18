@@ -67,6 +67,7 @@ class WaitUntilTimeFromHeaderBackoffStrategy(BackoffStrategy):
         if (isinstance(wait_until, str) and wait_until.isnumeric()) or isinstance(
             wait_until, numbers.Number
         ):
+            # pyrefly: ignore  # bad-argument-type
             wait_time = float(wait_until) - now
         else:
             return float(min_wait)

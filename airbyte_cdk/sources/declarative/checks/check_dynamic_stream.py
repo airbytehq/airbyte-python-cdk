@@ -50,6 +50,7 @@ class CheckDynamicStream(ConnectionChecker):
                     return False, reason
         except Exception as error:
             error_message = (
+                # pyrefly: ignore  # unbound-name
                 f"Encountered an error trying to connect to stream {stream.name}. Error: {error}"
             )
             logger.error(error_message, exc_info=True)

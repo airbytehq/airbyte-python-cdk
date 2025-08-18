@@ -261,12 +261,15 @@ def list_(
     table.add_column("Labels", justify="left", style="magenta", overflow="fold")
     table.add_column("Created", justify="left", style="blue", overflow="fold")
     for secret in secrets:
+        # pyrefly: ignore  # missing-attribute
         full_secret_name = secret.name
         secret_name = _extract_secret_name(full_secret_name)
         secret_url = _get_secret_url(secret_name, gcp_project_id)
         table.add_row(
             f"[link={secret_url}]{secret_name}[/link]",
+            # pyrefly: ignore  # missing-attribute
             "\n".join([f"{k}={v}" for k, v in secret.labels.items()]),
+            # pyrefly: ignore  # missing-attribute
             str(secret.create_time),
         )
 
@@ -360,6 +363,7 @@ def _write_secret_file(
     """
     # List all enabled versions of the secret.
     response = client.list_secret_versions(
+        # pyrefly: ignore  # missing-attribute
         request={"parent": secret.name, "filter": "state:ENABLED"}
     )
 
@@ -368,6 +372,7 @@ def _write_secret_file(
     versions = list(response)
 
     if not versions:
+        # pyrefly: ignore  # missing-attribute
         secret_name = _extract_secret_name(secret.name)
         raise ConnectorSecretWithNoValidVersionsError(
             connector_name=connector_name,
@@ -404,7 +409,9 @@ def _get_secret_filepath(
     secret: Secret,  # type: ignore
 ) -> Path:
     """Get the file path for a secret based on its labels."""
+    # pyrefly: ignore  # missing-attribute, unsupported-operation
     if secret.labels and "filename" in secret.labels:
+        # pyrefly: ignore  # index-error
         return secrets_dir / f"{secret.labels['filename']}.json"
 
     return secrets_dir / "config.json"  # Default filename
@@ -468,6 +475,7 @@ def _print_ci_secrets_masks_for_config(
             _print_ci_secrets_masks_for_config(item)
 
     if isinstance(config, dict):
+        # pyrefly: ignore  # bad-assignment
         for key, value in config.items():
             if _is_secret_property(key):
                 logger.debug(f"Masking secret for config key: {key}")

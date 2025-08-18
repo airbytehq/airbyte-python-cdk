@@ -77,6 +77,7 @@ class DefaultFileBasedStream(AbstractFileBasedStream, IncrementalMixin):
         self._cursor.set_initial_state(value)
 
     @property  # type: ignore # mypy complains wrong type, but AbstractFileBasedCursor is parent of file-based cursors
+    # pyrefly: ignore  # bad-override
     def cursor(self) -> Optional[AbstractFileBasedCursor]:
         return self._cursor
 
@@ -338,10 +339,12 @@ class DefaultFileBasedStream(AbstractFileBasedStream, IncrementalMixin):
                         else:
                             DefaultFileBasedStream._fill_nulls(v)
                 else:
+                    # pyrefly: ignore  # bad-argument-type
                     DefaultFileBasedStream._fill_nulls(v)
         elif isinstance(schema, list):
             for item in schema:
                 DefaultFileBasedStream._fill_nulls(item)
+        # pyrefly: ignore  # bad-return
         return schema
 
     async def _infer_schema(self, files: List[RemoteFile]) -> Mapping[str, Any]:

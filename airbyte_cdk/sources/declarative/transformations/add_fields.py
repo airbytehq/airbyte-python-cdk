@@ -105,6 +105,7 @@ class AddFields(RecordTransformation):
 
             if not isinstance(add_field.value, InterpolatedString):
                 if not isinstance(add_field.value, str):
+                    # pyrefly: ignore  # invalid-inheritance
                     raise f"Expected a string value for the AddFields transformation: {add_field}"
                 else:
                     self._parsed_fields.append(

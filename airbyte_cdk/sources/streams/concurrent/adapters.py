@@ -215,6 +215,7 @@ class StreamFacade(AbstractStreamFacade[DefaultStream], Stream):
 
 
 class SliceEncoder(json.JSONEncoder):
+    # pyrefly: ignore  # bad-override
     def default(self, obj: Any) -> Any:
         if hasattr(obj, "__json_serializable__"):
             return obj.__json_serializable__()

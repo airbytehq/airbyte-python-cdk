@@ -183,11 +183,13 @@ class HttpResponseBuilder:
 
 def _get_unit_test_folder(execution_folder: str) -> FilePath:
     # FIXME: This function should be removed after the next CDK release to avoid breaking amazon-seller-partner test code.
+    # pyrefly: ignore  # bad-return
     return get_unit_test_folder(execution_folder)
 
 
 def find_template(resource: str, execution_folder: str) -> Dict[str, Any]:
     response_template_filepath = str(
+        # pyrefly: ignore  # unsupported-operation
         get_unit_test_folder(execution_folder)
         / "resource"
         / "http"
@@ -200,6 +202,7 @@ def find_template(resource: str, execution_folder: str) -> Dict[str, Any]:
 
 def find_binary_response(resource: str, execution_folder: str) -> bytes:
     response_filepath = str(
+        # pyrefly: ignore  # unsupported-operation
         get_unit_test_folder(execution_folder) / "resource" / "http" / "response" / f"{resource}"
     )
     with open(response_filepath, "rb") as response_file:

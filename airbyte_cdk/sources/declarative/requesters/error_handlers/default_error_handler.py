@@ -108,6 +108,7 @@ class DefaultErrorHandler(ErrorHandler):
 
         self._last_request_to_attempt_count: MutableMapping[requests.PreparedRequest, int] = {}
 
+    # pyrefly: ignore  # bad-override
     def interpret_response(
         self, response_or_exception: Optional[Union[requests.Response, Exception]]
     ) -> ErrorResolution:

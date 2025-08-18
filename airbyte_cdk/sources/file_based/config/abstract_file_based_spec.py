@@ -16,6 +16,7 @@ from airbyte_cdk.sources.utils import schema_helpers
 
 
 class DeliverRecords(BaseModel):
+    # pyrefly: ignore  # bad-override
     class Config(OneOfOptionConfig):
         title = "Replicate Records"
         description = "Recommended - Extract and load structured records into your destination of choice. This is the classic method of moving data in Airbyte. It allows for blocking and hashing individual fields or files from a structured schema. Data can be flattened, typed and deduped depending on the destination."
@@ -25,6 +26,7 @@ class DeliverRecords(BaseModel):
 
 
 class DeliverRawFiles(BaseModel):
+    # pyrefly: ignore  # bad-override
     class Config(OneOfOptionConfig):
         title = "Copy Raw Files"
         description = "Copy raw files without parsing their contents. Bits are copied into the destination exactly as they appeared in the source. Recommended for use with unstructured text data, non-text and compressed files."

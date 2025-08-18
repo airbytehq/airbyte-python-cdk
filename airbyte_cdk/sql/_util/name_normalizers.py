@@ -49,6 +49,7 @@ class LowerCaseNormalizer(NameNormalizerBase):
 
     @staticmethod
     @functools.cache
+    # pyrefly: ignore  # bad-override
     def normalize(name: str) -> str:
         """Return the normalized name.
 

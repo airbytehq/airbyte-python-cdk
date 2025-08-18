@@ -66,6 +66,7 @@ class DatetimeFormatInferrer:
                 continue
             for format in self._formats:
                 if self._matches_format(field_value, format):
+                    # pyrefly: ignore  # unsupported-operation
                     self._datetime_candidates[field_name] = format
                     break
 
@@ -73,6 +74,7 @@ class DatetimeFormatInferrer:
         """Validates that the record is consistent with the inferred datetime formats"""
         if self._datetime_candidates:
             for candidate_field_name in list(self._datetime_candidates.keys()):
+                # pyrefly: ignore  # unsupported-operation
                 candidate_field_format = self._datetime_candidates[candidate_field_name]
                 current_value = record.data.get(candidate_field_name, None)
                 if (
@@ -80,6 +82,7 @@ class DatetimeFormatInferrer:
                     or not self._can_be_datetime(current_value)
                     or not self._matches_format(current_value, candidate_field_format)
                 ):
+                    # pyrefly: ignore  # missing-attribute
                     self._datetime_candidates.pop(candidate_field_name)
 
     def accumulate(self, record: AirbyteRecordMessage) -> None:

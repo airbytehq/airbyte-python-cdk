@@ -143,6 +143,7 @@ class ManifestReferenceResolver:
             path = ref_match.groups()[0]
             return self._read_ref_value(path, manifest)
         except (AttributeError, KeyError, IndexError):
+            # pyrefly: ignore  # unbound-name
             raise UndefinedReferenceException(path, ref)
 
     @staticmethod

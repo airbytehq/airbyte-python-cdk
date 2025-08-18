@@ -19,6 +19,7 @@ class StreamSlicerMeta(ABCMeta):
     def __instancecheck__(cls, instance: Any) -> bool:
         # Check if it's our wrapper with matching wrapped class
         if hasattr(instance, "wrapped_slicer"):
+            # pyrefly: ignore  # invalid-argument
             return isinstance(instance.wrapped_slicer, cls)
 
         return super().__instancecheck__(instance)

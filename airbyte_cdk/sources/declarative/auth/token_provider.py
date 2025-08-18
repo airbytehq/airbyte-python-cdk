@@ -65,6 +65,7 @@ class SessionTokenProvider(TokenProvider):
             raise ReadException("Failed to get session token, response got ignored by requester")
         session_token = dpath.get(next(self.decoder.decode(response)), self.session_token_path)
         if self.expiration_duration is not None:
+            # pyrefly: ignore  # bad-assignment
             self._next_expiration_time = ab_datetime_now() + self.expiration_duration
         self._token = session_token  # type: ignore # Returned decoded response will be Mapping and therefore session_token will be str or None
 

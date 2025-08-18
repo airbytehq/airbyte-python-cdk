@@ -80,6 +80,7 @@ class HttpResponseFilter:
         )
 
         if isinstance(mapped_key, (int, Exception)):
+            # pyrefly: ignore  # bad-argument-type
             default_mapped_error_resolution = self._match_default_error_mapping(mapped_key)
         else:
             default_mapped_error_resolution = None
@@ -104,6 +105,7 @@ class HttpResponseFilter:
 
             return ErrorResolution(
                 response_action=filter_action,
+                # pyrefly: ignore  # bad-argument-type
                 failure_type=failure_type,
                 error_message=error_message,
             )
