@@ -69,7 +69,9 @@ class DeclarativePartition(Partition):
         self._hash = SliceHasher.hash(self._stream_name, self._stream_slice)
 
     def read(self) -> Iterable[Record]:
-        for stream_data in self._retriever.read_records(self._schema_loader.get_json_schema(), self._stream_slice):
+        for stream_data in self._retriever.read_records(
+            self._schema_loader.get_json_schema(), self._stream_slice
+        ):
             if isinstance(stream_data, Mapping):
                 record = (
                     stream_data
