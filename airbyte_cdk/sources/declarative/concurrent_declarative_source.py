@@ -3,7 +3,6 @@
 #
 
 import logging
-
 from typing import Any, Generic, Iterator, List, Mapping, MutableMapping, Optional, Tuple, Union
 
 from airbyte_cdk.models import (
