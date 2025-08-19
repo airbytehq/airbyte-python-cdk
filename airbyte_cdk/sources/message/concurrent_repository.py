@@ -35,19 +35,17 @@ class ConcurrentMessageRepository(MessageRepository):
         )
 
     def emit_message(self, message: AirbyteMessage) -> None:
-        if self._log_messages_for_testing:
-            self._log_message(message)
         self._decorated_message_repository.emit_message(message)
         for message in self._decorated_message_repository.consume_queue():
             if self._log_messages_for_testing:
-                self._log_message(message)
+                self._log_message(message, "emit_message()")
             self._queue.put(message)
 
     def log_message(self, level: Level, message_provider: Callable[[], LogMessage]) -> None:
         self._decorated_message_repository.log_message(level, message_provider)
         for message in self._decorated_message_repository.consume_queue():
             if self._log_messages_for_testing:
-                self._log_message(message)
+                self._log_message(message, "log_message()")
             self._queue.put(message)
 
     def consume_queue(self) -> Iterable[AirbyteMessage]:
@@ -58,14 +56,15 @@ class ConcurrentMessageRepository(MessageRepository):
         yield from []
 
     @staticmethod
-    def _log_message(message: AirbyteMessage) -> None:
+    def _log_message(message: AirbyteMessage, calling_method: str) -> None:
         if message.type == MessageType.STATE:
             if message.state and message.state.stream:
+                stream_name = message.state.stream.stream_descriptor.name
                 state = message.state.stream.stream_state.__dict__
                 logger.info(
-                    f"Processing and emitting message of type {message.type} with contents: {message.state.stream.stream_state.__dict__}"
+                    f"From {calling_method} -- emitting message of type {message.type} for stream {stream_name} with contents: {state}"
                 )
         else:
             logger.info(
-                f"Processing and emitting message of type {message.type} with contents: {message.__dict__}"
+                f"From {calling_method} -- emitting message of type {message.type} with contents: {message.__dict__}"
             )
