@@ -7,7 +7,7 @@ import dataclasses
 import json
 import logging
 import os
-from typing import List, Literal
+from typing import List, Literal, Union
 from unittest import mock
 from unittest.mock import MagicMock, patch
 
@@ -56,10 +56,14 @@ from airbyte_cdk.models import (
     Type,
 )
 from airbyte_cdk.models import Type as MessageType
+from airbyte_cdk.sources.declarative.concurrent_declarative_source import (
+    ConcurrentDeclarativeSource,
+)
 from airbyte_cdk.sources.declarative.declarative_stream import DeclarativeStream
 from airbyte_cdk.sources.declarative.manifest_declarative_source import ManifestDeclarativeSource
 from airbyte_cdk.sources.declarative.retrievers.simple_retriever import SimpleRetriever
 from airbyte_cdk.sources.declarative.stream_slicers import StreamSlicerTestReadDecorator
+from airbyte_cdk.sources.streams.concurrent.default_stream import DefaultStream
 from airbyte_cdk.test.mock_http import HttpMocker, HttpRequest, HttpResponse
 from airbyte_cdk.utils.airbyte_secrets_utils import filter_secrets, update_secrets
 from unit_tests.connector_builder.utils import create_configured_catalog
@@ -440,6 +444,14 @@ MOCK_RESPONSE = {
 }
 
 
+def get_retriever(stream: Union[DeclarativeStream, DefaultStream]):
+    return (
+        stream.retriever
+        if isinstance(stream, DeclarativeStream)
+        else stream._stream_partition_generator._partition_factory._retriever
+    )
+
+
 @pytest.fixture
 def valid_resolve_manifest_config_file(tmp_path):
     config_file = tmp_path / "config.json"
@@ -780,7 +792,13 @@ def test_config_update() -> None:
         "client_secret": "a client secret",
         "refresh_token": "a refresh token",
     }
-    source = ManifestDeclarativeSource(source_config=manifest)
+    source = ConcurrentDeclarativeSource(
+        catalog=None,
+        config=config,
+        state=None,
+        source_config=manifest,
+        emit_connector_builder_messages=True,
+    )
 
     refresh_request_response = {
         "access_token": "an updated access token",
@@ -1117,8 +1135,9 @@ def test_read_source(mock_http_stream):
 
     streams = source.streams(config)
     for s in streams:
-        assert isinstance(s.retriever, SimpleRetriever)
-        assert isinstance(s.retriever.stream_slicer, StreamSlicerTestReadDecorator)
+        retriever = get_retriever(s)
+        assert isinstance(retriever, SimpleRetriever)
+        assert isinstance(retriever.stream_slicer, StreamSlicerTestReadDecorator)
 
 
 @patch.object(
@@ -1164,8 +1183,9 @@ def test_read_source_single_page_single_slice(mock_http_stream):
 
     streams = source.streams(config)
     for s in streams:
-        assert isinstance(s.retriever, SimpleRetriever)
-        assert isinstance(s.retriever.stream_slicer, StreamSlicerTestReadDecorator)
+        retriever = get_retriever(s)
+        assert isinstance(retriever, SimpleRetriever)
+        assert isinstance(retriever.stream_slicer, StreamSlicerTestReadDecorator)
 
 
 @pytest.mark.parametrize(

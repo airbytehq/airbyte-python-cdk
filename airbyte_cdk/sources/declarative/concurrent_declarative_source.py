@@ -3,7 +3,7 @@
 #
 
 import logging
-from typing import Any, Generic, Iterator, List, Mapping, MutableMapping, Optional, Tuple
+from typing import Any, Generic, Iterator, List, Mapping, MutableMapping, Optional, Tuple, Union
 
 from airbyte_cdk.models import (
     AirbyteCatalog,
@@ -15,10 +15,6 @@ from airbyte_cdk.sources.concurrent_source.concurrent_source import ConcurrentSo
 from airbyte_cdk.sources.connector_state_manager import ConnectorStateManager
 from airbyte_cdk.sources.declarative.concurrency_level import ConcurrencyLevel
 from airbyte_cdk.sources.declarative.declarative_stream import DeclarativeStream
-from airbyte_cdk.sources.declarative.extractors import RecordSelector
-from airbyte_cdk.sources.declarative.extractors.record_filter import (
-    ClientSideIncrementalRecordFilterDecorator,
-)
 from airbyte_cdk.sources.declarative.incremental import (
     ConcurrentPerPartitionCursor,
     GlobalSubstreamCursor,
@@ -28,7 +24,6 @@ from airbyte_cdk.sources.declarative.incremental.per_partition_with_global impor
     PerPartitionWithGlobalCursor,
 )
 from airbyte_cdk.sources.declarative.manifest_declarative_source import ManifestDeclarativeSource
-from airbyte_cdk.sources.declarative.models import FileUploader
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     ConcurrencyLevel as ConcurrencyLevelModel,
 )
@@ -84,7 +79,6 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
         # incremental streams running in full refresh.
         component_factory = component_factory or ModelToComponentFactory(
             emit_connector_builder_messages=emit_connector_builder_messages,
-            disable_resumable_full_refresh=True,
             connector_state_manager=self._connector_state_manager,
             max_concurrent_async_job_count=source_config.get("max_concurrent_async_job_count"),
         )
@@ -180,7 +174,7 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
             ]
         )
 
-    def streams(self, config: Mapping[str, Any]) -> List[Stream]:
+    def streams(self, config: Mapping[str, Any]) -> List[Union[Stream, AbstractStream]]:  # type: ignore  # we are migrating away from the AbstractSource and are expecting that this will only be called by ConcurrentDeclarativeSource or the Connector Builder
         """
         The `streams` method is used as part of the AbstractSource in the following cases:
         * ConcurrentDeclarativeSource.check -> ManifestDeclarativeSource.check -> AbstractSource.check -> DeclarativeSource.check_connection -> CheckStream.check_connection -> streams
@@ -209,6 +203,10 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
             # Some low-code sources use a combination of DeclarativeStream and regular Python streams. We can't inspect
             # these legacy Python streams the way we do low-code streams to determine if they are concurrent compatible,
             # so we need to treat them as synchronous
+
+            if isinstance(declarative_stream, AbstractStream):
+                concurrent_streams.append(declarative_stream)
+                continue
 
             supports_file_transfer = (
                 isinstance(declarative_stream, DeclarativeStream)
@@ -278,10 +276,10 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
 
                         partition_generator = StreamSlicerPartitionGenerator(
                             partition_factory=DeclarativePartitionFactory(
-                                declarative_stream.name,
-                                declarative_stream.get_json_schema(),
-                                retriever,
-                                self.message_repository,
+                                stream_name=declarative_stream.name,
+                                schema_loader=declarative_stream._schema_loader,  # type: ignore  # We are accessing the private property but the public one is optional and we will remove this code soonish
+                                retriever=retriever,
+                                message_repository=self.message_repository,
                             ),
                             stream_slicer=declarative_stream.retriever.stream_slicer,
                         )
@@ -309,10 +307,10 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
                             )
                         partition_generator = StreamSlicerPartitionGenerator(
                             partition_factory=DeclarativePartitionFactory(
-                                declarative_stream.name,
-                                declarative_stream.get_json_schema(),
-                                retriever,
-                                self.message_repository,
+                                stream_name=declarative_stream.name,
+                                schema_loader=declarative_stream._schema_loader,  # type: ignore  # We are accessing the private property but the public one is optional and we will remove this code soonish
+                                retriever=retriever,
+                                message_repository=self.message_repository,
                             ),
                             stream_slicer=cursor,
                         )
@@ -339,10 +337,10 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
                 ) and hasattr(declarative_stream.retriever, "stream_slicer"):
                     partition_generator = StreamSlicerPartitionGenerator(
                         DeclarativePartitionFactory(
-                            declarative_stream.name,
-                            declarative_stream.get_json_schema(),
-                            declarative_stream.retriever,
-                            self.message_repository,
+                            stream_name=declarative_stream.name,
+                            schema_loader=declarative_stream._schema_loader,  # type: ignore  # We are accessing the private property but the public one is optional and we will remove this code soonish
+                            retriever=declarative_stream.retriever,
+                            message_repository=self.message_repository,
                         ),
                         declarative_stream.retriever.stream_slicer,
                     )
@@ -399,10 +397,10 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
 
                     partition_generator = StreamSlicerPartitionGenerator(
                         DeclarativePartitionFactory(
-                            declarative_stream.name,
-                            declarative_stream.get_json_schema(),
-                            retriever,
-                            self.message_repository,
+                            stream_name=declarative_stream.name,
+                            schema_loader=declarative_stream._schema_loader,  # type: ignore  # We are accessing the private property but the public one is optional and we will remove this code soonish
+                            retriever=retriever,
+                            message_repository=self.message_repository,
                         ),
                         perpartition_cursor,
                     )
