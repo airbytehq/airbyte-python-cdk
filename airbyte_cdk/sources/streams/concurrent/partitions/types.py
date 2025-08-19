@@ -4,7 +4,6 @@
 
 from typing import Any, Union
 
-from airbyte_cdk.models import AirbyteMessage
 from airbyte_cdk.sources.concurrent_source.partition_generation_completed_sentinel import (
     PartitionGenerationCompletedSentinel,
 )
@@ -35,10 +34,5 @@ class PartitionCompleteSentinel:
 Typedef representing the items that can be added to the ThreadBasedConcurrentStream
 """
 QueueItem = Union[
-    Record,
-    Partition,
-    PartitionCompleteSentinel,
-    PartitionGenerationCompletedSentinel,
-    Exception,
-    AirbyteMessage,
+    Record, Partition, PartitionCompleteSentinel, PartitionGenerationCompletedSentinel, Exception
 ]
