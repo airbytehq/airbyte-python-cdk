@@ -20,6 +20,7 @@ from airbyte_cdk.sources.declarative.concurrent_declarative_source import (
     ConcurrentDeclarativeSource,
 )
 from airbyte_cdk.sources.declarative.incremental import ConcurrentPerPartitionCursor
+from airbyte_cdk.sources.declarative.schema import InlineSchemaLoader
 from airbyte_cdk.sources.declarative.stream_slicers.declarative_partition_generator import (
     DeclarativePartition,
 )
@@ -30,6 +31,8 @@ from airbyte_cdk.sources.streams.concurrent.state_converters.datetime_stream_sta
 from airbyte_cdk.sources.types import StreamSlice
 from airbyte_cdk.test.catalog_builder import CatalogBuilder, ConfiguredAirbyteStreamBuilder
 from airbyte_cdk.test.entrypoint_wrapper import EntrypointOutput, read
+
+_EMPTY_SCHEMA_LOADER = InlineSchemaLoader(schema={}, parameters={})
 
 SUBSTREAM_MANIFEST: MutableMapping[str, Any] = {
     "version": "0.51.42",
@@ -3616,7 +3619,7 @@ def test_given_no_partitions_processed_when_close_partition_then_no_state_update
         cursor.close_partition(
             DeclarativePartition(
                 stream_name="test_stream",
-                json_schema={},
+                schema_loader=_EMPTY_SCHEMA_LOADER,
                 retriever=MagicMock(),
                 message_repository=MagicMock(),
                 max_records_limit=None,
@@ -3701,7 +3704,7 @@ def test_given_unfinished_first_parent_partition_no_parent_state_update():
         cursor.close_partition(
             DeclarativePartition(
                 stream_name="test_stream",
-                json_schema={},
+                schema_loader=_EMPTY_SCHEMA_LOADER,
                 retriever=MagicMock(),
                 message_repository=MagicMock(),
                 max_records_limit=None,
@@ -3796,7 +3799,7 @@ def test_given_unfinished_last_parent_partition_with_partial_parent_state_update
         cursor.close_partition(
             DeclarativePartition(
                 stream_name="test_stream",
-                json_schema={},
+                schema_loader=_EMPTY_SCHEMA_LOADER,
                 retriever=MagicMock(),
                 message_repository=MagicMock(),
                 max_records_limit=None,
@@ -3886,7 +3889,7 @@ def test_given_all_partitions_finished_when_close_partition_then_final_state_emi
         cursor.close_partition(
             DeclarativePartition(
                 stream_name="test_stream",
-                json_schema={},
+                schema_loader=_EMPTY_SCHEMA_LOADER,
                 retriever=MagicMock(),
                 message_repository=MagicMock(),
                 max_records_limit=None,
@@ -3960,7 +3963,7 @@ def test_given_partition_limit_exceeded_when_close_partition_then_switch_to_glob
         cursor.close_partition(
             DeclarativePartition(
                 stream_name="test_stream",
-                json_schema={},
+                schema_loader=_EMPTY_SCHEMA_LOADER,
                 retriever=MagicMock(),
                 message_repository=MagicMock(),
                 max_records_limit=None,
@@ -4045,7 +4048,7 @@ def test_semaphore_cleanup():
         cursor.close_partition(
             DeclarativePartition(
                 stream_name="test_stream",
-                json_schema={},
+                schema_loader=_EMPTY_SCHEMA_LOADER,
                 retriever=MagicMock(),
                 message_repository=MagicMock(),
                 max_records_limit=None,
@@ -4165,7 +4168,7 @@ def test_duplicate_partition_after_closing_partition_cursor_deleted():
     cursor.close_partition(
         DeclarativePartition(
             stream_name="dup_stream",
-            json_schema={},
+            schema_loader=_EMPTY_SCHEMA_LOADER,
             retriever=MagicMock(),
             message_repository=MagicMock(),
             max_records_limit=None,
@@ -4177,7 +4180,7 @@ def test_duplicate_partition_after_closing_partition_cursor_deleted():
     cursor.close_partition(
         DeclarativePartition(
             stream_name="dup_stream",
-            json_schema={},
+            schema_loader=_EMPTY_SCHEMA_LOADER,
             retriever=MagicMock(),
             message_repository=MagicMock(),
             max_records_limit=None,
@@ -4189,7 +4192,7 @@ def test_duplicate_partition_after_closing_partition_cursor_deleted():
     cursor.close_partition(
         DeclarativePartition(
             stream_name="dup_stream",
-            json_schema={},
+            schema_loader=_EMPTY_SCHEMA_LOADER,
             retriever=MagicMock(),
             message_repository=MagicMock(),
             max_records_limit=None,
@@ -4250,7 +4253,7 @@ def test_duplicate_partition_after_closing_partition_cursor_exists():
     cursor.close_partition(
         DeclarativePartition(
             stream_name="dup_stream",
-            json_schema={},
+            schema_loader=_EMPTY_SCHEMA_LOADER,
             retriever=MagicMock(),
             message_repository=MagicMock(),
             max_records_limit=None,
@@ -4262,7 +4265,7 @@ def test_duplicate_partition_after_closing_partition_cursor_exists():
     cursor.close_partition(
         DeclarativePartition(
             stream_name="dup_stream",
-            json_schema={},
+            schema_loader=_EMPTY_SCHEMA_LOADER,
             retriever=MagicMock(),
             message_repository=MagicMock(),
             max_records_limit=None,
@@ -4275,7 +4278,7 @@ def test_duplicate_partition_after_closing_partition_cursor_exists():
     cursor.close_partition(
         DeclarativePartition(
             stream_name="dup_stream",
-            json_schema={},
+            schema_loader=_EMPTY_SCHEMA_LOADER,
             retriever=MagicMock(),
             message_repository=MagicMock(),
             max_records_limit=None,
@@ -4333,7 +4336,7 @@ def test_duplicate_partition_while_processing():
     cursor.close_partition(
         DeclarativePartition(
             stream_name="dup_stream",
-            json_schema={},
+            schema_loader=_EMPTY_SCHEMA_LOADER,
             retriever=MagicMock(),
             message_repository=MagicMock(),
             max_records_limit=None,
@@ -4344,7 +4347,7 @@ def test_duplicate_partition_while_processing():
     cursor.close_partition(
         DeclarativePartition(
             stream_name="dup_stream",
-            json_schema={},
+            schema_loader=_EMPTY_SCHEMA_LOADER,
             retriever=MagicMock(),
             message_repository=MagicMock(),
             max_records_limit=None,
