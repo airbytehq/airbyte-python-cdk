@@ -11,7 +11,14 @@ import pytest
 import requests
 
 from airbyte_cdk import YamlDeclarativeSource
-from airbyte_cdk.models import AirbyteLogMessage, AirbyteMessage, Level, SyncMode, Type
+from airbyte_cdk.models import (
+    AirbyteLogMessage,
+    AirbyteMessage,
+    AirbyteRecordMessage,
+    Level,
+    SyncMode,
+    Type,
+)
 from airbyte_cdk.sources.declarative.auth.declarative_authenticator import NoAuth
 from airbyte_cdk.sources.declarative.decoders import JsonDecoder
 from airbyte_cdk.sources.declarative.extractors import DpathExtractor, RecordSelector
