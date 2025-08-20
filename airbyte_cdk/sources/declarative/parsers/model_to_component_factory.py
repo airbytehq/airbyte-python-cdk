@@ -2085,13 +2085,7 @@ class ModelToComponentFactory:
                     retriever,
                     self._message_repository,
                 ),
-                stream_slicer=cast(
-                    StreamSlicer,
-                    StreamSlicerTestReadDecorator(
-                        wrapped_slicer=combined_slicers,
-                        maximum_number_of_slices=self._limit_slices_fetched or 5,
-                    ),
-                ),
+                stream_slicer=combined_slicers,
             )
             return DefaultStream(
                 partition_generator=partition_generator,
