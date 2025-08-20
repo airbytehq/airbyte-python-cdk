@@ -155,9 +155,6 @@ class ConcurrentReadProcessor:
                 )
             self._record_counter[stream.name] += 1
             stream.cursor.observe(record)
-        test_env = os.getenv("PYTEST_CURRENT_TEST")
-        if test_env and "test_concurrent_declarative_source.py" in test_env:
-            self._logger.info(f"Processing and emitting: {message.__dict__}")
         yield message
         yield from self._message_repository.consume_queue()
 
