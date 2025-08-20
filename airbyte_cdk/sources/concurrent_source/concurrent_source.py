@@ -146,7 +146,7 @@ class ConcurrentSource:
         while airbyte_message_or_record_or_exception := queue.get():
             test_env = os.getenv("PYTEST_CURRENT_TEST")
             if test_env and "test_concurrent_declarative_source.py" in test_env:
-                self._logger.info(f"Processing and emitting: {airbyte_message_or_record_or_exception.__dict__}")
+                self._logger.info(f"Processing and emitting {type(airbyte_message_or_record_or_exception)}: {airbyte_message_or_record_or_exception.__dict__}")
             yield from self._handle_item(
                 airbyte_message_or_record_or_exception,
                 concurrent_stream_processor,
