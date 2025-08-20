@@ -4,6 +4,7 @@
 
 import functools
 import logging
+import os
 from abc import ABC, abstractmethod
 from typing import (
     Any,
@@ -17,6 +18,7 @@ from typing import (
     Union,
 )
 
+from airbyte_cdk.models import AirbyteLogMessage, AirbyteMessage, Level, Type
 from airbyte_cdk.sources.connector_state_manager import ConnectorStateManager
 from airbyte_cdk.sources.message import MessageRepository
 from airbyte_cdk.sources.streams import NO_CURSOR_STATE_KEY
@@ -237,12 +239,41 @@ class ConcurrentCursor(Cursor):
         return self._connector_state_converter.parse_value(self._cursor_field.extract_value(record))
 
     def close_partition(self, partition: Partition) -> None:
+        test_env = os.getenv("PYTEST_CURRENT_TEST")
+        if test_env and "test_concurrent_declarative_source.py" in test_env:
+            self._message_repository.emit_message(
+                AirbyteMessage(
+                    type=Type.LOG,
+                    log=AirbyteLogMessage(
+                        level=Level.INFO, message=f"Closing partition {partition.to_slice()}"
+                    ),
+                )
+            )
+            self._message_repository.emit_message(
+                AirbyteMessage(
+                    type=Type.LOG,
+                    log=AirbyteLogMessage(
+                        level=Level.INFO, message=f"\tstate before is {self._concurrent_state}"
+                    ),
+                )
+            )
+
         slice_count_before = len(self._concurrent_state.get("slices", []))
         self._add_slice_to_state(partition)
         if slice_count_before < len(
             self._concurrent_state["slices"]
         ):  # only emit if at least one slice has been processed
             self._merge_partitions()
+            if test_env and "test_concurrent_declarative_source.py" in test_env:
+                self._message_repository.emit_message(
+                    AirbyteMessage(
+                        type=Type.LOG,
+                        log=AirbyteLogMessage(
+                            level=Level.INFO,
+                            message=f"\tstate after merged partition is {self._concurrent_state}",
+                        ),
+                    )
+                )
             self._emit_state_message()
         self._has_closed_at_least_one_slice = True
 
