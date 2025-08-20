@@ -5,6 +5,7 @@
 import functools
 import logging
 import os
+import threading
 from abc import ABC, abstractmethod
 from typing import (
     Any,
@@ -176,6 +177,12 @@ class ConcurrentCursor(Cursor):
         self._should_be_synced_logger_triggered = False
         self._clamping_strategy = clamping_strategy
 
+        # A lock is required when closing a partition because updating the cursor's concurrent_state is
+        # not thread safe. When multiple partitions are being closed by the cursor at the same time, it is
+        # possible for one partition to update concurrent_state after a second partition has already read
+        # the previous state. This can lead to the second partition overwriting the previous one's state.
+        self._lock = threading.Lock()
+
     @property
     def state(self) -> MutableMapping[str, Any]:
         return self._connector_state_converter.convert_to_state_message(
@@ -239,44 +246,21 @@ class ConcurrentCursor(Cursor):
         return self._connector_state_converter.parse_value(self._cursor_field.extract_value(record))
 
     def close_partition(self, partition: Partition) -> None:
-        test_env = os.getenv("PYTEST_CURRENT_TEST")
-        if test_env and "test_concurrent_declarative_source.py" in test_env:
-            self._message_repository.emit_message(
-                AirbyteMessage(
-                    type=Type.LOG,
-                    log=AirbyteLogMessage(
-                        level=Level.INFO,
-                        message=f"[{self._stream_name}] Closing partition {partition.to_slice()}",
-                    ),
-                )
-            )
-            self._message_repository.emit_message(
-                AirbyteMessage(
-                    type=Type.LOG,
-                    log=AirbyteLogMessage(
-                        level=Level.INFO,
-                        message=f"\t[{self._stream_name}] state before is {self._concurrent_state}",
-                    ),
-                )
-            )
-
-        slice_count_before = len(self._concurrent_state.get("slices", []))
-        self._add_slice_to_state(partition)
-        if slice_count_before < len(
-            self._concurrent_state["slices"]
-        ):  # only emit if at least one slice has been processed
-            self._merge_partitions()
-            if test_env and "test_concurrent_declarative_source.py" in test_env:
-                self._message_repository.emit_message(
-                    AirbyteMessage(
-                        type=Type.LOG,
-                        log=AirbyteLogMessage(
-                            level=Level.INFO,
-                            message=f"\t[{self._stream_name}] state after merged partition is {self._concurrent_state}",
-                        ),
-                    )
-                )
-            self._emit_state_message()
+        with self._lock:
+            slice_count_before = len(self._concurrent_state.get("slices", []))
+            self._add_slice_to_state(partition)
+            if slice_count_before < len(
+                self._concurrent_state["slices"]
+            ):  # only emit if at least one slice has been processed
+                self._merge_partitions()
+                self._emit_state_message()
+        # slice_count_before = len(self._concurrent_state.get("slices", []))
+        # self._add_slice_to_state(partition)
+        # if slice_count_before < len(
+        #     self._concurrent_state["slices"]
+        # ):  # only emit if at least one slice has been processed
+        #     self._merge_partitions()
+        #     self._emit_state_message()
         self._has_closed_at_least_one_slice = True
 
     def _add_slice_to_state(self, partition: Partition) -> None:
