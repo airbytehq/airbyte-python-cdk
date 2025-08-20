@@ -12,9 +12,7 @@ from airbyte_cdk.models import (
     AirbyteCatalog,
     AirbyteMessage,
     AirbyteStateMessage,
-    AirbyteStateMessageSerializer,
     ConfiguredAirbyteCatalog,
-    ConfiguredAirbyteCatalogSerializer,
 )
 
 TState = TypeVar("TState")
@@ -72,7 +70,7 @@ class Source(
             state_obj = BaseConnector._read_json_file(state_path)
             if state_obj:
                 for state in state_obj:  # type: ignore  # `isinstance(state_obj, List)` ensures that this is a list
-                    parsed_message = AirbyteStateMessageSerializer.load(state)
+                    parsed_message = AirbyteStateMessage.model_validate(state)
                     if (
                         not parsed_message.stream
                         and not parsed_message.data
@@ -87,7 +85,7 @@ class Source(
     # can be overridden to change an input catalog
     @classmethod
     def read_catalog(cls, catalog_path: str) -> ConfiguredAirbyteCatalog:
-        return ConfiguredAirbyteCatalogSerializer.load(cls._read_json_file(catalog_path))
+        return ConfiguredAirbyteCatalog.model_validate(cls._read_json_file(catalog_path))
 
     @property
     def name(self) -> str:

@@ -23,7 +23,6 @@ from airbyte_cdk.models import (
     AirbyteControlConnectorConfigMessage,
     AirbyteControlMessage,
     AirbyteMessage,
-    AirbyteMessageSerializer,
     AirbyteRecordMessage,
     AirbyteStateBlob,
     AirbyteStateMessage,
@@ -42,6 +41,7 @@ from airbyte_cdk.models import (
     SyncMode,
     TraceType,
     Type,
+    ab_message_to_string,
 )
 from airbyte_cdk.sources import Source
 from airbyte_cdk.sources.connector_state_manager import HashableStreamDescriptor
@@ -270,7 +270,7 @@ def _wrap_message(
     else:
         raise Exception(f"Unknown message type: {submessage}")
 
-    return orjson.dumps(AirbyteMessageSerializer.dump(message)).decode()
+    return ab_message_to_string(message)
 
 
 def test_run_spec(entrypoint: AirbyteEntrypoint, mocker):
@@ -281,7 +281,7 @@ def test_run_spec(entrypoint: AirbyteEntrypoint, mocker):
     messages = list(entrypoint.run(parsed_args))
 
     assert [
-        orjson.dumps(AirbyteMessageSerializer.dump(MESSAGE_FROM_REPOSITORY)).decode(),
+        ab_message_to_string(MESSAGE_FROM_REPOSITORY),
         _wrap_message(expected),
     ] == messages
 
@@ -348,15 +348,12 @@ def test_config_validate(entrypoint: AirbyteEntrypoint, mocker, config_mock, sch
     messages = list(entrypoint.run(parsed_args))
     if config_valid:
         assert [
-            orjson.dumps(AirbyteMessageSerializer.dump(MESSAGE_FROM_REPOSITORY)).decode(),
+            ab_message_to_string(MESSAGE_FROM_REPOSITORY),
             _wrap_message(check_value),
         ] == messages
     else:
         assert len(messages) == 2
-        assert (
-            messages[0]
-            == orjson.dumps(AirbyteMessageSerializer.dump(MESSAGE_FROM_REPOSITORY)).decode()
-        )
+        assert messages[0] == ab_message_to_string(MESSAGE_FROM_REPOSITORY)
         connection_status_message = AirbyteMessage(**orjson.loads(messages[1]))
         assert connection_status_message.type == Type.CONNECTION_STATUS.value
         assert connection_status_message.connectionStatus.get("status") == Status.FAILED.value
@@ -373,7 +370,7 @@ def test_run_check(entrypoint: AirbyteEntrypoint, mocker, spec_mock, config_mock
     messages = list(entrypoint.run(parsed_args))
 
     assert [
-        orjson.dumps(AirbyteMessageSerializer.dump(MESSAGE_FROM_REPOSITORY)).decode(),
+        ab_message_to_string(MESSAGE_FROM_REPOSITORY),
         _wrap_message(check_value),
     ] == messages
     assert spec_mock.called
@@ -413,8 +410,8 @@ def test_run_check_with_config_error(entrypoint: AirbyteEntrypoint, mocker, spec
     expected_trace.emitted_at = 1
     expected_trace.trace.emitted_at = 1
     expected_messages = [
-        orjson.dumps(AirbyteMessageSerializer.dump(MESSAGE_FROM_REPOSITORY)).decode(),
-        orjson.dumps(AirbyteMessageSerializer.dump(expected_trace)).decode(),
+        ab_message_to_string(MESSAGE_FROM_REPOSITORY),
+        ab_message_to_string(expected_trace),
         _wrap_message(
             AirbyteConnectionStatus(
                 status=Status.FAILED,
@@ -452,7 +449,7 @@ def test_run_discover(entrypoint: AirbyteEntrypoint, mocker, spec_mock, config_m
     messages = list(entrypoint.run(parsed_args))
 
     assert [
-        orjson.dumps(AirbyteMessageSerializer.dump(MESSAGE_FROM_REPOSITORY)).decode(),
+        ab_message_to_string(MESSAGE_FROM_REPOSITORY),
         _wrap_message(expected),
     ] == messages
     assert spec_mock.called
@@ -464,9 +461,7 @@ def test_run_discover_with_exception(entrypoint: AirbyteEntrypoint, mocker, spec
 
     with pytest.raises(ValueError):
         messages = list(entrypoint.run(parsed_args))
-        assert [
-            orjson.dumps(AirbyteMessageSerializer.dump(MESSAGE_FROM_REPOSITORY)).decode()
-        ] == messages
+        assert [ab_message_to_string(MESSAGE_FROM_REPOSITORY)] == messages
 
 
 def test_run_read(entrypoint: AirbyteEntrypoint, mocker, spec_mock, config_mock):
@@ -483,7 +478,7 @@ def test_run_read(entrypoint: AirbyteEntrypoint, mocker, spec_mock, config_mock)
     messages = list(entrypoint.run(parsed_args))
 
     assert [
-        orjson.dumps(AirbyteMessageSerializer.dump(MESSAGE_FROM_REPOSITORY)).decode(),
+        ab_message_to_string(MESSAGE_FROM_REPOSITORY),
         _wrap_message(expected),
     ] == messages
     assert spec_mock.called
@@ -498,10 +493,7 @@ def test_given_message_emitted_during_config_when_read_then_emit_message_before_
     mocker.patch.object(MockSource, "read_catalog", side_effect=ValueError)
 
     messages = entrypoint.run(parsed_args)
-    assert (
-        next(messages)
-        == orjson.dumps(AirbyteMessageSerializer.dump(MESSAGE_FROM_REPOSITORY)).decode()
-    )
+    assert next(messages) == ab_message_to_string(MESSAGE_FROM_REPOSITORY)
     with pytest.raises(ValueError):
         next(messages)
 
@@ -516,9 +508,7 @@ def test_run_read_with_exception(entrypoint: AirbyteEntrypoint, mocker, spec_moc
 
     with pytest.raises(ValueError):
         messages = list(entrypoint.run(parsed_args))
-        assert [
-            orjson.dumps(AirbyteMessageSerializer.dump(MESSAGE_FROM_REPOSITORY)).decode()
-        ] == messages
+        assert [ab_message_to_string(MESSAGE_FROM_REPOSITORY)] == messages
 
 
 def test_invalid_command(entrypoint: AirbyteEntrypoint, config_mock):

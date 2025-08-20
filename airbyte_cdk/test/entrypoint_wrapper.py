@@ -17,6 +17,7 @@ than that, there are integrations point that are annoying to integrate with usin
 import json
 import logging
 import re
+import sys
 import tempfile
 import traceback
 from collections import deque
@@ -28,7 +29,6 @@ from typing import Any, List, Literal, Optional, Union, final, overload
 
 import orjson
 from pydantic import ValidationError as V2ValidationError
-from serpyco_rs import SchemaValidationError
 
 from airbyte_cdk.entrypoint import AirbyteEntrypoint
 from airbyte_cdk.exception_handler import assemble_uncaught_exception
@@ -36,19 +36,30 @@ from airbyte_cdk.logger import AirbyteLogFormatter
 from airbyte_cdk.models import (
     AirbyteLogMessage,
     AirbyteMessage,
-    AirbyteMessageSerializer,
     AirbyteStateMessage,
-    AirbyteStateMessageSerializer,
     AirbyteStreamState,
     AirbyteStreamStatus,
     ConfiguredAirbyteCatalog,
-    ConfiguredAirbyteCatalogSerializer,
     Level,
     TraceType,
     Type,
+    ab_configured_catalog_from_string,
+    ab_configured_catalog_to_string,
+    ab_connector_spec_from_string,
+    ab_connector_spec_to_string,
+    ab_message_from_string,
+    ab_message_to_string,
+    ab_state_message_to_string,
 )
 from airbyte_cdk.sources import Source
 from airbyte_cdk.test.models.scenario import ExpectedOutcome
+
+JsonValidationErrors: tuple[type[Exception], ...] = (orjson.JSONDecodeError,)
+# Conditionally import and create a union type for exception handling
+if sys.platform != "emscripten":
+    from serpyco_rs import SchemaValidationError
+
+    JsonValidationErrors = (orjson.JSONDecodeError, SchemaValidationError)
 
 
 class AirbyteEntrypointException(Exception):
@@ -117,8 +128,8 @@ class EntrypointOutput:
     @staticmethod
     def _parse_message(message: str) -> AirbyteMessage:
         try:
-            return AirbyteMessageSerializer.load(orjson.loads(message))
-        except (orjson.JSONDecodeError, SchemaValidationError):
+            return ab_message_from_string(message)
+        except JsonValidationErrors:
             # The platform assumes that logs that are not of AirbyteMessage format are log messages
             return AirbyteMessage(
                 type=Type.LOG, log=AirbyteLogMessage(level=Level.INFO, message=message)
@@ -441,7 +452,7 @@ def read(
         config_file = make_file(tmp_directory_path / "config.json", config)
         catalog_file = make_file(
             tmp_directory_path / "catalog.json",
-            orjson.dumps(ConfiguredAirbyteCatalogSerializer.dump(catalog)).decode(),
+            ab_configured_catalog_to_string(catalog),
         )
         args = [
             "read",
@@ -453,15 +464,13 @@ def read(
         if debug:
             args.append("--debug")
         if state is not None:
-            args.extend(
-                [
-                    "--state",
-                    make_file(
-                        tmp_directory_path / "state.json",
-                        f"[{','.join([orjson.dumps(AirbyteStateMessageSerializer.dump(stream_state)).decode() for stream_state in state])}]",
-                    ),
-                ]
-            )
+            args.extend([
+                "--state",
+                make_file(
+                    tmp_directory_path / "state.json",
+                    f"[{','.join([ab_state_message_to_string(stream_state) for stream_state in state])}]",
+                ),
+            ])
 
         return _run_command(
             source,

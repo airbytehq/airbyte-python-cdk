@@ -1,7 +1,13 @@
 # Copyright (c) 2024 Airbyte, Inc., all rights reserved.
-from typing import Any, Dict
+import json
+import logging
+import sys
+from enum import Enum
+from typing import Any, Callable, Dict, Type, TypeVar, cast
 
-from serpyco_rs import CustomType, Serializer
+import dacite
+import orjson
+from pydantic import ValidationError
 
 from .airbyte_protocol import (  # type: ignore[attr-defined] # all classes are imported to airbyte_protocol via *
     AirbyteCatalog,
@@ -15,34 +21,154 @@ from .airbyte_protocol import (  # type: ignore[attr-defined] # all classes are 
     ConnectorSpecification,
 )
 
+USE_RUST_BACKEND = sys.platform != "emscripten"
+"""When run in WASM, use the pure Python backend for serpyco."""
 
-class AirbyteStateBlobType(CustomType[AirbyteStateBlob, Dict[str, Any]]):
-    def serialize(self, value: AirbyteStateBlob) -> Dict[str, Any]:
-        # cant use orjson.dumps() directly because private attributes are excluded, e.g. "__ab_full_refresh_sync_complete"
-        return {k: v for k, v in value.__dict__.items()}
+_HAS_LOGGED_FOR_SERIALIZATION_ERROR = False
+"""Track if we have logged an error for serialization issues."""
 
-    def deserialize(self, value: Dict[str, Any]) -> AirbyteStateBlob:
-        return AirbyteStateBlob(value)
+T = TypeVar("T")
 
-    def get_json_schema(self) -> Dict[str, Any]:
-        return {"type": "object"}
+logger = logging.getLogger("airbyte")
 
-
-def custom_type_resolver(t: type) -> CustomType[AirbyteStateBlob, Dict[str, Any]] | None:
-    return AirbyteStateBlobType() if t is AirbyteStateBlob else None
+# Making this a no-op for now:
 
 
-AirbyteCatalogSerializer = Serializer(AirbyteCatalog, omit_none=True)
-AirbyteStreamSerializer = Serializer(AirbyteStream, omit_none=True)
-AirbyteStreamStateSerializer = Serializer(
-    AirbyteStreamState, omit_none=True, custom_type_resolver=custom_type_resolver
-)
-AirbyteStateMessageSerializer = Serializer(
-    AirbyteStateMessage, omit_none=True, custom_type_resolver=custom_type_resolver
-)
-AirbyteMessageSerializer = Serializer(
-    AirbyteMessage, omit_none=True, custom_type_resolver=custom_type_resolver
-)
-ConfiguredAirbyteCatalogSerializer = Serializer(ConfiguredAirbyteCatalog, omit_none=True)
-ConfiguredAirbyteStreamSerializer = Serializer(ConfiguredAirbyteStream, omit_none=True)
-ConnectorSpecificationSerializer = Serializer(ConnectorSpecification, omit_none=True)
+def ab_message_to_string(
+    message: AirbyteMessage,
+) -> str:
+    """
+    Convert an AirbyteMessage to a JSON string.
+
+    Args:
+        message (AirbyteMessage): The Airbyte message to convert.
+
+    Returns:
+        str: JSON string representation of the AirbyteMessage.
+    """
+    return message.model_dump_json()
+
+
+def ab_message_from_string(
+    message_json: str,
+) -> AirbyteMessage:
+    """
+    Convert a JSON string to an AirbyteMessage.
+
+    Args:
+        message_str (str): The JSON string to convert.
+
+    Returns:
+        AirbyteMessage: The deserialized AirbyteMessage.
+    """
+    try:
+        return AirbyteMessage.model_validate_json(message_json)
+    except ValidationError as e:
+        raise ValueError(f"Invalid AirbyteMessage format: {e}") from e
+    except orjson.JSONDecodeError as e:
+        raise ValueError(f"Failed to decode JSON: {e}") from e
+
+
+def ab_connector_spec_from_string(
+    spec_json: str,
+) -> ConnectorSpecification:
+    """
+    Convert a JSON string to a ConnectorSpecification.
+
+    Args:
+        spec_str (str): The JSON string to convert.
+
+    Returns:
+        ConnectorSpecification: The deserialized ConnectorSpecification.
+    """
+    try:
+        return ConnectorSpecification.model_validate_json(spec_json)
+    except ValidationError as e:
+        raise ValueError(f"Invalid ConnectorSpecification format: {e}") from e
+    except orjson.JSONDecodeError as e:
+        raise ValueError(f"Failed to decode JSON: {e}") from e
+
+
+def ab_connector_spec_to_string(
+    spec: ConnectorSpecification,
+) -> str:
+    """
+    Convert a ConnectorSpecification to a JSON string.
+
+    Args:
+        spec (ConnectorSpecification): The ConnectorSpecification to convert.
+
+    Returns:
+        str: JSON string representation of the ConnectorSpecification.
+    """
+    return spec.model_dump_json()
+
+
+def ab_configured_catalog_to_string(
+    catalog: ConfiguredAirbyteCatalog,
+) -> str:
+    """
+    Convert a ConfiguredAirbyteCatalog to a JSON string.
+
+    Args:
+        catalog (ConfiguredAirbyteCatalog): The ConfiguredAirbyteCatalog to convert.
+
+    Returns:
+        str: JSON string representation of the ConfiguredAirbyteCatalog.
+    """
+    return catalog.model_dump_json()
+
+
+def ab_configured_catalog_from_string(
+    catalog_json: str,
+) -> ConfiguredAirbyteCatalog:
+    """
+    Convert a JSON string to a ConfiguredAirbyteCatalog.
+
+    Args:
+        catalog_json (str): The JSON string to convert.
+
+    Returns:
+        ConfiguredAirbyteCatalog: The deserialized ConfiguredAirbyteCatalog.
+    """
+    try:
+        return ConfiguredAirbyteCatalog.model_validate_json(catalog_json)
+    except ValidationError as e:
+        raise ValueError(f"Invalid ConfiguredAirbyteCatalog format: {e}") from e
+    except orjson.JSONDecodeError as e:
+        raise ValueError(f"Failed to decode JSON: {e}") from e
+
+
+def ab_state_message_from_string(
+    state_json: str,
+) -> AirbyteStateMessage:
+    """
+    Convert a JSON string to an AirbyteStateMessage.
+
+    Args:
+        state_json (str): The JSON string to convert.
+
+    Returns:
+        AirbyteStateMessage: The deserialized AirbyteStateMessage.
+    """
+    try:
+        return AirbyteStateMessage.model_validate_json(state_json)
+    except ValidationError as e:
+        raise ValueError(f"Invalid AirbyteStateMessage format: {e}") from e
+    except orjson.JSONDecodeError as e:
+        raise ValueError(f"Failed to decode JSON: {e}") from e
+
+
+def ab_state_message_to_string(
+    state: AirbyteStateMessage,
+) -> str:
+    """
+    Convert an AirbyteStateMessage to a JSON string.
+
+    Args:
+        state (AirbyteStateMessage): The AirbyteStateMessage to convert.
+
+    Returns:
+        str: JSON string representation of the AirbyteStateMessage.
+    """
+    return state.model_dump_json()

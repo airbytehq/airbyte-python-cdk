@@ -6,7 +6,7 @@ import unittest
 from datetime import datetime, timezone
 from unittest.mock import Mock
 
-from airbyte_protocol_dataclasses.models import SyncMode
+from airbyte_protocol.models import SyncMode
 
 from airbyte_cdk.sources.file_based.discovery_policy import AbstractDiscoveryPolicy
 from airbyte_cdk.sources.file_based.exceptions import (

@@ -2424,7 +2424,7 @@ def migration_mocks(monkeypatch):
     monkeypatch.setattr("json.dump", mock_json_dump)
     monkeypatch.setattr("builtins.print", mock_print)
     monkeypatch.setattr(
-        "airbyte_cdk.models.airbyte_protocol_serializers.AirbyteMessageSerializer.dump",
+        "airbyte_cdk.models.airbyte_protocol_serializers.ab_message_to_string",
         mock_serializer_dump,
     )
     monkeypatch.setattr(

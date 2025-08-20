@@ -9,12 +9,12 @@ import pytest
 from airbyte_cdk.models import (
     AirbyteErrorTraceMessage,
     AirbyteMessage,
-    AirbyteMessageSerializer,
     AirbyteTraceMessage,
     FailureType,
     Status,
     StreamDescriptor,
     TraceType,
+    ab_message_to_string,
 )
 from airbyte_cdk.models import Type as MessageType
 from airbyte_cdk.utils.traced_exception import AirbyteTracedException
@@ -127,7 +127,7 @@ def test_emit_message(capsys):
     traced_exc.emit_message()
 
     stdout = capsys.readouterr().out
-    printed_message = AirbyteMessageSerializer.load(orjson.loads(stdout))
+    printed_message = ab_message_from_string(stdout)
     printed_message.trace.emitted_at = 0.0
     assert printed_message == expected_message
 

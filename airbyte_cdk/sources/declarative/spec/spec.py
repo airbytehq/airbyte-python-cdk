@@ -8,8 +8,8 @@ from typing import Any, List, Mapping, MutableMapping, Optional
 from airbyte_cdk.models import (
     AdvancedAuth,
     ConnectorSpecification,
-    ConnectorSpecificationSerializer,
 )
+from airbyte_cdk.models.airbyte_protocol_serializers import ab_connector_spec_from_string
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import AuthFlow
 from airbyte_cdk.sources.declarative.transformations.config_transformations.config_transformation import (
     ConfigTransformation,
@@ -59,7 +59,7 @@ class Spec:
             obj["advanced_auth"] = self.advanced_auth.dict()
 
         # We remap these keys to camel case because that's the existing format expected by the rest of the platform
-        return ConnectorSpecificationSerializer.load(obj)
+        return ConnectorSpecification.model_validate(obj)
 
     def migrate_config(self, config: MutableMapping[str, Any]) -> None:
         """

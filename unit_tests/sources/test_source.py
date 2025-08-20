@@ -4,6 +4,7 @@
 
 import json
 import logging
+import sys
 import tempfile
 from contextlib import nullcontext as does_not_raise
 from typing import Any, List, Mapping, MutableMapping, Optional, Tuple, Union

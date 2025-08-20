@@ -86,7 +86,6 @@ from typing import Any, Optional, Union, overload
 
 from dateutil import parser
 from typing_extensions import Never
-from whenever import Instant, LocalDateTime, ZonedDateTime
 
 
 class AirbyteDateTime(datetime):
@@ -137,6 +136,18 @@ class AirbyteDateTime(datetime):
             dt.microsecond,
             dt.tzinfo or timezone.utc,
         )
+
+    @classmethod
+    def from_timestamp(cls, timestamp: float) -> "AirbyteDateTime":
+        """Creates an AirbyteDateTime from a Unix timestamp in seconds.
+
+        Args:
+            timestamp: A Unix timestamp in seconds (float).
+
+        Returns:
+            AirbyteDateTime: A new timezone-aware datetime instance (UTC).
+        """
+        return AirbyteDateTime.from_datetime(datetime.fromtimestamp(timestamp, tz=timezone.utc))
 
     def to_datetime(self) -> datetime:
         """Converts this AirbyteDateTime to a standard datetime object.
@@ -400,8 +411,7 @@ def ab_datetime_parse(dt_str: str | int) -> AirbyteDateTime:
                 raise ValueError("Timestamp cannot be negative")
             if len(str(abs(timestamp))) > 10:
                 raise ValueError("Timestamp value too large")
-            instant = Instant.from_timestamp(timestamp)
-            return AirbyteDateTime.from_datetime(instant.py_datetime())
+            return AirbyteDateTime.from_timestamp(timestamp)
 
         if not isinstance(dt_str, str):
             raise ValueError(
@@ -414,8 +424,7 @@ def ab_datetime_parse(dt_str: str | int) -> AirbyteDateTime:
                 year, month, day = map(int, dt_str.split("-"))
                 if not (1 <= month <= 12 and 1 <= day <= 31):
                     raise ValueError(f"Invalid date format: {dt_str}")
-                instant = Instant.from_utc(year, month, day, 0, 0, 0)
-                return AirbyteDateTime.from_datetime(instant.py_datetime())
+                return AirbyteDateTime(year, month, day, 0, 0, 0)
             except (ValueError, TypeError):
                 raise ValueError(f"Invalid date format: {dt_str}")
 

@@ -26,12 +26,12 @@ from airbyte_cdk.logger import PRINT_BUFFER, init_logger, is_platform_debug_log_
 from airbyte_cdk.models import (
     AirbyteConnectionStatus,
     AirbyteMessage,
-    AirbyteMessageSerializer,
     AirbyteStateStats,
     ConnectorSpecification,
     FailureType,
     Status,
     Type,
+    ab_message_to_string,
 )
 from airbyte_cdk.sources import Source
 from airbyte_cdk.sources.connector_state_manager import HashableStreamDescriptor
@@ -47,7 +47,6 @@ logger = init_logger("airbyte")
 
 VALID_URL_SCHEMES = ["https"]
 CLOUD_DEPLOYMENT_MODE = "cloud"
-_HAS_LOGGED_FOR_SERIALIZATION_ERROR = False
 
 
 class AirbyteEntrypoint(object):
@@ -178,26 +177,26 @@ class AirbyteEntrypoint(object):
                 if cmd == "spec":
                     message = AirbyteMessage(type=Type.SPEC, spec=source_spec)
                     yield from [
-                        self.airbyte_message_to_string(queued_message)
+                        ab_message_to_string(queued_message)
                         for queued_message in self._emit_queued_messages(self.source)
                     ]
-                    yield self.airbyte_message_to_string(message)
+                    yield ab_message_to_string(message)
                 else:
                     raw_config = self.source.read_config(parsed_args.config)
                     config = self.source.configure(raw_config, temp_dir)
 
                     yield from [
-                        self.airbyte_message_to_string(queued_message)
+                        ab_message_to_string(queued_message)
                         for queued_message in self._emit_queued_messages(self.source)
                     ]
                     if cmd == "check":
                         yield from map(
-                            AirbyteEntrypoint.airbyte_message_to_string,
+                            ab_message_to_string,
                             self.check(source_spec, config),
                         )
                     elif cmd == "discover":
                         yield from map(
-                            AirbyteEntrypoint.airbyte_message_to_string,
+                            ab_message_to_string,
                             self.discover(source_spec, config),
                         )
                     elif cmd == "read":
@@ -205,14 +204,14 @@ class AirbyteEntrypoint(object):
                         state = self.source.read_state(parsed_args.state)
 
                         yield from map(
-                            AirbyteEntrypoint.airbyte_message_to_string,
+                            ab_message_to_string,
                             self.read(source_spec, config, config_catalog, state),
                         )
                     else:
                         raise Exception("Unexpected command " + cmd)
         finally:
             yield from [
-                self.airbyte_message_to_string(queued_message)
+                ab_message_to_string(queued_message)
                 for queued_message in self._emit_queued_messages(self.source)
             ]
 
@@ -326,20 +325,6 @@ class AirbyteEntrypoint(object):
         # that we should filter in logging to avoid leaking secrets
         config_secrets = get_secrets(connection_specification, config)
         update_secrets(config_secrets)
-
-    @staticmethod
-    def airbyte_message_to_string(airbyte_message: AirbyteMessage) -> str:
-        global _HAS_LOGGED_FOR_SERIALIZATION_ERROR
-        serialized_message = AirbyteMessageSerializer.dump(airbyte_message)
-        try:
-            return orjson.dumps(serialized_message).decode()
-        except Exception as exception:
-            if not _HAS_LOGGED_FOR_SERIALIZATION_ERROR:
-                logger.warning(
-                    f"There was an error during the serialization of an AirbyteMessage: `{exception}`. This might impact the sync performances."
-                )
-                _HAS_LOGGED_FOR_SERIALIZATION_ERROR = True
-            return json.dumps(serialized_message)
 
     @classmethod
     def extract_state(cls, args: List[str]) -> Optional[Any]:

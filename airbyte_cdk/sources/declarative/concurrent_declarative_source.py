@@ -55,7 +55,7 @@ from airbyte_cdk.sources.streams.concurrent.helpers import get_primary_key_from_
 class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
     # By default, we defer to a value of 2. A value lower than than could cause a PartitionEnqueuer to be stuck in a state of deadlock
     # because it has hit the limit of futures but not partition reader is consuming them.
-    _LOWEST_SAFE_CONCURRENCY_LEVEL = 2
+    _LOWEST_SAFE_CONCURRENCY_LEVEL = 1  # TODO: revert-me: 2
 
     def __init__(
         self,
@@ -110,7 +110,9 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
             )  # Partition_generation iterates using range based on this value. If this is floored to zero we end up in a dead lock during start up
         else:
             concurrency_level = self._LOWEST_SAFE_CONCURRENCY_LEVEL
-            initial_number_of_partitions_to_generate = self._LOWEST_SAFE_CONCURRENCY_LEVEL // 2
+            initial_number_of_partitions_to_generate = max(
+                self._LOWEST_SAFE_CONCURRENCY_LEVEL // 2, 1
+            )
 
         self._concurrent_source = ConcurrentSource.create(
             num_workers=concurrency_level,

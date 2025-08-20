@@ -31,7 +31,7 @@ from airbyte_cdk.models import (
     ConnectorSpecification,
     FailureType,
 )
-from airbyte_cdk.models.airbyte_protocol_serializers import AirbyteMessageSerializer
+from airbyte_cdk.models.airbyte_protocol_serializers import ab_message_to_string
 from airbyte_cdk.sources.declarative.checks import COMPONENTS_CHECKER_TYPE_MAPPING
 from airbyte_cdk.sources.declarative.checks.connection_checker import ConnectionChecker
 from airbyte_cdk.sources.declarative.declarative_source import DeclarativeSource
@@ -235,7 +235,7 @@ class ManifestDeclarativeSource(DeclarativeSource):
             )
             # We have no mechanism for consuming the queue, so we print the messages to stdout
             for message in self.message_repository.consume_queue():
-                print(orjson.dumps(AirbyteMessageSerializer.dump(message)).decode())
+                print(ab_message_to_string(message))
         self._spec_component.transform_config(mutable_config)
         return mutable_config
 

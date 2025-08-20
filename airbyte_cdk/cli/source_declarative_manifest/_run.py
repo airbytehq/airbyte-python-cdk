@@ -32,13 +32,13 @@ from airbyte_cdk.entrypoint import AirbyteEntrypoint, launch
 from airbyte_cdk.models import (
     AirbyteErrorTraceMessage,
     AirbyteMessage,
-    AirbyteMessageSerializer,
     AirbyteStateMessage,
     AirbyteTraceMessage,
     ConfiguredAirbyteCatalog,
-    ConnectorSpecificationSerializer,
     TraceType,
     Type,
+    ab_connector_spec_from_string,
+    ab_message_to_string,
 )
 from airbyte_cdk.sources.declarative.concurrent_declarative_source import (
     ConcurrentDeclarativeSource,
@@ -105,21 +105,19 @@ def _get_local_yaml_source(args: list[str]) -> SourceLocalYaml:
         )
     except Exception as error:
         print(
-            orjson.dumps(
-                AirbyteMessageSerializer.dump(
-                    AirbyteMessage(
-                        type=Type.TRACE,
-                        trace=AirbyteTraceMessage(
-                            type=TraceType.ERROR,
-                            emitted_at=ab_datetime_now().to_epoch_millis(),
-                            error=AirbyteErrorTraceMessage(
-                                message=f"Error starting the sync. This could be due to an invalid configuration or catalog. Please contact Support for assistance. Error: {error}",
-                                stack_trace=traceback.format_exc(),
-                            ),
+            ab_message_to_string(
+                AirbyteMessage(
+                    type=Type.TRACE,
+                    trace=AirbyteTraceMessage(
+                        type=TraceType.ERROR,
+                        emitted_at=ab_datetime_now().to_epoch_millis(),
+                        error=AirbyteErrorTraceMessage(
+                            message=f"Error starting the sync. This could be due to an invalid configuration or catalog. Please contact Support for assistance. Error: {error}",
+                            stack_trace=traceback.format_exc(),
                         ),
-                    )
-                )
-            ).decode()
+                    ),
+                ),
+            )
         )
         raise error
 
@@ -149,11 +147,10 @@ def handle_remote_manifest_command(args: list[str]) -> None:
                 "Could not find `spec.json` file for source-declarative-manifest"
             )
 
-        spec_obj = json.loads(json_spec)
-        spec = ConnectorSpecificationSerializer.load(spec_obj)
+        spec = ab_connector_spec_from_string(json_spec.decode("utf-8"))
 
         message = AirbyteMessage(type=Type.SPEC, spec=spec)
-        print(AirbyteEntrypoint.airbyte_message_to_string(message))
+        print(ab_message_to_string(message))
     else:
         source = create_declarative_source(args)
         launch(
@@ -215,21 +212,19 @@ def create_declarative_source(
         )
     except Exception as error:
         print(
-            orjson.dumps(
-                AirbyteMessageSerializer.dump(
-                    AirbyteMessage(
-                        type=Type.TRACE,
-                        trace=AirbyteTraceMessage(
-                            type=TraceType.ERROR,
-                            emitted_at=ab_datetime_now().to_epoch_millis(),
-                            error=AirbyteErrorTraceMessage(
-                                message=f"Error starting the sync. This could be due to an invalid configuration or catalog. Please contact Support for assistance. Error: {error}",
-                                stack_trace=traceback.format_exc(),
-                            ),
+            ab_message_to_string(
+                AirbyteMessage(
+                    type=Type.TRACE,
+                    trace=AirbyteTraceMessage(
+                        type=TraceType.ERROR,
+                        emitted_at=ab_datetime_now().to_epoch_millis(),
+                        error=AirbyteErrorTraceMessage(
+                            message=f"Error starting the sync. This could be due to an invalid configuration or catalog. Please contact Support for assistance. Error: {error}",
+                            stack_trace=traceback.format_exc(),
                         ),
-                    )
-                )
-            ).decode()
+                    ),
+                ),
+            ),
         )
         raise error
 
@@ -298,10 +293,10 @@ def _register_components_from_file(filepath: str) -> None:
     spec.loader.exec_module(module)
 
 
-def run() -> None:
+def run(args: list[str] | None = None) -> None:
     """Run the `source-declarative-manifest` CLI.
 
     Args are detected from the command line, and the appropriate command is executed.
     """
-    args: list[str] = sys.argv[1:]
+    args = args or sys.argv[1:]
     handle_command(args)
