@@ -245,7 +245,8 @@ class ConcurrentCursor(Cursor):
                 AirbyteMessage(
                     type=Type.LOG,
                     log=AirbyteLogMessage(
-                        level=Level.INFO, message=f"Closing partition {partition.to_slice()}"
+                        level=Level.INFO,
+                        message=f"[{self._stream_name}] Closing partition {partition.to_slice()}",
                     ),
                 )
             )
@@ -253,7 +254,8 @@ class ConcurrentCursor(Cursor):
                 AirbyteMessage(
                     type=Type.LOG,
                     log=AirbyteLogMessage(
-                        level=Level.INFO, message=f"\tstate before is {self._concurrent_state}"
+                        level=Level.INFO,
+                        message=f"\t[{self._stream_name}] state before is {self._concurrent_state}",
                     ),
                 )
             )
@@ -270,7 +272,7 @@ class ConcurrentCursor(Cursor):
                         type=Type.LOG,
                         log=AirbyteLogMessage(
                             level=Level.INFO,
-                            message=f"\tstate after merged partition is {self._concurrent_state}",
+                            message=f"\t[{self._stream_name}] state after merged partition is {self._concurrent_state}",
                         ),
                     )
                 )
