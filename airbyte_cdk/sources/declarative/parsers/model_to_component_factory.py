@@ -631,10 +631,6 @@ SCHEMA_TRANSFORMER_TYPE_MAPPING = {
     SchemaNormalizationModel.Default: TransformConfig.DefaultSchemaNormalization,
 }
 
-# Ideally this should use the value defined in ConcurrentDeclarativeSource, but
-# this would be a circular import
-MAX_SLICES = 5
-
 
 class ModelToComponentFactory:
     EPOCH_DATETIME_FORMAT = "%s"
@@ -2057,7 +2053,7 @@ class ModelToComponentFactory:
         if (
             isinstance(combined_slicers, PartitionRouter)
             or isinstance(concurrent_cursor, ConcurrentCursor)
-        ) and not is_parent:
+        ) and not self._emit_connector_builder_messages and not is_parent:
             # We are starting to migrate streams to instantiate directly the DefaultStream instead of instantiating the
             # DeclarativeStream and assembling the DefaultStream from that. The plan is the following:
             # * Streams without partition router nor cursors and streams with only partition router. This is the `isinstance(combined_slicers, PartitionRouter)` condition as the first kind with have a SinglePartitionRouter
@@ -2101,7 +2097,6 @@ class ModelToComponentFactory:
                     ),
                 ),
             )
-
             return DefaultStream(
                 partition_generator=partition_generator,
                 name=stream_name,
