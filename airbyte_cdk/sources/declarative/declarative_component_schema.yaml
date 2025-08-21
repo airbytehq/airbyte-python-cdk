@@ -4142,11 +4142,9 @@ definitions:
           - stream_slice
           - stream_template_config
         examples:
-          - ["data"]
-          - ["data", "records"]
-          - ["data", 1, "name"]
-          - ["data", "{{ components_values.name }}"]
-          - ["data", "*", "record"]
+          - ["name"]
+          - ["retriever", "requester", "url"]
+          - ["retriever", "requester", "{{ components_values.field }}"]
           - ["*", "**", "name"]
       value:
         title: Value
