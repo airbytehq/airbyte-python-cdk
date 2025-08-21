@@ -209,7 +209,7 @@ class CsvParser(FileTypeParser):
                 failure_type=FailureType.config_error,
             )
         schema = {
-            header.strip(): {"type": type_inferred.infer()}
+            header: {"type": type_inferred.infer()}
             for header, type_inferred in type_inferrer_by_field.items()
         }
         data_generator.close()
