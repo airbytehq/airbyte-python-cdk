@@ -2117,7 +2117,6 @@ class ModelToComponentFactory:
             model.incremental_sync
             and hasattr(model.incremental_sync, "is_client_side_incremental")
             and model.incremental_sync.is_client_side_incremental
-        )
 
     def _build_stream_slicer_from_partition_router(
         self,
