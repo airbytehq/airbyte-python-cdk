@@ -231,6 +231,13 @@ class ConcurrentCursor(Cursor):
         )
 
     def observe(self, record: Record) -> None:
+        # Because observe writes to the most_recent_cursor_value_per_partition mapping,
+        # it is not thread-safe. However, this shouldn't lead to concurrency issues
+        # because observe() is only invoked on the main thread and the map is broken
+        # down by partition which should not have conflicting read/write.
+        #
+        # If we were to add thread safety, we should implement a lock per-partition
+        # which is instantiated during stream_slices()
         most_recent_cursor_value = self._most_recent_cursor_value_per_partition.get(
             record.associated_slice
         )
