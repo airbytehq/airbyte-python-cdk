@@ -82,14 +82,14 @@ class DeclarativePartition(Partition):
         self._hash = SliceHasher.hash(self._stream_name, self._stream_slice)
 
     def read(self) -> Iterable[Record]:
-        if self._max_records_limit:
+        if self._max_records_limit is not None:
             global total_record_counter
             if total_record_counter >= self._max_records_limit:
                 return
         for stream_data in self._retriever.read_records(
             self._schema_loader.get_json_schema(), self._stream_slice
         ):
-            if self._max_records_limit:
+            if self._max_records_limit is not None:
                 if total_record_counter >= self._max_records_limit:
                     break
 
@@ -107,7 +107,7 @@ class DeclarativePartition(Partition):
             else:
                 self._message_repository.emit_message(stream_data)
 
-            if self._max_records_limit:
+            if self._max_records_limit is not None:
                 total_record_counter += 1
 
     def to_slice(self) -> Optional[Mapping[str, Any]]:
