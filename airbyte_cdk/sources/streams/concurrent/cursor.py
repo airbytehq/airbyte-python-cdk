@@ -254,13 +254,6 @@ class ConcurrentCursor(Cursor):
             ):  # only emit if at least one slice has been processed
                 self._merge_partitions()
                 self._emit_state_message()
-        # slice_count_before = len(self._concurrent_state.get("slices", []))
-        # self._add_slice_to_state(partition)
-        # if slice_count_before < len(
-        #     self._concurrent_state["slices"]
-        # ):  # only emit if at least one slice has been processed
-        #     self._merge_partitions()
-        #     self._emit_state_message()
         self._has_closed_at_least_one_slice = True
 
     def _add_slice_to_state(self, partition: Partition) -> None:

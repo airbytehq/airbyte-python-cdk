@@ -127,12 +127,6 @@ class HttpClient:
         Override if needed. Return the name of cache file
         Note that if the environment variable REQUEST_CACHE_PATH is not set, the cache will be in-memory only.
         """
-        # This is a hack so that we ensure that the same cache is not used across different test files
-        # because we observed some flakiness in tests when running on CI
-        # https://github.com/airbytehq/airbyte-python-cdk/pull/688
-        # https://github.com/airbytehq/airbyte-python-cdk/pull/712
-        if os.getenv("PYTEST_CURRENT_TEST"):
-            return f"{self._name}-{os.getenv('PYTEST_CURRENT_TEST')}.sqlite"
         return f"{self._name}.sqlite"
 
     def _request_session(self) -> requests.Session:
