@@ -4780,7 +4780,7 @@ interpolation:
       type: object
       examples:
         - name: "accounts"
-          id: 1234  
+          id: 1234
   macros:
     - title: now_utc
       description: Returns the current date and time in the UTC timezone.
