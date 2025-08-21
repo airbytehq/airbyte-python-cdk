@@ -128,7 +128,7 @@ class _CsvReader:
             # Then read the header
             self._skip_rows(fp, config_format.skip_rows_before_header)
             reader = csv.reader(fp, dialect=dialect_name)  # type: ignore
-            headers = list(next(reader))
+            headers = [header.strip() for header in next(reader)]
 
         fp.seek(0)
         return headers
