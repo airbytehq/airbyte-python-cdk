@@ -642,10 +642,6 @@ SCHEMA_TRANSFORMER_TYPE_MAPPING = {
 }
 _NO_STREAM_SLICING = SinglePartitionRouter(parameters={})
 
-# Ideally this should use the value defined in ConcurrentDeclarativeSource, but
-# this would be a circular import
-MAX_SLICES = 5
-
 
 class ModelToComponentFactory:
     EPOCH_DATETIME_FORMAT = "%s"
@@ -2096,7 +2092,6 @@ class ModelToComponentFactory:
                     self._message_repository,
                 ),
                 stream_slicer,
-                self._limit_slices_fetched or 5 if self._should_limit_slices_fetched() else None,
             ),
             name=stream_name,
             json_schema=schema_loader.get_json_schema,
@@ -3912,7 +3907,7 @@ class ModelToComponentFactory:
             config=config,
             name=f"{stream_name if stream_name else '__http_components_resolver'}",
             primary_key=None,
-            stream_slicer=SinglePartitionRouter(parameters={}),
+            stream_slicer=self._build_stream_slicer_from_partition_router(model.retriever, config),
             transformations=[],
         )
 
