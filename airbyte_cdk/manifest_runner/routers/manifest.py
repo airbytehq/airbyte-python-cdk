@@ -2,7 +2,8 @@ import hashlib
 from dataclasses import asdict
 from typing import Any, Dict, List
 
-from fastapi import APIRouter, Depends
+import jsonschema
+from fastapi import APIRouter, Depends, HTTPException
 
 from airbyte_cdk.models import AirbyteStateMessageSerializer
 from airbyte_cdk.sources.declarative.parsers.custom_code_compiler import (
@@ -21,6 +22,15 @@ from ..auth import verify_jwt_token
 from ..manifest_runner.runner import ManifestRunner
 from ..manifest_runner.utils import build_catalog, build_source
 
+
+def safe_build_source(manifest_dict, config_dict):
+    """Wrapper around build_source that converts ValidationError to HTTPException."""
+    try:
+        return build_source(manifest_dict, config_dict)
+    except jsonschema.exceptions.ValidationError as e:
+        raise HTTPException(status_code=400, detail=f"Invalid manifest: {e.message}")
+
+
 router = APIRouter(
     prefix="/manifest",
     tags=["manifest"],
@@ -34,7 +44,8 @@ def test_read(request: StreamTestReadRequest) -> StreamRead:
     Test reading from a specific stream in the manifest.
     """
     config_dict = request.config.model_dump()
-    source = build_source(request.manifest.model_dump(), config_dict)
+
+    source = safe_build_source(request.manifest.model_dump(), config_dict)
     catalog = build_catalog(request.stream_name)
     state = [AirbyteStateMessageSerializer.load(state) for state in request.state]
 
@@ -59,7 +70,7 @@ def test_read(request: StreamTestReadRequest) -> StreamRead:
 @router.post("/resolve", operation_id="resolve")
 def resolve(request: ResolveRequest) -> ManifestResponse:
     """Resolve a manifest to its final configuration."""
-    source = build_source(request.manifest.model_dump(), {})
+    source = safe_build_source(request.manifest.model_dump(), {})
     return ManifestResponse(manifest=source.resolved_manifest)
 
 
@@ -71,7 +82,7 @@ def full_resolve(request: FullResolveRequest) -> ManifestResponse:
     Generates dynamic streams up to the specified limit and includes
     them in the resolved manifest.
     """
-    source = build_source(request.manifest.model_dump(), request.config.model_dump())
+    source = safe_build_source(request.manifest.model_dump(), request.config.model_dump())
     manifest = {**source.resolved_manifest}
     streams = manifest.get("streams", [])
     for stream in streams:

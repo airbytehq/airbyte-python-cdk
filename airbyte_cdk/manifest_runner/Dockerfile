@@ -18,14 +18,10 @@ COPY pyproject.toml poetry.lock ./
 # Install dependencies directly to system Python
 RUN --mount=type=cache,target=$POETRY_CACHE_DIR \
     poetry config virtualenvs.create false && \
-    poetry install --extras manifest-runner --no-root && \
-    pip install fastapi uvicorn
+    poetry install --extras manifest-runner --no-root
 
 # Copy the project source code (including .git for dynamic versioning)
 COPY . /app
-
-# Install the project
-RUN pip install -e .
 
 # Create a non-root user and group
 RUN groupadd --gid 1000 airbyte && \
