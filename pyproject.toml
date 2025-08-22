@@ -111,6 +111,7 @@ pytest-cov = "*"
 pytest-httpserver = "*"
 pytest-mock = "*"
 requests-mock = "*"
+httpx = "*"  # Required for FastAPI TestClient
 # Stubs packages for mypy typing
 types-requests = "^2.32.0.20241016"
 types-python-dateutil = "^2.9.0.20241003"

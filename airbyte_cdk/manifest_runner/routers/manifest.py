@@ -2,7 +2,7 @@ import hashlib
 from dataclasses import asdict
 from typing import Any, Dict, List
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 
 from airbyte_cdk.models import AirbyteStateMessageSerializer
 from airbyte_cdk.sources.declarative.parsers.custom_code_compiler import (
@@ -17,12 +17,14 @@ from ..api_models import (
     StreamRead,
     StreamTestReadRequest,
 )
+from ..auth import verify_jwt_token
 from ..manifest_runner.runner import ManifestRunner
 from ..manifest_runner.utils import build_catalog, build_source
 
 router = APIRouter(
     prefix="/manifest",
     tags=["manifest"],
+    dependencies=[Depends(verify_jwt_token)],
 )
 
 
