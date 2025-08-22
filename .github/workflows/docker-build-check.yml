@@ -42,3 +42,14 @@ jobs:
           push: false
           tags: airbyte/source-declarative-manifest:pr-${{ github.event.pull_request.number }}
           outputs: type=image,name=target,annotation-index.org.opencontainers.image.description=SDM Docker image for PR ${{ github.event.pull_request.number }}
+
+      - name: Build Manifest Runner Docker image for multiple platforms
+        id: manifest-runner-build
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: airbyte_cdk/manifest_runner/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: false
+          tags: airbyte/manifest-runner:pr-${{ github.event.pull_request.number }}
+          outputs: type=image,name=target,annotation-index.org.opencontainers.image.description=Manifest Runner Docker image for PR ${{ github.event.pull_request.number }}
