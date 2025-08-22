@@ -58,6 +58,17 @@ Fully resolve a manifest including dynamic streams.
 
 **POST** - Generates dynamic streams up to specified limits and includes them in the resolved manifest.
 
+## Custom Components
+
+The manifest runner supports custom Python components, but this feature is **disabled by default** for security reasons.
+
+### Enabling Custom Components
+
+To allow custom Python components in your manifest files, set the environment variable:
+```bash
+export AIRBYTE_ENABLE_UNSAFE_CODE=true
+```
+
 ## Authentication
 
 The manifest runner supports optional JWT bearer token authentication:
