@@ -87,6 +87,8 @@ pytest = {version = "^7", optional = true }
 orjson = "^3.10.7"
 serpyco-rs = "^1.10.2"
 sqlalchemy = {version = "^2.0,!=2.0.36", optional = true }
+fastapi = { version = "^0.104.0", optional = true }
+uvicorn = { version = "^0.24.0", optional = true }
 xmltodict = ">=0.13,<0.15"
 anyascii = "^0.3.2"
 whenever = "^0.6.16"
@@ -121,11 +123,13 @@ file-based = ["avro", "fastavro", "pyarrow", "unstructured", "pdf2image", "pdfmi
 vector-db-based = ["langchain", "openai", "cohere", "tiktoken"]
 sql = ["sqlalchemy"]
 dev = ["pytest"]
+manifest-runner = ["fastapi", "uvicorn"]
 
 [tool.poetry.scripts]
 
 airbyte-cdk = "airbyte_cdk.cli.airbyte_cdk:cli"
 source-declarative-manifest = "airbyte_cdk.cli.source_declarative_manifest:run"
+manifest-runner = "airbyte_cdk.cli.manifest_runner._run:run"
 
 # Ruff configuration moved to ruff.toml
 
