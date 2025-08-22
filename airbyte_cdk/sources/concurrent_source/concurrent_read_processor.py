@@ -154,7 +154,6 @@ class ConcurrentReadProcessor:
                     stream.as_airbyte_stream(), AirbyteStreamStatus.RUNNING
                 )
             self._record_counter[stream.name] += 1
-            stream.cursor.observe(record)
         yield message
         yield from self._message_repository.consume_queue()
 
