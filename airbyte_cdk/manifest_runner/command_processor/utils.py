@@ -1,4 +1,4 @@
-from typing import Any, Mapping
+from typing import Any, Mapping, Optional
 
 from airbyte_cdk.models import (
     AirbyteStream,
@@ -55,7 +55,10 @@ def should_normalize_manifest(manifest: Mapping[str, Any]) -> bool:
 
 
 def build_source(
-    manifest: Mapping[str, Any], config: Mapping[str, Any]
+    manifest: Mapping[str, Any],
+    config: Mapping[str, Any],
+    page_limit: Optional[int] = None,
+    slice_limit: Optional[int] = None,
 ) -> ManifestDeclarativeSource:
     return ManifestDeclarativeSource(
         source_config=manifest,
@@ -65,8 +68,8 @@ def build_source(
         emit_connector_builder_messages=True,
         component_factory=ModelToComponentFactory(
             emit_connector_builder_messages=True,
-            limit_pages_fetched_per_slice=None,  # TODO
-            limit_slices_fetched=None,  # TODO
+            limit_pages_fetched_per_slice=page_limit,
+            limit_slices_fetched=slice_limit,
             disable_retries=True,
             disable_cache=True,
         ),

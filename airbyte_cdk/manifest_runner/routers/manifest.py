@@ -1,6 +1,6 @@
 import hashlib
 from dataclasses import asdict
-from typing import Any, Dict, List, Mapping
+from typing import Any, Dict, List, Mapping, Optional
 
 import jsonschema
 from fastapi import APIRouter, Depends, HTTPException
@@ -32,11 +32,14 @@ from ..command_processor.utils import build_catalog, build_source
 
 
 def safe_build_source(
-    manifest_dict: Mapping[str, Any], config_dict: Mapping[str, Any]
+    manifest_dict: Mapping[str, Any],
+    config_dict: Mapping[str, Any],
+    page_limit: Optional[int] = None,
+    slice_limit: Optional[int] = None,
 ) -> ManifestDeclarativeSource:
     """Wrapper around build_source that converts ValidationError to HTTPException."""
     try:
-        return build_source(manifest_dict, config_dict)
+        return build_source(manifest_dict, config_dict, page_limit, slice_limit)
     except jsonschema.exceptions.ValidationError as e:
         raise HTTPException(status_code=400, detail=f"Invalid manifest: {e.message}")
 
@@ -55,7 +58,9 @@ def test_read(request: StreamTestReadRequest) -> StreamRead:
     """
     config_dict = request.config.model_dump()
 
-    source = safe_build_source(request.manifest.model_dump(), config_dict)
+    source = safe_build_source(
+        request.manifest.model_dump(), config_dict, request.page_limit, request.slice_limit
+    )
     catalog = build_catalog(request.stream_name)
     state = [AirbyteStateMessageSerializer.load(state) for state in request.state]
 
