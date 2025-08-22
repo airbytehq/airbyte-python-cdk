@@ -108,7 +108,7 @@ class TestManifestRouter:
         response = client.post("/v1/manifest/test_read", json=request_data)
 
         assert response.status_code == 200
-        mock_safe_build_source.assert_called_once_with(sample_manifest, sample_config)
+        mock_safe_build_source.assert_called_once_with(sample_manifest, sample_config, 5, 5)
         mock_build_catalog.assert_called_once_with("products")
         mock_runner.test_read.assert_called_once()
 
@@ -224,7 +224,7 @@ class TestManifestRouter:
             data = response.json()
             assert "manifest" in data
             assert data["manifest"] == mock_source.resolved_manifest
-            mock_build_source.assert_called_once_with(sample_manifest, {})
+            mock_build_source.assert_called_once_with(sample_manifest, {}, None, None)
 
     def test_resolve_invalid_manifest(self):
         """Test resolve endpoint with invalid manifest."""
