@@ -74,8 +74,18 @@ class TestManifestRouter:
             latest_config_update=None,
         )
 
+    @patch("airbyte_cdk.manifest_runner.routers.manifest.ManifestCommandProcessor")
+    @patch("airbyte_cdk.manifest_runner.routers.manifest.build_catalog")
+    @patch("airbyte_cdk.manifest_runner.routers.manifest.safe_build_source")
     def test_test_read_endpoint_success(
-        self, sample_manifest, sample_config, mock_source, mock_stream_read
+        self,
+        mock_safe_build_source,
+        mock_build_catalog,
+        mock_runner_class,
+        sample_manifest,
+        sample_config,
+        mock_source,
+        mock_stream_read,
     ):
         """Test successful test_read endpoint call."""
         request_data = {
@@ -88,31 +98,32 @@ class TestManifestRouter:
             "slice_limit": 5,
         }
 
-        with (
-            patch("airbyte_cdk.manifest_runner.routers.manifest.build_source") as mock_build_source,
-            patch(
-                "airbyte_cdk.manifest_runner.routers.manifest.build_catalog"
-            ) as mock_build_catalog,
-            patch(
-                "airbyte_cdk.manifest_runner.routers.manifest.ManifestRunner"
-            ) as mock_runner_class,
-        ):
-            mock_build_source.return_value = mock_source
-            mock_build_catalog.return_value = Mock()
+        mock_safe_build_source.return_value = mock_source
+        mock_build_catalog.return_value = Mock()
 
-            mock_runner = Mock()
-            mock_runner.test_read.return_value = mock_stream_read
-            mock_runner_class.return_value = mock_runner
+        mock_runner = Mock()
+        mock_runner.test_read.return_value = mock_stream_read
+        mock_runner_class.return_value = mock_runner
 
-            response = client.post("/v1/manifest/test_read", json=request_data)
+        response = client.post("/v1/manifest/test_read", json=request_data)
 
-            assert response.status_code == 200
-            mock_build_source.assert_called_once_with(sample_manifest, sample_config)
-            mock_build_catalog.assert_called_once_with("products")
-            mock_runner.test_read.assert_called_once()
+        assert response.status_code == 200
+        mock_safe_build_source.assert_called_once_with(sample_manifest, sample_config)
+        mock_build_catalog.assert_called_once_with("products")
+        mock_runner.test_read.assert_called_once()
 
+    @patch("airbyte_cdk.manifest_runner.routers.manifest.ManifestCommandProcessor")
+    @patch("airbyte_cdk.manifest_runner.routers.manifest.build_catalog")
+    @patch("airbyte_cdk.manifest_runner.routers.manifest.safe_build_source")
     def test_test_read_with_custom_components(
-        self, sample_manifest, sample_config, mock_source, mock_stream_read
+        self,
+        mock_safe_build_source,
+        mock_build_catalog,
+        mock_runner_class,
+        sample_manifest,
+        sample_config,
+        mock_source,
+        mock_stream_read,
     ):
         """Test test_read endpoint with custom components code."""
         custom_code = "def custom_function(): pass"
@@ -129,36 +140,39 @@ class TestManifestRouter:
             "slice_limit": 2,
         }
 
-        with (
-            patch("airbyte_cdk.manifest_runner.routers.manifest.build_source") as mock_build_source,
-            patch(
-                "airbyte_cdk.manifest_runner.routers.manifest.build_catalog"
-            ) as mock_build_catalog,
-            patch(
-                "airbyte_cdk.manifest_runner.routers.manifest.ManifestRunner"
-            ) as mock_runner_class,
-        ):
-            mock_build_source.return_value = mock_source
-            mock_build_catalog.return_value = Mock()
+        mock_safe_build_source.return_value = mock_source
+        mock_build_catalog.return_value = Mock()
 
-            mock_runner = Mock()
-            mock_runner.test_read.return_value = mock_stream_read
-            mock_runner_class.return_value = mock_runner
+        mock_runner = Mock()
+        mock_runner.test_read.return_value = mock_stream_read
+        mock_runner_class.return_value = mock_runner
 
-            response = client.post("/v1/manifest/test_read", json=request_data)
+        response = client.post("/v1/manifest/test_read", json=request_data)
 
-            assert response.status_code == 200
+        assert response.status_code == 200
 
-            # Verify that build_source was called with config containing custom components
-            call_args = mock_build_source.call_args
-            config_arg = call_args[0][1]  # Second argument is config
-            assert "__injected_components_py" in config_arg
-            assert config_arg["__injected_components_py"] == custom_code
-            assert "__injected_components_py_checksums" in config_arg
-            assert config_arg["__injected_components_py_checksums"]["md5"] == expected_checksum
+        # Verify that build_source was called with config containing custom components
+        call_args = mock_safe_build_source.call_args
+        config_arg = call_args[0][1]  # Second argument is config
+        assert "__injected_components_py" in config_arg
+        assert config_arg["__injected_components_py"] == custom_code
+        assert "__injected_components_py_checksums" in config_arg
+        assert config_arg["__injected_components_py_checksums"]["md5"] == expected_checksum
 
+    @patch("airbyte_cdk.manifest_runner.routers.manifest.AirbyteStateMessageSerializer")
+    @patch("airbyte_cdk.manifest_runner.routers.manifest.ManifestCommandProcessor")
+    @patch("airbyte_cdk.manifest_runner.routers.manifest.build_catalog")
+    @patch("airbyte_cdk.manifest_runner.routers.manifest.safe_build_source")
     def test_test_read_with_state(
-        self, sample_manifest, sample_config, mock_source, mock_stream_read
+        self,
+        mock_safe_build_source,
+        mock_build_catalog,
+        mock_runner_class,
+        mock_serializer,
+        sample_manifest,
+        sample_config,
+        mock_source,
+        mock_stream_read,
     ):
         """Test test_read endpoint with state."""
         state_data = [{"type": "STREAM", "stream": {"stream_descriptor": {"name": "products"}}}]
@@ -170,30 +184,18 @@ class TestManifestRouter:
             "state": state_data,
         }
 
-        with (
-            patch("airbyte_cdk.manifest_runner.routers.manifest.build_source") as mock_build_source,
-            patch(
-                "airbyte_cdk.manifest_runner.routers.manifest.build_catalog"
-            ) as mock_build_catalog,
-            patch(
-                "airbyte_cdk.manifest_runner.routers.manifest.ManifestRunner"
-            ) as mock_runner_class,
-            patch(
-                "airbyte_cdk.manifest_runner.routers.manifest.AirbyteStateMessageSerializer"
-            ) as mock_serializer,
-        ):
-            mock_build_source.return_value = mock_source
-            mock_build_catalog.return_value = Mock()
-            mock_serializer.load.return_value = Mock()
+        mock_safe_build_source.return_value = mock_source
+        mock_build_catalog.return_value = Mock()
+        mock_serializer.load.return_value = Mock()
 
-            mock_runner = Mock()
-            mock_runner.test_read.return_value = mock_stream_read
-            mock_runner_class.return_value = mock_runner
+        mock_runner = Mock()
+        mock_runner.test_read.return_value = mock_stream_read
+        mock_runner_class.return_value = mock_runner
 
-            response = client.post("/v1/manifest/test_read", json=request_data)
+        response = client.post("/v1/manifest/test_read", json=request_data)
 
-            assert response.status_code == 200
-            assert mock_serializer.load.call_count == len(state_data)
+        assert response.status_code == 200
+        assert mock_serializer.load.call_count == len(state_data)
 
     def test_test_read_invalid_request(self):
         """Test test_read endpoint with invalid request data."""
@@ -356,67 +358,63 @@ class TestManifestRouter:
             assert len(template_a_streams) == 1
             assert len(template_b_streams) == 1
 
-    def test_check_endpoint_success(self, sample_manifest, sample_config, mock_source):
+    @patch("airbyte_cdk.manifest_runner.routers.manifest.ManifestCommandProcessor")
+    @patch("airbyte_cdk.manifest_runner.routers.manifest.safe_build_source")
+    def test_check_endpoint_success(
+        self, mock_safe_build_source, mock_runner_class, sample_manifest, sample_config, mock_source
+    ):
         """Test successful check endpoint call."""
         request_data = {
             "manifest": sample_manifest,
             "config": sample_config,
         }
 
-        with (
-            patch(
-                "airbyte_cdk.manifest_runner.routers.manifest.safe_build_source"
-            ) as mock_safe_build_source,
-            patch(
-                "airbyte_cdk.manifest_runner.routers.manifest.ManifestRunner"
-            ) as mock_runner_class,
-        ):
-            mock_safe_build_source.return_value = mock_source
+        mock_safe_build_source.return_value = mock_source
 
-            mock_runner = Mock()
-            mock_runner.check_connection.return_value = (True, "Connection successful")
-            mock_runner_class.return_value = mock_runner
+        mock_runner = Mock()
+        mock_runner.check_connection.return_value = (True, "Connection successful")
+        mock_runner_class.return_value = mock_runner
 
-            response = client.post("/v1/manifest/check", json=request_data)
+        response = client.post("/v1/manifest/check", json=request_data)
 
-            assert response.status_code == 200
-            data = response.json()
-            assert data["success"] is True
-            assert data["message"] == "Connection successful"
+        assert response.status_code == 200
+        data = response.json()
+        assert data["success"] is True
+        assert data["message"] == "Connection successful"
 
-            mock_safe_build_source.assert_called_once_with(sample_manifest, sample_config)
-            mock_runner_class.assert_called_once_with(mock_source)
-            mock_runner.check_connection.assert_called_once_with(sample_config)
+        mock_safe_build_source.assert_called_once_with(sample_manifest, sample_config)
+        mock_runner_class.assert_called_once_with(mock_source)
+        mock_runner.check_connection.assert_called_once_with(sample_config)
 
-    def test_check_endpoint_failure(self, sample_manifest, sample_config, mock_source):
+    @patch("airbyte_cdk.manifest_runner.routers.manifest.ManifestCommandProcessor")
+    @patch("airbyte_cdk.manifest_runner.routers.manifest.safe_build_source")
+    def test_check_endpoint_failure(
+        self, mock_safe_build_source, mock_runner_class, sample_manifest, sample_config, mock_source
+    ):
         """Test check endpoint with connection failure."""
         request_data = {
             "manifest": sample_manifest,
             "config": sample_config,
         }
 
-        with (
-            patch(
-                "airbyte_cdk.manifest_runner.routers.manifest.safe_build_source"
-            ) as mock_safe_build_source,
-            patch(
-                "airbyte_cdk.manifest_runner.routers.manifest.ManifestRunner"
-            ) as mock_runner_class,
-        ):
-            mock_safe_build_source.return_value = mock_source
+        mock_safe_build_source.return_value = mock_source
 
-            mock_runner = Mock()
-            mock_runner.check_connection.return_value = (False, "Invalid API key")
-            mock_runner_class.return_value = mock_runner
+        mock_runner = Mock()
+        mock_runner.check_connection.return_value = (False, "Invalid API key")
+        mock_runner_class.return_value = mock_runner
 
-            response = client.post("/v1/manifest/check", json=request_data)
+        response = client.post("/v1/manifest/check", json=request_data)
 
-            assert response.status_code == 200
-            data = response.json()
-            assert data["success"] is False
-            assert data["message"] == "Invalid API key"
+        assert response.status_code == 200
+        data = response.json()
+        assert data["success"] is False
+        assert data["message"] == "Invalid API key"
 
-    def test_discover_endpoint_success(self, sample_manifest, sample_config, mock_source):
+    @patch("airbyte_cdk.manifest_runner.routers.manifest.ManifestCommandProcessor")
+    @patch("airbyte_cdk.manifest_runner.routers.manifest.safe_build_source")
+    def test_discover_endpoint_success(
+        self, mock_safe_build_source, mock_runner_class, sample_manifest, sample_config, mock_source
+    ):
         """Test successful discover endpoint call."""
         from airbyte_protocol_dataclasses.models import AirbyteCatalog, AirbyteStream
 
@@ -436,54 +434,42 @@ class TestManifestRouter:
             ]
         )
 
-        with (
-            patch(
-                "airbyte_cdk.manifest_runner.routers.manifest.safe_build_source"
-            ) as mock_safe_build_source,
-            patch(
-                "airbyte_cdk.manifest_runner.routers.manifest.ManifestRunner"
-            ) as mock_runner_class,
-        ):
-            mock_safe_build_source.return_value = mock_source
+        mock_safe_build_source.return_value = mock_source
 
-            mock_runner = Mock()
-            mock_runner.discover.return_value = mock_catalog
-            mock_runner_class.return_value = mock_runner
+        mock_runner = Mock()
+        mock_runner.discover.return_value = mock_catalog
+        mock_runner_class.return_value = mock_runner
 
-            response = client.post("/v1/manifest/discover", json=request_data)
+        response = client.post("/v1/manifest/discover", json=request_data)
 
-            assert response.status_code == 200
-            data = response.json()
-            assert "catalog" in data
-            assert data["catalog"]["streams"][0]["name"] == "products"
+        assert response.status_code == 200
+        data = response.json()
+        assert "catalog" in data
+        assert data["catalog"]["streams"][0]["name"] == "products"
 
-            mock_safe_build_source.assert_called_once_with(sample_manifest, sample_config)
-            mock_runner_class.assert_called_once_with(mock_source)
-            mock_runner.discover.assert_called_once_with(sample_config)
+        mock_safe_build_source.assert_called_once_with(sample_manifest, sample_config)
+        mock_runner_class.assert_called_once_with(mock_source)
+        mock_runner.discover.assert_called_once_with(sample_config)
 
-    def test_discover_endpoint_missing_catalog(self, sample_manifest, sample_config, mock_source):
+    @patch("airbyte_cdk.manifest_runner.routers.manifest.ManifestCommandProcessor")
+    @patch("airbyte_cdk.manifest_runner.routers.manifest.safe_build_source")
+    def test_discover_endpoint_missing_catalog(
+        self, mock_safe_build_source, mock_runner_class, sample_manifest, sample_config, mock_source
+    ):
         """Test discover endpoint with no catalog throws 422 error."""
         request_data = {
             "manifest": sample_manifest,
             "config": sample_config,
         }
 
-        with (
-            patch(
-                "airbyte_cdk.manifest_runner.routers.manifest.safe_build_source"
-            ) as mock_safe_build_source,
-            patch(
-                "airbyte_cdk.manifest_runner.routers.manifest.ManifestRunner"
-            ) as mock_runner_class,
-        ):
-            mock_safe_build_source.return_value = mock_source
+        mock_safe_build_source.return_value = mock_source
 
-            mock_runner = Mock()
-            mock_runner.discover.return_value = None  # No catalog returned
-            mock_runner_class.return_value = mock_runner
+        mock_runner = Mock()
+        mock_runner.discover.return_value = None  # No catalog returned
+        mock_runner_class.return_value = mock_runner
 
-            response = client.post("/v1/manifest/discover", json=request_data)
+        response = client.post("/v1/manifest/discover", json=request_data)
 
-            assert response.status_code == 422
-            data = response.json()
-            assert "Connector did not return a discovered catalog" in data["detail"]
+        assert response.status_code == 422
+        data = response.json()
+        assert "Connector did not return a discovered catalog" in data["detail"]

@@ -25,8 +25,8 @@ from ..api_models import (
     StreamTestReadRequest,
 )
 from ..auth import verify_jwt_token
-from ..manifest_runner.runner import ManifestRunner
-from ..manifest_runner.utils import build_catalog, build_source
+from ..command_processor.processor import ManifestCommandProcessor
+from ..command_processor.utils import build_catalog, build_source
 
 
 def safe_build_source(manifest_dict, config_dict):
@@ -61,7 +61,7 @@ def test_read(request: StreamTestReadRequest) -> StreamRead:
             "md5": hashlib.md5(request.custom_components_code.encode()).hexdigest()
         }
 
-    runner = ManifestRunner(source)
+    runner = ManifestCommandProcessor(source)
     cdk_result = runner.test_read(
         config_dict,
         catalog,
@@ -77,7 +77,7 @@ def test_read(request: StreamTestReadRequest) -> StreamRead:
 def check(request: CheckRequest) -> CheckResponse:
     """Check configuration against a manifest"""
     source = safe_build_source(request.manifest.model_dump(), request.config.model_dump())
-    runner = ManifestRunner(source)
+    runner = ManifestCommandProcessor(source)
     success, message = runner.check_connection(request.config.model_dump())
     return CheckResponse(success=success, message=message)
 
@@ -86,7 +86,7 @@ def check(request: CheckRequest) -> CheckResponse:
 def discover(request: DiscoverRequest) -> DiscoverResponse:
     """Discover streams from a manifest"""
     source = safe_build_source(request.manifest.model_dump(), request.config.model_dump())
-    runner = ManifestRunner(source)
+    runner = ManifestCommandProcessor(source)
     catalog = runner.discover(request.config.model_dump())
     if catalog is None:
         raise HTTPException(status_code=422, detail="Connector did not return a discovered catalog")

@@ -22,7 +22,7 @@ from airbyte_cdk.sources.declarative.manifest_declarative_source import (
 )
 
 
-class ManifestRunner:
+class ManifestCommandProcessor:
     _source: ManifestDeclarativeSource
     _logger = logging.getLogger("airbyte.manifest-runner")
 

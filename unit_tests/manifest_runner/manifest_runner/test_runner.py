@@ -12,11 +12,11 @@ from airbyte_protocol_dataclasses.models import (
 )
 from airbyte_protocol_dataclasses.models import Type as AirbyteMessageType
 
-from airbyte_cdk.manifest_runner.manifest_runner.runner import ManifestRunner
+from airbyte_cdk.manifest_runner.command_processor.processor import ManifestCommandProcessor
 
 
-class TestManifestRunner:
-    """Test cases for the ManifestRunner class."""
+class TestManifestCommandProcessor:
+    """Test cases for the ManifestCommandProcessor class."""
 
     @pytest.fixture
     def mock_source(self):
@@ -25,8 +25,8 @@ class TestManifestRunner:
 
     @pytest.fixture
     def manifest_runner(self, mock_source):
-        """Create a ManifestRunner instance with mocked source."""
-        return ManifestRunner(mock_source)
+        """Create a ManifestCommandProcessor instance with mocked source."""
+        return ManifestCommandProcessor(mock_source)
 
     @pytest.fixture
     def sample_config(self):
@@ -63,7 +63,7 @@ class TestManifestRunner:
         """Sample state messages for testing."""
         return []
 
-    @patch("airbyte_cdk.manifest_runner.manifest_runner.runner.TestReader")
+    @patch("airbyte_cdk.manifest_runner.command_processor.processor.TestReader")
     def test_test_read_success(
         self, mock_test_reader_class, manifest_runner, sample_config, sample_catalog
     ):
@@ -124,7 +124,7 @@ class TestManifestRunner:
         # Verify the result is returned correctly
         assert result == mock_stream_read
 
-    @patch("airbyte_cdk.manifest_runner.manifest_runner.runner.TestReader")
+    @patch("airbyte_cdk.manifest_runner.command_processor.processor.TestReader")
     def test_test_read_exception_handling(
         self,
         mock_test_reader_class,
@@ -151,7 +151,7 @@ class TestManifestRunner:
                 slice_limit=10,
             )
 
-    @patch("airbyte_cdk.manifest_runner.manifest_runner.runner.AirbyteEntrypoint")
+    @patch("airbyte_cdk.manifest_runner.command_processor.processor.AirbyteEntrypoint")
     def test_check_connection_success(self, mock_entrypoint_class, manifest_runner, sample_config):
         """Test successful check_connection execution."""
 
@@ -185,7 +185,7 @@ class TestManifestRunner:
         mock_entrypoint_class.assert_called_once_with(source=manifest_runner._source)
         mock_entrypoint_instance.check.assert_called_once()
 
-    @patch("airbyte_cdk.manifest_runner.manifest_runner.runner.AirbyteEntrypoint")
+    @patch("airbyte_cdk.manifest_runner.command_processor.processor.AirbyteEntrypoint")
     def test_check_connection_failure(self, mock_entrypoint_class, manifest_runner, sample_config):
         """Test check_connection with failed status."""
 
@@ -210,7 +210,7 @@ class TestManifestRunner:
         assert success is False
         assert message == "Invalid API key"
 
-    @patch("airbyte_cdk.manifest_runner.manifest_runner.runner.AirbyteEntrypoint")
+    @patch("airbyte_cdk.manifest_runner.command_processor.processor.AirbyteEntrypoint")
     def test_check_connection_no_status_message(
         self, mock_entrypoint_class, manifest_runner, sample_config
     ):
@@ -232,7 +232,7 @@ class TestManifestRunner:
         assert success is False
         assert message == "Connection check failed"
 
-    @patch("airbyte_cdk.manifest_runner.manifest_runner.runner.AirbyteEntrypoint")
+    @patch("airbyte_cdk.manifest_runner.command_processor.processor.AirbyteEntrypoint")
     def test_check_connection_with_trace_error(
         self, mock_entrypoint_class, manifest_runner, sample_config
     ):
@@ -256,7 +256,7 @@ class TestManifestRunner:
         with pytest.raises(Exception, match="Authentication failed"):
             manifest_runner.check_connection(sample_config)
 
-    @patch("airbyte_cdk.manifest_runner.manifest_runner.runner.AirbyteEntrypoint")
+    @patch("airbyte_cdk.manifest_runner.command_processor.processor.AirbyteEntrypoint")
     def test_discover_success(self, mock_entrypoint_class, manifest_runner, sample_config):
         """Test successful discover execution."""
 
@@ -295,7 +295,7 @@ class TestManifestRunner:
         mock_entrypoint_class.assert_called_once_with(source=manifest_runner._source)
         mock_entrypoint_instance.discover.assert_called_once()
 
-    @patch("airbyte_cdk.manifest_runner.manifest_runner.runner.AirbyteEntrypoint")
+    @patch("airbyte_cdk.manifest_runner.command_processor.processor.AirbyteEntrypoint")
     def test_discover_no_catalog_message(
         self, mock_entrypoint_class, manifest_runner, sample_config
     ):
@@ -316,7 +316,7 @@ class TestManifestRunner:
         # Verify the result is None
         assert result is None
 
-    @patch("airbyte_cdk.manifest_runner.manifest_runner.runner.AirbyteEntrypoint")
+    @patch("airbyte_cdk.manifest_runner.command_processor.processor.AirbyteEntrypoint")
     def test_discover_with_trace_error(self, mock_entrypoint_class, manifest_runner, sample_config):
         """Test discover raises exception when trace error is present."""
 
