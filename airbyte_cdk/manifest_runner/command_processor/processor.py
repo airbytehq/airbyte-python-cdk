@@ -1,5 +1,5 @@
 import logging
-from typing import Any, Iterable, List, Mapping, Tuple
+from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple
 
 from airbyte_protocol_dataclasses.models import (
     AirbyteCatalog,
@@ -13,7 +13,7 @@ from airbyte_protocol_dataclasses.models import Type as AirbyteMessageType
 from airbyte_cdk.connector_builder.models import StreamRead
 from airbyte_cdk.connector_builder.test_reader import TestReader
 from airbyte_cdk.entrypoint import AirbyteEntrypoint
-from airbyte_cdk.models.airbyte_protocol import (
+from airbyte_cdk.models import (
     AirbyteStateMessage,
     ConfiguredAirbyteCatalog,
 )
@@ -78,7 +78,7 @@ class ManifestCommandProcessor:
     def discover(
         self,
         config: Mapping[str, Any],
-    ) -> AirbyteCatalog | None:
+    ) -> Optional[AirbyteCatalog]:
         """
         Discover the catalog from the source.
         """
@@ -91,11 +91,11 @@ class ManifestCommandProcessor:
     def _get_messages_by_type(
         self,
         messages: Iterable[AirbyteMessage],
-    ) -> Mapping[str, Iterable[AirbyteMessage]]:
+    ) -> Dict[str, List[AirbyteMessage]]:
         """
         Group messages by type.
         """
-        grouped = {}
+        grouped: Dict[str, List[AirbyteMessage]] = {}
         for message in messages:
             msg_type = message.type
             if msg_type not in grouped:
@@ -106,7 +106,7 @@ class ManifestCommandProcessor:
     def _get_connection_status(
         self,
         messages_by_type: Mapping[str, List[AirbyteMessage]],
-    ) -> AirbyteConnectionStatus | None:
+    ) -> Optional[AirbyteConnectionStatus]:
         """
         Get the connection status from the messages.
         """
@@ -116,7 +116,7 @@ class ManifestCommandProcessor:
     def _get_catalog(
         self,
         messages_by_type: Mapping[str, List[AirbyteMessage]],
-    ) -> AirbyteCatalog:
+    ) -> Optional[AirbyteCatalog]:
         """
         Get the catalog from the messages.
         """

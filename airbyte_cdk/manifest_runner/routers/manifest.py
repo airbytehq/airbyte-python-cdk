@@ -1,6 +1,6 @@
 import hashlib
 from dataclasses import asdict
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Mapping
 
 import jsonschema
 from fastapi import APIRouter, Depends, HTTPException
@@ -12,6 +12,7 @@ from airbyte_cdk.manifest_runner.api_models.manifest import (
     DiscoverResponse,
 )
 from airbyte_cdk.models import AirbyteStateMessageSerializer
+from airbyte_cdk.sources.declarative.manifest_declarative_source import ManifestDeclarativeSource
 from airbyte_cdk.sources.declarative.parsers.custom_code_compiler import (
     INJECTED_COMPONENTS_PY,
     INJECTED_COMPONENTS_PY_CHECKSUMS,
@@ -19,6 +20,7 @@ from airbyte_cdk.sources.declarative.parsers.custom_code_compiler import (
 
 from ..api_models import (
     FullResolveRequest,
+    Manifest,
     ManifestResponse,
     ResolveRequest,
     StreamRead,
@@ -29,7 +31,9 @@ from ..command_processor.processor import ManifestCommandProcessor
 from ..command_processor.utils import build_catalog, build_source
 
 
-def safe_build_source(manifest_dict, config_dict):
+def safe_build_source(
+    manifest_dict: Mapping[str, Any], config_dict: Mapping[str, Any]
+) -> ManifestDeclarativeSource:
     """Wrapper around build_source that converts ValidationError to HTTPException."""
     try:
         return build_source(manifest_dict, config_dict)
@@ -97,7 +101,7 @@ def discover(request: DiscoverRequest) -> DiscoverResponse:
 def resolve(request: ResolveRequest) -> ManifestResponse:
     """Resolve a manifest to its final configuration."""
     source = safe_build_source(request.manifest.model_dump(), {})
-    return ManifestResponse(manifest=source.resolved_manifest)
+    return ManifestResponse(manifest=Manifest(**source.resolved_manifest))
 
 
 @router.post("/full_resolve", operation_id="fullResolve")
@@ -125,4 +129,4 @@ def full_resolve(request: FullResolveRequest) -> ManifestResponse:
         streams.extend(generated_streams_list)
 
     manifest["streams"] = streams
-    return ManifestResponse(manifest=manifest)
+    return ManifestResponse(manifest=Manifest(**manifest))
