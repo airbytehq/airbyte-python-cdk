@@ -31,6 +31,11 @@ on:
         type: boolean
         required: true
         default: true
+      publish_manifest_runner:
+        description: "Publish Manifest Runner to DockerHub. If true, the workflow will publish the Manifest Runner to DockerHub."
+        type: boolean
+        required: true
+        default: true
       update_connector_builder:
         description: "Update Connector Builder. If true, the workflow will create a PR to bump the CDK version used by Connector Builder."
         type: boolean
@@ -249,6 +254,98 @@ jobs:
           push: true
           tags: |
             airbyte/source-declarative-manifest:latest
+
+  publish_manifest_runner:
+    name: Publish Manifest Runner to DockerHub
+    if: >
+      (github.event_name == 'push' &&
+       startsWith(github.ref, 'refs/tags/v')) ||
+      (github.event_name == 'workflow_dispatch' &&
+       github.event.inputs.publish_manifest_runner == 'true'
+      )
+    runs-on: ubuntu-24.04
+    needs: [build]
+    environment:
+      name: DockerHub
+      url: https://hub.docker.com/r/airbyte/manifest-runner/tags
+    env:
+      VERSION: ${{ needs.build.outputs.VERSION }}
+      IS_PRERELEASE: ${{ needs.build.outputs.IS_PRERELEASE }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # We need to download the build artifact again because the previous job was on a different runner
+      - name: Download Build Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: Packages-${{ github.run_id }}
+          path: dist
+
+      - name: Set up QEMU for multi-platform builds
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_HUB_USERNAME }}
+          password: ${{ secrets.DOCKER_HUB_PASSWORD }}
+
+      - name: "Check for existing tag (version: ${{ env.VERSION || 'none' }} )"
+        if: env.VERSION != ''
+        run: |
+          tag="airbyte/manifest-runner:${{ env.VERSION }}"
+          if [ -z "$tag" ]; then
+            echo "Error: VERSION is not set. Ensure the tag follows the format 'refs/tags/vX.Y.Z'."
+            exit 1
+          fi
+          echo "Checking if tag '$tag' exists on DockerHub..."
+          if DOCKER_CLI_EXPERIMENTAL=enabled docker manifest inspect "$tag" > /dev/null 2>&1; then
+            echo "The tag '$tag' already exists on DockerHub. Skipping publish to prevent overwrite."
+            exit 1
+          fi
+          echo "No existing tag '$tag' found. Proceeding with publish."
+
+      - name: "Build and push (sha tag: '${{ github.sha }}')"
+        # Only run if the version is not set
+        if: env.VERSION == ''
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: airbyte_cdk/manifest_runner/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: |
+            airbyte/manifest-runner:${{ github.sha }}
+
+      - name: "Build and push (version tag: ${{ env.VERSION || 'none'}})"
+        # Only run if the version is set
+        if: env.VERSION != ''
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: airbyte_cdk/manifest_runner/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: |
+            airbyte/manifest-runner:${{ env.VERSION }}
+
+      - name: Build and push ('latest' tag)
+        # Only run if version is set and IS_PRERELEASE is false
+        if: env.VERSION != '' && env.IS_PRERELEASE == 'false'
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: airbyte_cdk/manifest_runner/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: |
+            airbyte/manifest-runner:latest
 
   update-connector-builder:
     # Create a PR against the Builder, to update the CDK version that it uses.
