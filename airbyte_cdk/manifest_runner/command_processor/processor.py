@@ -53,6 +53,8 @@ class ManifestCommandProcessor:
             config=config,
             configured_catalog=catalog,
             state=state,
+            stream_name=catalog.streams[0].stream.name,
+            record_limit=record_limit,
         )
 
         return stream_read

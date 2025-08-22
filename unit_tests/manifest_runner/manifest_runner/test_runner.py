@@ -118,7 +118,9 @@ class TestManifestCommandProcessor:
             source=manifest_runner._source,
             config=sample_config,
             configured_catalog=sample_catalog,
+            stream_name="test_stream",
             state=state_messages,
+            record_limit=record_limit,
         )
 
         # Verify the result is returned correctly
