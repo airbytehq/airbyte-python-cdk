@@ -4,7 +4,6 @@
 
 import functools
 import logging
-import os
 import threading
 from abc import ABC, abstractmethod
 from typing import (
@@ -19,7 +18,6 @@ from typing import (
     Union,
 )
 
-from airbyte_cdk.models import AirbyteLogMessage, AirbyteMessage, Level, Type
 from airbyte_cdk.sources.connector_state_manager import ConnectorStateManager
 from airbyte_cdk.sources.message import MessageRepository
 from airbyte_cdk.sources.streams import NO_CURSOR_STATE_KEY
@@ -233,8 +231,12 @@ class ConcurrentCursor(Cursor):
     def observe(self, record: Record) -> None:
         # Because observe writes to the most_recent_cursor_value_per_partition mapping,
         # it is not thread-safe. However, this shouldn't lead to concurrency issues
-        # because observe() is only invoked on the main thread and the map is broken
-        # down by partition which should not have conflicting read/write.
+        # because observe() is only invoked in two ways both of which aren't conflicting:
+        # - ConcurrentReadProcessor.on_record(): Since records are observed on the main
+        # thread and so there aren't concurrent operations. Partitions are also split by key.
+        # - PartitionReader.process_partition(): Because the map is broken down according to
+        # partition, concurrent threads processing only read/write from different keys which
+        # avoids any conflicts.
         #
         # If we were to add thread safety, we should implement a lock per-partition
         # which is instantiated during stream_slices()
