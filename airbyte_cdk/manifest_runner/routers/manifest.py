@@ -86,4 +86,4 @@ def full_resolve(request: FullResolveRequest) -> ManifestResponse:
         streams.extend(generated_streams_list)
 
     manifest["streams"] = streams
-    return ManifestResponse(manifest)
+    return ManifestResponse(manifest=manifest)
