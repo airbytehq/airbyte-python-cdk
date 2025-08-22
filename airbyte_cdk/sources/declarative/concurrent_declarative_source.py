@@ -160,6 +160,9 @@ def _get_declarative_component_schema() -> Dict[str, Any]:
 
 # todo: AbstractSource can be removed once we've completely moved off all legacy synchronous CDK code paths
 #  and replaced with implementing the source.py:Source class
+#
+# todo: The `ConcurrentDeclarativeSource.message_repository()` method can also be removed once AbstractSource
+#  is no longer inherited from since the only external dependency is from that class.
 class ConcurrentDeclarativeSource(AbstractSource, Generic[TState]):
     # By default, we defer to a value of 2. A value lower than could cause a PartitionEnqueuer to be stuck in a state of deadlock
     # because it has hit the limit of futures but not partition reader is consuming them.
@@ -273,7 +276,7 @@ class ConcurrentDeclarativeSource(AbstractSource, Generic[TState]):
             logger=self.logger,
             slice_logger=self._slice_logger,
             queue=queue,
-            message_repository=self.message_repository,
+            message_repository=self._message_repository,
         )
 
     def _pre_process_manifest(self, manifest: Dict[str, Any]) -> Dict[str, Any]:
@@ -394,6 +397,7 @@ class ConcurrentDeclarativeSource(AbstractSource, Generic[TState]):
         """
         return self._source_config
 
+    # TODO: Deprecate this class once ConcurrentDeclarativeSource no longer inherits AbstractSource
     @property
     def message_repository(self) -> MessageRepository:
         return self._message_repository
@@ -414,8 +418,6 @@ class ConcurrentDeclarativeSource(AbstractSource, Generic[TState]):
         catalog: ConfiguredAirbyteCatalog,
         state: Optional[List[AirbyteStateMessage]] = None,
     ) -> Iterator[AirbyteMessage]:
-        self._configure_logger_level(logger)
-
         concurrent_streams, _ = self._group_streams(config=config)
 
         # ConcurrentReadProcessor pops streams that are finished being read so before syncing, the names of
@@ -469,13 +471,6 @@ class ConcurrentDeclarativeSource(AbstractSource, Generic[TState]):
 
         if self._spec_component:
             self._spec_component.validate_config(config)
-
-        self._emit_manifest_debug_message(
-            extra_args={
-                "source_name": self.name,
-                "parsed_config": json.dumps(self._source_config),
-            }
-        )
 
         stream_configs = (
             self._stream_configs(self._source_config, config=config) + self.dynamic_streams
@@ -560,20 +555,11 @@ class ConcurrentDeclarativeSource(AbstractSource, Generic[TState]):
         will first attempt to load the spec from the manifest's spec block, otherwise it will load it from "spec.yaml" or "spec.json"
         in the project root.
         """
-        self._configure_logger_level(logger)
-        self._emit_manifest_debug_message(
-            extra_args={
-                "source_name": self.name,
-                "parsed_config": json.dumps(self._source_config),
-            }
-        )
-
         return (
             self._spec_component.generate_spec() if self._spec_component else super().spec(logger)
         )
 
     def check(self, logger: logging.Logger, config: Mapping[str, Any]) -> AirbyteConnectionStatus:
-        self._configure_logger_level(logger)
         return super().check(logger, config)
 
     def check_connection(
@@ -707,7 +693,7 @@ class ConcurrentDeclarativeSource(AbstractSource, Generic[TState]):
                                 stream_name=declarative_stream.name,
                                 json_schema=declarative_stream.get_json_schema(),
                                 retriever=retriever,
-                                message_repository=self.message_repository,
+                                message_repository=self._message_repository,
                                 max_records_limit=self._limits.max_records
                                 if self._limits
                                 else None,
@@ -744,7 +730,7 @@ class ConcurrentDeclarativeSource(AbstractSource, Generic[TState]):
                                 stream_name=declarative_stream.name,
                                 json_schema=declarative_stream.get_json_schema(),
                                 retriever=retriever,
-                                message_repository=self.message_repository,
+                                message_repository=self._message_repository,
                                 max_records_limit=self._limits.max_records
                                 if self._limits
                                 else None,
@@ -778,7 +764,7 @@ class ConcurrentDeclarativeSource(AbstractSource, Generic[TState]):
                             stream_name=declarative_stream.name,
                             json_schema=declarative_stream.get_json_schema(),
                             retriever=declarative_stream.retriever,
-                            message_repository=self.message_repository,
+                            message_repository=self._message_repository,
                             max_records_limit=self._limits.max_records if self._limits else None,
                         ),
                         declarative_stream.retriever.stream_slicer,
@@ -790,7 +776,7 @@ class ConcurrentDeclarativeSource(AbstractSource, Generic[TState]):
                     final_state_cursor = FinalStateCursor(
                         stream_name=declarative_stream.name,
                         stream_namespace=declarative_stream.namespace,
-                        message_repository=self.message_repository,
+                        message_repository=self._message_repository,
                     )
 
                     concurrent_streams.append(
@@ -842,7 +828,7 @@ class ConcurrentDeclarativeSource(AbstractSource, Generic[TState]):
                             stream_name=declarative_stream.name,
                             json_schema=declarative_stream.get_json_schema(),
                             retriever=retriever,
-                            message_repository=self.message_repository,
+                            message_repository=self._message_repository,
                             max_records_limit=self._limits.max_records if self._limits else None,
                         ),
                         perpartition_cursor,
@@ -1067,13 +1053,3 @@ class ConcurrentDeclarativeSource(AbstractSource, Generic[TState]):
                 stream_state = dict(state_migration.migrate(stream_state))
 
         return stream_state
-
-    def _emit_manifest_debug_message(self, extra_args: dict[str, Any]) -> None:
-        self.logger.debug("declarative source created from manifest", extra=extra_args)
-
-    def _configure_logger_level(self, logger: logging.Logger) -> None:
-        """
-        Set the log level to logging.DEBUG if debug mode is enabled
-        """
-        if self._debug:
-            logger.setLevel(logging.DEBUG)
