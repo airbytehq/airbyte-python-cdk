@@ -94,7 +94,7 @@ class AirbyteEntrypoint(object):
             "--components-path",
             type=str,
             required=False,
-            help="path to the custom components file, if it exists",
+            help="path to the custom components file, if it exists ",
         )
 
         # discover
