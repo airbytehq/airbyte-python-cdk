@@ -38,6 +38,16 @@ Test reading from a specific stream in the manifest.
 
 **POST** - Test stream reading with configurable limits for records, pages, and slices.
 
+### `/manifest/check`
+Check configuration against a manifest.
+
+**POST** - Validates connector configuration and returns success/failure status with message.
+
+### `/manifest/discover`
+Discover streams from a manifest.
+
+**POST** - Returns the catalog of available streams from the manifest.
+
 ### `/manifest/resolve` 
 Resolve a manifest to its final configuration.
 

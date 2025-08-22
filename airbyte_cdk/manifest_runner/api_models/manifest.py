@@ -7,6 +7,7 @@ like reading, resolving, and full resolution.
 
 from typing import Any, List, Optional
 
+from airbyte_protocol_dataclasses.models import AirbyteCatalog
 from pydantic import BaseModel, Field
 
 from .dicts import ConnectorConfig, Manifest
@@ -23,6 +24,33 @@ class StreamTestReadRequest(BaseModel):
     record_limit: int = Field(default=100, ge=1, le=5000)
     page_limit: int = Field(default=5, ge=1, le=20)
     slice_limit: int = Field(default=5, ge=1, le=20)
+
+
+class CheckRequest(BaseModel):
+    """Request to check a manifest."""
+
+    manifest: Manifest
+    config: ConnectorConfig
+
+
+class CheckResponse(BaseModel):
+    """Response to check a manifest."""
+
+    success: bool
+    message: Optional[str] = None
+
+
+class DiscoverRequest(BaseModel):
+    """Request to discover a manifest."""
+
+    manifest: Manifest
+    config: ConnectorConfig
+
+
+class DiscoverResponse(BaseModel):
+    """Response to discover a manifest."""
+
+    catalog: AirbyteCatalog
 
 
 class ResolveRequest(BaseModel):

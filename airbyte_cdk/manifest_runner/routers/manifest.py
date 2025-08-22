@@ -5,6 +5,12 @@ from typing import Any, Dict, List
 import jsonschema
 from fastapi import APIRouter, Depends, HTTPException
 
+from airbyte_cdk.manifest_runner.api_models.manifest import (
+    CheckRequest,
+    CheckResponse,
+    DiscoverRequest,
+    DiscoverResponse,
+)
 from airbyte_cdk.models import AirbyteStateMessageSerializer
 from airbyte_cdk.sources.declarative.parsers.custom_code_compiler import (
     INJECTED_COMPONENTS_PY,
@@ -65,6 +71,24 @@ def test_read(request: StreamTestReadRequest) -> StreamRead:
         request.slice_limit,
     )
     return StreamRead.model_validate(asdict(cdk_result))
+
+
+@router.post("/check", operation_id="check")
+def check(request: CheckRequest) -> CheckResponse:
+    """Check configuration against a manifest"""
+    source = safe_build_source(request.manifest.model_dump(), request.config.model_dump())
+    runner = ManifestRunner(source)
+    success, message = runner.check_connection(request.config.model_dump())
+    return CheckResponse(success=success, message=message)
+
+
+@router.post("/discover", operation_id="discover")
+def discover(request: DiscoverRequest) -> DiscoverResponse:
+    """Discover streams from a manifest"""
+    source = safe_build_source(request.manifest.model_dump(), request.config.model_dump())
+    runner = ManifestRunner(source)
+    catalog = runner.discover(request.config.model_dump())
+    return DiscoverResponse(catalog=catalog)
 
 
 @router.post("/resolve", operation_id="resolve")

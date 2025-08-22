@@ -37,6 +37,7 @@ paths:
           content:
             application/json:
               schema:
+                additionalProperties: true
                 type: object
                 title: Response Getcapabilities
   /v1/manifest/test_read:
@@ -65,6 +66,64 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - HTTPBearer: []
+  /v1/manifest/check:
+    post:
+      tags:
+      - manifest
+      summary: Check
+      description: Check configuration against a manifest
+      operationId: check
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CheckRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CheckResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - HTTPBearer: []
+  /v1/manifest/discover:
+    post:
+      tags:
+      - manifest
+      summary: Discover
+      description: Discover streams from a manifest
+      operationId: discover
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DiscoverRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DiscoverResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - HTTPBearer: []
   /v1/manifest/resolve:
     post:
       tags:
@@ -91,6 +150,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - HTTPBearer: []
   /v1/manifest/full_resolve:
     post:
       tags:
@@ -122,8 +183,77 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - HTTPBearer: []
 components:
   schemas:
+    AirbyteCatalog:
+      properties:
+        streams:
+          items:
+            $ref: '#/components/schemas/AirbyteStream'
+          type: array
+          title: Streams
+      type: object
+      required:
+      - streams
+      title: AirbyteCatalog
+    AirbyteStream:
+      properties:
+        name:
+          type: string
+          title: Name
+        json_schema:
+          additionalProperties: true
+          type: object
+          title: Json Schema
+        supported_sync_modes:
+          items:
+            $ref: '#/components/schemas/SyncMode'
+          type: array
+          title: Supported Sync Modes
+        source_defined_cursor:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          title: Source Defined Cursor
+        default_cursor_field:
+          anyOf:
+          - items:
+              type: string
+            type: array
+          - type: 'null'
+          title: Default Cursor Field
+        source_defined_primary_key:
+          anyOf:
+          - items:
+              items:
+                type: string
+              type: array
+            type: array
+          - type: 'null'
+          title: Source Defined Primary Key
+        namespace:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Namespace
+        is_resumable:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          title: Is Resumable
+        is_file_based:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          title: Is File Based
+      type: object
+      required:
+      - name
+      - json_schema
+      - supported_sync_modes
+      title: AirbyteStream
     AuxiliaryRequest:
       properties:
         title:
@@ -148,6 +278,33 @@ components:
       - response
       title: AuxiliaryRequest
       description: Auxiliary HTTP request made during stream processing.
+    CheckRequest:
+      properties:
+        manifest:
+          $ref: '#/components/schemas/Manifest'
+        config:
+          $ref: '#/components/schemas/ConnectorConfig'
+      type: object
+      required:
+      - manifest
+      - config
+      title: CheckRequest
+      description: Request to check a manifest.
+    CheckResponse:
+      properties:
+        success:
+          type: boolean
+          title: Success
+        message:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Message
+      type: object
+      required:
+      - success
+      title: CheckResponse
+      description: Response to check a manifest.
     ConnectorConfig:
       properties: {}
       additionalProperties: true
@@ -155,6 +312,27 @@ components:
       title: ConnectorConfig
       description: Base connector configuration model. Allows client generation to
         replace with proper JsonNode types.
+    DiscoverRequest:
+      properties:
+        manifest:
+          $ref: '#/components/schemas/Manifest'
+        config:
+          $ref: '#/components/schemas/ConnectorConfig'
+      type: object
+      required:
+      - manifest
+      - config
+      title: DiscoverRequest
+      description: Request to discover a manifest.
+    DiscoverResponse:
+      properties:
+        catalog:
+          $ref: '#/components/schemas/AirbyteCatalog'
+      type: object
+      required:
+      - catalog
+      title: DiscoverResponse
+      description: Response to discover a manifest.
     FullResolveRequest:
       properties:
         manifest:
@@ -189,7 +367,8 @@ components:
           title: Url
         headers:
           anyOf:
-          - type: object
+          - additionalProperties: true
+            type: object
           - type: 'null'
           title: Headers
         http_method:
@@ -219,7 +398,8 @@ components:
           title: Body
         headers:
           anyOf:
-          - type: object
+          - additionalProperties: true
+            type: object
           - type: 'null'
           title: Headers
       type: object
@@ -298,7 +478,8 @@ components:
           title: Auxiliary Requests
         inferred_schema:
           anyOf:
-          - type: object
+          - additionalProperties: true
+            type: object
           - type: 'null'
           title: Inferred Schema
         inferred_datetime_formats:
@@ -310,7 +491,8 @@ components:
           title: Inferred Datetime Formats
         latest_config_update:
           anyOf:
-          - type: object
+          - additionalProperties: true
+            type: object
           - type: 'null'
           title: Latest Config Update
       type: object
@@ -358,6 +540,7 @@ components:
         state:
           anyOf:
           - items:
+              additionalProperties: true
               type: object
             type: array
           - type: 'null'
@@ -419,6 +602,12 @@ components:
       - stream_name
       title: StreamTestReadRequest
       description: Request to test read from a specific stream.
+    SyncMode:
+      type: string
+      enum:
+      - full_refresh
+      - incremental
+      title: SyncMode
     ValidationError:
       properties:
         loc:
@@ -440,3 +629,7 @@ components:
       - msg
       - type
       title: ValidationError
+  securitySchemes:
+    HTTPBearer:
+      type: http
+      scheme: bearer
