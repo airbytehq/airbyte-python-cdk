@@ -25,7 +25,7 @@ class TestVerifyJwtToken:
         with patch.dict(os.environ, {"AB_JWT_SIGNATURE_SECRET": "test-secret"}):
             with pytest.raises(HTTPException) as exc_info:
                 verify_jwt_token(None)
-            
+
             assert exc_info.value.status_code == 401
             assert exc_info.value.detail == "Bearer token required"
             assert exc_info.value.headers == {"WWW-Authenticate": "Bearer"}
@@ -34,13 +34,12 @@ class TestVerifyJwtToken:
         """Test that invalid JWT tokens raise 401."""
         with patch.dict(os.environ, {"AB_JWT_SIGNATURE_SECRET": "test-secret"}):
             invalid_credentials = HTTPAuthorizationCredentials(
-                scheme="Bearer", 
-                credentials="invalid.jwt.token"
+                scheme="Bearer", credentials="invalid.jwt.token"
             )
-            
+
             with pytest.raises(HTTPException) as exc_info:
                 verify_jwt_token(invalid_credentials)
-            
+
             assert exc_info.value.status_code == 401
             assert exc_info.value.detail == "Invalid token"
             assert exc_info.value.headers == {"WWW-Authenticate": "Bearer"}
@@ -49,13 +48,12 @@ class TestVerifyJwtToken:
         """Test that malformed tokens raise 401."""
         with patch.dict(os.environ, {"AB_JWT_SIGNATURE_SECRET": "test-secret"}):
             malformed_credentials = HTTPAuthorizationCredentials(
-                scheme="Bearer", 
-                credentials="not-a-jwt-token"
+                scheme="Bearer", credentials="not-a-jwt-token"
             )
-            
+
             with pytest.raises(HTTPException) as exc_info:
                 verify_jwt_token(malformed_credentials)
-            
+
             assert exc_info.value.status_code == 401
             assert exc_info.value.detail == "Invalid token"
 
@@ -65,16 +63,15 @@ class TestVerifyJwtToken:
         payload = {
             "exp": datetime.now(timezone.utc) + timedelta(hours=1),
             "iat": datetime.now(timezone.utc),
-            "sub": "test-user"
+            "sub": "test-user",
         }
         valid_token = jwt.encode(payload, secret, algorithm="HS256")
-        
+
         with patch.dict(os.environ, {"AB_JWT_SIGNATURE_SECRET": secret}):
             valid_credentials = HTTPAuthorizationCredentials(
-                scheme="Bearer", 
-                credentials=valid_token
+                scheme="Bearer", credentials=valid_token
             )
-            
+
             # Should not raise any exception
             verify_jwt_token(valid_credentials)
 
@@ -84,19 +81,18 @@ class TestVerifyJwtToken:
         expired_payload = {
             "exp": datetime.now(timezone.utc) - timedelta(hours=1),
             "iat": datetime.now(timezone.utc) - timedelta(hours=2),
-            "sub": "test-user"
+            "sub": "test-user",
         }
         expired_token = jwt.encode(expired_payload, secret, algorithm="HS256")
-        
+
         with patch.dict(os.environ, {"AB_JWT_SIGNATURE_SECRET": secret}):
             expired_credentials = HTTPAuthorizationCredentials(
-                scheme="Bearer", 
-                credentials=expired_token
+                scheme="Bearer", credentials=expired_token
             )
-            
+
             with pytest.raises(HTTPException) as exc_info:
                 verify_jwt_token(expired_credentials)
-            
+
             assert exc_info.value.status_code == 401
             assert exc_info.value.detail == "Invalid token"
 
@@ -104,23 +100,22 @@ class TestVerifyJwtToken:
         """Test that tokens signed with wrong secret raise 401."""
         correct_secret = "correct-secret"
         wrong_secret = "wrong-secret"
-        
+
         payload = {
             "exp": datetime.now(timezone.utc) + timedelta(hours=1),
             "iat": datetime.now(timezone.utc),
-            "sub": "test-user"
+            "sub": "test-user",
         }
         token_with_wrong_secret = jwt.encode(payload, wrong_secret, algorithm="HS256")
-        
+
         with patch.dict(os.environ, {"AB_JWT_SIGNATURE_SECRET": correct_secret}):
             wrong_credentials = HTTPAuthorizationCredentials(
-                scheme="Bearer", 
-                credentials=token_with_wrong_secret
+                scheme="Bearer", credentials=token_with_wrong_secret
             )
-            
+
             with pytest.raises(HTTPException) as exc_info:
                 verify_jwt_token(wrong_credentials)
-            
+
             assert exc_info.value.status_code == 401
             assert exc_info.value.detail == "Invalid token"
 
@@ -136,12 +131,11 @@ class TestVerifyJwtToken:
         secret = "test-secret"
         minimal_payload = {"custom": "data"}  # No exp, iat, sub etc.
         minimal_token = jwt.encode(minimal_payload, secret, algorithm="HS256")
-        
+
         with patch.dict(os.environ, {"AB_JWT_SIGNATURE_SECRET": secret}):
             minimal_credentials = HTTPAuthorizationCredentials(
-                scheme="Bearer", 
-                credentials=minimal_token
+                scheme="Bearer", credentials=minimal_token
             )
-            
+
             # Should not raise any exception - we only verify signature
             verify_jwt_token(minimal_credentials)

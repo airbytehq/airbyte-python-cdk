@@ -88,6 +88,8 @@ def discover(request: DiscoverRequest) -> DiscoverResponse:
     source = safe_build_source(request.manifest.model_dump(), request.config.model_dump())
     runner = ManifestRunner(source)
     catalog = runner.discover(request.config.model_dump())
+    if catalog is None:
+        raise HTTPException(status_code=422, detail="Connector did not return a discovered catalog")
     return DiscoverResponse(catalog=catalog)
 
 

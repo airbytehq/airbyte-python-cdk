@@ -355,3 +355,135 @@ class TestManifestRouter:
             template_b_streams = [s for s in dynamic_streams if "2a" in s["name"]]
             assert len(template_a_streams) == 1
             assert len(template_b_streams) == 1
+
+    def test_check_endpoint_success(self, sample_manifest, sample_config, mock_source):
+        """Test successful check endpoint call."""
+        request_data = {
+            "manifest": sample_manifest,
+            "config": sample_config,
+        }
+
+        with (
+            patch(
+                "airbyte_cdk.manifest_runner.routers.manifest.safe_build_source"
+            ) as mock_safe_build_source,
+            patch(
+                "airbyte_cdk.manifest_runner.routers.manifest.ManifestRunner"
+            ) as mock_runner_class,
+        ):
+            mock_safe_build_source.return_value = mock_source
+
+            mock_runner = Mock()
+            mock_runner.check_connection.return_value = (True, "Connection successful")
+            mock_runner_class.return_value = mock_runner
+
+            response = client.post("/v1/manifest/check", json=request_data)
+
+            assert response.status_code == 200
+            data = response.json()
+            assert data["success"] is True
+            assert data["message"] == "Connection successful"
+
+            mock_safe_build_source.assert_called_once_with(sample_manifest, sample_config)
+            mock_runner_class.assert_called_once_with(mock_source)
+            mock_runner.check_connection.assert_called_once_with(sample_config)
+
+    def test_check_endpoint_failure(self, sample_manifest, sample_config, mock_source):
+        """Test check endpoint with connection failure."""
+        request_data = {
+            "manifest": sample_manifest,
+            "config": sample_config,
+        }
+
+        with (
+            patch(
+                "airbyte_cdk.manifest_runner.routers.manifest.safe_build_source"
+            ) as mock_safe_build_source,
+            patch(
+                "airbyte_cdk.manifest_runner.routers.manifest.ManifestRunner"
+            ) as mock_runner_class,
+        ):
+            mock_safe_build_source.return_value = mock_source
+
+            mock_runner = Mock()
+            mock_runner.check_connection.return_value = (False, "Invalid API key")
+            mock_runner_class.return_value = mock_runner
+
+            response = client.post("/v1/manifest/check", json=request_data)
+
+            assert response.status_code == 200
+            data = response.json()
+            assert data["success"] is False
+            assert data["message"] == "Invalid API key"
+
+    def test_discover_endpoint_success(self, sample_manifest, sample_config, mock_source):
+        """Test successful discover endpoint call."""
+        from airbyte_protocol_dataclasses.models import AirbyteCatalog, AirbyteStream
+
+        request_data = {
+            "manifest": sample_manifest,
+            "config": sample_config,
+        }
+
+        # Create mock catalog
+        mock_catalog = AirbyteCatalog(
+            streams=[
+                AirbyteStream(
+                    name="products",
+                    json_schema={"type": "object", "properties": {"id": {"type": "integer"}}},
+                    supported_sync_modes=["full_refresh"],
+                )
+            ]
+        )
+
+        with (
+            patch(
+                "airbyte_cdk.manifest_runner.routers.manifest.safe_build_source"
+            ) as mock_safe_build_source,
+            patch(
+                "airbyte_cdk.manifest_runner.routers.manifest.ManifestRunner"
+            ) as mock_runner_class,
+        ):
+            mock_safe_build_source.return_value = mock_source
+
+            mock_runner = Mock()
+            mock_runner.discover.return_value = mock_catalog
+            mock_runner_class.return_value = mock_runner
+
+            response = client.post("/v1/manifest/discover", json=request_data)
+
+            assert response.status_code == 200
+            data = response.json()
+            assert "catalog" in data
+            assert data["catalog"]["streams"][0]["name"] == "products"
+
+            mock_safe_build_source.assert_called_once_with(sample_manifest, sample_config)
+            mock_runner_class.assert_called_once_with(mock_source)
+            mock_runner.discover.assert_called_once_with(sample_config)
+
+    def test_discover_endpoint_missing_catalog(self, sample_manifest, sample_config, mock_source):
+        """Test discover endpoint with no catalog throws 422 error."""
+        request_data = {
+            "manifest": sample_manifest,
+            "config": sample_config,
+        }
+
+        with (
+            patch(
+                "airbyte_cdk.manifest_runner.routers.manifest.safe_build_source"
+            ) as mock_safe_build_source,
+            patch(
+                "airbyte_cdk.manifest_runner.routers.manifest.ManifestRunner"
+            ) as mock_runner_class,
+        ):
+            mock_safe_build_source.return_value = mock_source
+
+            mock_runner = Mock()
+            mock_runner.discover.return_value = None  # No catalog returned
+            mock_runner_class.return_value = mock_runner
+
+            response = client.post("/v1/manifest/discover", json=request_data)
+
+            assert response.status_code == 422
+            data = response.json()
+            assert "Connector did not return a discovered catalog" in data["detail"]
