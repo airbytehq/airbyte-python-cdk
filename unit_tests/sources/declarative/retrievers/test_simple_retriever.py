@@ -265,120 +265,6 @@ def test_simple_retriever_resumable_full_refresh_cursor_page_increment(
     assert retriever.state == {"__ab_full_refresh_sync_complete": True}
 
 
-@pytest.mark.parametrize(
-    "initial_state, expected_reset_value, expected_next_page",
-    [
-        pytest.param(None, None, 1, id="test_initial_sync_no_state"),
-        pytest.param(
-            {
-                "next_page_token": "https://for-all-mankind.nasa.com/api/v1/astronauts?next_page=tracy_stevens"
-            },
-            "https://for-all-mankind.nasa.com/api/v1/astronauts?next_page=tracy_stevens",
-            "https://for-all-mankind.nasa.com/api/v1/astronauts?next_page=gordo_stevens",
-            id="test_reset_with_next_page_token",
-        ),
-    ],
-)
-def test_simple_retriever_resumable_full_refresh_cursor_reset_cursor_pagination(
-    initial_state, expected_reset_value, expected_next_page, requests_mock
-):
-    expected_records = [
-        Record(data={"name": "ed_baldwin"}, associated_slice=None, stream_name="users"),
-        Record(data={"name": "danielle_poole"}, associated_slice=None, stream_name="users"),
-        Record(data={"name": "tracy_stevens"}, associated_slice=None, stream_name="users"),
-        Record(data={"name": "deke_slayton"}, associated_slice=None, stream_name="users"),
-        Record(data={"name": "molly_cobb"}, associated_slice=None, stream_name="users"),
-        Record(data={"name": "gordo_stevens"}, associated_slice=None, stream_name="users"),
-        Record(data={"name": "margo_madison"}, associated_slice=None, stream_name="users"),
-        Record(data={"name": "ellen_waverly"}, associated_slice=None, stream_name="users"),
-    ]
-
-    content = """
-name: users
-type: DeclarativeStream
-retriever:
-  type: SimpleRetriever
-  decoder:
-    type: JsonDecoder
-  paginator:
-    type: "DefaultPaginator"
-    page_token_option:
-      type: RequestPath
-    pagination_strategy:
-      type: "CursorPagination"
-      cursor_value: "{{ response.next_page }}"
-  requester:
-    path: /astronauts
-    type: HttpRequester
-    url_base: "https://for-all-mankind.nasa.com/api/v1"
-    http_method: GET
-    authenticator:
-      type: ApiKeyAuthenticator
-      api_token: "{{ config['api_key'] }}"
-      inject_into:
-        type: RequestOption
-        field_name: Api-Key
-        inject_into: header
-    request_headers: {}
-    request_body_json: {}
-  record_selector:
-    type: RecordSelector
-    extractor:
-      type: DpathExtractor
-      field_path: ["data"]
-  partition_router: []
-primary_key: []
-    """
-
-    factory = ModelToComponentFactory()
-    stream_manifest = YamlDeclarativeSource._parse(content)
-    stream = factory.create_component(
-        model_type=DeclarativeStreamModel, component_definition=stream_manifest, config={}
-    )
-    response_body = {
-        "data": [r.data for r in expected_records[:5]],
-        "next_page": "https://for-all-mankind.nasa.com/api/v1/astronauts?next_page=gordo_stevens",
-    }
-    requests_mock.get("https://for-all-mankind.nasa.com/api/v1/astronauts", json=response_body)
-    requests_mock.get(
-        "https://for-all-mankind.nasa.com/astronauts?next_page=tracy_stevens", json=response_body
-    )
-    response_body_2 = {
-        "data": [r.data for r in expected_records[5:]],
-    }
-    requests_mock.get(
-        "https://for-all-mankind.nasa.com/api/v1/astronauts?next_page=gordo_stevens",
-        json=response_body_2,
-    )
-    stream_slicer = ResumableFullRefreshCursor(parameters={})
-    if initial_state:
-        stream_slicer.set_initial_state(initial_state)
-    stream.retriever.stream_slices = stream_slicer
-    stream.retriever.cursor = stream_slicer
-    stream_slice = list(stream_slicer.stream_slices())[0]
-    actual_records = [
-        r for r in stream.retriever.read_records(records_schema={}, stream_slice=stream_slice)
-    ]
-
-    assert len(actual_records) == 5
-    assert actual_records == expected_records[:5]
-    assert stream.retriever.state == {
-        "next_page_token": "https://for-all-mankind.nasa.com/api/v1/astronauts?next_page=gordo_stevens"
-    }
-    requests_mock.get(
-        "https://for-all-mankind.nasa.com/astronauts?next_page=tracy_stevens", json=response_body
-    )
-    requests_mock.get(
-        "https://for-all-mankind.nasa.com/astronauts?next_page=gordo_stevens", json=response_body_2
-    )
-    actual_records = [
-        r for r in stream.retriever.read_records(records_schema={}, stream_slice=stream_slice)
-    ]
-    assert len(actual_records) == 3
-    assert actual_records == expected_records[5:]
-    assert stream.retriever.state == {"__ab_full_refresh_sync_complete": True}
-
-
 def test_simple_retriever_resumable_full_refresh_cursor_reset_skip_completed_stream():
     expected_records = [
         Record(data={"id": "abc"}, associated_slice=None, stream_name="test_stream"),
@@ -722,56 +608,6 @@ def test_limit_stream_slices():
     assert truncated_slices == _generate_slices(maximum_number_of_slices)
 
 
-@pytest.mark.parametrize(
-    "test_name, first_greater_than_second",
-    [
-        ("test_first_greater_than_second", True),
-        ("test_second_greater_than_first", False),
-    ],
-)
-def test_when_read_records_then_cursor_close_slice_with_greater_record(
-    test_name, first_greater_than_second
-):
-    first_record = Record({"first": 1}, StreamSlice(cursor_slice={}, partition={}))
-    second_record = Record({"second": 2}, StreamSlice(cursor_slice={}, partition={}))
-    records = [first_record, second_record]
-    record_selector = MagicMock()
-    record_selector.select_records.return_value = records
-    cursor = MagicMock(spec=DeclarativeCursor)
-    cursor.is_greater_than_or_equal.return_value = first_greater_than_second
-    paginator = MagicMock()
-    paginator.get_request_headers.return_value = {}
-
-    retriever = SimpleRetriever(
-        name="stream_name",
-        primary_key=primary_key,
-        requester=MagicMock(),
-        paginator=paginator,
-        record_selector=record_selector,
-        stream_slicer=cursor,
-        cursor=cursor,
-        parameters={},
-        config={},
-    )
-    stream_slice = StreamSlice(cursor_slice={}, partition={"repository": "airbyte"})
-
-    def retriever_read_pages(_, __, ___):
-        return retriever._parse_records(
-            response=MagicMock(), stream_state={}, stream_slice=stream_slice, records_schema={}
-        )
-
-    with patch.object(
-        SimpleRetriever,
-        "_read_pages",
-        return_value=iter([first_record, second_record]),
-        side_effect=retriever_read_pages,
-    ):
-        list(retriever.read_records(stream_slice=stream_slice, records_schema={}))
-        cursor.close_slice.assert_called_once_with(
-            stream_slice, first_record if first_greater_than_second else second_record
-        )
-
-
 def test_given_stream_data_is_not_record_when_read_records_then_update_slice_with_optional_record():
     stream_data = [
         AirbyteMessage(
@@ -808,7 +644,7 @@ def test_given_stream_data_is_not_record_when_read_records_then_update_slice_wit
     ):
         list(retriever.read_records(stream_slice=stream_slice, records_schema={}))
         cursor.observe.assert_not_called()
-        cursor.close_slice.assert_called_once_with(stream_slice, None)
+        cursor.close_slice.assert_called_once_with(stream_slice)
 
 
 def test_given_initial_token_is_zero_when_read_records_then_pass_initial_token():

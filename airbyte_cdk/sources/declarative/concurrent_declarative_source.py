@@ -3,7 +3,7 @@
 #
 
 import logging
-from typing import Any, Generic, Iterator, List, Mapping, MutableMapping, Optional, Tuple
+from typing import Any, Generic, Iterator, List, Mapping, MutableMapping, Optional, Tuple, Union
 
 from airbyte_cdk.models import (
     AirbyteCatalog,
@@ -15,10 +15,6 @@ from airbyte_cdk.sources.concurrent_source.concurrent_source import ConcurrentSo
 from airbyte_cdk.sources.connector_state_manager import ConnectorStateManager
 from airbyte_cdk.sources.declarative.concurrency_level import ConcurrencyLevel
 from airbyte_cdk.sources.declarative.declarative_stream import DeclarativeStream
-from airbyte_cdk.sources.declarative.extractors import RecordSelector
-from airbyte_cdk.sources.declarative.extractors.record_filter import (
-    ClientSideIncrementalRecordFilterDecorator,
-)
 from airbyte_cdk.sources.declarative.incremental import (
     ConcurrentPerPartitionCursor,
     GlobalSubstreamCursor,
@@ -28,7 +24,6 @@ from airbyte_cdk.sources.declarative.incremental.per_partition_with_global impor
     PerPartitionWithGlobalCursor,
 )
 from airbyte_cdk.sources.declarative.manifest_declarative_source import ManifestDeclarativeSource
-from airbyte_cdk.sources.declarative.models import FileUploader
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     ConcurrencyLevel as ConcurrencyLevelModel,
 )
@@ -52,9 +47,6 @@ from airbyte_cdk.sources.source import TState
 from airbyte_cdk.sources.streams import Stream
 from airbyte_cdk.sources.streams.concurrent.abstract_stream import AbstractStream
 from airbyte_cdk.sources.streams.concurrent.abstract_stream_facade import AbstractStreamFacade
-from airbyte_cdk.sources.streams.concurrent.availability_strategy import (
-    AlwaysAvailableAvailabilityStrategy,
-)
 from airbyte_cdk.sources.streams.concurrent.cursor import ConcurrentCursor, FinalStateCursor
 from airbyte_cdk.sources.streams.concurrent.default_stream import DefaultStream
 from airbyte_cdk.sources.streams.concurrent.helpers import get_primary_key_from_stream
@@ -87,7 +79,6 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
         # incremental streams running in full refresh.
         component_factory = component_factory or ModelToComponentFactory(
             emit_connector_builder_messages=emit_connector_builder_messages,
-            disable_resumable_full_refresh=True,
             connector_state_manager=self._connector_state_manager,
             max_concurrent_async_job_count=source_config.get("max_concurrent_async_job_count"),
         )
@@ -183,7 +174,7 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
             ]
         )
 
-    def streams(self, config: Mapping[str, Any]) -> List[Stream]:
+    def streams(self, config: Mapping[str, Any]) -> List[Union[Stream, AbstractStream]]:  # type: ignore  # we are migrating away from the AbstractSource and are expecting that this will only be called by ConcurrentDeclarativeSource or the Connector Builder
         """
         The `streams` method is used as part of the AbstractSource in the following cases:
         * ConcurrentDeclarativeSource.check -> ManifestDeclarativeSource.check -> AbstractSource.check -> DeclarativeSource.check_connection -> CheckStream.check_connection -> streams
@@ -212,6 +203,10 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
             # Some low-code sources use a combination of DeclarativeStream and regular Python streams. We can't inspect
             # these legacy Python streams the way we do low-code streams to determine if they are concurrent compatible,
             # so we need to treat them as synchronous
+
+            if isinstance(declarative_stream, AbstractStream):
+                concurrent_streams.append(declarative_stream)
+                continue
 
             supports_file_transfer = (
                 isinstance(declarative_stream, DeclarativeStream)
@@ -281,10 +276,10 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
 
                         partition_generator = StreamSlicerPartitionGenerator(
                             partition_factory=DeclarativePartitionFactory(
-                                declarative_stream.name,
-                                declarative_stream.get_json_schema(),
-                                retriever,
-                                self.message_repository,
+                                stream_name=declarative_stream.name,
+                                schema_loader=declarative_stream._schema_loader,  # type: ignore  # We are accessing the private property but the public one is optional and we will remove this code soonish
+                                retriever=retriever,
+                                message_repository=self.message_repository,
                             ),
                             stream_slicer=declarative_stream.retriever.stream_slicer,
                         )
@@ -312,10 +307,10 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
                             )
                         partition_generator = StreamSlicerPartitionGenerator(
                             partition_factory=DeclarativePartitionFactory(
-                                declarative_stream.name,
-                                declarative_stream.get_json_schema(),
-                                retriever,
-                                self.message_repository,
+                                stream_name=declarative_stream.name,
+                                schema_loader=declarative_stream._schema_loader,  # type: ignore  # We are accessing the private property but the public one is optional and we will remove this code soonish
+                                retriever=retriever,
+                                message_repository=self.message_repository,
                             ),
                             stream_slicer=cursor,
                         )
@@ -325,7 +320,6 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
                             partition_generator=partition_generator,
                             name=declarative_stream.name,
                             json_schema=declarative_stream.get_json_schema(),
-                            availability_strategy=AlwaysAvailableAvailabilityStrategy(),
                             primary_key=get_primary_key_from_stream(declarative_stream.primary_key),
                             cursor_field=cursor.cursor_field.cursor_field_key
                             if hasattr(cursor, "cursor_field")
@@ -343,10 +337,10 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
                 ) and hasattr(declarative_stream.retriever, "stream_slicer"):
                     partition_generator = StreamSlicerPartitionGenerator(
                         DeclarativePartitionFactory(
-                            declarative_stream.name,
-                            declarative_stream.get_json_schema(),
-                            declarative_stream.retriever,
-                            self.message_repository,
+                            stream_name=declarative_stream.name,
+                            schema_loader=declarative_stream._schema_loader,  # type: ignore  # We are accessing the private property but the public one is optional and we will remove this code soonish
+                            retriever=declarative_stream.retriever,
+                            message_repository=self.message_repository,
                         ),
                         declarative_stream.retriever.stream_slicer,
                     )
@@ -362,7 +356,6 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
                             partition_generator=partition_generator,
                             name=declarative_stream.name,
                             json_schema=declarative_stream.get_json_schema(),
-                            availability_strategy=AlwaysAvailableAvailabilityStrategy(),
                             primary_key=get_primary_key_from_stream(declarative_stream.primary_key),
                             cursor_field=None,
                             logger=self.logger,
@@ -404,10 +397,10 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
 
                     partition_generator = StreamSlicerPartitionGenerator(
                         DeclarativePartitionFactory(
-                            declarative_stream.name,
-                            declarative_stream.get_json_schema(),
-                            retriever,
-                            self.message_repository,
+                            stream_name=declarative_stream.name,
+                            schema_loader=declarative_stream._schema_loader,  # type: ignore  # We are accessing the private property but the public one is optional and we will remove this code soonish
+                            retriever=retriever,
+                            message_repository=self.message_repository,
                         ),
                         perpartition_cursor,
                     )
@@ -417,7 +410,6 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
                             partition_generator=partition_generator,
                             name=declarative_stream.name,
                             json_schema=declarative_stream.get_json_schema(),
-                            availability_strategy=AlwaysAvailableAvailabilityStrategy(),
                             primary_key=get_primary_key_from_stream(declarative_stream.primary_key),
                             cursor_field=perpartition_cursor.cursor_field.cursor_field_key,
                             logger=self.logger,
@@ -468,34 +460,11 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
     def _get_retriever(
         declarative_stream: DeclarativeStream, stream_state: Mapping[str, Any]
     ) -> Retriever:
-        retriever = declarative_stream.retriever
-
-        # This is an optimization so that we don't invoke any cursor or state management flows within the
-        # low-code framework because state management is handled through the ConcurrentCursor.
-        if declarative_stream and isinstance(retriever, SimpleRetriever):
-            # Also a temporary hack. In the legacy Stream implementation, as part of the read,
-            # set_initial_state() is called to instantiate incoming state on the cursor. Although we no
-            # longer rely on the legacy low-code cursor for concurrent checkpointing, low-code components
-            # like StopConditionPaginationStrategyDecorator still rely on a DatetimeBasedCursor that is
-            # properly initialized with state.
-            if retriever.cursor:
-                retriever.cursor.set_initial_state(stream_state=stream_state)
-
-            # Similar to above, the ClientSideIncrementalRecordFilterDecorator cursor is a separate instance
-            # from the one initialized on the SimpleRetriever, so it also must also have state initialized
-            # for semi-incremental streams using is_client_side_incremental to filter properly
-            if isinstance(retriever.record_selector, RecordSelector) and isinstance(
-                retriever.record_selector.record_filter, ClientSideIncrementalRecordFilterDecorator
-            ):
-                retriever.record_selector.record_filter._cursor.set_initial_state(
-                    stream_state=stream_state
-                )  # type: ignore  # After non-concurrent cursors are deprecated we can remove these cursor workarounds
-
+        if declarative_stream and isinstance(declarative_stream.retriever, SimpleRetriever):
             # We zero it out here, but since this is a cursor reference, the state is still properly
             # instantiated for the other components that reference it
-            retriever.cursor = None
-
-        return retriever
+            declarative_stream.retriever.cursor = None
+        return declarative_stream.retriever
 
     @staticmethod
     def _select_streams(

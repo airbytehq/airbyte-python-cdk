@@ -6,6 +6,7 @@ from unittest.mock import Mock
 
 from airbyte_cdk.models import AirbyteLogMessage, AirbyteMessage, Level, Type
 from airbyte_cdk.sources.declarative.retrievers import Retriever
+from airbyte_cdk.sources.declarative.schema import InlineSchemaLoader
 from airbyte_cdk.sources.declarative.stream_slicers.declarative_partition_generator import (
     DeclarativePartitionFactory,
 )
@@ -14,7 +15,7 @@ from airbyte_cdk.sources.streams.core import StreamData
 from airbyte_cdk.sources.types import StreamSlice
 
 _STREAM_NAME = "a_stream_name"
-_JSON_SCHEMA = {"type": "object", "properties": {}}
+_SCHEMA_LOADER = InlineSchemaLoader({"type": "object", "properties": {}}, {})
 _A_STREAM_SLICE = StreamSlice(
     partition={"partition_key": "partition_value"}, cursor_slice={"cursor_key": "cursor_value"}
 )
@@ -34,7 +35,7 @@ class StreamSlicerPartitionGeneratorTest(TestCase):
         message_repository = Mock(spec=MessageRepository)
         partition_factory = DeclarativePartitionFactory(
             _STREAM_NAME,
-            _JSON_SCHEMA,
+            _SCHEMA_LOADER,
             retriever,
             message_repository,
         )
@@ -49,7 +50,7 @@ class StreamSlicerPartitionGeneratorTest(TestCase):
         message_repository = Mock(spec=MessageRepository)
         partition_factory = DeclarativePartitionFactory(
             _STREAM_NAME,
-            _JSON_SCHEMA,
+            _SCHEMA_LOADER,
             retriever,
             message_repository,
         )
@@ -67,7 +68,7 @@ class StreamSlicerPartitionGeneratorTest(TestCase):
         message_repository = Mock(spec=MessageRepository)
         partition_factory = DeclarativePartitionFactory(
             _STREAM_NAME,
-            _JSON_SCHEMA,
+            _SCHEMA_LOADER,
             retriever,
             message_repository,
         )

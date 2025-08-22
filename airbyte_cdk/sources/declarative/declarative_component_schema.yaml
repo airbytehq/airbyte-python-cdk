@@ -1511,7 +1511,6 @@ definitions:
       incremental_sync:
         title: Incremental Sync
         description: Component used to fetch data incrementally based on a time field in the data.
-        linkable: true
         anyOf:
           - "$ref": "#/definitions/DatetimeBasedCursor"
           - "$ref": "#/definitions/IncrementingCountCursor"
@@ -1839,6 +1838,7 @@ definitions:
         "$ref": "#/definitions/RequestOption"
       page_token_option:
         title: Inject Page Token Into Outgoing HTTP Request
+        description: Inject the page token into the outgoing HTTP requests by inserting it into either the request URL path or a field on the request.
         anyOf:
           - "$ref": "#/definitions/RequestOption"
           - "$ref": "#/definitions/RequestPath"
@@ -3487,7 +3487,7 @@ definitions:
           - [["content", "html"], ["content", "plain_text"]]
   RequestPath:
     title: Request Path
-    description: Specifies where in the request path a component's value should be inserted.
+    description: The URL path to be used for the HTTP request.
     type: object
     required:
       - type
@@ -3682,7 +3682,6 @@ definitions:
       partition_router:
         title: Partition Router
         description: Used to iteratively execute requests over a set of values, such as a parent stream's records or a list of constant values.
-        linkable: true
         anyOf:
           - "$ref": "#/definitions/SubstreamPartitionRouter"
           - "$ref": "#/definitions/ListPartitionRouter"
