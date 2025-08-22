@@ -1,11 +1,15 @@
 # Copyright (c) 2025 Airbyte, Inc., all rights reserved.
-
+import logging
+import os
 from queue import Queue
 from typing import Callable, Iterable
 
 from airbyte_cdk.models import AirbyteMessage, Level
+from airbyte_cdk.models import Type as MessageType
 from airbyte_cdk.sources.message.repository import LogMessage, MessageRepository
 from airbyte_cdk.sources.streams.concurrent.partitions.types import QueueItem
+
+logger = logging.getLogger("airbyte")
 
 
 class ConcurrentMessageRepository(MessageRepository):

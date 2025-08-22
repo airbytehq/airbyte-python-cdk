@@ -7,6 +7,7 @@ from __future__ import annotations
 import datetime
 import importlib
 import inspect
+import logging
 import re
 from functools import partial
 from typing import (
@@ -93,16 +94,13 @@ from airbyte_cdk.sources.declarative.extractors.record_filter import (
     ClientSideIncrementalRecordFilterDecorator,
 )
 from airbyte_cdk.sources.declarative.incremental import (
-    ChildPartitionResumableFullRefreshCursor,
     ConcurrentCursorFactory,
     ConcurrentPerPartitionCursor,
     CursorFactory,
     DatetimeBasedCursor,
     DeclarativeCursor,
     GlobalSubstreamCursor,
-    PerPartitionCursor,
     PerPartitionWithGlobalCursor,
-    ResumableFullRefreshCursor,
 )
 from airbyte_cdk.sources.declarative.interpolation import InterpolatedString
 from airbyte_cdk.sources.declarative.interpolation.interpolated_mapping import InterpolatedMapping
@@ -445,10 +443,6 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     ZipfileDecoder as ZipfileDecoderModel,
 )
-from airbyte_cdk.sources.declarative.parsers.custom_code_compiler import (
-    COMPONENTS_MODULE_NAME,
-    SDM_COMPONENTS_MODULE_NAME,
-)
 from airbyte_cdk.sources.declarative.partition_routers import (
     CartesianProductStreamSlicer,
     GroupingPartitionRouter,
@@ -507,7 +501,7 @@ from airbyte_cdk.sources.declarative.requesters.request_options import (
     RequestOptionsProvider,
 )
 from airbyte_cdk.sources.declarative.requesters.request_path import RequestPath
-from airbyte_cdk.sources.declarative.requesters.requester import HttpMethod, Requester
+from airbyte_cdk.sources.declarative.requesters.requester import HttpMethod
 from airbyte_cdk.sources.declarative.resolvers import (
     ComponentMappingDefinition,
     ConfigComponentsResolver,
@@ -542,6 +536,10 @@ from airbyte_cdk.sources.declarative.spec import ConfigMigration, Spec
 from airbyte_cdk.sources.declarative.stream_slicers import (
     StreamSlicer,
     StreamSlicerTestReadDecorator,
+)
+from airbyte_cdk.sources.declarative.stream_slicers.declarative_partition_generator import (
+    DeclarativePartitionFactory,
+    StreamSlicerPartitionGenerator,
 )
 from airbyte_cdk.sources.declarative.transformations import (
     AddFields,
@@ -594,6 +592,7 @@ from airbyte_cdk.sources.streams.call_rate import (
     Rate,
     UnlimitedCallRatePolicy,
 )
+from airbyte_cdk.sources.streams.concurrent.abstract_stream import AbstractStream
 from airbyte_cdk.sources.streams.concurrent.clamping import (
     ClampingEndProvider,
     ClampingStrategy,
@@ -603,7 +602,17 @@ from airbyte_cdk.sources.streams.concurrent.clamping import (
     WeekClampingStrategy,
     Weekday,
 )
-from airbyte_cdk.sources.streams.concurrent.cursor import ConcurrentCursor, Cursor, CursorField
+from airbyte_cdk.sources.streams.concurrent.cursor import (
+    ConcurrentCursor,
+    Cursor,
+    CursorField,
+    FinalStateCursor,
+)
+from airbyte_cdk.sources.streams.concurrent.default_stream import DefaultStream
+from airbyte_cdk.sources.streams.concurrent.helpers import get_primary_key_from_stream
+from airbyte_cdk.sources.streams.concurrent.partitions.stream_slicer import (
+    StreamSlicer as ConcurrentStreamSlicer,
+)
 from airbyte_cdk.sources.streams.concurrent.state_converters.datetime_stream_state_converter import (
     CustomFormatConcurrentStreamStateConverter,
     DateTimeStreamStateConverter,
@@ -637,7 +646,6 @@ class ModelToComponentFactory:
         emit_connector_builder_messages: bool = False,
         disable_retries: bool = False,
         disable_cache: bool = False,
-        disable_resumable_full_refresh: bool = False,
         message_repository: Optional[MessageRepository] = None,
         connector_state_manager: Optional[ConnectorStateManager] = None,
         max_concurrent_async_job_count: Optional[int] = None,
@@ -648,7 +656,6 @@ class ModelToComponentFactory:
         self._emit_connector_builder_messages = emit_connector_builder_messages
         self._disable_retries = disable_retries
         self._disable_cache = disable_cache
-        self._disable_resumable_full_refresh = disable_resumable_full_refresh
         self._message_repository = message_repository or InMemoryMessageRepository(
             self._evaluate_log_level(emit_connector_builder_messages)
         )
@@ -1924,31 +1931,9 @@ class ModelToComponentFactory:
         )
 
     def create_declarative_stream(
-        self, model: DeclarativeStreamModel, config: Config, **kwargs: Any
-    ) -> DeclarativeStream:
-        # When constructing a declarative stream, we assemble the incremental_sync component and retriever's partition_router field
-        # components if they exist into a single CartesianProductStreamSlicer. This is then passed back as an argument when constructing the
-        # Retriever. This is done in the declarative stream not the retriever to support custom retrievers. The custom create methods in
-        # the factory only support passing arguments to the component constructors, whereas this performs a merge of all slicers into one.
-        combined_slicers = self._merge_stream_slicers(model=model, config=config)
-
+        self, model: DeclarativeStreamModel, config: Config, is_parent: bool = False, **kwargs: Any
+    ) -> Union[DeclarativeStream, AbstractStream]:
         primary_key = model.primary_key.__root__ if model.primary_key else None
-        stop_condition_on_cursor = (
-            model.incremental_sync
-            and hasattr(model.incremental_sync, "is_data_feed")
-            and model.incremental_sync.is_data_feed
-        )
-        client_side_filtering_enabled = (
-            model.incremental_sync
-            and hasattr(model.incremental_sync, "is_client_side_incremental")
-            and model.incremental_sync.is_client_side_incremental
-        )
-        concurrent_cursor = None
-        if stop_condition_on_cursor or client_side_filtering_enabled:
-            stream_slicer = self._build_stream_slicer_from_partition_router(
-                model.retriever, config, stream_name=model.name
-            )
-            concurrent_cursor = self._build_concurrent_cursor(model, stream_slicer, config)
 
         if model.incremental_sync and isinstance(model.incremental_sync, DatetimeBasedCursorModel):
             cursor_model = model.incremental_sync
@@ -2016,6 +2001,15 @@ class ModelToComponentFactory:
                 model=model.file_uploader, config=config
             )
 
+        # When constructing a declarative stream, we assemble the incremental_sync component and retriever's partition_router field
+        # components if they exist into a single CartesianProductStreamSlicer. This is then passed back as an argument when constructing the
+        # Retriever. This is done in the declarative stream not the retriever to support custom retrievers. The custom create methods in
+        # the factory only support passing arguments to the component constructors, whereas this performs a merge of all slicers into one.
+        combined_slicers = self._merge_stream_slicers(model=model, config=config)
+        partition_router = self._build_stream_slicer_from_partition_router(
+            model.retriever, config, stream_name=model.name
+        )
+        concurrent_cursor = self._build_concurrent_cursor(model, partition_router, config)
         retriever = self._create_component_from_model(
             model=model.retriever,
             config=config,
@@ -2023,23 +2017,16 @@ class ModelToComponentFactory:
             primary_key=primary_key,
             stream_slicer=combined_slicers,
             request_options_provider=request_options_provider,
-            stop_condition_cursor=concurrent_cursor,
+            stop_condition_cursor=concurrent_cursor
+            if self._is_stop_condition_on_cursor(model)
+            else None,
             client_side_incremental_sync={"cursor": concurrent_cursor}
-            if client_side_filtering_enabled
+            if self._is_client_side_filtering_enabled(model)
             else None,
             transformations=transformations,
             file_uploader=file_uploader,
             incremental_sync=model.incremental_sync,
         )
-        cursor_field = model.incremental_sync.cursor_field if model.incremental_sync else None
-
-        if model.state_migrations:
-            state_transformations = [
-                self._create_component_from_model(state_migration, config, declarative_stream=model)
-                for state_migration in model.state_migrations
-            ]
-        else:
-            state_transformations = []
 
         schema_loader: Union[
             CompositeSchemaLoader,
@@ -2067,6 +2054,74 @@ class ModelToComponentFactory:
                 options["name"] = model.name
             schema_loader = DefaultSchemaLoader(config=config, parameters=options)
 
+        if (
+            (
+                isinstance(combined_slicers, PartitionRouter)
+                or isinstance(concurrent_cursor, ConcurrentCursor)
+            )
+            and not self._emit_connector_builder_messages
+            and not is_parent
+        ):
+            # We are starting to migrate streams to instantiate directly the DefaultStream instead of instantiating the
+            # DeclarativeStream and assembling the DefaultStream from that. The plan is the following:
+            # * Streams without partition router nor cursors and streams with only partition router. This is the `isinstance(combined_slicers, PartitionRouter)` condition as the first kind with have a SinglePartitionRouter
+            # * Streams without partition router but with cursor. This is the `isinstance(concurrent_cursor, ConcurrentCursor)` condition
+            # * Streams with both partition router and cursor
+            # We specifically exclude parent streams here because SubstreamPartitionRouter has not been updated yet
+            # We specifically exclude Connector Builder stuff for now as Brian is working on this anyway
+
+            stream_name = model.name or ""
+            stream_slicer: ConcurrentStreamSlicer = (
+                concurrent_cursor if concurrent_cursor else SinglePartitionRouter(parameters={})
+            )
+            cursor: Cursor = FinalStateCursor(stream_name, None, self._message_repository)
+            if isinstance(retriever, AsyncRetriever):
+                # The AsyncRetriever only ever worked with a cursor from the concurrent package. Hence, the method
+                # `_build_incremental_cursor` which we would usually think would return only declarative stuff has a
+                # special clause and return a concurrent cursor. This stream slicer is passed to AsyncRetriever when
+                # built because the async retriever has a specific partition router which relies on this stream slicer.
+                # We can't re-use `concurrent_cursor` because it is a different instance than the one passed in
+                # AsyncJobPartitionRouter.
+                stream_slicer = retriever.stream_slicer
+                if isinstance(combined_slicers, Cursor):
+                    cursor = combined_slicers
+            elif isinstance(combined_slicers, PartitionRouter):
+                stream_slicer = combined_slicers
+            elif concurrent_cursor:
+                cursor = concurrent_cursor
+
+            partition_generator = StreamSlicerPartitionGenerator(
+                DeclarativePartitionFactory(
+                    stream_name,
+                    schema_loader,
+                    retriever,
+                    self._message_repository,
+                ),
+                stream_slicer=stream_slicer,
+            )
+            return DefaultStream(
+                partition_generator=partition_generator,
+                name=stream_name,
+                json_schema=schema_loader.get_json_schema,
+                primary_key=get_primary_key_from_stream(primary_key),
+                cursor_field=cursor.cursor_field.cursor_field_key
+                if hasattr(cursor, "cursor_field")
+                else "",  # FIXME we should have the cursor field has part of the interface of cursor,
+                logger=logging.getLogger(f"airbyte.{stream_name}"),
+                # FIXME this is a breaking change compared to the old implementation which used the source name instead
+                cursor=cursor,
+                supports_file_transfer=hasattr(model, "file_uploader")
+                and bool(model.file_uploader),
+            )
+
+        cursor_field = model.incremental_sync.cursor_field if model.incremental_sync else None
+        if model.state_migrations:
+            state_transformations = [
+                self._create_component_from_model(state_migration, config, declarative_stream=model)
+                for state_migration in model.state_migrations
+            ]
+        else:
+            state_transformations = []
         return DeclarativeStream(
             name=model.name or "",
             primary_key=primary_key,
@@ -2078,6 +2133,20 @@ class ModelToComponentFactory:
             parameters=model.parameters or {},
         )
 
+    def _is_stop_condition_on_cursor(self, model: DeclarativeStreamModel) -> bool:
+        return bool(
+            model.incremental_sync
+            and hasattr(model.incremental_sync, "is_data_feed")
+            and model.incremental_sync.is_data_feed
+        )
+
+    def _is_client_side_filtering_enabled(self, model: DeclarativeStreamModel) -> bool:
+        return bool(
+            model.incremental_sync
+            and hasattr(model.incremental_sync, "is_client_side_incremental")
+            and model.incremental_sync.is_client_side_incremental
+        )
+
     def _build_stream_slicer_from_partition_router(
         self,
         model: Union[
@@ -2087,7 +2156,7 @@ class ModelToComponentFactory:
         ],
         config: Config,
         stream_name: Optional[str] = None,
-    ) -> Optional[PartitionRouter]:
+    ) -> PartitionRouter:
         if (
             hasattr(model, "partition_router")
             and isinstance(model, SimpleRetrieverModel | AsyncRetrieverModel)
@@ -2108,7 +2177,7 @@ class ModelToComponentFactory:
                 return self._create_component_from_model(  # type: ignore[no-any-return] # Will be created PartitionRouter as stream_slicer_model is model.partition_router
                     model=stream_slicer_model, config=config, stream_name=stream_name or ""
                 )
-        return None
+        return SinglePartitionRouter(parameters={})
 
     def _build_incremental_cursor(
         self,
@@ -2125,7 +2194,9 @@ class ModelToComponentFactory:
             else []
         )
 
-        if model.incremental_sync and stream_slicer:
+        if model.incremental_sync and (
+            stream_slicer and not isinstance(stream_slicer, SinglePartitionRouter)
+        ):
             if model.retriever.type == "AsyncRetriever":
                 stream_name = model.name or ""
                 stream_namespace = None
@@ -2198,7 +2269,11 @@ class ModelToComponentFactory:
         else:
             state_transformations = []
 
-        if model.incremental_sync and stream_slicer:
+        if (
+            model.incremental_sync
+            and stream_slicer
+            and not isinstance(stream_slicer, SinglePartitionRouter)
+        ):
             return self.create_concurrent_cursor_from_perpartition_cursor(  # type: ignore # This is a known issue that we are creating and returning a ConcurrentCursor which does not technically implement the (low-code) StreamSlicer. However, (low-code) StreamSlicer and ConcurrentCursor both implement StreamSlicer.stream_slices() which is the primary method needed for checkpointing
                 state_manager=self._connector_state_manager,
                 model_type=DatetimeBasedCursorModel,
@@ -2237,28 +2312,6 @@ class ModelToComponentFactory:
                 )
         return None
 
-    def _build_resumable_cursor(
-        self,
-        model: Union[
-            AsyncRetrieverModel,
-            CustomRetrieverModel,
-            SimpleRetrieverModel,
-        ],
-        stream_slicer: Optional[PartitionRouter],
-    ) -> Optional[StreamSlicer]:
-        if hasattr(model, "paginator") and model.paginator and not stream_slicer:
-            # For the regular Full-Refresh streams, we use the high level `ResumableFullRefreshCursor`
-            return ResumableFullRefreshCursor(parameters={})
-        elif stream_slicer:
-            # For the Full-Refresh sub-streams, we use the nested `ChildPartitionResumableFullRefreshCursor`
-            return PerPartitionCursor(
-                cursor_factory=CursorFactory(
-                    create_function=partial(ChildPartitionResumableFullRefreshCursor, {})
-                ),
-                partition_router=stream_slicer,
-            )
-        return None
-
     def _merge_stream_slicers(
         self, model: DeclarativeStreamModel, config: Config
     ) -> Optional[StreamSlicer]:
@@ -2295,11 +2348,7 @@ class ModelToComponentFactory:
         if model.incremental_sync:
             return self._build_incremental_cursor(model, stream_slicer, config)
 
-        return (
-            stream_slicer
-            if self._disable_resumable_full_refresh
-            else self._build_resumable_cursor(retriever_model, stream_slicer)
-        )
+        return stream_slicer
 
     def create_default_error_handler(
         self, model: DefaultErrorHandlerModel, config: Config, **kwargs: Any
@@ -2581,9 +2630,6 @@ class ModelToComponentFactory:
     def create_dynamic_schema_loader(
         self, model: DynamicSchemaLoaderModel, config: Config, **kwargs: Any
     ) -> DynamicSchemaLoader:
-        stream_slicer = self._build_stream_slicer_from_partition_router(model.retriever, config)
-        combined_slicers = self._build_resumable_cursor(model.retriever, stream_slicer)
-
         schema_transformations = []
         if model.schema_transformations:
             for transformation_model in model.schema_transformations:
@@ -2596,7 +2642,7 @@ class ModelToComponentFactory:
             config=config,
             name=name,
             primary_key=None,
-            stream_slicer=combined_slicers,
+            stream_slicer=self._build_stream_slicer_from_partition_router(model.retriever, config),
             transformations=[],
             use_cache=True,
             log_formatter=(
@@ -2949,7 +2995,10 @@ class ModelToComponentFactory:
         self, model: ParentStreamConfigModel, config: Config, **kwargs: Any
     ) -> ParentStreamConfig:
         declarative_stream = self._create_component_from_model(
-            model.stream, config=config, **kwargs
+            model.stream,
+            config=config,
+            is_parent=True,
+            **kwargs,
         )
         request_option = (
             self._create_component_from_model(model.request_option, config=config)
@@ -3859,15 +3908,12 @@ class ModelToComponentFactory:
     def create_http_components_resolver(
         self, model: HttpComponentsResolverModel, config: Config, stream_name: Optional[str] = None
     ) -> Any:
-        stream_slicer = self._build_stream_slicer_from_partition_router(model.retriever, config)
-        combined_slicers = self._build_resumable_cursor(model.retriever, stream_slicer)
-
         retriever = self._create_component_from_model(
             model=model.retriever,
             config=config,
             name=f"{stream_name if stream_name else '__http_components_resolver'}",
             primary_key=None,
-            stream_slicer=stream_slicer if stream_slicer else combined_slicers,
+            stream_slicer=self._build_stream_slicer_from_partition_router(model.retriever, config),
             transformations=[],
         )
 

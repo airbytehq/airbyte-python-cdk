@@ -157,6 +157,9 @@ from airbyte_cdk.sources.declarative.schema.composite_schema_loader import Compo
 from airbyte_cdk.sources.declarative.schema.schema_loader import SchemaLoader
 from airbyte_cdk.sources.declarative.spec import Spec
 from airbyte_cdk.sources.declarative.stream_slicers import StreamSlicerTestReadDecorator
+from airbyte_cdk.sources.declarative.stream_slicers.declarative_partition_generator import (
+    SchemaLoaderCachingDecorator,
+)
 from airbyte_cdk.sources.declarative.transformations import AddFields, RemoveFields
 from airbyte_cdk.sources.declarative.transformations.add_fields import AddedFieldDefinition
 from airbyte_cdk.sources.declarative.yaml_declarative_source import YamlDeclarativeSource
@@ -168,6 +171,7 @@ from airbyte_cdk.sources.streams.concurrent.clamping import (
     WeekClampingStrategy,
 )
 from airbyte_cdk.sources.streams.concurrent.cursor import ConcurrentCursor, CursorField
+from airbyte_cdk.sources.streams.concurrent.default_stream import DefaultStream
 from airbyte_cdk.sources.streams.concurrent.state_converters.datetime_stream_state_converter import (
     CustomFormatConcurrentStreamStateConverter,
 )
@@ -346,102 +350,92 @@ spec:
         model_type=DeclarativeStreamModel, component_definition=stream_manifest, config=input_config
     )
 
-    assert isinstance(stream, DeclarativeStream)
-    assert stream.primary_key == "id"
+    assert isinstance(stream, DefaultStream)
     assert stream.name == "lists"
-    assert stream._stream_cursor_field.string == "created"
+    assert stream.cursor_field == "created"
 
-    assert isinstance(stream.schema_loader, JsonFileSchemaLoader)
-    assert stream.schema_loader._get_json_filepath() == "./source_sendgrid/schemas/lists.json"
+    schema_loader = get_schema_loader(stream)
+    assert isinstance(schema_loader, JsonFileSchemaLoader)
+    assert schema_loader._get_json_filepath() == "./source_sendgrid/schemas/lists.json"
 
-    assert len(stream.retriever.record_selector.transformations) == 1
-    add_fields = stream.retriever.record_selector.transformations[0]
+    retriever = get_retriever(stream)
+    assert len(retriever.record_selector.transformations) == 1
+    add_fields = retriever.record_selector.transformations[0]
     assert isinstance(add_fields, AddFields)
     assert add_fields.fields[0].path == ["extra"]
     assert add_fields.fields[0].value.string == "{{ response.to_add }}"
 
-    assert isinstance(stream.retriever, SimpleRetriever)
-    assert stream.retriever.primary_key == stream.primary_key
-    assert stream.retriever.name == stream.name
+    assert isinstance(retriever, SimpleRetriever)
+    assert retriever.primary_key == "id"
+    assert retriever.name == stream.name
 
-    assert isinstance(stream.retriever.record_selector, RecordSelector)
+    assert isinstance(retriever.record_selector, RecordSelector)
 
-    assert isinstance(stream.retriever.record_selector.extractor, DpathExtractor)
-    assert isinstance(stream.retriever.record_selector.extractor.decoder, JsonDecoder)
-    assert [
-        fp.eval(input_config) for fp in stream.retriever.record_selector.extractor._field_path
-    ] == ["lists"]
+    assert isinstance(retriever.record_selector.extractor, DpathExtractor)
+    assert isinstance(retriever.record_selector.extractor.decoder, JsonDecoder)
+    assert [fp.eval(input_config) for fp in retriever.record_selector.extractor._field_path] == [
+        "lists"
+    ]
 
-    assert isinstance(stream.retriever.record_selector.record_filter, RecordFilter)
+    assert isinstance(retriever.record_selector.record_filter, RecordFilter)
     assert (
-        stream.retriever.record_selector.record_filter._filter_interpolator.condition
+        retriever.record_selector.record_filter._filter_interpolator.condition
         == "{{ record['id'] > stream_state['id'] }}"
     )
 
-    assert isinstance(stream.retriever.paginator, DefaultPaginator)
-    assert isinstance(stream.retriever.paginator.decoder, PaginationDecoderDecorator)
-    assert stream.retriever.paginator.page_size_option.field_name.eval(input_config) == "page_size"
-    assert (
-        stream.retriever.paginator.page_size_option.inject_into
-        == RequestOptionType.request_parameter
-    )
-    assert isinstance(stream.retriever.paginator.page_token_option, RequestPath)
-    assert stream.retriever.paginator.url_base.string == "https://api.sendgrid.com/v3/"
-    assert stream.retriever.paginator.url_base.default == "https://api.sendgrid.com/v3/"
+    assert isinstance(retriever.paginator, DefaultPaginator)
+    assert isinstance(retriever.paginator.decoder, PaginationDecoderDecorator)
+    assert retriever.paginator.page_size_option.field_name.eval(input_config) == "page_size"
+    assert retriever.paginator.page_size_option.inject_into == RequestOptionType.request_parameter
+    assert isinstance(retriever.paginator.page_token_option, RequestPath)
+    assert retriever.paginator.url_base.string == "https://api.sendgrid.com/v3/"
+    assert retriever.paginator.url_base.default == "https://api.sendgrid.com/v3/"
 
-    assert isinstance(stream.retriever.paginator.pagination_strategy, CursorPaginationStrategy)
-    assert isinstance(
-        stream.retriever.paginator.pagination_strategy.decoder, PaginationDecoderDecorator
-    )
+    assert isinstance(retriever.paginator.pagination_strategy, CursorPaginationStrategy)
+    assert isinstance(retriever.paginator.pagination_strategy.decoder, PaginationDecoderDecorator)
     assert (
-        stream.retriever.paginator.pagination_strategy._cursor_value.string
+        retriever.paginator.pagination_strategy._cursor_value.string
         == "{{ response._metadata.next }}"
     )
     assert (
-        stream.retriever.paginator.pagination_strategy._cursor_value.default
+        retriever.paginator.pagination_strategy._cursor_value.default
         == "{{ response._metadata.next }}"
     )
-    assert stream.retriever.paginator.pagination_strategy.page_size == 10
+    assert retriever.paginator.pagination_strategy.page_size == 10
 
-    assert isinstance(stream.retriever.requester, HttpRequester)
-    assert stream.retriever.requester.http_method == HttpMethod.GET
-    assert stream.retriever.requester.name == stream.name
-    assert stream.retriever.requester._path.string == "{{ next_page_token['next_page_url'] }}"
-    assert stream.retriever.requester._path.default == "{{ next_page_token['next_page_url'] }}"
+    assert isinstance(retriever.requester, HttpRequester)
+    assert retriever.requester.http_method == HttpMethod.GET
+    assert retriever.requester.name == stream.name
+    assert retriever.requester._path.string == "{{ next_page_token['next_page_url'] }}"
+    assert retriever.requester._path.default == "{{ next_page_token['next_page_url'] }}"
 
-    assert isinstance(stream.retriever.request_option_provider, DatetimeBasedRequestOptionsProvider)
+    assert isinstance(retriever.request_option_provider, DatetimeBasedRequestOptionsProvider)
     assert (
-        stream.retriever.request_option_provider.start_time_option.inject_into
+        retriever.request_option_provider.start_time_option.inject_into
         == RequestOptionType.request_parameter
     )
     assert (
-        stream.retriever.request_option_provider.start_time_option.field_name.eval(
-            config=input_config
-        )
+        retriever.request_option_provider.start_time_option.field_name.eval(config=input_config)
         == "after"
     )
     assert (
-        stream.retriever.request_option_provider.end_time_option.inject_into
+        retriever.request_option_provider.end_time_option.inject_into
         == RequestOptionType.request_parameter
     )
     assert (
-        stream.retriever.request_option_provider.end_time_option.field_name.eval(
-            config=input_config
-        )
+        retriever.request_option_provider.end_time_option.field_name.eval(config=input_config)
         == "before"
     )
-    assert stream.retriever.request_option_provider._partition_field_start.string == "start_time"
-    assert stream.retriever.request_option_provider._partition_field_end.string == "end_time"
+    assert retriever.request_option_provider._partition_field_start.string == "start_time"
+    assert retriever.request_option_provider._partition_field_end.string == "end_time"
 
-    assert isinstance(stream.retriever.requester.authenticator, BearerAuthenticator)
-    assert stream.retriever.requester.authenticator.token_provider.get_token() == "verysecrettoken"
+    assert isinstance(retriever.requester.authenticator, BearerAuthenticator)
+    assert retriever.requester.authenticator.token_provider.get_token() == "verysecrettoken"
 
     assert isinstance(
-        stream.retriever.requester.request_options_provider, InterpolatedRequestOptionsProvider
+        retriever.requester.request_options_provider, InterpolatedRequestOptionsProvider
     )
-    assert (
-        stream.retriever.requester.request_options_provider.request_parameters.get("unit") == "day"
-    )
+    assert retriever.requester.request_options_provider.request_parameters.get("unit") == "day"
 
     checker = factory.create_component(
         model_type=CheckStreamModel, component_definition=manifest["check"], config=input_config
@@ -1060,152 +1054,6 @@ def test_stream_with_incremental_and_async_retriever_with_partition_router(use_l
     assert stream_slices == expected_stream_slices
 
 
-def test_resumable_full_refresh_stream():
-    content = """
-decoder:
-  type: JsonDecoder
-extractor:
-  type: DpathExtractor
-selector:
-  type: RecordSelector
-  record_filter:
-    type: RecordFilter
-    condition: "{{ record['id'] > stream_state['id'] }}"
-metadata_paginator:
-    type: DefaultPaginator
-    page_size_option:
-      type: RequestOption
-      inject_into: body_json
-      field_path: ["variables", "page_size"]
-    page_token_option:
-      type: RequestPath
-    pagination_strategy:
-      type: "CursorPagination"
-      cursor_value: "{{ response._metadata.next }}"
-      page_size: 10
-requester:
-  type: HttpRequester
-  url_base: "https://api.sendgrid.com/v3/"
-  http_method: "GET"
-  authenticator:
-    type: BearerAuthenticator
-    api_token: "{{ config['apikey'] }}"
-  request_parameters:
-    unit: "day"
-retriever:
-  paginator:
-    type: NoPagination
-  decoder:
-    $ref: "#/decoder"
-partial_stream:
-  type: DeclarativeStream
-  schema_loader:
-    type: JsonFileSchemaLoader
-    file_path: "./source_sendgrid/schemas/{{ parameters.name }}.json"
-list_stream:
-  $ref: "#/partial_stream"
-  $parameters:
-    name: "lists"
-    extractor:
-      $ref: "#/extractor"
-      field_path: ["{{ parameters['name'] }}"]
-  name: "lists"
-  primary_key: "id"
-  retriever:
-    $ref: "#/retriever"
-    requester:
-      $ref: "#/requester"
-      path: "{{ next_page_token['next_page_url'] }}"
-    paginator:
-      $ref: "#/metadata_paginator"
-    record_selector:
-      $ref: "#/selector"
-  transformations:
-    - type: AddFields
-      fields:
-      - path: ["extra"]
-        value: "{{ response.to_add }}"
-check:
-  type: CheckStream
-  stream_names: ["list_stream"]
-spec:
-  type: Spec
-  documentation_url: https://airbyte.com/#yaml-from-manifest
-  connection_specification:
-    title: Test Spec
-    type: object
-    required:
-      - api_key
-    additionalProperties: false
-    properties:
-      api_key:
-        type: string
-        airbyte_secret: true
-        title: API Key
-        description: Test API Key
-        order: 0
-  advanced_auth:
-    auth_flow_type: "oauth2.0"
-    """
-    parsed_manifest = YamlDeclarativeSource._parse(content)
-    resolved_manifest = resolver.preprocess_manifest(parsed_manifest)
-    resolved_manifest["type"] = "DeclarativeSource"
-    manifest = transformer.propagate_types_and_parameters("", resolved_manifest, {})
-
-    stream_manifest = manifest["list_stream"]
-    assert stream_manifest["type"] == "DeclarativeStream"
-    stream = factory.create_component(
-        model_type=DeclarativeStreamModel, component_definition=stream_manifest, config=input_config
-    )
-
-    assert isinstance(stream, DeclarativeStream)
-    assert stream.primary_key == "id"
-    assert stream.name == "lists"
-    assert stream._stream_cursor_field.string == ""
-
-    assert isinstance(stream.retriever, SimpleRetriever)
-    assert stream.retriever.primary_key == stream.primary_key
-    assert stream.retriever.name == stream.name
-
-    assert isinstance(stream.retriever.record_selector, RecordSelector)
-
-    assert isinstance(stream.retriever.stream_slicer, ResumableFullRefreshCursor)
-    assert isinstance(stream.retriever.cursor, ResumableFullRefreshCursor)
-
-    assert isinstance(stream.retriever.paginator, DefaultPaginator)
-    assert isinstance(stream.retriever.paginator.decoder, PaginationDecoderDecorator)
-    for string in stream.retriever.paginator.page_size_option.field_path:
-        assert isinstance(string, InterpolatedString)
-    assert len(stream.retriever.paginator.page_size_option.field_path) == 2
-    assert stream.retriever.paginator.page_size_option.inject_into == RequestOptionType.body_json
-    assert isinstance(stream.retriever.paginator.page_token_option, RequestPath)
-    assert stream.retriever.paginator.url_base.string == "https://api.sendgrid.com/v3/"
-    assert stream.retriever.paginator.url_base.default == "https://api.sendgrid.com/v3/"
-
-    assert isinstance(stream.retriever.paginator.pagination_strategy, CursorPaginationStrategy)
-    assert isinstance(
-        stream.retriever.paginator.pagination_strategy.decoder, PaginationDecoderDecorator
-    )
-    assert (
-        stream.retriever.paginator.pagination_strategy._cursor_value.string
-        == "{{ response._metadata.next }}"
-    )
-    assert (
-        stream.retriever.paginator.pagination_strategy._cursor_value.default
-        == "{{ response._metadata.next }}"
-    )
-    assert stream.retriever.paginator.pagination_strategy.page_size == 10
-
-    checker = factory.create_component(
-        model_type=CheckStreamModel, component_definition=manifest["check"], config=input_config
-    )
-
-    assert isinstance(checker, CheckStream)
-    streams_to_check = checker.stream_names
-    assert len(streams_to_check) == 1
-    assert list(streams_to_check)[0] == "list_stream"
-
-
 def test_incremental_data_feed():
     content = """
 selector:
@@ -1259,7 +1107,8 @@ list_stream:
     )
 
     assert isinstance(
-        stream.retriever.paginator.pagination_strategy, StopConditionPaginationStrategyDecorator
+        get_retriever(stream).paginator.pagination_strategy,
+        StopConditionPaginationStrategyDecorator,
     )
 
 
@@ -1340,11 +1189,12 @@ list_stream:
         model_type=DeclarativeStreamModel, component_definition=stream_manifest, config=input_config
     )
 
+    retriever = get_retriever(stream)
     assert isinstance(
-        stream.retriever.record_selector.record_filter, ClientSideIncrementalRecordFilterDecorator
+        retriever.record_selector.record_filter, ClientSideIncrementalRecordFilterDecorator
     )
 
-    assert stream.retriever.record_selector.transform_before_filtering == True
+    assert get_retriever(stream).record_selector.transform_before_filtering == True
 
 
 def test_client_side_incremental_with_partition_router():
@@ -1908,38 +1758,33 @@ def test_config_with_defaults():
         model_type=DeclarativeStreamModel, component_definition=stream_manifest, config=input_config
     )
 
-    assert isinstance(stream, DeclarativeStream)
-    assert stream.primary_key == "id"
+    assert isinstance(stream, DefaultStream)
     assert stream.name == "lists"
-    assert isinstance(stream.retriever, SimpleRetriever)
-    assert stream.retriever.name == stream.name
-    assert stream.retriever.primary_key == stream.primary_key
+    retriever = stream._stream_partition_generator._partition_factory._retriever
+    assert isinstance(retriever, SimpleRetriever)
+    assert retriever.name == stream.name
+    assert retriever.primary_key == "id"
 
-    assert isinstance(stream.schema_loader, JsonFileSchemaLoader)
-    assert (
-        stream.schema_loader.file_path.string
-        == "./source_sendgrid/schemas/{{ parameters.name }}.yaml"
-    )
-    assert (
-        stream.schema_loader.file_path.default
-        == "./source_sendgrid/schemas/{{ parameters.name }}.yaml"
-    )
+    schema_loader = get_schema_loader(stream)
+    assert isinstance(schema_loader, JsonFileSchemaLoader)
+    assert schema_loader.file_path.string == "./source_sendgrid/schemas/{{ parameters.name }}.yaml"
+    assert schema_loader.file_path.default == "./source_sendgrid/schemas/{{ parameters.name }}.yaml"
 
-    assert isinstance(stream.retriever.requester, HttpRequester)
-    assert stream.retriever.requester.http_method == HttpMethod.GET
+    assert isinstance(retriever.requester, HttpRequester)
+    assert retriever.requester.http_method == HttpMethod.GET
 
-    assert isinstance(stream.retriever.requester.authenticator, BearerAuthenticator)
-    assert stream.retriever.requester.authenticator.token_provider.get_token() == "verysecrettoken"
+    assert isinstance(retriever.requester.authenticator, BearerAuthenticator)
+    assert retriever.requester.authenticator.token_provider.get_token() == "verysecrettoken"
 
-    assert isinstance(stream.retriever.record_selector, RecordSelector)
-    assert isinstance(stream.retriever.record_selector.extractor, DpathExtractor)
-    assert [
-        fp.eval(input_config) for fp in stream.retriever.record_selector.extractor._field_path
-    ] == ["result"]
+    assert isinstance(retriever.record_selector, RecordSelector)
+    assert isinstance(retriever.record_selector.extractor, DpathExtractor)
+    assert [fp.eval(input_config) for fp in retriever.record_selector.extractor._field_path] == [
+        "result"
+    ]
 
-    assert isinstance(stream.retriever.paginator, DefaultPaginator)
-    assert stream.retriever.paginator.url_base.string == "https://api.sendgrid.com"
-    assert stream.retriever.paginator.pagination_strategy.get_page_size() == 10
+    assert isinstance(retriever.paginator, DefaultPaginator)
+    assert retriever.paginator.url_base.string == "https://api.sendgrid.com"
+    assert retriever.paginator.pagination_strategy.get_page_size() == 10
 
 
 def test_create_default_paginator():
@@ -2335,8 +2180,8 @@ class TestCreateTransformations:
             config=input_config,
         )
 
-        assert isinstance(stream, DeclarativeStream)
-        assert [] == stream.retriever.record_selector.transformations
+        assert isinstance(stream, DefaultStream)
+        assert [] == get_retriever(stream).record_selector.transformations
 
     def test_remove_fields(self):
         content = f"""
@@ -2363,11 +2208,11 @@ class TestCreateTransformations:
             config=input_config,
         )
 
-        assert isinstance(stream, DeclarativeStream)
+        assert isinstance(stream, DefaultStream)
         expected = [
             RemoveFields(field_pointers=[["path", "to", "field1"], ["path2"]], parameters={})
         ]
-        assert stream.retriever.record_selector.transformations == expected
+        assert get_retriever(stream).record_selector.transformations == expected
 
     def test_add_fields_no_value_type(self):
         content = f"""
@@ -2526,8 +2371,8 @@ class TestCreateTransformations:
             config=input_config,
         )
 
-        assert isinstance(stream, DeclarativeStream)
-        assert stream.retriever.record_selector.transformations == expected
+        assert isinstance(stream, DefaultStream)
+        assert get_retriever(stream).record_selector.transformations == expected
 
     def test_default_schema_loader(self):
         component_definition = {
@@ -2566,7 +2411,7 @@ class TestCreateTransformations:
             component_definition=propagated_source_config,
             config=input_config,
         )
-        schema_loader = stream.schema_loader
+        schema_loader = get_schema_loader(stream)
         assert (
             schema_loader.default_loader._get_json_filepath().split("/")[-1]
             == f"{stream.name}.json"
@@ -2574,7 +2419,7 @@ class TestCreateTransformations:
 
 
 @pytest.mark.parametrize(
-    "incremental, partition_router, expected_type",
+    "incremental, partition_router, expected_router_type, expected_stream_type",
     [
         pytest.param(
             {
@@ -2587,7 +2432,8 @@ class TestCreateTransformations:
                 "cursor_granularity": "PT0.000001S",
             },
             None,
-            DatetimeBasedCursor,
+            ConcurrentCursor,
+            DefaultStream,
             id="test_create_simple_retriever_with_incremental",
         ),
         pytest.param(
@@ -2597,7 +2443,8 @@ class TestCreateTransformations:
                 "values": "{{config['repos']}}",
                 "cursor_field": "a_key",
             },
-            PerPartitionCursor,
+            ListPartitionRouter,
+            DefaultStream,
             id="test_create_simple_retriever_with_partition_router",
         ),
         pytest.param(
@@ -2616,6 +2463,7 @@ class TestCreateTransformations:
                 "cursor_field": "a_key",
             },
             PerPartitionWithGlobalCursor,
+            DeclarativeStream,
             id="test_create_simple_retriever_with_incremental_and_partition_router",
         ),
         pytest.param(
@@ -2641,17 +2489,21 @@ class TestCreateTransformations:
                 },
             ],
             PerPartitionWithGlobalCursor,
+            DeclarativeStream,
             id="test_create_simple_retriever_with_partition_routers_multiple_components",
         ),
         pytest.param(
             None,
             None,
             SinglePartitionRouter,
+            DefaultStream,
             id="test_create_simple_retriever_with_no_incremental_or_partition_router",
         ),
     ],
 )
-def test_merge_incremental_and_partition_router(incremental, partition_router, expected_type):
+def test_merge_incremental_and_partition_router(
+    incremental, partition_router, expected_router_type, expected_stream_type
+):
     stream_model = {
         "type": "DeclarativeStream",
         "retriever": {
@@ -2682,22 +2534,25 @@ def test_merge_incremental_and_partition_router(incremental, partition_router, e
         model_type=DeclarativeStreamModel, component_definition=stream_model, config=input_config
     )
 
-    assert isinstance(stream, DeclarativeStream)
-    assert isinstance(stream.retriever, SimpleRetriever)
-    assert isinstance(stream.retriever.stream_slicer, expected_type)
+    assert isinstance(stream, expected_stream_type)
+    retriever = get_retriever(stream)
+    assert isinstance(retriever, SimpleRetriever)
+    stream_slicer = (
+        retriever.stream_slicer
+        if expected_stream_type == DeclarativeStream
+        else stream._stream_partition_generator._stream_slicer
+    )
+    assert isinstance(stream_slicer, expected_router_type)
 
     if incremental and partition_router:
-        assert isinstance(stream.retriever.stream_slicer, PerPartitionWithGlobalCursor)
+        assert isinstance(retriever.stream_slicer, PerPartitionWithGlobalCursor)
         if isinstance(partition_router, list) and len(partition_router) > 1:
             assert isinstance(
-                stream.retriever.stream_slicer._partition_router, CartesianProductStreamSlicer
+                retriever.stream_slicer._partition_router, CartesianProductStreamSlicer
             )
-            assert len(stream.retriever.stream_slicer._partition_router.stream_slicers) == len(
+            assert len(retriever.stream_slicer._partition_router.stream_slicers) == len(
                 partition_router
             )
-    elif partition_router and isinstance(partition_router, list) and len(partition_router) > 1:
-        assert isinstance(stream.retriever.stream_slicer, PerPartitionWithGlobalCursor)
-        assert len(stream.retriever.stream_slicer.stream_slicerS) == len(partition_router)
 
 
 def test_simple_retriever_emit_log_messages():
@@ -2865,8 +2720,10 @@ def test_create_custom_retriever():
         model_type=DeclarativeStreamModel, component_definition=stream_model, config=input_config
     )
 
-    assert isinstance(stream, DeclarativeStream)
-    assert isinstance(stream.retriever, MyCustomRetriever)
+    assert isinstance(stream, DefaultStream)
+    assert isinstance(
+        stream._stream_partition_generator._partition_factory._retriever, MyCustomRetriever
+    )
 
 
 @freezegun.freeze_time("2021-01-01 00:00:00")
@@ -4265,7 +4122,8 @@ def test_simple_retriever_with_query_properties():
         model_type=DeclarativeStreamModel, component_definition=stream_manifest, config=input_config
     )
 
-    query_properties = stream.retriever.additional_query_properties
+    retriever = get_retriever(stream)
+    query_properties = retriever.additional_query_properties
     assert isinstance(query_properties, QueryProperties)
     assert query_properties.property_list == [
         "first_name",
@@ -4276,18 +4134,16 @@ def test_simple_retriever_with_query_properties():
     ]
     assert query_properties.always_include_properties == ["id"]
 
-    property_chunking = stream.retriever.additional_query_properties.property_chunking
+    property_chunking = retriever.additional_query_properties.property_chunking
     assert isinstance(property_chunking, PropertyChunking)
     assert property_chunking.property_limit_type == PropertyLimitType.property_count
     assert property_chunking.property_limit == 3
 
-    merge_strategy = (
-        stream.retriever.additional_query_properties.property_chunking.record_merge_strategy
-    )
+    merge_strategy = retriever.additional_query_properties.property_chunking.record_merge_strategy
     assert isinstance(merge_strategy, GroupByKey)
     assert merge_strategy.key == ["id"]
 
-    request_options_provider = stream.retriever.requester.request_options_provider
+    request_options_provider = retriever.requester.request_options_provider
     assert isinstance(request_options_provider, InterpolatedRequestOptionsProvider)
     # For a better developer experience we allow QueryProperties to be defined on the requester.request_parameters,
     # but it actually is leveraged by the SimpleRetriever which is why it is not included in the RequestOptionsProvider
@@ -4367,27 +4223,28 @@ def test_simple_retriever_with_request_parameters_properties_from_endpoint():
         model_type=DeclarativeStreamModel, component_definition=stream_manifest, config=input_config
     )
 
-    query_properties = stream.retriever.additional_query_properties
+    retriever = get_retriever(stream)
+    query_properties = retriever.additional_query_properties
     assert isinstance(query_properties, QueryProperties)
     assert query_properties.always_include_properties is None
 
-    properties_from_endpoint = stream.retriever.additional_query_properties.property_list
+    properties_from_endpoint = retriever.additional_query_properties.property_list
     assert isinstance(properties_from_endpoint, PropertiesFromEndpoint)
     assert properties_from_endpoint.property_field_path == ["name"]
 
     properties_from_endpoint_retriever = (
-        stream.retriever.additional_query_properties.property_list.retriever
+        retriever.additional_query_properties.property_list.retriever
     )
     assert isinstance(properties_from_endpoint_retriever, SimpleRetriever)
 
     properties_from_endpoint_requester = (
-        stream.retriever.additional_query_properties.property_list.retriever.requester
+        retriever.additional_query_properties.property_list.retriever.requester
     )
     assert isinstance(properties_from_endpoint_requester, HttpRequester)
     assert properties_from_endpoint_requester.url_base == "https://api.hubapi.com"
     assert properties_from_endpoint_requester.path == "/properties/v2/dynamics/properties"
 
-    property_chunking = stream.retriever.additional_query_properties.property_chunking
+    property_chunking = retriever.additional_query_properties.property_chunking
     assert isinstance(property_chunking, PropertyChunking)
     assert property_chunking.property_limit_type == PropertyLimitType.property_count
     assert property_chunking.property_limit == 3
@@ -4455,22 +4312,23 @@ def test_simple_retriever_with_requester_properties_from_endpoint():
         model_type=DeclarativeStreamModel, component_definition=stream_manifest, config=input_config
     )
 
-    query_properties = stream.retriever.additional_query_properties
+    retriever = get_retriever(stream)
+    query_properties = retriever.additional_query_properties
     assert isinstance(query_properties, QueryProperties)
     assert query_properties.always_include_properties is None
     assert query_properties.property_chunking is None
 
-    properties_from_endpoint = stream.retriever.additional_query_properties.property_list
+    properties_from_endpoint = retriever.additional_query_properties.property_list
     assert isinstance(properties_from_endpoint, PropertiesFromEndpoint)
     assert properties_from_endpoint.property_field_path == ["name"]
 
     properties_from_endpoint_retriever = (
-        stream.retriever.additional_query_properties.property_list.retriever
+        retriever.additional_query_properties.property_list.retriever
     )
     assert isinstance(properties_from_endpoint_retriever, SimpleRetriever)
 
     properties_from_endpoint_requester = (
-        stream.retriever.additional_query_properties.property_list.retriever.requester
+        retriever.additional_query_properties.property_list.retriever.requester
     )
     assert isinstance(properties_from_endpoint_requester, HttpRequester)
     assert properties_from_endpoint_requester.url_base == "https://api.hubapi.com"
@@ -4797,14 +4655,30 @@ def test_create_stream_with_multiple_schema_loaders():
         "", resolved_manifest["stream_A"], {}
     )
 
-    declarative_stream = factory.create_component(
+    stream = factory.create_component(
         model_type=DeclarativeStreamModel,
         component_definition=partition_router_manifest,
         config=input_config,
     )
 
-    schema_loader = declarative_stream.schema_loader
+    schema_loader = get_schema_loader(stream)
     assert isinstance(schema_loader, CompositeSchemaLoader)
     assert len(schema_loader.schema_loaders) == 2
     assert isinstance(schema_loader.schema_loaders[0], InlineSchemaLoader)
     assert isinstance(schema_loader.schema_loaders[1], InlineSchemaLoader)
+
+
+def get_schema_loader(stream: DefaultStream):
+    assert isinstance(
+        stream._stream_partition_generator._partition_factory._schema_loader,
+        SchemaLoaderCachingDecorator,
+    )
+    return stream._stream_partition_generator._partition_factory._schema_loader._decorated
+
+
+def get_retriever(stream: Union[DeclarativeStream, DefaultStream]):
+    return (
+        stream.retriever
+        if isinstance(stream, DeclarativeStream)
+        else stream._stream_partition_generator._partition_factory._retriever
+    )

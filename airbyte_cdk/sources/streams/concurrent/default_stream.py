@@ -2,9 +2,8 @@
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
 
-from functools import lru_cache
 from logging import Logger
-from typing import Any, Iterable, List, Mapping, Optional
+from typing import Any, Callable, Iterable, List, Mapping, Optional, Union
 
 from airbyte_cdk.models import AirbyteStream, SyncMode
 from airbyte_cdk.sources.streams.concurrent.abstract_stream import AbstractStream
@@ -20,7 +19,7 @@ class DefaultStream(AbstractStream):
         self,
         partition_generator: PartitionGenerator,
         name: str,
-        json_schema: Mapping[str, Any],
+        json_schema: Union[Mapping[str, Any], Callable[[], Mapping[str, Any]]],
         primary_key: List[str],
         cursor_field: Optional[str],
         logger: Logger,
@@ -53,14 +52,13 @@ class DefaultStream(AbstractStream):
     def cursor_field(self) -> Optional[str]:
         return self._cursor_field
 
-    @lru_cache(maxsize=None)
     def get_json_schema(self) -> Mapping[str, Any]:
-        return self._json_schema
+        return self._json_schema() if callable(self._json_schema) else self._json_schema
 
     def as_airbyte_stream(self) -> AirbyteStream:
         stream = AirbyteStream(
             name=self.name,
-            json_schema=dict(self._json_schema),
+            json_schema=dict(self.get_json_schema()),
             supported_sync_modes=[SyncMode.full_refresh],
             is_resumable=False,
             is_file_based=self._supports_file_transfer,

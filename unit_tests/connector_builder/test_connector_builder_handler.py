@@ -7,7 +7,7 @@ import dataclasses
 import json
 import logging
 import os
-from typing import List, Literal
+from typing import List, Literal, Union
 from unittest import mock
 from unittest.mock import MagicMock, patch
 
@@ -17,7 +17,6 @@ import requests
 
 from airbyte_cdk import connector_builder
 from airbyte_cdk.connector_builder.connector_builder_handler import (
-    TestLimits,
     create_source,
     get_limits,
     resolve_manifest,
@@ -60,6 +59,7 @@ from airbyte_cdk.sources.declarative.concurrent_declarative_source import (
 from airbyte_cdk.sources.declarative.declarative_stream import DeclarativeStream
 from airbyte_cdk.sources.declarative.retrievers.simple_retriever import SimpleRetriever
 from airbyte_cdk.sources.declarative.stream_slicers import StreamSlicerTestReadDecorator
+from airbyte_cdk.sources.streams.concurrent.default_stream import DefaultStream
 from airbyte_cdk.test.mock_http import HttpMocker, HttpRequest, HttpResponse
 from airbyte_cdk.utils.airbyte_secrets_utils import filter_secrets, update_secrets
 from unit_tests.connector_builder.utils import create_configured_catalog
@@ -440,6 +440,14 @@ MOCK_RESPONSE = {
 }
 
 
+def get_retriever(stream: Union[DeclarativeStream, DefaultStream]):
+    return (
+        stream.retriever
+        if isinstance(stream, DeclarativeStream)
+        else stream._stream_partition_generator._partition_factory._retriever
+    )
+
+
 @pytest.fixture
 def valid_resolve_manifest_config_file(tmp_path):
     config_file = tmp_path / "config.json"
@@ -785,7 +793,11 @@ def test_config_update() -> None:
         "refresh_token": "a refresh token",
     }
     source = ConcurrentDeclarativeSource(
-        catalog=None, config=config, state=None, source_config=manifest
+        catalog=None,
+        config=config,
+        state=None,
+        source_config=manifest,
+        emit_connector_builder_messages=True,
     )
 
     refresh_request_response = {
@@ -880,12 +892,13 @@ def test_handle_429_response():
         {"result": [{"error": "too many requests"}], "_metadata": {"next": "next"}}
     )
 
+    config = copy.deepcopy(TEST_READ_CONFIG)
+
     # Add backoff strategy to avoid default endless backoff loop
-    TEST_READ_CONFIG["__injected_declarative_manifest"]["definitions"]["retriever"]["requester"][
+    config["__injected_declarative_manifest"]["definitions"]["retriever"]["requester"][
         "error_handler"
     ] = {"backoff_strategies": [{"type": "ConstantBackoffStrategy", "backoff_time_in_seconds": 5}]}
 
-    config = TEST_READ_CONFIG
     limits = TestLimits()
     catalog = ConfiguredAirbyteCatalogSerializer.load(CONFIGURED_CATALOG)
     source = create_source(config=config, limits=limits, catalog=catalog, state=None)
@@ -1126,8 +1139,9 @@ def test_read_source(mock_http_stream):
 
     streams = source.streams(config)
     for s in streams:
-        assert isinstance(s.retriever, SimpleRetriever)
-        assert isinstance(s.retriever.stream_slicer, StreamSlicerTestReadDecorator)
+        retriever = get_retriever(s)
+        assert isinstance(retriever, SimpleRetriever)
+        assert isinstance(retriever.stream_slicer, StreamSlicerTestReadDecorator)
 
 
 @patch.object(
@@ -1173,8 +1187,9 @@ def test_read_source_single_page_single_slice(mock_http_stream):
 
     streams = source.streams(config)
     for s in streams:
-        assert isinstance(s.retriever, SimpleRetriever)
-        assert isinstance(s.retriever.stream_slicer, StreamSlicerTestReadDecorator)
+        retriever = get_retriever(s)
+        assert isinstance(retriever, SimpleRetriever)
+        assert isinstance(retriever.stream_slicer, StreamSlicerTestReadDecorator)
 
 
 @pytest.mark.parametrize(
@@ -1241,7 +1256,7 @@ def test_handle_read_external_requests(deployment_mode, url_base, expected_error
         ]
     )
 
-    test_manifest = MANIFEST
+    test_manifest = copy.deepcopy(MANIFEST)
     test_manifest["streams"][0]["$parameters"]["url_base"] = url_base
     config = {"__injected_declarative_manifest": test_manifest}
 
@@ -1335,7 +1350,7 @@ def test_handle_read_external_oauth_request(deployment_mode, token_url, expected
         "refresh_token": "john",
     }
 
-    test_manifest = MANIFEST
+    test_manifest = copy.deepcopy(MANIFEST)
     test_manifest["definitions"]["retriever"]["requester"]["authenticator"] = (
         oauth_authenticator_config
     )
@@ -1471,11 +1486,11 @@ def test_full_resolve_manifest(valid_resolve_manifest_config_file):
                             "type": "RequestOption",
                             "name": "stream_with_custom_requester",
                             "primary_key": "id",
-                            "url_base": "https://10.0.27.27/api/v1/",
+                            "url_base": "https://api.sendgrid.com",
                             "$parameters": {
                                 "name": "stream_with_custom_requester",
                                 "primary_key": "id",
-                                "url_base": "https://10.0.27.27/api/v1/",
+                                "url_base": "https://api.sendgrid.com",
                             },
                         },
                         "page_token_option": {
@@ -1483,11 +1498,11 @@ def test_full_resolve_manifest(valid_resolve_manifest_config_file):
                             "type": "RequestPath",
                             "name": "stream_with_custom_requester",
                             "primary_key": "id",
-                            "url_base": "https://10.0.27.27/api/v1/",
+                            "url_base": "https://api.sendgrid.com",
                             "$parameters": {
                                 "name": "stream_with_custom_requester",
                                 "primary_key": "id",
-                                "url_base": "https://10.0.27.27/api/v1/",
+                                "url_base": "https://api.sendgrid.com",
                             },
                         },
                         "pagination_strategy": {
@@ -1496,20 +1511,20 @@ def test_full_resolve_manifest(valid_resolve_manifest_config_file):
                             "page_size": 2,
                             "name": "stream_with_custom_requester",
                             "primary_key": "id",
-                            "url_base": "https://10.0.27.27/api/v1/",
+                            "url_base": "https://api.sendgrid.com",
                             "$parameters": {
                                 "name": "stream_with_custom_requester",
                                 "primary_key": "id",
-                                "url_base": "https://10.0.27.27/api/v1/",
+                                "url_base": "https://api.sendgrid.com",
                             },
                         },
                         "name": "stream_with_custom_requester",
                         "primary_key": "id",
-                        "url_base": "https://10.0.27.27/api/v1/",
+                        "url_base": "https://api.sendgrid.com",
                         "$parameters": {
                             "name": "stream_with_custom_requester",
                             "primary_key": "id",
-                            "url_base": "https://10.0.27.27/api/v1/",
+                            "url_base": "https://api.sendgrid.com",
                         },
                     },
                     "partition_router": {
@@ -1518,11 +1533,11 @@ def test_full_resolve_manifest(valid_resolve_manifest_config_file):
                         "cursor_field": "item_id",
                         "name": "stream_with_custom_requester",
                         "primary_key": "id",
-                        "url_base": "https://10.0.27.27/api/v1/",
+                        "url_base": "https://api.sendgrid.com",
                         "$parameters": {
                             "name": "stream_with_custom_requester",
                             "primary_key": "id",
-                            "url_base": "https://10.0.27.27/api/v1/",
+                            "url_base": "https://api.sendgrid.com",
                         },
                     },
                     "requester": {
@@ -1532,22 +1547,22 @@ def test_full_resolve_manifest(valid_resolve_manifest_config_file):
                             "api_token": "{{ config.apikey }}",
                             "name": "stream_with_custom_requester",
                             "primary_key": "id",
-                            "url_base": "https://10.0.27.27/api/v1/",
+                            "url_base": "https://api.sendgrid.com",
                             "$parameters": {
                                 "name": "stream_with_custom_requester",
                                 "primary_key": "id",
-                                "url_base": "https://10.0.27.27/api/v1/",
+                                "url_base": "https://api.sendgrid.com",
                             },
                         },
                         "request_parameters": {"a_param": "10"},
                         "type": "HttpRequester",
                         "name": "stream_with_custom_requester",
                         "primary_key": "id",
-                        "url_base": "https://10.0.27.27/api/v1/",
+                        "url_base": "https://api.sendgrid.com",
                         "$parameters": {
                             "name": "stream_with_custom_requester",
                             "primary_key": "id",
-                            "url_base": "https://10.0.27.27/api/v1/",
+                            "url_base": "https://api.sendgrid.com",
                         },
                     },
                     "record_selector": {
@@ -1556,40 +1571,40 @@ def test_full_resolve_manifest(valid_resolve_manifest_config_file):
                             "type": "DpathExtractor",
                             "name": "stream_with_custom_requester",
                             "primary_key": "id",
-                            "url_base": "https://10.0.27.27/api/v1/",
+                            "url_base": "https://api.sendgrid.com",
                             "$parameters": {
                                 "name": "stream_with_custom_requester",
                                 "primary_key": "id",
-                                "url_base": "https://10.0.27.27/api/v1/",
+                                "url_base": "https://api.sendgrid.com",
                             },
                         },
                         "type": "RecordSelector",
                         "name": "stream_with_custom_requester",
                         "primary_key": "id",
-                        "url_base": "https://10.0.27.27/api/v1/",
+                        "url_base": "https://api.sendgrid.com",
                         "$parameters": {
                             "name": "stream_with_custom_requester",
                             "primary_key": "id",
-                            "url_base": "https://10.0.27.27/api/v1/",
+                            "url_base": "https://api.sendgrid.com",
                         },
                     },
                     "type": "SimpleRetriever",
                     "name": "stream_with_custom_requester",
                     "primary_key": "id",
-                    "url_base": "https://10.0.27.27/api/v1/",
+                    "url_base": "https://api.sendgrid.com",
                     "$parameters": {
                         "name": "stream_with_custom_requester",
                         "primary_key": "id",
-                        "url_base": "https://10.0.27.27/api/v1/",
+                        "url_base": "https://api.sendgrid.com",
                     },
                 },
                 "name": "stream_with_custom_requester",
                 "primary_key": "id",
-                "url_base": "https://10.0.27.27/api/v1/",
+                "url_base": "https://api.sendgrid.com",
                 "$parameters": {
                     "name": "stream_with_custom_requester",
                     "primary_key": "id",
-                    "url_base": "https://10.0.27.27/api/v1/",
+                    "url_base": "https://api.sendgrid.com",
                 },
                 "dynamic_stream_name": None,
             },

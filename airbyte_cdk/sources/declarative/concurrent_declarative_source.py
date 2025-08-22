@@ -19,6 +19,7 @@ from typing import (
     Optional,
     Set,
     Tuple,
+    Union,
 )
 
 import orjson
@@ -51,10 +52,6 @@ from airbyte_cdk.sources.declarative.checks import COMPONENTS_CHECKER_TYPE_MAPPI
 from airbyte_cdk.sources.declarative.checks.connection_checker import ConnectionChecker
 from airbyte_cdk.sources.declarative.concurrency_level import ConcurrencyLevel
 from airbyte_cdk.sources.declarative.declarative_stream import DeclarativeStream
-from airbyte_cdk.sources.declarative.extractors import RecordSelector
-from airbyte_cdk.sources.declarative.extractors.record_filter import (
-    ClientSideIncrementalRecordFilterDecorator,
-)
 from airbyte_cdk.sources.declarative.incremental import (
     ConcurrentPerPartitionCursor,
     GlobalSubstreamCursor,
@@ -205,7 +202,6 @@ class ConcurrentDeclarativeSource(AbstractSource, Generic[TState]):
         # incremental streams running in full refresh.
         component_factory = ModelToComponentFactory(
             emit_connector_builder_messages=emit_connector_builder_messages,
-            disable_resumable_full_refresh=True,
             message_repository=ConcurrentMessageRepository(queue, message_repository),
             connector_state_manager=self._connector_state_manager,
             max_concurrent_async_job_count=source_config.get("max_concurrent_async_job_count"),
@@ -459,7 +455,7 @@ class ConcurrentDeclarativeSource(AbstractSource, Generic[TState]):
             ]
         )
 
-    def streams(self, config: Mapping[str, Any]) -> List[Stream]:
+    def streams(self, config: Mapping[str, Any]) -> List[Union[Stream, AbstractStream]]:  # type: ignore  # we are migrating away from the AbstractSource and are expecting that this will only be called by ConcurrentDeclarativeSource or the Connector Builder
         """
         The `streams` method is used as part of the AbstractSource in the following cases:
         * ConcurrentDeclarativeSource.check -> ManifestDeclarativeSource.check -> AbstractSource.check -> DeclarativeSource.check_connection -> CheckStream.check_connection -> streams
@@ -622,6 +618,10 @@ class ConcurrentDeclarativeSource(AbstractSource, Generic[TState]):
             # these legacy Python streams the way we do low-code streams to determine if they are concurrent compatible,
             # so we need to treat them as synchronous
 
+            if isinstance(declarative_stream, AbstractStream):
+                concurrent_streams.append(declarative_stream)
+                continue
+
             supports_file_transfer = (
                 isinstance(declarative_stream, DeclarativeStream)
                 and "file_uploader" in name_to_stream_mapping[declarative_stream.name]
@@ -691,7 +691,7 @@ class ConcurrentDeclarativeSource(AbstractSource, Generic[TState]):
                         partition_generator = StreamSlicerPartitionGenerator(
                             partition_factory=DeclarativePartitionFactory(
                                 stream_name=declarative_stream.name,
-                                json_schema=declarative_stream.get_json_schema(),
+                                schema_loader=declarative_stream._schema_loader,  # type: ignore  # We are accessing the private property but the public one is optional and we will remove this code soonish
                                 retriever=retriever,
                                 message_repository=self._message_repository,
                                 max_records_limit=self._limits.max_records
@@ -728,7 +728,7 @@ class ConcurrentDeclarativeSource(AbstractSource, Generic[TState]):
                         partition_generator = StreamSlicerPartitionGenerator(
                             partition_factory=DeclarativePartitionFactory(
                                 stream_name=declarative_stream.name,
-                                json_schema=declarative_stream.get_json_schema(),
+                                schema_loader=declarative_stream._schema_loader,  # type: ignore  # We are accessing the private property but the public one is optional and we will remove this code soonish
                                 retriever=retriever,
                                 message_repository=self._message_repository,
                                 max_records_limit=self._limits.max_records
@@ -762,7 +762,7 @@ class ConcurrentDeclarativeSource(AbstractSource, Generic[TState]):
                     partition_generator = StreamSlicerPartitionGenerator(
                         DeclarativePartitionFactory(
                             stream_name=declarative_stream.name,
-                            json_schema=declarative_stream.get_json_schema(),
+                            schema_loader=declarative_stream._schema_loader,  # type: ignore  # We are accessing the private property but the public one is optional and we will remove this code soonish
                             retriever=declarative_stream.retriever,
                             message_repository=self._message_repository,
                             max_records_limit=self._limits.max_records if self._limits else None,
@@ -826,7 +826,7 @@ class ConcurrentDeclarativeSource(AbstractSource, Generic[TState]):
                     partition_generator = StreamSlicerPartitionGenerator(
                         DeclarativePartitionFactory(
                             stream_name=declarative_stream.name,
-                            json_schema=declarative_stream.get_json_schema(),
+                            schema_loader=declarative_stream._schema_loader,  # type: ignore  # We are accessing the private property but the public one is optional and we will remove this code soonish
                             retriever=retriever,
                             message_repository=self._message_repository,
                             max_records_limit=self._limits.max_records if self._limits else None,
