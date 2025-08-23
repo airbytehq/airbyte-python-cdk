@@ -45,8 +45,8 @@ jobs:
           tags: airbyte/source-declarative-manifest:pr-${{ github.event.pull_request.number }}
           outputs: type=image,name=target,annotation-index.org.opencontainers.image.description=SDM Docker image for PR ${{ github.event.pull_request.number }}
 
-  manifest-runner-docker-build-check:
-    name: Manifest Runner Docker Image Build
+  manifest-server-docker-build-check:
+    name: Manifest Server Docker Image Build
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout code
@@ -60,13 +60,13 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Build Manifest Runner Docker image for multiple platforms
-        id: manifest-runner-build
+      - name: Build Manifest Server Docker image for multiple platforms
+        id: manifest-server-build
         uses: docker/build-push-action@v5
         with:
           context: .
-          file: airbyte_cdk/manifest_runner/Dockerfile
+          file: airbyte_cdk/manifest_server/Dockerfile
           platforms: linux/amd64,linux/arm64
           push: false
-          tags: airbyte/manifest-runner:pr-${{ github.event.pull_request.number }}
-          outputs: type=image,name=target,annotation-index.org.opencontainers.image.description=Manifest Runner Docker image for PR ${{ github.event.pull_request.number }}
+          tags: airbyte/manifest-server:pr-${{ github.event.pull_request.number }}
+          outputs: type=image,name=target,annotation-index.org.opencontainers.image.description=Manifest Server Docker image for PR ${{ github.event.pull_request.number }}

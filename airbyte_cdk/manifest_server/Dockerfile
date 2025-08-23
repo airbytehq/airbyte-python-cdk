@@ -18,7 +18,7 @@ COPY pyproject.toml poetry.lock ./
 # Install dependencies directly to system Python
 RUN --mount=type=cache,target=$POETRY_CACHE_DIR \
     poetry config virtualenvs.create false && \
-    poetry install --extras manifest-runner --no-root
+    poetry install --extras manifest-server --no-root
 
 # Copy the project source code (including .git for dynamic versioning)
 COPY . /app
@@ -35,4 +35,4 @@ USER airbyte:airbyte
 
 EXPOSE 8080
 
-CMD ["uvicorn", "airbyte_cdk.manifest_runner.app:app", "--host", "0.0.0.0", "--port", "8080"]
+CMD ["uvicorn", "airbyte_cdk.manifest_server.app:app", "--host", "0.0.0.0", "--port", "8080"]

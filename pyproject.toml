@@ -124,13 +124,13 @@ file-based = ["avro", "fastavro", "pyarrow", "unstructured", "pdf2image", "pdfmi
 vector-db-based = ["langchain", "openai", "cohere", "tiktoken"]
 sql = ["sqlalchemy"]
 dev = ["pytest"]
-manifest-runner = ["fastapi", "uvicorn"]
+manifest-server = ["fastapi", "uvicorn"]
 
 [tool.poetry.scripts]
 
 airbyte-cdk = "airbyte_cdk.cli.airbyte_cdk:cli"
 source-declarative-manifest = "airbyte_cdk.cli.source_declarative_manifest:run"
-manifest-runner = "airbyte_cdk.cli.manifest_runner._run:run"
+manifest-server = "airbyte_cdk.cli.manifest_server._run:run"
 
 # Ruff configuration moved to ruff.toml
 

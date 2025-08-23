@@ -1,9 +1,9 @@
 from fastapi import FastAPI
 
-from ..manifest_runner.routers import capabilities, health, manifest
+from ..manifest_server.routers import capabilities, health, manifest
 
 app = FastAPI(
-    title="Manifest Runner Service",
+    title="Manifest Server Service",
     description="A service for running low-code Airbyte connectors",
     version="0.1.0",
     contact={

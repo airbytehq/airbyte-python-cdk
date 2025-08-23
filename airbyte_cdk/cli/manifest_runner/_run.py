@@ -1,24 +1,24 @@
 # Copyright (c) 2025 Airbyte, Inc., all rights reserved.
-"""Standalone CLI for the Airbyte CDK Manifest Runner.
+"""Standalone CLI for the Airbyte CDK Manifest Server.
 
-This CLI provides commands for running and managing the manifest runner server.
+This CLI provides commands for running and managing the manifest server server.
 
 **Installation:**
 
-To use the manifest-runner functionality, install the CDK with the manifest-runner extra:
+To use the manifest-server functionality, install the CDK with the manifest-server extra:
 
 ```bash
-pip install airbyte-cdk[manifest-runner]
+pip install airbyte-cdk[manifest-server]
 # or
-poetry install --extras manifest-runner
+poetry install --extras manifest-server
 ```
 
 **Usage:**
 
 ```bash
-manifest-runner start --port 8000
-manifest-runner info
-manifest-runner --help
+manifest-server start --port 8000
+manifest-server info
+manifest-server --help
 ```
 """
 
@@ -37,7 +37,7 @@ from ._start import start
 def cli(
     ctx: click.Context,
 ) -> None:
-    """Airbyte Manifest Runner CLI."""
+    """Airbyte Manifest Server CLI."""
 
     if ctx.invoked_subcommand is None:
         # If no subcommand is provided, show the help message.
@@ -51,7 +51,7 @@ cli.add_command(generate_openapi)
 
 
 def run() -> None:
-    """Entry point for the manifest-runner CLI."""
+    """Entry point for the manifest-server CLI."""
     cli()
 
 

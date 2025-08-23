@@ -31,8 +31,8 @@ on:
         type: boolean
         required: true
         default: true
-      publish_manifest_runner:
-        description: "Publish Manifest Runner to DockerHub. If true, the workflow will publish the Manifest Runner to DockerHub."
+      publish_manifest_server:
+        description: "Publish Manifest Server to DockerHub. If true, the workflow will publish the Manifest Server to DockerHub."
         type: boolean
         required: true
         default: true
@@ -255,19 +255,19 @@ jobs:
           tags: |
             airbyte/source-declarative-manifest:latest
 
-  publish_manifest_runner:
-    name: Publish Manifest Runner to DockerHub
+  publish_manifest_server:
+    name: Publish Manifest Server to DockerHub
     if: >
       (github.event_name == 'push' &&
        startsWith(github.ref, 'refs/tags/v')) ||
       (github.event_name == 'workflow_dispatch' &&
-       github.event.inputs.publish_manifest_runner == 'true'
+       github.event.inputs.publish_manifest_server == 'true'
       )
     runs-on: ubuntu-24.04
     needs: [build]
     environment:
       name: DockerHub
-      url: https://hub.docker.com/r/airbyte/manifest-runner/tags
+      url: https://hub.docker.com/r/airbyte/manifest-server/tags
     env:
       VERSION: ${{ needs.build.outputs.VERSION }}
       IS_PRERELEASE: ${{ needs.build.outputs.IS_PRERELEASE }}
@@ -299,7 +299,7 @@ jobs:
       - name: "Check for existing tag (version: ${{ env.VERSION || 'none' }} )"
         if: env.VERSION != ''
         run: |
-          tag="airbyte/manifest-runner:${{ env.VERSION }}"
+          tag="airbyte/manifest-server:${{ env.VERSION }}"
           if [ -z "$tag" ]; then
             echo "Error: VERSION is not set. Ensure the tag follows the format 'refs/tags/vX.Y.Z'."
             exit 1
@@ -317,11 +317,11 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: .
-          file: airbyte_cdk/manifest_runner/Dockerfile
+          file: airbyte_cdk/manifest_server/Dockerfile
           platforms: linux/amd64,linux/arm64
           push: true
           tags: |
-            airbyte/manifest-runner:${{ github.sha }}
+            airbyte/manifest-server:${{ github.sha }}
 
       - name: "Build and push (version tag: ${{ env.VERSION || 'none'}})"
         # Only run if the version is set
@@ -329,11 +329,11 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: .
-          file: airbyte_cdk/manifest_runner/Dockerfile
+          file: airbyte_cdk/manifest_server/Dockerfile
           platforms: linux/amd64,linux/arm64
           push: true
           tags: |
-            airbyte/manifest-runner:${{ env.VERSION }}
+            airbyte/manifest-server:${{ env.VERSION }}
 
       - name: Build and push ('latest' tag)
         # Only run if version is set and IS_PRERELEASE is false
@@ -341,11 +341,11 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: .
-          file: airbyte_cdk/manifest_runner/Dockerfile
+          file: airbyte_cdk/manifest_server/Dockerfile
           platforms: linux/amd64,linux/arm64
           push: true
           tags: |
-            airbyte/manifest-runner:latest
+            airbyte/manifest-server:latest
 
   update-connector-builder:
     # Create a PR against the Builder, to update the CDK version that it uses.

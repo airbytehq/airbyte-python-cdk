@@ -1,9 +1,9 @@
 # Copyright (c) 2025 Airbyte, Inc., all rights reserved.
-"""Start command for the manifest runner CLI."""
+"""Start command for the manifest server CLI."""
 
 import rich_click as click
 
-from ._common import check_manifest_runner_dependencies
+from ._common import check_manifest_server_dependencies
 
 
 @click.command()
@@ -25,11 +25,11 @@ from ._common import check_manifest_runner_dependencies
     help="Enable auto-reload for development",
 )
 def start(host: str, port: int, reload: bool) -> None:
-    """Start the FastAPI manifest runner server."""
-    check_manifest_runner_dependencies()
+    """Start the FastAPI manifest server server."""
+    check_manifest_server_dependencies()
 
     # Import and use the main server function
-    from airbyte_cdk.manifest_runner.main import run_server
+    from airbyte_cdk.manifest_server.main import run_server
 
     run_server(
         host=host,

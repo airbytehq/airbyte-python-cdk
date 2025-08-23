@@ -1,6 +1,6 @@
 from unittest.mock import Mock, patch
 
-from airbyte_cdk.manifest_runner.command_processor.utils import (
+from airbyte_cdk.manifest_server.command_processor.utils import (
     SHOULD_MIGRATE_KEY,
     SHOULD_NORMALIZE_KEY,
     build_catalog,
@@ -9,7 +9,7 @@ from airbyte_cdk.manifest_runner.command_processor.utils import (
 
 
 class TestManifestUtils:
-    """Test cases for the manifest_runner utils module."""
+    """Test cases for the utils module."""
 
     def test_build_catalog_creates_correct_structure(self):
         """Test that build_catalog creates a properly structured ConfiguredAirbyteCatalog."""
@@ -31,8 +31,8 @@ class TestManifestUtils:
         assert configured_stream.sync_mode == SyncMode.incremental
         assert configured_stream.destination_sync_mode == DestinationSyncMode.overwrite
 
-    @patch("airbyte_cdk.manifest_runner.command_processor.utils.ManifestDeclarativeSource")
-    @patch("airbyte_cdk.manifest_runner.command_processor.utils.ModelToComponentFactory")
+    @patch("airbyte_cdk.manifest_server.command_processor.utils.ManifestDeclarativeSource")
+    @patch("airbyte_cdk.manifest_server.command_processor.utils.ModelToComponentFactory")
     def test_build_source_creates_manifest_declarative_source(
         self, mock_component_factory_class, mock_source_class
     ):
@@ -92,8 +92,8 @@ class TestManifestUtils:
 
         assert result == mock_source
 
-    @patch("airbyte_cdk.manifest_runner.command_processor.utils.ManifestDeclarativeSource")
-    @patch("airbyte_cdk.manifest_runner.command_processor.utils.ModelToComponentFactory")
+    @patch("airbyte_cdk.manifest_server.command_processor.utils.ManifestDeclarativeSource")
+    @patch("airbyte_cdk.manifest_server.command_processor.utils.ModelToComponentFactory")
     def test_build_source_with_normalize_flag(
         self, mock_component_factory_class, mock_source_class
     ):
@@ -113,8 +113,8 @@ class TestManifestUtils:
         assert call_args["normalize_manifest"] is True
         assert call_args["migrate_manifest"] is False
 
-    @patch("airbyte_cdk.manifest_runner.command_processor.utils.ManifestDeclarativeSource")
-    @patch("airbyte_cdk.manifest_runner.command_processor.utils.ModelToComponentFactory")
+    @patch("airbyte_cdk.manifest_server.command_processor.utils.ManifestDeclarativeSource")
+    @patch("airbyte_cdk.manifest_server.command_processor.utils.ModelToComponentFactory")
     def test_build_source_with_migrate_flag(self, mock_component_factory_class, mock_source_class):
         """Test build_source when migrate flag is set."""
         mock_component_factory = Mock()

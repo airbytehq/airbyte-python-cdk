@@ -1,5 +1,5 @@
 # Copyright (c) 2025 Airbyte, Inc., all rights reserved.
-"""Common utilities for manifest runner CLI commands."""
+"""Common utilities for manifest server CLI commands."""
 
 import sys
 
@@ -15,14 +15,14 @@ except ImportError:
     FASTAPI_AVAILABLE = False
 
 
-def check_manifest_runner_dependencies() -> None:
-    """Check if manifest-runner dependencies are installed."""
+def check_manifest_server_dependencies() -> None:
+    """Check if manifest-server dependencies are installed."""
     if not FASTAPI_AVAILABLE:
         click.echo(
             "❌ Manifest runner dependencies not found. Please install with:\n\n"
-            "  pip install airbyte-cdk[manifest-runner]\n"
+            "  pip install airbyte-cdk[manifest-server]\n"
             "  # or\n"
-            "  poetry install --extras manifest-runner\n",
+            "  poetry install --extras manifest-server\n",
             err=True,
         )
         sys.exit(1)

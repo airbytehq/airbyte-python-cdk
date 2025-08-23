@@ -1,9 +1,9 @@
 # This file is auto-generated. Do not edit manually.
-# To regenerate, run: manifest-runner generate-openapi
+# To regenerate, run: manifest-server generate-openapi
 
 openapi: 3.1.0
 info:
-  title: Manifest Runner Service
+  title: Manifest Server Service
   description: A service for running low-code Airbyte connectors
   contact:
     name: Airbyte
@@ -27,7 +27,7 @@ paths:
       tags:
       - capabilities
       summary: Get Capabilities
-      description: "Get the capabilities available for the manifest runner service.\n\
+      description: "Get the capabilities available for the manifest server service.\n\
         \nReturns:\n    Dict containing the service capabilities including custom\
         \ code execution support."
       operationId: getCapabilities

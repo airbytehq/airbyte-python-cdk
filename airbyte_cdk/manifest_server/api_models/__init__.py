@@ -1,5 +1,5 @@
 """
-API Models for the Manifest Runner Service.
+API Models for the Manifest Server Service.
 
 This package contains all Pydantic models used for API requests and responses.
 """

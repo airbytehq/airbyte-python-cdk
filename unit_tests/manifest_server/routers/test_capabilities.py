@@ -3,7 +3,7 @@ from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
-from airbyte_cdk.manifest_runner.app import app
+from airbyte_cdk.manifest_server.app import app
 
 client = TestClient(app)
 

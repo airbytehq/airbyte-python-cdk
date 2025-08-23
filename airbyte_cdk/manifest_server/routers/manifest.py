@@ -5,7 +5,7 @@ from typing import Any, Dict, List, Mapping, Optional
 import jsonschema
 from fastapi import APIRouter, Depends, HTTPException
 
-from airbyte_cdk.manifest_runner.api_models.manifest import (
+from airbyte_cdk.manifest_server.api_models.manifest import (
     CheckRequest,
     CheckResponse,
     DiscoverRequest,

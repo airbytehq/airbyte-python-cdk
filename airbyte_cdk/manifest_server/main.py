@@ -1,5 +1,5 @@
 # Copyright (c) 2025 Airbyte, Inc., all rights reserved.
-"""Main entry point for the Airbyte Manifest Runner server."""
+"""Main entry point for the Airbyte Manifest Server server."""
 
 import uvicorn
 
@@ -9,10 +9,10 @@ def run_server(
 ) -> None:
     """Run the FastAPI server."""
 
-    print(f"🚀 Starting Airbyte CDK Manifest Runner on {host}:{port}")
+    print(f"🚀 Starting Airbyte CDK Manifest Server on {host}:{port}")
 
     uvicorn.run(
-        "airbyte_cdk.manifest_runner.app:app",
+        "airbyte_cdk.manifest_server.app:app",
         host=host,
         port=port,
         reload=reload,

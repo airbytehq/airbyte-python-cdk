@@ -24,7 +24,7 @@ from airbyte_cdk.sources.declarative.manifest_declarative_source import (
 
 class ManifestCommandProcessor:
     _source: ManifestDeclarativeSource
-    _logger = logging.getLogger("airbyte.manifest-runner")
+    _logger = logging.getLogger("airbyte.manifest-server")
 
     def __init__(self, source: ManifestDeclarativeSource) -> None:
         self._source = source

@@ -1103,7 +1103,7 @@ description = "FastAPI framework, high performance, easy to learn, fast to code,
 optional = true
 python-versions = ">=3.8"
 groups = ["main"]
-markers = "extra == \"manifest-runner\""
+markers = "extra == \"manifest-server\""
 files = [
     {file = "fastapi-0.116.1-py3-none-any.whl", hash = "sha256:c46ac7c312df840f0c9e220f7964bada936781bc4e2e6eb71f1c4d7553786565"},
     {file = "fastapi-0.116.1.tar.gz", hash = "sha256:ed52cbf946abfd70c5a0dccb24673f0670deeb517a88b3544d03c2a6bf283143"},
@@ -5050,7 +5050,7 @@ description = "The little ASGI library that shines."
 optional = true
 python-versions = ">=3.9"
 groups = ["main"]
-markers = "extra == \"manifest-runner\""
+markers = "extra == \"manifest-server\""
 files = [
     {file = "starlette-0.47.2-py3-none-any.whl", hash = "sha256:c5847e96134e5c5371ee9fac6fdf1a67336d5815e09eb2a01fdb57a351ef915b"},
     {file = "starlette-0.47.2.tar.gz", hash = "sha256:6ae9aa5db235e4846decc1e7b79c4f346adf41e9777aebeb49dfd09bbd7023d8"},
@@ -5547,7 +5547,7 @@ description = "The lightning-fast ASGI server."
 optional = true
 python-versions = ">=3.9"
 groups = ["main"]
-markers = "extra == \"manifest-runner\""
+markers = "extra == \"manifest-server\""
 files = [
     {file = "uvicorn-0.35.0-py3-none-any.whl", hash = "sha256:197535216b25ff9b785e29a0b79199f55222193d47f820816e7da751e9bc8d4a"},
     {file = "uvicorn-0.35.0.tar.gz", hash = "sha256:bc662f087f7cf2ce11a1d7fd70b90c9f98ef2e2831556dd078d131b96cc94a01"},
@@ -5825,11 +5825,11 @@ type = ["pytest-mypy"]
 [extras]
 dev = ["pytest"]
 file-based = ["avro", "fastavro", "markdown", "pdf2image", "pdfminer.six", "pyarrow", "pytesseract", "python-calamine", "python-snappy", "unstructured", "unstructured.pytesseract"]
-manifest-runner = ["fastapi", "uvicorn"]
+manifest-server = ["fastapi", "uvicorn"]
 sql = ["sqlalchemy"]
 vector-db-based = ["cohere", "langchain", "openai", "tiktoken"]
 
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.10,<3.13"
-content-hash = "b0b72001b2481663999f2a2c6dfc7db8e04f01e9c88e98c0bbd715e6595b7ffe"
+content-hash = "485d30a4b055f56882e9d2fc2f3b18aae0e634884fdf220715f35ffb3c76947c"

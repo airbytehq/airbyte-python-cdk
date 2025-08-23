@@ -5,7 +5,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from airbyte_cdk.connector_builder.models import StreamRead as CDKStreamRead
-from airbyte_cdk.manifest_runner.app import app
+from airbyte_cdk.manifest_server.app import app
 
 client = TestClient(app)
 
@@ -74,9 +74,9 @@ class TestManifestRouter:
             latest_config_update=None,
         )
 
-    @patch("airbyte_cdk.manifest_runner.routers.manifest.ManifestCommandProcessor")
-    @patch("airbyte_cdk.manifest_runner.routers.manifest.build_catalog")
-    @patch("airbyte_cdk.manifest_runner.routers.manifest.safe_build_source")
+    @patch("airbyte_cdk.manifest_server.routers.manifest.ManifestCommandProcessor")
+    @patch("airbyte_cdk.manifest_server.routers.manifest.build_catalog")
+    @patch("airbyte_cdk.manifest_server.routers.manifest.safe_build_source")
     def test_test_read_endpoint_success(
         self,
         mock_safe_build_source,
@@ -112,9 +112,9 @@ class TestManifestRouter:
         mock_build_catalog.assert_called_once_with("products")
         mock_runner.test_read.assert_called_once()
 
-    @patch("airbyte_cdk.manifest_runner.routers.manifest.ManifestCommandProcessor")
-    @patch("airbyte_cdk.manifest_runner.routers.manifest.build_catalog")
-    @patch("airbyte_cdk.manifest_runner.routers.manifest.safe_build_source")
+    @patch("airbyte_cdk.manifest_server.routers.manifest.ManifestCommandProcessor")
+    @patch("airbyte_cdk.manifest_server.routers.manifest.build_catalog")
+    @patch("airbyte_cdk.manifest_server.routers.manifest.safe_build_source")
     def test_test_read_with_custom_components(
         self,
         mock_safe_build_source,
@@ -159,10 +159,10 @@ class TestManifestRouter:
         assert "__injected_components_py_checksums" in config_arg
         assert config_arg["__injected_components_py_checksums"]["md5"] == expected_checksum
 
-    @patch("airbyte_cdk.manifest_runner.routers.manifest.AirbyteStateMessageSerializer")
-    @patch("airbyte_cdk.manifest_runner.routers.manifest.ManifestCommandProcessor")
-    @patch("airbyte_cdk.manifest_runner.routers.manifest.build_catalog")
-    @patch("airbyte_cdk.manifest_runner.routers.manifest.safe_build_source")
+    @patch("airbyte_cdk.manifest_server.routers.manifest.AirbyteStateMessageSerializer")
+    @patch("airbyte_cdk.manifest_server.routers.manifest.ManifestCommandProcessor")
+    @patch("airbyte_cdk.manifest_server.routers.manifest.build_catalog")
+    @patch("airbyte_cdk.manifest_server.routers.manifest.safe_build_source")
     def test_test_read_with_state(
         self,
         mock_safe_build_source,
@@ -214,7 +214,7 @@ class TestManifestRouter:
         request_data = {"manifest": sample_manifest}
 
         with patch(
-            "airbyte_cdk.manifest_runner.routers.manifest.build_source"
+            "airbyte_cdk.manifest_server.routers.manifest.build_source"
         ) as mock_build_source:
             mock_build_source.return_value = mock_source
 
@@ -256,7 +256,7 @@ class TestManifestRouter:
         }
 
         with patch(
-            "airbyte_cdk.manifest_runner.routers.manifest.build_source"
+            "airbyte_cdk.manifest_server.routers.manifest.build_source"
         ) as mock_build_source:
             mock_build_source.return_value = mock_source
 
@@ -293,7 +293,7 @@ class TestManifestRouter:
         }
 
         with patch(
-            "airbyte_cdk.manifest_runner.routers.manifest.build_source"
+            "airbyte_cdk.manifest_server.routers.manifest.build_source"
         ) as mock_build_source:
             mock_build_source.return_value = mock_source
 
@@ -337,7 +337,7 @@ class TestManifestRouter:
         }
 
         with patch(
-            "airbyte_cdk.manifest_runner.routers.manifest.build_source"
+            "airbyte_cdk.manifest_server.routers.manifest.build_source"
         ) as mock_build_source:
             mock_build_source.return_value = mock_source
 
@@ -358,8 +358,8 @@ class TestManifestRouter:
             assert len(template_a_streams) == 1
             assert len(template_b_streams) == 1
 
-    @patch("airbyte_cdk.manifest_runner.routers.manifest.ManifestCommandProcessor")
-    @patch("airbyte_cdk.manifest_runner.routers.manifest.safe_build_source")
+    @patch("airbyte_cdk.manifest_server.routers.manifest.ManifestCommandProcessor")
+    @patch("airbyte_cdk.manifest_server.routers.manifest.safe_build_source")
     def test_check_endpoint_success(
         self, mock_safe_build_source, mock_runner_class, sample_manifest, sample_config, mock_source
     ):
@@ -386,8 +386,8 @@ class TestManifestRouter:
         mock_runner_class.assert_called_once_with(mock_source)
         mock_runner.check_connection.assert_called_once_with(sample_config)
 
-    @patch("airbyte_cdk.manifest_runner.routers.manifest.ManifestCommandProcessor")
-    @patch("airbyte_cdk.manifest_runner.routers.manifest.safe_build_source")
+    @patch("airbyte_cdk.manifest_server.routers.manifest.ManifestCommandProcessor")
+    @patch("airbyte_cdk.manifest_server.routers.manifest.safe_build_source")
     def test_check_endpoint_failure(
         self, mock_safe_build_source, mock_runner_class, sample_manifest, sample_config, mock_source
     ):
@@ -410,8 +410,8 @@ class TestManifestRouter:
         assert data["success"] is False
         assert data["message"] == "Invalid API key"
 
-    @patch("airbyte_cdk.manifest_runner.routers.manifest.ManifestCommandProcessor")
-    @patch("airbyte_cdk.manifest_runner.routers.manifest.safe_build_source")
+    @patch("airbyte_cdk.manifest_server.routers.manifest.ManifestCommandProcessor")
+    @patch("airbyte_cdk.manifest_server.routers.manifest.safe_build_source")
     def test_discover_endpoint_success(
         self, mock_safe_build_source, mock_runner_class, sample_manifest, sample_config, mock_source
     ):
@@ -451,8 +451,8 @@ class TestManifestRouter:
         mock_runner_class.assert_called_once_with(mock_source)
         mock_runner.discover.assert_called_once_with(sample_config)
 
-    @patch("airbyte_cdk.manifest_runner.routers.manifest.ManifestCommandProcessor")
-    @patch("airbyte_cdk.manifest_runner.routers.manifest.safe_build_source")
+    @patch("airbyte_cdk.manifest_server.routers.manifest.ManifestCommandProcessor")
+    @patch("airbyte_cdk.manifest_server.routers.manifest.safe_build_source")
     def test_discover_endpoint_missing_catalog(
         self, mock_safe_build_source, mock_runner_class, sample_manifest, sample_config, mock_source
     ):

@@ -12,7 +12,7 @@ from airbyte_protocol_dataclasses.models import (
 )
 from airbyte_protocol_dataclasses.models import Type as AirbyteMessageType
 
-from airbyte_cdk.manifest_runner.command_processor.processor import ManifestCommandProcessor
+from airbyte_cdk.manifest_server.command_processor.processor import ManifestCommandProcessor
 
 
 class TestManifestCommandProcessor:
@@ -24,7 +24,7 @@ class TestManifestCommandProcessor:
         return Mock()
 
     @pytest.fixture
-    def manifest_runner(self, mock_source):
+    def command_processor(self, mock_source):
         """Create a ManifestCommandProcessor instance with mocked source."""
         return ManifestCommandProcessor(mock_source)
 
@@ -63,9 +63,9 @@ class TestManifestCommandProcessor:
         """Sample state messages for testing."""
         return []
 
-    @patch("airbyte_cdk.manifest_runner.command_processor.processor.TestReader")
+    @patch("airbyte_cdk.manifest_server.command_processor.processor.TestReader")
     def test_test_read_success(
-        self, mock_test_reader_class, manifest_runner, sample_config, sample_catalog
+        self, mock_test_reader_class, command_processor, sample_config, sample_catalog
     ):
         """Test successful test_read execution with various parameters and state messages."""
         from airbyte_cdk.models.airbyte_protocol import (
@@ -97,7 +97,7 @@ class TestManifestCommandProcessor:
         slice_limit = 7
 
         # Execute test_read
-        result = manifest_runner.test_read(
+        result = command_processor.test_read(
             config=sample_config,
             catalog=sample_catalog,
             state=state_messages,
@@ -115,7 +115,7 @@ class TestManifestCommandProcessor:
 
         # Verify run_test_read was called with correct parameters including state
         mock_test_reader_instance.run_test_read.assert_called_once_with(
-            source=manifest_runner._source,
+            source=command_processor._source,
             config=sample_config,
             configured_catalog=sample_catalog,
             stream_name="test_stream",
@@ -126,11 +126,11 @@ class TestManifestCommandProcessor:
         # Verify the result is returned correctly
         assert result == mock_stream_read
 
-    @patch("airbyte_cdk.manifest_runner.command_processor.processor.TestReader")
+    @patch("airbyte_cdk.manifest_server.command_processor.processor.TestReader")
     def test_test_read_exception_handling(
         self,
         mock_test_reader_class,
-        manifest_runner,
+        command_processor,
         sample_config,
         sample_catalog,
         sample_state,
@@ -144,7 +144,7 @@ class TestManifestCommandProcessor:
 
         # Verify the exception is propagated
         with pytest.raises(Exception, match="Test error"):
-            manifest_runner.test_read(
+            command_processor.test_read(
                 config=sample_config,
                 catalog=sample_catalog,
                 state=sample_state,
@@ -153,12 +153,14 @@ class TestManifestCommandProcessor:
                 slice_limit=10,
             )
 
-    @patch("airbyte_cdk.manifest_runner.command_processor.processor.AirbyteEntrypoint")
-    def test_check_connection_success(self, mock_entrypoint_class, manifest_runner, sample_config):
+    @patch("airbyte_cdk.manifest_server.command_processor.processor.AirbyteEntrypoint")
+    def test_check_connection_success(
+        self, mock_entrypoint_class, command_processor, sample_config
+    ):
         """Test successful check_connection execution."""
 
         # Mock the spec method
-        manifest_runner._source.spec.return_value = Mock()
+        command_processor._source.spec.return_value = Mock()
 
         # Mock the entrypoint instance and its check method
         mock_entrypoint_instance = Mock()
@@ -174,25 +176,27 @@ class TestManifestCommandProcessor:
         mock_entrypoint_instance.check.return_value = [mock_message]
 
         # Execute check_connection
-        success, message = manifest_runner.check_connection(sample_config)
+        success, message = command_processor.check_connection(sample_config)
 
         # Verify the result
         assert success is True
         assert message == "Connection test succeeded"
 
         # Verify spec was called
-        manifest_runner._source.spec.assert_called_once()
+        command_processor._source.spec.assert_called_once()
 
         # Verify entrypoint was created and check was called
-        mock_entrypoint_class.assert_called_once_with(source=manifest_runner._source)
+        mock_entrypoint_class.assert_called_once_with(source=command_processor._source)
         mock_entrypoint_instance.check.assert_called_once()
 
-    @patch("airbyte_cdk.manifest_runner.command_processor.processor.AirbyteEntrypoint")
-    def test_check_connection_failure(self, mock_entrypoint_class, manifest_runner, sample_config):
+    @patch("airbyte_cdk.manifest_server.command_processor.processor.AirbyteEntrypoint")
+    def test_check_connection_failure(
+        self, mock_entrypoint_class, command_processor, sample_config
+    ):
         """Test check_connection with failed status."""
 
         # Mock the spec method
-        manifest_runner._source.spec.return_value = Mock()
+        command_processor._source.spec.return_value = Mock()
 
         # Mock the entrypoint instance
         mock_entrypoint_instance = Mock()
@@ -206,19 +210,19 @@ class TestManifestCommandProcessor:
         mock_entrypoint_instance.check.return_value = [mock_message]
 
         # Execute check_connection
-        success, message = manifest_runner.check_connection(sample_config)
+        success, message = command_processor.check_connection(sample_config)
 
         # Verify the result
         assert success is False
         assert message == "Invalid API key"
 
-    @patch("airbyte_cdk.manifest_runner.command_processor.processor.AirbyteEntrypoint")
+    @patch("airbyte_cdk.manifest_server.command_processor.processor.AirbyteEntrypoint")
     def test_check_connection_no_status_message(
-        self, mock_entrypoint_class, manifest_runner, sample_config
+        self, mock_entrypoint_class, command_processor, sample_config
     ):
         """Test check_connection when no connection status message is returned."""
         # Mock the spec method
-        manifest_runner._source.spec.return_value = Mock()
+        command_processor._source.spec.return_value = Mock()
 
         # Mock the entrypoint instance
         mock_entrypoint_instance = Mock()
@@ -228,20 +232,20 @@ class TestManifestCommandProcessor:
         mock_entrypoint_instance.check.return_value = []
 
         # Execute check_connection
-        success, message = manifest_runner.check_connection(sample_config)
+        success, message = command_processor.check_connection(sample_config)
 
         # Verify the result
         assert success is False
         assert message == "Connection check failed"
 
-    @patch("airbyte_cdk.manifest_runner.command_processor.processor.AirbyteEntrypoint")
+    @patch("airbyte_cdk.manifest_server.command_processor.processor.AirbyteEntrypoint")
     def test_check_connection_with_trace_error(
-        self, mock_entrypoint_class, manifest_runner, sample_config
+        self, mock_entrypoint_class, command_processor, sample_config
     ):
         """Test check_connection raises exception when trace error is present."""
 
         # Mock the spec method
-        manifest_runner._source.spec.return_value = Mock()
+        command_processor._source.spec.return_value = Mock()
 
         # Mock the entrypoint instance
         mock_entrypoint_instance = Mock()
@@ -256,14 +260,14 @@ class TestManifestCommandProcessor:
 
         # Verify exception is raised
         with pytest.raises(Exception, match="Authentication failed"):
-            manifest_runner.check_connection(sample_config)
+            command_processor.check_connection(sample_config)
 
-    @patch("airbyte_cdk.manifest_runner.command_processor.processor.AirbyteEntrypoint")
-    def test_discover_success(self, mock_entrypoint_class, manifest_runner, sample_config):
+    @patch("airbyte_cdk.manifest_server.command_processor.processor.AirbyteEntrypoint")
+    def test_discover_success(self, mock_entrypoint_class, command_processor, sample_config):
         """Test successful discover execution."""
 
         # Mock the spec method
-        manifest_runner._source.spec.return_value = Mock()
+        command_processor._source.spec.return_value = Mock()
 
         # Mock the entrypoint instance
         mock_entrypoint_instance = Mock()
@@ -283,7 +287,7 @@ class TestManifestCommandProcessor:
         mock_entrypoint_instance.discover.return_value = [mock_message]
 
         # Execute discover
-        result = manifest_runner.discover(sample_config)
+        result = command_processor.discover(sample_config)
 
         # Verify the result
         assert result == catalog
@@ -291,19 +295,19 @@ class TestManifestCommandProcessor:
         assert result.streams[0].name == "test_stream"
 
         # Verify spec was called
-        manifest_runner._source.spec.assert_called_once()
+        command_processor._source.spec.assert_called_once()
 
         # Verify entrypoint was created and discover was called
-        mock_entrypoint_class.assert_called_once_with(source=manifest_runner._source)
+        mock_entrypoint_class.assert_called_once_with(source=command_processor._source)
         mock_entrypoint_instance.discover.assert_called_once()
 
-    @patch("airbyte_cdk.manifest_runner.command_processor.processor.AirbyteEntrypoint")
+    @patch("airbyte_cdk.manifest_server.command_processor.processor.AirbyteEntrypoint")
     def test_discover_no_catalog_message(
-        self, mock_entrypoint_class, manifest_runner, sample_config
+        self, mock_entrypoint_class, command_processor, sample_config
     ):
         """Test discover when no catalog message is returned."""
         # Mock the spec method
-        manifest_runner._source.spec.return_value = Mock()
+        command_processor._source.spec.return_value = Mock()
 
         # Mock the entrypoint instance
         mock_entrypoint_instance = Mock()
@@ -313,17 +317,19 @@ class TestManifestCommandProcessor:
         mock_entrypoint_instance.discover.return_value = []
 
         # Execute discover
-        result = manifest_runner.discover(sample_config)
+        result = command_processor.discover(sample_config)
 
         # Verify the result is None
         assert result is None
 
-    @patch("airbyte_cdk.manifest_runner.command_processor.processor.AirbyteEntrypoint")
-    def test_discover_with_trace_error(self, mock_entrypoint_class, manifest_runner, sample_config):
+    @patch("airbyte_cdk.manifest_server.command_processor.processor.AirbyteEntrypoint")
+    def test_discover_with_trace_error(
+        self, mock_entrypoint_class, command_processor, sample_config
+    ):
         """Test discover raises exception when trace error is present."""
 
         # Mock the spec method
-        manifest_runner._source.spec.return_value = Mock()
+        command_processor._source.spec.return_value = Mock()
 
         # Mock the entrypoint instance
         mock_entrypoint_instance = Mock()
@@ -340,4 +346,4 @@ class TestManifestCommandProcessor:
 
         # Verify exception is raised
         with pytest.raises(Exception, match="Stream discovery failed"):
-            manifest_runner.discover(sample_config)
+            command_processor.discover(sample_config)

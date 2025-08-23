@@ -12,7 +12,7 @@ router = APIRouter(
 @router.get("/", operation_id="getCapabilities")
 def get_capabilities() -> Dict[str, Any]:
     """
-    Get the capabilities available for the manifest runner service.
+    Get the capabilities available for the manifest server.
 
     Returns:
         Dict containing the service capabilities including custom code execution support.
