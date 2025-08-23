@@ -3,6 +3,8 @@ from typing import Any, Dict
 
 from fastapi import APIRouter
 
+from ..api_models.capabilities import CapabilitiesResponse
+
 router = APIRouter(
     prefix="/capabilities",
     tags=["capabilities"],
@@ -10,7 +12,7 @@ router = APIRouter(
 
 
 @router.get("/", operation_id="getCapabilities")
-def get_capabilities() -> Dict[str, Any]:
+def get_capabilities() -> CapabilitiesResponse:
     """
     Get the capabilities available for the manifest server.
 
@@ -20,4 +22,4 @@ def get_capabilities() -> Dict[str, Any]:
     # Read the same environment variable as the connector builder server
     enable_unsafe_code = os.getenv("AIRBYTE_ENABLE_UNSAFE_CODE", "false").lower() == "true"
 
-    return {"customCodeExecution": enable_unsafe_code}
+    return CapabilitiesResponse(custom_code_execution=enable_unsafe_code)

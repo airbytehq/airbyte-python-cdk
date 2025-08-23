@@ -41,8 +41,7 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                title: Response Getcapabilities
+                $ref: '#/components/schemas/CapabilitiesResponse'
   /v1/manifest/test_read:
     post:
       tags:
@@ -280,6 +279,16 @@ components:
       - response
       title: AuxiliaryRequest
       description: Auxiliary HTTP request made during stream processing.
+    CapabilitiesResponse:
+      properties:
+        custom_code_execution:
+          type: boolean
+          title: Custom Code Execution
+      type: object
+      required:
+      - custom_code_execution
+      title: CapabilitiesResponse
+      description: Capabilities of the manifest server.
     CheckRequest:
       properties:
         manifest:
