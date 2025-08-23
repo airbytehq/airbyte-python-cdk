@@ -1,3 +1,10 @@
+# Dockerfile for the Airbyte Manifest Server.
+#
+# This Dockerfile should be built from the root of the repository.
+#
+# Example:
+# docker build -f airbyte_cdk/manifest_server/Dockerfile -t airbyte/manifest-server .
+
 FROM python:3.12-slim-bookworm
 
 # Install git (needed for dynamic versioning) and poetry

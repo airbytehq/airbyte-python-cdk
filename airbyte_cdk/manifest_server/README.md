@@ -14,6 +14,9 @@ poetry install --extras manifest-server
 
 # Using pip
 pip install airbyte-cdk[manifest-server]
+
+# Using uv
+uv pip install 'airbyte-cdk[manifest-runner]'
 ```
 
 ### Running the Server
@@ -26,7 +29,7 @@ manifest-server start
 manifest-server start --port 8080
 
 # Or using Python module
-python -m airbyte_cdk.cli.manifest_server._run start
+python -m airbyte_cdk.manifest_server.cli.run start
 ```
 
 The server will start on `http://localhost:8000` by default.
