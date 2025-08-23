@@ -22,13 +22,13 @@ WORKDIR /app
 # Copy poetry files (build from project root)
 COPY pyproject.toml poetry.lock ./
 
-# Install dependencies directly to system Python
+# Copy the project source code (needed for dynamic versioning)
+COPY . /app
+
+# Install dependencies and package directly to system Python
 RUN --mount=type=cache,target=$POETRY_CACHE_DIR \
     poetry config virtualenvs.create false && \
-    poetry install --extras manifest-server --no-root
-
-# Copy the project source code (including .git for dynamic versioning)
-COPY . /app
+    poetry install --extras manifest-server
 
 # Create a non-root user and group
 RUN groupadd --gid 1000 airbyte && \
