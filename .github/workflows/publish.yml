@@ -209,18 +209,10 @@ jobs:
 
       - name: "Check for existing tag (version: ${{ env.VERSION || 'none' }} )"
         if: env.VERSION != ''
-        run: |
-          tag="airbyte/source-declarative-manifest:${{ env.VERSION }}"
-          if [ -z "$tag" ]; then
-            echo "Error: VERSION is not set. Ensure the tag follows the format 'refs/tags/vX.Y.Z'."
-            exit 1
-          fi
-          echo "Checking if tag '$tag' exists on DockerHub..."
-          if DOCKER_CLI_EXPERIMENTAL=enabled docker manifest inspect "$tag" > /dev/null 2>&1; then
-            echo "The tag '$tag' already exists on DockerHub. Skipping publish to prevent overwrite."
-            exit 1
-          fi
-          echo "No existing tag '$tag' found. Proceeding with publish."
+        uses: ./.github/actions/check-docker-tag
+        with:
+          image_name: airbyte/source-declarative-manifest
+          tag: ${{ env.VERSION }}
 
       - name: "Build and push (sha tag: '${{ github.sha }}')"
         # Only run if the version is not set
@@ -298,18 +290,10 @@ jobs:
 
       - name: "Check for existing tag (version: ${{ env.VERSION || 'none' }} )"
         if: env.VERSION != ''
-        run: |
-          tag="airbyte/manifest-server:${{ env.VERSION }}"
-          if [ -z "$tag" ]; then
-            echo "Error: VERSION is not set. Ensure the tag follows the format 'refs/tags/vX.Y.Z'."
-            exit 1
-          fi
-          echo "Checking if tag '$tag' exists on DockerHub..."
-          if DOCKER_CLI_EXPERIMENTAL=enabled docker manifest inspect "$tag" > /dev/null 2>&1; then
-            echo "The tag '$tag' already exists on DockerHub. Skipping publish to prevent overwrite."
-            exit 1
-          fi
-          echo "No existing tag '$tag' found. Proceeding with publish."
+        uses: ./.github/actions/check-docker-tag
+        with:
+          image_name: airbyte/manifest-server
+          tag: ${{ env.VERSION }}
 
       - name: "Build and push (sha tag: '${{ github.sha }}')"
         # Only run if the version is not set
