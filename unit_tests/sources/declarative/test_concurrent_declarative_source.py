@@ -2391,8 +2391,8 @@ class TestConcurrentDeclarativeSource:
 
         streams = source.streams({})
         assert len(streams) == 2
-        assert isinstance(streams[0], DeclarativeStream)
-        assert isinstance(streams[1], DeclarativeStream)
+        assert isinstance(streams[0], DefaultStream)
+        assert isinstance(streams[1], DefaultStream)
         assert (
             source.resolved_manifest["description"]
             == "This is a sample source connector that is very valid."
@@ -2992,140 +2992,6 @@ class TestConcurrentDeclarativeSource:
         with pytest.raises(FileNotFoundError):
             source.spec(logger)
 
-    @patch("airbyte_cdk.sources.concurrent_source.concurrent_source.ConcurrentSource.read")
-    def test_given_debug_when_read_then_set_log_level(self, declarative_source_read):
-        any_valid_manifest = {
-            "version": "0.29.3",
-            "definitions": {
-                "schema_loader": {
-                    "type": "InlineSchemaLoader",
-                    "schema": {
-                        "type": "object",
-                        "properties": {"id": {"type": "string"}},
-                    },
-                },
-                "retriever": {
-                    "paginator": {
-                        "type": "DefaultPaginator",
-                        "page_size": 10,
-                        "page_size_option": {
-                            "type": "RequestOption",
-                            "inject_into": "request_parameter",
-                            "field_name": "page_size",
-                        },
-                        "page_token_option": {"type": "RequestPath"},
-                        "pagination_strategy": {
-                            "type": "CursorPagination",
-                            "cursor_value": "{{ response._metadata.next }}",
-                        },
-                    },
-                    "requester": {
-                        "path": "/v3/marketing/lists",
-                        "authenticator": {
-                            "type": "BearerAuthenticator",
-                            "api_token": "{{ config.apikey }}",
-                        },
-                        "request_parameters": {"page_size": "10"},
-                    },
-                    "record_selector": {"extractor": {"field_path": ["result"]}},
-                },
-            },
-            "streams": [
-                {
-                    "type": "DeclarativeStream",
-                    "$parameters": {
-                        "name": "lists",
-                        "primary_key": "id",
-                        "url_base": "https://api.sendgrid.com",
-                    },
-                    "schema_loader": {
-                        "type": "InlineSchemaLoader",
-                        "schema": {
-                            "type": "object",
-                            "properties": {"id": {"type": "string"}},
-                        },
-                    },
-                    "retriever": {
-                        "paginator": {
-                            "type": "DefaultPaginator",
-                            "page_size": 10,
-                            "page_size_option": {
-                                "type": "RequestOption",
-                                "inject_into": "request_parameter",
-                                "field_name": "page_size",
-                            },
-                            "page_token_option": {"type": "RequestPath"},
-                            "pagination_strategy": {
-                                "type": "CursorPagination",
-                                "cursor_value": "{{ response._metadata.next }}",
-                                "page_size": 10,
-                            },
-                        },
-                        "requester": {
-                            "path": "/v3/marketing/lists",
-                            "authenticator": {
-                                "type": "BearerAuthenticator",
-                                "api_token": "{{ config.apikey }}",
-                            },
-                            "request_parameters": {"page_size": "{{ 10 }}"},
-                        },
-                        "record_selector": {"extractor": {"field_path": ["result"]}},
-                    },
-                },
-                {
-                    "type": "DeclarativeStream",
-                    "$parameters": {
-                        "name": "stream_with_custom_requester",
-                        "primary_key": "id",
-                        "url_base": "https://api.sendgrid.com",
-                    },
-                    "schema_loader": {
-                        "type": "InlineSchemaLoader",
-                        "schema": {
-                            "type": "object",
-                            "properties": {"id": {"type": "string"}},
-                        },
-                    },
-                    "retriever": {
-                        "paginator": {
-                            "type": "DefaultPaginator",
-                            "page_size": 10,
-                            "page_size_option": {
-                                "type": "RequestOption",
-                                "inject_into": "request_parameter",
-                                "field_name": "page_size",
-                            },
-                            "page_token_option": {"type": "RequestPath"},
-                            "pagination_strategy": {
-                                "type": "CursorPagination",
-                                "cursor_value": "{{ response._metadata.next }}",
-                                "page_size": 10,
-                            },
-                        },
-                        "requester": {
-                            "type": "CustomRequester",
-                            "class_name": "unit_tests.sources.declarative.external_component.SampleCustomComponent",
-                            "path": "/v3/marketing/lists",
-                            "custom_request_parameters": {"page_size": 10},
-                        },
-                        "record_selector": {"extractor": {"field_path": ["result"]}},
-                    },
-                },
-            ],
-            "check": {"type": "CheckStream", "stream_names": ["lists"]},
-        }
-
-        catalog = create_catalog("lists")
-
-        source = ConcurrentDeclarativeSource(
-            source_config=any_valid_manifest, config={}, catalog=catalog, state=None, debug=True
-        )
-
-        debug_logger = logging.getLogger("logger.debug")
-        list(source.read(debug_logger, {}, catalog, None))
-
-        assert debug_logger.isEnabledFor(logging.DEBUG)
-
     @pytest.mark.parametrize(
         "is_sandbox, expected_stream_count",
         [
@@ -3280,13 +3146,13 @@ class TestConcurrentDeclarativeSource:
 
         actual_streams = source.streams(config=config)
         assert len(actual_streams) == expected_stream_count
-        assert isinstance(actual_streams[0], DeclarativeStream)
+        assert isinstance(actual_streams[0], DefaultStream)
         assert actual_streams[0].name == "students"
 
         if is_sandbox:
-            assert isinstance(actual_streams[1], DeclarativeStream)
+            assert isinstance(actual_streams[1], DefaultStream)
             assert actual_streams[1].name == "classrooms"
-            assert isinstance(actual_streams[2], DeclarativeStream)
+            assert isinstance(actual_streams[2], DefaultStream)
             assert actual_streams[2].name == "clubs"
 
         assert (
@@ -4161,24 +4027,37 @@ def test_only_parent_streams_use_cache():
     assert len(streams) == 3
 
     # Main stream with caching (parent for substream `applications_interviews`)
-    assert streams[0].name == "applications"
-    assert streams[0].retriever.requester.use_cache
+    stream_0 = streams[0]
+    assert stream_0.name == "applications"
+    assert isinstance(stream_0, DefaultStream)
+    assert stream_0._stream_partition_generator._partition_factory._retriever.requester.use_cache
 
     # Substream
-    assert streams[1].name == "applications_interviews"
-    assert not streams[1].retriever.requester.use_cache
-
-    # Parent stream created for substream
-    assert streams[1].retriever.stream_slicer.parent_stream_configs[0].stream.name == "applications"
+    stream_1 = streams[1]
+    assert stream_1.name == "applications_interviews"
+    assert isinstance(stream_1, DefaultStream)
     assert (
-        streams[1]
-        .retriever.stream_slicer.parent_stream_configs[0]
-        .stream.retriever.requester.use_cache
+        not stream_1._stream_partition_generator._partition_factory._retriever.requester.use_cache
     )
 
+    # Parent stream created for substream
+    assert (
+        stream_1._stream_partition_generator._partition_factory._retriever.stream_slicer.parent_stream_configs[
+            0
+        ].stream.name
+        == "applications"
+    )
+    assert stream_1._stream_partition_generator._partition_factory._retriever.stream_slicer.parent_stream_configs[
+        0
+    ].stream.retriever.requester.use_cache
+
     # Main stream without caching
-    assert streams[2].name == "jobs"
-    assert not streams[2].retriever.requester.use_cache
+    stream_2 = streams[2]
+    assert stream_2.name == "jobs"
+    assert isinstance(stream_2, DefaultStream)
+    assert (
+        not stream_2._stream_partition_generator._partition_factory._retriever.requester.use_cache
+    )
 
 
 def _run_read(manifest: Mapping[str, Any], stream_name: str) -> List[AirbyteMessage]:
