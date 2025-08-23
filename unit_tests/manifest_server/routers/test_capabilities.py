@@ -17,34 +17,34 @@ class TestCapabilities:
         assert response.status_code == 200
 
     def test_capabilities_custom_code_execution_false_by_default(self):
-        """Test that customCodeExecution is false by default when env var is not set."""
+        """Test that custom_code_execution is false by default when env var is not set."""
         with patch.dict(os.environ, {}, clear=True):
             response = client.get("/capabilities/")
             assert response.status_code == 200
 
             data = response.json()
-            assert "customCodeExecution" in data
-            assert data["customCodeExecution"] is False
+            assert "custom_code_execution" in data
+            assert data["custom_code_execution"] is False
 
     def test_capabilities_custom_code_execution_false_when_env_var_false(self):
-        """Test that customCodeExecution is false when env var is explicitly set to false."""
+        """Test that custom_code_execution is false when env var is explicitly set to false."""
         with patch.dict(os.environ, {"AIRBYTE_ENABLE_UNSAFE_CODE": "false"}):
             response = client.get("/capabilities/")
             assert response.status_code == 200
 
             data = response.json()
-            assert "customCodeExecution" in data
-            assert data["customCodeExecution"] is False
+            assert "custom_code_execution" in data
+            assert data["custom_code_execution"] is False
 
     def test_capabilities_custom_code_execution_true_when_env_var_true(self):
-        """Test that customCodeExecution is true when env var is set to true."""
+        """Test that custom_code_execution is true when env var is set to true."""
         with patch.dict(os.environ, {"AIRBYTE_ENABLE_UNSAFE_CODE": "true"}):
             response = client.get("/capabilities/")
             assert response.status_code == 200
 
             data = response.json()
-            assert "customCodeExecution" in data
-            assert data["customCodeExecution"] is True
+            assert "custom_code_execution" in data
+            assert data["custom_code_execution"] is True
 
     def test_capabilities_custom_code_execution_case_insensitive(self):
         """Test that env var parsing is case insensitive."""
@@ -56,7 +56,7 @@ class TestCapabilities:
                 assert response.status_code == 200
 
                 data = response.json()
-                assert data["customCodeExecution"] is True
+                assert data["custom_code_execution"] is True
 
     def test_capabilities_custom_code_execution_invalid_values_default_to_false(self):
         """Test that invalid env var values default to false."""
@@ -68,4 +68,4 @@ class TestCapabilities:
                 assert response.status_code == 200
 
                 data = response.json()
-                assert data["customCodeExecution"] is False
+                assert data["custom_code_execution"] is False
