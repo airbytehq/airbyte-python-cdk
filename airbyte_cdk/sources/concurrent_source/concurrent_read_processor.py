@@ -2,7 +2,6 @@
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
 import logging
-import os
 from typing import Dict, Iterable, List, Optional, Set
 
 from airbyte_cdk.exception_handler import generate_failed_streams_error_message
@@ -96,14 +95,11 @@ class ConcurrentReadProcessor:
         """
         stream_name = partition.stream_name()
         self._streams_to_running_partitions[stream_name].add(partition)
-        cursor = self._stream_name_to_instance[stream_name].cursor
         if self._slice_logger.should_log_slice_message(self._logger):
             self._message_repository.emit_message(
                 self._slice_logger.create_slice_log_message(partition.to_slice())
             )
-        self._thread_pool_manager.submit(
-            self._partition_reader.process_partition, partition, cursor
-        )
+        self._thread_pool_manager.submit(self._partition_reader.process_partition, partition)
 
     def on_partition_complete_sentinel(
         self, sentinel: PartitionCompleteSentinel
@@ -116,16 +112,26 @@ class ConcurrentReadProcessor:
         """
         partition = sentinel.partition
 
-        partitions_running = self._streams_to_running_partitions[partition.stream_name()]
-        if partition in partitions_running:
-            partitions_running.remove(partition)
-            # If all partitions were generated and this was the last one, the stream is done
-            if (
-                partition.stream_name() not in self._streams_currently_generating_partitions
-                and len(partitions_running) == 0
-            ):
-                yield from self._on_stream_is_done(partition.stream_name())
-        yield from self._message_repository.consume_queue()
+        try:
+            if sentinel.is_successful:
+                stream = self._stream_name_to_instance[partition.stream_name()]
+                stream.cursor.close_partition(partition)
+        except Exception as exception:
+            self._flag_exception(partition.stream_name(), exception)
+            yield AirbyteTracedException.from_exception(
+                exception, stream_descriptor=StreamDescriptor(name=partition.stream_name())
+            ).as_sanitized_airbyte_message()
+        finally:
+            partitions_running = self._streams_to_running_partitions[partition.stream_name()]
+            if partition in partitions_running:
+                partitions_running.remove(partition)
+                # If all partitions were generated and this was the last one, the stream is done
+                if (
+                    partition.stream_name() not in self._streams_currently_generating_partitions
+                    and len(partitions_running) == 0
+                ):
+                    yield from self._on_stream_is_done(partition.stream_name())
+            yield from self._message_repository.consume_queue()
 
     def on_record(self, record: Record) -> Iterable[AirbyteMessage]:
         """
@@ -154,6 +160,7 @@ class ConcurrentReadProcessor:
                     stream.as_airbyte_stream(), AirbyteStreamStatus.RUNNING
                 )
             self._record_counter[stream.name] += 1
+            stream.cursor.observe(record)
         yield message
         yield from self._message_repository.consume_queue()
 
