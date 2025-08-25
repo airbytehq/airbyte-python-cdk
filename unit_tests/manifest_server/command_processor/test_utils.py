@@ -31,15 +31,12 @@ class TestManifestUtils:
         assert configured_stream.sync_mode == SyncMode.incremental
         assert configured_stream.destination_sync_mode == DestinationSyncMode.overwrite
 
-    @patch("airbyte_cdk.manifest_server.command_processor.utils.ManifestDeclarativeSource")
-    @patch("airbyte_cdk.manifest_server.command_processor.utils.ModelToComponentFactory")
+    @patch("airbyte_cdk.manifest_server.command_processor.utils.ConcurrentDeclarativeSource")
     def test_build_source_creates_manifest_declarative_source(
-        self, mock_component_factory_class, mock_source_class
+        self, mock_source_class
     ):
-        """Test that build_source creates a ManifestDeclarativeSource with correct parameters."""
+        """Test that build_source creates a ConcurrentDeclarativeSource with correct parameters."""
         # Setup mocks
-        mock_component_factory = Mock()
-        mock_component_factory_class.return_value = mock_component_factory
         mock_source = Mock()
         mock_source_class.return_value = mock_source
 
@@ -68,64 +65,57 @@ class TestManifestUtils:
             "timeout": 30,
         }
 
-        # Call build_source
-        result = build_source(manifest, config)
+        # Call build_source with additional parameters
+        catalog = build_catalog("test_stream")
+        state = []
+        result = build_source(manifest, catalog, config, state)
 
-        # Verify ModelToComponentFactory was created with correct parameters
-        mock_component_factory_class.assert_called_once_with(
-            emit_connector_builder_messages=True,
-            limit_pages_fetched_per_slice=None,
-            limit_slices_fetched=None,
-            disable_retries=True,
-            disable_cache=True,
-        )
-
-        # Verify ManifestDeclarativeSource was created with correct parameters
+        # Verify ConcurrentDeclarativeSource was created with correct parameters
         mock_source_class.assert_called_once_with(
+            catalog=catalog,
+            state=state,
             source_config=manifest,
             config=config,
             normalize_manifest=False,  # Default when flag not set
             migrate_manifest=False,  # Default when flag not set
             emit_connector_builder_messages=True,
-            component_factory=mock_component_factory,
+            limits=mock_source_class.call_args[1]["limits"],
         )
 
         assert result == mock_source
 
-    @patch("airbyte_cdk.manifest_server.command_processor.utils.ManifestDeclarativeSource")
-    @patch("airbyte_cdk.manifest_server.command_processor.utils.ModelToComponentFactory")
+    @patch("airbyte_cdk.manifest_server.command_processor.utils.ConcurrentDeclarativeSource")
     def test_build_source_with_normalize_flag(
-        self, mock_component_factory_class, mock_source_class
+        self, mock_source_class
     ):
         """Test build_source when normalize flag is set."""
-        mock_component_factory = Mock()
-        mock_component_factory_class.return_value = mock_component_factory
         mock_source = Mock()
         mock_source_class.return_value = mock_source
 
         manifest = {"streams": [{"name": "test_stream"}], SHOULD_NORMALIZE_KEY: True}
         config = {"api_key": "test_key"}
+        catalog = build_catalog("test_stream")
+        state = []
 
-        build_source(manifest, config)
+        build_source(manifest, catalog, config, state)
 
         # Verify normalize_manifest is True
         call_args = mock_source_class.call_args[1]
         assert call_args["normalize_manifest"] is True
         assert call_args["migrate_manifest"] is False
 
-    @patch("airbyte_cdk.manifest_server.command_processor.utils.ManifestDeclarativeSource")
-    @patch("airbyte_cdk.manifest_server.command_processor.utils.ModelToComponentFactory")
-    def test_build_source_with_migrate_flag(self, mock_component_factory_class, mock_source_class):
+    @patch("airbyte_cdk.manifest_server.command_processor.utils.ConcurrentDeclarativeSource")
+    def test_build_source_with_migrate_flag(self, mock_source_class):
         """Test build_source when migrate flag is set."""
-        mock_component_factory = Mock()
-        mock_component_factory_class.return_value = mock_component_factory
         mock_source = Mock()
         mock_source_class.return_value = mock_source
 
         manifest = {"streams": [{"name": "test_stream"}], SHOULD_MIGRATE_KEY: True}
         config = {"api_key": "test_key"}
+        catalog = build_catalog("test_stream")
+        state = []
 
-        build_source(manifest, config)
+        build_source(manifest, catalog, config, state)
 
         # Verify migrate_manifest is True
         call_args = mock_source_class.call_args[1]

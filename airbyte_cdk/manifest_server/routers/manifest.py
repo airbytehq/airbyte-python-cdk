@@ -3,6 +3,7 @@ from dataclasses import asdict
 from typing import Any, Dict, List, Mapping, Optional
 
 import jsonschema
+from airbyte_protocol_dataclasses.models import AirbyteStateMessage, ConfiguredAirbyteCatalog
 from fastapi import APIRouter, Depends, HTTPException
 
 from airbyte_cdk.manifest_server.api_models.manifest import (
@@ -12,7 +13,9 @@ from airbyte_cdk.manifest_server.api_models.manifest import (
     DiscoverResponse,
 )
 from airbyte_cdk.models import AirbyteStateMessageSerializer
-from airbyte_cdk.sources.declarative.manifest_declarative_source import ManifestDeclarativeSource
+from airbyte_cdk.sources.declarative.concurrent_declarative_source import (
+    ConcurrentDeclarativeSource,
+)
 from airbyte_cdk.sources.declarative.parsers.custom_code_compiler import (
     INJECTED_COMPONENTS_PY,
     INJECTED_COMPONENTS_PY_CHECKSUMS,
@@ -34,12 +37,23 @@ from ..command_processor.utils import build_catalog, build_source
 def safe_build_source(
     manifest_dict: Mapping[str, Any],
     config_dict: Mapping[str, Any],
+    catalog: Optional[ConfiguredAirbyteCatalog] = None,
+    state: Optional[List[AirbyteStateMessage]] = None,
     page_limit: Optional[int] = None,
     slice_limit: Optional[int] = None,
-) -> ManifestDeclarativeSource:
+    record_limit: Optional[int] = None,
+) -> ConcurrentDeclarativeSource[Optional[List[AirbyteStateMessage]]]:
     """Wrapper around build_source that converts ValidationError to HTTPException."""
     try:
-        return build_source(manifest_dict, config_dict, page_limit, slice_limit)
+        return build_source(
+            manifest_dict,
+            catalog,
+            config_dict,
+            state,
+            record_limit,
+            page_limit,
+            slice_limit,
+        )
     except jsonschema.exceptions.ValidationError as e:
         raise HTTPException(status_code=400, detail=f"Invalid manifest: {e.message}")
 
@@ -58,10 +72,16 @@ def test_read(request: StreamTestReadRequest) -> StreamRead:
     """
     config_dict = request.config.model_dump()
 
-    source = safe_build_source(
-        request.manifest.model_dump(), config_dict, request.page_limit, request.slice_limit
-    )
     catalog = build_catalog(request.stream_name)
+    source = safe_build_source(
+        request.manifest.model_dump(),
+        config_dict,
+        catalog,
+        request.state,
+        request.page_limit,
+        request.slice_limit,
+        request.record_limit,
+    )
     state = [AirbyteStateMessageSerializer.load(state) for state in request.state]
 
     if request.custom_components_code:

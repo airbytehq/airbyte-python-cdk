@@ -76,10 +76,10 @@ class TestManifestRouter:
 
     @patch("airbyte_cdk.manifest_server.routers.manifest.ManifestCommandProcessor")
     @patch("airbyte_cdk.manifest_server.routers.manifest.build_catalog")
-    @patch("airbyte_cdk.manifest_server.routers.manifest.safe_build_source")
+    @patch("airbyte_cdk.manifest_server.routers.manifest.build_source")
     def test_test_read_endpoint_success(
         self,
-        mock_safe_build_source,
+        mock_build_source,
         mock_build_catalog,
         mock_runner_class,
         sample_manifest,
@@ -98,7 +98,7 @@ class TestManifestRouter:
             "slice_limit": 5,
         }
 
-        mock_safe_build_source.return_value = mock_source
+        mock_build_source.return_value = mock_source
         mock_build_catalog.return_value = Mock()
 
         mock_runner = Mock()
@@ -108,16 +108,25 @@ class TestManifestRouter:
         response = client.post("/v1/manifest/test_read", json=request_data)
 
         assert response.status_code == 200
-        mock_safe_build_source.assert_called_once_with(sample_manifest, sample_config, 5, 5)
+        # Verify build_source was called with correct arguments
+        mock_build_source.assert_called_once_with(
+            sample_manifest, 
+            mock_build_catalog.return_value, 
+            sample_config, 
+            [], 
+            100,  # record_limit
+            5,    # page_limit
+            5     # slice_limit
+        )
         mock_build_catalog.assert_called_once_with("products")
         mock_runner.test_read.assert_called_once()
 
     @patch("airbyte_cdk.manifest_server.routers.manifest.ManifestCommandProcessor")
     @patch("airbyte_cdk.manifest_server.routers.manifest.build_catalog")
-    @patch("airbyte_cdk.manifest_server.routers.manifest.safe_build_source")
+    @patch("airbyte_cdk.manifest_server.routers.manifest.build_source")
     def test_test_read_with_custom_components(
         self,
-        mock_safe_build_source,
+        mock_build_source,
         mock_build_catalog,
         mock_runner_class,
         sample_manifest,
@@ -140,7 +149,7 @@ class TestManifestRouter:
             "slice_limit": 2,
         }
 
-        mock_safe_build_source.return_value = mock_source
+        mock_build_source.return_value = mock_source
         mock_build_catalog.return_value = Mock()
 
         mock_runner = Mock()
@@ -152,20 +161,31 @@ class TestManifestRouter:
         assert response.status_code == 200
 
         # Verify that build_source was called with config containing custom components
-        call_args = mock_safe_build_source.call_args
-        config_arg = call_args[0][1]  # Second argument is config
+        call_args = mock_build_source.call_args
+        config_arg = call_args[0][2]  # Third argument is config
         assert "__injected_components_py" in config_arg
         assert config_arg["__injected_components_py"] == custom_code
         assert "__injected_components_py_checksums" in config_arg
         assert config_arg["__injected_components_py_checksums"]["md5"] == expected_checksum
+        
+        # Verify other arguments
+        mock_build_source.assert_called_once_with(
+            sample_manifest,
+            mock_build_catalog.return_value,
+            config_arg,
+            [],
+            50,  # record_limit
+            3,   # page_limit
+            2    # slice_limit
+        )
 
     @patch("airbyte_cdk.manifest_server.routers.manifest.AirbyteStateMessageSerializer")
     @patch("airbyte_cdk.manifest_server.routers.manifest.ManifestCommandProcessor")
     @patch("airbyte_cdk.manifest_server.routers.manifest.build_catalog")
-    @patch("airbyte_cdk.manifest_server.routers.manifest.safe_build_source")
+    @patch("airbyte_cdk.manifest_server.routers.manifest.build_source")
     def test_test_read_with_state(
         self,
-        mock_safe_build_source,
+        mock_build_source,
         mock_build_catalog,
         mock_runner_class,
         mock_serializer,
@@ -184,7 +204,7 @@ class TestManifestRouter:
             "state": state_data,
         }
 
-        mock_safe_build_source.return_value = mock_source
+        mock_build_source.return_value = mock_source
         mock_build_catalog.return_value = Mock()
         mock_serializer.load.return_value = Mock()
 
@@ -224,7 +244,15 @@ class TestManifestRouter:
             data = response.json()
             assert "manifest" in data
             assert data["manifest"] == mock_source.resolved_manifest
-            mock_build_source.assert_called_once_with(sample_manifest, {}, None, None)
+            mock_build_source.assert_called_once_with(
+                sample_manifest, 
+                None,  # catalog
+                {},    # config
+                None,  # state
+                None,  # record_limit
+                None,  # page_limit
+                None   # slice_limit
+            )
 
     def test_resolve_invalid_manifest(self):
         """Test resolve endpoint with invalid manifest."""
@@ -359,9 +387,9 @@ class TestManifestRouter:
             assert len(template_b_streams) == 1
 
     @patch("airbyte_cdk.manifest_server.routers.manifest.ManifestCommandProcessor")
-    @patch("airbyte_cdk.manifest_server.routers.manifest.safe_build_source")
+    @patch("airbyte_cdk.manifest_server.routers.manifest.build_source")
     def test_check_endpoint_success(
-        self, mock_safe_build_source, mock_runner_class, sample_manifest, sample_config, mock_source
+        self, mock_build_source, mock_runner_class, sample_manifest, sample_config, mock_source
     ):
         """Test successful check endpoint call."""
         request_data = {
@@ -369,7 +397,7 @@ class TestManifestRouter:
             "config": sample_config,
         }
 
-        mock_safe_build_source.return_value = mock_source
+        mock_build_source.return_value = mock_source
 
         mock_runner = Mock()
         mock_runner.check_connection.return_value = (True, "Connection successful")
@@ -382,14 +410,22 @@ class TestManifestRouter:
         assert data["success"] is True
         assert data["message"] == "Connection successful"
 
-        mock_safe_build_source.assert_called_once_with(sample_manifest, sample_config)
+        mock_build_source.assert_called_once_with(
+            sample_manifest,
+            None,  # catalog
+            sample_config,
+            None,  # state
+            None,  # record_limit
+            None,  # page_limit
+            None   # slice_limit
+        )
         mock_runner_class.assert_called_once_with(mock_source)
         mock_runner.check_connection.assert_called_once_with(sample_config)
 
     @patch("airbyte_cdk.manifest_server.routers.manifest.ManifestCommandProcessor")
-    @patch("airbyte_cdk.manifest_server.routers.manifest.safe_build_source")
+    @patch("airbyte_cdk.manifest_server.routers.manifest.build_source")
     def test_check_endpoint_failure(
-        self, mock_safe_build_source, mock_runner_class, sample_manifest, sample_config, mock_source
+        self, mock_build_source, mock_runner_class, sample_manifest, sample_config, mock_source
     ):
         """Test check endpoint with connection failure."""
         request_data = {
@@ -397,7 +433,7 @@ class TestManifestRouter:
             "config": sample_config,
         }
 
-        mock_safe_build_source.return_value = mock_source
+        mock_build_source.return_value = mock_source
 
         mock_runner = Mock()
         mock_runner.check_connection.return_value = (False, "Invalid API key")
@@ -409,11 +445,21 @@ class TestManifestRouter:
         data = response.json()
         assert data["success"] is False
         assert data["message"] == "Invalid API key"
+        
+        mock_build_source.assert_called_once_with(
+            sample_manifest,
+            None,  # catalog
+            sample_config,
+            None,  # state
+            None,  # record_limit
+            None,  # page_limit
+            None   # slice_limit
+        )
 
     @patch("airbyte_cdk.manifest_server.routers.manifest.ManifestCommandProcessor")
-    @patch("airbyte_cdk.manifest_server.routers.manifest.safe_build_source")
+    @patch("airbyte_cdk.manifest_server.routers.manifest.build_source")
     def test_discover_endpoint_success(
-        self, mock_safe_build_source, mock_runner_class, sample_manifest, sample_config, mock_source
+        self, mock_build_source, mock_runner_class, sample_manifest, sample_config, mock_source
     ):
         """Test successful discover endpoint call."""
         from airbyte_protocol_dataclasses.models import AirbyteCatalog, AirbyteStream
@@ -434,7 +480,7 @@ class TestManifestRouter:
             ]
         )
 
-        mock_safe_build_source.return_value = mock_source
+        mock_build_source.return_value = mock_source
 
         mock_runner = Mock()
         mock_runner.discover.return_value = mock_catalog
@@ -447,14 +493,22 @@ class TestManifestRouter:
         assert "catalog" in data
         assert data["catalog"]["streams"][0]["name"] == "products"
 
-        mock_safe_build_source.assert_called_once_with(sample_manifest, sample_config)
+        mock_build_source.assert_called_once_with(
+            sample_manifest,
+            None,  # catalog
+            sample_config,
+            None,  # state
+            None,  # record_limit
+            None,  # page_limit
+            None   # slice_limit
+        )
         mock_runner_class.assert_called_once_with(mock_source)
         mock_runner.discover.assert_called_once_with(sample_config)
 
     @patch("airbyte_cdk.manifest_server.routers.manifest.ManifestCommandProcessor")
-    @patch("airbyte_cdk.manifest_server.routers.manifest.safe_build_source")
+    @patch("airbyte_cdk.manifest_server.routers.manifest.build_source")
     def test_discover_endpoint_missing_catalog(
-        self, mock_safe_build_source, mock_runner_class, sample_manifest, sample_config, mock_source
+        self, mock_build_source, mock_runner_class, sample_manifest, sample_config, mock_source
     ):
         """Test discover endpoint with no catalog throws 422 error."""
         request_data = {
@@ -462,7 +516,7 @@ class TestManifestRouter:
             "config": sample_config,
         }
 
-        mock_safe_build_source.return_value = mock_source
+        mock_build_source.return_value = mock_source
 
         mock_runner = Mock()
         mock_runner.discover.return_value = None  # No catalog returned

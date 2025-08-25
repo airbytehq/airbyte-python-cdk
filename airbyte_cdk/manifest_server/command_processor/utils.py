@@ -1,4 +1,6 @@
-from typing import Any, Mapping, Optional
+from typing import Any, List, Mapping, Optional
+
+from airbyte_protocol_dataclasses.models import AirbyteStateMessage
 
 from airbyte_cdk.models import (
     AirbyteStream,
@@ -6,6 +8,10 @@ from airbyte_cdk.models import (
     ConfiguredAirbyteStream,
     DestinationSyncMode,
     SyncMode,
+)
+from airbyte_cdk.sources.declarative.concurrent_declarative_source import (
+    ConcurrentDeclarativeSource,
+    TestLimits,
 )
 from airbyte_cdk.sources.declarative.manifest_declarative_source import (
     ManifestDeclarativeSource,
@@ -56,21 +62,31 @@ def should_normalize_manifest(manifest: Mapping[str, Any]) -> bool:
 
 def build_source(
     manifest: Mapping[str, Any],
+    catalog: Optional[ConfiguredAirbyteCatalog],
     config: Mapping[str, Any],
+    state: Optional[List[AirbyteStateMessage]],
+    record_limit: Optional[int] = None,
     page_limit: Optional[int] = None,
     slice_limit: Optional[int] = None,
-) -> ManifestDeclarativeSource:
-    return ManifestDeclarativeSource(
+) -> ConcurrentDeclarativeSource[Optional[List[AirbyteStateMessage]]]:
+    # We enforce a concurrency level of 1 so that the stream is processed on a single thread
+    # to retain ordering for the grouping of the builder message responses.
+    if "concurrency_level" in manifest:
+        manifest["concurrency_level"]["default_concurrency"] = 1
+    else:
+        manifest["concurrency_level"] = {"type": "ConcurrencyLevel", "default_concurrency": 1}
+
+    return ConcurrentDeclarativeSource(
+        catalog=catalog,
+        state=state,
         source_config=manifest,
         config=config,
         normalize_manifest=should_normalize_manifest(manifest),
         migrate_manifest=should_migrate_manifest(manifest),
         emit_connector_builder_messages=True,
-        component_factory=ModelToComponentFactory(
-            emit_connector_builder_messages=True,
-            limit_pages_fetched_per_slice=page_limit,
-            limit_slices_fetched=slice_limit,
-            disable_retries=True,
-            disable_cache=True,
+        limits=TestLimits(
+            max_pages_per_slice=page_limit,
+            max_slices=slice_limit,
+            max_records=record_limit,
         ),
     )
