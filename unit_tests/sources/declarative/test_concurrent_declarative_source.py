@@ -1507,6 +1507,8 @@ def test_read_concurrent_with_failing_partition_in_the_middle():
             ):
                 messages.append(message)
         except AirbyteTracedException:
+            locations_states = get_states_for_stream(stream_name="locations", messages=messages)
+            assert len(locations_states) == 3
             assert (
                 get_states_for_stream(stream_name="locations", messages=messages)[
                     -1
