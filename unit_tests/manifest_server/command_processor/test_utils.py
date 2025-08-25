@@ -32,9 +32,7 @@ class TestManifestUtils:
         assert configured_stream.destination_sync_mode == DestinationSyncMode.overwrite
 
     @patch("airbyte_cdk.manifest_server.command_processor.utils.ConcurrentDeclarativeSource")
-    def test_build_source_creates_manifest_declarative_source(
-        self, mock_source_class
-    ):
+    def test_build_source_creates_manifest_declarative_source(self, mock_source_class):
         """Test that build_source creates a ConcurrentDeclarativeSource with correct parameters."""
         # Setup mocks
         mock_source = Mock()
@@ -85,9 +83,7 @@ class TestManifestUtils:
         assert result == mock_source
 
     @patch("airbyte_cdk.manifest_server.command_processor.utils.ConcurrentDeclarativeSource")
-    def test_build_source_with_normalize_flag(
-        self, mock_source_class
-    ):
+    def test_build_source_with_normalize_flag(self, mock_source_class):
         """Test build_source when normalize flag is set."""
         mock_source = Mock()
         mock_source_class.return_value = mock_source

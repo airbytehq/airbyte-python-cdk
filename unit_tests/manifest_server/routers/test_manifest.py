@@ -110,13 +110,13 @@ class TestManifestRouter:
         assert response.status_code == 200
         # Verify build_source was called with correct arguments
         mock_build_source.assert_called_once_with(
-            sample_manifest, 
-            mock_build_catalog.return_value, 
-            sample_config, 
-            [], 
+            sample_manifest,
+            mock_build_catalog.return_value,
+            sample_config,
+            [],
             100,  # record_limit
-            5,    # page_limit
-            5     # slice_limit
+            5,  # page_limit
+            5,  # slice_limit
         )
         mock_build_catalog.assert_called_once_with("products")
         mock_runner.test_read.assert_called_once()
@@ -167,7 +167,7 @@ class TestManifestRouter:
         assert config_arg["__injected_components_py"] == custom_code
         assert "__injected_components_py_checksums" in config_arg
         assert config_arg["__injected_components_py_checksums"]["md5"] == expected_checksum
-        
+
         # Verify other arguments
         mock_build_source.assert_called_once_with(
             sample_manifest,
@@ -175,8 +175,8 @@ class TestManifestRouter:
             config_arg,
             [],
             50,  # record_limit
-            3,   # page_limit
-            2    # slice_limit
+            3,  # page_limit
+            2,  # slice_limit
         )
 
     @patch("airbyte_cdk.manifest_server.routers.manifest.AirbyteStateMessageSerializer")
@@ -245,13 +245,13 @@ class TestManifestRouter:
             assert "manifest" in data
             assert data["manifest"] == mock_source.resolved_manifest
             mock_build_source.assert_called_once_with(
-                sample_manifest, 
+                sample_manifest,
                 None,  # catalog
-                {},    # config
+                {},  # config
                 None,  # state
                 None,  # record_limit
                 None,  # page_limit
-                None   # slice_limit
+                None,  # slice_limit
             )
 
     def test_resolve_invalid_manifest(self):
@@ -417,7 +417,7 @@ class TestManifestRouter:
             None,  # state
             None,  # record_limit
             None,  # page_limit
-            None   # slice_limit
+            None,  # slice_limit
         )
         mock_runner_class.assert_called_once_with(mock_source)
         mock_runner.check_connection.assert_called_once_with(sample_config)
@@ -445,7 +445,7 @@ class TestManifestRouter:
         data = response.json()
         assert data["success"] is False
         assert data["message"] == "Invalid API key"
-        
+
         mock_build_source.assert_called_once_with(
             sample_manifest,
             None,  # catalog
@@ -453,7 +453,7 @@ class TestManifestRouter:
             None,  # state
             None,  # record_limit
             None,  # page_limit
-            None   # slice_limit
+            None,  # slice_limit
         )
 
     @patch("airbyte_cdk.manifest_server.routers.manifest.ManifestCommandProcessor")
@@ -500,7 +500,7 @@ class TestManifestRouter:
             None,  # state
             None,  # record_limit
             None,  # page_limit
-            None   # slice_limit
+            None,  # slice_limit
         )
         mock_runner_class.assert_called_once_with(mock_source)
         mock_runner.discover.assert_called_once_with(sample_config)
