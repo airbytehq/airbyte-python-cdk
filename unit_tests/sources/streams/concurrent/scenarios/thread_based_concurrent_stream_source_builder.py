@@ -125,7 +125,6 @@ class InMemoryPartition(Partition):
         self._stream_name = stream_name
         self._slice = _slice
         self._records = records
-        self._is_closed = False
 
     def read(self) -> Iterable[Record]:
         for record_or_exception in self._records:
@@ -144,12 +143,6 @@ class InMemoryPartition(Partition):
             return hash((self._name, s))
         else:
             return hash(self._name)
-
-    def close(self) -> None:
-        self._is_closed = True
-
-    def is_closed(self) -> bool:
-        return self._is_closed
 
 
 class ConcurrentSourceBuilder(SourceBuilder[ConcurrentCdkSource]):

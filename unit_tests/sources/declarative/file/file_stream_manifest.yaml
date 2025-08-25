@@ -63,7 +63,7 @@ definitions:
       - "%Y-%m-%dT%H:%M:%SZ"
       - "%Y-%m-%dT%H:%M:%S%z"
     datetime_format: "%s"
-    cursor_field: "{{ parameters.get('cursor_field',  'updated_at') }}"
+    cursor_field: "updated_at"
     start_datetime:
       datetime: "{{ timestamp(config.get('start_date')) | int if config.get('start_date') else day_delta(-730, '%s') }}"
     start_time_option:
