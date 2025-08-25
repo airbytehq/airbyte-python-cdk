@@ -3,7 +3,7 @@
 
 openapi: 3.1.0
 info:
-  title: Manifest Server Service
+  title: Manifest Server
   description: A service for running low-code Airbyte connectors
   contact:
     name: Airbyte

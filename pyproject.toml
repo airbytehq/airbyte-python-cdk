@@ -145,7 +145,7 @@ pre-commit = {cmd = "poetry run pre-commit run --all-files", help = "Run all pre
 # Build tasks
 assemble = {cmd = "bin/generate-component-manifest-dagger.sh", help = "Generate component manifest files."}
 build-package = {cmd = "poetry build", help = "Build the python package: source and wheels archives."}
-build = {sequence = ["assemble", "build-package"], help = "Run all tasks to build the package."}
+build = {sequence = ["assemble", "openapi-generate", "build-package"], help = "Run all tasks to build the package."}
 
 # Format check tasks
 format-check = {sequence = ["_format-check-ruff", "_format-check-prettier"], help = "Check formatting for all file types via Ruff and Prettier.", ignore_fail = "return_non_zero"}
@@ -193,6 +193,9 @@ pre-push = {sequence = ["build", "check-local"], help = "Run all build and check
 # API Docs with PDoc
 docs-generate = {env = {PDOC_ALLOW_EXEC = "1"}, cmd = "python -m docs.generate run", help="Generate API documentation with PDoc."}
 docs-preview = {shell = "poe docs-generate && open docs/generated/index.html", help="Generate API documentation with PDoc and then open the docs in the default web browser."}
+
+# Manifest server
+openapi-generate = {cmd = "manifest-server generate-openapi", help = "Generate OpenAPI YAML specification for the manifest server."}
 
 [tool.check-wheel-contents]
 # Quality control for Python wheel generation. Docs here:
