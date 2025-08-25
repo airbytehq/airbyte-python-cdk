@@ -71,22 +71,26 @@ def build_source(
 ) -> ConcurrentDeclarativeSource[Optional[List[AirbyteStateMessage]]]:
     # We enforce a concurrency level of 1 so that the stream is processed on a single thread
     # to retain ordering for the grouping of the builder message responses.
-    if "concurrency_level" in manifest:
-        manifest["concurrency_level"]["default_concurrency"] = 1
+    manifest_no_concurrency = dict(manifest)
+    if "concurrency_level" in manifest_no_concurrency:
+        manifest_no_concurrency["concurrency_level"]["default_concurrency"] = 1
     else:
-        manifest["concurrency_level"] = {"type": "ConcurrencyLevel", "default_concurrency": 1}
+        manifest_no_concurrency["concurrency_level"] = {
+            "type": "ConcurrencyLevel",
+            "default_concurrency": 1,
+        }
 
     return ConcurrentDeclarativeSource(
         catalog=catalog,
         state=state,
-        source_config=manifest,
+        source_config=manifest_no_concurrency,
         config=config,
         normalize_manifest=should_normalize_manifest(manifest),
         migrate_manifest=should_migrate_manifest(manifest),
         emit_connector_builder_messages=True,
         limits=TestLimits(
-            max_pages_per_slice=page_limit,
-            max_slices=slice_limit,
-            max_records=record_limit,
+            max_pages_per_slice=page_limit or TestLimits.DEFAULT_MAX_PAGES_PER_SLICE,
+            max_slices=slice_limit or TestLimits.DEFAULT_MAX_SLICES,
+            max_records=record_limit or TestLimits.DEFAULT_MAX_RECORDS,
         ),
     )

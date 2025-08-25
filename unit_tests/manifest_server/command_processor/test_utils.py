@@ -32,7 +32,7 @@ class TestManifestUtils:
         assert configured_stream.destination_sync_mode == DestinationSyncMode.overwrite
 
     @patch("airbyte_cdk.manifest_server.command_processor.utils.ConcurrentDeclarativeSource")
-    def test_build_source_creates_manifest_declarative_source(self, mock_source_class):
+    def test_build_source_creates_source(self, mock_source_class):
         """Test that build_source creates a ConcurrentDeclarativeSource with correct parameters."""
         # Setup mocks
         mock_source = Mock()
@@ -69,10 +69,14 @@ class TestManifestUtils:
         result = build_source(manifest, catalog, config, state)
 
         # Verify ConcurrentDeclarativeSource was created with correct parameters
+        expected_source_config = {
+            **manifest,
+            "concurrency_level": {"type": "ConcurrencyLevel", "default_concurrency": 1},
+        }
         mock_source_class.assert_called_once_with(
             catalog=catalog,
             state=state,
-            source_config=manifest,
+            source_config=expected_source_config,
             config=config,
             normalize_manifest=False,  # Default when flag not set
             migrate_manifest=False,  # Default when flag not set
