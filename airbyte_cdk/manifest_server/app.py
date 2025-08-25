@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 
-from ..manifest_server.routers import capabilities, health, manifest
+from .routers import capabilities, health, manifest
 
 app = FastAPI(
     title="Manifest Server",

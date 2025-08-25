@@ -73,16 +73,7 @@ def test_read(request: StreamTestReadRequest) -> StreamRead:
     config_dict = request.config.model_dump()
 
     catalog = build_catalog(request.stream_name)
-    source = safe_build_source(
-        request.manifest.model_dump(),
-        config_dict,
-        catalog,
-        request.state,
-        request.page_limit,
-        request.slice_limit,
-        request.record_limit,
-    )
-    state = [AirbyteStateMessageSerializer.load(state) for state in request.state]
+    converted_state = [AirbyteStateMessageSerializer.load(state) for state in request.state]
 
     if request.custom_components_code:
         config_dict[INJECTED_COMPONENTS_PY] = request.custom_components_code
@@ -90,11 +81,21 @@ def test_read(request: StreamTestReadRequest) -> StreamRead:
             "md5": hashlib.md5(request.custom_components_code.encode()).hexdigest()
         }
 
+    source = safe_build_source(
+        request.manifest.model_dump(),
+        config_dict,
+        catalog,
+        converted_state,
+        request.page_limit,
+        request.slice_limit,
+        request.record_limit,
+    )
+
     runner = ManifestCommandProcessor(source)
     cdk_result = runner.test_read(
         config_dict,
         catalog,
-        state,
+        converted_state,
         request.record_limit,
         request.page_limit,
         request.slice_limit,

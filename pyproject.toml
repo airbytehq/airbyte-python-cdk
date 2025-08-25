@@ -210,7 +210,7 @@ ignore = [
 [tool.airbyte_ci]
 python_versions = ["3.10", "3.11"]
 optional_poetry_groups = ["dev"]
-poetry_extras = ["file-based", "vector-db-based"]
+poetry_extras = ["file-based", "vector-db-based", "manifest-server"]
 poe_tasks = ["check-ci"]
 mount_docker_socket = true
 

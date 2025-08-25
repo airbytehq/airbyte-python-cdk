@@ -16,7 +16,7 @@ poetry install --extras manifest-server
 pip install airbyte-cdk[manifest-server]
 
 # Using uv
-uv pip install 'airbyte-cdk[manifest-runner]'
+uv pip install 'airbyte-cdk[manifest-server]'
 ```
 
 ### Running the Server
@@ -36,27 +36,27 @@ The server will start on `http://localhost:8000` by default.
 
 ## API Endpoints
 
-### `/manifest/test_read`
+### `/v1/manifest/test_read`
 Test reading from a specific stream in the manifest.
 
 **POST** - Test stream reading with configurable limits for records, pages, and slices.
 
-### `/manifest/check`
+### `/v1/manifest/check`
 Check configuration against a manifest.
 
 **POST** - Validates connector configuration and returns success/failure status with message.
 
-### `/manifest/discover`
+### `/v1/manifest/discover`
 Discover streams from a manifest.
 
 **POST** - Returns the catalog of available streams from the manifest.
 
-### `/manifest/resolve` 
+### `/v1/manifest/resolve` 
 Resolve a manifest to its final configuration.
 
 **POST** - Returns the resolved manifest without dynamic stream generation.
 
-### `/manifest/full_resolve`
+### `/v1/manifest/full_resolve`
 Fully resolve a manifest including dynamic streams.
 
 **POST** - Generates dynamic streams up to specified limits and includes them in the resolved manifest.
@@ -86,7 +86,7 @@ export AB_JWT_SIGNATURE_SECRET="your-jwt-secret-key"
 When authentication is enabled, include a valid JWT token in the Authorization header:
 ```bash
 curl -H "Authorization: Bearer <your-jwt-token>" \
-  http://localhost:8000/manifest/test_read
+  http://localhost:8000/v1/manifest/test_read
 ```
 
 ### Behavior

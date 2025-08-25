@@ -19,7 +19,7 @@ class StreamTestReadRequest(BaseModel):
     manifest: Manifest
     config: ConnectorConfig
     stream_name: str
-    state: List[Any] = []
+    state: List[Any] = Field(default_factory=list)
     custom_components_code: Optional[str] = None
     record_limit: int = Field(default=100, ge=1, le=5000)
     page_limit: int = Field(default=5, ge=1, le=20)
