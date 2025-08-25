@@ -4191,11 +4191,9 @@ definitions:
           - stream_slice
           - stream_template_config
         examples:
-          - ["data"]
-          - ["data", "records"]
-          - ["data", 1, "name"]
-          - ["data", "{{ components_values.name }}"]
-          - ["data", "*", "record"]
+          - ["name"]
+          - ["retriever", "requester", "url"]
+          - ["retriever", "requester", "{{ components_values.field }}"]
           - ["*", "**", "name"]
       value:
         title: Value
@@ -4826,6 +4824,12 @@ interpolation:
     - title: stream_slice
       description: This variable is deprecated. Use stream_interval or stream_partition instead.
       type: object
+    - title: components_values
+      description: The record object produced by the components resolver for which a stream will be generated.
+      type: object
+      examples:
+        - name: "accounts"
+          id: 1234
   macros:
     - title: now_utc
       description: Returns the current date and time in the UTC timezone.
