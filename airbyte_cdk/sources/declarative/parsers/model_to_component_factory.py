@@ -2090,6 +2090,12 @@ class ModelToComponentFactory:
             elif concurrent_cursor:
                 cursor = concurrent_cursor
 
+            # FIXME to be removed once we migrate everything to DefaultStream
+            if isinstance(retriever, SimpleRetriever):
+                # We zero it out here, but since this is a cursor reference, the state is still properly
+                # instantiated for the other components that reference it
+                retriever.cursor = None
+
             partition_generator = StreamSlicerPartitionGenerator(
                 DeclarativePartitionFactory(
                     stream_name,
