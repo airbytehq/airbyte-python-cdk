@@ -13,11 +13,13 @@ runs:
     - name: "Check for existing tag (${{ inputs.image_name }}:${{ inputs.tag }})"
       shell: bash
       run: |
-        tag="${{ inputs.image_name }}:${{ inputs.tag }}"
-        if [ -z "$tag" ]; then
-          echo "Error: tag is not set."
+        image="${{ inputs.image_name }}"
+        tag_input="${{ inputs.tag }}"
+        if [ -z "$image" ] || [ -z "$tag_input" ]; then
+          echo "Error: image_name and tag are required."
           exit 1
         fi
+        tag="${image}:${tag_input}"
         echo "Checking if tag '$tag' exists on DockerHub..."
         if DOCKER_CLI_EXPERIMENTAL=enabled docker manifest inspect "$tag" > /dev/null 2>&1; then
           echo "The tag '$tag' already exists on DockerHub. Skipping publish to prevent overwrite."
