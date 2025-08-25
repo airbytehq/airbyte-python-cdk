@@ -13,6 +13,7 @@ from airbyte_cdk.sources.declarative.requesters.paginators import (
     DefaultPaginator,
     PaginationStrategy,
 )
+from airbyte_cdk.sources.declarative.retrievers import SimpleRetriever
 
 
 @dataclass
@@ -43,3 +44,8 @@ class TestingCustomSubstreamPartitionRouter(SubstreamPartitionRouter):
 
     custom_field: str
     custom_pagination_strategy: PaginationStrategy
+
+
+@dataclass
+class TestingCustomRetriever(SimpleRetriever):
+    pass
