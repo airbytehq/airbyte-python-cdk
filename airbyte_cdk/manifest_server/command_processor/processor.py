@@ -9,6 +9,7 @@ from airbyte_protocol_dataclasses.models import (
     TraceType,
 )
 from airbyte_protocol_dataclasses.models import Type as AirbyteMessageType
+from fastapi import HTTPException
 
 from airbyte_cdk.connector_builder.models import StreamRead
 from airbyte_cdk.connector_builder.test_reader import TestReader
@@ -138,5 +139,13 @@ class ManifestCommandProcessor:
             if message.trace.type == TraceType.ERROR
         ]
         if messages:
-            # TODO: raise a better exception
-            raise Exception(messages[-1].trace.error.message)
+            error_message = messages[-1].trace.error.message
+            self._logger.warning(
+                "Error response from CDK: %s\n%s",
+                error_message,
+                messages[-1].trace.error.stack_trace,
+            )
+            raise HTTPException(
+                status_code=422,
+                detail=f"AirbyteTraceMessage response from CDK: {error_message}",
+            )
