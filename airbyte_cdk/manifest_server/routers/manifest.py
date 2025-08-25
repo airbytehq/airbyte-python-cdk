@@ -35,7 +35,7 @@ from ..command_processor.utils import build_catalog, build_source
 
 
 def safe_build_source(
-    manifest_dict: Mapping[str, Any],
+    manifest_dict: Dict[str, Any],
     config_dict: Mapping[str, Any],
     catalog: Optional[ConfiguredAirbyteCatalog] = None,
     state: Optional[List[AirbyteStateMessage]] = None,

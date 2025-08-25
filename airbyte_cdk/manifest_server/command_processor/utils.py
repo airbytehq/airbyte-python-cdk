@@ -1,5 +1,5 @@
 import copy
-from typing import Any, List, Mapping, Optional
+from typing import Any, Dict, List, Mapping, Optional
 
 from airbyte_protocol_dataclasses.models import AirbyteStateMessage
 
@@ -56,7 +56,7 @@ def should_normalize_manifest(manifest: Mapping[str, Any]) -> bool:
 
 
 def build_source(
-    manifest: Mapping[str, Any],
+    manifest: Dict[str, Any],
     catalog: Optional[ConfiguredAirbyteCatalog],
     config: Mapping[str, Any],
     state: Optional[List[AirbyteStateMessage]],
