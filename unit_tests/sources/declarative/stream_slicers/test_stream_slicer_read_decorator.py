@@ -16,9 +16,6 @@ from airbyte_cdk.sources.declarative.incremental import (
     PerPartitionWithGlobalCursor,
 )
 from airbyte_cdk.sources.declarative.incremental.declarative_cursor import DeclarativeCursor
-from airbyte_cdk.sources.declarative.incremental.per_partition_cursor import (
-    StreamSlice,
-)
 from airbyte_cdk.sources.declarative.interpolation import InterpolatedString
 from airbyte_cdk.sources.declarative.models import (
     CustomRetriever,
@@ -38,6 +35,7 @@ from airbyte_cdk.sources.declarative.stream_slicers import (
     StreamSlicerTestReadDecorator,
 )
 from airbyte_cdk.sources.message import NoopMessageRepository
+from airbyte_cdk.sources.types import StreamSlice
 from unit_tests.sources.declarative.async_job.test_integration import MockAsyncJobRepository
 
 CURSOR_SLICE_FIELD = "cursor slice field"
