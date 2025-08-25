@@ -6,6 +6,8 @@
 # we have to also update the Trusted Publisher settings on PyPI.
 
 name: CDK Publish
+permissions:
+  contents: read
 
 on:
   push:

@@ -1,6 +1,6 @@
+name: Docker Build Check
 permissions:
   contents: read
-name: Docker Build Check
 
 on:
   pull_request:
