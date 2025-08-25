@@ -1,3 +1,4 @@
+import copy
 from typing import Any, List, Mapping, Optional
 
 from airbyte_protocol_dataclasses.models import AirbyteStateMessage
@@ -12,12 +13,6 @@ from airbyte_cdk.models import (
 from airbyte_cdk.sources.declarative.concurrent_declarative_source import (
     ConcurrentDeclarativeSource,
     TestLimits,
-)
-from airbyte_cdk.sources.declarative.manifest_declarative_source import (
-    ManifestDeclarativeSource,
-)
-from airbyte_cdk.sources.declarative.parsers.model_to_component_factory import (
-    ModelToComponentFactory,
 )
 
 SHOULD_NORMALIZE_KEY = "__should_normalize"
@@ -71,7 +66,7 @@ def build_source(
 ) -> ConcurrentDeclarativeSource[Optional[List[AirbyteStateMessage]]]:
     # We enforce a concurrency level of 1 so that the stream is processed on a single thread
     # to retain ordering for the grouping of the builder message responses.
-    manifest_no_concurrency = dict(manifest)
+    manifest_no_concurrency = copy.deepcopy(manifest)
     if "concurrency_level" in manifest_no_concurrency:
         manifest_no_concurrency["concurrency_level"]["default_concurrency"] = 1
     else:
