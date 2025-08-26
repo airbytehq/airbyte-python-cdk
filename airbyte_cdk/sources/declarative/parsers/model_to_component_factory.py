@@ -3784,7 +3784,9 @@ class ModelToComponentFactory:
         child_state = self._connector_state_manager.get_stream_state(
             kwargs["stream_name"], None
         )  # FIXME adding `stream_name` as a parameter means it will be a breaking change. I assume this is mostly called internally so I don't think we need to bother that much about this but still raising the flag
-        connector_state_manager = self._instantiate_parent_stream_state_manager(child_state, config, model)
+        connector_state_manager = self._instantiate_parent_stream_state_manager(
+            child_state, config, model
+        )
 
         substream_factory = ModelToComponentFactory(
             connector_state_manager=connector_state_manager,
