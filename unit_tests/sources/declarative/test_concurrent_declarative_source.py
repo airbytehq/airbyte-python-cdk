@@ -4649,3 +4649,93 @@ def test_given_invalid_config_streams_validates_config_and_raises():
 
     with pytest.raises(ValueError):
         source.streams(input_config)
+
+
+def test_parameter_propagation_for_concurrent_cursor():
+    cursor_field_parameter_override = "created_at"
+    manifest = {
+        "version": "5.0.0",
+        "definitions": {
+            "selector": {
+                "type": "RecordSelector",
+                "extractor": {"type": "DpathExtractor", "field_path": []},
+            },
+            "requester": {
+                "type": "HttpRequester",
+                "url_base": "https://persona.metaverse.com",
+                "http_method": "GET",
+            },
+            "retriever": {
+                "type": "SimpleRetriever",
+                "record_selector": {"$ref": "#/definitions/selector"},
+                "paginator": {"type": "NoPagination"},
+                "requester": {"$ref": "#/definitions/requester"},
+            },
+            "incremental_cursor": {
+                "type": "DatetimeBasedCursor",
+                "start_datetime": {"datetime": "2024-01-01"},
+                "end_datetime": "2024-12-31",
+                "datetime_format": "%Y-%m-%d",
+                "cursor_datetime_formats": ["%Y-%m-%d"],
+                "cursor_granularity": "P1D",
+                "step": "P400D",
+                "cursor_field": "{{ parameters.get('cursor_field',  'updated_at') }}",
+                "start_time_option": {
+                    "type": "RequestOption",
+                    "field_name": "start",
+                    "inject_into": "request_parameter",
+                },
+                "end_time_option": {
+                    "type": "RequestOption",
+                    "field_name": "end",
+                    "inject_into": "request_parameter",
+                },
+            },
+            "base_stream": {"retriever": {"$ref": "#/definitions/retriever"}},
+            "incremental_stream": {
+                "retriever": {
+                    "$ref": "#/definitions/retriever",
+                    "requester": {"$ref": "#/definitions/requester"},
+                },
+                "incremental_sync": {"$ref": "#/definitions/incremental_cursor"},
+                "$parameters": {
+                    "name": "stream_name",
+                    "primary_key": "id",
+                    "path": "/path",
+                    "cursor_field": cursor_field_parameter_override,
+                },
+                "schema_loader": {
+                    "type": "InlineSchemaLoader",
+                    "schema": {
+                        "$schema": "https://json-schema.org/draft-07/schema#",
+                        "type": "object",
+                        "properties": {
+                            "id": {
+                                "description": "The identifier",
+                                "type": ["null", "string"],
+                            },
+                        },
+                    },
+                },
+            },
+        },
+        "streams": [
+            "#/definitions/incremental_stream",
+        ],
+        "check": {"stream_names": ["stream_name"]},
+        "concurrency_level": {
+            "type": "ConcurrencyLevel",
+            "default_concurrency": "{{ config['num_workers'] or 10 }}",
+            "max_concurrency": 25,
+        },
+    }
+
+    source = ConcurrentDeclarativeSource(
+        source_config=manifest,
+        config={},
+        catalog=create_catalog("stream_name"),
+        state=None,
+    )
+    streams = source.streams({})
+
+    assert streams[0].cursor.cursor_field.cursor_field_key == cursor_field_parameter_override
