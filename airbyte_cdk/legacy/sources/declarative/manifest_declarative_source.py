@@ -20,6 +20,7 @@ from airbyte_cdk.config_observation import create_connector_config_control_messa
 from airbyte_cdk.connector_builder.models import (
     LogMessage as ConnectorBuilderLogMessage,
 )
+from airbyte_cdk.legacy.sources.declarative.declarative_source import DeclarativeSource
 from airbyte_cdk.manifest_migrations.migration_handler import (
     ManifestMigrationHandler,
 )
@@ -34,7 +35,6 @@ from airbyte_cdk.models import (
 from airbyte_cdk.models.airbyte_protocol_serializers import AirbyteMessageSerializer
 from airbyte_cdk.sources.declarative.checks import COMPONENTS_CHECKER_TYPE_MAPPING
 from airbyte_cdk.sources.declarative.checks.connection_checker import ConnectionChecker
-from airbyte_cdk.sources.declarative.declarative_source import DeclarativeSource
 from airbyte_cdk.sources.declarative.interpolation import InterpolatedBoolean
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     ConditionalStreams as ConditionalStreamsModel,

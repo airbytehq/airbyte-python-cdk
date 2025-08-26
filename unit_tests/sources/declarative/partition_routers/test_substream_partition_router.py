@@ -10,15 +10,9 @@ import pytest as pytest
 from airbyte_protocol_dataclasses.models import AirbyteStream
 
 from airbyte_cdk.sources.declarative.incremental import (
-    ConcurrentPerPartitionCursor,
     ConcurrentCursorFactory,
+    ConcurrentPerPartitionCursor,
 )
-from airbyte_cdk.sources.streams.concurrent.cursor import (
-    ConcurrentCursor,
-    CursorField,
-    FinalStateCursor,
-)
-from airbyte_cdk.sources.declarative.incremental.per_partition_cursor import StreamSlice
 from airbyte_cdk.sources.declarative.partition_routers import (
     CartesianProductStreamSlicer,
     ListPartitionRouter,
@@ -34,11 +28,16 @@ from airbyte_cdk.sources.declarative.requesters.request_option import (
 from airbyte_cdk.sources.streams.checkpoint import Cursor
 from airbyte_cdk.sources.streams.concurrent.abstract_stream import AbstractStream
 from airbyte_cdk.sources.streams.concurrent.availability_strategy import StreamAvailability
+from airbyte_cdk.sources.streams.concurrent.cursor import (
+    ConcurrentCursor,
+    CursorField,
+    FinalStateCursor,
+)
 from airbyte_cdk.sources.streams.concurrent.partitions.partition import Partition
 from airbyte_cdk.sources.streams.concurrent.state_converters.datetime_stream_state_converter import (
     CustomFormatConcurrentStreamStateConverter,
 )
-from airbyte_cdk.sources.types import Record
+from airbyte_cdk.sources.types import Record, StreamSlice
 from airbyte_cdk.utils.datetime_helpers import ab_datetime_now, ab_datetime_parse
 from unit_tests.sources.streams.concurrent.scenarios.thread_based_concurrent_stream_source_builder import (
     InMemoryPartition,

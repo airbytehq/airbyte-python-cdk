@@ -34,12 +34,12 @@ from airbyte_cdk.connector_builder.models import (
     LogMessage as ConnectorBuilderLogMessage,
 )
 from airbyte_cdk.models import (
+    AirbyteStateBlob,
+    AirbyteStateMessage,
+    AirbyteStateType,
+    AirbyteStreamState,
     FailureType,
     Level,
-    AirbyteStateMessage,
-    AirbyteStreamState,
-    AirbyteStateBlob,
-    AirbyteStateType,
     StreamDescriptor,
 )
 from airbyte_cdk.sources.connector_state_manager import ConnectorStateManager
@@ -641,6 +641,10 @@ SCHEMA_TRANSFORMER_TYPE_MAPPING = {
     SchemaNormalizationModel.Default: TransformConfig.DefaultSchemaNormalization,
 }
 _NO_STREAM_SLICING = SinglePartitionRouter(parameters={})
+
+# Ideally this should use the value defined in ConcurrentDeclarativeSource, but
+# this would be a circular import
+MAX_SLICES = 5
 
 
 class ModelToComponentFactory:
@@ -2087,6 +2091,14 @@ class ModelToComponentFactory:
             if "name" not in options:
                 options["name"] = model.name
             schema_loader = DefaultSchemaLoader(config=config, parameters=options)
+
+        # FIXME to be removed once we migrate everything to DefaultStream
+        # todo: blai This was originally added back in https://github.com/airbytehq/airbyte-python-cdk/pull/723.
+        #  It does seem like this could be removed now that we only manage DefaultStream but noting to confirm in the PR
+        if isinstance(retriever, SimpleRetriever):
+            # We zero it out here, but since this is a cursor reference, the state is still properly
+            # instantiated for the other components that reference it
+            retriever.cursor = None
 
         stream_name = model.name or ""
         return DefaultStream(

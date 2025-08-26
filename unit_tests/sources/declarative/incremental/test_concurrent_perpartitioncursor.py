@@ -3646,6 +3646,7 @@ def test_given_no_partitions_processed_when_close_partition_then_no_state_update
                 schema_loader=_EMPTY_SCHEMA_LOADER,
                 retriever=MagicMock(),
                 message_repository=MagicMock(),
+                max_records_limit=None,
                 stream_slice=slice,
             )
         )
@@ -3730,6 +3731,7 @@ def test_given_unfinished_first_parent_partition_no_parent_state_update():
                 schema_loader=_EMPTY_SCHEMA_LOADER,
                 retriever=MagicMock(),
                 message_repository=MagicMock(),
+                max_records_limit=None,
                 stream_slice=slice,
             )
         )
@@ -3824,6 +3826,7 @@ def test_given_unfinished_last_parent_partition_with_partial_parent_state_update
                 schema_loader=_EMPTY_SCHEMA_LOADER,
                 retriever=MagicMock(),
                 message_repository=MagicMock(),
+                max_records_limit=None,
                 stream_slice=slice,
             )
         )
@@ -3913,6 +3916,7 @@ def test_given_all_partitions_finished_when_close_partition_then_final_state_emi
                 schema_loader=_EMPTY_SCHEMA_LOADER,
                 retriever=MagicMock(),
                 message_repository=MagicMock(),
+                max_records_limit=None,
                 stream_slice=slice,
             )
         )
@@ -3986,6 +3990,7 @@ def test_given_partition_limit_exceeded_when_close_partition_then_switch_to_glob
                 schema_loader=_EMPTY_SCHEMA_LOADER,
                 retriever=MagicMock(),
                 message_repository=MagicMock(),
+                max_records_limit=None,
                 stream_slice=slice,
             )
         )
@@ -4070,6 +4075,7 @@ def test_semaphore_cleanup():
                 schema_loader=_EMPTY_SCHEMA_LOADER,
                 retriever=MagicMock(),
                 message_repository=MagicMock(),
+                max_records_limit=None,
                 stream_slice=s,
             )
         )
@@ -4189,6 +4195,7 @@ def test_duplicate_partition_after_closing_partition_cursor_deleted():
             schema_loader=_EMPTY_SCHEMA_LOADER,
             retriever=MagicMock(),
             message_repository=MagicMock(),
+            max_records_limit=None,
             stream_slice=first_1,
         )
     )
@@ -4200,6 +4207,7 @@ def test_duplicate_partition_after_closing_partition_cursor_deleted():
             schema_loader=_EMPTY_SCHEMA_LOADER,
             retriever=MagicMock(),
             message_repository=MagicMock(),
+            max_records_limit=None,
             stream_slice=two,
         )
     )
@@ -4211,6 +4219,7 @@ def test_duplicate_partition_after_closing_partition_cursor_deleted():
             schema_loader=_EMPTY_SCHEMA_LOADER,
             retriever=MagicMock(),
             message_repository=MagicMock(),
+            max_records_limit=None,
             stream_slice=second_1,
         )
     )
@@ -4271,6 +4280,7 @@ def test_duplicate_partition_after_closing_partition_cursor_exists():
             schema_loader=_EMPTY_SCHEMA_LOADER,
             retriever=MagicMock(),
             message_repository=MagicMock(),
+            max_records_limit=None,
             stream_slice=first_1,
         )
     )
@@ -4282,6 +4292,7 @@ def test_duplicate_partition_after_closing_partition_cursor_exists():
             schema_loader=_EMPTY_SCHEMA_LOADER,
             retriever=MagicMock(),
             message_repository=MagicMock(),
+            max_records_limit=None,
             stream_slice=two,
         )
     )
@@ -4294,6 +4305,7 @@ def test_duplicate_partition_after_closing_partition_cursor_exists():
             schema_loader=_EMPTY_SCHEMA_LOADER,
             retriever=MagicMock(),
             message_repository=MagicMock(),
+            max_records_limit=None,
             stream_slice=second_1,
         )
     )
@@ -4351,6 +4363,7 @@ def test_duplicate_partition_while_processing():
             schema_loader=_EMPTY_SCHEMA_LOADER,
             retriever=MagicMock(),
             message_repository=MagicMock(),
+            max_records_limit=None,
             stream_slice=generated[1],
         )
     )
@@ -4361,6 +4374,7 @@ def test_duplicate_partition_while_processing():
             schema_loader=_EMPTY_SCHEMA_LOADER,
             retriever=MagicMock(),
             message_repository=MagicMock(),
+            max_records_limit=None,
             stream_slice=generated[0],
         )
     )

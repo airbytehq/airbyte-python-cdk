@@ -3,15 +3,15 @@
 #
 from typing import Any, Iterable, Mapping, MutableMapping, Optional, Union
 
+from airbyte_cdk.legacy.sources.declarative.incremental.per_partition_cursor import (
+    CursorFactory,
+    PerPartitionCursor,
+)
 from airbyte_cdk.sources.declarative.incremental.datetime_based_cursor import DatetimeBasedCursor
 from airbyte_cdk.sources.declarative.incremental.declarative_cursor import DeclarativeCursor
 from airbyte_cdk.sources.declarative.incremental.global_substream_cursor import (
     GlobalSubstreamCursor,
     iterate_with_last_flag_and_state,
-)
-from airbyte_cdk.sources.declarative.incremental.per_partition_cursor import (
-    CursorFactory,
-    PerPartitionCursor,
 )
 from airbyte_cdk.sources.declarative.partition_routers.partition_router import PartitionRouter
 from airbyte_cdk.sources.types import Record, StreamSlice, StreamState

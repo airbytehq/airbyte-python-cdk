@@ -1,15 +1,23 @@
-# Copyright (c) 2024 Airbyte, Inc., all rights reserved.
+# Copyright (c) 2025 Airbyte, Inc., all rights reserved.
 
-from typing import Any, Iterable, Mapping, Optional
+from typing import Any, Iterable, Mapping, Optional, cast
 
 from airbyte_cdk.sources.declarative.retrievers import Retriever
 from airbyte_cdk.sources.declarative.schema import SchemaLoader
+from airbyte_cdk.sources.declarative.stream_slicers.stream_slicer_test_read_decorator import (
+    StreamSlicerTestReadDecorator,
+)
 from airbyte_cdk.sources.message import MessageRepository
 from airbyte_cdk.sources.streams.concurrent.partitions.partition import Partition
 from airbyte_cdk.sources.streams.concurrent.partitions.partition_generator import PartitionGenerator
 from airbyte_cdk.sources.streams.concurrent.partitions.stream_slicer import StreamSlicer
 from airbyte_cdk.sources.types import Record, StreamSlice
 from airbyte_cdk.utils.slice_hasher import SliceHasher
+
+# For Connector Builder test read operations, we track the total number of records
+# read for the stream at the global level so that we can stop reading early if we
+# exceed the record limit
+total_record_counter = 0
 
 
 class SchemaLoaderCachingDecorator(SchemaLoader):
@@ -31,6 +39,7 @@ class DeclarativePartitionFactory:
         schema_loader: SchemaLoader,
         retriever: Retriever,
         message_repository: MessageRepository,
+        max_records_limit: Optional[int] = None,
     ) -> None:
         """
         The DeclarativePartitionFactory takes a retriever_factory and not a retriever directly. The reason is that our components are not
@@ -41,6 +50,7 @@ class DeclarativePartitionFactory:
         self._schema_loader = SchemaLoaderCachingDecorator(schema_loader)
         self._retriever = retriever
         self._message_repository = message_repository
+        self._max_records_limit = max_records_limit
 
     def create(self, stream_slice: StreamSlice) -> Partition:
         return DeclarativePartition(
@@ -48,6 +58,7 @@ class DeclarativePartitionFactory:
             schema_loader=self._schema_loader,
             retriever=self._retriever,
             message_repository=self._message_repository,
+            max_records_limit=self._max_records_limit,
             stream_slice=stream_slice,
         )
 
@@ -59,19 +70,29 @@ class DeclarativePartition(Partition):
         schema_loader: SchemaLoader,
         retriever: Retriever,
         message_repository: MessageRepository,
+        max_records_limit: Optional[int],
         stream_slice: StreamSlice,
     ):
         self._stream_name = stream_name
         self._schema_loader = schema_loader
         self._retriever = retriever
         self._message_repository = message_repository
+        self._max_records_limit = max_records_limit
         self._stream_slice = stream_slice
         self._hash = SliceHasher.hash(self._stream_name, self._stream_slice)
 
     def read(self) -> Iterable[Record]:
+        if self._max_records_limit is not None:
+            global total_record_counter
+            if total_record_counter >= self._max_records_limit:
+                return
         for stream_data in self._retriever.read_records(
             self._schema_loader.get_json_schema(), self._stream_slice
         ):
+            if self._max_records_limit is not None:
+                if total_record_counter >= self._max_records_limit:
+                    break
+
             if isinstance(stream_data, Mapping):
                 record = (
                     stream_data
@@ -86,6 +107,9 @@ class DeclarativePartition(Partition):
             else:
                 self._message_repository.emit_message(stream_data)
 
+            if self._max_records_limit is not None:
+                total_record_counter += 1
+
     def to_slice(self) -> Optional[Mapping[str, Any]]:
         return self._stream_slice
 
@@ -98,10 +122,24 @@ class DeclarativePartition(Partition):
 
 class StreamSlicerPartitionGenerator(PartitionGenerator):
     def __init__(
-        self, partition_factory: DeclarativePartitionFactory, stream_slicer: StreamSlicer
+        self,
+        partition_factory: DeclarativePartitionFactory,
+        stream_slicer: StreamSlicer,
+        slice_limit: Optional[int] = None,
+        max_records_limit: Optional[int] = None,
     ) -> None:
         self._partition_factory = partition_factory
-        self._stream_slicer = stream_slicer
+
+        if slice_limit:
+            self._stream_slicer = cast(
+                StreamSlicer,
+                StreamSlicerTestReadDecorator(
+                    wrapped_slicer=stream_slicer,
+                    maximum_number_of_slices=slice_limit,
+                ),
+            )
+        else:
+            self._stream_slicer = stream_slicer
 
     def generate(self) -> Iterable[Partition]:
         for stream_slice in self._stream_slicer.stream_slices():
