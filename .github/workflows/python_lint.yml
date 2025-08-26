@@ -53,8 +53,8 @@ jobs:
       - name: Check code format
         run: poetry run ruff format --diff .
 
-  mypy-check:
-    name: MyPy Check
+  ty-check:
+    name: Ty Check
     runs-on: ubuntu-24.04
     steps:
       # Common steps:
@@ -74,5 +74,5 @@ jobs:
 
       # Job-specific step(s):
 
-      - name: Run mypy
-        run: poetry run mypy --config-file mypy.ini airbyte_cdk
+      - name: Run ty
+        run: poetry run ty check airbyte_cdk
