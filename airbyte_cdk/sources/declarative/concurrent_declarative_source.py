@@ -160,6 +160,8 @@ def _get_declarative_component_schema() -> Dict[str, Any]:
 #
 # todo: The `ConcurrentDeclarativeSource.message_repository()` method can also be removed once AbstractSource
 #  is no longer inherited from since the only external dependency is from that class.
+#
+# todo: It is worth investigating removal of the Generic[TState] since it will always be Optional[List[AirbyteStateMessage]]
 class ConcurrentDeclarativeSource(AbstractSource, Generic[TState]):
     # By default, we defer to a value of 2. A value lower than could cause a PartitionEnqueuer to be stuck in a state of deadlock
     # because it has hit the limit of futures but not partition reader is consuming them.
