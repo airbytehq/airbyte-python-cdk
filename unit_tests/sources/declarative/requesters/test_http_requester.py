@@ -2,7 +2,8 @@
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
 
-from datetime import timedelta
+import logging
+
 from typing import Any, Mapping, Optional
 from unittest import mock
 from unittest.mock import MagicMock
@@ -35,7 +36,7 @@ from airbyte_cdk.sources.streams.call_rate import (
     MovingWindowCallRatePolicy,
     Rate,
 )
-from airbyte_cdk.sources.streams.http.error_handlers.response_models import ResponseAction
+from airbyte_cdk.sources.streams.http.exceptions import RateLimitBackoffException
 from airbyte_cdk.sources.streams.http.exceptions import (
     RequestBodyException,
     UserDefinedBackoffException,
@@ -216,6 +217,30 @@ def create_requester(
     requester._http_client._session.send.return_value = req
     return requester
 
+def create_requester_rate_limited(
+    url_base: Optional[str] = None,
+    parameters: Optional[Mapping[str, Any]] = {},
+    config: Optional[Config] = None,
+    path: Optional[str] = None,
+    authenticator: Optional[DeclarativeAuthenticator] = None,
+    error_handler: Optional[ErrorHandler] = None,
+) -> HttpRequester:
+    requester = HttpRequester(
+        name="name",
+        url_base=url_base or "https://example.com",
+        path=path or "deals",
+        http_method=HttpMethod.GET,
+        request_options_provider=None,
+        authenticator=authenticator,
+        error_handler=error_handler,
+        config=config or {},
+        parameters=parameters or {},
+    )
+    requester._http_client._session.send = MagicMock()
+    req = requests.Response()
+    req.status_code = 429  # Simulating a rate limit response
+    requester._http_client._session.send.return_value = req
+    return requester
 
 def test_basic_send_request():
     options_provider = MagicMock()
@@ -229,6 +254,19 @@ def test_basic_send_request():
     assert sent_request.headers["my_header"] == "my_value"
     assert sent_request.body is None
 
+@pytest.mark.usefixtures("mock_sleep")
+def test_send_request_rate_limited(caplog):
+    options_provider = MagicMock()
+    options_provider.get_request_headers.return_value = {"my_header": "my_value"}
+    requester = create_requester_rate_limited()
+    requester._request_options_provider = options_provider
+    with caplog.at_level(logging.INFO, logger="airbyte"):
+        with pytest.raises(RateLimitBackoffException):
+            requester.send_request(stream_slice={"start": "2012"})
+
+
+    logged_messages = [record.message for record in caplog.records]
+    assert "Caught retryable error 'Too many requests.' after 1 tries. Waiting 1 seconds then retrying for slice: {'start': '2012'}..." in logged_messages
 
 @pytest.mark.parametrize(
     "provider_data, provider_json, param_data, param_json, authenticator_data, authenticator_json, expected_exception, expected_body",
