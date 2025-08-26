@@ -149,7 +149,7 @@ class CartesianProductStreamSlicer(PartitionRouter):
         for stream_slice_tuple in product:
             partition = dict(ChainMap(*[s.partition for s in stream_slice_tuple]))  # type: ignore # ChainMap expects a MutableMapping[Never, Never] for reasons
             cursor_slices = [s.cursor_slice for s in stream_slice_tuple if s.cursor_slice]
-            extra_fields = dict(ChainMap(*[s.extra_fields for s in stream_slice_tuple]))
+            extra_fields = dict(ChainMap(*[s.extra_fields for s in stream_slice_tuple]))  # type: ignore # ChainMap expects a MutableMapping[Never, Never] for reasons
             if len(cursor_slices) > 1:
                 raise ValueError(
                     f"There should only be a single cursor slice. Found {cursor_slices}"
