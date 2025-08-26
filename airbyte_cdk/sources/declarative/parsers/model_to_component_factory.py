@@ -1278,6 +1278,12 @@ class ModelToComponentFactory:
                 f"Expected manifest component of type {model_type.__name__}, but received {component_type} instead"
             )
 
+        # FIXME the interfaces of the concurrent cursor are kind of annoying as they take a `ComponentDefinition` instead of the actual model. This was done because the ConcurrentDeclarativeSource didn't have access to the models [here for example](https://github.com/airbytehq/airbyte-python-cdk/blob/f525803b3fec9329e4cc8478996a92bf884bfde9/airbyte_cdk/sources/declarative/concurrent_declarative_source.py#L354C54-L354C91). So now we have two cases:
+        # * The ComponentDefinition comes from model.__dict__ in which case we have `parameters`
+        # * The ComponentDefinition comes from the manifest as a dict in which case we have `$parameters`
+        # We should change those interfaces to use the model once we clean up the code in CDS at which point the parameter propagation should happen as part of the ModelToComponentFactory.
+        if "$parameters" not in component_definition and "parameters" in component_definition:
+            component_definition["$parameters"] = component_definition.get("parameters")
         datetime_based_cursor_model = model_type.parse_obj(component_definition)
 
         if not isinstance(datetime_based_cursor_model, DatetimeBasedCursorModel):
@@ -1582,6 +1588,12 @@ class ModelToComponentFactory:
                 f"Expected manifest component of type {model_type.__name__}, but received {component_type} instead"
             )
 
+        # FIXME the interfaces of the concurrent cursor are kind of annoying as they take a `ComponentDefinition` instead of the actual model. This was done because the ConcurrentDeclarativeSource didn't have access to the models [here for example](https://github.com/airbytehq/airbyte-python-cdk/blob/f525803b3fec9329e4cc8478996a92bf884bfde9/airbyte_cdk/sources/declarative/concurrent_declarative_source.py#L354C54-L354C91). So now we have two cases:
+        # * The ComponentDefinition comes from model.__dict__ in which case we have `parameters`
+        # * The ComponentDefinition comes from the manifest as a dict in which case we have `$parameters`
+        # We should change those interfaces to use the model once we clean up the code in CDS at which point the parameter propagation should happen as part of the ModelToComponentFactory.
+        if "$parameters" not in component_definition and "parameters" in component_definition:
+            component_definition["$parameters"] = component_definition.get("parameters")
         datetime_based_cursor_model = model_type.parse_obj(component_definition)
 
         if not isinstance(datetime_based_cursor_model, DatetimeBasedCursorModel):
