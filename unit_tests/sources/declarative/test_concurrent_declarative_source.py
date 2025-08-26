@@ -4673,9 +4673,7 @@ def test_parameter_propagation_for_concurrent_cursor():
             },
             "incremental_cursor": {
                 "type": "DatetimeBasedCursor",
-                "start_datetime": {
-                    "datetime": "2024-01-01"
-                },
+                "start_datetime": {"datetime": "2024-01-01"},
                 "end_datetime": "2024-12-31",
                 "datetime_format": "%Y-%m-%d",
                 "cursor_datetime_formats": ["%Y-%m-%d"],
@@ -4700,7 +4698,12 @@ def test_parameter_propagation_for_concurrent_cursor():
                     "requester": {"$ref": "#/definitions/requester"},
                 },
                 "incremental_sync": {"$ref": "#/definitions/incremental_cursor"},
-                "$parameters": {"name": "stream_name", "primary_key": "id", "path": "/path", "cursor_field": cursor_field_parameter_override},
+                "$parameters": {
+                    "name": "stream_name",
+                    "primary_key": "id",
+                    "path": "/path",
+                    "cursor_field": cursor_field_parameter_override,
+                },
                 "schema_loader": {
                     "type": "InlineSchemaLoader",
                     "schema": {
