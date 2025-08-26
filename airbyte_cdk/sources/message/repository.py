@@ -96,6 +96,11 @@ class InMemoryMessageRepository(MessageRepository):
 
 
 class StateFilteringMessageRepository(MessageRepository):
+    """
+    This message repository is used when creating parent streams for SubstreamPartitionRouter. As the child stream
+    manages the state for both the child and the parents, we want to prevent parents from emitting state messages.
+    """
+
     def __init__(self, decorated: MessageRepository) -> None:
         self._decorated = decorated
 

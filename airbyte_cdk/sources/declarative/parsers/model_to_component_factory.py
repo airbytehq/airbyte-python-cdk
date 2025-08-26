@@ -3784,6 +3784,46 @@ class ModelToComponentFactory:
         child_state = self._connector_state_manager.get_stream_state(
             kwargs["stream_name"], None
         )  # FIXME adding `stream_name` as a parameter means it will be a breaking change. I assume this is mostly called internally so I don't think we need to bother that much about this but still raising the flag
+        connector_state_manager = self._instantiate_parent_stream_state_manager(child_state, config, model)
+
+        substream_factory = ModelToComponentFactory(
+            connector_state_manager=connector_state_manager,
+            limit_pages_fetched_per_slice=self._limit_pages_fetched_per_slice,
+            limit_slices_fetched=self._limit_slices_fetched,
+            emit_connector_builder_messages=self._emit_connector_builder_messages,
+            disable_retries=self._disable_retries,
+            disable_cache=self._disable_cache,
+            message_repository=StateFilteringMessageRepository(
+                LogAppenderMessageRepositoryDecorator(
+                    {
+                        "airbyte_cdk": {"stream": {"is_substream": True}},
+                        "http": {"is_auxiliary": True},
+                    },
+                    self._message_repository,
+                    self._evaluate_log_level(self._emit_connector_builder_messages),
+                ),
+            ),
+        )
+
+        # This flag will be used exclusively for StateDelegatingStream when a parent stream is created
+        has_parent_state = bool(
+            self._connector_state_manager.get_stream_state(kwargs.get("stream_name", ""), None)
+            if model.incremental_dependency
+            else False
+        )
+        return substream_factory._create_component_from_model(
+            model=model, config=config, has_parent_state=has_parent_state, **kwargs
+        )
+
+    def _instantiate_parent_stream_state_manager(self, child_state, config, model):
+        """
+        With DefaultStream, the state needs to be provided during __init__ of the cursor as opposed to the
+        `set_initial_state` flow that existed for the declarative cursors. This state is taken from
+        self._connector_state_manager.get_stream_state (`self` being a newly created ModelToComponentFactory to account
+        for the MessageRepository being different). So we need to pass a ConnectorStateManager to the
+        ModelToComponentFactory that has the parent states. This method populates this if there is a child state and if
+        incremental_dependency is set.
+        """
         if model.incremental_dependency and child_state:
             parent_stream_name = model.stream.name or ""
             parent_state = ConcurrentPerPartitionCursor.get_parent_state(
@@ -3814,38 +3854,9 @@ class ModelToComponentFactory:
                                 ),
                             ),
                         )
-            connector_state_manager = ConnectorStateManager([parent_state] if parent_state else [])
-        else:
-            connector_state_manager = ConnectorStateManager([])
+            return ConnectorStateManager([parent_state] if parent_state else [])
 
-        substream_factory = ModelToComponentFactory(
-            connector_state_manager=connector_state_manager,
-            limit_pages_fetched_per_slice=self._limit_pages_fetched_per_slice,
-            limit_slices_fetched=self._limit_slices_fetched,
-            emit_connector_builder_messages=self._emit_connector_builder_messages,
-            disable_retries=self._disable_retries,
-            disable_cache=self._disable_cache,
-            message_repository=StateFilteringMessageRepository(
-                LogAppenderMessageRepositoryDecorator(
-                    {
-                        "airbyte_cdk": {"stream": {"is_substream": True}},
-                        "http": {"is_auxiliary": True},
-                    },
-                    self._message_repository,
-                    self._evaluate_log_level(self._emit_connector_builder_messages),
-                ),
-            ),
-        )
-
-        # This flag will be used exclusively for StateDelegatingStream when a parent stream is created
-        has_parent_state = bool(
-            self._connector_state_manager.get_stream_state(kwargs.get("stream_name", ""), None)
-            if model.incremental_dependency
-            else False
-        )
-        return substream_factory._create_component_from_model(
-            model=model, config=config, has_parent_state=has_parent_state, **kwargs
-        )
+        return ConnectorStateManager([])
 
     @staticmethod
     def create_wait_time_from_header(

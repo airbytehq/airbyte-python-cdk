@@ -206,6 +206,13 @@ class SubstreamPartitionRouter(PartitionRouter):
                     for parent_record, is_last_record_in_slice in iterate_with_last_flag(
                         partition.read()
                     ):
+                        # In the previous CDK implementation, state management was done internally by the stream.
+                        # However, this could cause issues when doing availability check for example as the availability
+                        # check would progress the state so state management was moved outside of the read method.
+                        # Hence, we need to call the cursor here.
+                        # Note that we call observe and close_partition before emitting the associated record as the
+                        # ConcurrentPerPartitionCursor will associate a record with the state of the stream after the
+                        # record was consumed.
                         parent_stream.cursor.observe(parent_record)
                         parent_partition = (
                             parent_record.associated_slice.partition
