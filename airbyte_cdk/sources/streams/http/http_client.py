@@ -4,7 +4,6 @@
 
 import logging
 import os
-import sqlite3
 import urllib
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Mapping, Optional, Tuple, Union
