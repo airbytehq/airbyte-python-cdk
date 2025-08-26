@@ -4,6 +4,7 @@
 
 import logging
 import os
+import sqlite3
 import urllib
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Mapping, Optional, Tuple, Union
@@ -54,6 +55,27 @@ from airbyte_cdk.utils.stream_status_utils import (
 from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 
 BODY_REQUEST_METHODS = ("GET", "POST", "PUT", "PATCH")
+
+
+def monkey_patched_get_item(self, key):
+    """
+    con.execute can lead to `sqlite3.InterfaceError: bad parameter or other API misuse`. There was a fix implemented
+    [here](https://github.com/requests-cache/requests-cache/commit/5ca6b9cdcb2797dd2fed485872110ccd72aee55d#diff-f43db4a5edf931647c32dec28ea7557aae4cae8444af4b26c8ecbe88d8c925aaL330-R332)
+    but there is still no official releases of requests_cache that this is part of. Hence, we will monkeypatch it for now.
+    """
+    with self.connection() as con:
+        # Using placeholders here with python 3.12+ and concurrency results in the error:
+        # sqlite3.InterfaceError: bad parameter or other API misuse
+        cur = con.execute(f"SELECT value FROM {self.table_name} WHERE key='{key}'")
+        row = cur.fetchone()
+        cur.close()
+        if not row:
+            raise KeyError(key)
+
+        return self.deserialize(key, row[0])
+
+
+requests_cache.SQLiteDict.__getitem__ = monkey_patched_get_item
 
 
 class MessageRepresentationAirbyteTracedErrors(AirbyteTracedException):
