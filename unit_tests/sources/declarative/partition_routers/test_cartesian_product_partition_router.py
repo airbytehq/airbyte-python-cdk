@@ -11,15 +11,16 @@ from airbyte_cdk.sources.declarative.partition_routers import (
     CartesianProductStreamSlicer,
     ListPartitionRouter,
 )
+from airbyte_cdk.sources.declarative.partition_routers.substream_partition_router import (
+    ParentStreamConfig,
+    SubstreamPartitionRouter,
+)
 from airbyte_cdk.sources.declarative.requesters.request_option import (
     RequestOption,
     RequestOptionType,
 )
 from airbyte_cdk.sources.types import StreamSlice
-from airbyte_cdk.sources.declarative.partition_routers.substream_partition_router import (
-    ParentStreamConfig,
-    SubstreamPartitionRouter,
-)
+
 from .helpers import MockStream
 
 
