@@ -2110,6 +2110,7 @@ class ModelToComponentFactory:
                     self._message_repository,
                 ),
                 stream_slicer,
+                slice_limit=self._limit_slices_fetched,
             ),
             name=stream_name,
             json_schema=schema_loader.get_json_schema,
