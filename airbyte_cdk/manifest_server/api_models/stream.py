@@ -64,7 +64,7 @@ class StreamReadSlices(BaseModel):
     auxiliary_requests: Optional[List[AuxiliaryRequest]] = None
 
 
-class StreamRead(BaseModel):
+class StreamReadResponse(BaseModel):
     """Complete stream read response with properly typed fields."""
 
     logs: List[LogMessage]

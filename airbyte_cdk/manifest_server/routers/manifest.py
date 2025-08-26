@@ -6,12 +6,6 @@ import jsonschema
 from airbyte_protocol_dataclasses.models import AirbyteStateMessage, ConfiguredAirbyteCatalog
 from fastapi import APIRouter, Depends, HTTPException
 
-from airbyte_cdk.manifest_server.api_models.manifest import (
-    CheckRequest,
-    CheckResponse,
-    DiscoverRequest,
-    DiscoverResponse,
-)
 from airbyte_cdk.models import AirbyteStateMessageSerializer
 from airbyte_cdk.sources.declarative.concurrent_declarative_source import (
     ConcurrentDeclarativeSource,
@@ -22,11 +16,15 @@ from airbyte_cdk.sources.declarative.parsers.custom_code_compiler import (
 )
 
 from ..api_models import (
+    CheckRequest,
+    CheckResponse,
+    DiscoverRequest,
+    DiscoverResponse,
     FullResolveRequest,
     Manifest,
     ManifestResponse,
     ResolveRequest,
-    StreamRead,
+    StreamReadResponse,
     StreamTestReadRequest,
 )
 from ..auth import verify_jwt_token
@@ -66,7 +64,7 @@ router = APIRouter(
 
 
 @router.post("/test_read", operation_id="testRead")
-def test_read(request: StreamTestReadRequest) -> StreamRead:
+def test_read(request: StreamTestReadRequest) -> StreamReadResponse:
     """
     Test reading from a specific stream in the manifest.
     """
@@ -100,7 +98,7 @@ def test_read(request: StreamTestReadRequest) -> StreamRead:
         request.page_limit,
         request.slice_limit,
     )
-    return StreamRead.model_validate(asdict(cdk_result))
+    return StreamReadResponse.model_validate(asdict(cdk_result))
 
 
 @router.post("/check", operation_id="check")

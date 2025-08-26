@@ -6,6 +6,10 @@ This package contains all Pydantic models used for API requests and responses.
 
 from .dicts import ConnectorConfig, Manifest
 from .manifest import (
+    CheckRequest,
+    CheckResponse,
+    DiscoverRequest,
+    DiscoverResponse,
     FullResolveRequest,
     ManifestResponse,
     ResolveRequest,
@@ -16,8 +20,8 @@ from .stream import (
     HttpRequest,
     HttpResponse,
     LogMessage,
-    StreamRead,
     StreamReadPages,
+    StreamReadResponse,
     StreamReadSlices,
 )
 
@@ -30,12 +34,16 @@ __all__ = [
     "ManifestResponse",
     "StreamTestReadRequest",
     "ResolveRequest",
+    "CheckRequest",
+    "CheckResponse",
+    "DiscoverRequest",
+    "DiscoverResponse",
     # Stream models
     "AuxiliaryRequest",
     "HttpRequest",
     "HttpResponse",
     "LogMessage",
-    "StreamRead",
+    "StreamReadResponse",
     "StreamReadPages",
     "StreamReadSlices",
 ]
