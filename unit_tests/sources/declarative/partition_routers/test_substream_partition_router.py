@@ -35,6 +35,8 @@ from airbyte_cdk.sources.declarative.requesters.request_option import (
 from airbyte_cdk.sources.streams.checkpoint import Cursor
 from airbyte_cdk.sources.types import Record
 from airbyte_cdk.utils import AirbyteTracedException
+from unit_tests.sources.declarative.partition_routers.helpers import MockStream
+
 
 parent_records = [{"id": 1, "data": "data1"}, {"id": 2, "data": "data2"}]
 more_records = [
@@ -62,7 +64,6 @@ data_second_parent_slice_with_cursor = [
 all_parent_data_with_cursor = (
     data_first_parent_slice_with_cursor + data_second_parent_slice_with_cursor
 )
-from .helpers import MockStream
 
 
 class MockIncrementalStream(MockStream):

@@ -21,7 +21,7 @@ from airbyte_cdk.sources.declarative.requesters.request_option import (
 )
 from airbyte_cdk.sources.types import StreamSlice
 
-from .helpers import MockStream
+from unit_tests.sources.declarative.partition_routers.helpers import MockStream
 
 
 @pytest.mark.parametrize(
