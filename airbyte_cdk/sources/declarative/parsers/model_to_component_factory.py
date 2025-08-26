@@ -1283,7 +1283,7 @@ class ModelToComponentFactory:
         # * The ComponentDefinition comes from the manifest as a dict in which case we have `$parameters`
         # We should change those interfaces to use the model once we clean up the code in CDS at which point the parameter propagation should happen as part of the ModelToComponentFactory.
         if "$parameters" not in component_definition and "parameters" in component_definition:
-            component_definition["$parameters"] = component_definition.get("parameters")
+            component_definition["$parameters"] = component_definition.get("parameters")  # type: ignore  # This is a dict
         datetime_based_cursor_model = model_type.parse_obj(component_definition)
 
         if not isinstance(datetime_based_cursor_model, DatetimeBasedCursorModel):
@@ -1593,7 +1593,7 @@ class ModelToComponentFactory:
         # * The ComponentDefinition comes from the manifest as a dict in which case we have `$parameters`
         # We should change those interfaces to use the model once we clean up the code in CDS at which point the parameter propagation should happen as part of the ModelToComponentFactory.
         if "$parameters" not in component_definition and "parameters" in component_definition:
-            component_definition["$parameters"] = component_definition.get("parameters")
+            component_definition["$parameters"] = component_definition.get("parameters")  # type: ignore  # This is a dict
         datetime_based_cursor_model = model_type.parse_obj(component_definition)
 
         if not isinstance(datetime_based_cursor_model, DatetimeBasedCursorModel):
