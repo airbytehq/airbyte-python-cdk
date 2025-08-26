@@ -17,7 +17,6 @@ from airbyte_cdk.sources.declarative.incremental import (
 from airbyte_cdk.sources.declarative.incremental.per_partition_cursor import (
     CursorFactory,
     PerPartitionCursor,
-    StreamSlice,
 )
 from airbyte_cdk.sources.declarative.interpolation import InterpolatedString
 from airbyte_cdk.sources.declarative.partition_routers import (
@@ -33,7 +32,7 @@ from airbyte_cdk.sources.declarative.requesters.request_option import (
     RequestOptionType,
 )
 from airbyte_cdk.sources.streams.checkpoint import Cursor
-from airbyte_cdk.sources.types import Record
+from airbyte_cdk.sources.types import Record, StreamSlice
 from airbyte_cdk.utils import AirbyteTracedException
 from unit_tests.sources.declarative.partition_routers.helpers import MockStream
 
