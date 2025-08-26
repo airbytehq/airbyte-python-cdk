@@ -21,7 +21,9 @@ from airbyte_cdk.cli.source_declarative_manifest._run import (
     create_declarative_source,
 )
 from airbyte_cdk.models import ConfiguredAirbyteCatalog, ConfiguredAirbyteStream
-from airbyte_cdk.sources.declarative.manifest_declarative_source import ManifestDeclarativeSource
+from airbyte_cdk.sources.declarative.concurrent_declarative_source import (
+    ConcurrentDeclarativeSource,
+)
 from airbyte_cdk.sources.declarative.parsers.custom_code_compiler import (
     ENV_VAR_ALLOW_CUSTOM_CODE,
     INJECTED_COMPONENTS_PY,
@@ -251,7 +253,7 @@ def test_sync_with_injected_py_components(
         source = create_declarative_source(
             ["check", "--config", temp_config_file.name],
         )
-        assert isinstance(source, ManifestDeclarativeSource)
+        assert isinstance(source, ConcurrentDeclarativeSource)
         source.check(logger=logging.getLogger(), config=py_components_config_dict)
         catalog: AirbyteCatalog = source.discover(
             logger=logging.getLogger(), config=py_components_config_dict
