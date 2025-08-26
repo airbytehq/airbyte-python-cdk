@@ -37,7 +37,6 @@ from airbyte_cdk.sources.types import Record
 from airbyte_cdk.utils import AirbyteTracedException
 from unit_tests.sources.declarative.partition_routers.helpers import MockStream
 
-
 parent_records = [{"id": 1, "data": "data1"}, {"id": 2, "data": "data2"}]
 more_records = [
     {"id": 10, "data": "data10", "slice": "second_parent"},

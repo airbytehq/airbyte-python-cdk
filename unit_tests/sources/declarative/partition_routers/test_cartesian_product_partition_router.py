@@ -20,7 +20,6 @@ from airbyte_cdk.sources.declarative.requesters.request_option import (
     RequestOptionType,
 )
 from airbyte_cdk.sources.types import StreamSlice
-
 from unit_tests.sources.declarative.partition_routers.helpers import MockStream
 
 
