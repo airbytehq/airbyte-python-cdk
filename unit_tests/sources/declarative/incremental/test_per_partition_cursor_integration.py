@@ -253,9 +253,6 @@ def test_given_record_for_partition_when_read_then_update_state(caplog):
     )
     logger = MagicMock()
 
-    stream_instance = source.streams({})[0]
-    # list(stream_instance.stream_slices(sync_mode=SYNC_MODE))
-
     stream_slice = [
         StreamSlice(
             partition={"partition_field": "1"},
@@ -275,22 +272,6 @@ def test_given_record_for_partition_when_read_then_update_state(caplog):
         ),
     ]
 
-    # with patch.object(
-    #     SimpleRetriever,
-    #     "_read_pages",
-    #     side_effect=[
-    #         [Record({"a record key": "a record value", CURSOR_FIELD: "2022-01-15"}, stream_slice)]
-    #     ],
-    # ):
-    #     list(
-    #         stream_instance.read(
-    #             sync_mode=SYNC_MODE,
-    #             stream_slice=stream_slice,
-    #             stream_state={"states": []},
-    #             cursor_field=CURSOR_FIELD,
-    #         )
-    #     )
-
     records = [
         [
             Record(
@@ -302,9 +283,6 @@ def test_given_record_for_partition_when_read_then_update_state(caplog):
         [],
         [],
         [],
-        # [Record(data={"a record key": "a record value", CURSOR_FIELD: "2022-02-15"}, stream_name="Rates", associated_slice=stream_slice[1])],
-        # [Record(data={"a record key": "a record value", CURSOR_FIELD: "2022-01-15"}, stream_name="Rates", associated_slice=stream_slice[1])],
-        # [Record(data={"a record key": "a record value", CURSOR_FIELD: "2022-02-15"}, stream_name="Rates", associated_slice=stream_slice[1])],
     ]
 
     # Use caplog to capture logs
