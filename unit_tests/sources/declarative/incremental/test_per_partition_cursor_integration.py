@@ -394,13 +394,13 @@ def test_substream_without_input_state():
         ]
 
 
-def test_partition_limitation(caplog):
+def test_switch_to_global_limit(caplog):
     """
-    Test that when the number of partitions exceeds the maximum allowed limit in PerPartitionCursor,
-    the oldest partitions are dropped, and the state is updated accordingly.
+    Test that when the number of partitions exceeds the limit to switch to global state.
 
-    In this test, we set the maximum number of partitions to 2 and provide 3 partitions.
-    We verify that the state only retains information for the two most recent partitions.
+    In this test, we set the maximum number of partitions to 1 (not 2 because we evaluate this before generating a
+    partition and the limit is not inclusive) and provide 3 partitions.
+    We verify that the state switch to global.
     """
     stream_name = "Rates"
 
@@ -508,15 +508,15 @@ def test_partition_limitation(caplog):
     )
 
     # Use caplog to capture logs
-    with caplog.at_level(logging.WARNING, logger="airbyte"):
+    with caplog.at_level(logging.INFO, logger="airbyte"):
         with patch.object(SimpleRetriever, "_read_pages", side_effect=records_list):
-            with patch.object(ConcurrentPerPartitionCursor, "DEFAULT_MAX_PARTITIONS_NUMBER", 2):
+            with patch.object(ConcurrentPerPartitionCursor, "SWITCH_TO_GLOBAL_LIMIT", 1):
                 output = list(source.read(logger, {}, catalog, initial_state))
 
     # Check if the warning was logged
-    logged_messages = [record.message for record in caplog.records if record.levelname == "WARNING"]
-    warning_message = 'The maximum number of partitions has been reached. Dropping the oldest partition: {"partition_field":"1"}. Over limit: 1.'
-    assert warning_message in logged_messages
+    logged_messages = [record.message for record in caplog.records if record.levelname == "INFO"]
+    warning_message = "Exceeded the 'SWITCH_TO_GLOBAL_LIMIT' of"
+    assert any(map(lambda message: warning_message in message, logged_messages))
 
     final_state = [
         orjson.loads(orjson.dumps(message.state.stream.stream_state))
@@ -526,17 +526,7 @@ def test_partition_limitation(caplog):
     assert final_state[-1] == {
         "lookback_window": 1,
         "state": {"cursor_field": "2022-02-17"},
-        "use_global_cursor": False,
-        "states": [
-            {
-                "partition": {"partition_field": "2"},
-                "cursor": {CURSOR_FIELD: "2022-01-16"},
-            },
-            {
-                "partition": {"partition_field": "3"},
-                "cursor": {CURSOR_FIELD: "2022-02-17"},
-            },
-        ],
+        "use_global_cursor": True,
     }
 
 
@@ -684,38 +674,10 @@ def test_perpartition_with_fallback(caplog):
         state=initial_state,
     )
 
-    # Use caplog to capture logs
-    with caplog.at_level(logging.WARNING, logger="airbyte"):
-        with patch.object(SimpleRetriever, "_read_pages", side_effect=records_list):
-            with patch.object(ConcurrentPerPartitionCursor, "DEFAULT_MAX_PARTITIONS_NUMBER", 2):
-                with patch.object(ConcurrentPerPartitionCursor, "SWITCH_TO_GLOBAL_LIMIT", 1):
-                    output = list(source.read(logger, {}, catalog, initial_state))
-
-    # Check if the warnings were logged
-    logged_messages = [record.message for record in caplog.records if record.levelname == "WARNING"]
-    warning_message = (
-        "The maximum number of partitions has been reached. Dropping the oldest partition:"
-    )
-    expected_warning_over_limit_messages = [
-        "Over limit: 1",
-        "Over limit: 2",
-        "Over limit: 3",
-    ]
-
-    for logged_message in logged_messages:
-        assert warning_message in logged_message
-
-    for expected_warning_over_limit_message in expected_warning_over_limit_messages:
-        assert (
-            len(
-                [
-                    logged_message
-                    for logged_message in logged_messages
-                    if expected_warning_over_limit_message in logged_message
-                ]
-            )
-            > 0
-        )
+    with patch.object(SimpleRetriever, "_read_pages", side_effect=records_list):
+        with patch.object(ConcurrentPerPartitionCursor, "DEFAULT_MAX_PARTITIONS_NUMBER", 2):
+            with patch.object(ConcurrentPerPartitionCursor, "SWITCH_TO_GLOBAL_LIMIT", 1):
+                output = list(source.read(logger, {}, catalog, initial_state))
 
     # Proceed with existing assertions
     final_state = [
