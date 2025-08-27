@@ -36,7 +36,10 @@ if TYPE_CHECKING:
     from airbyte_cdk.sources.streams.concurrent.abstract_stream import AbstractStream
 
 
-def iterate_with_last_flag(generator: Iterable[Partition]) -> Iterable[tuple[Partition, bool]]:
+T = TypeVar("T")
+
+
+def iterate_with_last_flag(generator: Iterable[T]) -> Iterable[tuple[T, bool]]:
     iterator = iter(generator)
 
     try:
@@ -306,60 +309,6 @@ class SubstreamPartitionRouter(PartitionRouter):
                     extra_field_value = None
                 extracted_extra_fields[".".join(extra_field_path)] = extra_field_value
         return extracted_extra_fields
-
-    def set_initial_state(self, stream_state: StreamState) -> None:
-        """
-        Set the state of the parent streams.
-
-        If the `parent_state` key is missing from `stream_state`, migrate the child stream state to the parent stream's state format.
-        This migration applies only to parent streams with incremental dependencies.
-
-        Args:
-            stream_state (StreamState): The state of the streams to be set.
-
-        Example of state format:
-        {
-            "parent_state": {
-                "parent_stream_name1": {
-                    "last_updated": "2023-05-27T00:00:00Z"
-                },
-                "parent_stream_name2": {
-                    "last_updated": "2023-05-27T00:00:00Z"
-                }
-            }
-        }
-
-        Example of migrating to parent state format:
-        - Initial state:
-        {
-            "updated_at": "2023-05-27T00:00:00Z"
-        }
-        - After migration:
-        {
-            "updated_at": "2023-05-27T00:00:00Z",
-            "parent_state": {
-                "parent_stream_name": {
-                    "parent_stream_cursor": "2023-05-27T00:00:00Z"
-                }
-            }
-        }
-        """
-        if not stream_state:
-            return
-
-        parent_state = stream_state.get("parent_state", {})
-
-        # Set state for each parent stream with an incremental dependency
-        for parent_config in self.parent_stream_configs:
-            if (
-                not parent_state.get(parent_config.stream.name, {})
-                and parent_config.incremental_dependency
-            ):
-                # Migrate child state to parent state format
-                parent_state = self._migrate_child_state_to_parent_state(stream_state)
-
-            if parent_config.incremental_dependency:
-                parent_config.stream.state = parent_state.get(parent_config.stream.name, {})
 
     def _migrate_child_state_to_parent_state(self, stream_state: StreamState) -> StreamState:
         """

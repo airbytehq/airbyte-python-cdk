@@ -19,11 +19,15 @@ class PerPartitionRequestOptionsProvider(RequestOptionsProvider):
     ) -> Mapping[str, Any]:
         return self._partition_router.get_request_params(  # type: ignore # this always returns a mapping
             stream_state=stream_state,
-            stream_slice=StreamSlice(partition=stream_slice.partition, cursor_slice={}),
+            stream_slice=StreamSlice(partition=stream_slice.partition, cursor_slice={})
+            if stream_slice
+            else StreamSlice(partition={}, cursor_slice={}),
             next_page_token=next_page_token,
         ) | self._cursor_provider.get_request_params(
             stream_state=stream_state,
-            stream_slice=StreamSlice(partition={}, cursor_slice=stream_slice.cursor_slice),
+            stream_slice=StreamSlice(partition={}, cursor_slice=stream_slice.cursor_slice)
+            if stream_slice
+            else StreamSlice(partition={}, cursor_slice={}),
             next_page_token=next_page_token,
         )
 
@@ -36,11 +40,15 @@ class PerPartitionRequestOptionsProvider(RequestOptionsProvider):
     ) -> Mapping[str, Any]:
         return self._partition_router.get_request_headers(  # type: ignore # this always returns a mapping
             stream_state=stream_state,
-            stream_slice=StreamSlice(partition=stream_slice.partition, cursor_slice={}),
+            stream_slice=StreamSlice(partition=stream_slice.partition, cursor_slice={})
+            if stream_slice
+            else stream_slice,
             next_page_token=next_page_token,
         ) | self._cursor_provider.get_request_headers(
             stream_state=stream_state,
-            stream_slice=StreamSlice(partition={}, cursor_slice=stream_slice.cursor_slice),
+            stream_slice=StreamSlice(partition={}, cursor_slice=stream_slice.cursor_slice)
+            if stream_slice
+            else stream_slice,
             next_page_token=next_page_token,
         )
 
@@ -53,11 +61,15 @@ class PerPartitionRequestOptionsProvider(RequestOptionsProvider):
     ) -> Union[Mapping[str, Any], str]:
         return self._partition_router.get_request_body_data(  # type: ignore # this always returns a mapping
             stream_state=stream_state,
-            stream_slice=StreamSlice(partition=stream_slice.partition, cursor_slice={}),
+            stream_slice=StreamSlice(partition=stream_slice.partition, cursor_slice={})
+            if stream_slice
+            else stream_slice,
             next_page_token=next_page_token,
         ) | self._cursor_provider.get_request_body_data(
             stream_state=stream_state,
-            stream_slice=StreamSlice(partition={}, cursor_slice=stream_slice.cursor_slice),
+            stream_slice=StreamSlice(partition={}, cursor_slice=stream_slice.cursor_slice)
+            if stream_slice
+            else stream_slice,
             next_page_token=next_page_token,
         )
 
@@ -70,10 +82,14 @@ class PerPartitionRequestOptionsProvider(RequestOptionsProvider):
     ) -> Mapping[str, Any]:
         return self._partition_router.get_request_body_json(  # type: ignore # this always returns a mapping
             stream_state=stream_state,
-            stream_slice=StreamSlice(partition=stream_slice.partition, cursor_slice={}),
+            stream_slice=StreamSlice(partition=stream_slice.partition, cursor_slice={})
+            if stream_slice
+            else stream_slice,
             next_page_token=next_page_token,
         ) | self._cursor_provider.get_request_body_json(
             stream_state=stream_state,
-            stream_slice=StreamSlice(partition={}, cursor_slice=stream_slice.cursor_slice),
+            stream_slice=StreamSlice(partition={}, cursor_slice=stream_slice.cursor_slice)
+            if stream_slice
+            else stream_slice,
             next_page_token=next_page_token,
         )

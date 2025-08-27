@@ -348,20 +348,6 @@ def test_stream_slices_lazy_iteration(mock_config, mock_underlying_router):
     )
 
 
-def test_set_initial_state_delegation(mock_config, mock_underlying_router):
-    """Test that set_initial_state delegates to the underlying router."""
-    router = GroupingPartitionRouter(
-        group_size=2,
-        underlying_partition_router=mock_underlying_router,
-        config=mock_config,
-    )
-    mock_state = {"some_key": "some_value"}
-    mock_underlying_router.set_initial_state = MagicMock()
-
-    router.set_initial_state(mock_state)
-    mock_underlying_router.set_initial_state.assert_called_once_with(mock_state)
-
-
 def test_stream_slices_extra_fields_varied(mock_config):
     """Test grouping with varied extra fields across partitions."""
     parent_stream = MockStream(
@@ -514,72 +500,3 @@ def test_get_request_params_default(mock_config, mock_underlying_router):
         )
     )
     assert params == {}
-
-
-def test_stream_slices_resume_from_state(mock_config, mock_underlying_router):
-    """Test that stream_slices resumes correctly from a previous state."""
-
-    # Simulate underlying router state handling
-    class MockPartitionRouter:
-        def __init__(self):
-            self.slices = [
-                StreamSlice(
-                    partition={"board_ids": i},
-                    cursor_slice={},
-                    extra_fields={"name": f"Board {i}", "owner": f"User{i}"},
-                )
-                for i in range(5)
-            ]
-            self.state = {"last_board_id": 0}  # Initial state
-
-        def set_initial_state(self, state):
-            self.state = state
-
-        def get_stream_state(self):
-            return self.state
-
-        def stream_slices(self):
-            last_board_id = self.state.get("last_board_id", -1)
-            for slice in self.slices:
-                board_id = slice.partition["board_ids"]
-                if board_id <= last_board_id:
-                    continue
-                self.state = {"last_board_id": board_id}
-                yield slice
-
-    underlying_router = MockPartitionRouter()
-    router = GroupingPartitionRouter(
-        group_size=2,
-        underlying_partition_router=underlying_router,
-        config=mock_config,
-        deduplicate=True,
-    )
-
-    # First sync: process first two slices
-    router.set_initial_state({"last_board_id": 0})
-    slices_iter = router.stream_slices()
-    first_batch = next(slices_iter)
-    assert first_batch == StreamSlice(
-        partition={"board_ids": [1, 2]},
-        cursor_slice={},
-        extra_fields={"name": ["Board 1", "Board 2"], "owner": ["User1", "User2"]},
-    )
-    state_after_first = router.get_stream_state()
-    assert state_after_first == {"last_board_id": 2}, "State should reflect last processed board_id"
-
-    # Simulate a new sync resuming from the previous state
-    new_router = GroupingPartitionRouter(
-        group_size=2,
-        underlying_partition_router=MockPartitionRouter(),
-        config=mock_config,
-        deduplicate=True,
-    )
-    new_router.set_initial_state(state_after_first)
-    resumed_slices = list(new_router.stream_slices())
-    assert resumed_slices == [
-        StreamSlice(
-            partition={"board_ids": [3, 4]},
-            cursor_slice={},
-            extra_fields={"name": ["Board 3", "Board 4"], "owner": ["User3", "User4"]},
-        )
-    ], "Should resume from board_id 3"

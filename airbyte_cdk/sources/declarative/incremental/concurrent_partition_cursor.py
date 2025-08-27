@@ -432,9 +432,6 @@ class ConcurrentPerPartitionCursor(Cursor):
         if stream_state.get("parent_state"):
             self._parent_state = stream_state["parent_state"]
 
-        # Set parent state for partition routers based on parent streams
-        self._partition_router.set_initial_state(stream_state)
-
     def _set_global_state(self, stream_state: Mapping[str, Any]) -> None:
         """
         Initializes the global cursor state from the provided stream state.
@@ -557,6 +554,9 @@ class ConcurrentPerPartitionCursor(Cursor):
     def get_parent_state(
         stream_state: Optional[StreamState], parent_stream_name: str
     ) -> Optional[AirbyteStateMessage]:
+        if not stream_state:
+            return stream_state
+
         if "parent_state" not in stream_state:
             logger.warning(
                 f"Trying to get_parent_state for stream `{parent_stream_name}` when there are not parent state in the state"

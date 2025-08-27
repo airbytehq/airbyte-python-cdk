@@ -159,12 +159,6 @@ class CartesianProductStreamSlicer(PartitionRouter):
                 cursor_slice = {}
             yield StreamSlice(partition=partition, cursor_slice=cursor_slice)
 
-    def set_initial_state(self, stream_state: StreamState) -> None:
-        """
-        Parent stream states are not supported for cartesian product stream slicer
-        """
-        pass
-
     def get_stream_state(self) -> Optional[Mapping[str, StreamState]]:
         """
         Parent stream states are not supported for cartesian product stream slicer

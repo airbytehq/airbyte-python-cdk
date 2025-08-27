@@ -98,6 +98,7 @@ from airbyte_cdk.sources.declarative.extractors import (
     RecordSelector,
     ResponseToFileExtractor,
 )
+from airbyte_cdk.sources.declarative.extractors.record_extractor import RecordExtractor
 from airbyte_cdk.sources.declarative.extractors.record_filter import (
     ClientSideIncrementalRecordFilterDecorator,
 )
@@ -106,7 +107,6 @@ from airbyte_cdk.sources.declarative.incremental import (
     ConcurrentPerPartitionCursor,
     CursorFactory,
     DatetimeBasedCursor,
-    DeclarativeCursor,
     GlobalSubstreamCursor,
     PerPartitionWithGlobalCursor,
 )
@@ -512,7 +512,7 @@ from airbyte_cdk.sources.declarative.requesters.request_options.per_partition_re
     PerPartitionRequestOptionsProvider,
 )
 from airbyte_cdk.sources.declarative.requesters.request_path import RequestPath
-from airbyte_cdk.sources.declarative.requesters.requester import HttpMethod
+from airbyte_cdk.sources.declarative.requesters.requester import HttpMethod, Requester
 from airbyte_cdk.sources.declarative.resolvers import (
     ComponentMappingDefinition,
     ConfigComponentsResolver,
@@ -529,6 +529,7 @@ from airbyte_cdk.sources.declarative.retrievers import (
 from airbyte_cdk.sources.declarative.retrievers.file_uploader import (
     ConnectorBuilderFileUploader,
     DefaultFileUploader,
+    FileUploader,
     LocalFileSystemFileWriter,
     NoopFileWriter,
 )
@@ -553,6 +554,7 @@ from airbyte_cdk.sources.declarative.stream_slicers.declarative_partition_genera
 )
 from airbyte_cdk.sources.declarative.transformations import (
     AddFields,
+    RecordTransformation,
     RemoveFields,
 )
 from airbyte_cdk.sources.declarative.transformations.add_fields import AddedFieldDefinition
@@ -3255,7 +3257,7 @@ class ModelToComponentFactory:
         log_formatter: Optional[Callable[[Response], Any]] = None,
         **kwargs: Any,
     ) -> SimpleRetriever:
-        def _get_url() -> str:
+        def _get_url(req: Requester) -> str:
             """
             Closure to get the URL from the requester. This is used to get the URL in the case of a lazy retriever.
             This is needed because the URL is not set until the requester is created.
@@ -3264,12 +3266,12 @@ class ModelToComponentFactory:
             _url: str = (
                 model.requester.url
                 if hasattr(model.requester, "url") and model.requester.url is not None
-                else requester.get_url()
+                else req.get_url(stream_state=None, stream_slice=None, next_page_token=None)
             )
             _url_base: str = (
                 model.requester.url_base
                 if hasattr(model.requester, "url_base") and model.requester.url_base is not None
-                else requester.get_url_base()
+                else req.get_url(stream_state=None, stream_slice=None, next_page_token=None)
             )
 
             return _url or _url_base
@@ -3355,7 +3357,7 @@ class ModelToComponentFactory:
             self._create_component_from_model(
                 model=model.paginator,
                 config=config,
-                url_base=_get_url(),
+                url_base=_get_url(requester),
                 extractor_model=model.record_selector.extractor,
                 decoder=decoder,
                 cursor_used_for_stop_condition=stop_condition_cursor or None,
@@ -3538,12 +3540,14 @@ class ModelToComponentFactory:
         transformations: List[RecordTransformation],
         **kwargs: Any,
     ) -> AsyncRetriever:
-        def _get_download_retriever() -> SimpleRetriever:
+        def _get_download_retriever(
+            requester: Requester, extractor: RecordExtractor, _decoder: Decoder
+        ) -> SimpleRetriever:
             # We create a record selector for the download retriever
             # with no schema normalization and no transformations, neither record filter
             # as all this occurs in the record_selector of the AsyncRetriever
             record_selector = RecordSelector(
-                extractor=download_extractor,
+                extractor=extractor,
                 name=name,
                 record_filter=None,
                 transformations=[],
@@ -3554,7 +3558,7 @@ class ModelToComponentFactory:
             paginator = (
                 self._create_component_from_model(
                     model=model.download_paginator,
-                    decoder=decoder,
+                    decoder=_decoder,
                     config=config,
                     url_base="",
                 )
@@ -3563,7 +3567,7 @@ class ModelToComponentFactory:
             )
 
             return SimpleRetriever(
-                requester=download_requester,
+                requester=requester,
                 record_selector=record_selector,
                 primary_key=None,
                 name=name,
@@ -3657,7 +3661,9 @@ class ModelToComponentFactory:
             config=config,
             name=job_download_components_name,
         )
-        download_retriever = _get_download_retriever()
+        download_retriever = _get_download_retriever(
+            download_requester, download_extractor, download_decoder
+        )
         abort_requester = (
             self._create_component_from_model(
                 model=model.abort_requester,
@@ -3840,7 +3846,9 @@ class ModelToComponentFactory:
             model=model, config=config, has_parent_state=has_parent_state, **kwargs
         )
 
-    def _instantiate_parent_stream_state_manager(self, child_state, config, model):
+    def _instantiate_parent_stream_state_manager(
+        self, child_state: MutableMapping[str, Any], config: Config, model: ParentStreamConfigModel
+    ):
         """
         With DefaultStream, the state needs to be provided during __init__ of the cursor as opposed to the
         `set_initial_state` flow that existed for the declarative cursors. This state is taken from
