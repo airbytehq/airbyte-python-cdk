@@ -1293,9 +1293,8 @@ class ModelToComponentFactory:
         # * The ComponentDefinition comes from model.__dict__ in which case we have `parameters`
         # * The ComponentDefinition comes from the manifest as a dict in which case we have `$parameters`
         # We should change those interfaces to use the model once we clean up the code in CDS at which point the parameter propagation should happen as part of the ModelToComponentFactory.
-        parameters = component_definition.get(
-            "parameters", component_definition.get("$parameters", {})
-        )
+        if "$parameters" not in component_definition and "parameters" in component_definition:
+            component_definition["$parameters"] = component_definition.get("parameters")  # type: ignore  # This is a dict
         datetime_based_cursor_model = model_type.parse_obj(component_definition)
 
         if not isinstance(datetime_based_cursor_model, DatetimeBasedCursorModel):
@@ -1303,19 +1302,20 @@ class ModelToComponentFactory:
                 f"Expected {model_type.__name__} component, but received {datetime_based_cursor_model.__class__.__name__}"
             )
 
+        model_parameters = datetime_based_cursor_model.parameters or {}
         interpolated_cursor_field = InterpolatedString.create(
             datetime_based_cursor_model.cursor_field,
-            parameters=parameters,
+            parameters=model_parameters,
         )
         cursor_field = CursorField(interpolated_cursor_field.eval(config=config))
 
         interpolated_partition_field_start = InterpolatedString.create(
             datetime_based_cursor_model.partition_field_start or "start_time",
-            parameters=parameters,
+            parameters=model_parameters,
         )
         interpolated_partition_field_end = InterpolatedString.create(
             datetime_based_cursor_model.partition_field_end or "end_time",
-            parameters=parameters,
+            parameters=model_parameters,
         )
 
         slice_boundary_fields = (
@@ -1335,7 +1335,7 @@ class ModelToComponentFactory:
         interpolated_lookback_window = (
             InterpolatedString.create(
                 datetime_based_cursor_model.lookback_window,
-                parameters=parameters,
+                parameters=model_parameters,
             )
             if datetime_based_cursor_model.lookback_window
             else None
@@ -1421,7 +1421,7 @@ class ModelToComponentFactory:
         interpolated_step = (
             InterpolatedString.create(
                 datetime_based_cursor_model.step,
-                parameters=parameters,
+                parameters=model_parameters,
             )
             if datetime_based_cursor_model.step
             else None
@@ -1438,7 +1438,7 @@ class ModelToComponentFactory:
             # object which we want to keep agnostic of being low-code
             target = InterpolatedString(
                 string=datetime_based_cursor_model.clamping.target,
-                parameters=parameters,
+                parameters=model_parameters,
             )
             evaluated_target = target.eval(config=config)
             match evaluated_target:
@@ -1600,6 +1600,12 @@ class ModelToComponentFactory:
                 f"Expected manifest component of type {model_type.__name__}, but received {component_type} instead"
             )
 
+        # FIXME the interfaces of the concurrent cursor are kind of annoying as they take a `ComponentDefinition` instead of the actual model. This was done because the ConcurrentDeclarativeSource didn't have access to the models [here for example](https://github.com/airbytehq/airbyte-python-cdk/blob/f525803b3fec9329e4cc8478996a92bf884bfde9/airbyte_cdk/sources/declarative/concurrent_declarative_source.py#L354C54-L354C91). So now we have two cases:
+        # * The ComponentDefinition comes from model.__dict__ in which case we have `parameters`
+        # * The ComponentDefinition comes from the manifest as a dict in which case we have `$parameters`
+        # We should change those interfaces to use the model once we clean up the code in CDS at which point the parameter propagation should happen as part of the ModelToComponentFactory.
+        if "$parameters" not in component_definition and "parameters" in component_definition:
+            component_definition["$parameters"] = component_definition.get("parameters")  # type: ignore  # This is a dict
         datetime_based_cursor_model = model_type.parse_obj(component_definition)
 
         if not isinstance(datetime_based_cursor_model, DatetimeBasedCursorModel):
@@ -1613,9 +1619,7 @@ class ModelToComponentFactory:
             # * The ComponentDefinition comes from model.__dict__ in which case we have `parameters`
             # * The ComponentDefinition comes from the manifest as a dict in which case we have `$parameters`
             # We should change those interfaces to use the model once we clean up the code in CDS at which point the parameter propagation should happen as part of the ModelToComponentFactory.
-            parameters=component_definition.get(
-                "parameters", component_definition.get("$parameters", {})
-            ),
+            parameters=datetime_based_cursor_model.parameters or {},
         )
         cursor_field = CursorField(interpolated_cursor_field.eval(config=config))
 
