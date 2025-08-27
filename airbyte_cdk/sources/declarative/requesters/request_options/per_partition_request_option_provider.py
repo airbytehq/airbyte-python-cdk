@@ -1,4 +1,4 @@
-from typing import Optional, Mapping, Any, Union
+from typing import Any, Mapping, Optional, Union
 
 from airbyte_cdk.sources.declarative.partition_routers import PartitionRouter
 from airbyte_cdk.sources.declarative.requesters.request_options import RequestOptionsProvider

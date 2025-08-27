@@ -3,11 +3,15 @@
 #
 
 import logging
+from typing import Iterator, List, Tuple
 from unittest.mock import MagicMock, patch
 
 import orjson
+import requests_mock
 
 from airbyte_cdk.models import (
+    AirbyteMessage,
+    AirbyteRecordMessage,
     AirbyteStateBlob,
     AirbyteStateMessage,
     AirbyteStateType,
@@ -18,6 +22,7 @@ from airbyte_cdk.models import (
     DestinationSyncMode,
     StreamDescriptor,
     SyncMode,
+    Type,
 )
 from airbyte_cdk.sources.declarative.concurrent_declarative_source import (
     ConcurrentDeclarativeSource,
@@ -25,6 +30,7 @@ from airbyte_cdk.sources.declarative.concurrent_declarative_source import (
 from airbyte_cdk.sources.declarative.incremental import ConcurrentPerPartitionCursor
 from airbyte_cdk.sources.declarative.retrievers.simple_retriever import SimpleRetriever
 from airbyte_cdk.sources.types import Record, StreamSlice
+from airbyte_cdk.test.catalog_builder import CatalogBuilder, ConfiguredAirbyteStreamBuilder
 
 CURSOR_FIELD = "cursor_field"
 SYNC_MODE = SyncMode.incremental
@@ -35,6 +41,7 @@ class ManifestBuilder:
         self._incremental_sync = {}
         self._partition_router = {}
         self._substream_partition_router = {}
+        self._concurrency_default = None
 
     def with_list_partition_router(self, stream_name, cursor_field, partitions):
         self._partition_router[stream_name] = {
@@ -44,7 +51,7 @@ class ManifestBuilder:
         }
         return self
 
-    def with_substream_partition_router(self, stream_name):
+    def with_substream_partition_router(self, stream_name, incremental_dependency=False):
         self._substream_partition_router[stream_name] = {
             "type": "SubstreamPartitionRouter",
             "parent_stream_configs": [
@@ -53,6 +60,7 @@ class ManifestBuilder:
                     "stream": "#/definitions/Rates",
                     "parent_key": "id",
                     "partition_field": "parent_id",
+                    "incremental_dependency": incremental_dependency,
                 }
             ],
         }
@@ -76,7 +84,21 @@ class ManifestBuilder:
             "cursor_field": cursor_field,
             "step": step,
             "cursor_granularity": cursor_granularity,
+            "start_time_option": {
+                "type": "RequestOption",
+                "field_name": "from",
+                "inject_into": "request_parameter",
+            },
+            "end_time_option": {
+                "type": "RequestOption",
+                "field_name": "to",
+                "inject_into": "request_parameter",
+            },
         }
+        return self
+
+    def with_concurrency(self, default: int) -> "ManifestBuilder":
+        self._concurrency_default = default
         return self
 
     def build(self):
@@ -102,7 +124,7 @@ class ManifestBuilder:
                         "requester": {
                             "type": "HttpRequester",
                             "url_base": "https://api.apilayer.com",
-                            "path": "/exchangerates_data/latest",
+                            "path": "/exchangerates_data/parent/{{ stream_partition['parent_id'] }}/child/latest",
                             "http_method": "GET",
                         },
                         "record_selector": {
@@ -128,7 +150,7 @@ class ManifestBuilder:
                         "requester": {
                             "type": "HttpRequester",
                             "url_base": "https://api.apilayer.com",
-                            "path": "/exchangerates_data/latest",
+                            "path": "/exchangerates_data/parent/latest",
                             "http_method": "GET",
                         },
                         "record_selector": {
@@ -161,6 +183,12 @@ class ManifestBuilder:
             manifest["definitions"][stream_name]["retriever"]["partition_router"] = (
                 partition_router_definition
             )
+
+        if self._concurrency_default:
+            manifest["concurrency_level"] = {
+                "type": "ConcurrencyLevel",
+                "default_concurrency": self._concurrency_default,
+            }
         return manifest
 
 
@@ -872,3 +900,82 @@ def test_per_partition_cursor_within_limit(caplog):
             },
         ],
     }
+
+
+def test_parent_stream_is_updated_after_parent_record_fully_consumed():
+    source = ConcurrentDeclarativeSource(
+        source_config=ManifestBuilder()
+        .with_substream_partition_router("AnotherStream", incremental_dependency=True)
+        .with_incremental_sync(
+            "AnotherStream",
+            start_datetime="2022-01-01",
+            end_datetime="2022-02-28",
+            datetime_format="%Y-%m-%d",
+            cursor_field=CURSOR_FIELD,
+            step="P1M",
+            cursor_granularity="P1D",
+        )
+        .with_incremental_sync(
+            "Rates",
+            start_datetime="2022-01-01",
+            end_datetime="2022-02-28",
+            datetime_format="%Y-%m-%d",
+            cursor_field=CURSOR_FIELD,
+            step="P1Y",
+            cursor_granularity="P1D",
+        )
+        .with_concurrency(1)  # so that we know partition 1 gets processed before 2
+        .build(),
+        config={},
+        catalog=None,
+        state=None,
+    )
+
+    with requests_mock.Mocker() as m:
+        # Request for parent stream
+        m.get(
+            "https://api.apilayer.com/exchangerates_data/parent/latest?from=2022-01-01&to=2022-02-28",
+            json=[{"id": "1"}],
+        )
+
+        # Requests for child stream
+        record_from_first_cursor_interval = {"id": "child_1.1"}
+        m.get(
+            "https://api.apilayer.com/exchangerates_data/parent/1/child/latest?from=2022-01-01&to=2022-01-31",
+            json=[record_from_first_cursor_interval],
+        )
+        record_from_second_cursor_interval = {"id": "child_1.2"}
+        m.get(
+            "https://api.apilayer.com/exchangerates_data/parent/1/child/latest?from=2022-02-01&to=2022-02-28",
+            json=[record_from_second_cursor_interval],
+        )
+
+        message_iterator = source.read(
+            MagicMock(),
+            {},
+            CatalogBuilder()
+            .with_stream(ConfiguredAirbyteStreamBuilder().with_name("AnotherStream"))
+            .build(),
+            None,
+        )
+
+        records, state = get_records_until_state_message(message_iterator)
+
+        assert len(records) == 1 and records[0].data == record_from_first_cursor_interval
+        assert "parent_state" not in state.stream.stream_state.__dict__
+
+        records, state = get_records_until_state_message(message_iterator)
+        assert "parent_state" in state.stream.stream_state.__dict__
+
+
+def get_records_until_state_message(
+    message_iterator: Iterator[AirbyteMessage],
+) -> Tuple[List[AirbyteRecordMessage], AirbyteStateMessage]:
+    records = []
+    for message in message_iterator:
+        if message.type == Type.RECORD:
+            records.append(message.record)
+        elif message.type == Type.STATE:
+            return records, message.state
+
+    raise ValueError("No state message encountered")

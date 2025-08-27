@@ -14,7 +14,7 @@ from airbyte_cdk.sources.declarative.partition_routers import (
 from airbyte_cdk.sources.declarative.partition_routers.substream_partition_router import (
     ParentStreamConfig,
 )
-from airbyte_cdk.sources.types import StreamSlice, Record
+from airbyte_cdk.sources.types import Record, StreamSlice
 from unit_tests.sources.declarative.partition_routers.test_substream_partition_router import (
     MockStream,
     parent_slices,

@@ -15,8 +15,8 @@ from typing import (
     Mapping,
     MutableMapping,
     Optional,
-    Union,
     TypeVar,
+    Union,
 )
 
 import dpath

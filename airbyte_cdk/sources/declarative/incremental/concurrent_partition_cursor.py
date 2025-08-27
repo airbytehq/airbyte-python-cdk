@@ -12,10 +12,10 @@ from datetime import timedelta
 from typing import Any, Callable, Iterable, List, Mapping, MutableMapping, Optional
 
 from airbyte_cdk.models import (
-    AirbyteStateMessage,
     AirbyteStateBlob,
-    AirbyteStreamState,
+    AirbyteStateMessage,
     AirbyteStateType,
+    AirbyteStreamState,
     StreamDescriptor,
 )
 from airbyte_cdk.sources.connector_state_manager import ConnectorStateManager
@@ -558,10 +558,14 @@ class ConcurrentPerPartitionCursor(Cursor):
         stream_state: Optional[StreamState], parent_stream_name: str
     ) -> Optional[AirbyteStateMessage]:
         if "parent_state" not in stream_state:
-            logger.warning(f"Trying to get_parent_state for stream `{parent_stream_name}` when there are not parent state in the state")
+            logger.warning(
+                f"Trying to get_parent_state for stream `{parent_stream_name}` when there are not parent state in the state"
+            )
             return None
         elif parent_stream_name not in stream_state["parent_state"]:
-            logger.info(f"Could not find parent state for stream `{parent_stream_name}`. On parents available are {list(stream_state['parent_state'].keys())}")
+            logger.info(
+                f"Could not find parent state for stream `{parent_stream_name}`. On parents available are {list(stream_state['parent_state'].keys())}"
+            )
             return None
 
         return AirbyteStateMessage(
