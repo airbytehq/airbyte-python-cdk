@@ -2195,10 +2195,11 @@ def test_only_parent_streams_use_cache():
     assert not stream_1_retriever.requester.use_cache
 
     # Parent stream created for substream
-    assert stream_1_retriever.stream_slicer.parent_stream_configs[0].stream.name == "applications"
-    assert stream_1_retriever.stream_slicer.parent_stream_configs[
+    stream_slicer = streams[1]._stream_partition_generator._stream_slicer
+    assert stream_slicer.parent_stream_configs[0].stream.name == "applications"
+    assert stream_slicer.parent_stream_configs[
         0
-    ].stream.retriever.requester.use_cache
+    ].stream._stream_partition_generator._partition_factory._retriever.requester.use_cache
 
     # Main stream without caching
     assert streams[2].name == "jobs"

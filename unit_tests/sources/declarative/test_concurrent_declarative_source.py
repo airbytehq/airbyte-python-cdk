@@ -4042,14 +4042,12 @@ def test_only_parent_streams_use_cache():
 
     # Parent stream created for substream
     assert (
-        stream_1._stream_partition_generator._partition_factory._retriever.stream_slicer.parent_stream_configs[
-            0
-        ].stream.name
+        stream_1._stream_partition_generator._stream_slicer.parent_stream_configs[0].stream.name
         == "applications"
     )
-    assert stream_1._stream_partition_generator._partition_factory._retriever.stream_slicer.parent_stream_configs[
+    assert stream_1._stream_partition_generator._stream_slicer.parent_stream_configs[
         0
-    ].stream.retriever.requester.use_cache
+    ].stream._stream_partition_generator._partition_factory._retriever.requester.use_cache
 
     # Main stream without caching
     stream_2 = streams[2]
