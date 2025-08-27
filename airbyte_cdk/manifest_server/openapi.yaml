@@ -61,7 +61,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/StreamRead'
+                $ref: '#/components/schemas/StreamReadResponse'
         '422':
           description: Validation Error
           content:
@@ -159,12 +159,13 @@ paths:
       tags:
       - manifest
       summary: Full Resolve
-      description: 'Fully resolve a manifest including dynamic streams.
+      description: 'Fully resolve a manifest, including dynamic streams.
 
 
-        Generates dynamic streams up to the specified limit and includes
-
-        them in the resolved manifest.'
+        This is a similar operation to resolve, but has an extra step which generates
+        streams from dynamic stream templates if the manifest contains any. This is
+        used when a user clicks the generate streams button on a stream template in
+        the Builder UI'
       operationId: fullResolve
       requestBody:
         content:
@@ -465,7 +466,26 @@ components:
       - manifest
       title: ResolveRequest
       description: Request to resolve a manifest.
-    StreamRead:
+    StreamReadPages:
+      properties:
+        records:
+          items: {}
+          type: array
+          title: Records
+        request:
+          anyOf:
+          - $ref: '#/components/schemas/HttpRequest'
+          - type: 'null'
+        response:
+          anyOf:
+          - $ref: '#/components/schemas/HttpResponse'
+          - type: 'null'
+      type: object
+      required:
+      - records
+      title: StreamReadPages
+      description: Pages of data read from a stream slice.
+    StreamReadResponse:
       properties:
         logs:
           items:
@@ -511,27 +531,8 @@ components:
       - inferred_schema
       - inferred_datetime_formats
       - latest_config_update
-      title: StreamRead
+      title: StreamReadResponse
       description: Complete stream read response with properly typed fields.
-    StreamReadPages:
-      properties:
-        records:
-          items: {}
-          type: array
-          title: Records
-        request:
-          anyOf:
-          - $ref: '#/components/schemas/HttpRequest'
-          - type: 'null'
-        response:
-          anyOf:
-          - $ref: '#/components/schemas/HttpResponse'
-          - type: 'null'
-      type: object
-      required:
-      - records
-      title: StreamReadPages
-      description: Pages of data read from a stream slice.
     StreamReadSlices:
       properties:
         pages:
@@ -577,7 +578,6 @@ components:
           items: {}
           type: array
           title: State
-          default: []
         custom_components_code:
           anyOf:
           - type: string
