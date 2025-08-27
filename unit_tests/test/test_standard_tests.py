@@ -5,7 +5,9 @@ from typing import Any
 
 import pytest
 
-from airbyte_cdk.sources.declarative.declarative_source import DeclarativeSource
+from airbyte_cdk.sources.declarative.concurrent_declarative_source import (
+    ConcurrentDeclarativeSource,
+)
 from airbyte_cdk.sources.source import Source
 from airbyte_cdk.test.standard_tests._job_runner import IConnector
 
@@ -13,7 +15,7 @@ from airbyte_cdk.test.standard_tests._job_runner import IConnector
 @pytest.mark.parametrize(
     "input, expected",
     [
-        (DeclarativeSource, True),
+        (ConcurrentDeclarativeSource, True),
         (Source, True),
         (None, False),
         ("", False),
