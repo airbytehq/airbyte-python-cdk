@@ -7,12 +7,6 @@ from unittest.mock import MagicMock, patch
 
 import orjson
 
-from airbyte_cdk.legacy.sources.declarative.incremental.per_partition_cursor import (
-    PerPartitionCursor,
-)
-from airbyte_cdk.legacy.sources.declarative.manifest_declarative_source import (
-    ManifestDeclarativeSource,
-)
 from airbyte_cdk.models import (
     AirbyteStateBlob,
     AirbyteStateMessage,
@@ -25,6 +19,10 @@ from airbyte_cdk.models import (
     StreamDescriptor,
     SyncMode,
 )
+from airbyte_cdk.sources.declarative.concurrent_declarative_source import (
+    ConcurrentDeclarativeSource,
+)
+from airbyte_cdk.sources.declarative.incremental import ConcurrentPerPartitionCursor
 from airbyte_cdk.sources.declarative.retrievers.simple_retriever import SimpleRetriever
 from airbyte_cdk.sources.types import Record, StreamSlice
 
@@ -167,7 +165,26 @@ class ManifestBuilder:
 
 
 def test_given_state_for_only_some_partition_when_stream_slices_then_create_slices_using_state_or_start_from_start_datetime():
-    source = ManifestDeclarativeSource(
+    state = [
+        AirbyteStateMessage(
+            type=AirbyteStateType.STREAM,
+            stream=AirbyteStreamState(
+                stream_descriptor=StreamDescriptor(name="Rates", namespace=None),
+                stream_state=AirbyteStateBlob(
+                    {
+                        "states": [
+                            {
+                                "partition": {"partition_field": "1"},
+                                "cursor": {CURSOR_FIELD: "2022-02-01"},
+                            }
+                        ]
+                    }
+                ),
+            ),
+        )
+    ]
+
+    source = ConcurrentDeclarativeSource(
         source_config=ManifestBuilder()
         .with_list_partition_router("Rates", "partition_field", ["1", "2"])
         .with_incremental_sync(
@@ -179,32 +196,45 @@ def test_given_state_for_only_some_partition_when_stream_slices_then_create_slic
             step="P1M",
             cursor_granularity="P1D",
         )
-        .build()
+        .build(),
+        config={},
+        catalog=None,
+        state=state,
     )
     stream_instance = source.streams({})[0]
-    stream_instance.state = {
-        "states": [
-            {
-                "partition": {"partition_field": "1"},
-                "cursor": {CURSOR_FIELD: "2022-02-01"},
-            }
-        ]
-    }
 
-    slices = stream_instance.stream_slices(
-        sync_mode=SYNC_MODE,
-        stream_state={},
-    )
+    partitions = stream_instance.generate_partitions()
+    slices = [partition.to_slice() for partition in partitions]
 
-    assert list(slices) == [
-        {"partition_field": "1", "start_time": "2022-02-01", "end_time": "2022-02-28"},
-        {"partition_field": "2", "start_time": "2022-01-01", "end_time": "2022-01-31"},
-        {"partition_field": "2", "start_time": "2022-02-01", "end_time": "2022-02-28"},
+    assert slices == [
+        StreamSlice(
+            partition={"partition_field": "1"},
+            cursor_slice={"start_time": "2022-02-01", "end_time": "2022-02-28"},
+        ),
+        StreamSlice(
+            partition={"partition_field": "2"},
+            cursor_slice={"start_time": "2022-01-01", "end_time": "2022-01-31"},
+        ),
+        StreamSlice(
+            partition={"partition_field": "2"},
+            cursor_slice={"start_time": "2022-02-01", "end_time": "2022-02-28"},
+        ),
     ]
 
 
-def test_given_record_for_partition_when_read_then_update_state():
-    source = ManifestDeclarativeSource(
+def test_given_record_for_partition_when_read_then_update_state(caplog):
+    configured_stream = ConfiguredAirbyteStream(
+        stream=AirbyteStream(
+            name="Rates",
+            json_schema={},
+            supported_sync_modes=[SyncMode.full_refresh, SyncMode.incremental],
+        ),
+        sync_mode=SyncMode.incremental,
+        destination_sync_mode=DestinationSyncMode.append,
+    )
+    catalog = ConfiguredAirbyteCatalog(streams=[configured_stream])
+
+    source = ConcurrentDeclarativeSource(
         source_config=ManifestBuilder()
         .with_list_partition_router("Rates", "partition_field", ["1", "2"])
         .with_incremental_sync(
@@ -216,45 +246,102 @@ def test_given_record_for_partition_when_read_then_update_state():
             step="P1M",
             cursor_granularity="P1D",
         )
-        .build()
+        .build(),
+        config={},
+        catalog=catalog,
+        state=None,
     )
+    logger = MagicMock()
+
     stream_instance = source.streams({})[0]
-    list(stream_instance.stream_slices(sync_mode=SYNC_MODE))
+    # list(stream_instance.stream_slices(sync_mode=SYNC_MODE))
 
-    stream_slice = StreamSlice(
-        partition={"partition_field": "1"},
-        cursor_slice={"start_time": "2022-01-01", "end_time": "2022-01-31"},
-    )
-    with patch.object(
-        SimpleRetriever,
-        "_read_pages",
-        side_effect=[
-            [Record({"a record key": "a record value", CURSOR_FIELD: "2022-01-15"}, stream_slice)]
-        ],
-    ):
-        list(
-            stream_instance.read_records(
-                sync_mode=SYNC_MODE,
-                stream_slice=stream_slice,
-                stream_state={"states": []},
-                cursor_field=CURSOR_FIELD,
+    stream_slice = [
+        StreamSlice(
+            partition={"partition_field": "1"},
+            cursor_slice={"start_time": "2022-01-01", "end_time": "2022-01-31"},
+        ),
+        StreamSlice(
+            partition={"partition_field": "1"},
+            cursor_slice={"start_time": "2022-02-01", "end_time": "2022-02-28"},
+        ),
+        StreamSlice(
+            partition={"partition_field": "2"},
+            cursor_slice={"start_time": "2022-02-01", "end_time": "2022-02-28"},
+        ),
+        StreamSlice(
+            partition={"partition_field": "2"},
+            cursor_slice={"start_time": "2022-02-01", "end_time": "2022-02-28"},
+        ),
+    ]
+
+    # with patch.object(
+    #     SimpleRetriever,
+    #     "_read_pages",
+    #     side_effect=[
+    #         [Record({"a record key": "a record value", CURSOR_FIELD: "2022-01-15"}, stream_slice)]
+    #     ],
+    # ):
+    #     list(
+    #         stream_instance.read(
+    #             sync_mode=SYNC_MODE,
+    #             stream_slice=stream_slice,
+    #             stream_state={"states": []},
+    #             cursor_field=CURSOR_FIELD,
+    #         )
+    #     )
+
+    records = [
+        [
+            Record(
+                data={"a record key": "a record value", CURSOR_FIELD: "2022-01-15"},
+                stream_name="Rates",
+                associated_slice=stream_slice[0],
             )
-        )
+        ],
+        [],
+        [],
+        [],
+        # [Record(data={"a record key": "a record value", CURSOR_FIELD: "2022-02-15"}, stream_name="Rates", associated_slice=stream_slice[1])],
+        # [Record(data={"a record key": "a record value", CURSOR_FIELD: "2022-01-15"}, stream_name="Rates", associated_slice=stream_slice[1])],
+        # [Record(data={"a record key": "a record value", CURSOR_FIELD: "2022-02-15"}, stream_name="Rates", associated_slice=stream_slice[1])],
+    ]
 
-    assert stream_instance.state == {
-        "state": {},
+    # Use caplog to capture logs
+    with caplog.at_level(logging.WARNING, logger="airbyte"):
+        with patch.object(SimpleRetriever, "_read_pages", side_effect=records):
+            output = list(source.read(logger, {}, catalog, None))
+
+    # Since the partition limit is not exceeded, we expect no warnings
+    logged_warnings = [record.message for record in caplog.records if record.levelname == "WARNING"]
+    assert len(logged_warnings) == 0
+
+    # Proceed with existing assertions
+    final_state = [
+        orjson.loads(orjson.dumps(message.state.stream.stream_state))
+        for message in output
+        if message.state
+    ]
+
+    assert final_state[-1] == {
+        "lookback_window": 1,
+        "state": {"cursor_field": "2022-01-15"},
         "use_global_cursor": False,
         "states": [
             {
                 "partition": {"partition_field": "1"},
                 "cursor": {CURSOR_FIELD: "2022-01-15"},
-            }
+            },
+            {
+                "partition": {"partition_field": "2"},
+                "cursor": {CURSOR_FIELD: "2022-01-01"},
+            },
         ],
     }
 
 
 def test_substream_without_input_state():
-    test_source = ManifestDeclarativeSource(
+    test_source = ConcurrentDeclarativeSource(
         source_config=ManifestBuilder()
         .with_substream_partition_router("AnotherStream")
         .with_incremental_sync(
@@ -275,7 +362,10 @@ def test_substream_without_input_state():
             step="P1M",
             cursor_granularity="P1D",
         )
-        .build()
+        .build(),
+        config={},
+        catalog=None,
+        state=None,
     )
 
     stream_instance = test_source.streams({})[1]
@@ -293,7 +383,7 @@ def test_substream_without_input_state():
             [Record({"id": "2", CURSOR_FIELD: "2022-01-15"}, parent_stream_slice)],
         ],
     ):
-        slices = list(stream_instance.stream_slices(sync_mode=SYNC_MODE))
+        slices = [partition.to_slice() for partition in stream_instance.generate_partitions()]
         assert list(slices) == [
             StreamSlice(
                 partition={
@@ -335,22 +425,6 @@ def test_partition_limitation(caplog):
     We verify that the state only retains information for the two most recent partitions.
     """
     stream_name = "Rates"
-    source = ManifestDeclarativeSource(
-        source_config=ManifestBuilder()
-        .with_list_partition_router(
-            stream_name=stream_name, cursor_field="partition_field", partitions=["1", "2", "3"]
-        )
-        .with_incremental_sync(
-            stream_name=stream_name,
-            start_datetime="2022-01-01",
-            end_datetime="2022-02-28",
-            datetime_format="%Y-%m-%d",
-            cursor_field=CURSOR_FIELD,
-            step="P1M",
-            cursor_granularity="P1D",
-        )
-        .build()
-    )
 
     partition_slices = [
         StreamSlice(partition={"partition_field": "1"}, cursor_slice={}),
@@ -435,10 +509,30 @@ def test_partition_limitation(caplog):
     ]
     logger = MagicMock()
 
+    source = ConcurrentDeclarativeSource(
+        source_config=ManifestBuilder()
+        .with_list_partition_router(
+            stream_name=stream_name, cursor_field="partition_field", partitions=["1", "2", "3"]
+        )
+        .with_incremental_sync(
+            stream_name=stream_name,
+            start_datetime="2022-01-01",
+            end_datetime="2022-02-28",
+            datetime_format="%Y-%m-%d",
+            cursor_field=CURSOR_FIELD,
+            step="P1M",
+            cursor_granularity="P1D",
+        )
+        .build(),
+        config={},
+        catalog=catalog,
+        state=initial_state,
+    )
+
     # Use caplog to capture logs
     with caplog.at_level(logging.WARNING, logger="airbyte"):
         with patch.object(SimpleRetriever, "_read_pages", side_effect=records_list):
-            with patch.object(PerPartitionCursor, "DEFAULT_MAX_PARTITIONS_NUMBER", 2):
+            with patch.object(ConcurrentPerPartitionCursor, "DEFAULT_MAX_PARTITIONS_NUMBER", 2):
                 output = list(source.read(logger, {}, catalog, initial_state))
 
     # Check if the warning was logged
@@ -476,20 +570,6 @@ def test_perpartition_with_fallback(caplog):
     This test also checks that the appropriate warning logs are emitted when the partition limit is exceeded.
     """
     stream_name = "Rates"
-    source = ManifestDeclarativeSource(
-        source_config=ManifestBuilder()
-        .with_list_partition_router("Rates", "partition_field", ["1", "2", "3", "4", "5", "6"])
-        .with_incremental_sync(
-            stream_name=stream_name,
-            start_datetime="2022-01-01",
-            end_datetime="2022-02-28",
-            datetime_format="%Y-%m-%d",
-            cursor_field=CURSOR_FIELD,
-            step="P1M",
-            cursor_granularity="P1D",
-        )
-        .build()
-    )
 
     partition_slices = [
         StreamSlice(partition={"partition_field": str(i)}, cursor_slice={}) for i in range(1, 7)
@@ -608,10 +688,28 @@ def test_perpartition_with_fallback(caplog):
     ]
     logger = MagicMock()
 
+    source = ConcurrentDeclarativeSource(
+        source_config=ManifestBuilder()
+        .with_list_partition_router("Rates", "partition_field", ["1", "2", "3", "4", "5", "6"])
+        .with_incremental_sync(
+            stream_name=stream_name,
+            start_datetime="2022-01-01",
+            end_datetime="2022-02-28",
+            datetime_format="%Y-%m-%d",
+            cursor_field=CURSOR_FIELD,
+            step="P1M",
+            cursor_granularity="P1D",
+        )
+        .build(),
+        config={},
+        catalog=catalog,
+        state=initial_state,
+    )
+
     # Use caplog to capture logs
     with caplog.at_level(logging.WARNING, logger="airbyte"):
         with patch.object(SimpleRetriever, "_read_pages", side_effect=records_list):
-            with patch.object(PerPartitionCursor, "DEFAULT_MAX_PARTITIONS_NUMBER", 2):
+            with patch.object(ConcurrentPerPartitionCursor, "DEFAULT_MAX_PARTITIONS_NUMBER", 2):
                 output = list(source.read(logger, {}, catalog, initial_state))
 
     # Check if the warnings were logged
@@ -646,69 +744,108 @@ def test_per_partition_cursor_within_limit(caplog):
 
     This test also checks that no warning logs are emitted when the partition limit is not exceeded.
     """
-    source = ManifestDeclarativeSource(
-        source_config=ManifestBuilder()
-        .with_list_partition_router("Rates", "partition_field", ["1", "2", "3"])
-        .with_incremental_sync(
-            "Rates",
-            start_datetime="2022-01-01",
-            end_datetime="2022-03-31",
-            datetime_format="%Y-%m-%d",
-            cursor_field=CURSOR_FIELD,
-            step="P1M",
-            cursor_granularity="P1D",
-        )
-        .build()
-    )
-
     partition_slices = [
         StreamSlice(partition={"partition_field": str(i)}, cursor_slice={}) for i in range(1, 4)
     ]
+    slice_range_2022_01_01_partition_1 = StreamSlice(
+        partition={"partition_field": "1"},
+        cursor_slice={"start_time": "2022-01-01", "end_time": "2022-01-31"},
+    )
+    slice_range_2022_02_01_partition_1 = StreamSlice(
+        partition={"partition_field": "1"},
+        cursor_slice={"start_time": "2022-02-01", "end_time": "2022-02-28"},
+    )
+    slice_range_2022_03_01_partition_1 = StreamSlice(
+        partition={"partition_field": "1"},
+        cursor_slice={"start_time": "2022-03-01", "end_time": "2022-03-31"},
+    )
+    slice_range_2022_01_01_partition_2 = StreamSlice(
+        partition={"partition_field": "2"},
+        cursor_slice={"start_time": "2022-01-01", "end_time": "2022-01-31"},
+    )
+    slice_range_2022_02_01_partition_2 = StreamSlice(
+        partition={"partition_field": "2"},
+        cursor_slice={"start_time": "2022-02-01", "end_time": "2022-02-28"},
+    )
+    slice_range_2022_03_01_partition_2 = StreamSlice(
+        partition={"partition_field": "2"},
+        cursor_slice={"start_time": "2022-03-01", "end_time": "2022-03-31"},
+    )
+    slice_range_2022_01_01_partition_3 = StreamSlice(
+        partition={"partition_field": "3"},
+        cursor_slice={"start_time": "2022-01-01", "end_time": "2022-01-31"},
+    )
+    slice_range_2022_02_01_partition_3 = StreamSlice(
+        partition={"partition_field": "3"},
+        cursor_slice={"start_time": "2022-02-01", "end_time": "2022-02-28"},
+    )
+    slice_range_2022_03_01_partition_3 = StreamSlice(
+        partition={"partition_field": "3"},
+        cursor_slice={"start_time": "2022-03-01", "end_time": "2022-03-31"},
+    )
 
     records_list = [
         [
             Record(
-                {"a record key": "a record value", CURSOR_FIELD: "2022-01-15"}, partition_slices[0]
+                {"a record key": "a record value", CURSOR_FIELD: "2022-01-15"},
+                stream_name="Rates",
+                associated_slice=slice_range_2022_01_01_partition_1,
             )
         ],
         [
             Record(
-                {"a record key": "a record value", CURSOR_FIELD: "2022-02-20"}, partition_slices[0]
+                {"a record key": "a record value", CURSOR_FIELD: "2022-02-20"},
+                stream_name="Rates",
+                associated_slice=slice_range_2022_02_01_partition_1,
             )
         ],
         [
             Record(
-                {"a record key": "a record value", CURSOR_FIELD: "2022-03-25"}, partition_slices[0]
+                {"a record key": "a record value", CURSOR_FIELD: "2022-03-25"},
+                stream_name="Rates",
+                associated_slice=slice_range_2022_03_01_partition_1,
             )
         ],
         [
             Record(
-                {"a record key": "a record value", CURSOR_FIELD: "2022-01-16"}, partition_slices[1]
+                {"a record key": "a record value", CURSOR_FIELD: "2022-01-16"},
+                stream_name="Rates",
+                associated_slice=slice_range_2022_01_01_partition_2,
             )
         ],
         [
             Record(
-                {"a record key": "a record value", CURSOR_FIELD: "2022-02-18"}, partition_slices[1]
+                {"a record key": "a record value", CURSOR_FIELD: "2022-02-18"},
+                stream_name="Rates",
+                associated_slice=slice_range_2022_02_01_partition_2,
             )
         ],
         [
             Record(
-                {"a record key": "a record value", CURSOR_FIELD: "2022-03-28"}, partition_slices[1]
+                {"a record key": "a record value", CURSOR_FIELD: "2022-03-28"},
+                stream_name="Rates",
+                associated_slice=slice_range_2022_03_01_partition_2,
             )
         ],
         [
             Record(
-                {"a record key": "a record value", CURSOR_FIELD: "2022-01-17"}, partition_slices[2]
+                {"a record key": "a record value", CURSOR_FIELD: "2022-01-17"},
+                stream_name="Rates",
+                associated_slice=slice_range_2022_01_01_partition_3,
             )
         ],
         [
             Record(
-                {"a record key": "a record value", CURSOR_FIELD: "2022-02-19"}, partition_slices[2]
+                {"a record key": "a record value", CURSOR_FIELD: "2022-02-19"},
+                stream_name="Rates",
+                associated_slice=slice_range_2022_02_01_partition_3,
             )
         ],
         [
             Record(
-                {"a record key": "a record value", CURSOR_FIELD: "2022-03-29"}, partition_slices[2]
+                {"a record key": "a record value", CURSOR_FIELD: "2022-03-29"},
+                stream_name="Rates",
+                associated_slice=slice_range_2022_03_01_partition_3,
             )
         ],
     ]
@@ -727,10 +864,28 @@ def test_per_partition_cursor_within_limit(caplog):
     initial_state = {}
     logger = MagicMock()
 
+    source = ConcurrentDeclarativeSource(
+        source_config=ManifestBuilder()
+        .with_list_partition_router("Rates", "partition_field", ["1", "2", "3"])
+        .with_incremental_sync(
+            "Rates",
+            start_datetime="2022-01-01",
+            end_datetime="2022-03-31",
+            datetime_format="%Y-%m-%d",
+            cursor_field=CURSOR_FIELD,
+            step="P1M",
+            cursor_granularity="P1D",
+        )
+        .build(),
+        config={},
+        catalog=catalog,
+        state=initial_state,
+    )
+
     # Use caplog to capture logs
     with caplog.at_level(logging.WARNING, logger="airbyte"):
         with patch.object(SimpleRetriever, "_read_pages", side_effect=records_list):
-            with patch.object(PerPartitionCursor, "DEFAULT_MAX_PARTITIONS_NUMBER", 5):
+            with patch.object(ConcurrentPerPartitionCursor, "DEFAULT_MAX_PARTITIONS_NUMBER", 5):
                 output = list(source.read(logger, {}, catalog, initial_state))
 
     # Since the partition limit is not exceeded, we expect no warnings

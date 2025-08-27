@@ -8,9 +8,6 @@ import orjson
 import pytest
 import requests_mock
 
-from airbyte_cdk.legacy.sources.declarative.manifest_declarative_source import (
-    ManifestDeclarativeSource,
-)
 from airbyte_cdk.models import (
     AirbyteMessage,
     AirbyteStateBlob,
@@ -23,6 +20,9 @@ from airbyte_cdk.models import (
     DestinationSyncMode,
     StreamDescriptor,
     SyncMode,
+)
+from airbyte_cdk.sources.declarative.concurrent_declarative_source import (
+    ConcurrentDeclarativeSource,
 )
 
 SUBSTREAM_MANIFEST: MutableMapping[str, Any] = {
@@ -242,7 +242,6 @@ def _run_read(
     stream_name: str,
     state: Optional[Union[List[AirbyteStateMessage], MutableMapping[str, Any]]] = None,
 ) -> List[AirbyteMessage]:
-    source = ManifestDeclarativeSource(source_config=manifest)
     catalog = ConfiguredAirbyteCatalog(
         streams=[
             ConfiguredAirbyteStream(
@@ -255,6 +254,9 @@ def _run_read(
                 destination_sync_mode=DestinationSyncMode.append,
             )
         ]
+    )
+    source = ConcurrentDeclarativeSource(
+        source_config=manifest, config=config, catalog=catalog, state=state
     )
     logger = MagicMock()
     return list(source.read(logger, config, catalog, state))
