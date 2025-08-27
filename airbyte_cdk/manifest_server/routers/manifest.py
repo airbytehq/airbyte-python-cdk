@@ -131,10 +131,9 @@ def resolve(request: ResolveRequest) -> ManifestResponse:
 @router.post("/full_resolve", operation_id="fullResolve")
 def full_resolve(request: FullResolveRequest) -> ManifestResponse:
     """
-    Fully resolve a manifest including dynamic streams.
+    Fully resolve a manifest, including dynamic streams.
 
-    Generates dynamic streams up to the specified limit and includes
-    them in the resolved manifest.
+    This is a similar operation to resolve, but has an extra step which generates streams from dynamic stream templates if the manifest contains any. This is used when a user clicks the generate streams button on a stream template in the Builder UI
     """
     source = safe_build_source(request.manifest.model_dump(), request.config.model_dump())
     manifest = {**source.resolved_manifest}
