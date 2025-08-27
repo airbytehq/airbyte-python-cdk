@@ -14,18 +14,19 @@ from airbyte_cdk.models import (
     AirbyteStateMessage,
     ConfiguredAirbyteCatalog,
 )
-from airbyte_cdk.models.airbyte_protocol_serializers import AirbyteMessageSerializer
-from airbyte_cdk.sources.declarative.manifest_declarative_source import (
-    ManifestDeclarativeSource,
+from airbyte_cdk.sources.declarative.concurrent_declarative_source import (
+    ConcurrentDeclarativeSource,
 )
 from airbyte_cdk.test.entrypoint_wrapper import AirbyteEntrypointException, EntrypointOutput
 
 
 class ManifestCommandProcessor:
-    _source: ManifestDeclarativeSource
+    _source: ConcurrentDeclarativeSource[Optional[List[AirbyteStateMessage]]]
     _logger = logging.getLogger("airbyte.manifest-server")
 
-    def __init__(self, source: ManifestDeclarativeSource) -> None:
+    def __init__(
+        self, source: ConcurrentDeclarativeSource[Optional[List[AirbyteStateMessage]]]
+    ) -> None:
         self._source = source
 
     def test_read(
