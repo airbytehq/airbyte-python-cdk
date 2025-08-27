@@ -557,16 +557,19 @@ class ConcurrentPerPartitionCursor(Cursor):
     def get_parent_state(
         stream_state: Optional[StreamState], parent_stream_name: str
     ) -> Optional[AirbyteStateMessage]:
-        return (
-            AirbyteStateMessage(
-                type=AirbyteStateType.STREAM,
-                stream=AirbyteStreamState(
-                    stream_descriptor=StreamDescriptor(parent_stream_name, None),
-                    stream_state=AirbyteStateBlob(stream_state["parent_state"][parent_stream_name]),
-                ),
-            )
-            if stream_state and "parent_state" in stream_state
-            else None
+        if "parent_state" not in stream_state:
+            logger.warning(f"Trying to get_parent_state for stream `{parent_stream_name}` when there are not parent state in the state")
+            return None
+        elif parent_stream_name not in stream_state["parent_state"]:
+            logger.info(f"Could not find parent state for stream `{parent_stream_name}`. On parents available are {list(stream_state['parent_state'].keys())}")
+            return None
+
+        return AirbyteStateMessage(
+            type=AirbyteStateType.STREAM,
+            stream=AirbyteStreamState(
+                stream_descriptor=StreamDescriptor(parent_stream_name, None),
+                stream_state=AirbyteStateBlob(stream_state["parent_state"][parent_stream_name]),
+            ),
         )
 
     @staticmethod
