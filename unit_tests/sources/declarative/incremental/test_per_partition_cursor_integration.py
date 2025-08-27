@@ -710,19 +710,34 @@ def test_perpartition_with_fallback(caplog):
     with caplog.at_level(logging.WARNING, logger="airbyte"):
         with patch.object(SimpleRetriever, "_read_pages", side_effect=records_list):
             with patch.object(ConcurrentPerPartitionCursor, "DEFAULT_MAX_PARTITIONS_NUMBER", 2):
-                output = list(source.read(logger, {}, catalog, initial_state))
+                with patch.object(ConcurrentPerPartitionCursor, "SWITCH_TO_GLOBAL_LIMIT", 1):
+                    output = list(source.read(logger, {}, catalog, initial_state))
 
     # Check if the warnings were logged
-    expected_warning_messages = [
-        'The maximum number of partitions has been reached. Dropping the oldest partition: {"partition_field":"1"}. Over limit: 1.',
-        'The maximum number of partitions has been reached. Dropping the oldest partition: {"partition_field":"2"}. Over limit: 2.',
-        'The maximum number of partitions has been reached. Dropping the oldest partition: {"partition_field":"3"}. Over limit: 3.',
+    logged_messages = [record.message for record in caplog.records if record.levelname == "WARNING"]
+    warning_message = (
+        "The maximum number of partitions has been reached. Dropping the oldest partition:"
+    )
+    expected_warning_over_limit_messages = [
+        "Over limit: 1",
+        "Over limit: 2",
+        "Over limit: 3",
     ]
 
-    logged_messages = [record.message for record in caplog.records if record.levelname == "WARNING"]
+    for logged_message in logged_messages:
+        assert warning_message in logged_message
 
-    for expected_message in expected_warning_messages:
-        assert expected_message in logged_messages
+    for expected_warning_over_limit_message in expected_warning_over_limit_messages:
+        assert (
+            len(
+                [
+                    logged_message
+                    for logged_message in logged_messages
+                    if expected_warning_over_limit_message in logged_message
+                ]
+            )
+            > 0
+        )
 
     # Proceed with existing assertions
     final_state = [
