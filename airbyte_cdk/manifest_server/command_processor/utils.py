@@ -66,22 +66,30 @@ def build_source(
 ) -> ConcurrentDeclarativeSource[Optional[List[AirbyteStateMessage]]]:
     # We enforce a concurrency level of 1 so that the stream is processed on a single thread
     # to retain ordering for the grouping of the builder message responses.
-    manifest_no_concurrency = copy.deepcopy(manifest)
-    if "concurrency_level" in manifest_no_concurrency:
-        manifest_no_concurrency["concurrency_level"]["default_concurrency"] = 1
+    definition = copy.deepcopy(manifest)
+    if "concurrency_level" in definition:
+        definition["concurrency_level"]["default_concurrency"] = 1
     else:
-        manifest_no_concurrency["concurrency_level"] = {
+        definition["concurrency_level"] = {
             "type": "ConcurrencyLevel",
             "default_concurrency": 1,
         }
 
+    should_normalize = should_normalize_manifest(manifest)
+    if should_normalize:
+        del definition[SHOULD_NORMALIZE_KEY]
+
+    should_migrate = should_migrate_manifest(manifest)
+    if should_migrate:
+        del definition[SHOULD_MIGRATE_KEY]
+
     return ConcurrentDeclarativeSource(
         catalog=catalog,
         state=state,
-        source_config=manifest_no_concurrency,
+        source_config=definition,
         config=config,
-        normalize_manifest=should_normalize_manifest(manifest),
-        migrate_manifest=should_migrate_manifest(manifest),
+        normalize_manifest=should_normalize,
+        migrate_manifest=should_migrate,
         emit_connector_builder_messages=True,
         limits=TestLimits(
             max_pages_per_slice=page_limit or TestLimits.DEFAULT_MAX_PAGES_PER_SLICE,
