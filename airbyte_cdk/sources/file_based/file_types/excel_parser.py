@@ -5,7 +5,11 @@
 import logging
 from io import IOBase
 from pathlib import Path
+import sys
+import tempfile
+import io
 from typing import Any, Dict, Iterable, Mapping, Optional, Tuple, Union
+from collections import deque
 
 import orjson
 import pandas as pd
@@ -29,6 +33,23 @@ from airbyte_cdk.sources.file_based.file_based_stream_reader import (
 from airbyte_cdk.sources.file_based.file_types.file_type_parser import FileTypeParser
 from airbyte_cdk.sources.file_based.remote_file import RemoteFile
 from airbyte_cdk.sources.file_based.schema_helpers import SchemaType
+
+
+
+def iter_records_via_tempfile(df: pd.DataFrame):
+    """
+    Stream records using Pandas' to_json (so datetime strings match exactly),
+    without building a giant string in RAM.
+
+    - Writes NDJSON to a temporary file (text-wrapped over a binary file)
+    - Reads back line-by-line and yields parsed dicts
+    """
+    with tempfile.NamedTemporaryFile(mode="w+", encoding="utf-8", delete=True) as f:
+        df.to_json(f, orient="records", lines=True, date_format="iso", date_unit="us")
+        f.seek(0)
+        for line in f:              # line is str
+            if line.strip():
+                yield orjson.loads(line)
 
 
 class ExcelParser(FileTypeParser):
@@ -118,9 +139,9 @@ class ExcelParser(FileTypeParser):
                 # DataFrame.to_dict() method returns datetime values in pandas.Timestamp values, which are not serializable by orjson
                 # DataFrame.to_json() returns string with datetime values serialized to iso8601 with microseconds to align with pydantic behavior
                 # see PR description: https://github.com/airbytehq/airbyte/pull/44444/
-                yield from orjson.loads(
-                    df.to_json(orient="records", date_format="iso", date_unit="us")
-                )
+                for index, row in df.iterrows():
+                    # Convert each row (as a Series) to a JSON string
+                    yield orjson.loads(row.to_json(date_format="iso", date_unit="us"))
 
         except Exception as exc:
             # Raise a RecordParseError if any exception occurs during parsing
