@@ -1119,6 +1119,8 @@ def run_incremental_parent_state_test(
 
         # Assert that the number of intermediate states is as expected
         assert len(intermediate_states) - 1 == num_intermediate_states
+        # Assert that ensure_at_least_one_state_emitted is called before yielding the last record from the last slice
+        assert intermediate_states[-1][0].stream.stream_state.__dict__["parent_state"] == intermediate_states[-2][0].stream.stream_state.__dict__["parent_state"]
 
         # For each intermediate state, perform another read starting from that state
         for state, records_before_state in intermediate_states[:-1]:

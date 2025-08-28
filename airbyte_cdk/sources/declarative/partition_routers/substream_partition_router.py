@@ -249,6 +249,8 @@ class SubstreamPartitionRouter(PartitionRouter):
 
                         if is_last_record_in_slice:
                             parent_stream.cursor.close_partition(partition)
+                            if is_last_slice:
+                                parent_stream.cursor.ensure_at_least_one_state_emitted()
 
                         yield StreamSlice(
                             partition={
