@@ -4,8 +4,6 @@ from typing import List
 from unittest import TestCase
 from unittest.mock import Mock
 
-# This allows for the global total_record_counter to be reset between tests
-import airbyte_cdk.sources.declarative.stream_slicers.declarative_partition_generator as declarative_partition_generator
 from airbyte_cdk.models import AirbyteLogMessage, AirbyteMessage, Level, Type
 from airbyte_cdk.sources.declarative.retrievers import Retriever
 from airbyte_cdk.sources.declarative.schema import InlineSchemaLoader
@@ -35,7 +33,7 @@ class StreamSlicerPartitionGeneratorTest(TestCase):
     def test_given_multiple_slices_partition_generator_uses_the_same_retriever(self) -> None:
         retriever = self._mock_retriever([])
         message_repository = Mock(spec=MessageRepository)
-        partition_factory = declarative_partition_generator.DeclarativePartitionFactory(
+        partition_factory = DeclarativePartitionFactory(
             _STREAM_NAME,
             _SCHEMA_LOADER,
             retriever,
@@ -50,7 +48,7 @@ class StreamSlicerPartitionGeneratorTest(TestCase):
     def test_given_a_mapping_when_read_then_yield_record(self) -> None:
         retriever = self._mock_retriever([_A_RECORD])
         message_repository = Mock(spec=MessageRepository)
-        partition_factory = declarative_partition_generator.DeclarativePartitionFactory(
+        partition_factory = DeclarativePartitionFactory(
             _STREAM_NAME,
             _SCHEMA_LOADER,
             retriever,
@@ -68,7 +66,7 @@ class StreamSlicerPartitionGeneratorTest(TestCase):
     def test_given_not_a_record_when_read_then_send_to_message_repository(self) -> None:
         retriever = self._mock_retriever([_AIRBYTE_LOG_MESSAGE])
         message_repository = Mock(spec=MessageRepository)
-        partition_factory = declarative_partition_generator.DeclarativePartitionFactory(
+        partition_factory = DeclarativePartitionFactory(
             _STREAM_NAME,
             _SCHEMA_LOADER,
             retriever,
@@ -80,8 +78,6 @@ class StreamSlicerPartitionGeneratorTest(TestCase):
         message_repository.emit_message.assert_called_once_with(_AIRBYTE_LOG_MESSAGE)
 
     def test_max_records_reached_stops_reading(self) -> None:
-        declarative_partition_generator.total_record_counter = 0
-
         expected_records = [
             Record(data={"id": 1, "name": "Max"}, stream_name="stream_name"),
             Record(data={"id": 1, "name": "Oscar"}, stream_name="stream_name"),
@@ -97,7 +93,7 @@ class StreamSlicerPartitionGeneratorTest(TestCase):
 
         retriever = self._mock_retriever(mock_records)
         message_repository = Mock(spec=MessageRepository)
-        partition_factory = declarative_partition_generator.DeclarativePartitionFactory(
+        partition_factory = DeclarativePartitionFactory(
             _STREAM_NAME,
             _SCHEMA_LOADER,
             retriever,
@@ -113,8 +109,6 @@ class StreamSlicerPartitionGeneratorTest(TestCase):
         assert actual_records == expected_records
 
     def test_max_records_reached_on_previous_partition(self) -> None:
-        declarative_partition_generator.total_record_counter = 0
-
         expected_records = [
             Record(data={"id": 1, "name": "Max"}, stream_name="stream_name"),
             Record(data={"id": 1, "name": "Oscar"}, stream_name="stream_name"),
@@ -128,7 +122,7 @@ class StreamSlicerPartitionGeneratorTest(TestCase):
 
         retriever = self._mock_retriever(mock_records)
         message_repository = Mock(spec=MessageRepository)
-        partition_factory = declarative_partition_generator.DeclarativePartitionFactory(
+        partition_factory = DeclarativePartitionFactory(
             _STREAM_NAME,
             _SCHEMA_LOADER,
             retriever,

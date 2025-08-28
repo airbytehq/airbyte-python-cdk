@@ -14,10 +14,21 @@ from airbyte_cdk.sources.streams.concurrent.partitions.stream_slicer import Stre
 from airbyte_cdk.sources.types import Record, StreamSlice
 from airbyte_cdk.utils.slice_hasher import SliceHasher
 
+
 # For Connector Builder test read operations, we track the total number of records
-# read for the stream at the global level so that we can stop reading early if we
-# exceed the record limit
-total_record_counter = 0
+# read for the stream so that we can stop reading early if we exceed the record limit.
+class RecordCounter:
+    def __init__(self):
+        self.total_record_counter = 0
+
+    def increment(self):
+        self.total_record_counter += 1
+
+    def get_total_records(self) -> int:
+        return self.total_record_counter
+
+    def reset(self):
+        self.total_record_counter = 0
 
 
 class SchemaLoaderCachingDecorator(SchemaLoader):
@@ -51,6 +62,7 @@ class DeclarativePartitionFactory:
         self._retriever = retriever
         self._message_repository = message_repository
         self._max_records_limit = max_records_limit
+        self._record_counter = RecordCounter()
 
     def create(self, stream_slice: StreamSlice) -> Partition:
         return DeclarativePartition(
@@ -60,6 +72,7 @@ class DeclarativePartitionFactory:
             message_repository=self._message_repository,
             max_records_limit=self._max_records_limit,
             stream_slice=stream_slice,
+            record_counter=self._record_counter,
         )
 
 
@@ -72,6 +85,7 @@ class DeclarativePartition(Partition):
         message_repository: MessageRepository,
         max_records_limit: Optional[int],
         stream_slice: StreamSlice,
+        record_counter: RecordCounter,
     ):
         self._stream_name = stream_name
         self._schema_loader = schema_loader
@@ -80,17 +94,17 @@ class DeclarativePartition(Partition):
         self._max_records_limit = max_records_limit
         self._stream_slice = stream_slice
         self._hash = SliceHasher.hash(self._stream_name, self._stream_slice)
+        self._record_counter = record_counter
 
     def read(self) -> Iterable[Record]:
         if self._max_records_limit is not None:
-            global total_record_counter
-            if total_record_counter >= self._max_records_limit:
+            if self._record_counter.get_total_records() >= self._max_records_limit:
                 return
         for stream_data in self._retriever.read_records(
             self._schema_loader.get_json_schema(), self._stream_slice
         ):
             if self._max_records_limit is not None:
-                if total_record_counter >= self._max_records_limit:
+                if self._record_counter.get_total_records() >= self._max_records_limit:
                     break
 
             if isinstance(stream_data, Mapping):
@@ -108,7 +122,7 @@ class DeclarativePartition(Partition):
                 self._message_repository.emit_message(stream_data)
 
             if self._max_records_limit is not None:
-                total_record_counter += 1
+                self._record_counter.increment()
 
     def to_slice(self) -> Optional[Mapping[str, Any]]:
         return self._stream_slice
