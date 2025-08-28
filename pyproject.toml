@@ -48,7 +48,7 @@ packaging = "*"  # Transitive dependency used directly in code
 pandas = "2.2.3"
 psutil = "6.1.0" # TODO: Remove if unused
 pydantic = "^2.7"
-pyrate-limiter = "~3.1.0"
+pyrate-limiter = ">=3.1,<3.10"
 python-dateutil = "^2.9.0"
 python-ulid = "^3.0.0"
 PyYAML = "^6.0.1"
