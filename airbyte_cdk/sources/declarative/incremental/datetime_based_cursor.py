@@ -315,6 +315,9 @@ class DatetimeBasedCursor(DeclarativeCursor):
             except ValueError:
                 pass
 
+        # If we have not parsed by now, use the robust parser which handles
+        # all common formats, including all formats supported by ISO8601
+        # and RFC3306.
         parsed_dt = ab_datetime_try_parse(date)
         if parsed_dt is not None:
             return parsed_dt
