@@ -6,7 +6,7 @@ import copy
 import json
 import logging
 from functools import lru_cache
-from typing import Any, Iterable, List, Mapping, MutableMapping, Optional, Tuple, Union
+from typing import Any, Iterable, List, Mapping, MutableMapping, Optional, Union
 
 from typing_extensions import deprecated
 
@@ -24,12 +24,7 @@ from airbyte_cdk.sources.connector_state_manager import ConnectorStateManager
 from airbyte_cdk.sources.message import MessageRepository
 from airbyte_cdk.sources.source import ExperimentalClassWarning
 from airbyte_cdk.sources.streams import Stream
-from airbyte_cdk.sources.streams.availability_strategy import AvailabilityStrategy
 from airbyte_cdk.sources.streams.concurrent.abstract_stream_facade import AbstractStreamFacade
-from airbyte_cdk.sources.streams.concurrent.availability_strategy import (
-    AbstractAvailabilityStrategy,
-    AlwaysAvailableAvailabilityStrategy,
-)
 from airbyte_cdk.sources.streams.concurrent.cursor import Cursor, FinalStateCursor
 from airbyte_cdk.sources.streams.concurrent.default_stream import DefaultStream
 from airbyte_cdk.sources.streams.concurrent.exceptions import ExceptionWithDisplayMessage
@@ -101,7 +96,6 @@ class StreamFacade(AbstractStreamFacade[DefaultStream], Stream):
                 name=stream.name,
                 namespace=stream.namespace,
                 json_schema=stream.get_json_schema(),
-                availability_strategy=AlwaysAvailableAvailabilityStrategy(),
                 primary_key=pk,
                 cursor_field=cursor_field,
                 logger=logger,
@@ -202,6 +196,7 @@ class StreamFacade(AbstractStreamFacade[DefaultStream], Stream):
     def cursor(self) -> Optional[Cursor]:  # type: ignore[override] # StreamFaced expects to use only airbyte_cdk.sources.streams.concurrent.cursor.Cursor
         return self._cursor
 
+    # FIXME the lru_cache seems to be mostly there because of typing issue
     @lru_cache(maxsize=None)
     def get_json_schema(self) -> Mapping[str, Any]:
         return self._abstract_stream.get_json_schema()
@@ -209,18 +204,6 @@ class StreamFacade(AbstractStreamFacade[DefaultStream], Stream):
     @property
     def supports_incremental(self) -> bool:
         return self._legacy_stream.supports_incremental
-
-    def check_availability(
-        self, logger: logging.Logger, source: Optional["Source"] = None
-    ) -> Tuple[bool, Optional[str]]:
-        """
-        Verifies the stream is available. Delegates to the underlying AbstractStream and ignores the parameters
-        :param logger: (ignored)
-        :param source:  (ignored)
-        :return:
-        """
-        availability = self._abstract_stream.check_availability()
-        return availability.is_available(), availability.message()
 
     def as_airbyte_stream(self) -> AirbyteStream:
         return self._abstract_stream.as_airbyte_stream()
@@ -370,28 +353,3 @@ class StreamPartitionGenerator(PartitionGenerator):
                 self._cursor_field,
                 self._state,
             )
-
-
-@deprecated(
-    "Availability strategy has been soft deprecated. Do not use. Class is subject to removal",
-    category=ExperimentalClassWarning,
-)
-class AvailabilityStrategyFacade(AvailabilityStrategy):
-    def __init__(self, abstract_availability_strategy: AbstractAvailabilityStrategy):
-        self._abstract_availability_strategy = abstract_availability_strategy
-
-    def check_availability(
-        self, stream: Stream, logger: logging.Logger, source: Optional["Source"] = None
-    ) -> Tuple[bool, Optional[str]]:
-        """
-        Checks stream availability.
-
-        Important to note that the stream and source parameters are not used by the underlying AbstractAvailabilityStrategy.
-
-        :param stream: (unused)
-        :param logger: logger object to use
-        :param source: (unused)
-        :return: A tuple of (boolean, str). If boolean is true, then the stream
-        """
-        stream_availability = self._abstract_availability_strategy.check_availability(logger)
-        return stream_availability.is_available(), stream_availability.message()

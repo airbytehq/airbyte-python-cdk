@@ -1463,11 +1463,9 @@ class ComponentMappingDefinition(BaseModel):
         ...,
         description="A list of potentially nested fields indicating the full path where value will be added or updated.",
         examples=[
-            ["data"],
-            ["data", "records"],
-            ["data", 1, "name"],
-            ["data", "{{ components_values.name }}"],
-            ["data", "*", "record"],
+            ["name"],
+            ["retriever", "requester", "url"],
+            ["retriever", "requester", "{{ components_values.field }}"],
             ["*", "**", "name"],
         ],
         title="Field Path",
@@ -2002,7 +2000,9 @@ class DefaultPaginator(BaseModel):
         None, title="Inject Page Size Into Outgoing HTTP Request"
     )
     page_token_option: Optional[Union[RequestOption, RequestPath]] = Field(
-        None, title="Inject Page Token Into Outgoing HTTP Request"
+        None,
+        description="Inject the page token into the outgoing HTTP requests by inserting it into either the request URL path or a field on the request.",
+        title="Inject Page Token Into Outgoing HTTP Request",
     )
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 

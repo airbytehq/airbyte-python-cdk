@@ -2,19 +2,16 @@
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
 
-from functools import lru_cache
 from logging import Logger
-from typing import Any, Iterable, List, Mapping, Optional
+from typing import Any, Callable, Iterable, List, Mapping, Optional, Union
 
 from airbyte_cdk.models import AirbyteStream, SyncMode
 from airbyte_cdk.sources.streams.concurrent.abstract_stream import AbstractStream
-from airbyte_cdk.sources.streams.concurrent.availability_strategy import (
-    AbstractAvailabilityStrategy,
-    StreamAvailability,
-)
+from airbyte_cdk.sources.streams.concurrent.availability_strategy import StreamAvailability
 from airbyte_cdk.sources.streams.concurrent.cursor import Cursor
 from airbyte_cdk.sources.streams.concurrent.partitions.partition import Partition
 from airbyte_cdk.sources.streams.concurrent.partitions.partition_generator import PartitionGenerator
+from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 
 
 class DefaultStream(AbstractStream):
@@ -22,8 +19,7 @@ class DefaultStream(AbstractStream):
         self,
         partition_generator: PartitionGenerator,
         name: str,
-        json_schema: Mapping[str, Any],
-        availability_strategy: AbstractAvailabilityStrategy,
+        json_schema: Union[Mapping[str, Any], Callable[[], Mapping[str, Any]]],
         primary_key: List[str],
         cursor_field: Optional[str],
         logger: Logger,
@@ -34,7 +30,6 @@ class DefaultStream(AbstractStream):
         self._stream_partition_generator = partition_generator
         self._name = name
         self._json_schema = json_schema
-        self._availability_strategy = availability_strategy
         self._primary_key = primary_key
         self._cursor_field = cursor_field
         self._logger = logger
@@ -53,21 +48,17 @@ class DefaultStream(AbstractStream):
     def namespace(self) -> Optional[str]:
         return self._namespace
 
-    def check_availability(self) -> StreamAvailability:
-        return self._availability_strategy.check_availability(self._logger)
-
     @property
     def cursor_field(self) -> Optional[str]:
         return self._cursor_field
 
-    @lru_cache(maxsize=None)
     def get_json_schema(self) -> Mapping[str, Any]:
-        return self._json_schema
+        return self._json_schema() if callable(self._json_schema) else self._json_schema
 
     def as_airbyte_stream(self) -> AirbyteStream:
         stream = AirbyteStream(
             name=self.name,
-            json_schema=dict(self._json_schema),
+            json_schema=dict(self.get_json_schema()),
             supported_sync_modes=[SyncMode.full_refresh],
             is_resumable=False,
             is_file_based=self._supports_file_transfer,
@@ -100,3 +91,33 @@ class DefaultStream(AbstractStream):
     @property
     def cursor(self) -> Cursor:
         return self._cursor
+
+    def check_availability(self) -> StreamAvailability:
+        """
+        Check stream availability by attempting to read the first record of the stream.
+        """
+        try:
+            partition = next(iter(self.generate_partitions()))
+        except StopIteration:
+            # NOTE: The following comment was copied from legacy stuff and I don't know how relevant it is:
+            # If stream_slices has no `next()` item (Note - this is different from stream_slices returning [None]!)
+            # This can happen when a substream's `stream_slices` method does a `for record in parent_records: yield <something>`
+            # without accounting for the case in which the parent stream is empty.
+            return StreamAvailability.unavailable(
+                f"Cannot attempt to connect to stream {self.name} - no stream slices were found"
+            )
+        except AirbyteTracedException as error:
+            return StreamAvailability.unavailable(
+                error.message or error.internal_message or "<no error message>"
+            )
+
+        try:
+            next(iter(partition.read()))
+            return StreamAvailability.available()
+        except StopIteration:
+            self._logger.info(f"Successfully connected to stream {self.name}, but got 0 records.")
+            return StreamAvailability.available()
+        except AirbyteTracedException as error:
+            return StreamAvailability.unavailable(
+                error.message or error.internal_message or "<no error message>"
+            )

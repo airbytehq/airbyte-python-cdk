@@ -100,10 +100,17 @@ def build(
     "--image",
     help="Image to test, instead of building a new one.",
 )
+@click.option(
+    "--no-creds",
+    is_flag=True,
+    default=False,
+    help="Skip tests that require credentials (marked with 'requires_creds').",
+)
 def image_test(  # "image test" command
     connector: str | None = None,
     *,
     image: str | None = None,
+    no_creds: bool = False,
 ) -> None:
     """Test a connector Docker image.
 
@@ -124,7 +131,11 @@ def image_test(  # "image test" command
     connector_name, connector_directory = resolve_connector_name_and_directory(connector)
 
     # Select only tests with the 'image_tests' mark
-    pytest_args = ["-m", "image_tests"]
+    pytest_filter = "image_tests"
+    if no_creds:
+        pytest_filter += " and not requires_creds"
+
+    pytest_args = ["-m", pytest_filter]
     if not image:
         metadata_file_path: Path = connector_directory / "metadata.yaml"
         try:

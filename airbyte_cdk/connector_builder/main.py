@@ -25,7 +25,9 @@ from airbyte_cdk.models import (
     ConfiguredAirbyteCatalog,
     ConfiguredAirbyteCatalogSerializer,
 )
-from airbyte_cdk.sources.declarative.manifest_declarative_source import ManifestDeclarativeSource
+from airbyte_cdk.sources.declarative.concurrent_declarative_source import (
+    ConcurrentDeclarativeSource,
+)
 from airbyte_cdk.sources.source import Source
 from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 
@@ -68,7 +70,7 @@ def get_config_and_catalog_from_args(
 
 
 def handle_connector_builder_request(
-    source: ManifestDeclarativeSource,
+    source: ConcurrentDeclarativeSource[Optional[List[AirbyteStateMessage]]],
     command: str,
     config: Mapping[str, Any],
     catalog: Optional[ConfiguredAirbyteCatalog],
@@ -91,12 +93,12 @@ def handle_connector_builder_request(
 def handle_request(args: List[str]) -> str:
     command, config, catalog, state = get_config_and_catalog_from_args(args)
     limits = get_limits(config)
-    source = create_source(config, limits)
-    return orjson.dumps(
+    source = create_source(config=config, limits=limits, catalog=catalog, state=state)
+    return orjson.dumps(  # type: ignore[no-any-return] # Serializer.dump() always returns AirbyteMessage
         AirbyteMessageSerializer.dump(
             handle_connector_builder_request(source, command, config, catalog, state, limits)
         )
-    ).decode()  # type: ignore[no-any-return] # Serializer.dump() always returns AirbyteMessage
+    ).decode()
 
 
 if __name__ == "__main__":

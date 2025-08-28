@@ -4,6 +4,7 @@
 
 import functools
 import logging
+import threading
 from abc import ABC, abstractmethod
 from typing import (
     Any,
@@ -74,6 +75,10 @@ class Cursor(StreamSlicer, ABC):
         """
         raise NotImplementedError()
 
+    @abstractmethod
+    def should_be_synced(self, record: Record) -> bool:
+        pass
+
     def stream_slices(self) -> Iterable[StreamSlice]:
         """
         Default placeholder implementation of generate_slices.
@@ -123,6 +128,9 @@ class FinalStateCursor(Cursor):
         )
         self._message_repository.emit_message(state_message)
 
+    def should_be_synced(self, record: Record) -> bool:
+        return True
+
 
 class ConcurrentCursor(Cursor):
     _START_BOUNDARY = 0
@@ -167,6 +175,12 @@ class ConcurrentCursor(Cursor):
         self._should_be_synced_logger_triggered = False
         self._clamping_strategy = clamping_strategy
 
+        # A lock is required when closing a partition because updating the cursor's concurrent_state is
+        # not thread safe. When multiple partitions are being closed by the cursor at the same time, it is
+        # possible for one partition to update concurrent_state after a second partition has already read
+        # the previous state. This can lead to the second partition overwriting the previous one's state.
+        self._lock = threading.Lock()
+
     @property
     def state(self) -> MutableMapping[str, Any]:
         return self._connector_state_converter.convert_to_state_message(
@@ -192,15 +206,37 @@ class ConcurrentCursor(Cursor):
         self, state: MutableMapping[str, Any]
     ) -> Tuple[CursorValueType, MutableMapping[str, Any]]:
         if self._connector_state_converter.is_state_message_compatible(state):
+            partitioned_state = self._connector_state_converter.deserialize(state)
+            slices_from_partitioned_state = partitioned_state.get("slices", [])
+
+            value_from_partitioned_state = None
+            if slices_from_partitioned_state:
+                # We assume here that the slices have been already merged
+                first_slice = slices_from_partitioned_state[0]
+                value_from_partitioned_state = (
+                    first_slice[self._connector_state_converter.MOST_RECENT_RECORD_KEY]
+                    if self._connector_state_converter.MOST_RECENT_RECORD_KEY in first_slice
+                    else first_slice[self._connector_state_converter.END_KEY]
+                )
             return (
-                self._start or self._connector_state_converter.zero_value,
-                self._connector_state_converter.deserialize(state),
+                value_from_partitioned_state
+                or self._start
+                or self._connector_state_converter.zero_value,
+                partitioned_state,
             )
         return self._connector_state_converter.convert_from_sequential_state(
             self._cursor_field, state, self._start
         )
 
     def observe(self, record: Record) -> None:
+        # Because observe writes to the most_recent_cursor_value_per_partition mapping,
+        # it is not thread-safe. However, this shouldn't lead to concurrency issues because
+        # observe() is only invoked by PartitionReader.process_partition(). Since the map is
+        # broken down according to partition, concurrent threads processing only read/write
+        # from different keys which avoids any conflicts.
+        #
+        # If we were to add thread safety, we should implement a lock per-partition
+        # which is instantiated during stream_slices()
         most_recent_cursor_value = self._most_recent_cursor_value_per_partition.get(
             record.associated_slice
         )
@@ -216,13 +252,14 @@ class ConcurrentCursor(Cursor):
         return self._connector_state_converter.parse_value(self._cursor_field.extract_value(record))
 
     def close_partition(self, partition: Partition) -> None:
-        slice_count_before = len(self._concurrent_state.get("slices", []))
-        self._add_slice_to_state(partition)
-        if slice_count_before < len(
-            self._concurrent_state["slices"]
-        ):  # only emit if at least one slice has been processed
-            self._merge_partitions()
-            self._emit_state_message()
+        with self._lock:
+            slice_count_before = len(self._concurrent_state.get("slices", []))
+            self._add_slice_to_state(partition)
+            if slice_count_before < len(
+                self._concurrent_state["slices"]
+            ):  # only emit if at least one slice has been processed
+                self._merge_partitions()
+                self._emit_state_message()
         self._has_closed_at_least_one_slice = True
 
     def _add_slice_to_state(self, partition: Partition) -> None:

@@ -16,6 +16,7 @@ from airbyte_cdk.sources.declarative.checks.check_stream import CheckStream
 from airbyte_cdk.sources.declarative.concurrent_declarative_source import (
     ConcurrentDeclarativeSource,
 )
+from airbyte_cdk.sources.streams.core import Stream
 from airbyte_cdk.sources.streams.http import HttpStream
 from airbyte_cdk.test.mock_http import HttpMocker, HttpRequest, HttpResponse
 
@@ -45,7 +46,7 @@ record = MagicMock()
 def test_check_stream_with_slices_as_list(
     test_name, record, streams_to_check, stream_slice, expectation, slices_as_list
 ):
-    stream = MagicMock()
+    stream = MagicMock(spec=Stream)
     stream.name = "s1"
     stream.availability_strategy = None
     if slices_as_list:
@@ -77,7 +78,7 @@ def mock_read_records(responses, default_response=None, **kwargs):
 
 
 def test_check_empty_stream():
-    stream = MagicMock()
+    stream = MagicMock(spec=Stream)
     stream.name = "s1"
     stream.read_records.return_value = iter([])
     stream.stream_slices.return_value = iter([None])
@@ -91,7 +92,7 @@ def test_check_empty_stream():
 
 
 def test_check_stream_with_no_stream_slices_aborts():
-    stream = MagicMock()
+    stream = MagicMock(spec=Stream)
     stream.name = "s1"
     stream.stream_slices.return_value = iter([])
 
