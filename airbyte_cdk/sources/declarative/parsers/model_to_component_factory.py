@@ -3480,13 +3480,16 @@ class ModelToComponentFactory:
                 f"state_delegating_stream, full_refresh_stream name and incremental_stream must have equal names. Instead has {model.name}, {model.full_refresh_stream.name} and {model.incremental_stream.name}."
             )
 
-        stream_model = (
+        stream_model = self._get_state_delegating_stream_model(has_parent_state, model)
+
+        return self._create_component_from_model(stream_model, config=config, **kwargs)  # type: ignore[no-any-return]  # Will be created DeclarativeStream as stream_model is stream description
+
+    def _get_state_delegating_stream_model(self, has_parent_state, model):
+        return (
             model.incremental_stream
             if self._connector_state_manager.get_stream_state(model.name, None) or has_parent_state
             else model.full_refresh_stream
         )
-
-        return self._create_component_from_model(stream_model, config=config, **kwargs)  # type: ignore[no-any-return]  # Will be created DeclarativeStream as stream_model is stream description
 
     def _create_async_job_status_mapping(
         self, model: AsyncJobStatusMapModel, config: Config, **kwargs: Any
@@ -3805,8 +3808,15 @@ class ModelToComponentFactory:
         child_state = self._connector_state_manager.get_stream_state(
             kwargs["stream_name"], None
         )  # FIXME adding `stream_name` as a parameter means it will be a breaking change. I assume this is mostly called internally so I don't think we need to bother that much about this but still raising the flag
+
+        # This flag will be used exclusively for StateDelegatingStream when a parent stream is created
+        has_parent_state = bool(
+            self._connector_state_manager.get_stream_state(kwargs.get("stream_name", ""), None)
+            if model.incremental_dependency
+            else False
+        )
         connector_state_manager = self._instantiate_parent_stream_state_manager(
-            child_state, config, model
+            child_state, config, model, has_parent_state
         )
 
         substream_factory = ModelToComponentFactory(
@@ -3828,19 +3838,13 @@ class ModelToComponentFactory:
             ),
         )
 
-        # This flag will be used exclusively for StateDelegatingStream when a parent stream is created
-        has_parent_state = bool(
-            self._connector_state_manager.get_stream_state(kwargs.get("stream_name", ""), None)
-            if model.incremental_dependency
-            else False
-        )
         return substream_factory._create_component_from_model(
             model=model, config=config, has_parent_state=has_parent_state, **kwargs
         )
 
     def _instantiate_parent_stream_state_manager(
-        self, child_state: MutableMapping[str, Any], config: Config, model: ParentStreamConfigModel
-    ):
+        self, child_state: MutableMapping[str, Any], config: Config, model: ParentStreamConfigModel, has_parent_state: bool
+    ) -> ConnectorStateManager:
         """
         With DefaultStream, the state needs to be provided during __init__ of the cursor as opposed to the
         `set_initial_state` flow that existed for the declarative cursors. This state is taken from
@@ -3862,12 +3866,13 @@ class ModelToComponentFactory:
                 )
 
                 if not parent_state and not isinstance(parent_state, dict):
-                    cursor_field = InterpolatedString.create(
-                        model.stream.incremental_sync.cursor_field,
-                        parameters=model.stream.incremental_sync.parameters or {},
-                    ).eval(config)
                     cursor_values = child_state.values()
                     if cursor_values:
+                        incremental_sync_model = model.stream.incremental_sync if isinstance(model.stream, DeclarativeStreamModel) else self._get_state_delegating_stream_model(has_parent_state, model.stream)
+                        cursor_field = InterpolatedString.create(
+                            incremental_sync_model.cursor_field,
+                            parameters=incremental_sync_model.parameters or {},
+                        ).eval(config)
                         parent_state = AirbyteStateMessage(
                             type=AirbyteStateType.STREAM,
                             stream=AirbyteStreamState(

@@ -555,7 +555,7 @@ class ConcurrentPerPartitionCursor(Cursor):
         stream_state: Optional[StreamState], parent_stream_name: str
     ) -> Optional[AirbyteStateMessage]:
         if not stream_state:
-            return stream_state
+            return None
 
         if "parent_state" not in stream_state:
             logger.warning(
