@@ -997,6 +997,30 @@ def test_parse_date_legacy_merge_datetime_format_in_cursor_datetime_format(
             ["%Y-%m-%dT%H:%M:%S.%f%z", "%s"],
             datetime.datetime(2021, 1, 1, 0, 0, tzinfo=datetime.timezone.utc),
         ),
+        (
+            "test_robust_fallback_z_suffix",
+            "2021-01-01T00:00:00Z",
+            ["%Y-%m-%d"],
+            datetime.datetime(2021, 1, 1, 0, 0, tzinfo=datetime.timezone.utc),
+        ),
+        (
+            "test_robust_fallback_iso_with_colon_tz",
+            "2021-01-01T00:00:00+00:00",
+            ["%Y-%m-%d"],
+            datetime.datetime(2021, 1, 1, 0, 0, tzinfo=datetime.timezone.utc),
+        ),
+        (
+            "test_robust_fallback_date_only",
+            "2021-01-01",
+            ["%s"],
+            datetime.datetime(2021, 1, 1, 0, 0, tzinfo=datetime.timezone.utc),
+        ),
+        (
+            "test_robust_fallback_unix_timestamp_string",
+            "1609459200",
+            ["%Y-%m-%d"],
+            datetime.datetime(2021, 1, 1, 0, 0, tzinfo=datetime.timezone.utc),
+        ),
     ],
 )
 def test_parse_date(test_name, input_date, date_formats, expected_output_date):
@@ -1022,6 +1046,25 @@ def test_given_unknown_format_when_parse_date_then_raise_error():
     )
     with pytest.raises(ValueError):
         slicer.parse_date("not-a-valid-datetime-string")
+
+
+def test_minmax_datetime_robust_fallback():
+    from airbyte_cdk.sources.declarative.datetime.min_max_datetime import MinMaxDatetime
+
+    test_cases = [
+        ("2021-01-01T00:00:00Z", "%Y-%m-%d"),
+        ("2021-01-01T00:00:00+00:00", "%Y-%m-%d"),
+        ("1609459200", "%Y-%m-%d"),
+    ]
+
+    for input_date, incompatible_format in test_cases:
+        min_max_dt = MinMaxDatetime(
+            datetime=input_date, datetime_format=incompatible_format, parameters={}
+        )
+        result = min_max_dt.get_datetime({})
+        assert result.year == 2021
+        assert result.month == 1
+        assert result.day == 1
 
 
 @pytest.mark.parametrize(

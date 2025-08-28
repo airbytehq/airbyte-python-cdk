@@ -8,6 +8,7 @@ from typing import Any, Mapping, Optional, Union
 
 from airbyte_cdk.sources.declarative.datetime.datetime_parser import DatetimeParser
 from airbyte_cdk.sources.declarative.interpolation.interpolated_string import InterpolatedString
+from airbyte_cdk.utils.datetime_helpers import ab_datetime_try_parse
 
 
 @dataclass
@@ -65,15 +66,23 @@ class MinMaxDatetime:
         if not datetime_format:
             datetime_format = "%Y-%m-%dT%H:%M:%S.%f%z"
 
-        time = self._parser.parse(
-            str(
-                self.datetime.eval(  # type: ignore[union-attr] # str has no attribute "eval"
-                    config,
-                    **additional_parameters,
+        datetime_str = str(
+            self.datetime.eval(  # type: ignore[union-attr] # str has no attribute "eval"
+                config,
+                **additional_parameters,
+            )
+        )
+
+        try:
+            time = self._parser.parse(datetime_str, datetime_format)
+        except ValueError:
+            parsed_dt = ab_datetime_try_parse(datetime_str)
+            if parsed_dt is not None:
+                time = parsed_dt
+            else:
+                raise ValueError(
+                    f"Unable to parse datetime '{datetime_str}' with format '{datetime_format}' or robust parsing"
                 )
-            ),
-            datetime_format,
-        )  # type: ignore # datetime is always cast to an interpolated string
 
         if self.min_datetime:
             min_time = str(self.min_datetime.eval(config, **additional_parameters))  # type: ignore # min_datetime is always cast to an interpolated string
