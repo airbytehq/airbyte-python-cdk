@@ -315,6 +315,7 @@ class DatetimeBasedCursor(DeclarativeCursor):
             except ValueError:
                 pass
 
+        parsed_dt = ab_datetime_try_parse(date)
         if parsed_dt is not None:
             return parsed_dt
 
