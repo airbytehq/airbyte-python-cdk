@@ -4,8 +4,57 @@
 #
 # A new version of source-declarative-manifest is built for every new Airbyte CDK release, and their versions are kept in sync.
 #
+# Most of the below is in common with the Python Connector Base Image
+# - https://github.com/airbytehq/airbyte/blob/master/docker-images/Dockerfile.python-connector-base
+#
+# We moved off of the Python base image in Aug 2025, in order to decouple the Python version used by
+# Python connectors and the Manifest-Only executions. (Python connectors require additional testing
+# to to external library dependencies.)
 
-FROM docker.io/airbyte/python-connector-base:4.0.2@sha256:9fdb1888c4264cf6fee473649ecb593f56f58e5d0096a87ee0b231777e2e3e73
+# https://hub.docker.com/_/python/tags?name=3.13.7-slim-bookworm
+ARG BASE_IMAGE=docker.io/python:3.13.7-slim-bookworm@sha256:9b8102b7b3a61db24fe58f335b526173e5aeaaf7d13b2fbfb514e20f84f5e386
+FROM ${BASE_IMAGE}
+
+# Set the timezone to UTC
+RUN ln -snf /usr/share/zoneinfo/Etc/UTC /etc/localtime
+
+# Set-up groups, users, and directories
+RUN adduser --uid 1000 --system --group --no-create-home airbyte
+
+# Create the cache airbyte directories and set the right permissions
+RUN mkdir --mode 755 /airbyte && \
+    mkdir --mode 755 /custom_cache && \
+    mkdir /secrets && \
+    mkdir /config && \
+    mkdir /nonexistent && \
+    chown airbyte:airbyte /airbyte && \
+    chown -R airbyte:airbyte /custom_cache && \
+    chown -R airbyte:airbyte /secrets && \
+    chown -R airbyte:airbyte /config && \
+    chown -R airbyte:airbyte /nonexistent && \
+    chown -R airbyte:airbyte /tmp
+
+ENV POETRY_VIRTUALENVS_CREATE=false
+ENV POETRY_VIRTUALENVS_IN_PROJECT=false
+ENV POETRY_NO_INTERACTION=1
+
+# Create and set up pip cache directory
+# TODO: Remove this block if not needed.
+ENV PIP_CACHE_DIR=/pip_cache
+RUN mkdir -p ${PIP_CACHE_DIR} && chown -R airbyte:airbyte ${PIP_CACHE_DIR}
+
+# Install pip and poetry
+RUN pip install --upgrade \
+      pip==24.0 \
+      setuptools==78.1.1 \
+      poetry==1.8.4
+
+# Install system dependencies
+RUN apt-get update && \
+    apt-get upgrade -y && \
+    apt-get dist-upgrade -y && \
+    apt-get clean
+RUN apt-get install -y socat=1.7.4.4-2
 
 WORKDIR /airbyte/integration_code
 
