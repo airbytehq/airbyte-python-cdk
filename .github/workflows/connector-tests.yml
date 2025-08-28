@@ -141,9 +141,9 @@ jobs:
 
       - name: Set up Poetry
         if: steps.no_changes.outputs.status != 'cancelled'
-        uses: Gr1N/setup-poetry@v9
+        uses: snok/install-poetry@v1
         with:
-          poetry-version: "2.0.1"
+          version: "2.0.1"
 
       - name: Get Connector Language
         if: steps.no_changes.outputs.status != 'cancelled'
