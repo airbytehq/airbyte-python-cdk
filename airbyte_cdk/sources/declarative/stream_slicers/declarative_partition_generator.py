@@ -18,17 +18,17 @@ from airbyte_cdk.utils.slice_hasher import SliceHasher
 # For Connector Builder test read operations, we track the total number of records
 # read for the stream so that we can stop reading early if we exceed the record limit.
 class RecordCounter:
-    def __init__(self):
+    def __init__(self) -> None:
         self.total_record_counter = 0
 
-    def increment(self):
+    def increment(self) -> None:
         self.total_record_counter += 1
+
+    def reset(self) -> None:
+        self.total_record_counter = 0
 
     def get_total_records(self) -> int:
         return self.total_record_counter
-
-    def reset(self):
-        self.total_record_counter = 0
 
 
 class SchemaLoaderCachingDecorator(SchemaLoader):
