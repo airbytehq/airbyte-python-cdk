@@ -3484,7 +3484,7 @@ class ModelToComponentFactory:
 
         return self._create_component_from_model(stream_model, config=config, **kwargs)  # type: ignore[no-any-return]  # Will be created DeclarativeStream as stream_model is stream description
 
-    def _get_state_delegating_stream_model(self, has_parent_state, model):
+    def _get_state_delegating_stream_model(self, has_parent_state: bool, model: StateDelegatingStreamModel):
         return (
             model.incremental_stream
             if self._connector_state_manager.get_stream_state(model.name, None) or has_parent_state
