@@ -912,7 +912,7 @@ def test_parent_stream_is_updated_after_parent_record_fully_consumed():
             end_datetime="2022-02-28",
             datetime_format="%Y-%m-%d",
             cursor_field=CURSOR_FIELD,
-            step="P1M",
+            step="P1Y",
             cursor_granularity="P1D",
         )
         .with_incremental_sync(
@@ -935,19 +935,20 @@ def test_parent_stream_is_updated_after_parent_record_fully_consumed():
         # Request for parent stream
         m.get(
             "https://api.apilayer.com/exchangerates_data/parent/latest?from=2022-01-01&to=2022-02-28",
-            json=[{"id": "1"}],
+            json=[{"id": "1", CURSOR_FIELD: "2022-02-01"}, {"id": "2", CURSOR_FIELD: "2022-02-10"}],
         )
 
         # Requests for child stream
-        record_from_first_cursor_interval = {"id": "child_1.1"}
+        record_from_first_partition = {"id": "child_1.1"}
         m.get(
-            "https://api.apilayer.com/exchangerates_data/parent/1/child/latest?from=2022-01-01&to=2022-01-31",
-            json=[record_from_first_cursor_interval],
+            "https://api.apilayer.com/exchangerates_data/parent/1/child/latest?from=2022-01-01&to=2022-02-28",
+            json=[record_from_first_partition],
         )
-        record_from_second_cursor_interval = {"id": "child_1.2"}
+
+        record_from_second_partition = {"id": "child_1.2"}
         m.get(
-            "https://api.apilayer.com/exchangerates_data/parent/1/child/latest?from=2022-02-01&to=2022-02-28",
-            json=[record_from_second_cursor_interval],
+            "https://api.apilayer.com/exchangerates_data/parent/2/child/latest?from=2022-01-01&to=2022-02-28",
+            json=[record_from_second_partition],
         )
 
         message_iterator = source.read(
@@ -960,12 +961,12 @@ def test_parent_stream_is_updated_after_parent_record_fully_consumed():
         )
 
         records, state = get_records_until_state_message(message_iterator)
-
-        assert len(records) == 1 and records[0].data == record_from_first_cursor_interval
-        assert "parent_state" not in state.stream.stream_state.__dict__
+        assert len(records) == 1 and records[0].data == record_from_first_partition
+        assert state.stream.stream_state.__dict__["parent_state"] == {"Rates": {"cursor_field": "2022-01-01"}}  # state cursor value == start_datetime
 
         records, state = get_records_until_state_message(message_iterator)
-        assert "parent_state" in state.stream.stream_state.__dict__
+        assert len(records) == 1 and records[0].data == record_from_second_partition
+        assert state.stream.stream_state.__dict__["parent_state"] == {"Rates": {"cursor_field": "2022-02-10"}}  # state cursor value == most_recent_cursor_value
 
 
 def get_records_until_state_message(

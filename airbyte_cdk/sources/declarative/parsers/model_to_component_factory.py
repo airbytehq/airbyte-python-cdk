@@ -2098,14 +2098,6 @@ class ModelToComponentFactory:
                 options["name"] = model.name
             schema_loader = DefaultSchemaLoader(config=config, parameters=options)
 
-        # FIXME to be removed once we migrate everything to DefaultStream
-        # todo: blai This was originally added back in https://github.com/airbytehq/airbyte-python-cdk/pull/723.
-        #  It does seem like this could be removed now that we only manage DefaultStream but noting to confirm in the PR
-        if isinstance(retriever, SimpleRetriever):
-            # We zero it out here, but since this is a cursor reference, the state is still properly
-            # instantiated for the other components that reference it
-            retriever.cursor = None
-
         stream_name = model.name or ""
         return DefaultStream(
             partition_generator=StreamSlicerPartitionGenerator(
