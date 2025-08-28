@@ -7,6 +7,7 @@ from airbyte_protocol_dataclasses.models import (
 )
 from fastapi import HTTPException
 
+import airbyte_cdk.sources.declarative.stream_slicers.declarative_partition_generator
 from airbyte_cdk.connector_builder.models import StreamRead
 from airbyte_cdk.connector_builder.test_reader import TestReader
 from airbyte_cdk.entrypoint import AirbyteEntrypoint
@@ -41,6 +42,12 @@ class ManifestCommandProcessor:
         """
         Test the read method of the source.
         """
+
+        # HACK: reset total_record_counter
+        # DeclarativePartition defines total_record_counter as a global variable, which keeps around the record count
+        # across multiple test_read calls, even if the source is different. This is a hack to reset the counter for
+        # each test_read call.
+        airbyte_cdk.sources.declarative.stream_slicers.declarative_partition_generator.total_record_counter = 0
 
         test_read_handler = TestReader(
             max_pages_per_slice=page_limit,
