@@ -1021,7 +1021,7 @@ def test_given_unknown_format_when_parse_date_then_raise_error():
         parameters={},
     )
     with pytest.raises(ValueError):
-        slicer.parse_date("2021-01-01T00:00:00.000000+0000")
+        slicer.parse_date("not-a-valid-datetime-string")
 
 
 @pytest.mark.parametrize(
