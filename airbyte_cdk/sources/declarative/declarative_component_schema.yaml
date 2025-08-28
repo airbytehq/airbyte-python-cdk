@@ -987,6 +987,18 @@ definitions:
           - "%Y-%m-%d %H:%M:%S.%f+00:00"
           - "%s"
           - "%ms"
+        suggestions:
+          - "%Y-%m-%d"
+          - "%Y-%m-%d %H:%M:%S"
+          - "%Y-%m-%dT%H:%M:%S"
+          - "%Y-%m-%dT%H:%M:%SZ"
+          - "%Y-%m-%dT%H:%M:%S%z"
+          - "%Y-%m-%dT%H:%M:%S.%fZ"
+          - "%Y-%m-%dT%H:%M:%S.%f%z"
+          - "%Y-%m-%d %H:%M:%S.%f+00:00"
+          - "%s"
+          - "%ms"
+          - "%s_as_float"
       start_datetime:
         title: Start Datetime
         description: The datetime that determines the earliest record that should be synced.
@@ -1061,6 +1073,18 @@ definitions:
           - "%s"
           - "%ms"
           - "%s_as_float"
+        suggestions:
+          - "%Y-%m-%d"
+          - "%Y-%m-%d %H:%M:%S"
+          - "%Y-%m-%dT%H:%M:%S"
+          - "%Y-%m-%dT%H:%M:%SZ"
+          - "%Y-%m-%dT%H:%M:%S%z"
+          - "%Y-%m-%dT%H:%M:%S.%fZ"
+          - "%Y-%m-%dT%H:%M:%S.%f%z"
+          - "%Y-%m-%d %H:%M:%S.%f+00:00"
+          - "%s"
+          - "%ms"
+          - "%s_as_float"
       cursor_granularity:
         title: Cursor Granularity
         description: |
@@ -1075,6 +1099,13 @@ definitions:
         type: string
         examples:
           - "PT1S"
+        suggestions:
+          - "PT0.000001S"
+          - "PT0.001S"
+          - "PT1S"
+          - "PT1M"
+          - "PT1H"
+          - "P1D"
       is_data_feed:
         title: Data Feed API
         description: A data feed API is an API that does not allow filtering and paginates the content from the most recent to the least recent. Given this, the CDK needs to know when to stop paginating and this field will generate a stop condition for pagination.
@@ -1133,6 +1164,12 @@ definitions:
         examples:
           - "P1W"
           - "{{ config['step_increment'] }}"
+        suggestions:
+          - "PT1H"
+          - "P1D"
+          - "P1W"
+          - "P1M"
+          - "P1Y"
       $parameters:
         type: object
         additionalProperties: true
@@ -1838,6 +1875,7 @@ definitions:
         "$ref": "#/definitions/RequestOption"
       page_token_option:
         title: Inject Page Token Into Outgoing HTTP Request
+        description: Inject the page token into the outgoing HTTP requests by inserting it into either the request URL path or a field on the request.
         anyOf:
           - "$ref": "#/definitions/RequestOption"
           - "$ref": "#/definitions/RequestPath"
@@ -2803,6 +2841,18 @@ definitions:
           - "%Y-%m-%dT%H:%M:%S.%f%z"
           - "%Y-%m-%d"
           - "%s"
+        suggestions:
+          - "%Y-%m-%d"
+          - "%Y-%m-%d %H:%M:%S"
+          - "%Y-%m-%dT%H:%M:%S"
+          - "%Y-%m-%dT%H:%M:%SZ"
+          - "%Y-%m-%dT%H:%M:%S%z"
+          - "%Y-%m-%dT%H:%M:%S.%fZ"
+          - "%Y-%m-%dT%H:%M:%S.%f%z"
+          - "%Y-%m-%d %H:%M:%S.%f+00:00"
+          - "%s"
+          - "%ms"
+          - "%s_as_float"
       max_datetime:
         title: Max Datetime
         description: Ceiling applied on the datetime value. Must be formatted with the datetime_format field.
@@ -3486,7 +3536,7 @@ definitions:
           - [["content", "html"], ["content", "plain_text"]]
   RequestPath:
     title: Request Path
-    description: Specifies where in the request path a component's value should be inserted.
+    description: The URL path to be used for the HTTP request.
     type: object
     required:
       - type
@@ -4141,11 +4191,9 @@ definitions:
           - stream_slice
           - stream_template_config
         examples:
-          - ["data"]
-          - ["data", "records"]
-          - ["data", 1, "name"]
-          - ["data", "{{ components_values.name }}"]
-          - ["data", "*", "record"]
+          - ["name"]
+          - ["retriever", "requester", "url"]
+          - ["retriever", "requester", "{{ components_values.field }}"]
           - ["*", "**", "name"]
       value:
         title: Value
@@ -4776,6 +4824,12 @@ interpolation:
     - title: stream_slice
       description: This variable is deprecated. Use stream_interval or stream_partition instead.
       type: object
+    - title: components_values
+      description: The record object produced by the components resolver for which a stream will be generated.
+      type: object
+      examples:
+        - name: "accounts"
+          id: 1234
   macros:
     - title: now_utc
       description: Returns the current date and time in the UTC timezone.

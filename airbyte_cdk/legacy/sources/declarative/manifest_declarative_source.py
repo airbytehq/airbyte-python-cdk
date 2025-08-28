@@ -8,7 +8,7 @@ import pkgutil
 from copy import deepcopy
 from importlib import metadata
 from types import ModuleType
-from typing import Any, Dict, Iterator, List, Mapping, Optional, Set
+from typing import Any, Dict, Iterator, List, Mapping, Optional, Set, Union
 
 import orjson
 import yaml
@@ -20,6 +20,7 @@ from airbyte_cdk.config_observation import create_connector_config_control_messa
 from airbyte_cdk.connector_builder.models import (
     LogMessage as ConnectorBuilderLogMessage,
 )
+from airbyte_cdk.legacy.sources.declarative.declarative_source import DeclarativeSource
 from airbyte_cdk.manifest_migrations.migration_handler import (
     ManifestMigrationHandler,
 )
@@ -34,7 +35,6 @@ from airbyte_cdk.models import (
 from airbyte_cdk.models.airbyte_protocol_serializers import AirbyteMessageSerializer
 from airbyte_cdk.sources.declarative.checks import COMPONENTS_CHECKER_TYPE_MAPPING
 from airbyte_cdk.sources.declarative.checks.connection_checker import ConnectionChecker
-from airbyte_cdk.sources.declarative.declarative_source import DeclarativeSource
 from airbyte_cdk.sources.declarative.interpolation import InterpolatedBoolean
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     ConditionalStreams as ConditionalStreamsModel,
@@ -66,6 +66,7 @@ from airbyte_cdk.sources.declarative.parsers.model_to_component_factory import (
 from airbyte_cdk.sources.declarative.resolvers import COMPONENTS_RESOLVER_TYPE_MAPPING
 from airbyte_cdk.sources.declarative.spec.spec import Spec
 from airbyte_cdk.sources.message import MessageRepository
+from airbyte_cdk.sources.streams.concurrent.abstract_stream import AbstractStream
 from airbyte_cdk.sources.streams.core import Stream
 from airbyte_cdk.sources.types import Config, ConnectionDefinition
 from airbyte_cdk.sources.utils.slice_logger import (
@@ -297,7 +298,12 @@ class ManifestDeclarativeSource(DeclarativeSource):
                 f"Expected to generate a ConnectionChecker component, but received {check_stream.__class__}"
             )
 
-    def streams(self, config: Mapping[str, Any]) -> List[Stream]:
+    def streams(self, config: Mapping[str, Any]) -> List[Union[Stream, AbstractStream]]:  # type: ignore  # we are migrating away from the AbstractSource and are expecting that this will only be called by ConcurrentDeclarativeSource or the Connector Builder
+        """
+        As a migration step, this method will return both legacy stream (Stream) and concurrent stream (AbstractStream).
+        Once the migration is done, we can probably have this method throw "not implemented" as we figure out how to
+        fully decouple this from the AbstractSource.
+        """
         if self._spec_component:
             self._spec_component.validate_config(config)
 
