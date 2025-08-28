@@ -3484,7 +3484,9 @@ class ModelToComponentFactory:
 
         return self._create_component_from_model(stream_model, config=config, **kwargs)  # type: ignore[no-any-return]  # Will be created DeclarativeStream as stream_model is stream description
 
-    def _get_state_delegating_stream_model(self, has_parent_state: bool, model: StateDelegatingStreamModel):
+    def _get_state_delegating_stream_model(
+        self, has_parent_state: bool, model: StateDelegatingStreamModel
+    ):
         return (
             model.incremental_stream
             if self._connector_state_manager.get_stream_state(model.name, None) or has_parent_state
@@ -3843,7 +3845,11 @@ class ModelToComponentFactory:
         )
 
     def _instantiate_parent_stream_state_manager(
-        self, child_state: MutableMapping[str, Any], config: Config, model: ParentStreamConfigModel, has_parent_state: bool
+        self,
+        child_state: MutableMapping[str, Any],
+        config: Config,
+        model: ParentStreamConfigModel,
+        has_parent_state: bool,
     ) -> ConnectorStateManager:
         """
         With DefaultStream, the state needs to be provided during __init__ of the cursor as opposed to the
@@ -3868,7 +3874,13 @@ class ModelToComponentFactory:
                 if not parent_state and not isinstance(parent_state, dict):
                     cursor_values = child_state.values()
                     if cursor_values:
-                        incremental_sync_model = model.stream.incremental_sync if isinstance(model.stream, DeclarativeStreamModel) else self._get_state_delegating_stream_model(has_parent_state, model.stream)
+                        incremental_sync_model = (
+                            model.stream.incremental_sync
+                            if isinstance(model.stream, DeclarativeStreamModel)
+                            else self._get_state_delegating_stream_model(
+                                has_parent_state, model.stream
+                            )
+                        )
                         cursor_field = InterpolatedString.create(
                             incremental_sync_model.cursor_field,
                             parameters=incremental_sync_model.parameters or {},

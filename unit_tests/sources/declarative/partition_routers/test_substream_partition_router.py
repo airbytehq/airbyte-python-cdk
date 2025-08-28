@@ -38,7 +38,7 @@ from airbyte_cdk.sources.streams.concurrent.state_converters.datetime_stream_sta
     CustomFormatConcurrentStreamStateConverter,
 )
 from airbyte_cdk.sources.types import Record, StreamSlice
-from airbyte_cdk.utils.datetime_helpers import ab_datetime_now, ab_datetime_parse
+from airbyte_cdk.utils.datetime_helpers import ab_datetime_parse
 from unit_tests.sources.streams.concurrent.scenarios.thread_based_concurrent_stream_source_builder import (
     InMemoryPartition,
 )

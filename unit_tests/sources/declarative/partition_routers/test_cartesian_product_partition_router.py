@@ -1,6 +1,7 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
+from unittest.mock import Mock
 
 import pytest as pytest
 
@@ -10,6 +11,7 @@ from airbyte_cdk.sources.declarative.interpolation.interpolated_string import In
 from airbyte_cdk.sources.declarative.partition_routers import (
     CartesianProductStreamSlicer,
     ListPartitionRouter,
+    PartitionRouter,
 )
 from airbyte_cdk.sources.declarative.requesters.request_option import (
     RequestOption,
@@ -169,6 +171,28 @@ def test_substream_slicer(test_name, stream_slicers, expected_slices):
     slicer = CartesianProductStreamSlicer(stream_slicers=stream_slicers, parameters={})
     slices = [s for s in slicer.stream_slices()]
     assert slices == expected_slices
+
+
+def test_substream_slicer_with_extra_fields():
+    decorated_slicer = Mock(spec=PartitionRouter)
+    decorated_slicer.stream_slices.return_value = iter(
+        [
+            StreamSlice(
+                partition={"first_stream_id": 0, "parent_slice": {}},
+                cursor_slice={},
+                extra_fields={"extra_field_key": "extra_field_value_0"},
+            ),
+            StreamSlice(
+                partition={"first_stream_id": 1, "parent_slice": {}},
+                cursor_slice={},
+                extra_fields={"extra_field_key": "extra_field_value_1"},
+            ),
+        ],
+    )
+    slicer = CartesianProductStreamSlicer(stream_slicers=[decorated_slicer], parameters={})
+    extra_fields = [bool(s.extra_fields) for s in slicer.stream_slices()]
+    assert len(extra_fields) == 2
+    assert all(extra_fields)
 
 
 def test_stream_slices_raises_exception_if_multiple_cursor_slice_components():

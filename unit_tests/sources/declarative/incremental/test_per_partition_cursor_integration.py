@@ -962,11 +962,15 @@ def test_parent_stream_is_updated_after_parent_record_fully_consumed():
 
         records, state = get_records_until_state_message(message_iterator)
         assert len(records) == 1 and records[0].data == record_from_first_partition
-        assert state.stream.stream_state.__dict__["parent_state"] == {"Rates": {"cursor_field": "2022-01-01"}}  # state cursor value == start_datetime
+        assert state.stream.stream_state.__dict__["parent_state"] == {
+            "Rates": {"cursor_field": "2022-01-01"}
+        }  # state cursor value == start_datetime
 
         records, state = get_records_until_state_message(message_iterator)
         assert len(records) == 1 and records[0].data == record_from_second_partition
-        assert state.stream.stream_state.__dict__["parent_state"] == {"Rates": {"cursor_field": "2022-02-10"}}  # state cursor value == most_recent_cursor_value
+        assert state.stream.stream_state.__dict__["parent_state"] == {
+            "Rates": {"cursor_field": "2022-02-10"}
+        }  # state cursor value == most_recent_cursor_value
 
 
 def get_records_until_state_message(
