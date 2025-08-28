@@ -315,8 +315,7 @@ class DatetimeBasedCursor(DeclarativeCursor):
             except ValueError:
                 pass
 
-        parsed_dt = ab_datetime_try_parse(date)
-        if parsed_dt:
+        if parsed_dt is not None:
             return parsed_dt
 
         raise ValueError(f"No format in {self.cursor_datetime_formats} matching {date}")
