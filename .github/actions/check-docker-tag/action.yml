@@ -1,11 +1,11 @@
-name: "Check Docker Tag Exists"
-description: "Check if a Docker tag exists on DockerHub to prevent overwrites"
+name: 'Check Docker Tag Exists'
+description: 'Check if a Docker tag exists on DockerHub to prevent overwrites'
 inputs:
   image_name:
-    description: "Docker image name (e.g. airbyte/source-declarative-manifest)"
+    description: 'Docker image name (e.g. airbyte/source-declarative-manifest)'
     required: true
   tag:
-    description: "Docker tag to check"
+    description: 'Docker tag to check'
     required: true
 runs:
   using: "composite"
