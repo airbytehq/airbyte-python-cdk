@@ -58,10 +58,10 @@ jobs:
               - 'poetry.lock'
               - 'pyproject.toml'
       - name: Set up Poetry
-        uses: Gr1N/setup-poetry@v9
+        uses: snok/install-poetry@v1
         if: steps.changes.outputs.src == 'true'
         with:
-          poetry-version: "2.0.1"
+          version: "2.0.1"
       - name: Set up Python
         uses: actions/setup-python@v5
         if: steps.changes.outputs.src == 'true'

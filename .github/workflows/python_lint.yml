@@ -15,9 +15,9 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
       - name: Set up Poetry
-        uses: Gr1N/setup-poetry@v9
+        uses: snok/install-poetry@v1
         with:
-          poetry-version: "2.0.1"
+          version: "2.0.1"
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -38,9 +38,9 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
       - name: Set up Poetry
-        uses: Gr1N/setup-poetry@v9
+        uses: snok/install-poetry@v1
         with:
-          poetry-version: "1.8.4"
+          version: "1.8.4"
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -61,9 +61,9 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
       - name: Set up Poetry
-        uses: Gr1N/setup-poetry@v9
+        uses: snok/install-poetry@v1
         with:
-          poetry-version: "1.8.4"
+          version: "1.8.4"
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
