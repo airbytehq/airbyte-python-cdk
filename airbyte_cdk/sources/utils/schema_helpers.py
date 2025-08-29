@@ -13,7 +13,8 @@ import jsonref
 from jsonschema import validate
 from jsonschema.exceptions import ValidationError
 from pydantic.v1 import BaseModel, Field
-from referencing import Registry, Resource, Resolver
+from referencing import Registry, Resource
+from referencing._core import Resolver  # used for type hints
 from referencing.jsonschema import DRAFT7
 
 from airbyte_cdk.models import ConnectorSpecification, FailureType

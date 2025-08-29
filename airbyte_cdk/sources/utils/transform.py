@@ -7,7 +7,8 @@ from enum import Flag, auto
 from typing import Any, Callable, Dict, Generator, Mapping, Optional, cast
 
 from jsonschema import Draft7Validator, ValidationError, Validator, validators
-from referencing import Registry, Resource, Resolver
+from referencing import Registry, Resource
+from referencing._core import Resolver  # used for type hints
 from referencing.jsonschema import DRAFT7
 
 MAX_NESTING_DEPTH = 3
