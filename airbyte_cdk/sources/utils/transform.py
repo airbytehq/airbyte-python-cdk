@@ -196,22 +196,30 @@ class TypeTransformer:
 
             def resolve(subschema: dict[str, Any]) -> dict[str, Any]:
                 if "$ref" in subschema:
+                    ref_url = subschema["$ref"]
+
                     try:
                         root_schema = validator_instance.schema
                         resource = Resource.from_contents(root_schema, default_specification=DRAFT7)
                         registry = Registry().with_resource("", resource)
                         resolver = registry.resolver()
-                        resolved = resolver.lookup(subschema["$ref"]).contents
+                        resolved = resolver.lookup(ref_url).contents
                         return cast(dict[str, Any], resolved)
                     except Exception:
                         try:
-                            _, resolved = cast(RefResolver, validator_instance.resolver).resolve(
-                                subschema["$ref"]
-                            )
-                            return cast(dict[str, Any], resolved)
+                            if (
+                                hasattr(validator_instance, "resolver")
+                                and validator_instance.resolver
+                            ):
+                                _, resolved = cast(
+                                    RefResolver, validator_instance.resolver
+                                ).resolve(ref_url)
+                                return cast(dict[str, Any], resolved)
                         except Exception:
-                            # If both fail, return original subschema
-                            return subschema
+                            pass
+
+                    # If both approaches fail, return the original subschema
+                    return subschema
                 return subschema
 
             # Transform object and array values before running json schema type checking for each element.
