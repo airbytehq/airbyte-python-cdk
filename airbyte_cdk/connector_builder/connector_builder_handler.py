@@ -65,7 +65,7 @@ def create_source(
     limits: TestLimits,
     catalog: Optional[ConfiguredAirbyteCatalog],
     state: Optional[List[AirbyteStateMessage]],
-) -> ConcurrentDeclarativeSource[Optional[List[AirbyteStateMessage]]]:
+) -> ConcurrentDeclarativeSource:
     manifest = config["__injected_declarative_manifest"]
 
     # We enforce a concurrency level of 1 so that the stream is processed on a single thread
@@ -88,7 +88,7 @@ def create_source(
 
 
 def read_stream(
-    source: ConcurrentDeclarativeSource[Optional[List[AirbyteStateMessage]]],
+    source: ConcurrentDeclarativeSource,
     config: Mapping[str, Any],
     configured_catalog: ConfiguredAirbyteCatalog,
     state: List[AirbyteStateMessage],
@@ -127,7 +127,7 @@ def read_stream(
 
 
 def resolve_manifest(
-    source: ConcurrentDeclarativeSource[Optional[List[AirbyteStateMessage]]],
+    source: ConcurrentDeclarativeSource,
 ) -> AirbyteMessage:
     try:
         return AirbyteMessage(
@@ -146,7 +146,7 @@ def resolve_manifest(
 
 
 def full_resolve_manifest(
-    source: ConcurrentDeclarativeSource[Optional[List[AirbyteStateMessage]]], limits: TestLimits
+    source: ConcurrentDeclarativeSource, limits: TestLimits
 ) -> AirbyteMessage:
     try:
         manifest = {**source.resolved_manifest}

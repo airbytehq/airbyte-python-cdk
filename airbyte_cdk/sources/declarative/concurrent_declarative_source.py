@@ -162,7 +162,7 @@ def _get_declarative_component_schema() -> Dict[str, Any]:
 #  is no longer inherited from since the only external dependency is from that class.
 #
 # todo: It is worth investigating removal of the Generic[TState] since it will always be Optional[List[AirbyteStateMessage]]
-class ConcurrentDeclarativeSource(AbstractSource, Generic[TState]):
+class ConcurrentDeclarativeSource(AbstractSource):
     # By default, we defer to a value of 2. A value lower than could cause a PartitionEnqueuer to be stuck in a state of deadlock
     # because it has hit the limit of futures but not partition reader is consuming them.
     _LOWEST_SAFE_CONCURRENCY_LEVEL = 2
@@ -171,8 +171,8 @@ class ConcurrentDeclarativeSource(AbstractSource, Generic[TState]):
         self,
         catalog: Optional[ConfiguredAirbyteCatalog],
         config: Optional[Mapping[str, Any]],
-        state: TState,
         source_config: ConnectionDefinition,
+        state: Optional[List[AirbyteStateMessage]] = None,
         debug: bool = False,
         emit_connector_builder_messages: bool = False,
         migrate_manifest: bool = False,

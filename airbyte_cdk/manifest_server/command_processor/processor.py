@@ -21,12 +21,10 @@ from airbyte_cdk.test.entrypoint_wrapper import AirbyteEntrypointException, Entr
 
 
 class ManifestCommandProcessor:
-    _source: ConcurrentDeclarativeSource[Optional[List[AirbyteStateMessage]]]
+    _source: ConcurrentDeclarativeSource
     _logger = logging.getLogger("airbyte.manifest-server")
 
-    def __init__(
-        self, source: ConcurrentDeclarativeSource[Optional[List[AirbyteStateMessage]]]
-    ) -> None:
+    def __init__(self, source: ConcurrentDeclarativeSource) -> None:
         self._source = source
 
     def test_read(

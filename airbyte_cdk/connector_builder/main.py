@@ -70,7 +70,7 @@ def get_config_and_catalog_from_args(
 
 
 def handle_connector_builder_request(
-    source: ConcurrentDeclarativeSource[Optional[List[AirbyteStateMessage]]],
+    source: ConcurrentDeclarativeSource,
     command: str,
     config: Mapping[str, Any],
     catalog: Optional[ConfiguredAirbyteCatalog],
