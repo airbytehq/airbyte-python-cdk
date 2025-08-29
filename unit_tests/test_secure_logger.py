@@ -203,12 +203,12 @@ def test_airbyte_secrets_are_masked_on_uncaught_exceptions(mocker, caplog, capsy
         list(entrypoint.run(parsed_args))
     except Exception:
         sys.excepthook(*sys.exc_info())
-        assert I_AM_A_SECRET_VALUE not in capsys.readouterr().out, (
-            "Should have filtered non-secret value from exception trace message"
-        )
-        assert I_AM_A_SECRET_VALUE not in caplog.text, (
-            "Should have filtered secret value from exception log message"
-        )
+        assert (
+            I_AM_A_SECRET_VALUE not in capsys.readouterr().out
+        ), "Should have filtered non-secret value from exception trace message"
+        assert (
+            I_AM_A_SECRET_VALUE not in caplog.text
+        ), "Should have filtered secret value from exception log message"
 
 
 def test_non_airbyte_secrets_are_not_masked_on_uncaught_exceptions(mocker, caplog, capsys):
@@ -257,9 +257,9 @@ def test_non_airbyte_secrets_are_not_masked_on_uncaught_exceptions(mocker, caplo
         list(entrypoint.run(parsed_args))
     except Exception:
         sys.excepthook(*sys.exc_info())
-        assert NOT_A_SECRET_VALUE in capsys.readouterr().out, (
-            "Should not have filtered non-secret value from exception trace message"
-        )
-        assert NOT_A_SECRET_VALUE in caplog.text, (
-            "Should not have filtered non-secret value from exception log message"
-        )
+        assert (
+            NOT_A_SECRET_VALUE in capsys.readouterr().out
+        ), "Should not have filtered non-secret value from exception trace message"
+        assert (
+            NOT_A_SECRET_VALUE in caplog.text
+        ), "Should not have filtered non-secret value from exception log message"

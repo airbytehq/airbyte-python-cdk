@@ -62,24 +62,24 @@ def test_uncaught_exception_handler():
     log_output, trace_output = stdout_lines
 
     out_log_message = AirbyteMessageSerializer.load(json.loads(log_output))
-    assert traceback_start in out_log_message.log.message, (
-        "Log message should contain traceback start"
-    )
-    assert file_reference in out_log_message.log.message, (
-        "Log message should contain file reference"
-    )
-    assert exception_message in out_log_message.log.message, (
-        "Log message should contain expected exception message"
-    )
+    assert (
+        traceback_start in out_log_message.log.message
+    ), "Log message should contain traceback start"
+    assert (
+        file_reference in out_log_message.log.message
+    ), "Log message should contain file reference"
+    assert (
+        exception_message in out_log_message.log.message
+    ), "Log message should contain expected exception message"
 
     out_trace_message = AirbyteMessageSerializer.load(json.loads(trace_output))
     assert out_trace_message.trace.emitted_at > 0
-    assert traceback_start in out_trace_message.trace.error.stack_trace, (
-        "Trace message should contain traceback start"
-    )
-    assert file_reference in out_trace_message.trace.error.stack_trace, (
-        "Trace message should contain file reference"
-    )
-    assert out_trace_message.trace.error.internal_message == exception_message, (
-        "Trace message should contain expected exception message"
-    )
+    assert (
+        traceback_start in out_trace_message.trace.error.stack_trace
+    ), "Trace message should contain traceback start"
+    assert (
+        file_reference in out_trace_message.trace.error.stack_trace
+    ), "Trace message should contain file reference"
+    assert (
+        out_trace_message.trace.error.internal_message == exception_message
+    ), "Trace message should contain expected exception message"

@@ -268,9 +268,9 @@ class TestMovingWindowCallRatePolicy:
 
         with pytest.raises(CallRateLimitHit) as excinfo2:
             policy.try_acquire("call", weight=1), "call over limit"
-        assert excinfo2.value.time_to_wait < excinfo1.value.time_to_wait, (
-            "time to wait must decrease over time"
-        )
+        assert (
+            excinfo2.value.time_to_wait < excinfo1.value.time_to_wait
+        ), "time to wait must decrease over time"
 
     def test_limit_rate_support_custom_weight(self):
         """try_acquire must take into account provided weight and throw CallRateLimitHit when hit the limit."""
@@ -279,9 +279,9 @@ class TestMovingWindowCallRatePolicy:
         policy.try_acquire("call", weight=2), "1st call with weight of 2"
         with pytest.raises(CallRateLimitHit) as excinfo:
             policy.try_acquire("call", weight=9), "2nd call, over limit since 2 + 9 = 11 > 10"
-        assert excinfo.value.time_to_wait.total_seconds() == pytest.approx(60, 0.1), (
-            "should wait 1 minute before next call"
-        )
+        assert excinfo.value.time_to_wait.total_seconds() == pytest.approx(
+            60, 0.1
+        ), "should wait 1 minute before next call"
 
     def test_multiple_limit_rates(self):
         """try_acquire must take into all call rates and apply stricter."""

@@ -58,9 +58,9 @@ class TestArgParsing:
         self, arg_list: List[str], expected_output: Mapping[str, Any], destination: Destination
     ):
         parsed_args = vars(destination.parse_args(arg_list))
-        assert parsed_args == expected_output, (
-            f"Expected parsing {arg_list} to return parsed args {expected_output} but instead found {parsed_args}"
-        )
+        assert (
+            parsed_args == expected_output
+        ), f"Expected parsing {arg_list} to return parsed args {expected_output} but instead found {parsed_args}"
 
     @pytest.mark.parametrize(
         ("arg_list"),

@@ -277,9 +277,9 @@ class FileBasedStreamPartition(Partition):
     def to_slice(self) -> Optional[Mapping[str, Any]]:
         if self._slice is None:
             return None
-        assert len(self._slice["files"]) == 1, (
-            f"Expected 1 file per partition but got {len(self._slice['files'])} for stream {self.stream_name()}"
-        )
+        assert (
+            len(self._slice["files"]) == 1
+        ), f"Expected 1 file per partition but got {len(self._slice['files'])} for stream {self.stream_name()}"
         file = self._slice["files"][0]
         return {"files": [file]}
 

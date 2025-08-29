@@ -269,9 +269,9 @@ def test_stream_slices_lazy_iteration(mock_config, mock_underlying_router):
         cursor_slice={},
         extra_fields={"name": ["Board 0", "Board 1"], "owner": ["User0", "User1"]},
     )
-    assert controlled_iter.yield_count == 2, (
-        "Only 2 slices should be yielded to form the first group"
-    )
+    assert (
+        controlled_iter.yield_count == 2
+    ), "Only 2 slices should be yielded to form the first group"
 
     # Get the second slice
     second_slice = next(slices_iter)
@@ -280,9 +280,9 @@ def test_stream_slices_lazy_iteration(mock_config, mock_underlying_router):
         cursor_slice={},
         extra_fields={"name": ["Board 2", "Board 3"], "owner": ["User2", "User3"]},
     )
-    assert controlled_iter.yield_count == 4, (
-        "Only 4 slices should be yielded up to the second group"
-    )
+    assert (
+        controlled_iter.yield_count == 4
+    ), "Only 4 slices should be yielded up to the second group"
 
     # Exhaust the iterator
     remaining_slices = list(slices_iter)
@@ -293,9 +293,9 @@ def test_stream_slices_lazy_iteration(mock_config, mock_underlying_router):
             extra_fields={"name": ["Board 4"], "owner": ["User4"]},
         )
     ]
-    assert controlled_iter.yield_count == 5, (
-        "All 5 slices should be yielded after exhausting the iterator"
-    )
+    assert (
+        controlled_iter.yield_count == 5
+    ), "All 5 slices should be yielded after exhausting the iterator"
 
 
 def test_set_initial_state_delegation(mock_config, mock_underlying_router):

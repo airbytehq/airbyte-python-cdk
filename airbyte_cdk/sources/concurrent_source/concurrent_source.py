@@ -51,9 +51,9 @@ class ConcurrentSource:
         too_many_generator = (
             not is_single_threaded and initial_number_of_partitions_to_generate >= num_workers
         )
-        assert not too_many_generator, (
-            "It is required to have more workers than threads generating partitions"
-        )
+        assert (
+            not too_many_generator
+        ), "It is required to have more workers than threads generating partitions"
         threadpool = ThreadPoolManager(
             concurrent.futures.ThreadPoolExecutor(
                 max_workers=num_workers, thread_name_prefix="workerpool"

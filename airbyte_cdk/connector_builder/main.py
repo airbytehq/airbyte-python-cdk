@@ -80,9 +80,9 @@ def handle_connector_builder_request(
     if command == "resolve_manifest":
         return resolve_manifest(source)
     elif command == "test_read":
-        assert catalog is not None, (
-            "`test_read` requires a valid `ConfiguredAirbyteCatalog`, got None."
-        )
+        assert (
+            catalog is not None
+        ), "`test_read` requires a valid `ConfiguredAirbyteCatalog`, got None."
         return read_stream(source, config, catalog, state, limits)
     elif command == "full_resolve_manifest":
         return full_resolve_manifest(source, limits)

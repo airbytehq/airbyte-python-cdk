@@ -3437,9 +3437,9 @@ def test_create_concurrent_cursor_from_perpartition_cursor_runs_state_migrations
         stream_state_migrations=[DummyStateMigration()],
     )
     assert cursor.state["lookback_window"] != 10, "State migration wasn't called"
-    assert cursor.state["lookback_window"] == 20, (
-        "State migration was called, but actual state don't match expected"
-    )
+    assert (
+        cursor.state["lookback_window"] == 20
+    ), "State migration was called, but actual state don't match expected"
 
 
 def test_create_concurrent_cursor_uses_min_max_datetime_format_if_defined():

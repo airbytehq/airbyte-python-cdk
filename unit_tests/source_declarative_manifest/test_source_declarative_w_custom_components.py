@@ -97,9 +97,9 @@ def get_py_components_config_dict(
 
     manifest_dict = yaml.safe_load(manifest_yaml_path.read_text())
     assert manifest_dict, "Failed to load the manifest file."
-    assert isinstance(manifest_dict, Mapping), (
-        f"Manifest file is type {type(manifest_dict).__name__}, not a mapping: {manifest_dict}"
-    )
+    assert isinstance(
+        manifest_dict, Mapping
+    ), f"Manifest file is type {type(manifest_dict).__name__}, not a mapping: {manifest_dict}"
 
     custom_py_code = custom_py_code_path.read_text()
     combined_config_dict = {

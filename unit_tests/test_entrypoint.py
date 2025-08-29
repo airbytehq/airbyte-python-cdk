@@ -830,9 +830,9 @@ def test_handle_record_counts(
         assert message_count == expected_records_by_stream[stream_descriptor]
 
     if actual_message.type == Type.STATE:
-        assert isinstance(actual_message.state.sourceStats.recordCount, float), (
-            "recordCount value should be expressed as a float"
-        )
+        assert isinstance(
+            actual_message.state.sourceStats.recordCount, float
+        ), "recordCount value should be expressed as a float"
 
 
 def test_given_serialization_error_using_orjson_then_fallback_on_json(

@@ -150,9 +150,9 @@ def test_get_secret_paths(spec, expected):
     ],
 )
 def test_get_secrets(spec, config, expected):
-    assert get_secrets(spec, config) == expected, (
-        f"Expected the spec {spec} and config {config} to produce {expected}"
-    )
+    assert (
+        get_secrets(spec, config) == expected
+    ), f"Expected the spec {spec} and config {config} to produce {expected}"
 
 
 def test_secret_filtering():
