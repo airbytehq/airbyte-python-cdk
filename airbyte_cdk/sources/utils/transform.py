@@ -209,7 +209,7 @@ class TypeTransformer:
                         try:
                             if (
                                 hasattr(validator_instance, "resolver")
-                                and validator_instance.resolver
+                                and validator_instance.resolver is not None
                             ):
                                 _, resolved = cast(
                                     RefResolver, validator_instance.resolver
@@ -218,7 +218,6 @@ class TypeTransformer:
                         except Exception:
                             pass
 
-                    # If both approaches fail, return the original subschema
                     return subschema
                 return subschema
 
