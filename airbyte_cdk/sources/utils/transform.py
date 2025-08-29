@@ -7,7 +7,6 @@ from enum import Flag, auto
 from typing import Any, Callable, Dict, Generator, Mapping, Optional, cast
 
 from jsonschema import Draft7Validator, ValidationError, Validator, validators
-from referencing import Registry, Resource
 
 MAX_NESTING_DEPTH = 3
 json_to_python_simple = {

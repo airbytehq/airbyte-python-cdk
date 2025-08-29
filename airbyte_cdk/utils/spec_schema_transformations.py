@@ -7,6 +7,7 @@ import re
 from typing import Any
 
 from referencing import Registry, Resource
+from referencing.jsonschema import DRAFT7
 
 
 def resolve_refs(schema: dict[str, Any]) -> dict[str, Any]:
@@ -14,7 +15,7 @@ def resolve_refs(schema: dict[str, Any]) -> dict[str, Any]:
     For spec schemas generated using Pydantic models, the resulting JSON schema can contain refs between object
     relationships.
     """
-    resource = Resource.from_contents(schema)
+    resource = Resource.from_contents(schema, default_specification=DRAFT7)
     registry = Registry().with_resource("", resource)
     resolver = registry.resolver()
     str_schema = json.dumps(schema)

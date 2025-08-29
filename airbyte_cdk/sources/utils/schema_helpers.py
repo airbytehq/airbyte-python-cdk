@@ -14,6 +14,7 @@ from jsonschema import validate
 from jsonschema.exceptions import ValidationError
 from pydantic.v1 import BaseModel, Field
 from referencing import Registry, Resource
+from referencing.jsonschema import DRAFT7
 
 from airbyte_cdk.models import ConnectorSpecification, FailureType
 from airbyte_cdk.utils.traced_exception import AirbyteTracedException
@@ -71,7 +72,7 @@ def _expand_refs(schema: Any, ref_resolver: Optional[Registry] = None) -> None:
     :param ref_resolver: resolver to get definition from $ref, if None pass it will be instantiated
     """
     if ref_resolver is None:
-        resource = Resource.from_contents(schema)
+        resource = Resource.from_contents(schema, default_specification=DRAFT7)
         ref_resolver = Registry().with_resource("", resource)
     resolver = ref_resolver.resolver()
 
