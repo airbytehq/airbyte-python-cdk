@@ -41,7 +41,6 @@ class ManifestCommandProcessor:
         """
         Test the read method of the source.
         """
-
         test_read_handler = TestReader(
             max_pages_per_slice=page_limit,
             max_slices=slice_limit,
