@@ -8,7 +8,6 @@ from enum import Flag, auto
 from typing import TYPE_CHECKING, Any, Callable, Dict, Generator, Mapping, Optional, cast
 
 from jsonschema import Draft7Validator, ValidationError, validators
-from jsonschema._typing import SchemaKeywordValidator
 from referencing import Registry, Resource
 from referencing._core import Resolver
 from referencing.exceptions import Unresolvable
