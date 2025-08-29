@@ -145,6 +145,55 @@ class StreamSlicerPartitionGeneratorTest(TestCase):
         # called for the first partition read and not the second
         retriever.read_records.assert_called_once()
 
+    def test_record_counter_isolation_between_different_factories(self) -> None:
+        """Test that record counters are isolated between different DeclarativePartitionFactory instances."""
+
+        # Create mock records that exceed the limit
+        records = [
+            Record(data={"id": 1, "name": "Record1"}, stream_name="stream_name"),
+            Record(data={"id": 2, "name": "Record2"}, stream_name="stream_name"),
+            Record(
+                data={"id": 3, "name": "Record3"}, stream_name="stream_name"
+            ),  # Should be blocked by limit
+        ]
+
+        # Create first factory with record limit of 2
+        retriever1 = self._mock_retriever(records)
+        message_repository1 = Mock(spec=MessageRepository)
+        factory1 = DeclarativePartitionFactory(
+            _STREAM_NAME,
+            _SCHEMA_LOADER,
+            retriever1,
+            message_repository1,
+            max_records_limit=2,
+        )
+
+        # First factory should read up to limit (2 records)
+        partition1 = factory1.create(_A_STREAM_SLICE)
+        first_factory_records = list(partition1.read())
+        assert len(first_factory_records) == 2
+
+        # Create second factory with same limit - should be independent
+        retriever2 = self._mock_retriever(records)
+        message_repository2 = Mock(spec=MessageRepository)
+        factory2 = DeclarativePartitionFactory(
+            _STREAM_NAME,
+            _SCHEMA_LOADER,
+            retriever2,
+            message_repository2,
+            max_records_limit=2,
+        )
+
+        # Second factory should also be able to read up to limit (2 records)
+        # This would fail before the fix because record counter was global
+        partition2 = factory2.create(_A_STREAM_SLICE)
+        second_factory_records = list(partition2.read())
+        assert len(second_factory_records) == 2
+
+        # Verify both retrievers were called (confirming isolation)
+        retriever1.read_records.assert_called_once()
+        retriever2.read_records.assert_called_once()
+
     @staticmethod
     def _mock_retriever(read_return_value: List[StreamData]) -> Mock:
         retriever = Mock(spec=Retriever)
