@@ -1118,13 +1118,13 @@ def test_substream_using_resumable_full_refresh_parent_stream_slices(use_increme
     # validate final state for closed substream slices
     final_state = substream_cursor_slicer.get_stream_state()
     if not use_incremental_dependency:
-        assert (
-            final_state["states"] == expected_substream_state["states"]
-        ), "State for substreams is not valid!"
+        assert final_state["states"] == expected_substream_state["states"], (
+            "State for substreams is not valid!"
+        )
     else:
-        assert (
-            final_state == expected_substream_state
-        ), "State for substreams with incremental dependency is not valid!"
+        assert final_state == expected_substream_state, (
+            "State for substreams with incremental dependency is not valid!"
+        )
 
 
 @pytest.mark.parametrize(

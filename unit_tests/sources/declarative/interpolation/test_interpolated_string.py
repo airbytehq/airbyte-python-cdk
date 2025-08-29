@@ -62,6 +62,6 @@ def test_parsing_record_data(test_name, input_string, record_value, expected_val
     if expected_value is None:
         assert val is None, f"Expected None for value {record_value} in test {test_name}"
     else:
-        assert float == type(
-            val
-        ), f"Expected float, got {type(val)} for value {val} in test {test_name}"
+        assert float == type(val), (
+            f"Expected float, got {type(val)} for value {val} in test {test_name}"
+        )

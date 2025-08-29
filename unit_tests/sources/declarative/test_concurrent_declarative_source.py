@@ -1471,9 +1471,9 @@ def test_concurrent_declarative_source_runs_state_migrations_provided_in_manifes
         source_config=manifest, config=_CONFIG, catalog=_CATALOG, state=state
     )
     concurrent_streams, synchronous_streams = source._group_streams(_CONFIG)
-    assert (
-        concurrent_streams[0].cursor.state.get("state") != state_blob.__dict__
-    ), "State was not migrated."
+    assert concurrent_streams[0].cursor.state.get("state") != state_blob.__dict__, (
+        "State was not migrated."
+    )
     assert concurrent_streams[0].cursor.state.get("states") == [
         {"cursor": {"updated_at": "2024-08-21"}, "partition": {"type": "type_1"}},
         {"cursor": {"updated_at": "2024-08-21"}, "partition": {"type": "type_2"}},
