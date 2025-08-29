@@ -3,10 +3,25 @@
 #
 
 import logging
+from copy import deepcopy
 from enum import Flag, auto
-from typing import Any, Callable, Dict, Generator, Mapping, Optional, cast
+from typing import TYPE_CHECKING, Any, Callable, Dict, Generator, Mapping, Optional, cast
 
-from jsonschema import Draft7Validator, RefResolver, ValidationError, Validator, validators
+from jsonschema import Draft7Validator, ValidationError, validators
+from referencing import Registry, Resource
+from referencing._core import Resolver
+from referencing.exceptions import Unresolvable
+from referencing.jsonschema import DRAFT7
+
+from airbyte_cdk.sources.utils.schema_helpers import expand_refs
+
+from .schema_helpers import get_ref_resolver_registry
+
+try:
+    from jsonschema.validators import Validator
+except:
+    from jsonschema import Validator
+
 
 MAX_NESTING_DEPTH = 3
 json_to_python_simple = {
@@ -191,15 +206,14 @@ class TypeTransformer:
             validators parameter for detailed description.
             :
             """
+            # Very first step is to expand $refs in the schema itself:
+            expand_refs(schema)
 
-            def resolve(subschema: dict[str, Any]) -> dict[str, Any]:
-                if "$ref" in subschema:
-                    _, resolved = cast(
-                        RefResolver,
-                        validator_instance.resolver,
-                    ).resolve(subschema["$ref"])
-                    return cast(dict[str, Any], resolved)
-                return subschema
+            # Now we can expand $refs in the property value:
+            if isinstance(property_value, dict):
+                expand_refs(property_value)
+
+            # Now we can validate and normalize the values:
 
             # Transform object and array values before running json schema type checking for each element.
             # Recursively normalize every value of the "instance" sub-object,
@@ -207,14 +221,12 @@ class TypeTransformer:
             if schema_key == "properties" and isinstance(instance, dict):
                 for k, subschema in property_value.items():
                     if k in instance:
-                        subschema = resolve(subschema)
                         instance[k] = self.__normalize(instance[k], subschema)
             # Recursively normalize every item of the "instance" sub-array,
             # if "instance" is an incorrect type - skip recursive normalization of "instance"
             elif schema_key == "items" and isinstance(instance, list):
-                subschema = resolve(property_value)
                 for index, item in enumerate(instance):
-                    instance[index] = self.__normalize(item, subschema)
+                    instance[index] = self.__normalize(item, property_value)
 
             # Running native jsonschema traverse algorithm after field normalization is done.
             yield from original_validator(

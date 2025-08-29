@@ -901,7 +901,12 @@ def test_handle_429_response():
 
     limits = TestLimits()
     catalog = ConfiguredAirbyteCatalogSerializer.load(CONFIGURED_CATALOG)
-    source = create_source(config=config, limits=limits, catalog=catalog, state=None)
+    source = create_source(
+        config=config,
+        limits=limits,
+        catalog=catalog,
+        state=None,
+    )
 
     with patch("requests.Session.send", return_value=response) as mock_send:
         response = handle_connector_builder_request(
