@@ -28,10 +28,11 @@ jobs:
     strategy:
       matrix:
         python-version: [
-            "3.10",
-            "3.11",
-            # "3.12",  # `requests-cache` blocker: https://github.com/airbytehq/airbyte-python-cdk/issues/299
-          ]
+          "3.10",
+          "3.11",
+          "3.12",
+          "3.13",
+        ]
         os: [
             Ubuntu,
             # Windows,  # For now, we don't include Windows in the test matrix.

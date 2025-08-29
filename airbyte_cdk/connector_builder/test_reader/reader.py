@@ -85,7 +85,7 @@ class TestReader:
 
     def run_test_read(
         self,
-        source: ConcurrentDeclarativeSource[Optional[List[AirbyteStateMessage]]],
+        source: ConcurrentDeclarativeSource,
         config: Mapping[str, Any],
         configured_catalog: ConfiguredAirbyteCatalog,
         stream_name: str,
@@ -383,7 +383,7 @@ class TestReader:
 
     def _read_stream(
         self,
-        source: ConcurrentDeclarativeSource[Optional[List[AirbyteStateMessage]]],
+        source: ConcurrentDeclarativeSource,
         config: Mapping[str, Any],
         configured_catalog: ConfiguredAirbyteCatalog,
         state: List[AirbyteStateMessage],

@@ -37,26 +37,31 @@ The server will start on `http://localhost:8000` by default.
 ## API Endpoints
 
 ### `/v1/manifest/test_read`
+
 Test reading from a specific stream in the manifest.
 
 **POST** - Test stream reading with configurable limits for records, pages, and slices.
 
 ### `/v1/manifest/check`
+
 Check configuration against a manifest.
 
 **POST** - Validates connector configuration and returns success/failure status with message.
 
 ### `/v1/manifest/discover`
+
 Discover streams from a manifest.
 
 **POST** - Returns the catalog of available streams from the manifest.
 
-### `/v1/manifest/resolve` 
+### `/v1/manifest/resolve`
+
 Resolve a manifest to its final configuration.
 
 **POST** - Returns the resolved manifest without dynamic stream generation.
 
 ### `/v1/manifest/full_resolve`
+
 Fully resolve a manifest including dynamic streams.
 
 **POST** - Generates dynamic streams up to specified limits and includes them in the resolved manifest.
@@ -68,6 +73,7 @@ The manifest server supports custom Python components, but this feature is **dis
 ### Enabling Custom Components
 
 To allow custom Python components in your manifest files, set the environment variable:
+
 ```bash
 export AIRBYTE_ENABLE_UNSAFE_CODE=true
 ```
@@ -77,20 +83,25 @@ export AIRBYTE_ENABLE_UNSAFE_CODE=true
 The manifest server supports optional JWT bearer token authentication:
 
 ### Configuration
+
 Set the environment variable to enable authentication:
+
 ```bash
 export AB_JWT_SIGNATURE_SECRET="your-jwt-secret-key"
 ```
 
 ### Usage
+
 When authentication is enabled, include a valid JWT token in the Authorization header:
+
 ```bash
 curl -H "Authorization: Bearer <your-jwt-token>" \
   http://localhost:8000/v1/manifest/test_read
 ```
 
 ### Behavior
-- **Without `AB_JWT_SIGNATURE_SECRET`**: All requests pass through 
+
+- **Without `AB_JWT_SIGNATURE_SECRET`**: All requests pass through
 - **With `AB_JWT_SIGNATURE_SECRET`**: Requires valid JWT bearer token using HS256 algorithm
 
 ## OpenAPI Specification
@@ -98,6 +109,7 @@ curl -H "Authorization: Bearer <your-jwt-token>" \
 The manifest server provides an OpenAPI specification for API client generation:
 
 ### Generating the OpenAPI Spec
+
 ```bash
 # Generate OpenAPI YAML (default location)
 manifest-server generate-openapi
@@ -107,6 +119,7 @@ manifest-server generate-openapi --output /path/to/openapi.yaml
 ```
 
 The generated OpenAPI specification is consumed by other applications and tools to:
+
 - Generate API clients in various programming languages
 - Create SDK bindings for the manifest server
 - Provide API documentation and validation
@@ -115,6 +128,7 @@ The generated OpenAPI specification is consumed by other applications and tools 
 ### Interactive API Documentation
 
 When running, interactive API documentation is available at:
+
 - Swagger UI: `http://localhost:8000/docs`
 - ReDoc: `http://localhost:8000/redoc`
 
@@ -140,3 +154,25 @@ docker run -p 8080:8080 manifest-server
 ```
 
 Note: The container runs on port 8080 by default.
+
+## Datadog APM
+
+The manifest server supports Datadog APM tracing for monitoring and observability:
+
+### Configuration
+
+To enable Datadog tracing, set the environment variable:
+
+```bash
+export DD_ENABLED=true
+```
+
+This requires the `ddtrace` dependency, which is included in the `manifest-server` extra. For additional configuration options via environment variables, see [ddtrace configuration](https://ddtrace.readthedocs.io/en/stable/configuration.html).
+
+### Usage
+
+```bash
+# Run with Datadog tracing enabled
+DD_ENABLED=true manifest-server start
+```
+

@@ -23,6 +23,7 @@ from airbyte_cdk.sources.declarative.incremental import ConcurrentPerPartitionCu
 from airbyte_cdk.sources.declarative.schema import InlineSchemaLoader
 from airbyte_cdk.sources.declarative.stream_slicers.declarative_partition_generator import (
     DeclarativePartition,
+    RecordCounter,
 )
 from airbyte_cdk.sources.streams.concurrent.cursor import CursorField
 from airbyte_cdk.sources.streams.concurrent.state_converters.datetime_stream_state_converter import (
@@ -3624,6 +3625,7 @@ def test_given_no_partitions_processed_when_close_partition_then_no_state_update
                 message_repository=MagicMock(),
                 max_records_limit=None,
                 stream_slice=slice,
+                record_counter=RecordCounter(),
             )
         )
 
@@ -3709,6 +3711,7 @@ def test_given_unfinished_first_parent_partition_no_parent_state_update():
                 message_repository=MagicMock(),
                 max_records_limit=None,
                 stream_slice=slice,
+                record_counter=RecordCounter(),
             )
         )
     cursor.ensure_at_least_one_state_emitted()
@@ -3804,6 +3807,7 @@ def test_given_unfinished_last_parent_partition_with_partial_parent_state_update
                 message_repository=MagicMock(),
                 max_records_limit=None,
                 stream_slice=slice,
+                record_counter=RecordCounter(),
             )
         )
     cursor.ensure_at_least_one_state_emitted()
@@ -3894,6 +3898,7 @@ def test_given_all_partitions_finished_when_close_partition_then_final_state_emi
                 message_repository=MagicMock(),
                 max_records_limit=None,
                 stream_slice=slice,
+                record_counter=RecordCounter(),
             )
         )
 
@@ -3968,6 +3973,7 @@ def test_given_partition_limit_exceeded_when_close_partition_then_switch_to_glob
                 message_repository=MagicMock(),
                 max_records_limit=None,
                 stream_slice=slice,
+                record_counter=RecordCounter(),
             )
         )
     cursor.ensure_at_least_one_state_emitted()
@@ -4053,6 +4059,7 @@ def test_semaphore_cleanup():
                 message_repository=MagicMock(),
                 max_records_limit=None,
                 stream_slice=s,
+                record_counter=RecordCounter(),
             )
         )
 
@@ -4173,6 +4180,7 @@ def test_duplicate_partition_after_closing_partition_cursor_deleted():
             message_repository=MagicMock(),
             max_records_limit=None,
             stream_slice=first_1,
+            record_counter=RecordCounter(),
         )
     )
 
@@ -4185,6 +4193,7 @@ def test_duplicate_partition_after_closing_partition_cursor_deleted():
             message_repository=MagicMock(),
             max_records_limit=None,
             stream_slice=two,
+            record_counter=RecordCounter(),
         )
     )
 
@@ -4197,6 +4206,7 @@ def test_duplicate_partition_after_closing_partition_cursor_deleted():
             message_repository=MagicMock(),
             max_records_limit=None,
             stream_slice=second_1,
+            record_counter=RecordCounter(),
         )
     )
 
@@ -4258,6 +4268,7 @@ def test_duplicate_partition_after_closing_partition_cursor_exists():
             message_repository=MagicMock(),
             max_records_limit=None,
             stream_slice=first_1,
+            record_counter=RecordCounter(),
         )
     )
 
@@ -4270,6 +4281,7 @@ def test_duplicate_partition_after_closing_partition_cursor_exists():
             message_repository=MagicMock(),
             max_records_limit=None,
             stream_slice=two,
+            record_counter=RecordCounter(),
         )
     )
 
@@ -4283,6 +4295,7 @@ def test_duplicate_partition_after_closing_partition_cursor_exists():
             message_repository=MagicMock(),
             max_records_limit=None,
             stream_slice=second_1,
+            record_counter=RecordCounter(),
         )
     )
 
@@ -4341,6 +4354,7 @@ def test_duplicate_partition_while_processing():
             message_repository=MagicMock(),
             max_records_limit=None,
             stream_slice=generated[1],
+            record_counter=RecordCounter(),
         )
     )
     # Now close the initial “1”
@@ -4352,6 +4366,7 @@ def test_duplicate_partition_while_processing():
             message_repository=MagicMock(),
             max_records_limit=None,
             stream_slice=generated[0],
+            record_counter=RecordCounter(),
         )
     )
 

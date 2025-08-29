@@ -11,7 +11,7 @@ FROM python:3.12-slim-bookworm
 RUN apt-get update && \
     apt-get install -y git && \
     rm -rf /var/lib/apt/lists/* && \
-    pip install poetry==1.8.3
+    pip install poetry==2.0.1
 
 # Configure poetry to not create virtual environments and disable interactive mode
 ENV POETRY_NO_INTERACTION=1 \
