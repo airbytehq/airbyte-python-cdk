@@ -7,6 +7,7 @@ import rich_click as click
 
 # Import server dependencies with graceful fallback
 try:
+    import ddtrace  # noqa: F401
     import fastapi  # noqa: F401
     import uvicorn  # noqa: F401
 

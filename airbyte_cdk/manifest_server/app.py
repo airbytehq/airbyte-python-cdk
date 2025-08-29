@@ -1,8 +1,8 @@
 import os
 
-if os.getenv("DD_ENABLED") == "true":
+if os.getenv("DD_ENABLED", "false").lower() == "true":
     # Auto-instrumentation should be imported as early as possible.
-    import ddtrace.auto
+    import ddtrace.auto  # noqa: F401
 
 from fastapi import FastAPI
 
