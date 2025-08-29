@@ -1,21 +1,31 @@
+#!/usr/bin/env python3
+#
+# Usage:
+# > uv run bin/generate_component_manifest_files.py
+#
+# /// script
+# dependencies = [
+#   "datamodel-code-generator==0.26.3",
+#   "PyYAML>=6.0.1",
+# ]
+# ///
+
 # Copyright (c) 2024 Airbyte, Inc., all rights reserved.
 
+import json
+import os
 import re
+import shutil
+import subprocess
 import sys
+import tempfile
 from glob import glob
 from pathlib import Path
 
-import anyio
-import dagger
+import yaml
 
-PYTHON_IMAGE = "python:3.10"
 LOCAL_YAML_DIR_PATH = "airbyte_cdk/sources/declarative"
 LOCAL_OUTPUT_DIR_PATH = "airbyte_cdk/sources/declarative/models"
-
-
-PIP_DEPENDENCIES = [
-    "datamodel_code_generator==0.26.3",
-]
 
 
 def get_all_yaml_files_without_ext() -> list[str]:
@@ -27,6 +37,37 @@ def generate_init_module_content() -> str:
     for module_name in get_all_yaml_files_without_ext():
         header += f"from .{module_name} import *\n"
     return header
+
+
+def generate_json_schema():
+    """Generate JSON schema from the YAML file for schemastore.org registration.
+
+    When registered with schemastore.org, a number of IDEs and libraries
+    automatically apply the JSON Schema validation features such as:
+    - auto-complete for keys and enums
+    - hover-tooltips for descriptions and examples
+    - linting squiggles for validation errors
+    """
+    yaml_file_path = f"{LOCAL_YAML_DIR_PATH}/declarative_component_schema.yaml"
+    json_file_path = f"{LOCAL_YAML_DIR_PATH}/generated/declarative_component_schema.json"
+
+    with open(yaml_file_path, "r") as yaml_file:
+        schema_data = yaml.safe_load(yaml_file)
+
+    class DateTimeEncoder(json.JSONEncoder):
+        def default(self, obj):
+            if hasattr(obj, "isoformat"):
+                return obj.isoformat()
+            return super().default(obj)
+
+    import os
+
+    os.makedirs(os.path.dirname(json_file_path), exist_ok=True)
+
+    with open(json_file_path, "w") as json_file:
+        json.dump(schema_data, json_file, indent=2, cls=DateTimeEncoder)
+
+    print(f"Generated JSON schema: {json_file_path}")
 
 
 def replace_base_model_for_classes_with_deprecated_fields(post_processed_content: str) -> str:
@@ -86,15 +127,18 @@ def replace_base_model_for_classes_with_deprecated_fields(post_processed_content
     return post_processed_content
 
 
-async def post_process_codegen(codegen_container: dagger.Container):
-    codegen_container = codegen_container.with_exec(
-        ["mkdir", "/generated_post_processed"], use_entrypoint=True
-    )
-    for generated_file in await codegen_container.directory("/generated").entries():
+def post_process_codegen(generated_dir: str, post_processed_dir: str):
+    """Post-process generated files to fix pydantic imports and deprecated fields."""
+    os.makedirs(post_processed_dir, exist_ok=True)
+
+    for generated_file in os.listdir(generated_dir):
         if generated_file.endswith(".py"):
-            original_content = await codegen_container.file(
-                f"/generated/{generated_file}"
-            ).contents()
+            input_path = os.path.join(generated_dir, generated_file)
+            output_path = os.path.join(post_processed_dir, generated_file)
+
+            with open(input_path, "r") as f:
+                original_content = f.read()
+
             # the space before _parameters is intentional to avoid replacing things like `request_parameters:` with `requestparameters:`
             post_processed_content = original_content.replace(
                 " _parameters:", " parameters:"
@@ -104,55 +148,65 @@ async def post_process_codegen(codegen_container: dagger.Container):
                 post_processed_content
             )
 
-            codegen_container = codegen_container.with_new_file(
-                f"/generated_post_processed/{generated_file}", contents=post_processed_content
-            )
-    return codegen_container
+            with open(output_path, "w") as f:
+                f.write(post_processed_content)
 
 
-async def main():
+def main():
+    generate_json_schema()
     init_module_content = generate_init_module_content()
 
-    async with dagger.Connection(dagger.Config(log_output=sys.stderr)) as dagger_client:
-        codegen_container = (
-            dagger_client.container()
-            .from_(PYTHON_IMAGE)
-            .with_exec(["mkdir", "/generated"], use_entrypoint=True)
-            .with_exec(["pip", "install", " ".join(PIP_DEPENDENCIES)], use_entrypoint=True)
-            .with_mounted_directory(
-                "/yaml", dagger_client.host().directory(LOCAL_YAML_DIR_PATH, include=["*.yaml"])
-            )
-            .with_new_file("/generated/__init__.py", contents=init_module_content)
-        )
+    with tempfile.TemporaryDirectory() as temp_dir:
+        generated_dir = os.path.join(temp_dir, "generated")
+        post_processed_dir = os.path.join(temp_dir, "generated_post_processed")
+
+        os.makedirs(generated_dir, exist_ok=True)
+
+        init_file_path = os.path.join(generated_dir, "__init__.py")
+        with open(init_file_path, "w") as f:
+            f.write(init_module_content)
+
         for yaml_file in get_all_yaml_files_without_ext():
-            codegen_container = codegen_container.with_exec(
-                [
-                    "datamodel-codegen",
-                    "--input",
-                    f"/yaml/{yaml_file}.yaml",
-                    "--output",
-                    f"/generated/{yaml_file}.py",
-                    "--disable-timestamp",
-                    "--enum-field-as-literal",
-                    "one",
-                    "--set-default-enum-member",
-                    "--use-double-quotes",
-                    "--remove-special-field-name-prefix",
-                    # allow usage of the extra key such as `deprecated`, etc.
-                    "--field-extra-keys",
-                    # account the `deprecated` flag provided for the field.
-                    "deprecated",
-                    # account the `deprecation_message` provided for the field.
-                    "deprecation_message",
-                ],
-                use_entrypoint=True,
-            )
+            input_yaml = os.path.join(LOCAL_YAML_DIR_PATH, f"{yaml_file}.yaml")
+            output_py = os.path.join(generated_dir, f"{yaml_file}.py")
 
-        await (
-            (await post_process_codegen(codegen_container))
-            .directory("/generated_post_processed")
-            .export(LOCAL_OUTPUT_DIR_PATH)
-        )
+            cmd = [
+                "datamodel-codegen",
+                "--input",
+                input_yaml,
+                "--output",
+                output_py,
+                "--disable-timestamp",
+                "--enum-field-as-literal",
+                "one",
+                "--set-default-enum-member",
+                "--use-double-quotes",
+                "--remove-special-field-name-prefix",
+                # allow usage of the extra key such as `deprecated`, etc.
+                "--field-extra-keys",
+                # account the `deprecated` flag provided for the field.
+                "deprecated",
+                # account the `deprecation_message` provided for the field.
+                "deprecation_message",
+            ]
+
+            try:
+                result = subprocess.run(cmd, check=True, capture_output=True, text=True)
+                print(f"Generated {output_py}")
+            except subprocess.CalledProcessError as e:
+                print(f"Error generating {output_py}: {e}")
+                print(f"stdout: {e.stdout}")
+                print(f"stderr: {e.stderr}")
+                sys.exit(1)
+
+        post_process_codegen(generated_dir, post_processed_dir)
+
+        if os.path.exists(LOCAL_OUTPUT_DIR_PATH):
+            shutil.rmtree(LOCAL_OUTPUT_DIR_PATH)
+        shutil.copytree(post_processed_dir, LOCAL_OUTPUT_DIR_PATH)
+
+        print(f"Generated models exported to {LOCAL_OUTPUT_DIR_PATH}")
 
 
-anyio.run(main)
+if __name__ == "__main__":
+    main()

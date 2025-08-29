@@ -145,7 +145,7 @@ lock = { shell = "poetry lock", help = "Lock all dependencies." }
 pre-commit = {cmd = "poetry run pre-commit run --all-files", help = "Run all pre-commit hooks on all files."}
 
 # Build tasks
-assemble = {cmd = "bin/generate-component-manifest-dagger.sh", help = "Generate component manifest files."}
+assemble = {cmd = "uv run bin/generate_component_manifest_files.py", help = "Generate component manifest files."}
 build-package = {cmd = "poetry build", help = "Build the python package: source and wheels archives."}
 build = {sequence = ["assemble", "openapi-generate", "build-package"], help = "Run all tasks to build the package."}
 
