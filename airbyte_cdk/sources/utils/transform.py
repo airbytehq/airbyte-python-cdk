@@ -10,6 +10,7 @@ from jsonschema import Draft7Validator, ValidationError, Validator, validators
 from referencing import Registry, Resource
 from referencing._core import Resolver  # used for type hints
 from referencing.jsonschema import DRAFT7
+from .schema_helpers import expand_refs
 
 MAX_NESTING_DEPTH = 3
 json_to_python_simple = {
@@ -195,29 +196,18 @@ class TypeTransformer:
             :
             """
 
-            def resolve(subschema: dict[str, Any]) -> dict[str, Any]:
-                if "$ref" not in subschema:
-                    # Nothing to resolve
-                    return subschema
-
-                # Else, we need to resolve "$ref":
-                ref_url = subschema["$ref"]
-                resolver: Resolver = validator_instance.resolver
-                resolved_contents = resolver.lookup(ref_url).contents
-                return cast(dict[str, Any], resolved_contents)
-
             # Transform object and array values before running json schema type checking for each element.
             # Recursively normalize every value of the "instance" sub-object,
             # if "instance" is an incorrect type - skip recursive normalization of "instance"
             if schema_key == "properties" and isinstance(instance, dict):
                 for k, subschema in property_value.items():
                     if k in instance:
-                        subschema = resolve(subschema)
+                        subschema = resolve_refs(subschema)
                         instance[k] = self.__normalize(instance[k], subschema)
             # Recursively normalize every item of the "instance" sub-array,
             # if "instance" is an incorrect type - skip recursive normalization of "instance"
             elif schema_key == "items" and isinstance(instance, list):
-                subschema = resolve(property_value)
+                subschema = resolve_refs(property_value)
                 for index, item in enumerate(instance):
                     instance[index] = self.__normalize(item, subschema)
 
