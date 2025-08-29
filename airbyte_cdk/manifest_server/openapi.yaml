@@ -13,11 +13,11 @@ paths:
   /health/:
     get:
       tags:
-      - health
+        - health
       summary: Health
       operationId: health_health__get
       responses:
-        '200':
+        "200":
           description: Successful Response
           content:
             application/json:
@@ -29,23 +29,24 @@ paths:
   /capabilities/:
     get:
       tags:
-      - capabilities
+        - capabilities
       summary: Get Capabilities
-      description: "Get the capabilities available for the manifest server.\n\nReturns:\n\
+      description:
+        "Get the capabilities available for the manifest server.\n\nReturns:\n\
         \    Dict containing the service capabilities including custom code execution\
         \ support."
       operationId: getCapabilities
       responses:
-        '200':
+        "200":
           description: Successful Response
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/CapabilitiesResponse'
+                $ref: "#/components/schemas/CapabilitiesResponse"
   /v1/manifest/test_read:
     post:
       tags:
-      - manifest
+        - manifest
       summary: Test Read
       description: Test reading from a specific stream in the manifest.
       operationId: testRead
@@ -53,27 +54,27 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/StreamTestReadRequest'
+              $ref: "#/components/schemas/StreamTestReadRequest"
         required: true
       responses:
-        '200':
+        "200":
           description: Successful Response
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/StreamReadResponse'
-        '422':
+                $ref: "#/components/schemas/StreamReadResponse"
+        "422":
           description: Validation Error
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/HTTPValidationError'
+                $ref: "#/components/schemas/HTTPValidationError"
       security:
-      - HTTPBearer: []
+        - HTTPBearer: []
   /v1/manifest/check:
     post:
       tags:
-      - manifest
+        - manifest
       summary: Check
       description: Check configuration against a manifest
       operationId: check
@@ -81,27 +82,27 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/CheckRequest'
+              $ref: "#/components/schemas/CheckRequest"
         required: true
       responses:
-        '200':
+        "200":
           description: Successful Response
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/CheckResponse'
-        '422':
+                $ref: "#/components/schemas/CheckResponse"
+        "422":
           description: Validation Error
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/HTTPValidationError'
+                $ref: "#/components/schemas/HTTPValidationError"
       security:
-      - HTTPBearer: []
+        - HTTPBearer: []
   /v1/manifest/discover:
     post:
       tags:
-      - manifest
+        - manifest
       summary: Discover
       description: Discover streams from a manifest
       operationId: discover
@@ -109,27 +110,27 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/DiscoverRequest'
+              $ref: "#/components/schemas/DiscoverRequest"
         required: true
       responses:
-        '200':
+        "200":
           description: Successful Response
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/DiscoverResponse'
-        '422':
+                $ref: "#/components/schemas/DiscoverResponse"
+        "422":
           description: Validation Error
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/HTTPValidationError'
+                $ref: "#/components/schemas/HTTPValidationError"
       security:
-      - HTTPBearer: []
+        - HTTPBearer: []
   /v1/manifest/resolve:
     post:
       tags:
-      - manifest
+        - manifest
       summary: Resolve
       description: Resolve a manifest to its final configuration.
       operationId: resolve
@@ -137,69 +138,69 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/ResolveRequest'
+              $ref: "#/components/schemas/ResolveRequest"
         required: true
       responses:
-        '200':
+        "200":
           description: Successful Response
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ManifestResponse'
-        '422':
+                $ref: "#/components/schemas/ManifestResponse"
+        "422":
           description: Validation Error
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/HTTPValidationError'
+                $ref: "#/components/schemas/HTTPValidationError"
       security:
-      - HTTPBearer: []
+        - HTTPBearer: []
   /v1/manifest/full_resolve:
     post:
       tags:
-      - manifest
+        - manifest
       summary: Full Resolve
-      description: 'Fully resolve a manifest, including dynamic streams.
+      description: "Fully resolve a manifest, including dynamic streams.
 
 
         This is a similar operation to resolve, but has an extra step which generates
         streams from dynamic stream templates if the manifest contains any. This is
         used when a user clicks the generate streams button on a stream template in
-        the Builder UI'
+        the Builder UI"
       operationId: fullResolve
       requestBody:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/FullResolveRequest'
+              $ref: "#/components/schemas/FullResolveRequest"
         required: true
       responses:
-        '200':
+        "200":
           description: Successful Response
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ManifestResponse'
-        '422':
+                $ref: "#/components/schemas/ManifestResponse"
+        "422":
           description: Validation Error
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/HTTPValidationError'
+                $ref: "#/components/schemas/HTTPValidationError"
       security:
-      - HTTPBearer: []
+        - HTTPBearer: []
 components:
   schemas:
     AirbyteCatalog:
       properties:
         streams:
           items:
-            $ref: '#/components/schemas/AirbyteStream'
+            $ref: "#/components/schemas/AirbyteStream"
           type: array
           title: Streams
       type: object
       required:
-      - streams
+        - streams
       title: AirbyteCatalog
     AirbyteStream:
       properties:
@@ -211,50 +212,50 @@ components:
           title: Json Schema
         supported_sync_modes:
           items:
-            $ref: '#/components/schemas/SyncMode'
+            $ref: "#/components/schemas/SyncMode"
           type: array
           title: Supported Sync Modes
         source_defined_cursor:
           anyOf:
-          - type: boolean
-          - type: 'null'
+            - type: boolean
+            - type: "null"
           title: Source Defined Cursor
         default_cursor_field:
           anyOf:
-          - items:
-              type: string
-            type: array
-          - type: 'null'
+            - items:
+                type: string
+              type: array
+            - type: "null"
           title: Default Cursor Field
         source_defined_primary_key:
           anyOf:
-          - items:
-              items:
-                type: string
+            - items:
+                items:
+                  type: string
+                type: array
               type: array
-            type: array
-          - type: 'null'
+            - type: "null"
           title: Source Defined Primary Key
         namespace:
           anyOf:
-          - type: string
-          - type: 'null'
+            - type: string
+            - type: "null"
           title: Namespace
         is_resumable:
           anyOf:
-          - type: boolean
-          - type: 'null'
+            - type: boolean
+            - type: "null"
           title: Is Resumable
         is_file_based:
           anyOf:
-          - type: boolean
-          - type: 'null'
+            - type: boolean
+            - type: "null"
           title: Is File Based
       type: object
       required:
-      - name
-      - json_schema
-      - supported_sync_modes
+        - name
+        - json_schema
+        - supported_sync_modes
       title: AirbyteStream
     AuxiliaryRequest:
       properties:
@@ -268,16 +269,16 @@ components:
           type: string
           title: Description
         request:
-          $ref: '#/components/schemas/HttpRequest'
+          $ref: "#/components/schemas/HttpRequest"
         response:
-          $ref: '#/components/schemas/HttpResponse'
+          $ref: "#/components/schemas/HttpResponse"
       type: object
       required:
-      - title
-      - type
-      - description
-      - request
-      - response
+        - title
+        - type
+        - description
+        - request
+        - response
       title: AuxiliaryRequest
       description: Auxiliary HTTP request made during stream processing.
     CapabilitiesResponse:
@@ -287,19 +288,19 @@ components:
           title: Custom Code Execution
       type: object
       required:
-      - custom_code_execution
+        - custom_code_execution
       title: CapabilitiesResponse
       description: Capabilities of the manifest server.
     CheckRequest:
       properties:
         manifest:
-          $ref: '#/components/schemas/Manifest'
+          $ref: "#/components/schemas/Manifest"
         config:
-          $ref: '#/components/schemas/ConnectorConfig'
+          $ref: "#/components/schemas/ConnectorConfig"
       type: object
       required:
-      - manifest
-      - config
+        - manifest
+        - config
       title: CheckRequest
       description: Request to check a manifest.
     CheckResponse:
@@ -309,12 +310,12 @@ components:
           title: Success
         message:
           anyOf:
-          - type: string
-          - type: 'null'
+            - type: string
+            - type: "null"
           title: Message
       type: object
       required:
-      - success
+        - success
       title: CheckResponse
       description: Response to check a manifest.
     ConnectorConfig:
@@ -322,35 +323,36 @@ components:
       additionalProperties: true
       type: object
       title: ConnectorConfig
-      description: Base connector configuration model. Allows client generation to
+      description:
+        Base connector configuration model. Allows client generation to
         replace with proper JsonNode types.
     DiscoverRequest:
       properties:
         manifest:
-          $ref: '#/components/schemas/Manifest'
+          $ref: "#/components/schemas/Manifest"
         config:
-          $ref: '#/components/schemas/ConnectorConfig'
+          $ref: "#/components/schemas/ConnectorConfig"
       type: object
       required:
-      - manifest
-      - config
+        - manifest
+        - config
       title: DiscoverRequest
       description: Request to discover a manifest.
     DiscoverResponse:
       properties:
         catalog:
-          $ref: '#/components/schemas/AirbyteCatalog'
+          $ref: "#/components/schemas/AirbyteCatalog"
       type: object
       required:
-      - catalog
+        - catalog
       title: DiscoverResponse
       description: Response to discover a manifest.
     FullResolveRequest:
       properties:
         manifest:
-          $ref: '#/components/schemas/Manifest'
+          $ref: "#/components/schemas/Manifest"
         config:
-          $ref: '#/components/schemas/ConnectorConfig'
+          $ref: "#/components/schemas/ConnectorConfig"
         stream_limit:
           type: integer
           maximum: 100.0
@@ -359,15 +361,15 @@ components:
           default: 100
       type: object
       required:
-      - manifest
-      - config
+        - manifest
+        - config
       title: FullResolveRequest
       description: Request to fully resolve a manifest.
     HTTPValidationError:
       properties:
         detail:
           items:
-            $ref: '#/components/schemas/ValidationError'
+            $ref: "#/components/schemas/ValidationError"
           type: array
           title: Detail
       type: object
@@ -379,22 +381,22 @@ components:
           title: Url
         headers:
           anyOf:
-          - type: object
-          - type: 'null'
+            - type: object
+            - type: "null"
           title: Headers
         http_method:
           type: string
           title: Http Method
         body:
           anyOf:
-          - type: string
-          - type: 'null'
+            - type: string
+            - type: "null"
           title: Body
       type: object
       required:
-      - url
-      - headers
-      - http_method
+        - url
+        - headers
+        - http_method
       title: HttpRequest
       description: HTTP request details.
     HttpResponse:
@@ -404,17 +406,17 @@ components:
           title: Status
         body:
           anyOf:
-          - type: string
-          - type: 'null'
+            - type: string
+            - type: "null"
           title: Body
         headers:
           anyOf:
-          - type: object
-          - type: 'null'
+            - type: object
+            - type: "null"
           title: Headers
       type: object
       required:
-      - status
+        - status
       title: HttpResponse
       description: HTTP response details.
     LogMessage:
@@ -427,18 +429,18 @@ components:
           title: Level
         internal_message:
           anyOf:
-          - type: string
-          - type: 'null'
+            - type: string
+            - type: "null"
           title: Internal Message
         stacktrace:
           anyOf:
-          - type: string
-          - type: 'null'
+            - type: string
+            - type: "null"
           title: Stacktrace
       type: object
       required:
-      - message
-      - level
+        - message
+        - level
       title: LogMessage
       description: Log message from stream processing.
     Manifest:
@@ -446,24 +448,25 @@ components:
       additionalProperties: true
       type: object
       title: Manifest
-      description: Base manifest model. Allows client generation to replace with proper
+      description:
+        Base manifest model. Allows client generation to replace with proper
         JsonNode types.
     ManifestResponse:
       properties:
         manifest:
-          $ref: '#/components/schemas/Manifest'
+          $ref: "#/components/schemas/Manifest"
       type: object
       required:
-      - manifest
+        - manifest
       title: ManifestResponse
       description: Response containing a manifest.
     ResolveRequest:
       properties:
         manifest:
-          $ref: '#/components/schemas/Manifest'
+          $ref: "#/components/schemas/Manifest"
       type: object
       required:
-      - manifest
+        - manifest
       title: ResolveRequest
       description: Request to resolve a manifest.
     StreamReadPages:
@@ -474,27 +477,27 @@ components:
           title: Records
         request:
           anyOf:
-          - $ref: '#/components/schemas/HttpRequest'
-          - type: 'null'
+            - $ref: "#/components/schemas/HttpRequest"
+            - type: "null"
         response:
           anyOf:
-          - $ref: '#/components/schemas/HttpResponse'
-          - type: 'null'
+            - $ref: "#/components/schemas/HttpResponse"
+            - type: "null"
       type: object
       required:
-      - records
+        - records
       title: StreamReadPages
       description: Pages of data read from a stream slice.
     StreamReadResponse:
       properties:
         logs:
           items:
-            $ref: '#/components/schemas/LogMessage'
+            $ref: "#/components/schemas/LogMessage"
           type: array
           title: Logs
         slices:
           items:
-            $ref: '#/components/schemas/StreamReadSlices'
+            $ref: "#/components/schemas/StreamReadSlices"
           type: array
           title: Slices
         test_read_limit_reached:
@@ -502,75 +505,75 @@ components:
           title: Test Read Limit Reached
         auxiliary_requests:
           items:
-            $ref: '#/components/schemas/AuxiliaryRequest'
+            $ref: "#/components/schemas/AuxiliaryRequest"
           type: array
           title: Auxiliary Requests
         inferred_schema:
           anyOf:
-          - type: object
-          - type: 'null'
+            - type: object
+            - type: "null"
           title: Inferred Schema
         inferred_datetime_formats:
           anyOf:
-          - additionalProperties:
-              type: string
-            type: object
-          - type: 'null'
+            - additionalProperties:
+                type: string
+              type: object
+            - type: "null"
           title: Inferred Datetime Formats
         latest_config_update:
           anyOf:
-          - type: object
-          - type: 'null'
+            - type: object
+            - type: "null"
           title: Latest Config Update
       type: object
       required:
-      - logs
-      - slices
-      - test_read_limit_reached
-      - auxiliary_requests
-      - inferred_schema
-      - inferred_datetime_formats
-      - latest_config_update
+        - logs
+        - slices
+        - test_read_limit_reached
+        - auxiliary_requests
+        - inferred_schema
+        - inferred_datetime_formats
+        - latest_config_update
       title: StreamReadResponse
       description: Complete stream read response with properly typed fields.
     StreamReadSlices:
       properties:
         pages:
           items:
-            $ref: '#/components/schemas/StreamReadPages'
+            $ref: "#/components/schemas/StreamReadPages"
           type: array
           title: Pages
         slice_descriptor:
           anyOf:
-          - type: string
-          - type: 'null'
+            - type: string
+            - type: "null"
           title: Slice Descriptor
         state:
           anyOf:
-          - items:
-              type: object
-            type: array
-          - type: 'null'
+            - items:
+                type: object
+              type: array
+            - type: "null"
           title: State
         auxiliary_requests:
           anyOf:
-          - items:
-              $ref: '#/components/schemas/AuxiliaryRequest'
-            type: array
-          - type: 'null'
+            - items:
+                $ref: "#/components/schemas/AuxiliaryRequest"
+              type: array
+            - type: "null"
           title: Auxiliary Requests
       type: object
       required:
-      - pages
-      - slice_descriptor
+        - pages
+        - slice_descriptor
       title: StreamReadSlices
       description: Slices of data read from a stream.
     StreamTestReadRequest:
       properties:
         manifest:
-          $ref: '#/components/schemas/Manifest'
+          $ref: "#/components/schemas/Manifest"
         config:
-          $ref: '#/components/schemas/ConnectorConfig'
+          $ref: "#/components/schemas/ConnectorConfig"
         stream_name:
           type: string
           title: Stream Name
@@ -580,8 +583,8 @@ components:
           title: State
         custom_components_code:
           anyOf:
-          - type: string
-          - type: 'null'
+            - type: string
+            - type: "null"
           title: Custom Components Code
         record_limit:
           type: integer
@@ -603,24 +606,24 @@ components:
           default: 5
       type: object
       required:
-      - manifest
-      - config
-      - stream_name
+        - manifest
+        - config
+        - stream_name
       title: StreamTestReadRequest
       description: Request to test read from a specific stream.
     SyncMode:
       type: string
       enum:
-      - full_refresh
-      - incremental
+        - full_refresh
+        - incremental
       title: SyncMode
     ValidationError:
       properties:
         loc:
           items:
             anyOf:
-            - type: string
-            - type: integer
+              - type: string
+              - type: integer
           type: array
           title: Location
         msg:
@@ -631,9 +634,9 @@ components:
           title: Error Type
       type: object
       required:
-      - loc
-      - msg
-      - type
+        - loc
+        - msg
+        - type
       title: ValidationError
   securitySchemes:
     HTTPBearer:
