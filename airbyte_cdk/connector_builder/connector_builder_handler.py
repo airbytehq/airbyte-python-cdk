@@ -62,9 +62,9 @@ def should_normalize_manifest(config: Mapping[str, Any]) -> bool:
 
 def create_source(
     config: Mapping[str, Any],
-    limits: TestLimits,
-    catalog: Optional[ConfiguredAirbyteCatalog],
-    state: Optional[List[AirbyteStateMessage]],
+    limits: TestLimits | None = None,
+    catalog: ConfiguredAirbyteCatalog | None = None,
+    state: AirbyteStateMessage | None = None,
 ) -> ConcurrentDeclarativeSource:
     manifest = config["__injected_declarative_manifest"]
 
