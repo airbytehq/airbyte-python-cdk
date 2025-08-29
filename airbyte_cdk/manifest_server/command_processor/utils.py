@@ -63,7 +63,7 @@ def build_source(
     record_limit: Optional[int] = None,
     page_limit: Optional[int] = None,
     slice_limit: Optional[int] = None,
-) -> ConcurrentDeclarativeSource[Optional[List[AirbyteStateMessage]]]:
+) -> ConcurrentDeclarativeSource:
     # We enforce a concurrency level of 1 so that the stream is processed on a single thread
     # to retain ordering for the grouping of the builder message responses.
     definition = copy.deepcopy(manifest)

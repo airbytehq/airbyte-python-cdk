@@ -40,7 +40,7 @@ def safe_build_source(
     page_limit: Optional[int] = None,
     slice_limit: Optional[int] = None,
     record_limit: Optional[int] = None,
-) -> ConcurrentDeclarativeSource[Optional[List[AirbyteStateMessage]]]:
+) -> ConcurrentDeclarativeSource:
     """Wrapper around build_source that converts ValidationError to HTTPException."""
     try:
         return build_source(
