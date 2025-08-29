@@ -20,7 +20,9 @@ COMPLEX_SCHEMA = {
         "too_many_types": {"type": ["boolean", "null", "string"]},
         "def": {
             "type": "object",
-            "properties": {"dd": {"$ref": "#/definitions/my_type"}},  # << Broken (missing?) on purpose?
+            "properties": {
+                "dd": {"$ref": "#/definitions/my_type"},
+            },
         },
         "array": {"type": "array", "items": {"$ref": "#/definitions/str_type"}},
         "nested": {"$ref": "#/definitions/nested_type"},
