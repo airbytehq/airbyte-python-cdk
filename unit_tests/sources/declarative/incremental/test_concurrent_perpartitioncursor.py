@@ -1486,7 +1486,6 @@ def run_incremental_parent_state_test(
                         ]
                     },
                 ),
-                # FIXME this is an interesting case. The previous solution would not update the parent state until `ensure_at_least_one_state_emitted` but the concurrent cursor does just before which is probably fine too
                 (
                     f"https://api.example.com/community/posts?per_page=100&start_time={POST_1_UPDATED_AT}",
                     {"posts": [{"id": 1, "updated_at": POST_1_UPDATED_AT}]},
@@ -1632,7 +1631,6 @@ def run_incremental_parent_state_test(
                         ]
                     },
                 ),
-                # FIXME this is an interesting case. The previous solution would not update the parent state until `ensure_at_least_one_state_emitted` but the concurrent cursor does just before which is probably fine too
                 (
                     f"https://api.example.com/community/posts?per_page=100&start_time={POST_1_UPDATED_AT}",
                     {"posts": [{"id": 1, "updated_at": POST_1_UPDATED_AT}]},
@@ -1741,7 +1739,7 @@ def run_incremental_parent_state_test(
                         ],
                     }
                 },
-                "lookback_window": 86400,  # FIXME this run only sync one record without cursor value hence why it might make sense not to update the lookback window
+                "lookback_window": 86400,
                 "use_global_cursor": False,
                 "states": [
                     {
@@ -2137,11 +2135,10 @@ def test_incremental_parent_state_migration(
                                 "partition": {"id": 1, "parent_slice": {}},
                                 "cursor": {
                                     "updated_at": START_DATE
-                                },  # FIXME this happens because the concurrent framework gets the start date as the max between the state value and the start value. In this case, the start value is higher
+                                },
                             }
                         ],
-                        "lookback_window": 0,  # FIXME the concurrent framework sets the lookback window to 0 as opposed to the declarative framework which would set not define it
-                        # FIXME the concurrent framework does not set the global state if there are none as opposed to the declarative framework which would set an empty global state
+                        "lookback_window": 0,
                         "use_global_cursor": False,
                         "parent_state": {"posts": {"updated_at": PARENT_POSTS_CURSOR}},
                     }
@@ -2338,7 +2335,7 @@ def test_incremental_parent_state_no_slices(
             },
             # Expected state
             {
-                "lookback_window": 0,  # FIXME maybe I'm wrong but I don't think it makes sense to have a lookback window being added from the state of "not having a lookback window" before
+                "lookback_window": 0,
                 "use_global_cursor": False,
                 "state": {"created_at": INITIAL_STATE_PARTITION_11_CURSOR},
                 "states": [
