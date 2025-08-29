@@ -6,7 +6,8 @@ import logging
 from enum import Flag, auto
 from typing import Any, Callable, Dict, Generator, Mapping, Optional, cast
 
-from jsonschema import Draft7Validator, RefResolver, ValidationError, Validator, validators
+from jsonschema import Draft7Validator, ValidationError, Validator, validators
+from referencing import Registry, Resource
 
 MAX_NESTING_DEPTH = 3
 json_to_python_simple = {
@@ -194,10 +195,7 @@ class TypeTransformer:
 
             def resolve(subschema: dict[str, Any]) -> dict[str, Any]:
                 if "$ref" in subschema:
-                    _, resolved = cast(
-                        RefResolver,
-                        validator_instance.resolver,
-                    ).resolve(subschema["$ref"])
+                    resolved = validator_instance.resolver.lookup(subschema["$ref"]).contents
                     return cast(dict[str, Any], resolved)
                 return subschema
 

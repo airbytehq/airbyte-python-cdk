@@ -10,9 +10,10 @@ import pkgutil
 from typing import Any, ClassVar, Dict, List, Mapping, MutableMapping, Optional, Tuple
 
 import jsonref
-from jsonschema import RefResolver, validate
+from jsonschema import validate
 from jsonschema.exceptions import ValidationError
 from pydantic.v1 import BaseModel, Field
+from referencing import Registry, Resource
 
 from airbyte_cdk.models import ConnectorSpecification, FailureType
 from airbyte_cdk.utils.traced_exception import AirbyteTracedException
@@ -63,18 +64,21 @@ def resolve_ref_links(obj: Any) -> Any:
         return obj
 
 
-def _expand_refs(schema: Any, ref_resolver: Optional[RefResolver] = None) -> None:
+def _expand_refs(schema: Any, ref_resolver: Optional[Registry] = None) -> None:
     """Internal function to iterate over schema and replace all occurrences of $ref with their definitions. Recursive.
 
     :param schema: schema that will be patched
     :param ref_resolver: resolver to get definition from $ref, if None pass it will be instantiated
     """
-    ref_resolver = ref_resolver or RefResolver.from_schema(schema)
+    if ref_resolver is None:
+        resource = Resource.from_contents(schema)
+        ref_resolver = Registry().with_resource("", resource)
+    resolver = ref_resolver.resolver()
 
     if isinstance(schema, MutableMapping):
         if "$ref" in schema:
             ref_url = schema.pop("$ref")
-            _, definition = ref_resolver.resolve(ref_url)
+            definition = resolver.lookup(ref_url).contents
             _expand_refs(
                 definition, ref_resolver=ref_resolver
             )  # expand refs in definitions as well
