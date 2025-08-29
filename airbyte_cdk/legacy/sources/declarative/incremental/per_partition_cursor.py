@@ -146,8 +146,10 @@ class PerPartitionCursor(DeclarativeCursor):
             if "state" in stream_state:
                 self._state_to_migrate_from = stream_state["state"]
 
-        # Set parent state for partition routers based on parent streams
-        self._partition_router.set_initial_state(stream_state)
+        # We used to set the parent state through this method but since moving the SubstreamPartitionRouter to the
+        # Concurrent CDK/AbstractStream, the state is passed at the __init__ stage and this does not need to be called.
+        # We are still keeping this line as a comment to be explicit about the past behavior.
+        # self._partition_router.set_initial_state(stream_state)
 
     def observe(self, stream_slice: StreamSlice, record: Record) -> None:
         self._cursor_per_partition[self._to_partition_key(stream_slice.partition)].observe(
