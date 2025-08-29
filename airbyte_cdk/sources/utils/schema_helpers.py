@@ -7,7 +7,18 @@ import importlib
 import json
 import os
 import pkgutil
-from typing import Any, ClassVar, Dict, List, Mapping, MutableMapping, Optional, Tuple
+from copy import deepcopy
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    ClassVar,
+    Dict,
+    List,
+    Mapping,
+    MutableMapping,
+    Optional,
+    Tuple,
+)
 
 import jsonref
 from jsonschema import validate
@@ -66,23 +77,23 @@ def resolve_ref_links(obj: Any) -> Any:
         return obj
 
 
-def _expand_refs(schema: Any, ref_resolver: Optional[Resolver] = None) -> None:
+def get_ref_resolver_registry(schema: dict[str, Any]) -> Registry:
+    """Get a reference resolver registry for the given schema."""
+    resource: Resource = Resource.from_contents(
+        contents=deepcopy(schema),
+        default_specification=DRAFT7,
+    )
+    return Registry().with_resource(
+        uri="",
+        resource=resource,
+    )
+
+
+def _expand_refs(schema: Any, ref_resolver: Resolver) -> None:
     """Internal function to iterate over schema and replace all occurrences of $ref with their definitions. Recursive.
 
     :param schema: schema that will be patched
-    :param ref_resolver: resolver to get definition from $ref, if None pass it will be instantiated
     """
-    if ref_resolver is None:
-        resource = Resource.from_contents(
-            contents=schema,
-            default_specification=DRAFT7,
-        )
-        resolver_registry = Registry().with_resource(
-            uri="",
-            resource=resource,
-        )
-        ref_resolver = resolver_registry.resolver()
-
     if isinstance(schema, MutableMapping):
         if "$ref" in schema:
             ref_url = schema.pop("$ref")
@@ -102,10 +113,14 @@ def _expand_refs(schema: Any, ref_resolver: Optional[Resolver] = None) -> None:
 def expand_refs(schema: Any) -> None:
     """Iterate over schema and replace all occurrences of $ref with their definitions.
 
+    If a "definitions" section is present at the root of the schema, it will be removed
+    after $ref resolution is complete.
+
     :param schema: schema that will be patched
     """
-    _expand_refs(schema)
-    schema.pop("definitions", None)  # remove definitions created by $ref
+    ref_resolver = get_ref_resolver_registry(schema).resolver()
+    _expand_refs(schema, ref_resolver)
+    schema.pop("definitions", None)
 
 
 def rename_key(schema: Any, old_key: str, new_key: str) -> None:
