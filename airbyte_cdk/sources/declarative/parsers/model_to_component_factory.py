@@ -715,7 +715,7 @@ class ModelToComponentFactory:
             CustomValidationStrategyModel: self.create_custom_component,
             CustomConfigTransformationModel: self.create_custom_component,
             DatetimeBasedCursorModel: self.create_datetime_based_cursor,
-            DeclarativeStreamModel: self.create_declarative_stream,
+            DeclarativeStreamModel: self.create_default_stream,
             DefaultErrorHandlerModel: self.create_default_error_handler,
             DefaultPaginatorModel: self.create_default_paginator,
             DpathExtractorModel: self.create_dpath_extractor,
@@ -1960,7 +1960,7 @@ class ModelToComponentFactory:
             parameters=model.parameters or {},
         )
 
-    def create_declarative_stream(
+    def create_default_stream(
         self, model: DeclarativeStreamModel, config: Config, is_parent: bool = False, **kwargs: Any
     ) -> Union[DeclarativeStream, AbstractStream]:
         primary_key = model.primary_key.__root__ if model.primary_key else None
@@ -1970,7 +1970,7 @@ class ModelToComponentFactory:
         )
         concurrent_cursor = self._build_concurrent_cursor(model, partition_router, config)
         if model.incremental_sync and isinstance(model.incremental_sync, DatetimeBasedCursorModel):
-            cursor_model = model.incremental_sync
+            cursor_model: DatetimeBasedCursorModel = model.incremental_sync
 
             end_time_option = (
                 self._create_component_from_model(
@@ -1990,7 +1990,7 @@ class ModelToComponentFactory:
             datetime_request_options_provider = DatetimeBasedRequestOptionsProvider(
                 start_time_option=start_time_option,
                 end_time_option=end_time_option,
-                partition_field_start=cursor_model.partition_field_end,
+                partition_field_start=cursor_model.partition_field_start,
                 partition_field_end=cursor_model.partition_field_end,
                 config=config,
                 parameters=model.parameters or {},
@@ -2117,7 +2117,6 @@ class ModelToComponentFactory:
             if hasattr(concurrent_cursor, "cursor_field")
             else "",  # FIXME we should have the cursor field has part of the interface of cursor,
             logger=logging.getLogger(f"airbyte.{stream_name}"),
-            # FIXME this is a breaking change compared to the old implementation which used the source name instead
             cursor=concurrent_cursor,
             supports_file_transfer=hasattr(model, "file_uploader") and bool(model.file_uploader),
         )
@@ -3484,7 +3483,7 @@ class ModelToComponentFactory:
             False if has_parent_state is None else has_parent_state, model
         )
 
-        return self._create_component_from_model(stream_model, config=config, **kwargs)  # type: ignore[no-any-return]  # Will be created DeclarativeStream as stream_model is stream description
+        return self._create_component_from_model(stream_model, config=config, **kwargs)  # type: ignore[no-any-return]  # DeclarativeStream will be created as stream_model is alwyas DeclarativeStreamModel
 
     def _get_state_delegating_stream_model(
         self, has_parent_state: bool, model: StateDelegatingStreamModel
@@ -3811,7 +3810,7 @@ class ModelToComponentFactory:
         # getting the parent state
         child_state = self._connector_state_manager.get_stream_state(
             kwargs["stream_name"], None
-        )  # FIXME adding `stream_name` as a parameter means it will be a breaking change. I assume this is mostly called internally so I don't think we need to bother that much about this but still raising the flag
+        )
 
         # This flag will be used exclusively for StateDelegatingStream when a parent stream is created
         has_parent_state = bool(

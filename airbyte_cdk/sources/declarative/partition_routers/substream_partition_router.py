@@ -261,7 +261,6 @@ class SubstreamPartitionRouter(PartitionRouter):
                             extra_fields=extracted_extra_fields,
                         )
 
-                parent_stream.cursor.ensure_at_least_one_state_emitted()
                 yield from []
 
     def _extract_child_response(
