@@ -154,3 +154,25 @@ docker run -p 8080:8080 manifest-server
 ```
 
 Note: The container runs on port 8080 by default.
+
+## Datadog APM
+
+The manifest server supports Datadog APM tracing for monitoring and observability:
+
+### Configuration
+
+To enable Datadog tracing, set the environment variable:
+
+```bash
+export DD_ENABLED=true
+```
+
+This requires the `ddtrace` dependency, which is included in the `manifest-server` extra. For additional configuration options via environment variables, see [ddtrace configuration](https://ddtrace.readthedocs.io/en/stable/configuration.html).
+
+### Usage
+
+```bash
+# Run with Datadog tracing enabled
+DD_ENABLED=true manifest-server start
+```
+
