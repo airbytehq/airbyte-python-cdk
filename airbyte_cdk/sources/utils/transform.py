@@ -216,6 +216,7 @@ class TypeTransformer:
                                 ).resolve(ref_url)
                                 return cast(dict[str, Any], resolved)
                         except Exception:
+                            # If both fail, we'll return original subschema, below.
                             pass
 
                     return subschema
