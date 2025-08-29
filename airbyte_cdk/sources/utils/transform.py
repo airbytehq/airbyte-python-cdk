@@ -205,7 +205,9 @@ class TypeTransformer:
                         return cast(dict[str, Any], resolved)
                     except Exception:
                         try:
-                            _, resolved = cast(RefResolver, validator_instance.resolver).resolve(subschema["$ref"])
+                            _, resolved = cast(RefResolver, validator_instance.resolver).resolve(
+                                subschema["$ref"]
+                            )
                             return cast(dict[str, Any], resolved)
                         except Exception:
                             # If both fail, return original subschema
