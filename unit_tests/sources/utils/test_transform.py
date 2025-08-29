@@ -33,7 +33,7 @@ COMPLEX_SCHEMA = {
     },
     "definitions": {
         "str_type": {"type": "string"},
-        "my_type": {"type": "string"},  # << Fixed
+        "my_type": {"type": "string"},
         "nested_type": {"type": "object", "properties": {"a": {"type": "string"}}},
     },
 }
