@@ -64,7 +64,7 @@ def create_source(
     config: Mapping[str, Any],
     limits: TestLimits | None = None,
     catalog: ConfiguredAirbyteCatalog | None = None,
-    state: AirbyteStateMessage | None = None,
+    state: List[AirbyteStateMessage] | None = None,
 ) -> ConcurrentDeclarativeSource:
     manifest = config["__injected_declarative_manifest"]
 
