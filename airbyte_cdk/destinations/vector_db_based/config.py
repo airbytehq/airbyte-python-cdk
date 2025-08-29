@@ -7,8 +7,8 @@ from typing import Any, Dict, List, Literal, Optional, Union
 import dpath
 from pydantic.v1 import BaseModel, Field
 
+from airbyte_cdk.sources.utils.schema_helpers import expand_refs
 from airbyte_cdk.utils.oneof_option_config import OneOfOptionConfig
-from airbyte_cdk.utils.spec_schema_transformations import resolve_refs
 
 
 class SeparatorSplitterConfigModel(BaseModel):
@@ -293,6 +293,6 @@ class VectorDBConfigModel(BaseModel):
     def schema(cls, by_alias: bool = True, ref_template: str = "") -> Dict[str, Any]:
         """we're overriding the schema classmethod to enable some post-processing"""
         schema: Dict[str, Any] = super().schema()
-        schema = resolve_refs(schema)
+        expand_refs(schema)
         cls.remove_discriminator(schema)
         return schema

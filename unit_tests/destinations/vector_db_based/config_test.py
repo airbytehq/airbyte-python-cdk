@@ -15,7 +15,7 @@ from airbyte_cdk.destinations.vector_db_based.config import (
     OpenAIEmbeddingConfigModel,
     ProcessingConfigModel,
 )
-from airbyte_cdk.utils.spec_schema_transformations import resolve_refs
+from airbyte_cdk.sources.utils.schema_helpers import expand_refs
 
 
 class IndexingModel(BaseModel):
@@ -64,7 +64,7 @@ class ConfigModel(BaseModel):
     def schema(cls):
         """we're overriding the schema classmethod to enable some post-processing"""
         schema = super().schema()
-        schema = resolve_refs(schema)
+        schema = expand_refs(schema)
         cls.remove_discriminator(schema)
         return schema
 

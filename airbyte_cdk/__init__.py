@@ -193,7 +193,6 @@ from .utils import AirbyteTracedException, is_cloud_environment
 from .utils.constants import ENV_REQUEST_CACHE_PATH
 from .utils.event_timing import create_timer
 from .utils.oneof_option_config import OneOfOptionConfig
-from .utils.spec_schema_transformations import resolve_refs
 from .utils.stream_status_utils import as_airbyte_message
 
 __all__ = [
@@ -340,7 +339,6 @@ __all__ = [
     "ENV_REQUEST_CACHE_PATH",
     "create_timer",
     "OneOfOptionConfig",
-    "resolve_refs",
     "as_airbyte_message",
     # Types
     "Config",
