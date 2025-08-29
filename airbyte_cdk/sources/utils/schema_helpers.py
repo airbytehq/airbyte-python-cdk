@@ -13,7 +13,7 @@ import jsonref
 from jsonschema import validate
 from jsonschema.exceptions import ValidationError
 from pydantic.v1 import BaseModel, Field
-from referencing import Registry, Resource
+from referencing import Registry, Resource, Resolver
 from referencing.jsonschema import DRAFT7
 
 from airbyte_cdk.models import ConnectorSpecification, FailureType
@@ -65,21 +65,27 @@ def resolve_ref_links(obj: Any) -> Any:
         return obj
 
 
-def _expand_refs(schema: Any, ref_resolver: Optional[Registry] = None) -> None:
+def _expand_refs(schema: Any, ref_resolver: Optional[Resolver] = None) -> None:
     """Internal function to iterate over schema and replace all occurrences of $ref with their definitions. Recursive.
 
     :param schema: schema that will be patched
     :param ref_resolver: resolver to get definition from $ref, if None pass it will be instantiated
     """
     if ref_resolver is None:
-        resource = Resource.from_contents(schema, default_specification=DRAFT7)
-        ref_resolver = Registry().with_resource("", resource)
-    resolver = ref_resolver.resolver()
+        resource = Resource.from_contents(
+            contents=schema,
+            default_specification=DRAFT7,
+        )
+        resolver_registry = Registry().with_resource(
+            uri="",
+            resource=resource,
+        )
+        ref_resolver = resolver_registry.resolver()
 
     if isinstance(schema, MutableMapping):
         if "$ref" in schema:
             ref_url = schema.pop("$ref")
-            definition = resolver.lookup(ref_url).contents
+            definition = ref_resolver.lookup(ref_url).contents
             _expand_refs(
                 definition, ref_resolver=ref_resolver
             )  # expand refs in definitions as well

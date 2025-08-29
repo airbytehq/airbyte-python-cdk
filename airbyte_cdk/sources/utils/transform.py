@@ -6,8 +6,8 @@ import logging
 from enum import Flag, auto
 from typing import Any, Callable, Dict, Generator, Mapping, Optional, cast
 
-from jsonschema import Draft7Validator, RefResolver, ValidationError, Validator, validators
-from referencing import Registry, Resource
+from jsonschema import Draft7Validator, ValidationError, Validator, validators
+from referencing import Registry, Resource, Resolver
 from referencing.jsonschema import DRAFT7
 
 MAX_NESTING_DEPTH = 3
@@ -195,33 +195,15 @@ class TypeTransformer:
             """
 
             def resolve(subschema: dict[str, Any]) -> dict[str, Any]:
-                if "$ref" in subschema:
-                    ref_url = subschema["$ref"]
-
-                    try:
-                        root_schema = validator_instance.schema
-                        resource = Resource.from_contents(root_schema, default_specification=DRAFT7)
-                        registry = Registry().with_resource("", resource)
-                        resolver = registry.resolver()
-                        resolved = resolver.lookup(ref_url).contents
-                        return cast(dict[str, Any], resolved)
-                    except Exception:
-                        try:
-                            if (
-                                hasattr(validator_instance, "resolver")
-                                and validator_instance.resolver is not None
-                            ):
-                                _, resolved = cast(
-                                    RefResolver, validator_instance.resolver
-                                ).resolve(ref_url)
-                                return cast(dict[str, Any], resolved)
-                        except Exception:
-                            # If both fail, we'll return original subschema, below.
-                            # If both fail, we'll return original subschema, below.
-                            pass
-
+                if "$ref" not in subschema:
+                    # Nothing to resolve
                     return subschema
-                return subschema
+
+                # Else, we need to resolve "$ref":
+                ref_url = subschema["$ref"]
+                resolver: Resolver = validator_instance.resolver
+                resolved_contents = resolver.lookup(ref_url).contents
+                return cast(dict[str, Any], resolved_contents)
 
             # Transform object and array values before running json schema type checking for each element.
             # Recursively normalize every value of the "instance" sub-object,
