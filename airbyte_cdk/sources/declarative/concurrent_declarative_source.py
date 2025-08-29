@@ -169,8 +169,8 @@ class ConcurrentDeclarativeSource(AbstractSource):
 
     def __init__(
         self,
-        catalog: Optional[ConfiguredAirbyteCatalog],
-        config: Optional[Mapping[str, Any]],
+        catalog: Optional[ConfiguredAirbyteCatalog] = None,
+        config: Optional[Mapping[str, Any]] = None,
         state: Optional[List[AirbyteStateMessage]] = None,
         *,
         source_config: ConnectionDefinition,
