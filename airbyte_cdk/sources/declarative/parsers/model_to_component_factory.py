@@ -2167,78 +2167,6 @@ class ModelToComponentFactory:
                 )
         return SinglePartitionRouter(parameters={})
 
-    def _build_incremental_cursor(
-        self,
-        model: DeclarativeStreamModel,
-        stream_slicer: Optional[PartitionRouter],
-        config: Config,
-    ) -> Optional[StreamSlicer]:
-        state_transformations = (
-            [
-                self._create_component_from_model(state_migration, config, declarative_stream=model)
-                for state_migration in model.state_migrations
-            ]
-            if model.state_migrations
-            else []
-        )
-
-        if model.incremental_sync and (
-            stream_slicer and not isinstance(stream_slicer, SinglePartitionRouter)
-        ):
-            if model.retriever.type == "AsyncRetriever":
-                stream_name = model.name or ""
-                stream_namespace = None
-                stream_state = self._connector_state_manager.get_stream_state(
-                    stream_name, stream_namespace
-                )
-
-                return self.create_concurrent_cursor_from_perpartition_cursor(  # type: ignore # This is a known issue that we are creating and returning a ConcurrentCursor which does not technically implement the (low-code) StreamSlicer. However, (low-code) StreamSlicer and ConcurrentCursor both implement StreamSlicer.stream_slices() which is the primary method needed for checkpointing
-                    state_manager=self._connector_state_manager,
-                    model_type=DatetimeBasedCursorModel,
-                    component_definition=model.incremental_sync.__dict__,
-                    stream_name=stream_name,
-                    stream_namespace=stream_namespace,
-                    config=config or {},
-                    stream_state=stream_state,
-                    stream_state_migrations=state_transformations,
-                    partition_router=stream_slicer,
-                )
-
-            incremental_sync_model = model.incremental_sync
-            cursor_component = self._create_component_from_model(
-                model=incremental_sync_model, config=config
-            )
-            is_global_cursor = (
-                hasattr(incremental_sync_model, "global_substream_cursor")
-                and incremental_sync_model.global_substream_cursor
-            )
-
-            if is_global_cursor:
-                return GlobalSubstreamCursor(
-                    stream_cursor=cursor_component, partition_router=stream_slicer
-                )
-            return PerPartitionWithGlobalCursor(
-                cursor_factory=CursorFactory(
-                    lambda: self._create_component_from_model(
-                        model=incremental_sync_model, config=config
-                    ),
-                ),
-                partition_router=stream_slicer,
-                stream_cursor=cursor_component,
-            )
-        elif model.incremental_sync:
-            if model.retriever.type == "AsyncRetriever":
-                return self.create_concurrent_cursor_from_datetime_based_cursor(  # type: ignore # This is a known issue that we are creating and returning a ConcurrentCursor which does not technically implement the (low-code) StreamSlicer. However, (low-code) StreamSlicer and ConcurrentCursor both implement StreamSlicer.stream_slices() which is the primary method needed for checkpointing
-                    model_type=DatetimeBasedCursorModel,
-                    component_definition=model.incremental_sync.__dict__,
-                    stream_name=model.name or "",
-                    stream_namespace=None,
-                    config=config or {},
-                    stream_state_migrations=state_transformations,
-                )
-            return self._create_component_from_model(model=model.incremental_sync, config=config)  # type: ignore[no-any-return]  # Will be created Cursor as stream_slicer_model is model.incremental_sync
-        return None
-
     def _build_concurrent_cursor(
         self,
         model: DeclarativeStreamModel,
@@ -2300,44 +2228,6 @@ class ModelToComponentFactory:
                     f"Incremental sync of type {type(model.incremental_sync)} is not supported"
                 )
         return FinalStateCursor(stream_name, None, self._message_repository)
-
-    def _merge_stream_slicers(
-        self, model: DeclarativeStreamModel, config: Config
-    ) -> Optional[StreamSlicer]:
-        retriever_model = model.retriever
-
-        stream_slicer = self._build_stream_slicer_from_partition_router(
-            retriever_model, config, stream_name=model.name
-        )
-
-        if retriever_model.type == "AsyncRetriever":
-            is_not_datetime_cursor = (
-                model.incremental_sync.type != "DatetimeBasedCursor"
-                if model.incremental_sync
-                else None
-            )
-            is_partition_router = (
-                bool(retriever_model.partition_router) if model.incremental_sync else None
-            )
-
-            if is_not_datetime_cursor:
-                # We are currently in a transition to the Concurrent CDK and AsyncRetriever can only work with the
-                # support or unordered slices (for example, when we trigger reports for January and February, the report
-                # in February can be completed first). Once we have support for custom concurrent cursor or have a new
-                # implementation available in the CDK, we can enable more cursors here.
-                raise ValueError(
-                    "AsyncRetriever with cursor other than DatetimeBasedCursor is not supported yet."
-                )
-
-            if is_partition_router and not stream_slicer:
-                # Note that this development is also done in parallel to the per partition development which once merged
-                # we could support here by calling create_concurrent_cursor_from_perpartition_cursor
-                raise ValueError("Per partition state is not supported yet for AsyncRetriever.")
-
-        if model.incremental_sync:
-            return self._build_incremental_cursor(model, stream_slicer, config)
-
-        return stream_slicer
 
     def create_default_error_handler(
         self, model: DefaultErrorHandlerModel, config: Config, **kwargs: Any
