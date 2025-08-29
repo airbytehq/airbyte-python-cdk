@@ -217,6 +217,7 @@ class TypeTransformer:
                                 return cast(dict[str, Any], resolved)
                         except Exception:
                             # If both fail, we'll return original subschema, below.
+                            # If both fail, we'll return original subschema, below.
                             pass
 
                     return subschema
