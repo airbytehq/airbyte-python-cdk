@@ -8,17 +8,7 @@ import json
 import os
 import pkgutil
 from copy import deepcopy
-from typing import (
-    TYPE_CHECKING,
-    Any,
-    ClassVar,
-    Dict,
-    List,
-    Mapping,
-    MutableMapping,
-    Optional,
-    Tuple,
-)
+from typing import TYPE_CHECKING, Any, ClassVar, Dict, List, Mapping, MutableMapping, Tuple
 
 import jsonref
 from jsonschema import validate
@@ -80,7 +70,7 @@ def resolve_ref_links(obj: Any) -> Any:
 def get_ref_resolver_registry(schema: dict[str, Any]) -> Registry:
     """Get a reference resolver registry for the given schema."""
     resource: Resource = Resource.from_contents(
-        contents=deepcopy(schema),
+        contents=schema,
         default_specification=DRAFT7,
     )
     return Registry().with_resource(
