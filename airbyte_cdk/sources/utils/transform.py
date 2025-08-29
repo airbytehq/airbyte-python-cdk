@@ -10,7 +10,6 @@ from jsonschema import Draft7Validator, ValidationError, Validator, validators
 from referencing import Registry, Resource
 from referencing._core import Resolver  # used for type hints
 from referencing.jsonschema import DRAFT7
-from .schema_helpers import expand_refs
 
 MAX_NESTING_DEPTH = 3
 json_to_python_simple = {
@@ -196,18 +195,25 @@ class TypeTransformer:
             :
             """
 
+            def resolve(subschema: dict[str, Any]) -> dict[str, Any]:
+                if "$ref" in subschema:
+                    resolver = validator_instance.resolver
+                    resolved = resolver.resolve(subschema["$ref"])
+                    return cast(dict[str, Any], resolved)
+                return subschema
+
             # Transform object and array values before running json schema type checking for each element.
             # Recursively normalize every value of the "instance" sub-object,
             # if "instance" is an incorrect type - skip recursive normalization of "instance"
             if schema_key == "properties" and isinstance(instance, dict):
                 for k, subschema in property_value.items():
                     if k in instance:
-                        subschema = resolve_refs(subschema)
+                        subschema = resolve(subschema)
                         instance[k] = self.__normalize(instance[k], subschema)
             # Recursively normalize every item of the "instance" sub-array,
             # if "instance" is an incorrect type - skip recursive normalization of "instance"
             elif schema_key == "items" and isinstance(instance, list):
-                subschema = resolve_refs(property_value)
+                subschema = resolve(property_value)
                 for index, item in enumerate(instance):
                     instance[index] = self.__normalize(item, subschema)
 
