@@ -34,12 +34,14 @@ RUN --mount=type=cache,target=$POETRY_CACHE_DIR \
 RUN groupadd --gid 1000 airbyte && \
     useradd --uid 1000 --gid airbyte --shell /bin/bash --create-home airbyte
 
-# Change ownership
-RUN chown -R airbyte:airbyte /app
+# Change ownership and make entrypoint executable
+RUN chown -R airbyte:airbyte /app && \
+    chmod +x /app/airbyte_cdk/manifest_server/entrypoint.sh
 
 # Run app as non-root user
 USER airbyte:airbyte
 
 EXPOSE 8080
 
+ENTRYPOINT ["/app/airbyte_cdk/manifest_server/entrypoint.sh"]
 CMD ["uvicorn", "airbyte_cdk.manifest_server.app:app", "--host", "0.0.0.0", "--port", "8080"]
