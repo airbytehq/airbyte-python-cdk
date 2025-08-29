@@ -8,7 +8,7 @@ import json
 import os
 import pkgutil
 from copy import deepcopy
-from typing import TYPE_CHECKING, Any, ClassVar, Dict, List, Mapping, MutableMapping, Tuple
+from typing import TYPE_CHECKING, Any, ClassVar, Dict, List, Mapping, MutableMapping, Tuple, cast
 
 import jsonref
 from jsonschema import validate
@@ -73,9 +73,12 @@ def get_ref_resolver_registry(schema: dict[str, Any]) -> Registry:
         contents=schema,
         default_specification=DRAFT7,
     )
-    return Registry().with_resource(
-        uri="",
-        resource=resource,
+    return cast(  # Mypy has a hard time detecting this return type.
+        "Registry",
+        Registry().with_resource(
+            uri="",
+            resource=resource,
+        ),
     )
 
 
