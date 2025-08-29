@@ -206,29 +206,14 @@ class TypeTransformer:
             validators parameter for detailed description.
             :
             """
-            # Very first step is to expand references in the schema itself:
+            # Very first step is to expand $refs in the schema itself:
             expand_refs(schema)
 
-            # Now we can expand references in the property value:
+            # Now we can expand $refs in the property value:
             if isinstance(property_value, dict):
                 expand_refs(property_value)
 
-            # Now we can validate the entries:
-
-            # TODO: Delete all the below commented-out code if tests pass (simplified above)
-            # resolver_registry: Registry = get_ref_resolver_registry(schema)
-            # ref_resolver: Resolver = resolver_registry.resolver()
-
-            # def resolve(subschema: dict[str, Any]) -> dict[str, Any]:
-            #     if "$ref" in subschema:
-            #         try:
-            #             resolved = ref_resolver.lookup(subschema["$ref"]).contents
-            #         except Unresolvable as e:
-            #             raise ValidationError(
-            #                 f"Failed to resolve $ref '{subschema['$ref']}' from {ref_resolver!r} and schema {schema!r}: {e}"
-            #             ) from e
-            #         return cast(dict[str, Any], resolved)
-            #     return subschema
+            # Now we can validate and normalize the values:
 
             # Transform object and array values before running json schema type checking for each element.
             # Recursively normalize every value of the "instance" sub-object,
@@ -236,12 +221,10 @@ class TypeTransformer:
             if schema_key == "properties" and isinstance(instance, dict):
                 for k, subschema in property_value.items():
                     if k in instance:
-                        # subschema = resolve(subschema)
                         instance[k] = self.__normalize(instance[k], subschema)
             # Recursively normalize every item of the "instance" sub-array,
             # if "instance" is an incorrect type - skip recursive normalization of "instance"
             elif schema_key == "items" and isinstance(instance, list):
-                # subschema = resolve(property_value)
                 for index, item in enumerate(instance):
                     instance[index] = self.__normalize(item, property_value)
 
