@@ -197,9 +197,17 @@ class TypeTransformer:
 
             def resolve(subschema: dict[str, Any]) -> dict[str, Any]:
                 if "$ref" in subschema:
-                    resolver = validator_instance.resolver
-                    resolved = resolver.resolve(subschema["$ref"])
-                    return cast(dict[str, Any], resolved)
+                    ref_url = subschema["$ref"]
+                    try:
+                        if hasattr(validator_instance.resolver, 'lookup'):
+                            resolved = validator_instance.resolver.lookup(ref_url).contents
+                            return cast(dict[str, Any], resolved)
+                        elif hasattr(validator_instance.resolver, 'resolve'):
+                            _, resolved = validator_instance.resolver.resolve(ref_url)
+                            return cast(dict[str, Any], resolved)
+                    except Exception:
+                        pass
+                    return subschema
                 return subschema
 
             # Transform object and array values before running json schema type checking for each element.
