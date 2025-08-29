@@ -2219,7 +2219,12 @@ def _run_read(manifest: Mapping[str, Any], stream_name: str) -> List[AirbyteMess
     )
     config = {}
     state = {}
-    source = ConcurrentDeclarativeSource(catalog, config, manifest, state)
+    source = ConcurrentDeclarativeSource(
+        catalog=catalog,
+        config=config,
+        manifest=manifest,
+        state=state,
+    )
     return list(source.read(logger, {}, catalog, state))
 
 
