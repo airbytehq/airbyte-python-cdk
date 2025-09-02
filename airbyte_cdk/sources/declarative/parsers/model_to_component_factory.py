@@ -3155,7 +3155,7 @@ class ModelToComponentFactory:
             _url_base: str = (
                 model.requester.url_base
                 if hasattr(model.requester, "url_base") and model.requester.url_base is not None
-                else req.get_url(stream_state=None, stream_slice=None, next_page_token=None)
+                else req.get_url_base(stream_state=None, stream_slice=None, next_page_token=None)
             )
 
             return _url or _url_base
