@@ -163,6 +163,7 @@ from airbyte_cdk.sources.declarative.stream_slicers.declarative_partition_genera
 from airbyte_cdk.sources.declarative.transformations import AddFields, RemoveFields
 from airbyte_cdk.sources.declarative.transformations.add_fields import AddedFieldDefinition
 from airbyte_cdk.sources.declarative.yaml_declarative_source import YamlDeclarativeSource
+from airbyte_cdk.sources.message.repository import StateFilteringMessageRepository
 from airbyte_cdk.sources.streams.call_rate import MovingWindowCallRatePolicy
 from airbyte_cdk.sources.streams.concurrent.clamping import (
     ClampingEndProvider,
@@ -942,6 +943,58 @@ list_stream:
     assert isinstance(list_stream_slicer, ListPartitionRouter)
     assert list_stream_slicer.values == ["airbyte", "airbyte-cloud"]
     assert list_stream_slicer._cursor_field.string == "a_key"
+
+
+def test_stream_with_custom_retriever_and_transformations():
+    content = """
+a_stream:
+  type: DeclarativeStream
+  primary_key: id
+  schema_loader:
+    type: InlineSchemaLoader
+    schema:
+      $schema: "http://json-schema.org/draft-07/schema"
+      type: object
+      properties:
+        id:
+          type: string
+  retriever:
+    type: CustomRetriever
+    class_name: unit_tests.sources.declarative.parsers.testing_components.TestingCustomRetriever
+    name: "{{ parameters['name'] }}"
+    decoder:
+      type: JsonDecoder
+    requester:
+      type: HttpRequester
+      name: "{{ parameters['name'] }}"
+      url_base: "https://api.sendgrid.com/v3/"
+      http_method: "GET"
+    record_selector:
+      type: RecordSelector
+      extractor:
+        type: DpathExtractor
+        field_path: ["records"]
+  transformations:
+    - type: AddFields
+      fields:
+        - path: ["extra"]
+          value: "{{ response.to_add }}"
+  $parameters:
+   name: a_stream
+"""
+
+    parsed_manifest = YamlDeclarativeSource._parse(content)
+    resolved_manifest = resolver.preprocess_manifest(parsed_manifest)
+    stream_manifest = transformer.propagate_types_and_parameters(
+        "", resolved_manifest["a_stream"], {}
+    )
+
+    stream = factory.create_component(
+        model_type=DeclarativeStreamModel, component_definition=stream_manifest, config=input_config
+    )
+
+    assert isinstance(stream, DefaultStream)
+    assert get_retriever(stream).record_selector.transformations
 
 
 @pytest.mark.parametrize(
@@ -2053,11 +2106,12 @@ def test_custom_components_do_not_contain_extra_fields():
     }
 
     custom_substream_partition_router = factory.create_component(
-        CustomPartitionRouterModel, custom_substream_partition_router_manifest, input_config
+        CustomPartitionRouterModel, custom_substream_partition_router_manifest, input_config, stream_name="child_stream_name",
     )
     assert isinstance(custom_substream_partition_router, TestingCustomSubstreamPartitionRouter)
 
     assert len(custom_substream_partition_router.parent_stream_configs) == 1
+    assert isinstance(custom_substream_partition_router.parent_stream_configs[0].stream.cursor._message_repository, StateFilteringMessageRepository)
     assert custom_substream_partition_router.parent_stream_configs[0].parent_key.eval({}) == "id"
     assert (
         custom_substream_partition_router.parent_stream_configs[0].partition_field.eval({})
@@ -2120,7 +2174,7 @@ def test_parse_custom_component_fields_if_subcomponent():
     }
 
     custom_substream_partition_router = factory.create_component(
-        CustomPartitionRouterModel, custom_substream_partition_router_manifest, input_config
+        CustomPartitionRouterModel, custom_substream_partition_router_manifest, input_config, stream_name="child_stream_name"
     )
     assert isinstance(custom_substream_partition_router, TestingCustomSubstreamPartitionRouter)
     assert custom_substream_partition_router.custom_field == "here"

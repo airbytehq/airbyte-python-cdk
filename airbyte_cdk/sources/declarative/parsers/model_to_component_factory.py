@@ -752,7 +752,7 @@ class ModelToComponentFactory:
             OAuthAuthenticatorModel: self.create_oauth_authenticator,
             OffsetIncrementModel: self.create_offset_increment,
             PageIncrementModel: self.create_page_increment,
-            ParentStreamConfigModel: self.create_parent_stream_config,
+            ParentStreamConfigModel: self._create_message_repository_substream_wrapper,
             PredicateValidatorModel: self.create_predicate_validator,
             PropertiesFromEndpointModel: self.create_properties_from_endpoint,
             PropertyChunkingModel: self.create_property_chunking,
@@ -1748,7 +1748,7 @@ class ModelToComponentFactory:
 
             if self._is_component(model_value):
                 model_args[model_field] = self._create_nested_component(
-                    model, model_field, model_value, config
+                    model, model_field, model_value, config, **kwargs,
                 )
             elif isinstance(model_value, list):
                 vals = []
@@ -1760,7 +1760,7 @@ class ModelToComponentFactory:
                         if derived_type:
                             v["type"] = derived_type
                     if self._is_component(v):
-                        vals.append(self._create_nested_component(model, model_field, v, config))
+                        vals.append(self._create_nested_component(model, model_field, v, config, **kwargs,))
                     else:
                         vals.append(v)
                 model_args[model_field] = vals
@@ -1850,7 +1850,7 @@ class ModelToComponentFactory:
             return []
 
     def _create_nested_component(
-        self, model: Any, model_field: str, model_value: Any, config: Config
+        self, model: Any, model_field: str, model_value: Any, config: Config, **kwargs: Any
     ) -> Any:
         type_name = model_value.get("type", None)
         if not type_name:
@@ -1875,8 +1875,11 @@ class ModelToComponentFactory:
                     for kwarg in constructor_kwargs
                     if kwarg in model_parameters
                 }
+                matching_kwargs = {
+                    kwarg: kwargs[kwarg] for kwarg in constructor_kwargs if kwarg in kwargs
+                }
                 return self._create_component_from_model(
-                    model=parsed_model, config=config, **matching_parameters
+                    model=parsed_model, config=config, **(matching_parameters | matching_kwargs)
                 )
             except TypeError as error:
                 missing_parameters = self._extract_missing_parameters(error)
@@ -2871,7 +2874,7 @@ class ModelToComponentFactory:
         )
 
     def create_parent_stream_config(
-        self, model: ParentStreamConfigModel, config: Config, **kwargs: Any
+        self, model: ParentStreamConfigModel, config: Config, stream_name: str, **kwargs: Any
     ) -> ParentStreamConfig:
         declarative_stream = self._create_component_from_model(
             model.stream,
@@ -3695,11 +3698,11 @@ class ModelToComponentFactory:
         )
 
     def _create_message_repository_substream_wrapper(
-        self, model: ParentStreamConfigModel, config: Config, **kwargs: Any
+        self, model: ParentStreamConfigModel, config: Config, *, stream_name: str, **kwargs: Any
     ) -> Any:
         # getting the parent state
         child_state = self._connector_state_manager.get_stream_state(
-            kwargs["stream_name"], None
+            stream_name, None
         )
 
         # This flag will be used exclusively for StateDelegatingStream when a parent stream is created
@@ -3731,8 +3734,8 @@ class ModelToComponentFactory:
             ),
         )
 
-        return substream_factory._create_component_from_model(
-            model=model, config=config, has_parent_state=has_parent_state, **kwargs
+        return substream_factory.create_parent_stream_config(
+            model=model, config=config, stream_name=stream_name, **kwargs
         )
 
     def _instantiate_parent_stream_state_manager(
