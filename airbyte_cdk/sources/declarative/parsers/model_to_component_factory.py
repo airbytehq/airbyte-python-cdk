@@ -2062,6 +2062,7 @@ class ModelToComponentFactory:
             primary_key=primary_key,
             request_options_provider=request_options_provider,
             stream_slicer=stream_slicer,
+            partition_router=partition_router,
             stop_condition_cursor=concurrent_cursor
             if self._is_stop_condition_on_cursor(model)
             else None,
@@ -2524,7 +2525,7 @@ class ModelToComponentFactory:
             config=config,
             name=name,
             primary_key=None,
-            stream_slicer=self._build_stream_slicer_from_partition_router(model.retriever, config),
+            partition_router=self._build_stream_slicer_from_partition_router(model.retriever, config),
             transformations=[],
             use_cache=True,
             log_formatter=(
@@ -3139,6 +3140,7 @@ class ModelToComponentFactory:
         ] = None,
         use_cache: Optional[bool] = None,
         log_formatter: Optional[Callable[[Response], Any]] = None,
+        partition_router: Optional[PartitionRouter] = None,
         **kwargs: Any,
     ) -> SimpleRetriever:
         def _get_url(req: Requester) -> str:
@@ -3236,6 +3238,8 @@ class ModelToComponentFactory:
 
         if not request_options_provider:
             request_options_provider = DefaultRequestOptionsProvider(parameters={})
+        if isinstance(request_options_provider, DefaultRequestOptionsProvider) and isinstance(partition_router, PartitionRouter):
+            request_options_provider = partition_router
 
         paginator = (
             self._create_component_from_model(
