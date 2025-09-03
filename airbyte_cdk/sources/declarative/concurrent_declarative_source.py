@@ -704,7 +704,7 @@ class ConcurrentDeclarativeSource(AbstractSource):
                             stream_slicer=declarative_stream.retriever.stream_slicer,
                             slice_limit=self._limits.max_slices
                             if self._limits
-                            else None,  # technically not needed because create_declarative_stream() -> create_simple_retriever() will apply the decorator. But for consistency and depending how we build create_default_stream, this may be needed later
+                            else None,  # technically not needed because create_default_stream() -> create_simple_retriever() will apply the decorator. But for consistency and depending how we build create_default_stream, this may be needed later
                         )
                     else:
                         if (
@@ -773,7 +773,7 @@ class ConcurrentDeclarativeSource(AbstractSource):
                         declarative_stream.retriever.stream_slicer,
                         slice_limit=self._limits.max_slices
                         if self._limits
-                        else None,  # technically not needed because create_declarative_stream() -> create_simple_retriever() will apply the decorator. But for consistency and depending how we build create_default_stream, this may be needed later
+                        else None,  # technically not needed because create_default_stream() -> create_simple_retriever() will apply the decorator. But for consistency and depending how we build create_default_stream, this may be needed later
                     )
 
                     final_state_cursor = FinalStateCursor(
