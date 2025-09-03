@@ -15,6 +15,14 @@ from freezegun.api import FakeDatetime
 from pydantic.v1 import ValidationError
 
 from airbyte_cdk import AirbyteTracedException
+from airbyte_cdk.legacy.sources.declarative.declarative_stream import DeclarativeStream
+from airbyte_cdk.legacy.sources.declarative.incremental import (
+    CursorFactory,
+    DatetimeBasedCursor,
+    PerPartitionCursor,
+    PerPartitionWithGlobalCursor,
+    ResumableFullRefreshCursor,
+)
 from airbyte_cdk.models import (
     AirbyteStateBlob,
     AirbyteStateMessage,
@@ -37,21 +45,13 @@ from airbyte_cdk.sources.declarative.auth.token_provider import SessionTokenProv
 from airbyte_cdk.sources.declarative.checks import CheckStream
 from airbyte_cdk.sources.declarative.concurrency_level import ConcurrencyLevel
 from airbyte_cdk.sources.declarative.datetime.min_max_datetime import MinMaxDatetime
-from airbyte_cdk.sources.declarative.declarative_stream import DeclarativeStream
 from airbyte_cdk.sources.declarative.decoders import JsonDecoder, PaginationDecoderDecorator
 from airbyte_cdk.sources.declarative.extractors import DpathExtractor, RecordFilter, RecordSelector
 from airbyte_cdk.sources.declarative.extractors.record_extractor import RecordExtractor
 from airbyte_cdk.sources.declarative.extractors.record_filter import (
     ClientSideIncrementalRecordFilterDecorator,
 )
-from airbyte_cdk.sources.declarative.incremental import (
-    ConcurrentPerPartitionCursor,
-    CursorFactory,
-    DatetimeBasedCursor,
-    PerPartitionCursor,
-    PerPartitionWithGlobalCursor,
-    ResumableFullRefreshCursor,
-)
+from airbyte_cdk.sources.declarative.incremental import ConcurrentPerPartitionCursor
 from airbyte_cdk.sources.declarative.interpolation import InterpolatedString
 from airbyte_cdk.sources.declarative.models import AsyncRetriever as AsyncRetrieverModel
 from airbyte_cdk.sources.declarative.models import CheckStream as CheckStreamModel

@@ -7,14 +7,14 @@ from unittest.mock import Mock
 
 import pytest
 
+from airbyte_cdk.legacy.sources.declarative.incremental.declarative_cursor import DeclarativeCursor
+from airbyte_cdk.legacy.sources.declarative.incremental.global_substream_cursor import (
+    GlobalSubstreamCursor,
+)
 from airbyte_cdk.legacy.sources.declarative.incremental.per_partition_cursor import (
     PerPartitionCursor,
     PerPartitionKeySerializer,
     StreamSlice,
-)
-from airbyte_cdk.sources.declarative.incremental.declarative_cursor import DeclarativeCursor
-from airbyte_cdk.sources.declarative.incremental.global_substream_cursor import (
-    GlobalSubstreamCursor,
 )
 from airbyte_cdk.sources.declarative.partition_routers.partition_router import PartitionRouter
 from airbyte_cdk.sources.types import Record

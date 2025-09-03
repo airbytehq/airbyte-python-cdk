@@ -33,6 +33,14 @@ from requests import Response
 from airbyte_cdk.connector_builder.models import (
     LogMessage as ConnectorBuilderLogMessage,
 )
+from airbyte_cdk.legacy.sources.declarative.declarative_stream import DeclarativeStream
+from airbyte_cdk.legacy.sources.declarative.incremental import (
+    CursorFactory,
+    DatetimeBasedCursor,
+    DeclarativeCursor,
+    GlobalSubstreamCursor,
+    PerPartitionWithGlobalCursor,
+)
 from airbyte_cdk.models import FailureType, Level
 from airbyte_cdk.sources.connector_state_manager import ConnectorStateManager
 from airbyte_cdk.sources.declarative.async_job.job_orchestrator import AsyncJobOrchestrator
@@ -67,7 +75,6 @@ from airbyte_cdk.sources.declarative.checks import (
 )
 from airbyte_cdk.sources.declarative.concurrency_level import ConcurrencyLevel
 from airbyte_cdk.sources.declarative.datetime.min_max_datetime import MinMaxDatetime
-from airbyte_cdk.sources.declarative.declarative_stream import DeclarativeStream
 from airbyte_cdk.sources.declarative.decoders import (
     Decoder,
     IterableDecoder,
@@ -96,11 +103,6 @@ from airbyte_cdk.sources.declarative.extractors.record_filter import (
 from airbyte_cdk.sources.declarative.incremental import (
     ConcurrentCursorFactory,
     ConcurrentPerPartitionCursor,
-    CursorFactory,
-    DatetimeBasedCursor,
-    DeclarativeCursor,
-    GlobalSubstreamCursor,
-    PerPartitionWithGlobalCursor,
 )
 from airbyte_cdk.sources.declarative.interpolation import InterpolatedString
 from airbyte_cdk.sources.declarative.interpolation.interpolated_mapping import InterpolatedMapping
@@ -191,9 +193,6 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     CustomErrorHandler as CustomErrorHandlerModel,
-)
-from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
-    CustomIncrementalSync as CustomIncrementalSyncModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     CustomPaginationStrategy as CustomPaginationStrategyModel,
@@ -688,7 +687,6 @@ class ModelToComponentFactory:
             CustomBackoffStrategyModel: self.create_custom_component,
             CustomDecoderModel: self.create_custom_component,
             CustomErrorHandlerModel: self.create_custom_component,
-            CustomIncrementalSyncModel: self.create_custom_component,
             CustomRecordExtractorModel: self.create_custom_component,
             CustomRecordFilterModel: self.create_custom_component,
             CustomRequesterModel: self.create_custom_component,
@@ -2660,7 +2658,9 @@ class ModelToComponentFactory:
             config=config,
             name=name,
             primary_key=None,
-            stream_slicer=self._build_stream_slicer_from_partition_router(model.retriever, config),
+            partition_router=self._build_stream_slicer_from_partition_router(
+                model.retriever, config
+            ),
             transformations=[],
             use_cache=True,
             log_formatter=(
@@ -3270,12 +3270,11 @@ class ModelToComponentFactory:
         transformations: List[RecordTransformation],
         file_uploader: Optional[DefaultFileUploader] = None,
         incremental_sync: Optional[
-            Union[
-                IncrementingCountCursorModel, DatetimeBasedCursorModel, CustomIncrementalSyncModel
-            ]
+            Union[IncrementingCountCursorModel, DatetimeBasedCursorModel]
         ] = None,
         use_cache: Optional[bool] = None,
         log_formatter: Optional[Callable[[Response], Any]] = None,
+        partition_router: Optional[PartitionRouter] = None,
         **kwargs: Any,
     ) -> SimpleRetriever:
         def _get_url() -> str:
@@ -3385,6 +3384,10 @@ class ModelToComponentFactory:
             request_options_provider = stream_slicer or DefaultRequestOptionsProvider(parameters={})
         elif not request_options_provider:
             request_options_provider = DefaultRequestOptionsProvider(parameters={})
+        if isinstance(request_options_provider, DefaultRequestOptionsProvider) and isinstance(
+            partition_router, PartitionRouter
+        ):
+            request_options_provider = partition_router
 
         stream_slicer = stream_slicer or SinglePartitionRouter(parameters={})
         if self._should_limit_slices_fetched():

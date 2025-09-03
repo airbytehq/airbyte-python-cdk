@@ -3,7 +3,7 @@
 from dataclasses import InitVar, dataclass
 from typing import Any, Iterable, Mapping, Optional
 
-from airbyte_cdk.sources.declarative.incremental import DeclarativeCursor
+from airbyte_cdk.legacy.sources.declarative.incremental import DeclarativeCursor
 from airbyte_cdk.sources.declarative.types import Record, StreamSlice, StreamState
 from airbyte_cdk.sources.streams.checkpoint.checkpoint_reader import FULL_REFRESH_COMPLETE_STATE
 

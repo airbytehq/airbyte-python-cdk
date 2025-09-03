@@ -8,16 +8,15 @@ from typing import Any, Iterable, List, Mapping, MutableMapping, Optional, Union
 
 import pytest as pytest
 
+from airbyte_cdk.legacy.sources.declarative.incremental import (
+    ChildPartitionResumableFullRefreshCursor,
+    ResumableFullRefreshCursor,
+)
 from airbyte_cdk.legacy.sources.declarative.incremental.per_partition_cursor import (
     CursorFactory,
     PerPartitionCursor,
 )
 from airbyte_cdk.models import AirbyteMessage, AirbyteRecordMessage, SyncMode, Type
-from airbyte_cdk.sources.declarative.declarative_stream import DeclarativeStream
-from airbyte_cdk.sources.declarative.incremental import (
-    ChildPartitionResumableFullRefreshCursor,
-    ResumableFullRefreshCursor,
-)
 from airbyte_cdk.sources.declarative.interpolation import InterpolatedString
 from airbyte_cdk.sources.declarative.partition_routers import (
     CartesianProductStreamSlicer,

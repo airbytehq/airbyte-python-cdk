@@ -6,6 +6,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from airbyte_cdk.legacy.sources.declarative.declarative_stream import DeclarativeStream
 from airbyte_cdk.models import (
     AirbyteLogMessage,
     AirbyteMessage,
@@ -15,7 +16,6 @@ from airbyte_cdk.models import (
     TraceType,
     Type,
 )
-from airbyte_cdk.sources.declarative.declarative_stream import DeclarativeStream
 from airbyte_cdk.sources.types import StreamSlice
 
 SLICE_NOT_CONSIDERED_FOR_EQUALITY = {}

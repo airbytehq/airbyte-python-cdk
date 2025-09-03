@@ -4,8 +4,10 @@
 
 import pytest as pytest
 
+from airbyte_cdk.legacy.sources.declarative.incremental.datetime_based_cursor import (
+    DatetimeBasedCursor,
+)
 from airbyte_cdk.sources.declarative.datetime.min_max_datetime import MinMaxDatetime
-from airbyte_cdk.sources.declarative.incremental.datetime_based_cursor import DatetimeBasedCursor
 from airbyte_cdk.sources.declarative.interpolation.interpolated_string import InterpolatedString
 from airbyte_cdk.sources.declarative.partition_routers import (
     CartesianProductStreamSlicer,

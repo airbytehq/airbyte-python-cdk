@@ -5,12 +5,12 @@ import logging
 from dataclasses import InitVar, dataclass, field
 from typing import Any, Iterable, List, Mapping, MutableMapping, Optional, Union
 
-from airbyte_cdk.models import SyncMode
-from airbyte_cdk.sources.declarative.incremental import (
+from airbyte_cdk.legacy.sources.declarative.incremental import (
     GlobalSubstreamCursor,
     PerPartitionCursor,
     PerPartitionWithGlobalCursor,
 )
+from airbyte_cdk.models import SyncMode
 from airbyte_cdk.sources.declarative.interpolation import InterpolatedString
 from airbyte_cdk.sources.declarative.migrations.state_migration import StateMigration
 from airbyte_cdk.sources.declarative.retrievers import SimpleRetriever

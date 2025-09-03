@@ -11,14 +11,11 @@ from typing import (
     Any,
     ClassVar,
     Dict,
-    Generic,
     Iterator,
     List,
     Mapping,
-    MutableMapping,
     Optional,
     Set,
-    Tuple,
     Union,
 )
 
@@ -43,36 +40,21 @@ from airbyte_cdk.models import (
     ConfiguredAirbyteCatalog,
     ConnectorSpecification,
     FailureType,
+    Status,
 )
 from airbyte_cdk.models.airbyte_protocol_serializers import AirbyteMessageSerializer
-from airbyte_cdk.sources.abstract_source import AbstractSource
+from airbyte_cdk.sources import Source
 from airbyte_cdk.sources.concurrent_source.concurrent_source import ConcurrentSource
 from airbyte_cdk.sources.connector_state_manager import ConnectorStateManager
 from airbyte_cdk.sources.declarative.checks import COMPONENTS_CHECKER_TYPE_MAPPING
 from airbyte_cdk.sources.declarative.checks.connection_checker import ConnectionChecker
 from airbyte_cdk.sources.declarative.concurrency_level import ConcurrencyLevel
-from airbyte_cdk.sources.declarative.declarative_stream import DeclarativeStream
-from airbyte_cdk.sources.declarative.incremental import (
-    ConcurrentPerPartitionCursor,
-    GlobalSubstreamCursor,
-)
-from airbyte_cdk.sources.declarative.incremental.datetime_based_cursor import DatetimeBasedCursor
-from airbyte_cdk.sources.declarative.incremental.per_partition_with_global import (
-    PerPartitionWithGlobalCursor,
-)
 from airbyte_cdk.sources.declarative.interpolation import InterpolatedBoolean
-from airbyte_cdk.sources.declarative.models import FileUploader
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     ConcurrencyLevel as ConcurrencyLevelModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
-    DatetimeBasedCursor as DatetimeBasedCursorModel,
-)
-from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     DeclarativeStream as DeclarativeStreamModel,
-)
-from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
-    IncrementingCountCursor as IncrementingCountCursorModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     Spec as SpecModel,
@@ -95,24 +77,13 @@ from airbyte_cdk.sources.declarative.parsers.manifest_reference_resolver import 
 from airbyte_cdk.sources.declarative.parsers.model_to_component_factory import (
     ModelToComponentFactory,
 )
-from airbyte_cdk.sources.declarative.partition_routers import AsyncJobPartitionRouter
 from airbyte_cdk.sources.declarative.resolvers import COMPONENTS_RESOLVER_TYPE_MAPPING
-from airbyte_cdk.sources.declarative.retrievers import AsyncRetriever, Retriever, SimpleRetriever
 from airbyte_cdk.sources.declarative.spec.spec import Spec
-from airbyte_cdk.sources.declarative.stream_slicers.declarative_partition_generator import (
-    DeclarativePartitionFactory,
-    StreamSlicerPartitionGenerator,
-)
 from airbyte_cdk.sources.declarative.types import Config, ConnectionDefinition
 from airbyte_cdk.sources.message.concurrent_repository import ConcurrentMessageRepository
 from airbyte_cdk.sources.message.repository import InMemoryMessageRepository, MessageRepository
-from airbyte_cdk.sources.source import TState
 from airbyte_cdk.sources.streams import Stream
 from airbyte_cdk.sources.streams.concurrent.abstract_stream import AbstractStream
-from airbyte_cdk.sources.streams.concurrent.abstract_stream_facade import AbstractStreamFacade
-from airbyte_cdk.sources.streams.concurrent.cursor import ConcurrentCursor, FinalStateCursor
-from airbyte_cdk.sources.streams.concurrent.default_stream import DefaultStream
-from airbyte_cdk.sources.streams.concurrent.helpers import get_primary_key_from_stream
 from airbyte_cdk.sources.streams.concurrent.partitions.types import QueueItem
 from airbyte_cdk.sources.utils.slice_logger import (
     AlwaysLogSliceLogger,
@@ -155,14 +126,7 @@ def _get_declarative_component_schema() -> Dict[str, Any]:
         )
 
 
-# todo: AbstractSource can be removed once we've completely moved off all legacy synchronous CDK code paths
-#  and replaced with implementing the source.py:Source class
-#
-# todo: The `ConcurrentDeclarativeSource.message_repository()` method can also be removed once AbstractSource
-#  is no longer inherited from since the only external dependency is from that class.
-#
-# todo: It is worth investigating removal of the Generic[TState] since it will always be Optional[List[AirbyteStateMessage]]
-class ConcurrentDeclarativeSource(AbstractSource):
+class ConcurrentDeclarativeSource(Source):
     # By default, we defer to a value of 2. A value lower than could cause a PartitionEnqueuer to be stuck in a state of deadlock
     # because it has hit the limit of futures but not partition reader is consuming them.
     _LOWEST_SAFE_CONCURRENCY_LEVEL = 2
@@ -396,17 +360,6 @@ class ConcurrentDeclarativeSource(AbstractSource):
         """
         return self._source_config
 
-    # TODO: Deprecate this class once ConcurrentDeclarativeSource no longer inherits AbstractSource
-    @property
-    def message_repository(self) -> MessageRepository:
-        return self._message_repository
-
-    # TODO: Remove this. This property is necessary to safely migrate Stripe during the transition state.
-    @property
-    def is_partially_declarative(self) -> bool:
-        """This flag used to avoid unexpected AbstractStreamFacade processing as concurrent streams."""
-        return False
-
     def deprecation_warnings(self) -> List[ConnectorBuilderLogMessage]:
         return self._constructor.get_model_deprecations()
 
@@ -417,47 +370,22 @@ class ConcurrentDeclarativeSource(AbstractSource):
         catalog: ConfiguredAirbyteCatalog,
         state: Optional[List[AirbyteStateMessage]] = None,
     ) -> Iterator[AirbyteMessage]:
-        concurrent_streams, _ = self._group_streams(config=config)
-
-        # ConcurrentReadProcessor pops streams that are finished being read so before syncing, the names of
-        # the concurrent streams must be saved so that they can be removed from the catalog before starting
-        # synchronous streams
-        if len(concurrent_streams) > 0:
-            concurrent_stream_names = set(
-                [concurrent_stream.name for concurrent_stream in concurrent_streams]
-            )
-
-            selected_concurrent_streams = self._select_streams(
-                streams=concurrent_streams, configured_catalog=catalog
-            )
-            # It would appear that passing in an empty set of streams causes an infinite loop in ConcurrentReadProcessor.
-            # This is also evident in concurrent_source_adapter.py so I'll leave this out of scope to fix for now
-            if selected_concurrent_streams:
-                yield from self._concurrent_source.read(selected_concurrent_streams)
-
-            # Sync all streams that are not concurrent compatible. We filter out concurrent streams because the
-            # existing AbstractSource.read() implementation iterates over the catalog when syncing streams. Many
-            # of which were already synced using the Concurrent CDK
-            filtered_catalog = self._remove_concurrent_streams_from_catalog(
-                catalog=catalog, concurrent_stream_names=concurrent_stream_names
-            )
-        else:
-            filtered_catalog = catalog
-
-        # It is no need run read for synchronous streams if they are not exists.
-        if not filtered_catalog.streams:
-            return
-
-        yield from super().read(logger, config, filtered_catalog, state)
-
-    def discover(self, logger: logging.Logger, config: Mapping[str, Any]) -> AirbyteCatalog:
-        concurrent_streams, synchronous_streams = self._group_streams(config=config)
-        return AirbyteCatalog(
-            streams=[
-                stream.as_airbyte_stream() for stream in concurrent_streams + synchronous_streams
-            ]
+        selected_concurrent_streams = self._select_streams(
+            streams=self.streams(config=self._config),  # type: ignore  # We are migrating away from the DeclarativeStream implementation and streams() only returns the concurrent-compatible AbstractStream. To preserve compatibility, we retain the existing method interface
+            configured_catalog=catalog,
         )
 
+        # It would appear that passing in an empty set of streams causes an infinite loop in ConcurrentReadProcessor.
+        # This is also evident in concurrent_source_adapter.py so I'll leave this out of scope to fix for now
+        if len(selected_concurrent_streams) > 0:
+            yield from self._concurrent_source.read(selected_concurrent_streams)
+
+    def discover(self, logger: logging.Logger, config: Mapping[str, Any]) -> AirbyteCatalog:
+        return AirbyteCatalog(
+            streams=[stream.as_airbyte_stream() for stream in self.streams(config=self._config)]
+        )
+
+    # todo: add PR comment about whether we can change the signature to List[AbstractStream]
     def streams(self, config: Mapping[str, Any]) -> List[Union[Stream, AbstractStream]]:  # type: ignore  # we are migrating away from the AbstractSource and are expecting that this will only be called by ConcurrentDeclarativeSource or the Connector Builder
         """
         The `streams` method is used as part of the AbstractSource in the following cases:
@@ -469,15 +397,13 @@ class ConcurrentDeclarativeSource(AbstractSource):
         """
 
         if self._spec_component:
-            self._spec_component.validate_config(config)
+            self._spec_component.validate_config(self._config)
 
-        stream_configs = (
-            self._stream_configs(self._source_config, config=config) + self.dynamic_streams
-        )
+        stream_configs = self._stream_configs(self._source_config) + self.dynamic_streams
 
         api_budget_model = self._source_config.get("api_budget")
         if api_budget_model:
-            self._constructor.set_api_budget(api_budget_model, config)
+            self._constructor.set_api_budget(api_budget_model, self._config)
 
         source_streams = [
             self._constructor.create_component(
@@ -487,7 +413,7 @@ class ConcurrentDeclarativeSource(AbstractSource):
                     else DeclarativeStreamModel
                 ),
                 stream_config,
-                config,
+                self._config,
                 emit_connector_builder_messages=self._emit_connector_builder_messages,
             )
             for stream_config in self._initialize_cache_for_parent_streams(deepcopy(stream_configs))
@@ -559,315 +485,33 @@ class ConcurrentDeclarativeSource(AbstractSource):
         )
 
     def check(self, logger: logging.Logger, config: Mapping[str, Any]) -> AirbyteConnectionStatus:
-        return super().check(logger, config)
-
-    def check_connection(
-        self, logger: logging.Logger, config: Mapping[str, Any]
-    ) -> Tuple[bool, Any]:
-        """
-        :param logger: The source logger
-        :param config: The user-provided configuration as specified by the source's spec.
-          This usually contains information required to check connection e.g. tokens, secrets and keys etc.
-        :return: A tuple of (boolean, error). If boolean is true, then the connection check is successful
-          and we can connect to the underlying data source using the provided configuration.
-          Otherwise, the input config cannot be used to connect to the underlying data source,
-          and the "error" object should describe what went wrong.
-          The error object will be cast to string to display the problem to the user.
-        """
-        return self.connection_checker.check_connection(self, logger, config)
-
-    @property
-    def connection_checker(self) -> ConnectionChecker:
         check = self._source_config["check"]
         if "type" not in check:
             check["type"] = "CheckStream"
-        check_stream = self._constructor.create_component(
+        connection_checker = self._constructor.create_component(
             COMPONENTS_CHECKER_TYPE_MAPPING[check["type"]],
             check,
             dict(),
             emit_connector_builder_messages=self._emit_connector_builder_messages,
         )
-        if isinstance(check_stream, ConnectionChecker):
-            return check_stream
-        else:
+        if not isinstance(connection_checker, ConnectionChecker):
             raise ValueError(
-                f"Expected to generate a ConnectionChecker component, but received {check_stream.__class__}"
+                f"Expected to generate a ConnectionChecker component, but received {connection_checker.__class__}"
             )
+
+        check_succeeded, error = connection_checker.check_connection(self, logger, self._config)
+        if not check_succeeded:
+            return AirbyteConnectionStatus(status=Status.FAILED, message=repr(error))
+        return AirbyteConnectionStatus(status=Status.SUCCEEDED)
 
     @property
     def dynamic_streams(self) -> List[Dict[str, Any]]:
         return self._dynamic_stream_configs(
             manifest=self._source_config,
-            config=self._config,
             with_dynamic_stream_name=True,
         )
 
-    def _group_streams(
-        self, config: Mapping[str, Any]
-    ) -> Tuple[List[AbstractStream], List[Stream]]:
-        concurrent_streams: List[AbstractStream] = []
-        synchronous_streams: List[Stream] = []
-
-        # Combine streams and dynamic_streams. Note: both cannot be empty at the same time,
-        # and this is validated during the initialization of the source.
-        streams = self._stream_configs(self._source_config, config) + self._dynamic_stream_configs(
-            self._source_config, config
-        )
-
-        name_to_stream_mapping = {stream["name"]: stream for stream in streams}
-
-        for declarative_stream in self.streams(config=config):
-            # Some low-code sources use a combination of DeclarativeStream and regular Python streams. We can't inspect
-            # these legacy Python streams the way we do low-code streams to determine if they are concurrent compatible,
-            # so we need to treat them as synchronous
-
-            if isinstance(declarative_stream, AbstractStream):
-                concurrent_streams.append(declarative_stream)
-                continue
-
-            supports_file_transfer = (
-                isinstance(declarative_stream, DeclarativeStream)
-                and "file_uploader" in name_to_stream_mapping[declarative_stream.name]
-            )
-
-            if (
-                isinstance(declarative_stream, DeclarativeStream)
-                and name_to_stream_mapping[declarative_stream.name]["type"]
-                == "StateDelegatingStream"
-            ):
-                stream_state = self._connector_state_manager.get_stream_state(
-                    stream_name=declarative_stream.name, namespace=declarative_stream.namespace
-                )
-
-                name_to_stream_mapping[declarative_stream.name] = (
-                    name_to_stream_mapping[declarative_stream.name]["incremental_stream"]
-                    if stream_state
-                    else name_to_stream_mapping[declarative_stream.name]["full_refresh_stream"]
-                )
-
-            if isinstance(declarative_stream, DeclarativeStream) and (
-                name_to_stream_mapping[declarative_stream.name]["retriever"]["type"]
-                == "SimpleRetriever"
-                or name_to_stream_mapping[declarative_stream.name]["retriever"]["type"]
-                == "AsyncRetriever"
-            ):
-                incremental_sync_component_definition = name_to_stream_mapping[
-                    declarative_stream.name
-                ].get("incremental_sync")
-
-                partition_router_component_definition = (
-                    name_to_stream_mapping[declarative_stream.name]
-                    .get("retriever", {})
-                    .get("partition_router")
-                )
-                is_without_partition_router_or_cursor = not bool(
-                    incremental_sync_component_definition
-                ) and not bool(partition_router_component_definition)
-
-                is_substream_without_incremental = (
-                    partition_router_component_definition
-                    and not incremental_sync_component_definition
-                )
-
-                if self._is_concurrent_cursor_incremental_without_partition_routing(
-                    declarative_stream, incremental_sync_component_definition
-                ):
-                    stream_state = self._connector_state_manager.get_stream_state(
-                        stream_name=declarative_stream.name, namespace=declarative_stream.namespace
-                    )
-                    stream_state = self._migrate_state(declarative_stream, stream_state)
-
-                    retriever = self._get_retriever(declarative_stream, stream_state)
-
-                    if isinstance(declarative_stream.retriever, AsyncRetriever) and isinstance(
-                        declarative_stream.retriever.stream_slicer, AsyncJobPartitionRouter
-                    ):
-                        cursor = declarative_stream.retriever.stream_slicer.stream_slicer
-
-                        if not isinstance(cursor, ConcurrentCursor | ConcurrentPerPartitionCursor):
-                            # This should never happen since we instantiate ConcurrentCursor in
-                            # model_to_component_factory.py
-                            raise ValueError(
-                                f"Expected AsyncJobPartitionRouter stream_slicer to be of type ConcurrentCursor, but received{cursor.__class__}"
-                            )
-
-                        partition_generator = StreamSlicerPartitionGenerator(
-                            partition_factory=DeclarativePartitionFactory(
-                                stream_name=declarative_stream.name,
-                                schema_loader=declarative_stream._schema_loader,  # type: ignore  # We are accessing the private property but the public one is optional and we will remove this code soonish
-                                retriever=retriever,
-                                message_repository=self._message_repository,
-                                max_records_limit=self._limits.max_records
-                                if self._limits
-                                else None,
-                            ),
-                            stream_slicer=declarative_stream.retriever.stream_slicer,
-                            slice_limit=self._limits.max_slices
-                            if self._limits
-                            else None,  # technically not needed because create_declarative_stream() -> create_simple_retriever() will apply the decorator. But for consistency and depending how we build create_default_stream, this may be needed later
-                        )
-                    else:
-                        if (
-                            incremental_sync_component_definition
-                            and incremental_sync_component_definition.get("type")
-                            == IncrementingCountCursorModel.__name__
-                        ):
-                            cursor = self._constructor.create_concurrent_cursor_from_incrementing_count_cursor(
-                                model_type=IncrementingCountCursorModel,
-                                component_definition=incremental_sync_component_definition,  # type: ignore  # Not None because of the if condition above
-                                stream_name=declarative_stream.name,
-                                stream_namespace=declarative_stream.namespace,
-                                config=config or {},
-                            )
-                        else:
-                            cursor = self._constructor.create_concurrent_cursor_from_datetime_based_cursor(
-                                model_type=DatetimeBasedCursorModel,
-                                component_definition=incremental_sync_component_definition,  # type: ignore  # Not None because of the if condition above
-                                stream_name=declarative_stream.name,
-                                stream_namespace=declarative_stream.namespace,
-                                config=config or {},
-                                stream_state_migrations=declarative_stream.state_migrations,
-                            )
-                        partition_generator = StreamSlicerPartitionGenerator(
-                            partition_factory=DeclarativePartitionFactory(
-                                stream_name=declarative_stream.name,
-                                schema_loader=declarative_stream._schema_loader,  # type: ignore  # We are accessing the private property but the public one is optional and we will remove this code soonish
-                                retriever=retriever,
-                                message_repository=self._message_repository,
-                                max_records_limit=self._limits.max_records
-                                if self._limits
-                                else None,
-                            ),
-                            stream_slicer=cursor,
-                            slice_limit=self._limits.max_slices if self._limits else None,
-                        )
-
-                    concurrent_streams.append(
-                        DefaultStream(
-                            partition_generator=partition_generator,
-                            name=declarative_stream.name,
-                            json_schema=declarative_stream.get_json_schema(),
-                            primary_key=get_primary_key_from_stream(declarative_stream.primary_key),
-                            cursor_field=cursor.cursor_field.cursor_field_key
-                            if hasattr(cursor, "cursor_field")
-                            and hasattr(
-                                cursor.cursor_field, "cursor_field_key"
-                            )  # FIXME this will need to be updated once we do the per partition
-                            else None,
-                            logger=self.logger,
-                            cursor=cursor,
-                            supports_file_transfer=supports_file_transfer,
-                        )
-                    )
-                elif (
-                    is_substream_without_incremental or is_without_partition_router_or_cursor
-                ) and hasattr(declarative_stream.retriever, "stream_slicer"):
-                    partition_generator = StreamSlicerPartitionGenerator(
-                        DeclarativePartitionFactory(
-                            stream_name=declarative_stream.name,
-                            schema_loader=declarative_stream._schema_loader,  # type: ignore  # We are accessing the private property but the public one is optional and we will remove this code soonish
-                            retriever=declarative_stream.retriever,
-                            message_repository=self._message_repository,
-                            max_records_limit=self._limits.max_records if self._limits else None,
-                        ),
-                        declarative_stream.retriever.stream_slicer,
-                        slice_limit=self._limits.max_slices
-                        if self._limits
-                        else None,  # technically not needed because create_declarative_stream() -> create_simple_retriever() will apply the decorator. But for consistency and depending how we build create_default_stream, this may be needed later
-                    )
-
-                    final_state_cursor = FinalStateCursor(
-                        stream_name=declarative_stream.name,
-                        stream_namespace=declarative_stream.namespace,
-                        message_repository=self._message_repository,
-                    )
-
-                    concurrent_streams.append(
-                        DefaultStream(
-                            partition_generator=partition_generator,
-                            name=declarative_stream.name,
-                            json_schema=declarative_stream.get_json_schema(),
-                            primary_key=get_primary_key_from_stream(declarative_stream.primary_key),
-                            cursor_field=None,
-                            logger=self.logger,
-                            cursor=final_state_cursor,
-                            supports_file_transfer=supports_file_transfer,
-                        )
-                    )
-                elif (
-                    incremental_sync_component_definition
-                    and incremental_sync_component_definition.get("type", "")
-                    == DatetimeBasedCursorModel.__name__
-                    and hasattr(declarative_stream.retriever, "stream_slicer")
-                    and isinstance(
-                        declarative_stream.retriever.stream_slicer,
-                        (GlobalSubstreamCursor, PerPartitionWithGlobalCursor),
-                    )
-                ):
-                    stream_state = self._connector_state_manager.get_stream_state(
-                        stream_name=declarative_stream.name, namespace=declarative_stream.namespace
-                    )
-                    stream_state = self._migrate_state(declarative_stream, stream_state)
-
-                    partition_router = declarative_stream.retriever.stream_slicer._partition_router
-
-                    perpartition_cursor = (
-                        self._constructor.create_concurrent_cursor_from_perpartition_cursor(
-                            state_manager=self._connector_state_manager,
-                            model_type=DatetimeBasedCursorModel,
-                            component_definition=incremental_sync_component_definition,
-                            stream_name=declarative_stream.name,
-                            stream_namespace=declarative_stream.namespace,
-                            config=config or {},
-                            stream_state=stream_state,
-                            partition_router=partition_router,
-                        )
-                    )
-
-                    retriever = self._get_retriever(declarative_stream, stream_state)
-
-                    partition_generator = StreamSlicerPartitionGenerator(
-                        DeclarativePartitionFactory(
-                            stream_name=declarative_stream.name,
-                            schema_loader=declarative_stream._schema_loader,  # type: ignore  # We are accessing the private property but the public one is optional and we will remove this code soonish
-                            retriever=retriever,
-                            message_repository=self._message_repository,
-                            max_records_limit=self._limits.max_records if self._limits else None,
-                        ),
-                        perpartition_cursor,
-                        slice_limit=self._limits.max_slices if self._limits else None,
-                    )
-
-                    concurrent_streams.append(
-                        DefaultStream(
-                            partition_generator=partition_generator,
-                            name=declarative_stream.name,
-                            json_schema=declarative_stream.get_json_schema(),
-                            primary_key=get_primary_key_from_stream(declarative_stream.primary_key),
-                            cursor_field=perpartition_cursor.cursor_field.cursor_field_key,
-                            logger=self.logger,
-                            cursor=perpartition_cursor,
-                            supports_file_transfer=supports_file_transfer,
-                        )
-                    )
-                else:
-                    synchronous_streams.append(declarative_stream)
-            # TODO: Remove this. This check is necessary to safely migrate Stripe during the transition state.
-            # Condition below needs to ensure that concurrent support is not lost for sources that already support
-            # it before migration, but now are only partially migrated to declarative implementation (e.g., Stripe).
-            elif (
-                isinstance(declarative_stream, AbstractStreamFacade)
-                and self.is_partially_declarative
-            ):
-                concurrent_streams.append(declarative_stream.get_underlying_stream())
-            else:
-                synchronous_streams.append(declarative_stream)
-
-        return concurrent_streams, synchronous_streams
-
-    def _stream_configs(
-        self, manifest: Mapping[str, Any], config: Mapping[str, Any]
-    ) -> List[Dict[str, Any]]:
+    def _stream_configs(self, manifest: Mapping[str, Any]) -> List[Dict[str, Any]]:
         # This has a warning flag for static, but after we finish part 4 we'll replace manifest with self._source_config
         stream_configs = []
         for current_stream_config in manifest.get("streams", []):
@@ -880,7 +524,7 @@ class ConcurrentDeclarativeSource(AbstractSource):
                     parameters={},
                 )
 
-                if interpolated_boolean.eval(config=config):
+                if interpolated_boolean.eval(config=self._config):
                     stream_configs.extend(current_stream_config.get("streams", []))
             else:
                 if "type" not in current_stream_config:
@@ -891,7 +535,6 @@ class ConcurrentDeclarativeSource(AbstractSource):
     def _dynamic_stream_configs(
         self,
         manifest: Mapping[str, Any],
-        config: Mapping[str, Any],
         with_dynamic_stream_name: Optional[bool] = None,
     ) -> List[Dict[str, Any]]:
         dynamic_stream_definitions: List[Dict[str, Any]] = manifest.get("dynamic_streams", [])
@@ -926,14 +569,14 @@ class ConcurrentDeclarativeSource(AbstractSource):
                 components_resolver = self._constructor.create_component(
                     model_type=COMPONENTS_RESOLVER_TYPE_MAPPING[resolver_type],
                     component_definition=components_resolver_config,
-                    config=config,
+                    config=self._config,
                     stream_name=dynamic_definition.get("name"),
                 )
             else:
                 components_resolver = self._constructor.create_component(
                     model_type=COMPONENTS_RESOLVER_TYPE_MAPPING[resolver_type],
                     component_definition=components_resolver_config,
-                    config=config,
+                    config=self._config,
                 )
 
             stream_template_config = dynamic_definition["stream_template"]
@@ -986,40 +629,6 @@ class ConcurrentDeclarativeSource(AbstractSource):
 
         return dynamic_stream_configs
 
-    def _is_concurrent_cursor_incremental_without_partition_routing(
-        self,
-        declarative_stream: DeclarativeStream,
-        incremental_sync_component_definition: Mapping[str, Any] | None,
-    ) -> bool:
-        return (
-            incremental_sync_component_definition is not None
-            and bool(incremental_sync_component_definition)
-            and (
-                incremental_sync_component_definition.get("type", "")
-                in (DatetimeBasedCursorModel.__name__, IncrementingCountCursorModel.__name__)
-            )
-            and hasattr(declarative_stream.retriever, "stream_slicer")
-            and (
-                isinstance(declarative_stream.retriever.stream_slicer, DatetimeBasedCursor)
-                # IncrementingCountCursorModel is hardcoded to be of type DatetimeBasedCursor
-                # add isintance check here if we want to create a Declarative IncrementingCountCursor
-                # or isinstance(
-                #     declarative_stream.retriever.stream_slicer, IncrementingCountCursor
-                # )
-                or isinstance(declarative_stream.retriever.stream_slicer, AsyncJobPartitionRouter)
-            )
-        )
-
-    @staticmethod
-    def _get_retriever(
-        declarative_stream: DeclarativeStream, stream_state: Mapping[str, Any]
-    ) -> Retriever:
-        if declarative_stream and isinstance(declarative_stream.retriever, SimpleRetriever):
-            # We zero it out here, but since this is a cursor reference, the state is still properly
-            # instantiated for the other components that reference it
-            declarative_stream.retriever.cursor = None
-        return declarative_stream.retriever
-
     @staticmethod
     def _select_streams(
         streams: List[AbstractStream], configured_catalog: ConfiguredAirbyteCatalog
@@ -1032,27 +641,3 @@ class ConcurrentDeclarativeSource(AbstractSource):
                 abstract_streams.append(stream_instance)
 
         return abstract_streams
-
-    @staticmethod
-    def _remove_concurrent_streams_from_catalog(
-        catalog: ConfiguredAirbyteCatalog,
-        concurrent_stream_names: set[str],
-    ) -> ConfiguredAirbyteCatalog:
-        return ConfiguredAirbyteCatalog(
-            streams=[
-                stream
-                for stream in catalog.streams
-                if stream.stream.name not in concurrent_stream_names
-            ]
-        )
-
-    @staticmethod
-    def _migrate_state(
-        declarative_stream: DeclarativeStream, stream_state: MutableMapping[str, Any]
-    ) -> MutableMapping[str, Any]:
-        for state_migration in declarative_stream.state_migrations:
-            if state_migration.should_migrate(stream_state):
-                # The state variable is expected to be mutable but the migrate method returns an immutable mapping.
-                stream_state = dict(state_migration.migrate(stream_state))
-
-        return stream_state

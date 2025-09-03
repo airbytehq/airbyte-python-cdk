@@ -32,6 +32,7 @@ from airbyte_cdk.connector_builder.models import (
     StreamReadPages,
     StreamReadSlices,
 )
+from airbyte_cdk.legacy.sources.declarative.declarative_stream import DeclarativeStream
 from airbyte_cdk.models import (
     AirbyteLogMessage,
     AirbyteMessage,
@@ -56,7 +57,6 @@ from airbyte_cdk.sources.declarative.concurrent_declarative_source import (
     ConcurrentDeclarativeSource,
     TestLimits,
 )
-from airbyte_cdk.sources.declarative.declarative_stream import DeclarativeStream
 from airbyte_cdk.sources.declarative.retrievers.simple_retriever import SimpleRetriever
 from airbyte_cdk.sources.declarative.stream_slicers import StreamSlicerTestReadDecorator
 from airbyte_cdk.sources.streams.concurrent.default_stream import DefaultStream

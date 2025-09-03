@@ -9,13 +9,9 @@ import time
 from collections import OrderedDict
 from copy import deepcopy
 from datetime import timedelta
-from typing import Any, Callable, Iterable, List, Mapping, MutableMapping, Optional
+from typing import Any, Callable, Iterable, List, Mapping, MutableMapping, Optional, TypeVar
 
 from airbyte_cdk.sources.connector_state_manager import ConnectorStateManager
-from airbyte_cdk.sources.declarative.incremental.global_substream_cursor import (
-    Timer,
-    iterate_with_last_flag_and_state,
-)
 from airbyte_cdk.sources.declarative.partition_routers.partition_router import PartitionRouter
 from airbyte_cdk.sources.message import MessageRepository
 from airbyte_cdk.sources.streams.checkpoint.per_partition_key_serializer import (
@@ -29,6 +25,63 @@ from airbyte_cdk.sources.streams.concurrent.state_converters.abstract_stream_sta
 from airbyte_cdk.sources.types import Record, StreamSlice, StreamState
 
 logger = logging.getLogger("airbyte")
+
+
+T = TypeVar("T")
+
+
+def iterate_with_last_flag_and_state(
+    generator: Iterable[T], get_stream_state_func: Callable[[], Optional[Mapping[str, StreamState]]]
+) -> Iterable[tuple[T, bool, Any]]:
+    """
+    Iterates over the given generator, yielding tuples containing the element, a flag
+    indicating whether it's the last element in the generator, and the result of
+    `get_stream_state_func` applied to the element.
+
+    Args:
+        generator: The iterable to iterate over.
+        get_stream_state_func: A function that takes an element from the generator and
+            returns its state.
+
+    Returns:
+        An iterator that yields tuples of the form (element, is_last, state).
+    """
+
+    iterator = iter(generator)
+
+    try:
+        current = next(iterator)
+        state = get_stream_state_func()
+    except StopIteration:
+        return  # Return an empty iterator
+
+    for next_item in iterator:
+        yield current, False, state
+        current = next_item
+        state = get_stream_state_func()
+
+    yield current, True, state
+
+
+class Timer:
+    """
+    A simple timer class that measures elapsed time in seconds using a high-resolution performance counter.
+    """
+
+    def __init__(self) -> None:
+        self._start: Optional[int] = None
+
+    def start(self) -> None:
+        self._start = time.perf_counter_ns()
+
+    def finish(self) -> int:
+        if self._start:
+            return ((time.perf_counter_ns() - self._start) / 1e9).__ceil__()
+        else:
+            raise RuntimeError("Global substream cursor timer not started")
+
+    def is_running(self) -> bool:
+        return self._start is not None
 
 
 class ConcurrentCursorFactory:

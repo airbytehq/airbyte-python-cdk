@@ -1,6 +1,7 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
+
 from copy import deepcopy
 from datetime import datetime, timedelta, timezone
 from functools import partial
@@ -12,9 +13,11 @@ import freezegun
 import pytest
 from isodate import parse_duration
 
+from airbyte_cdk.legacy.sources.declarative.incremental.datetime_based_cursor import (
+    DatetimeBasedCursor,
+)
 from airbyte_cdk.sources.connector_state_manager import ConnectorStateManager
 from airbyte_cdk.sources.declarative.datetime.min_max_datetime import MinMaxDatetime
-from airbyte_cdk.sources.declarative.incremental.datetime_based_cursor import DatetimeBasedCursor
 from airbyte_cdk.sources.message import MessageRepository
 from airbyte_cdk.sources.streams.concurrent.clamping import (
     ClampingEndProvider,

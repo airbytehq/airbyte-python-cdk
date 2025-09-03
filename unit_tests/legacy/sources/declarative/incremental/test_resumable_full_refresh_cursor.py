@@ -2,7 +2,7 @@
 
 import pytest
 
-from airbyte_cdk.sources.declarative.incremental import (
+from airbyte_cdk.legacy.sources.declarative.incremental import (
     ChildPartitionResumableFullRefreshCursor,
     ResumableFullRefreshCursor,
 )

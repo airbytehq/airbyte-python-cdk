@@ -65,6 +65,8 @@ from .config_observation import (
 from .connector import BaseConnector, Connector
 from .destinations import Destination
 from .entrypoint import AirbyteEntrypoint, launch
+from .legacy.sources.declarative.declarative_stream import DeclarativeStream
+from .legacy.sources.declarative.incremental import DatetimeBasedCursor
 from .logger import AirbyteLogFormatter, init_logger
 from .models import (
     AdvancedAuth,
@@ -99,13 +101,11 @@ from .sources.declarative.auth.token import (
     BearerAuthenticator,
 )
 from .sources.declarative.datetime.min_max_datetime import MinMaxDatetime
-from .sources.declarative.declarative_stream import DeclarativeStream
 from .sources.declarative.decoders import Decoder, JsonDecoder
 from .sources.declarative.exceptions import ReadException
 from .sources.declarative.extractors import DpathExtractor, RecordSelector
 from .sources.declarative.extractors.record_extractor import RecordExtractor
 from .sources.declarative.extractors.record_filter import RecordFilter
-from .sources.declarative.incremental import DatetimeBasedCursor
 from .sources.declarative.interpolation import InterpolatedBoolean, InterpolatedString
 from .sources.declarative.migrations.legacy_to_per_partition_state_migration import (
     LegacyToPerPartitionStateMigration,

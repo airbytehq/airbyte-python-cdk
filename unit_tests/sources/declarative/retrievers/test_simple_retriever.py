@@ -11,6 +11,13 @@ import pytest
 import requests
 
 from airbyte_cdk import YamlDeclarativeSource
+
+# todo: These can be removed once SimpleRetriever deprecated the now unused state methods
+from airbyte_cdk.legacy.sources.declarative.incremental import (
+    DatetimeBasedCursor,
+    DeclarativeCursor,
+    ResumableFullRefreshCursor,
+)
 from airbyte_cdk.models import (
     AirbyteLogMessage,
     AirbyteMessage,
@@ -22,11 +29,6 @@ from airbyte_cdk.models import (
 from airbyte_cdk.sources.declarative.auth.declarative_authenticator import NoAuth
 from airbyte_cdk.sources.declarative.decoders import JsonDecoder
 from airbyte_cdk.sources.declarative.extractors import DpathExtractor, RecordSelector
-from airbyte_cdk.sources.declarative.incremental import (
-    DatetimeBasedCursor,
-    DeclarativeCursor,
-    ResumableFullRefreshCursor,
-)
 from airbyte_cdk.sources.declarative.models import DeclarativeStream as DeclarativeStreamModel
 from airbyte_cdk.sources.declarative.parsers.model_to_component_factory import (
     ModelToComponentFactory,

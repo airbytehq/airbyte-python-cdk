@@ -23,6 +23,7 @@ from jsonschema.exceptions import ValidationError
 from typing_extensions import deprecated
 
 import unit_tests.sources.declarative.external_component  # Needed for dynamic imports to work
+from airbyte_cdk.legacy.sources.declarative.declarative_stream import DeclarativeStream
 from airbyte_cdk.models import (
     AirbyteLogMessage,
     AirbyteMessage,
@@ -46,7 +47,6 @@ from airbyte_cdk.sources.declarative.async_job.job_tracker import ConcurrentJobL
 from airbyte_cdk.sources.declarative.concurrent_declarative_source import (
     ConcurrentDeclarativeSource,
 )
-from airbyte_cdk.sources.declarative.declarative_stream import DeclarativeStream
 from airbyte_cdk.sources.declarative.extractors.record_filter import (
     ClientSideIncrementalRecordFilterDecorator,
 )
@@ -685,86 +685,6 @@ class DeclarativeStreamDecorator(Stream):
         return self._declarative_stream.get_cursor()
 
 
-def test_group_streams():
-    """
-    Tests the grouping of low-code streams into ones that can be processed concurrently vs ones that must be processed concurrently
-    """
-
-    catalog = ConfiguredAirbyteCatalog(
-        streams=[
-            ConfiguredAirbyteStream(
-                stream=AirbyteStream(
-                    name="party_members",
-                    json_schema={},
-                    supported_sync_modes=[SyncMode.incremental],
-                ),
-                sync_mode=SyncMode.full_refresh,
-                destination_sync_mode=DestinationSyncMode.append,
-            ),
-            ConfiguredAirbyteStream(
-                stream=AirbyteStream(
-                    name="palaces", json_schema={}, supported_sync_modes=[SyncMode.full_refresh]
-                ),
-                sync_mode=SyncMode.full_refresh,
-                destination_sync_mode=DestinationSyncMode.append,
-            ),
-            ConfiguredAirbyteStream(
-                stream=AirbyteStream(
-                    name="locations", json_schema={}, supported_sync_modes=[SyncMode.incremental]
-                ),
-                sync_mode=SyncMode.full_refresh,
-                destination_sync_mode=DestinationSyncMode.append,
-            ),
-            ConfiguredAirbyteStream(
-                stream=AirbyteStream(
-                    name="party_members_skills",
-                    json_schema={},
-                    supported_sync_modes=[SyncMode.full_refresh],
-                ),
-                sync_mode=SyncMode.full_refresh,
-                destination_sync_mode=DestinationSyncMode.append,
-            ),
-        ]
-    )
-
-    state = []
-
-    source = ConcurrentDeclarativeSource(
-        source_config=_MANIFEST, config=_CONFIG, catalog=catalog, state=state
-    )
-    concurrent_streams, synchronous_streams = source._group_streams(config=_CONFIG)
-
-    # 1 full refresh stream, 3 incremental streams, 1 substream w/o incremental, 1 list based substream w/o incremental
-    # 1 async job stream, 1 substream w/ incremental
-    assert len(concurrent_streams) == 8
-    (
-        concurrent_stream_0,
-        concurrent_stream_1,
-        concurrent_stream_2,
-        concurrent_stream_3,
-        concurrent_stream_4,
-        concurrent_stream_5,
-        concurrent_stream_6,
-        concurrent_stream_7,
-    ) = concurrent_streams
-    assert isinstance(concurrent_stream_0, DefaultStream)
-    assert concurrent_stream_0.name == "party_members"
-    assert isinstance(concurrent_stream_1, DefaultStream)
-    assert concurrent_stream_1.name == "palaces"
-    assert isinstance(concurrent_stream_2, DefaultStream)
-    assert concurrent_stream_2.name == "locations"
-    assert isinstance(concurrent_stream_3, DefaultStream)
-    assert concurrent_stream_3.name == "party_members_skills"
-    assert isinstance(concurrent_stream_4, DefaultStream)
-    assert concurrent_stream_4.name == "arcana_personas"
-    assert isinstance(concurrent_stream_5, DefaultStream)
-    assert concurrent_stream_5.name == "palace_enemies"
-    assert isinstance(concurrent_stream_6, DefaultStream)
-    assert concurrent_stream_6.name == "async_job_stream"
-    assert isinstance(concurrent_stream_7, DefaultStream)
-    assert concurrent_stream_7.name == "incremental_counting_stream"
-
-
 @freezegun.freeze_time(time_to_freeze=datetime(2024, 9, 1, 0, 0, 0, 0, tzinfo=timezone.utc))
 def test_create_concurrent_cursor():
     """
@@ -792,9 +712,9 @@ def test_create_concurrent_cursor():
     source = ConcurrentDeclarativeSource(
         source_config=_MANIFEST, config=_CONFIG, catalog=_CATALOG, state=state
     )
-    concurrent_streams, synchronous_streams = source._group_streams(config=_CONFIG)
+    streams = source.streams(config=_CONFIG)
 
-    party_members_stream = concurrent_streams[0]
+    party_members_stream = streams[0]
     assert isinstance(party_members_stream, DefaultStream)
     party_members_cursor = party_members_stream.cursor
 
@@ -810,7 +730,7 @@ def test_create_concurrent_cursor():
     assert party_members_cursor._lookback_window == timedelta(days=5)
     assert party_members_cursor._cursor_granularity == timedelta(days=1)
 
-    locations_stream = concurrent_streams[2]
+    locations_stream = streams[2]
     assert isinstance(locations_stream, DefaultStream)
     locations_cursor = locations_stream.cursor
 
@@ -835,7 +755,7 @@ def test_create_concurrent_cursor():
         "state_type": "date-range",
     }
 
-    incremental_counting_stream = concurrent_streams[7]
+    incremental_counting_stream = streams[7]
     assert isinstance(incremental_counting_stream, DefaultStream)
     incremental_counting_cursor = incremental_counting_stream.cursor
 
@@ -1470,11 +1390,9 @@ def test_concurrent_declarative_source_runs_state_migrations_provided_in_manifes
     source = ConcurrentDeclarativeSource(
         source_config=manifest, config=_CONFIG, catalog=_CATALOG, state=state
     )
-    concurrent_streams, synchronous_streams = source._group_streams(_CONFIG)
-    assert concurrent_streams[0].cursor.state.get("state") != state_blob.__dict__, (
-        "State was not migrated."
-    )
-    assert concurrent_streams[0].cursor.state.get("states") == [
+    streams = source.streams(_CONFIG)
+    assert streams[0].cursor.state.get("state") != state_blob.__dict__, "State was not migrated."
+    assert streams[0].cursor.state.get("states") == [
         {"cursor": {"updated_at": "2024-08-21"}, "partition": {"type": "type_1"}},
         {"cursor": {"updated_at": "2024-08-21"}, "partition": {"type": "type_2"}},
     ], "State was migrated, but actual state don't match expected"
@@ -1689,145 +1607,6 @@ def test_concurrency_level_initial_number_partitions_to_generate_is_always_one_o
     assert source._concurrent_source._initial_number_partitions_to_generate == 1
 
 
-def test_given_partition_routing_and_incremental_sync_then_stream_is_concurrent():
-    manifest = {
-        "version": "5.0.0",
-        "definitions": {
-            "selector": {
-                "type": "RecordSelector",
-                "extractor": {"type": "DpathExtractor", "field_path": []},
-            },
-            "requester": {
-                "type": "HttpRequester",
-                "url_base": "https://persona.metaverse.com",
-                "http_method": "GET",
-                "authenticator": {
-                    "type": "BasicHttpAuthenticator",
-                    "username": "{{ config['api_key'] }}",
-                    "password": "{{ config['secret_key'] }}",
-                },
-                "error_handler": {
-                    "type": "DefaultErrorHandler",
-                    "response_filters": [
-                        {
-                            "http_codes": [403],
-                            "action": "FAIL",
-                            "failure_type": "config_error",
-                            "error_message": "Access denied due to lack of permission or invalid API/Secret key or wrong data region.",
-                        },
-                        {
-                            "http_codes": [404],
-                            "action": "IGNORE",
-                            "error_message": "No data available for the time range requested.",
-                        },
-                    ],
-                },
-            },
-            "retriever": {
-                "type": "SimpleRetriever",
-                "record_selector": {"$ref": "#/definitions/selector"},
-                "paginator": {"type": "NoPagination"},
-                "requester": {"$ref": "#/definitions/requester"},
-            },
-            "incremental_cursor": {
-                "type": "DatetimeBasedCursor",
-                "start_datetime": {
-                    "datetime": "{{ format_datetime(config['start_date'], '%Y-%m-%d') }}"
-                },
-                "end_datetime": {"datetime": "{{ now_utc().strftime('%Y-%m-%d') }}"},
-                "datetime_format": "%Y-%m-%d",
-                "cursor_datetime_formats": ["%Y-%m-%d", "%Y-%m-%dT%H:%M:%S"],
-                "cursor_granularity": "P1D",
-                "step": "P15D",
-                "cursor_field": "updated_at",
-                "lookback_window": "P5D",
-                "start_time_option": {
-                    "type": "RequestOption",
-                    "field_name": "start",
-                    "inject_into": "request_parameter",
-                },
-                "end_time_option": {
-                    "type": "RequestOption",
-                    "field_name": "end",
-                    "inject_into": "request_parameter",
-                },
-            },
-            "base_stream": {"retriever": {"$ref": "#/definitions/retriever"}},
-            "base_incremental_stream": {
-                "retriever": {
-                    "$ref": "#/definitions/retriever",
-                    "requester": {"$ref": "#/definitions/requester"},
-                },
-                "incremental_sync": {"$ref": "#/definitions/incremental_cursor"},
-            },
-            "incremental_party_members_skills_stream": {
-                "$ref": "#/definitions/base_incremental_stream",
-                "retriever": {
-                    "$ref": "#/definitions/base_incremental_stream/retriever",
-                    "partition_router": {
-                        "type": "ListPartitionRouter",
-                        "cursor_field": "party_member_id",
-                        "values": ["party_member1", "party_member2"],
-                    },
-                },
-                "$parameters": {
-                    "name": "incremental_party_members_skills",
-                    "primary_key": "id",
-                    "path": "/party_members/{{stream_slice.party_member_id}}/skills",
-                },
-                "schema_loader": {
-                    "type": "InlineSchemaLoader",
-                    "schema": {
-                        "$schema": "https://json-schema.org/draft-07/schema#",
-                        "type": "object",
-                        "properties": {
-                            "id": {
-                                "description": "The identifier",
-                                "type": ["null", "string"],
-                            },
-                            "name": {
-                                "description": "The name of the party member",
-                                "type": ["null", "string"],
-                            },
-                        },
-                    },
-                },
-            },
-        },
-        "streams": ["#/definitions/incremental_party_members_skills_stream"],
-        "check": {"stream_names": ["incremental_party_members_skills"]},
-        "concurrency_level": {
-            "type": "ConcurrencyLevel",
-            "default_concurrency": "{{ config['num_workers'] or 10 }}",
-            "max_concurrency": 25,
-        },
-    }
-
-    catalog = ConfiguredAirbyteCatalog(
-        streams=[
-            ConfiguredAirbyteStream(
-                stream=AirbyteStream(
-                    name="incremental_party_members_skills",
-                    json_schema={},
-                    supported_sync_modes=[SyncMode.full_refresh],
-                ),
-                sync_mode=SyncMode.incremental,
-                destination_sync_mode=DestinationSyncMode.append,
-            )
-        ]
-    )
-
-    state = []
-
-    source = ConcurrentDeclarativeSource(
-        source_config=manifest, config=_CONFIG, catalog=catalog, state=state
-    )
-    concurrent_streams, synchronous_streams = source._group_streams(config=_CONFIG)
-
-    assert len(concurrent_streams) == 1
-    assert len(synchronous_streams) == 0
-
-
 def test_async_incremental_stream_uses_concurrent_cursor_with_state():
     state = [
         AirbyteStateMessage(
@@ -1855,8 +1634,8 @@ def test_async_incremental_stream_uses_concurrent_cursor_with_state():
         "state_type": "date-range",
     }
 
-    concurrent_streams, _ = source._group_streams(config=_CONFIG)
-    async_job_stream = concurrent_streams[6]
+    streams = source.streams(config=_CONFIG)
+    async_job_stream = streams[6]
     assert isinstance(async_job_stream, DefaultStream)
     cursor = async_job_stream._cursor
     assert isinstance(cursor, ConcurrentCursor)
@@ -1912,9 +1691,9 @@ def test_stream_using_is_client_side_incremental_has_cursor_state():
         catalog=_CATALOG,
         state=state,
     )
-    concurrent_streams, synchronous_streams = source._group_streams(config=_CONFIG)
+    streams = source.streams(config=_CONFIG)
 
-    locations_stream = concurrent_streams[2]
+    locations_stream = streams[2]
     assert isinstance(locations_stream, DefaultStream)
 
     simple_retriever = locations_stream._stream_partition_generator._partition_factory._retriever
@@ -1972,9 +1751,9 @@ def test_stream_using_is_client_side_incremental_has_transform_before_filtering_
         catalog=_CATALOG,
         state=state,
     )
-    concurrent_streams, synchronous_streams = source._group_streams(config=_CONFIG)
+    streams = source.streams(config=_CONFIG)
 
-    locations_stream = concurrent_streams[2]
+    locations_stream = streams[2]
     assert isinstance(locations_stream, DefaultStream)
 
     simple_retriever = locations_stream._stream_partition_generator._partition_factory._retriever
@@ -2312,8 +2091,14 @@ class TestConcurrentDeclarativeSource:
                         "url_base": "https://api.sendgrid.com",
                     },
                     "schema_loader": {
-                        "name": "{{ parameters.stream_name }}",
-                        "file_path": "./source_sendgrid/schemas/{{ parameters.name }}.yaml",
+                        "type": "InlineSchemaLoader",
+                        "schema": {
+                            "$schema": "http://json-schema.org/schema#",
+                            "properties": {
+                                "id": {"type": "string"},
+                            },
+                            "type": "object",
+                        },
                     },
                     "retriever": {
                         "paginator": {
@@ -2337,7 +2122,6 @@ class TestConcurrentDeclarativeSource:
                                 "type": "BearerAuthenticator",
                                 "api_token": "{{ config.apikey }}",
                             },
-                            "request_parameters": {"page_size": "{{ 10 }}"},
                         },
                         "record_selector": {"extractor": {"field_path": ["result"]}},
                     },
@@ -2350,8 +2134,14 @@ class TestConcurrentDeclarativeSource:
                         "url_base": "https://api.sendgrid.com",
                     },
                     "schema_loader": {
-                        "name": "{{ parameters.stream_name }}",
-                        "file_path": "./source_sendgrid/schemas/{{ parameters.name }}.yaml",
+                        "type": "InlineSchemaLoader",
+                        "schema": {
+                            "$schema": "http://json-schema.org/schema#",
+                            "properties": {
+                                "id": {"type": "string"},
+                            },
+                            "type": "object",
+                        },
                     },
                     "retriever": {
                         "paginator": {
@@ -2390,8 +2180,10 @@ class TestConcurrentDeclarativeSource:
             source_config=manifest, config={}, catalog=create_catalog("lists"), state=None
         )
 
-        check_stream = source.connection_checker
-        check_stream.check_connection(source, logging.getLogger(""), {})
+        pages = [_create_page({"records": [{"id": 0}], "_metadata": {}})]
+        with patch.object(SimpleRetriever, "_fetch_next_page", side_effect=pages):
+            connection_status = source.check(logging.getLogger(""), {})
+            assert connection_status.status == Status.SUCCEEDED
 
         streams = source.streams({})
         assert len(streams) == 2
@@ -3017,8 +2809,17 @@ class TestConcurrentDeclarativeSource:
                         "url_base": "https://api.yasogamihighschool.com",
                     },
                     "schema_loader": {
-                        "name": "{{ parameters.stream_name }}",
-                        "file_path": "./source_yasogami_high_school/schemas/{{ parameters.name }}.yaml",
+                        "type": "InlineSchemaLoader",
+                        "schema": {
+                            "$schema": "http://json-schema.org/schema#",
+                            "properties": {
+                                "id": {"type": "string"},
+                                "first_name": {"type": "string"},
+                                "last_name": {"type": "string"},
+                                "grade": {"type": "number"},
+                            },
+                            "type": "object",
+                        },
                     },
                     "retriever": {
                         "paginator": {
@@ -3042,7 +2843,6 @@ class TestConcurrentDeclarativeSource:
                                 "type": "BearerAuthenticator",
                                 "api_token": "{{ config.apikey }}",
                             },
-                            "request_parameters": {"page_size": "{{ 10 }}"},
                         },
                         "record_selector": {"extractor": {"field_path": ["result"]}},
                     },
@@ -3059,8 +2859,16 @@ class TestConcurrentDeclarativeSource:
                                 "url_base": "https://api.yasogamihighschool.com",
                             },
                             "schema_loader": {
-                                "name": "{{ parameters.stream_name }}",
-                                "file_path": "./source_yasogami_high_school/schemas/{{ parameters.name }}.yaml",
+                                "type": "InlineSchemaLoader",
+                                "schema": {
+                                    "$schema": "http://json-schema.org/schema#",
+                                    "properties": {
+                                        "id": {"type": "string"},
+                                        "floor": {"type": "number"},
+                                        "room_number": {"type": "number"},
+                                    },
+                                    "type": "object",
+                                },
                             },
                             "retriever": {
                                 "paginator": {
@@ -3084,7 +2892,6 @@ class TestConcurrentDeclarativeSource:
                                         "type": "BearerAuthenticator",
                                         "api_token": "{{ config.apikey }}",
                                     },
-                                    "request_parameters": {"page_size": "{{ 10 }}"},
                                 },
                                 "record_selector": {"extractor": {"field_path": ["result"]}},
                             },
@@ -3097,8 +2904,16 @@ class TestConcurrentDeclarativeSource:
                                 "url_base": "https://api.yasogamihighschool.com",
                             },
                             "schema_loader": {
-                                "name": "{{ parameters.stream_name }}",
-                                "file_path": "./source_yasogami_high_school/schemas/{{ parameters.name }}.yaml",
+                                "type": "InlineSchemaLoader",
+                                "schema": {
+                                    "$schema": "http://json-schema.org/schema#",
+                                    "properties": {
+                                        "id": {"type": "string"},
+                                        "name": {"type": "string"},
+                                        "category": {"type": "string"},
+                                    },
+                                    "type": "object",
+                                },
                             },
                             "retriever": {
                                 "paginator": {
@@ -3122,7 +2937,6 @@ class TestConcurrentDeclarativeSource:
                                         "type": "BearerAuthenticator",
                                         "api_token": "{{ config.apikey }}",
                                     },
-                                    "request_parameters": {"page_size": "{{ 10 }}"},
                                 },
                                 "record_selector": {"extractor": {"field_path": ["result"]}},
                             },
@@ -3145,8 +2959,17 @@ class TestConcurrentDeclarativeSource:
             source_config=manifest, config=config, catalog=catalog, state=None
         )
 
-        check_stream = source.connection_checker
-        check_stream.check_connection(source, logging.getLogger(""), config=config)
+        pages = [
+            _create_page(
+                {
+                    "students": [{"id": 0, "first_name": "yu", "last_name": "narukami"}],
+                    "_metadata": {},
+                }
+            )
+        ]
+        with patch.object(SimpleRetriever, "_fetch_next_page", side_effect=pages):
+            connection_status = source.check(logging.getLogger(""), config=config)
+            assert connection_status.status == Status.SUCCEEDED
 
         actual_streams = source.streams(config=config)
         assert len(actual_streams) == expected_stream_count

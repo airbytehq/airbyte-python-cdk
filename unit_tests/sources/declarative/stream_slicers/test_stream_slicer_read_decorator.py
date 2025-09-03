@@ -4,18 +4,18 @@
 
 from unittest.mock import Mock
 
-from airbyte_cdk.sources.declarative.async_job.job_orchestrator import (
-    AsyncJobOrchestrator,
-)
-from airbyte_cdk.sources.declarative.async_job.job_tracker import JobTracker
-from airbyte_cdk.sources.declarative.datetime.min_max_datetime import MinMaxDatetime
-from airbyte_cdk.sources.declarative.incremental import (
+from airbyte_cdk.legacy.sources.declarative.incremental import (
     CursorFactory,
     DatetimeBasedCursor,
     GlobalSubstreamCursor,
     PerPartitionWithGlobalCursor,
 )
-from airbyte_cdk.sources.declarative.incremental.declarative_cursor import DeclarativeCursor
+from airbyte_cdk.legacy.sources.declarative.incremental.declarative_cursor import DeclarativeCursor
+from airbyte_cdk.sources.declarative.async_job.job_orchestrator import (
+    AsyncJobOrchestrator,
+)
+from airbyte_cdk.sources.declarative.async_job.job_tracker import JobTracker
+from airbyte_cdk.sources.declarative.datetime.min_max_datetime import MinMaxDatetime
 from airbyte_cdk.sources.declarative.interpolation import InterpolatedString
 from airbyte_cdk.sources.declarative.models import (
     CustomRetriever,
