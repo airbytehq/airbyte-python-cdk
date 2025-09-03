@@ -752,7 +752,7 @@ class ModelToComponentFactory:
             OAuthAuthenticatorModel: self.create_oauth_authenticator,
             OffsetIncrementModel: self.create_offset_increment,
             PageIncrementModel: self.create_page_increment,
-            ParentStreamConfigModel: self._create_message_repository_substream_wrapper,
+            ParentStreamConfigModel: self.create_parent_stream_config_with_substream_wrapper,
             PredicateValidatorModel: self.create_predicate_validator,
             PropertiesFromEndpointModel: self.create_properties_from_endpoint,
             PropertyChunkingModel: self.create_property_chunking,
@@ -3688,7 +3688,7 @@ class ModelToComponentFactory:
         if model.parent_stream_configs:
             parent_stream_configs.extend(
                 [
-                    self._create_message_repository_substream_wrapper(
+                    self.create_parent_stream_config_with_substream_wrapper(
                         model=parent_stream_config, config=config, **kwargs
                     )
                     for parent_stream_config in model.parent_stream_configs
@@ -3701,7 +3701,7 @@ class ModelToComponentFactory:
             config=config,
         )
 
-    def _create_message_repository_substream_wrapper(
+    def create_parent_stream_config_with_substream_wrapper(
         self, model: ParentStreamConfigModel, config: Config, *, stream_name: str, **kwargs: Any
     ) -> Any:
         # getting the parent state
