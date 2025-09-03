@@ -2133,9 +2133,7 @@ def test_incremental_parent_state_migration(
                         "states": [
                             {
                                 "partition": {"id": 1, "parent_slice": {}},
-                                "cursor": {
-                                    "updated_at": START_DATE
-                                },
+                                "cursor": {"updated_at": START_DATE},
                             }
                         ],
                         "lookback_window": 0,

@@ -2106,12 +2106,20 @@ def test_custom_components_do_not_contain_extra_fields():
     }
 
     custom_substream_partition_router = factory.create_component(
-        CustomPartitionRouterModel, custom_substream_partition_router_manifest, input_config, stream_name="child_stream_name",
+        CustomPartitionRouterModel,
+        custom_substream_partition_router_manifest,
+        input_config,
+        stream_name="child_stream_name",
     )
     assert isinstance(custom_substream_partition_router, TestingCustomSubstreamPartitionRouter)
 
     assert len(custom_substream_partition_router.parent_stream_configs) == 1
-    assert isinstance(custom_substream_partition_router.parent_stream_configs[0].stream.cursor._message_repository, StateFilteringMessageRepository)
+    assert isinstance(
+        custom_substream_partition_router.parent_stream_configs[
+            0
+        ].stream.cursor._message_repository,
+        StateFilteringMessageRepository,
+    )
     assert custom_substream_partition_router.parent_stream_configs[0].parent_key.eval({}) == "id"
     assert (
         custom_substream_partition_router.parent_stream_configs[0].partition_field.eval({})
@@ -2174,7 +2182,10 @@ def test_parse_custom_component_fields_if_subcomponent():
     }
 
     custom_substream_partition_router = factory.create_component(
-        CustomPartitionRouterModel, custom_substream_partition_router_manifest, input_config, stream_name="child_stream_name"
+        CustomPartitionRouterModel,
+        custom_substream_partition_router_manifest,
+        input_config,
+        stream_name="child_stream_name",
     )
     assert isinstance(custom_substream_partition_router, TestingCustomSubstreamPartitionRouter)
     assert custom_substream_partition_router.custom_field == "here"

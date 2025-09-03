@@ -1748,7 +1748,11 @@ class ModelToComponentFactory:
 
             if self._is_component(model_value):
                 model_args[model_field] = self._create_nested_component(
-                    model, model_field, model_value, config, **kwargs,
+                    model,
+                    model_field,
+                    model_value,
+                    config,
+                    **kwargs,
                 )
             elif isinstance(model_value, list):
                 vals = []
@@ -1760,7 +1764,15 @@ class ModelToComponentFactory:
                         if derived_type:
                             v["type"] = derived_type
                     if self._is_component(v):
-                        vals.append(self._create_nested_component(model, model_field, v, config, **kwargs,))
+                        vals.append(
+                            self._create_nested_component(
+                                model,
+                                model_field,
+                                v,
+                                config,
+                                **kwargs,
+                            )
+                        )
                     else:
                         vals.append(v)
                 model_args[model_field] = vals
@@ -2525,7 +2537,9 @@ class ModelToComponentFactory:
             config=config,
             name=name,
             primary_key=None,
-            partition_router=self._build_stream_slicer_from_partition_router(model.retriever, config),
+            partition_router=self._build_stream_slicer_from_partition_router(
+                model.retriever, config
+            ),
             transformations=[],
             use_cache=True,
             log_formatter=(
@@ -3238,7 +3252,9 @@ class ModelToComponentFactory:
 
         if not request_options_provider:
             request_options_provider = DefaultRequestOptionsProvider(parameters={})
-        if isinstance(request_options_provider, DefaultRequestOptionsProvider) and isinstance(partition_router, PartitionRouter):
+        if isinstance(request_options_provider, DefaultRequestOptionsProvider) and isinstance(
+            partition_router, PartitionRouter
+        ):
             request_options_provider = partition_router
 
         paginator = (
@@ -3705,9 +3721,7 @@ class ModelToComponentFactory:
         self, model: ParentStreamConfigModel, config: Config, *, stream_name: str, **kwargs: Any
     ) -> Any:
         # getting the parent state
-        child_state = self._connector_state_manager.get_stream_state(
-            stream_name, None
-        )
+        child_state = self._connector_state_manager.get_stream_state(stream_name, None)
 
         # This flag will be used exclusively for StateDelegatingStream when a parent stream is created
         has_parent_state = bool(
