@@ -16,13 +16,7 @@ from pydantic.v1 import ValidationError
 
 from airbyte_cdk import AirbyteTracedException
 from airbyte_cdk.legacy.sources.declarative.declarative_stream import DeclarativeStream
-from airbyte_cdk.legacy.sources.declarative.incremental import (
-    CursorFactory,
-    DatetimeBasedCursor,
-    PerPartitionCursor,
-    PerPartitionWithGlobalCursor,
-    ResumableFullRefreshCursor,
-)
+from airbyte_cdk.legacy.sources.declarative.incremental import DatetimeBasedCursor
 from airbyte_cdk.models import (
     AirbyteStateBlob,
     AirbyteStateMessage,
@@ -745,6 +739,7 @@ def test_create_substream_partition_router():
     assert partition_router.parent_stream_configs[1].request_option is None
 
 
+# todo: delete this class once we deprecate SimpleRetriever.cursor and SimpleRetriever.state methods
 def test_datetime_based_cursor():
     content = """
     incremental:
