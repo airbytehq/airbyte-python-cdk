@@ -12,6 +12,7 @@ from .manifest import (
     DiscoverResponse,
     FullResolveRequest,
     ManifestResponse,
+    RequestContext,
     ResolveRequest,
     StreamTestReadRequest,
 )
@@ -30,6 +31,7 @@ __all__ = [
     "ConnectorConfig",
     "Manifest",
     # Manifest request/response models
+    "RequestContext",
     "FullResolveRequest",
     "ManifestResponse",
     "StreamTestReadRequest",

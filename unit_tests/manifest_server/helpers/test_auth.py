@@ -7,7 +7,7 @@ import pytest
 from fastapi import HTTPException
 from fastapi.security import HTTPAuthorizationCredentials
 
-from airbyte_cdk.manifest_server.auth import verify_jwt_token
+from airbyte_cdk.manifest_server.helpers.auth import verify_jwt_token
 
 
 class TestVerifyJwtToken:
