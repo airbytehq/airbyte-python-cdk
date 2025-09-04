@@ -11,6 +11,13 @@ from copy import deepcopy
 from datetime import timedelta
 from typing import Any, Callable, Iterable, List, Mapping, MutableMapping, Optional, TypeVar
 
+from airbyte_cdk.models import (
+    AirbyteStateBlob,
+    AirbyteStateMessage,
+    AirbyteStateType,
+    AirbyteStreamState,
+    StreamDescriptor,
+)
 from airbyte_cdk.sources.connector_state_manager import ConnectorStateManager
 from airbyte_cdk.sources.declarative.partition_routers.partition_router import PartitionRouter
 from airbyte_cdk.sources.message import MessageRepository
@@ -101,7 +108,7 @@ class ConcurrentPerPartitionCursor(Cursor):
     Manages state per partition when a stream has many partitions, preventing data loss or duplication.
 
     Attributes:
-        DEFAULT_MAX_PARTITIONS_NUMBER (int): Maximum number of partitions to retain in memory (default is 10,000).
+        DEFAULT_MAX_PARTITIONS_NUMBER (int): Maximum number of partitions to retain in memory (default is 10,000). This limit needs to be higher than the number of threads we might enqueue (which is represented by ThreadPoolManager.DEFAULT_MAX_QUEUE_SIZE). If not, we could have partitions that have been generated and submitted to the ThreadPool but got deleted from the ConcurrentPerPartitionCursor and when closing them, it will generate KeyError.
 
     - **Partition Limitation Logic**
       Ensures the number of tracked partitions does not exceed the specified limit to prevent memory overuse. Oldest partitions are removed when the limit is reached.
@@ -181,6 +188,7 @@ class ConcurrentPerPartitionCursor(Cursor):
 
         # FIXME this is a temporary field the time of the migration from declarative cursors to concurrent ones
         self._attempt_to_create_cursor_if_not_provided = attempt_to_create_cursor_if_not_provided
+        self._synced_some_data = False
 
     @property
     def cursor_field(self) -> CursorField:
@@ -221,8 +229,8 @@ class ConcurrentPerPartitionCursor(Cursor):
         with self._lock:
             self._semaphore_per_partition[partition_key].acquire()
             if not self._use_global_cursor:
-                self._cursor_per_partition[partition_key].close_partition(partition=partition)
                 cursor = self._cursor_per_partition[partition_key]
+                cursor.close_partition(partition=partition)
                 if (
                     partition_key in self._partitions_done_generating_stream_slices
                     and self._semaphore_per_partition[partition_key]._value == 0
@@ -266,8 +274,10 @@ class ConcurrentPerPartitionCursor(Cursor):
         if not any(
             semaphore_item[1]._value for semaphore_item in self._semaphore_per_partition.items()
         ):
-            self._global_cursor = self._new_global_cursor
-            self._lookback_window = self._timer.finish()
+            if self._synced_some_data:
+                # we only update those if we actually synced some data
+                self._global_cursor = self._new_global_cursor
+                self._lookback_window = self._timer.finish()
             self._parent_state = self._partition_router.get_stream_state()
         self._emit_state_message(throttle=False)
 
@@ -475,9 +485,6 @@ class ConcurrentPerPartitionCursor(Cursor):
         if stream_state.get("parent_state"):
             self._parent_state = stream_state["parent_state"]
 
-        # Set parent state for partition routers based on parent streams
-        self._partition_router.set_initial_state(stream_state)
-
     def _set_global_state(self, stream_state: Mapping[str, Any]) -> None:
         """
         Initializes the global cursor state from the provided stream state.
@@ -511,6 +518,7 @@ class ConcurrentPerPartitionCursor(Cursor):
         except ValueError:
             return
 
+        self._synced_some_data = True
         record_cursor = self._connector_state_converter.output_format(
             self._connector_state_converter.parse_value(record_cursor_value)
         )
@@ -594,3 +602,45 @@ class ConcurrentPerPartitionCursor(Cursor):
 
     def limit_reached(self) -> bool:
         return self._number_of_partitions > self.SWITCH_TO_GLOBAL_LIMIT
+
+    @staticmethod
+    def get_parent_state(
+        stream_state: Optional[StreamState], parent_stream_name: str
+    ) -> Optional[AirbyteStateMessage]:
+        if not stream_state:
+            return None
+
+        if "parent_state" not in stream_state:
+            logger.warning(
+                f"Trying to get_parent_state for stream `{parent_stream_name}` when there are not parent state in the state"
+            )
+            return None
+        elif parent_stream_name not in stream_state["parent_state"]:
+            logger.info(
+                f"Could not find parent state for stream `{parent_stream_name}`. On parents available are {list(stream_state['parent_state'].keys())}"
+            )
+            return None
+
+        return AirbyteStateMessage(
+            type=AirbyteStateType.STREAM,
+            stream=AirbyteStreamState(
+                stream_descriptor=StreamDescriptor(parent_stream_name, None),
+                stream_state=AirbyteStateBlob(stream_state["parent_state"][parent_stream_name]),
+            ),
+        )
+
+    @staticmethod
+    def get_global_state(
+        stream_state: Optional[StreamState], parent_stream_name: str
+    ) -> Optional[AirbyteStateMessage]:
+        return (
+            AirbyteStateMessage(
+                type=AirbyteStateType.STREAM,
+                stream=AirbyteStreamState(
+                    stream_descriptor=StreamDescriptor(parent_stream_name, None),
+                    stream_state=AirbyteStateBlob(stream_state["state"]),
+                ),
+            )
+            if stream_state and "state" in stream_state
+            else None
+        )

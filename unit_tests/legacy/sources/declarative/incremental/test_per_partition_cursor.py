@@ -508,47 +508,6 @@ def test_get_request_body_json(
             cursor.get_request_body_json(stream_slice=stream_slice)
 
 
-def test_parent_state_is_set_for_per_partition_cursor(
-    mocked_cursor_factory, mocked_partition_router
-):
-    # Define the parent state to be used in the test
-    parent_state = {"parent_cursor": "parent_state_value"}
-
-    # Mock the partition router to return a stream slice
-    partition = StreamSlice(
-        partition={"partition_field_1": "a value", "partition_field_2": "another value"},
-        cursor_slice={},
-    )
-    mocked_partition_router.stream_slices.return_value = [partition]
-
-    # Mock the cursor factory to create cursors with specific states
-    mocked_cursor_factory.create.side_effect = [
-        MockedCursorBuilder()
-        .with_stream_slices([{CURSOR_SLICE_FIELD: "first slice cursor value"}])
-        .with_stream_state(CURSOR_STATE)
-        .build(),
-    ]
-
-    # Mock the get_parent_state method to return the parent state
-    mocked_partition_router.get_stream_state.return_value = parent_state
-
-    # Initialize the PerPartitionCursor with the mocked cursor factory and partition router
-    cursor = PerPartitionCursor(mocked_cursor_factory, mocked_partition_router)
-
-    # Set the initial state, including the parent state
-    initial_state = {
-        "states": [{"partition": partition.partition, "cursor": CURSOR_STATE}],
-        "parent_state": parent_state,
-    }
-    cursor.set_initial_state(initial_state)
-
-    # Verify that the parent state has been set correctly
-    assert cursor.get_stream_state()["parent_state"] == parent_state
-
-    # Verify that set_parent_state was called on the partition router with the initial state
-    mocked_partition_router.set_initial_state.assert_called_once_with(initial_state)
-
-
 def test_get_stream_state_includes_parent_state(mocked_cursor_factory, mocked_partition_router):
     # Define the parent state to be used in the test
     parent_state = {"parent_cursor": "parent_state_value"}

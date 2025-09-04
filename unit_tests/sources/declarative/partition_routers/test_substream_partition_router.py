@@ -3,21 +3,16 @@
 #
 
 import logging
-from functools import partial
-from typing import Any, Iterable, List, Mapping, MutableMapping, Optional, Union
+from typing import Any, Iterable, List, Mapping, Optional
+from unittest.mock import Mock
 
 import pytest as pytest
+from airbyte_protocol_dataclasses.models import AirbyteStream
 
-from airbyte_cdk.legacy.sources.declarative.incremental import (
-    ChildPartitionResumableFullRefreshCursor,
-    ResumableFullRefreshCursor,
+from airbyte_cdk.sources.declarative.incremental import (
+    ConcurrentCursorFactory,
+    ConcurrentPerPartitionCursor,
 )
-from airbyte_cdk.legacy.sources.declarative.incremental.per_partition_cursor import (
-    CursorFactory,
-    PerPartitionCursor,
-)
-from airbyte_cdk.models import AirbyteMessage, AirbyteRecordMessage, SyncMode, Type
-from airbyte_cdk.sources.declarative.interpolation import InterpolatedString
 from airbyte_cdk.sources.declarative.partition_routers import (
     CartesianProductStreamSlicer,
     ListPartitionRouter,
@@ -31,9 +26,22 @@ from airbyte_cdk.sources.declarative.requesters.request_option import (
     RequestOptionType,
 )
 from airbyte_cdk.sources.streams.checkpoint import Cursor
+from airbyte_cdk.sources.streams.concurrent.abstract_stream import AbstractStream
+from airbyte_cdk.sources.streams.concurrent.availability_strategy import StreamAvailability
+from airbyte_cdk.sources.streams.concurrent.cursor import (
+    ConcurrentCursor,
+    CursorField,
+    FinalStateCursor,
+)
+from airbyte_cdk.sources.streams.concurrent.partitions.partition import Partition
+from airbyte_cdk.sources.streams.concurrent.state_converters.datetime_stream_state_converter import (
+    CustomFormatConcurrentStreamStateConverter,
+)
 from airbyte_cdk.sources.types import Record, StreamSlice
-from airbyte_cdk.utils import AirbyteTracedException
-from unit_tests.sources.declarative.partition_routers.helpers import MockStream
+from airbyte_cdk.utils.datetime_helpers import ab_datetime_parse
+from unit_tests.sources.streams.concurrent.scenarios.thread_based_concurrent_stream_source_builder import (
+    InMemoryPartition,
+)
 
 parent_records = [{"id": 1, "data": "data1"}, {"id": 2, "data": "data2"}]
 more_records = [
@@ -48,91 +56,77 @@ data_first_parent_slice = [
 data_second_parent_slice = [{"id": 2, "slice": "second", "data": "C"}]
 data_third_parent_slice = []
 all_parent_data = data_first_parent_slice + data_second_parent_slice + data_third_parent_slice
-parent_slices = [{"slice": "first"}, {"slice": "second"}, {"slice": "third"}]
+parent_slices = [
+    StreamSlice(partition={"slice": "first"}, cursor_slice={}),
+    StreamSlice(partition={"slice": "second"}, cursor_slice={}),
+    StreamSlice(partition={"slice": "third"}, cursor_slice={}),
+]
+parent_slices_with_cursor = [
+    StreamSlice(
+        partition={"slice": "first"}, cursor_slice={"start": "2021-01-01", "end": "2023-01-01"}
+    ),
+    StreamSlice(
+        partition={"slice": "second"}, cursor_slice={"start": "2021-01-01", "end": "2023-01-01"}
+    ),
+    StreamSlice(
+        partition={"slice": "third"}, cursor_slice={"start": "2021-01-01", "end": "2023-01-01"}
+    ),
+]
 second_parent_stream_slice = [StreamSlice(partition={"slice": "second_parent"}, cursor_slice={})]
 
 data_first_parent_slice_with_cursor = [
-    {"id": 0, "slice": "first", "data": "A", "cursor": "first_cursor_0"},
-    {"id": 1, "slice": "first", "data": "B", "cursor": "first_cursor_1"},
+    {"id": 0, "slice": "first", "data": "A", "cursor": "2021-01-01"},
+    {"id": 1, "slice": "first", "data": "B", "cursor": "2021-01-02"},
 ]
 data_second_parent_slice_with_cursor = [
-    {"id": 2, "slice": "second", "data": "C", "cursor": "second_cursor_2"}
+    {"id": 2, "slice": "second", "data": "C", "cursor": "2022-01-01"}
 ]
 all_parent_data_with_cursor = (
     data_first_parent_slice_with_cursor + data_second_parent_slice_with_cursor
 )
+_EMPTY_SLICE = StreamSlice(partition={}, cursor_slice={})
+_ANY_STREAM = None
 
 
-class MockIncrementalStream(MockStream):
-    def __init__(self, slices, records, name, cursor_field="", cursor=None, date_ranges=None):
-        super().__init__(slices, records, name, cursor_field, cursor)
-        if date_ranges is None:
-            date_ranges = []
-        self._date_ranges = date_ranges
-        self._state = {}
-
-    def read_records(
-        self,
-        sync_mode: SyncMode,
-        cursor_field: List[str] = None,
-        stream_slice: Mapping[str, Any] = None,
-        stream_state: Mapping[str, Any] = None,
-    ) -> Iterable[Mapping[str, Any]]:
-        results = [
-            record
-            for record in self._records
-            if stream_slice["start_time"] <= record["updated_at"] <= stream_slice["end_time"]
-        ]
-        print(f"about to emit {results}")
-        yield from results
-        print(f"setting state to {stream_slice}")
-        self._state = stream_slice
+def _build_records_for_slice(records: List[Mapping[str, Any]], _slice: StreamSlice):
+    return [Record(record, "stream_name", _slice) for record in records]
 
 
-class MockResumableFullRefreshStream(MockStream):
-    def __init__(
-        self,
-        slices,
-        name,
-        cursor_field="",
-        cursor=None,
-        record_pages: Optional[List[List[Mapping[str, Any]]]] = None,
-    ):
-        super().__init__(slices, [], name, cursor_field, cursor)
-        if record_pages:
-            self._record_pages = record_pages
-        else:
-            self._record_pages = []
-        self._state: MutableMapping[str, Any] = {}
+class MockStream(AbstractStream):
+    def __init__(self, partitions, name, cursor_field="", cursor=None):
+        self._partitions = partitions
+        self._stream_cursor_field = cursor_field
+        self._name = name
+        self._state = {"states": []}
+        self._cursor = cursor if cursor else FinalStateCursor(self._name, None, Mock())
 
-    def read_records(
-        self,
-        sync_mode: SyncMode,
-        cursor_field: List[str] = None,
-        stream_slice: Mapping[str, Any] = None,
-        stream_state: Mapping[str, Any] = None,
-    ) -> Iterable[Mapping[str, Any]]:
-        page_number = self.state.get("next_page_token") or 1
-        yield from self._record_pages[page_number - 1]
-
-        cursor = self.get_cursor()
-        if page_number < len(self._record_pages):
-            cursor.close_slice(
-                StreamSlice(cursor_slice={"next_page_token": page_number + 1}, partition={})
-            )
-        else:
-            cursor.close_slice(
-                StreamSlice(cursor_slice={"__ab_full_refresh_sync_complete": True}, partition={})
-            )
+    def generate_partitions(self) -> Iterable[Partition]:
+        list(self._cursor.stream_slices())
+        return self._partitions
 
     @property
-    def state(self) -> Mapping[str, Any]:
-        cursor = self.get_cursor()
-        return cursor.get_stream_state() if cursor else {}
+    def name(self) -> str:
+        return self._name
 
-    @state.setter
-    def state(self, value: Mapping[str, Any]) -> None:
-        self._state = value
+    @property
+    def cursor_field(self) -> Optional[str]:
+        return self._stream_cursor_field
+
+    def get_json_schema(self) -> Mapping[str, Any]:
+        return {}
+
+    def as_airbyte_stream(self) -> AirbyteStream:
+        raise NotImplementedError()
+
+    def log_stream_sync_configuration(self) -> None:
+        raise NotImplementedError()
+
+    @property
+    def cursor(self) -> Cursor:
+        return self._cursor
+
+    def check_availability(self) -> StreamAvailability:
+        raise NotImplementedError()
 
 
 @pytest.mark.parametrize(
@@ -142,7 +136,10 @@ class MockResumableFullRefreshStream(MockStream):
         (
             [
                 ParentStreamConfig(
-                    stream=MockStream([{}], [], "first_stream"),
+                    stream=MockStream(
+                        [InMemoryPartition("partition_name", "first_stream", _EMPTY_SLICE, [])],
+                        "first_stream",
+                    ),
                     parent_key="id",
                     partition_field="first_stream_id",
                     parameters={},
@@ -154,7 +151,17 @@ class MockResumableFullRefreshStream(MockStream):
         (
             [
                 ParentStreamConfig(
-                    stream=MockStream([{}], parent_records, "first_stream"),
+                    stream=MockStream(
+                        [
+                            InMemoryPartition(
+                                "partition_name",
+                                "first_stream",
+                                _EMPTY_SLICE,
+                                _build_records_for_slice(parent_records, _EMPTY_SLICE),
+                            )
+                        ],
+                        "first_stream",
+                    ),
                     parent_key="id",
                     partition_field="first_stream_id",
                     parameters={},
@@ -169,7 +176,31 @@ class MockResumableFullRefreshStream(MockStream):
         (
             [
                 ParentStreamConfig(
-                    stream=MockStream(parent_slices, all_parent_data, "first_stream"),
+                    stream=MockStream(
+                        [
+                            InMemoryPartition(
+                                "partition_1",
+                                "first_stream",
+                                parent_slices[0],
+                                _build_records_for_slice(data_first_parent_slice, parent_slices[0]),
+                            ),
+                            InMemoryPartition(
+                                "partition_2",
+                                "first_stream",
+                                parent_slices[1],
+                                _build_records_for_slice(
+                                    data_second_parent_slice, parent_slices[1]
+                                ),
+                            ),
+                            InMemoryPartition(
+                                "partition_3",
+                                "first_stream",
+                                parent_slices[2],
+                                _build_records_for_slice(data_third_parent_slice, parent_slices[2]),
+                            ),
+                        ],
+                        "first_stream",
+                    ),
                     parent_key="id",
                     partition_field="first_stream_id",
                     parameters={},
@@ -187,10 +218,27 @@ class MockResumableFullRefreshStream(MockStream):
                 ParentStreamConfig(
                     stream=MockStream(
                         [
-                            StreamSlice(partition=p, cursor_slice={"start": 0, "end": 1})
-                            for p in parent_slices
+                            InMemoryPartition(
+                                "partition_1",
+                                "first_stream",
+                                parent_slices[0],
+                                _build_records_for_slice(data_first_parent_slice, parent_slices[0]),
+                            ),
+                            InMemoryPartition(
+                                "partition_2",
+                                "first_stream",
+                                parent_slices[1],
+                                _build_records_for_slice(
+                                    data_second_parent_slice, parent_slices[1]
+                                ),
+                            ),
+                            InMemoryPartition(
+                                "partition_3",
+                                "first_stream",
+                                parent_slices[2],
+                                _build_records_for_slice(data_third_parent_slice, parent_slices[2]),
+                            ),
                         ],
-                        all_parent_data,
                         "first_stream",
                     ),
                     parent_key="id",
@@ -209,8 +257,28 @@ class MockResumableFullRefreshStream(MockStream):
             [
                 ParentStreamConfig(
                     stream=MockStream(
-                        parent_slices,
-                        data_first_parent_slice + data_second_parent_slice,
+                        [
+                            InMemoryPartition(
+                                "partition_1",
+                                "first_stream",
+                                parent_slices[0],
+                                _build_records_for_slice(data_first_parent_slice, parent_slices[0]),
+                            ),
+                            InMemoryPartition(
+                                "partition_2",
+                                "first_stream",
+                                parent_slices[1],
+                                _build_records_for_slice(
+                                    data_second_parent_slice, parent_slices[1]
+                                ),
+                            ),
+                            InMemoryPartition(
+                                "partition_3",
+                                "first_stream",
+                                parent_slices[2],
+                                [],
+                            ),
+                        ],
                         "first_stream",
                     ),
                     parent_key="id",
@@ -219,7 +287,19 @@ class MockResumableFullRefreshStream(MockStream):
                     config={},
                 ),
                 ParentStreamConfig(
-                    stream=MockStream(second_parent_stream_slice, more_records, "second_stream"),
+                    stream=MockStream(
+                        [
+                            InMemoryPartition(
+                                "partition_1",
+                                "first_stream",
+                                second_parent_stream_slice[0],
+                                _build_records_for_slice(
+                                    more_records, second_parent_stream_slice[0]
+                                ),
+                            ),
+                        ],
+                        "first_stream",
+                    ),
                     parent_key="id",
                     partition_field="second_stream_id",
                     parameters={},
@@ -238,7 +318,17 @@ class MockResumableFullRefreshStream(MockStream):
             [
                 ParentStreamConfig(
                     stream=MockStream(
-                        [{}], [{"id": 0}, {"id": 1}, {"_id": 2}, {"id": 3}], "first_stream"
+                        [
+                            InMemoryPartition(
+                                "partition_1",
+                                "first_stream",
+                                _EMPTY_SLICE,
+                                _build_records_for_slice(
+                                    [{"id": 0}, {"id": 1}, {"_id": 2}, {"id": 3}], _EMPTY_SLICE
+                                ),
+                            ),
+                        ],
+                        "first_stream",
                     ),
                     parent_key="id",
                     partition_field="first_stream_id",
@@ -256,8 +346,22 @@ class MockResumableFullRefreshStream(MockStream):
             [
                 ParentStreamConfig(
                     stream=MockStream(
-                        [{}],
-                        [{"a": {"b": 0}}, {"a": {"b": 1}}, {"a": {"c": 2}}, {"a": {"b": 3}}],
+                        [
+                            InMemoryPartition(
+                                "partition_1",
+                                "first_stream",
+                                _EMPTY_SLICE,
+                                _build_records_for_slice(
+                                    [
+                                        {"a": {"b": 0}},
+                                        {"a": {"b": 1}},
+                                        {"a": {"c": 2}},
+                                        {"a": {"b": 3}},
+                                    ],
+                                    _EMPTY_SLICE,
+                                ),
+                            ),
+                        ],
                         "first_stream",
                     ),
                     parent_key="a/b",
@@ -278,8 +382,8 @@ class MockResumableFullRefreshStream(MockStream):
         "test_single_parent_slices_no_records",
         "test_single_parent_slices_with_records",
         "test_with_parent_slices_and_records",
-        "test_multiple_parent_streams",
         "test_cursor_values_are_removed_from_parent_slices",
+        "test_multiple_parent_streams",
         "test_missed_parent_key",
         "test_dpath_extraction",
     ],
@@ -298,156 +402,6 @@ def test_substream_partition_router(parent_stream_configs, expected_slices):
     )
     slices = [s for s in partition_router.stream_slices()]
     assert slices == expected_slices
-
-
-def test_substream_partition_router_invalid_parent_record_type():
-    partition_router = SubstreamPartitionRouter(
-        parent_stream_configs=[
-            ParentStreamConfig(
-                stream=MockStream([{}], [list()], "first_stream"),
-                parent_key="id",
-                partition_field="first_stream_id",
-                parameters={},
-                config={},
-            )
-        ],
-        parameters={},
-        config={},
-    )
-
-    with pytest.raises(AirbyteTracedException):
-        _ = [s for s in partition_router.stream_slices()]
-
-
-@pytest.mark.parametrize(
-    "initial_state, expected_parent_state",
-    [
-        # Case 1: Empty initial state, no parent state expected
-        ({}, {}),
-        # Case 2: Initial state with no `parent_state`, migrate `updated_at` to `parent_stream_cursor`
-        (
-            {"updated_at": "2023-05-27T00:00:00Z"},
-            {"parent_stream_cursor": "2023-05-27T00:00:00Z"},
-        ),
-        # Case 3: Initial state with global `state`, no migration expected
-        (
-            {"state": {"updated": "2023-05-27T00:00:00Z"}},
-            {"parent_stream_cursor": "2023-05-27T00:00:00Z"},
-        ),
-        # Case 4: Initial state with per-partition `states`, no migration expected
-        (
-            {
-                "states": [
-                    {
-                        "partition": {
-                            "issue_id": "10012",
-                            "parent_slice": {
-                                "parent_slice": {},
-                                "project_id": "10000",
-                            },
-                        },
-                        "cursor": {"updated": "2021-01-01T00:00:00+0000"},
-                    },
-                    {
-                        "partition": {
-                            "issue_id": "10019",
-                            "parent_slice": {
-                                "parent_slice": {},
-                                "project_id": "10000",
-                            },
-                        },
-                        "cursor": {"updated": "2021-01-01T00:00:00+0000"},
-                    },
-                    {
-                        "partition": {
-                            "issue_id": "10000",
-                            "parent_slice": {
-                                "parent_slice": {},
-                                "project_id": "10000",
-                            },
-                        },
-                        "cursor": {"updated": "2021-01-01T00:00:00+0000"},
-                    },
-                ]
-            },
-            {},
-        ),
-        # Case 5: Initial state with `parent_state`, existing parent state persists
-        (
-            {
-                "parent_state": {
-                    "parent_stream_name1": {"parent_stream_cursor": "2023-05-27T00:00:00Z"},
-                },
-            },
-            {"parent_stream_cursor": "2023-05-27T00:00:00Z"},
-        ),
-        # Case 6: Declarative global cursor state, no migration expected
-        (
-            {
-                "looback_window": 1,
-                "use_global_cursor": True,
-                "state": {"updated": "2023-05-27T00:00:00Z"},
-            },
-            {"parent_stream_cursor": "2023-05-27T00:00:00Z"},
-        ),
-        # Case 7: Migrate child state to parent state but child state is empty
-        (
-            {
-                "state": {},
-                "states": [],
-                "parent_state": {"posts": {}},
-                "lookback_window": 1,
-                "use_global_cursor": False,
-            },
-            {},
-        ),
-    ],
-    ids=[
-        "empty_initial_state",
-        "initial_state_no_parent_legacy_state",
-        "initial_state_no_parent_global_state",
-        "initial_state_no_parent_per_partition_state",
-        "initial_state_with_parent_state",
-        "initial_state_no_parent_global_state_declarative",
-        "initial_state_no_parent_and_no_child",
-    ],
-)
-def test_set_initial_state(initial_state, expected_parent_state):
-    """
-    Test the `set_initial_state` method of SubstreamPartitionRouter.
-
-    This test verifies that the method correctly handles different initial state formats
-    and sets the appropriate parent stream state.
-    """
-    parent_stream = MockStream(
-        slices=[{}],
-        records=[],
-        name="parent_stream_name1",
-        cursor_field="parent_stream_cursor",
-    )
-    parent_stream.state = {}
-    parent_stream_config = ParentStreamConfig(
-        stream=parent_stream,
-        parent_key="id",
-        partition_field="parent_stream_id",
-        parameters={},
-        config={},
-        incremental_dependency=True,
-    )
-
-    partition_router = SubstreamPartitionRouter(
-        parent_stream_configs=[parent_stream_config],
-        parameters={},
-        config={},
-    )
-
-    partition_router.set_initial_state(initial_state)
-
-    # Assert the state of the parent stream
-    assert parent_stream.state == expected_parent_state, (
-        f"Unexpected parent state. Initial state: {initial_state}, "
-        f"Expected: {expected_parent_state}, Got: {parent_stream.state}"
-    )
 
 
 @pytest.mark.parametrize(
@@ -556,11 +510,7 @@ def test_request_option(
     partition_router = SubstreamPartitionRouter(
         parent_stream_configs=[
             ParentStreamConfig(
-                stream=MockStream(
-                    parent_slices,
-                    data_first_parent_slice + data_second_parent_slice,
-                    "first_stream",
-                ),
+                stream=_ANY_STREAM,
                 parent_key="id",
                 partition_field="first_stream_id",
                 parameters={},
@@ -568,7 +518,7 @@ def test_request_option(
                 request_option=parent_stream_request_parameters[0],
             ),
             ParentStreamConfig(
-                stream=MockStream(second_parent_stream_slice, more_records, "second_stream"),
+                stream=_ANY_STREAM,
                 parent_key="id",
                 partition_field="second_stream_id",
                 parameters={},
@@ -593,10 +543,65 @@ def test_request_option(
         (
             ParentStreamConfig(
                 stream=MockStream(
-                    parent_slices,
-                    all_parent_data_with_cursor,
+                    [
+                        InMemoryPartition(
+                            "partition_1",
+                            "first_stream",
+                            parent_slices_with_cursor[0],
+                            _build_records_for_slice(
+                                data_first_parent_slice_with_cursor, parent_slices_with_cursor[0]
+                            ),
+                        ),
+                        InMemoryPartition(
+                            "partition_2",
+                            "first_stream",
+                            parent_slices_with_cursor[1],
+                            _build_records_for_slice(
+                                data_second_parent_slice_with_cursor, parent_slices_with_cursor[1]
+                            ),
+                        ),
+                        InMemoryPartition(
+                            "partition_3",
+                            "first_stream",
+                            parent_slices_with_cursor[2],
+                            _build_records_for_slice([], parent_slices_with_cursor[2]),
+                        ),
+                    ],
                     "first_stream",
-                    cursor_field="cursor",
+                    cursor=ConcurrentPerPartitionCursor(
+                        cursor_factory=ConcurrentCursorFactory(
+                            lambda stream_state, runtime_lookback_window: ConcurrentCursor(
+                                stream_name="first_stream",
+                                stream_namespace=None,
+                                stream_state=stream_state,
+                                message_repository=Mock(),
+                                connector_state_manager=Mock(),
+                                connector_state_converter=CustomFormatConcurrentStreamStateConverter(
+                                    "%Y-%m-%d"
+                                ),
+                                cursor_field=CursorField("cursor"),
+                                slice_boundary_fields=("start", "end"),
+                                start=ab_datetime_parse("2021-01-01").to_datetime(),
+                                end_provider=lambda: ab_datetime_parse("2023-01-01").to_datetime(),
+                                lookback_window=runtime_lookback_window,
+                            ),
+                        ),
+                        partition_router=ListPartitionRouter(
+                            values=["first", "second", "third"],
+                            cursor_field="slice",
+                            config={},
+                            parameters={},
+                        ),
+                        stream_name="first_stream",
+                        stream_namespace=None,
+                        stream_state={},
+                        message_repository=Mock(),
+                        connector_state_manager=Mock(),
+                        connector_state_converter=CustomFormatConcurrentStreamStateConverter(
+                            "%Y-%m-%d"
+                        ),
+                        cursor_field=CursorField("cursor"),
+                    ),
                 ),
                 parent_key="id",
                 partition_field="first_stream_id",
@@ -606,10 +611,13 @@ def test_request_option(
             ),
             {
                 "first_stream": {
+                    "lookback_window": 0,
                     "states": [
-                        {"cursor": "first_cursor_1", "partition": "first"},
-                        {"cursor": "second_cursor_2", "partition": "second"},
-                    ]
+                        {"cursor": {"cursor": "2021-01-02"}, "partition": {"slice": "first"}},
+                        {"cursor": {"cursor": "2022-01-01"}, "partition": {"slice": "second"}},
+                        {"cursor": {"cursor": "2021-01-01"}, "partition": {"slice": "third"}},
+                    ],
+                    "use_global_cursor": False,
                 }
             },
         ),
@@ -701,59 +709,6 @@ def test_request_params_interpolation_for_parent_stream(
     assert partition_router.get_request_params(stream_slice=stream_slice) == expected_request_params
 
 
-def test_given_record_is_airbyte_message_when_stream_slices_then_use_record_data():
-    parent_slice = {}
-    partition_router = SubstreamPartitionRouter(
-        parent_stream_configs=[
-            ParentStreamConfig(
-                stream=MockStream(
-                    [parent_slice],
-                    [
-                        AirbyteMessage(
-                            type=Type.RECORD,
-                            record=AirbyteRecordMessage(
-                                data={"id": "record value"}, emitted_at=0, stream="stream"
-                            ),
-                        )
-                    ],
-                    "first_stream",
-                ),
-                parent_key="id",
-                partition_field="partition_field",
-                parameters={},
-                config={},
-            )
-        ],
-        parameters={},
-        config={},
-    )
-
-    slices = list(partition_router.stream_slices())
-    assert slices == [{"partition_field": "record value", "parent_slice": parent_slice}]
-
-
-def test_given_record_is_record_object_when_stream_slices_then_use_record_data():
-    parent_slice = {}
-    partition_router = SubstreamPartitionRouter(
-        parent_stream_configs=[
-            ParentStreamConfig(
-                stream=MockStream(
-                    [parent_slice], [Record({"id": "record value"}, {})], "first_stream"
-                ),
-                parent_key="id",
-                partition_field="partition_field",
-                parameters={},
-                config={},
-            )
-        ],
-        parameters={},
-        config={},
-    )
-
-    slices = list(partition_router.stream_slices())
-    assert slices == [{"partition_field": "record value", "parent_slice": parent_slice}]
-
-
 def test_substream_using_incremental_parent_stream():
     mock_slices = [
         StreamSlice(
@@ -774,15 +729,44 @@ def test_substream_using_incremental_parent_stream():
     partition_router = SubstreamPartitionRouter(
         parent_stream_configs=[
             ParentStreamConfig(
-                stream=MockIncrementalStream(
-                    slices=mock_slices,
-                    records=[
-                        Record({"id": "may_record_0", "updated_at": "2024-05-15"}, mock_slices[0]),
-                        Record({"id": "may_record_1", "updated_at": "2024-05-16"}, mock_slices[0]),
-                        Record({"id": "jun_record_0", "updated_at": "2024-06-15"}, mock_slices[1]),
-                        Record({"id": "jun_record_1", "updated_at": "2024-06-16"}, mock_slices[1]),
+                stream=MockStream(
+                    [
+                        InMemoryPartition(
+                            "partition_1",
+                            "first_stream",
+                            mock_slices[0],
+                            [
+                                Record(
+                                    {"id": "may_record_0", "updated_at": "2024-05-15"},
+                                    "first_stream",
+                                    mock_slices[0],
+                                ),
+                                Record(
+                                    {"id": "may_record_1", "updated_at": "2024-05-16"},
+                                    "first_stream",
+                                    mock_slices[0],
+                                ),
+                            ],
+                        ),
+                        InMemoryPartition(
+                            "partition_1",
+                            "first_stream",
+                            mock_slices[1],
+                            [
+                                Record(
+                                    {"id": "jun_record_0", "updated_at": "2024-06-15"},
+                                    "first_stream",
+                                    mock_slices[1],
+                                ),
+                                Record(
+                                    {"id": "jun_record_1", "updated_at": "2024-06-16"},
+                                    "first_stream",
+                                    mock_slices[1],
+                                ),
+                            ],
+                        ),
                     ],
-                    name="first_stream",
+                    "first_stream",
                 ),
                 parent_key="id",
                 partition_field="partition_field",
@@ -821,25 +805,69 @@ def test_substream_checkpoints_after_each_parent_partition():
     ]
 
     expected_parent_state = [
-        {"first_stream": {}},
-        {"first_stream": {}},
-        {"first_stream": {"start_time": "2024-04-27", "end_time": "2024-05-27"}},
-        {"first_stream": {"start_time": "2024-04-27", "end_time": "2024-05-27"}},
-        {"first_stream": {"start_time": "2024-05-27", "end_time": "2024-06-27"}},
+        {"first_stream": {"updated_at": mock_slices[0]["start_time"]}},
+        {"first_stream": {"updated_at": "2024-05-16"}},
+        {"first_stream": {"updated_at": "2024-05-16"}},
+        {"first_stream": {"updated_at": "2024-06-16"}},
+        {"first_stream": {"updated_at": "2024-06-16"}},
     ]
 
     partition_router = SubstreamPartitionRouter(
         parent_stream_configs=[
             ParentStreamConfig(
-                stream=MockIncrementalStream(
-                    slices=mock_slices,
-                    records=[
-                        Record({"id": "may_record_0", "updated_at": "2024-05-15"}, mock_slices[0]),
-                        Record({"id": "may_record_1", "updated_at": "2024-05-16"}, mock_slices[0]),
-                        Record({"id": "jun_record_0", "updated_at": "2024-06-15"}, mock_slices[1]),
-                        Record({"id": "jun_record_1", "updated_at": "2024-06-16"}, mock_slices[1]),
+                stream=MockStream(
+                    [
+                        InMemoryPartition(
+                            "partition_1",
+                            "first_stream",
+                            mock_slices[0],
+                            [
+                                Record(
+                                    {"id": "may_record_0", "updated_at": "2024-05-15"},
+                                    "first_stream",
+                                    mock_slices[0],
+                                ),
+                                Record(
+                                    {"id": "may_record_1", "updated_at": "2024-05-16"},
+                                    "first_stream",
+                                    mock_slices[0],
+                                ),
+                            ],
+                        ),
+                        InMemoryPartition(
+                            "partition_1",
+                            "first_stream",
+                            mock_slices[1],
+                            [
+                                Record(
+                                    {"id": "jun_record_0", "updated_at": "2024-06-15"},
+                                    "first_stream",
+                                    mock_slices[1],
+                                ),
+                                Record(
+                                    {"id": "jun_record_1", "updated_at": "2024-06-16"},
+                                    "first_stream",
+                                    mock_slices[1],
+                                ),
+                            ],
+                        ),
                     ],
-                    name="first_stream",
+                    "first_stream",
+                    "updated_at",
+                    ConcurrentCursor(
+                        stream_name="first_stream",
+                        stream_namespace=None,
+                        stream_state={},
+                        message_repository=Mock(),
+                        connector_state_manager=Mock(),
+                        connector_state_converter=CustomFormatConcurrentStreamStateConverter(
+                            "%Y-%m-%d"
+                        ),
+                        cursor_field=CursorField("updated_at"),
+                        slice_boundary_fields=("start_time", "end_time"),
+                        start=ab_datetime_parse(mock_slices[0]["start_time"]).to_datetime(),
+                        end_provider=lambda: ab_datetime_parse("2023-01-01").to_datetime(),
+                    ),
                 ),
                 incremental_dependency=True,
                 parent_key="id",
@@ -857,273 +885,7 @@ def test_substream_checkpoints_after_each_parent_partition():
         assert actual_slice == expected_slices[expected_counter]
         assert partition_router.get_stream_state() == expected_parent_state[expected_counter]
         expected_counter += 1
-    assert partition_router.get_stream_state() == expected_parent_state[expected_counter]
-
-
-@pytest.mark.parametrize(
-    "use_incremental_dependency",
-    [
-        pytest.param(False, id="test_resumable_full_refresh_stream_without_parent_checkpoint"),
-        pytest.param(
-            True,
-            id="test_resumable_full_refresh_stream_with_use_incremental_dependency_for_parent_checkpoint",
-        ),
-    ],
-)
-def test_substream_using_resumable_full_refresh_parent_stream(use_incremental_dependency):
-    mock_slices = [
-        StreamSlice(cursor_slice={}, partition={}),
-        StreamSlice(cursor_slice={"next_page_token": 2}, partition={}),
-        StreamSlice(cursor_slice={"next_page_token": 3}, partition={}),
-    ]
-
-    expected_slices = [
-        {"partition_field": "makoto_yuki", "parent_slice": {}},
-        {"partition_field": "yukari_takeba", "parent_slice": {}},
-        {"partition_field": "mitsuru_kirijo", "parent_slice": {}},
-        {"partition_field": "akihiko_sanada", "parent_slice": {}},
-        {"partition_field": "junpei_iori", "parent_slice": {}},
-        {"partition_field": "fuuka_yamagishi", "parent_slice": {}},
-    ]
-
-    expected_parent_state = [
-        {"persona_3_characters": {}},
-        {"persona_3_characters": {}},
-        {"persona_3_characters": {"next_page_token": 2}},
-        {"persona_3_characters": {"next_page_token": 2}},
-        {"persona_3_characters": {"next_page_token": 3}},
-        {"persona_3_characters": {"next_page_token": 3}},
-        {"persona_3_characters": {"__ab_full_refresh_sync_complete": True}},
-    ]
-
-    partition_router = SubstreamPartitionRouter(
-        parent_stream_configs=[
-            ParentStreamConfig(
-                stream=MockResumableFullRefreshStream(
-                    slices=[StreamSlice(partition={}, cursor_slice={})],
-                    cursor=ResumableFullRefreshCursor(parameters={}),
-                    record_pages=[
-                        [
-                            Record(
-                                data={"id": "makoto_yuki"},
-                                associated_slice=mock_slices[0],
-                                stream_name="test_stream",
-                            ),
-                            Record(
-                                data={"id": "yukari_takeba"},
-                                associated_slice=mock_slices[0],
-                                stream_name="test_stream",
-                            ),
-                        ],
-                        [
-                            Record(
-                                data={"id": "mitsuru_kirijo"},
-                                associated_slice=mock_slices[1],
-                                stream_name="test_stream",
-                            ),
-                            Record(
-                                data={"id": "akihiko_sanada"},
-                                associated_slice=mock_slices[1],
-                                stream_name="test_stream",
-                            ),
-                        ],
-                        [
-                            Record(
-                                data={"id": "junpei_iori"},
-                                associated_slice=mock_slices[2],
-                                stream_name="test_stream",
-                            ),
-                            Record(
-                                data={"id": "fuuka_yamagishi"},
-                                associated_slice=mock_slices[2],
-                                stream_name="test_stream",
-                            ),
-                        ],
-                    ],
-                    name="persona_3_characters",
-                ),
-                incremental_dependency=use_incremental_dependency,
-                parent_key="id",
-                partition_field="partition_field",
-                parameters={},
-                config={},
-            )
-        ],
-        parameters={},
-        config={},
-    )
-
-    expected_counter = 0
-    for actual_slice in partition_router.stream_slices():
-        assert actual_slice == expected_slices[expected_counter]
-        if use_incremental_dependency:
-            assert partition_router.get_stream_state() == expected_parent_state[expected_counter]
-        expected_counter += 1
-    if use_incremental_dependency:
-        assert partition_router.get_stream_state() == expected_parent_state[expected_counter]
-
-
-@pytest.mark.parametrize(
-    "use_incremental_dependency",
-    [
-        pytest.param(
-            False, id="test_substream_resumable_full_refresh_stream_without_parent_checkpoint"
-        ),
-        pytest.param(
-            True,
-            id="test_substream_resumable_full_refresh_stream_with_use_incremental_dependency_for_parent_checkpoint",
-        ),
-    ],
-)
-def test_substream_using_resumable_full_refresh_parent_stream_slices(use_incremental_dependency):
-    mock_parent_slices = [
-        StreamSlice(cursor_slice={}, partition={}),
-        StreamSlice(cursor_slice={"next_page_token": 2}, partition={}),
-        StreamSlice(cursor_slice={"next_page_token": 3}, partition={}),
-    ]
-
-    expected_parent_slices = [
-        {"partition_field": "makoto_yuki", "parent_slice": {}},
-        {"partition_field": "yukari_takeba", "parent_slice": {}},
-        {"partition_field": "mitsuru_kirijo", "parent_slice": {}},
-        {"partition_field": "akihiko_sanada", "parent_slice": {}},
-        {"partition_field": "junpei_iori", "parent_slice": {}},
-        {"partition_field": "fuuka_yamagishi", "parent_slice": {}},
-    ]
-
-    expected_parent_state = [
-        {"persona_3_characters": {}},
-        {"persona_3_characters": {}},
-        {"persona_3_characters": {"next_page_token": 2}},
-        {"persona_3_characters": {"next_page_token": 2}},
-        {"persona_3_characters": {"next_page_token": 3}},
-        {"persona_3_characters": {"next_page_token": 3}},
-        {"persona_3_characters": {"__ab_full_refresh_sync_complete": True}},
-    ]
-
-    expected_substream_state = {
-        "states": [
-            {
-                "partition": {"parent_slice": {}, "partition_field": "makoto_yuki"},
-                "cursor": {"__ab_full_refresh_sync_complete": True},
-            },
-            {
-                "partition": {"parent_slice": {}, "partition_field": "yukari_takeba"},
-                "cursor": {"__ab_full_refresh_sync_complete": True},
-            },
-            {
-                "partition": {"parent_slice": {}, "partition_field": "mitsuru_kirijo"},
-                "cursor": {"__ab_full_refresh_sync_complete": True},
-            },
-            {
-                "partition": {"parent_slice": {}, "partition_field": "akihiko_sanada"},
-                "cursor": {"__ab_full_refresh_sync_complete": True},
-            },
-            {
-                "partition": {"parent_slice": {}, "partition_field": "junpei_iori"},
-                "cursor": {"__ab_full_refresh_sync_complete": True},
-            },
-            {
-                "partition": {"parent_slice": {}, "partition_field": "fuuka_yamagishi"},
-                "cursor": {"__ab_full_refresh_sync_complete": True},
-            },
-        ],
-        "parent_state": {"persona_3_characters": {"__ab_full_refresh_sync_complete": True}},
-    }
-
-    partition_router = SubstreamPartitionRouter(
-        parent_stream_configs=[
-            ParentStreamConfig(
-                stream=MockResumableFullRefreshStream(
-                    slices=[StreamSlice(partition={}, cursor_slice={})],
-                    cursor=ResumableFullRefreshCursor(parameters={}),
-                    record_pages=[
-                        [
-                            Record(
-                                data={"id": "makoto_yuki"},
-                                associated_slice=mock_parent_slices[0],
-                                stream_name="test_stream",
-                            ),
-                            Record(
-                                data={"id": "yukari_takeba"},
-                                associated_slice=mock_parent_slices[0],
-                                stream_name="test_stream",
-                            ),
-                        ],
-                        [
-                            Record(
-                                data={"id": "mitsuru_kirijo"},
-                                associated_slice=mock_parent_slices[1],
-                                stream_name="test_stream",
-                            ),
-                            Record(
-                                data={"id": "akihiko_sanada"},
-                                associated_slice=mock_parent_slices[1],
-                                stream_name="test_stream",
-                            ),
-                        ],
-                        [
-                            Record(
-                                data={"id": "junpei_iori"},
-                                associated_slice=mock_parent_slices[2],
-                                stream_name="test_stream",
-                            ),
-                            Record(
-                                data={"id": "fuuka_yamagishi"},
-                                associated_slice=mock_parent_slices[2],
-                                stream_name="test_stream",
-                            ),
-                        ],
-                    ],
-                    name="persona_3_characters",
-                ),
-                incremental_dependency=use_incremental_dependency,
-                parent_key="id",
-                partition_field="partition_field",
-                parameters={},
-                config={},
-            )
-        ],
-        parameters={},
-        config={},
-    )
-
-    substream_cursor_slicer = PerPartitionCursor(
-        cursor_factory=CursorFactory(
-            create_function=partial(ChildPartitionResumableFullRefreshCursor, {})
-        ),
-        partition_router=partition_router,
-    )
-
-    expected_counter = 0
-    for actual_slice in substream_cursor_slicer.stream_slices():
-        # close the substream slice
-        substream_cursor_slicer.close_slice(actual_slice)
-        # check the slice has been processed
-        assert actual_slice == expected_parent_slices[expected_counter]
-        # check for parent state
-        if use_incremental_dependency:
-            assert (
-                substream_cursor_slicer._partition_router.get_stream_state()
-                == expected_parent_state[expected_counter]
-            )
-        expected_counter += 1
-    if use_incremental_dependency:
-        assert (
-            substream_cursor_slicer._partition_router.get_stream_state()
-            == expected_parent_state[expected_counter]
-        )
-
-    # validate final state for closed substream slices
-    final_state = substream_cursor_slicer.get_stream_state()
-    if not use_incremental_dependency:
-        assert final_state["states"] == expected_substream_state["states"], (
-            "State for substreams is not valid!"
-        )
-    else:
-        assert final_state == expected_substream_state, (
-            "State for substreams with incremental dependency is not valid!"
-        )
+    assert partition_router.get_stream_state() == expected_parent_state[-1]
 
 
 @pytest.mark.parametrize(
@@ -1133,18 +895,27 @@ def test_substream_using_resumable_full_refresh_parent_stream_slices(use_increme
             [
                 ParentStreamConfig(
                     stream=MockStream(
-                        [{}],
                         [
-                            {
-                                "id": 1,
-                                "field_1": "value_1",
-                                "field_2": {"nested_field": "nested_value_1"},
-                            },
-                            {
-                                "id": 2,
-                                "field_1": "value_2",
-                                "field_2": {"nested_field": "nested_value_2"},
-                            },
+                            InMemoryPartition(
+                                "partition_name",
+                                "first_stream",
+                                _EMPTY_SLICE,
+                                _build_records_for_slice(
+                                    [
+                                        {
+                                            "id": 1,
+                                            "field_1": "value_1",
+                                            "field_2": {"nested_field": "nested_value_1"},
+                                        },
+                                        {
+                                            "id": 2,
+                                            "field_1": "value_2",
+                                            "field_2": {"nested_field": "nested_value_2"},
+                                        },
+                                    ],
+                                    _EMPTY_SLICE,
+                                ),
+                            )
                         ],
                         "first_stream",
                     ),
@@ -1164,8 +935,20 @@ def test_substream_using_resumable_full_refresh_parent_stream_slices(use_increme
             [
                 ParentStreamConfig(
                     stream=MockStream(
-                        [{}],
-                        [{"id": 1, "field_1": "value_1"}, {"id": 2, "field_1": "value_2"}],
+                        [
+                            InMemoryPartition(
+                                "partition_name",
+                                "first_stream",
+                                _EMPTY_SLICE,
+                                _build_records_for_slice(
+                                    [
+                                        {"id": 1, "field_1": "value_1"},
+                                        {"id": 2, "field_1": "value_2"},
+                                    ],
+                                    _EMPTY_SLICE,
+                                ),
+                            )
+                        ],
                         "first_stream",
                     ),
                     parent_key="id",

@@ -1,6 +1,7 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
+from unittest.mock import Mock
 
 import pytest as pytest
 
@@ -12,17 +13,13 @@ from airbyte_cdk.sources.declarative.interpolation.interpolated_string import In
 from airbyte_cdk.sources.declarative.partition_routers import (
     CartesianProductStreamSlicer,
     ListPartitionRouter,
-)
-from airbyte_cdk.sources.declarative.partition_routers.substream_partition_router import (
-    ParentStreamConfig,
-    SubstreamPartitionRouter,
+    PartitionRouter,
 )
 from airbyte_cdk.sources.declarative.requesters.request_option import (
     RequestOption,
     RequestOptionType,
 )
 from airbyte_cdk.sources.types import StreamSlice
-from unit_tests.sources.declarative.partition_routers.helpers import MockStream
 
 
 @pytest.mark.parametrize(
@@ -178,66 +175,26 @@ def test_substream_slicer(test_name, stream_slicers, expected_slices):
     assert slices == expected_slices
 
 
-@pytest.mark.parametrize(
-    "test_name, stream_slicers, expected_slices",
-    [
-        (
-            "test_single_stream_slicer",
-            [
-                SubstreamPartitionRouter(
-                    parent_stream_configs=[
-                        ParentStreamConfig(
-                            stream=MockStream(
-                                [{}],
-                                [
-                                    {"a": {"b": 0}, "extra_field_key": "extra_field_value_0"},
-                                    {"a": {"b": 1}, "extra_field_key": "extra_field_value_1"},
-                                    {"a": {"c": 2}, "extra_field_key": "extra_field_value_2"},
-                                    {"a": {"b": 3}, "extra_field_key": "extra_field_value_3"},
-                                ],
-                                "first_stream",
-                            ),
-                            parent_key="a/b",
-                            partition_field="first_stream_id",
-                            parameters={},
-                            config={},
-                            extra_fields=[["extra_field_key"]],
-                        )
-                    ],
-                    parameters={},
-                    config={},
-                ),
-            ],
-            [
-                StreamSlice(
-                    partition={"first_stream_id": 0, "parent_slice": {}},
-                    cursor_slice={},
-                    extra_fields={"extra_field_key": "extra_field_value_0"},
-                ),
-                StreamSlice(
-                    partition={"first_stream_id": 1, "parent_slice": {}},
-                    cursor_slice={},
-                    extra_fields={"extra_field_key": "extra_field_value_1"},
-                ),
-                StreamSlice(
-                    partition={"first_stream_id": 3, "parent_slice": {}},
-                    cursor_slice={},
-                    extra_fields={"extra_field_key": "extra_field_value_3"},
-                ),
-            ],
-        )
-    ],
-)
-def test_substream_slicer_with_extra_fields(test_name, stream_slicers, expected_slices):
-    slicer = CartesianProductStreamSlicer(stream_slicers=stream_slicers, parameters={})
-    slices = [s for s in slicer.stream_slices()]
-    partitions = [s.partition for s in slices]
-    expected_partitions = [s.partition for s in expected_slices]
-    assert partitions == expected_partitions
-
-    extra_fields = [s.extra_fields for s in slices]
-    expected_extra_fields = [s.extra_fields for s in expected_slices]
-    assert extra_fields == expected_extra_fields
+def test_substream_slicer_with_extra_fields():
+    decorated_slicer = Mock(spec=PartitionRouter)
+    decorated_slicer.stream_slices.return_value = iter(
+        [
+            StreamSlice(
+                partition={"first_stream_id": 0, "parent_slice": {}},
+                cursor_slice={},
+                extra_fields={"extra_field_key": "extra_field_value_0"},
+            ),
+            StreamSlice(
+                partition={"first_stream_id": 1, "parent_slice": {}},
+                cursor_slice={},
+                extra_fields={"extra_field_key": "extra_field_value_1"},
+            ),
+        ],
+    )
+    slicer = CartesianProductStreamSlicer(stream_slicers=[decorated_slicer], parameters={})
+    extra_fields = [bool(s.extra_fields) for s in slicer.stream_slices()]
+    assert len(extra_fields) == 2
+    assert all(extra_fields)
 
 
 def test_stream_slices_raises_exception_if_multiple_cursor_slice_components():

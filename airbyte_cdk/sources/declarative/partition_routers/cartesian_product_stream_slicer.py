@@ -162,12 +162,6 @@ class CartesianProductStreamSlicer(PartitionRouter):
                 partition=partition, cursor_slice=cursor_slice, extra_fields=extra_fields
             )
 
-    def set_initial_state(self, stream_state: StreamState) -> None:
-        """
-        Parent stream states are not supported for cartesian product stream slicer
-        """
-        pass
-
     def get_stream_state(self) -> Optional[Mapping[str, StreamState]]:
         """
         Parent stream states are not supported for cartesian product stream slicer
