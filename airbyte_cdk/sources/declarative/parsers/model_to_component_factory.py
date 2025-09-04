@@ -1972,7 +1972,7 @@ class ModelToComponentFactory:
 
     def create_default_stream(
         self, model: DeclarativeStreamModel, config: Config, is_parent: bool = False, **kwargs: Any
-    ) -> Union[DeclarativeStream, AbstractStream]:
+    ) -> AbstractStream:
         primary_key = model.primary_key.__root__ if model.primary_key else None
 
         partition_router = self._build_stream_slicer_from_partition_router(

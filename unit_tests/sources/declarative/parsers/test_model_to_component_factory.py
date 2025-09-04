@@ -14,7 +14,6 @@ import requests
 from freezegun.api import FakeDatetime
 from pydantic.v1 import ValidationError
 
-from airbyte_cdk import AirbyteTracedException
 from airbyte_cdk.legacy.sources.declarative.declarative_stream import DeclarativeStream
 from airbyte_cdk.legacy.sources.declarative.incremental import DatetimeBasedCursor
 from airbyte_cdk.models import (
@@ -175,6 +174,7 @@ from airbyte_cdk.sources.streams.http.requests_native_auth.oauth import (
     SingleUseRefreshTokenOauth2Authenticator,
 )
 from airbyte_cdk.sources.types import StreamSlice
+from airbyte_cdk.utils import AirbyteTracedException
 from airbyte_cdk.utils.datetime_helpers import AirbyteDateTime, ab_datetime_now, ab_datetime_parse
 from unit_tests.sources.declarative.parsers.testing_components import (
     TestingCustomSubstreamPartitionRouter,

@@ -7,11 +7,11 @@ from unittest.mock import MagicMock
 import pytest
 from requests import Response
 
-from airbyte_cdk import AirbyteTracedException
 from airbyte_cdk.models import FailureType
 from airbyte_cdk.sources.declarative.requesters.error_handlers.backoff_strategies.wait_time_from_header_backoff_strategy import (
     WaitTimeFromHeaderBackoffStrategy,
 )
+from airbyte_cdk.utils import AirbyteTracedException
 
 SOME_BACKOFF_TIME = 60
 _A_RETRY_HEADER = "retry-header"

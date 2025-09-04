@@ -10,8 +10,6 @@ from unittest.mock import MagicMock, Mock, patch
 import pytest
 import requests
 
-from airbyte_cdk import YamlDeclarativeSource
-
 # todo: These can be removed once SimpleRetriever deprecated the now unused state methods
 from airbyte_cdk.legacy.sources.declarative.incremental import (
     DatetimeBasedCursor,
@@ -21,7 +19,6 @@ from airbyte_cdk.legacy.sources.declarative.incremental import (
 from airbyte_cdk.models import (
     AirbyteLogMessage,
     AirbyteMessage,
-    AirbyteRecordMessage,
     Level,
     SyncMode,
     Type,
@@ -29,10 +26,6 @@ from airbyte_cdk.models import (
 from airbyte_cdk.sources.declarative.auth.declarative_authenticator import NoAuth
 from airbyte_cdk.sources.declarative.decoders import JsonDecoder
 from airbyte_cdk.sources.declarative.extractors import DpathExtractor, RecordSelector
-from airbyte_cdk.sources.declarative.models import DeclarativeStream as DeclarativeStreamModel
-from airbyte_cdk.sources.declarative.parsers.model_to_component_factory import (
-    ModelToComponentFactory,
-)
 from airbyte_cdk.sources.declarative.partition_routers import SinglePartitionRouter
 from airbyte_cdk.sources.declarative.requesters.paginators import DefaultPaginator
 from airbyte_cdk.sources.declarative.requesters.paginators.strategies import (

@@ -8,8 +8,8 @@ import pytest
 from freezegun import freeze_time
 from jinja2.exceptions import TemplateSyntaxError
 
-from airbyte_cdk import StreamSlice
 from airbyte_cdk.sources.declarative.interpolation.jinja import JinjaInterpolation
+from airbyte_cdk.sources.types import StreamSlice
 from airbyte_cdk.utils import AirbyteTracedException
 
 interpolation = JinjaInterpolation()
