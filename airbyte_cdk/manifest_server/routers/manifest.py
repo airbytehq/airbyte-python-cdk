@@ -29,8 +29,8 @@ from ..api_models import (
 )
 from ..command_processor.processor import ManifestCommandProcessor
 from ..command_processor.utils import build_catalog, build_source
-from ..dependencies.auth import verify_jwt_token
-from ..dependencies.tracing import apply_trace_tags
+from ..helpers.auth import verify_jwt_token
+from ..helpers.tracing import apply_trace_tags_from_context
 
 
 def safe_build_source(
@@ -60,7 +60,7 @@ def safe_build_source(
 router = APIRouter(
     prefix="/manifest",
     tags=["manifest"],
-    dependencies=[Depends(verify_jwt_token), Depends(apply_trace_tags)],
+    dependencies=[Depends(verify_jwt_token)],
 )
 
 
@@ -69,6 +69,13 @@ def test_read(request: StreamTestReadRequest) -> StreamReadResponse:
     """
     Test reading from a specific stream in the manifest.
     """
+    # Apply trace tags from context if provided
+    if request.context:
+        apply_trace_tags_from_context(
+            workspace_id=request.context.workspace_id,
+            project_id=request.context.project_id,
+        )
+
     config_dict = request.config.model_dump()
 
     catalog = build_catalog(request.stream_name)
@@ -105,6 +112,13 @@ def test_read(request: StreamTestReadRequest) -> StreamReadResponse:
 @router.post("/check", operation_id="check")
 def check(request: CheckRequest) -> CheckResponse:
     """Check configuration against a manifest"""
+    # Apply trace tags from context if provided
+    if request.context:
+        apply_trace_tags_from_context(
+            workspace_id=request.context.workspace_id,
+            project_id=request.context.project_id,
+        )
+
     source = safe_build_source(request.manifest.model_dump(), request.config.model_dump())
     runner = ManifestCommandProcessor(source)
     success, message = runner.check_connection(request.config.model_dump())
@@ -114,6 +128,13 @@ def check(request: CheckRequest) -> CheckResponse:
 @router.post("/discover", operation_id="discover")
 def discover(request: DiscoverRequest) -> DiscoverResponse:
     """Discover streams from a manifest"""
+    # Apply trace tags from context if provided
+    if request.context:
+        apply_trace_tags_from_context(
+            workspace_id=request.context.workspace_id,
+            project_id=request.context.project_id,
+        )
+
     source = safe_build_source(request.manifest.model_dump(), request.config.model_dump())
     runner = ManifestCommandProcessor(source)
     catalog = runner.discover(request.config.model_dump())
@@ -125,6 +146,13 @@ def discover(request: DiscoverRequest) -> DiscoverResponse:
 @router.post("/resolve", operation_id="resolve")
 def resolve(request: ResolveRequest) -> ManifestResponse:
     """Resolve a manifest to its final configuration."""
+    # Apply trace tags from context if provided
+    if request.context:
+        apply_trace_tags_from_context(
+            workspace_id=request.context.workspace_id,
+            project_id=request.context.project_id,
+        )
+
     source = safe_build_source(request.manifest.model_dump(), {})
     return ManifestResponse(manifest=Manifest(**source.resolved_manifest))
 
@@ -136,6 +164,13 @@ def full_resolve(request: FullResolveRequest) -> ManifestResponse:
 
     This is a similar operation to resolve, but has an extra step which generates streams from dynamic stream templates if the manifest contains any. This is used when a user clicks the generate streams button on a stream template in the Builder UI
     """
+    # Apply trace tags from context if provided
+    if request.context:
+        apply_trace_tags_from_context(
+            workspace_id=request.context.workspace_id,
+            project_id=request.context.project_id,
+        )
+
     source = safe_build_source(request.manifest.model_dump(), request.config.model_dump())
     manifest = {**source.resolved_manifest}
     streams = manifest.get("streams", [])
