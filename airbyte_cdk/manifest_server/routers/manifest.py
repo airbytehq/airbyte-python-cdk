@@ -29,7 +29,8 @@ from ..api_models import (
 )
 from ..command_processor.processor import ManifestCommandProcessor
 from ..command_processor.utils import build_catalog, build_source
-from ..dependencies import apply_trace_tags, verify_jwt_token
+from ..dependencies.auth import verify_jwt_token
+from ..dependencies.tracing import apply_trace_tags
 
 
 def safe_build_source(
