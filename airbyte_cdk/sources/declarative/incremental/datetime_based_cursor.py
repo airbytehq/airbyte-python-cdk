@@ -21,6 +21,7 @@ from airbyte_cdk.sources.declarative.requesters.request_option import (
 )
 from airbyte_cdk.sources.message import MessageRepository
 from airbyte_cdk.sources.types import Config, Record, StreamSlice, StreamState
+from airbyte_cdk.utils.datetime_helpers import ab_datetime_format, ab_datetime_try_parse
 from airbyte_cdk.utils.mapping_helpers import _validate_component_request_option_paths
 
 
@@ -313,6 +314,14 @@ class DatetimeBasedCursor(DeclarativeCursor):
                 return self._parser.parse(date, datetime_format)
             except ValueError:
                 pass
+
+        # If we have not parsed by now, use the robust parser which handles
+        # all common formats, including all formats supported by ISO8601
+        # and RFC3339.
+        parsed_dt = ab_datetime_try_parse(date)
+        if parsed_dt is not None:
+            return parsed_dt
+
         raise ValueError(f"No format in {self.cursor_datetime_formats} matching {date}")
 
     @classmethod
