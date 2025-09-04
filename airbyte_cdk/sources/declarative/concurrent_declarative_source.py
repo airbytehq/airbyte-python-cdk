@@ -16,7 +16,6 @@ from typing import (
     Mapping,
     Optional,
     Set,
-    Union,
 )
 
 import orjson
