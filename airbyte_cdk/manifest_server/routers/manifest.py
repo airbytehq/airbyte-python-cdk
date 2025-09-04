@@ -27,9 +27,9 @@ from ..api_models import (
     StreamReadResponse,
     StreamTestReadRequest,
 )
-from ..auth import verify_jwt_token
 from ..command_processor.processor import ManifestCommandProcessor
 from ..command_processor.utils import build_catalog, build_source
+from ..dependencies import apply_trace_tags, verify_jwt_token
 
 
 def safe_build_source(
@@ -59,7 +59,7 @@ def safe_build_source(
 router = APIRouter(
     prefix="/manifest",
     tags=["manifest"],
-    dependencies=[Depends(verify_jwt_token)],
+    dependencies=[Depends(verify_jwt_token), Depends(apply_trace_tags)],
 )
 
 

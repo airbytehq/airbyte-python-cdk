@@ -1,0 +1,44 @@
+"""
+FastAPI dependencies for the Manifest Server.
+
+This module contains reusable FastAPI dependencies that can be used across
+different routers in the manifest server.
+"""
+
+import logging
+from typing import Optional
+
+import ddtrace
+from fastapi import Header
+
+logger = logging.getLogger(__name__)
+
+
+def apply_trace_tags(
+    workspace_id: Optional[str] = Header(None, alias="x-workspace-id"),
+    project_id: Optional[str] = Header(None, alias="x-project-id"),
+) -> None:
+    """FastAPI dependency to apply trace tags from headers to the current span."""
+    if not workspace_id and not project_id:
+        return
+
+    # Log the trace IDs for observability
+    log_parts = []
+    if workspace_id:
+        log_parts.append(f"workspace_id={workspace_id}")
+    if project_id:
+        log_parts.append(f"project_id={project_id}")
+
+    if log_parts:
+        logger.info(f"Processing request with trace tags: {', '.join(log_parts)}")
+
+    try:
+        span = ddtrace.tracer.current_span()
+        if span:
+            if workspace_id:
+                span.set_tag("workspace_id", workspace_id)
+            if project_id:
+                span.set_tag("project_id", project_id)
+    except Exception:
+        # Silently ignore any ddtrace-related errors (e.g. if ddtrace.auto wasn't run)
+        pass
