@@ -1,10 +1,3 @@
-"""
-FastAPI dependencies for the Manifest Server.
-
-This module contains reusable FastAPI dependencies that can be used across
-different routers in the manifest server.
-"""
-
 import logging
 from typing import Optional
 
