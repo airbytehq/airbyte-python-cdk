@@ -6,7 +6,7 @@ They accurately reflect the runtime types returned by the CDK, particularly
 fixing type mismatches like slice_descriptor being a string rather than an object.
 """
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 
 from pydantic import BaseModel
 
@@ -59,7 +59,7 @@ class StreamReadSlices(BaseModel):
     """Slices of data read from a stream."""
 
     pages: List[StreamReadPages]
-    slice_descriptor: Optional[str]  # This is actually a string at runtime, not Dict[str, Any]
+    slice_descriptor: Optional[Union[Dict[str, Any], str]]  # We're seeing strings at runtime
     state: Optional[List[Dict[str, Any]]] = None
     auxiliary_requests: Optional[List[AuxiliaryRequest]] = None
 
