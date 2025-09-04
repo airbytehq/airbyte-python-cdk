@@ -485,7 +485,10 @@ class ConcurrentDeclarativeSource(Source):
         )
 
     def check(self, logger: logging.Logger, config: Mapping[str, Any]) -> AirbyteConnectionStatus:
-        check = self._source_config["check"]
+        check = self._source_config.get("check")
+        if not check:
+            raise ValueError(f"Missing 'check' component definition within the manifest.")
+
         if "type" not in check:
             check["type"] = "CheckStream"
         connection_checker = self._constructor.create_component(
