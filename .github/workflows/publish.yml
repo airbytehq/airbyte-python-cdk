@@ -363,7 +363,7 @@ jobs:
         id: get-app-token
         with:
           owner: "airbytehq"
-          repositories: "airbyte-platform-internal,airbyte-python-cdk"
+          repositories: "airbyte-platform-internal"
           app-id: ${{ secrets.OCTAVIA_BOT_APP_ID }}
           private-key: ${{ secrets.OCTAVIA_BOT_PRIVATE_KEY }}
       - name: Checkout Airbyte Platform Internal
@@ -395,6 +395,7 @@ jobs:
         uses: peter-evans/create-pull-request@v7
         with:
           token: ${{ steps.get-app-token.outputs.token }}
+          repository: airbytehq/airbyte-platform-internal
           commit-message: "chore: update CDK version following release"
           title: "chore: update CDK version following release"
           body: This is an automatically generated PR triggered by a CDK release
