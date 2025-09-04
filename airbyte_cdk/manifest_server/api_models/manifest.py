@@ -13,6 +13,13 @@ from pydantic import BaseModel, Field
 from .dicts import ConnectorConfig, Manifest
 
 
+class RequestContext(BaseModel):
+    """Optional context information for tracing and observability."""
+
+    workspace_id: Optional[str] = None
+    project_id: Optional[str] = None
+
+
 class StreamTestReadRequest(BaseModel):
     """Request to test read from a specific stream."""
 
@@ -24,6 +31,7 @@ class StreamTestReadRequest(BaseModel):
     record_limit: int = Field(default=100, ge=1, le=5000)
     page_limit: int = Field(default=5, ge=1, le=20)
     slice_limit: int = Field(default=5, ge=1, le=20)
+    context: Optional[RequestContext] = None
 
 
 class CheckRequest(BaseModel):
@@ -31,6 +39,7 @@ class CheckRequest(BaseModel):
 
     manifest: Manifest
     config: ConnectorConfig
+    context: Optional[RequestContext] = None
 
 
 class CheckResponse(BaseModel):
@@ -45,6 +54,7 @@ class DiscoverRequest(BaseModel):
 
     manifest: Manifest
     config: ConnectorConfig
+    context: Optional[RequestContext] = None
 
 
 class DiscoverResponse(BaseModel):
@@ -57,6 +67,7 @@ class ResolveRequest(BaseModel):
     """Request to resolve a manifest."""
 
     manifest: Manifest
+    context: Optional[RequestContext] = None
 
 
 class ManifestResponse(BaseModel):
@@ -71,3 +82,4 @@ class FullResolveRequest(BaseModel):
     manifest: Manifest
     config: ConnectorConfig
     stream_limit: int = Field(default=100, ge=1, le=100)
+    context: Optional[RequestContext] = None
