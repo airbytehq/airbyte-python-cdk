@@ -150,16 +150,19 @@ definitions:
         enum: [ApiKeyAuthenticator]
       api_token:
         title: API Key
-        description: The API key to inject in the request. Fill it in the user inputs.
+        description: The API key token that will be injected into requests for authentication. This should reference a configuration field that contains the user's API key. Can include formatting like 'Bearer' or 'Token' prefixes.
         type: string
         interpolation_context:
           - config
         examples:
           - "{{ config['api_key'] }}"
           - "Token token={{ config['api_key'] }}"
+          - "Bearer {{ config['access_token'] }}"
+          - "{{ config['auth_token'] }}"
+          - "{{ config['secret_key'] }}"
       header:
         title: Header Name
-        description: The name of the HTTP header that will be set to the API key. This setting is deprecated, use inject_into instead. Header and inject_into can not be defined at the same time.
+        description: The name of the HTTP header where the API key will be injected. This setting is deprecated, use inject_into instead. Common headers include 'Authorization', 'X-API-Key', or custom headers specific to the API. Header and inject_into cannot be defined at the same time.
         type: string
         interpolation_context:
           - config
@@ -167,6 +170,10 @@ definitions:
           - Authorization
           - Api-Token
           - X-Auth-Token
+          - X-API-Key
+          - X-RapidAPI-Key
+          - apikey
+          - token
       inject_into:
         title: Inject API Key Into Outgoing HTTP Request
         description: Configure how the API Key will be sent in requests to the source API. Either inject_into or header has to be defined.
@@ -496,7 +503,7 @@ definitions:
         enum: [CursorPagination]
       cursor_value:
         title: Cursor Value
-        description: Value of the cursor defining the next page to fetch.
+        description: Template string for the cursor value to be used in the next request. This should reference a field from the API response that indicates the next page position.
         type: string
         interpolation_context:
           - config
@@ -508,12 +515,20 @@ definitions:
           - "{{ headers.link.next.cursor }}"
           - "{{ last_record['key'] }}"
           - "{{ response['nextPage'] }}"
+          - "{{ response.next_cursor }}"
+          - "{{ last_record['id'] }}"
+          - "{{ headers['x-next-page'] }}"
+          - "{{ response.pagination.next_token }}"
       page_size:
         title: Page Size
-        description: The number of records to include in each pages.
+        description: The number of records to include in each page. This value will be used with cursor-based pagination to control the amount of data returned per request. Choose a value that balances API rate limits with sync performance.
         type: integer
         examples:
+          - 10
+          - 50
           - 100
+          - 500
+          - 1000
       stop_condition:
         title: Stop Condition
         description: Template string evaluating when to stop paginating.
@@ -614,8 +629,15 @@ definitions:
         examples:
           - "source_railz.components.MyCustomIncrementalSync"
       cursor_field:
-        description: The location of the value on a record that will be used as a bookmark during sync.
+        title: Cursor Field
+        description: The location of the value on a record that will be used as a bookmark during sync. This field should contain datetime values that increase over time to enable incremental syncing. The field must be at the top level of the record.
         type: string
+        examples:
+          - "updated_at"
+          - "created_at"
+          - "last_modified"
+          - "timestamp"
+          - "{{ config['cursor_field'] }}"
       $parameters:
         type: object
         additionalProperties: true
@@ -1533,11 +1555,16 @@ definitions:
         enum: [DeclarativeStream]
       name:
         title: Name
-        description: The stream name.
+        description: The name of the stream as it will appear in the connector. This should be descriptive and match the data being synced (e.g., 'users', 'orders', 'transactions'). Use lowercase with underscores for consistency.
         type: string
         default: ""
-        example:
-          - "Users"
+        examples:
+          - "users"
+          - "orders"
+          - "transactions"
+          - "events"
+          - "user_profiles"
+          - "order_items"
       retriever:
         title: Retriever
         description: Component used to coordinate how records are extracted across stream slices and request pages.
@@ -3184,7 +3211,7 @@ definitions:
         enum: [OffsetIncrement]
       page_size:
         title: Limit
-        description: The number of records to include in each pages.
+        description: The number of records to include in each page. This value will be used to increment the offset for subsequent requests. Choose a value that balances API rate limits with sync performance.
         anyOf:
           - type: integer
             title: Number of Records
@@ -3194,7 +3221,11 @@ definitions:
           - config
           - response
         examples:
+          - 10
+          - 50
           - 100
+          - 500
+          - 1000
           - "{{ config['page_size'] }}"
       inject_on_first_request:
         title: Inject Offset on First Request
@@ -3216,7 +3247,7 @@ definitions:
         enum: [PageIncrement]
       page_size:
         title: Page Size
-        description: The number of records to include in each pages.
+        description: The number of records to include in each page. This value will be used to increment the page number for subsequent requests. Choose a value that balances API rate limits with sync performance.
         interpolation_context:
           - config
         anyOf:
@@ -3225,7 +3256,11 @@ definitions:
           - type: string
             title: Interpolated Value
         examples:
+          - 10
+          - 50
           - 100
+          - 500
+          - 1000
           - "100"
           - "{{ config['page_size'] }}"
       start_from_page:
@@ -3670,11 +3705,16 @@ definitions:
         enum: [StateDelegatingStream]
       name:
         title: Name
-        description: The stream name.
+        description: The name of the stream as it will appear in the connector. This should be descriptive and match the data being synced (e.g., 'users', 'orders', 'transactions'). Use lowercase with underscores for consistency.
         type: string
         default: ""
-        example:
-          - "Users"
+        examples:
+          - "users"
+          - "orders"
+          - "transactions"
+          - "events"
+          - "user_profiles"
+          - "order_items"
       full_refresh_stream:
         title: Full Refresh Stream
         description: Component used to coordinate how records are extracted across stream slices and request pages when the state is empty or not provided.
@@ -4463,8 +4503,13 @@ definitions:
     properties:
       query:
         type: string
-        description: The GraphQL query to be executed
+        description: The GraphQL query to be executed. This should be a valid GraphQL query string that will be sent in the request body.
         default: "query {\n    \n}"
+        examples:
+          - "query { users { id name email } }"
+          - "query GetUser($id: ID!) { user(id: $id) { name email } }"
+          - "{ viewer { login repositories(first: 10) { nodes { name } } } }"
+          - "mutation CreateUser($input: UserInput!) { createUser(input: $input) { id } }"
     additionalProperties: true
   DpathValidator:
     title: Dpath Validator
