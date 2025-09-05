@@ -14,10 +14,6 @@ from airbyte_cdk.sources.streams.concurrent.cursor import Cursor
 from airbyte_cdk.sources.streams.concurrent.partitions.partition import Partition
 
 
-@deprecated(
-    "This class is experimental. Use at your own risk.",
-    category=ExperimentalClassWarning,
-)
 class AbstractStream(ABC):
     """
     AbstractStream is an experimental interface for streams developed as part of the Concurrent CDK.

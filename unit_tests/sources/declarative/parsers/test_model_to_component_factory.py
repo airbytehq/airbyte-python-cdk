@@ -14,7 +14,8 @@ import requests
 from freezegun.api import FakeDatetime
 from pydantic.v1 import ValidationError
 
-from airbyte_cdk import AirbyteTracedException
+from airbyte_cdk.legacy.sources.declarative.declarative_stream import DeclarativeStream
+from airbyte_cdk.legacy.sources.declarative.incremental import DatetimeBasedCursor
 from airbyte_cdk.models import (
     AirbyteStateBlob,
     AirbyteStateMessage,
@@ -37,21 +38,13 @@ from airbyte_cdk.sources.declarative.auth.token_provider import SessionTokenProv
 from airbyte_cdk.sources.declarative.checks import CheckStream
 from airbyte_cdk.sources.declarative.concurrency_level import ConcurrencyLevel
 from airbyte_cdk.sources.declarative.datetime.min_max_datetime import MinMaxDatetime
-from airbyte_cdk.sources.declarative.declarative_stream import DeclarativeStream
 from airbyte_cdk.sources.declarative.decoders import JsonDecoder, PaginationDecoderDecorator
 from airbyte_cdk.sources.declarative.extractors import DpathExtractor, RecordFilter, RecordSelector
 from airbyte_cdk.sources.declarative.extractors.record_extractor import RecordExtractor
 from airbyte_cdk.sources.declarative.extractors.record_filter import (
     ClientSideIncrementalRecordFilterDecorator,
 )
-from airbyte_cdk.sources.declarative.incremental import (
-    ConcurrentPerPartitionCursor,
-    CursorFactory,
-    DatetimeBasedCursor,
-    PerPartitionCursor,
-    PerPartitionWithGlobalCursor,
-    ResumableFullRefreshCursor,
-)
+from airbyte_cdk.sources.declarative.incremental import ConcurrentPerPartitionCursor
 from airbyte_cdk.sources.declarative.interpolation import InterpolatedString
 from airbyte_cdk.sources.declarative.models import AsyncRetriever as AsyncRetrieverModel
 from airbyte_cdk.sources.declarative.models import CheckStream as CheckStreamModel
@@ -181,6 +174,7 @@ from airbyte_cdk.sources.streams.http.requests_native_auth.oauth import (
     SingleUseRefreshTokenOauth2Authenticator,
 )
 from airbyte_cdk.sources.types import StreamSlice
+from airbyte_cdk.utils import AirbyteTracedException
 from airbyte_cdk.utils.datetime_helpers import AirbyteDateTime, ab_datetime_now, ab_datetime_parse
 from unit_tests.sources.declarative.parsers.testing_components import (
     TestingCustomSubstreamPartitionRouter,
@@ -745,6 +739,7 @@ def test_create_substream_partition_router():
     assert partition_router.parent_stream_configs[1].request_option is None
 
 
+# todo: delete this class once we deprecate SimpleRetriever.cursor and SimpleRetriever.state methods
 def test_datetime_based_cursor():
     content = """
     incremental:

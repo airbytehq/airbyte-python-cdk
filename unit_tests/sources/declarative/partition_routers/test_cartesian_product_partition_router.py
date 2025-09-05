@@ -5,8 +5,10 @@ from unittest.mock import Mock
 
 import pytest as pytest
 
+from airbyte_cdk.legacy.sources.declarative.incremental.datetime_based_cursor import (
+    DatetimeBasedCursor,
+)
 from airbyte_cdk.sources.declarative.datetime.min_max_datetime import MinMaxDatetime
-from airbyte_cdk.sources.declarative.incremental.datetime_based_cursor import DatetimeBasedCursor
 from airbyte_cdk.sources.declarative.interpolation.interpolated_string import InterpolatedString
 from airbyte_cdk.sources.declarative.partition_routers import (
     CartesianProductStreamSlicer,
@@ -20,6 +22,8 @@ from airbyte_cdk.sources.declarative.requesters.request_option import (
 from airbyte_cdk.sources.types import StreamSlice
 
 
+# todo: All these tests rely on stream_slicers that are of a the deprecated legacy class DatetimeBasedCursor these
+#  should really be ConcurrentCursor, but this fix is a bit tedious and are tested in other parts of the code
 @pytest.mark.parametrize(
     "test_name, stream_slicers, expected_slices",
     [

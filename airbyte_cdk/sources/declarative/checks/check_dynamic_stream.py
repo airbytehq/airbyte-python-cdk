@@ -6,11 +6,11 @@ import logging
 from dataclasses import InitVar, dataclass
 from typing import Any, List, Mapping, Tuple, Union
 
-from airbyte_cdk.sources.abstract_source import AbstractSource
+from airbyte_cdk.sources import Source
 from airbyte_cdk.sources.declarative.checks.check_stream import evaluate_availability
 from airbyte_cdk.sources.declarative.checks.connection_checker import ConnectionChecker
+from airbyte_cdk.sources.streams import Stream
 from airbyte_cdk.sources.streams.concurrent.abstract_stream import AbstractStream
-from airbyte_cdk.sources.streams.http.availability_strategy import HttpAvailabilityStrategy
 
 
 @dataclass
@@ -33,7 +33,10 @@ class CheckDynamicStream(ConnectionChecker):
         self._parameters = parameters
 
     def check_connection(
-        self, source: AbstractSource, logger: logging.Logger, config: Mapping[str, Any]
+        self,
+        source: Source,
+        logger: logging.Logger,
+        config: Mapping[str, Any],
     ) -> Tuple[bool, Any]:
         streams: List[Union[Stream, AbstractStream]] = source.streams(config=config)  # type: ignore  # this is a migration step and we expect the declarative CDK to migrate off of ConnectionChecker
 

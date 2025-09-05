@@ -7,7 +7,7 @@ import dataclasses
 import json
 import logging
 import os
-from typing import List, Literal, Union
+from typing import List, Literal
 from unittest import mock
 from unittest.mock import MagicMock, patch
 
@@ -56,7 +56,6 @@ from airbyte_cdk.sources.declarative.concurrent_declarative_source import (
     ConcurrentDeclarativeSource,
     TestLimits,
 )
-from airbyte_cdk.sources.declarative.declarative_stream import DeclarativeStream
 from airbyte_cdk.sources.declarative.retrievers.simple_retriever import SimpleRetriever
 from airbyte_cdk.sources.declarative.stream_slicers import StreamSlicerTestReadDecorator
 from airbyte_cdk.sources.streams.concurrent.default_stream import DefaultStream
@@ -440,12 +439,8 @@ MOCK_RESPONSE = {
 }
 
 
-def get_retriever(stream: Union[DeclarativeStream, DefaultStream]):
-    return (
-        stream.retriever
-        if isinstance(stream, DeclarativeStream)
-        else stream._stream_partition_generator._partition_factory._retriever
-    )
+def get_retriever(stream: DefaultStream):
+    return stream._stream_partition_generator._partition_factory._retriever
 
 
 @pytest.fixture
@@ -983,12 +978,6 @@ def create_mock_retriever(name, url_base, path):
     http_stream.requester.get_path.return_value = path
     http_stream._paginator_path.return_value = None
     return http_stream
-
-
-def create_mock_declarative_stream(http_stream):
-    declarative_stream = mock.Mock(spec=DeclarativeStream, autospec=True)
-    declarative_stream.retriever = http_stream
-    return declarative_stream
 
 
 @pytest.mark.parametrize(

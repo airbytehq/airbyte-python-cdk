@@ -9,10 +9,10 @@ from typing import Any, Callable, Iterable, List, Mapping, MutableMapping, Optio
 
 from isodate import Duration, duration_isoformat, parse_duration
 
+from airbyte_cdk.legacy.sources.declarative.incremental.declarative_cursor import DeclarativeCursor
 from airbyte_cdk.models import AirbyteLogMessage, AirbyteMessage, Level, Type
 from airbyte_cdk.sources.declarative.datetime.datetime_parser import DatetimeParser
 from airbyte_cdk.sources.declarative.datetime.min_max_datetime import MinMaxDatetime
-from airbyte_cdk.sources.declarative.incremental.declarative_cursor import DeclarativeCursor
 from airbyte_cdk.sources.declarative.interpolation.interpolated_string import InterpolatedString
 from airbyte_cdk.sources.declarative.interpolation.jinja import JinjaInterpolation
 from airbyte_cdk.sources.declarative.requesters.request_option import (

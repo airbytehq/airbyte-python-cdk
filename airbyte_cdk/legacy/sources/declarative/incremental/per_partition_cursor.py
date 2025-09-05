@@ -6,7 +6,7 @@ import logging
 from collections import OrderedDict
 from typing import Any, Callable, Iterable, Mapping, Optional, Union
 
-from airbyte_cdk.sources.declarative.incremental.declarative_cursor import DeclarativeCursor
+from airbyte_cdk.legacy.sources.declarative.incremental.declarative_cursor import DeclarativeCursor
 from airbyte_cdk.sources.declarative.partition_routers.partition_router import PartitionRouter
 from airbyte_cdk.sources.streams.checkpoint.per_partition_key_serializer import (
     PerPartitionKeySerializer,

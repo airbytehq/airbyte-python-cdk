@@ -7,8 +7,8 @@ from unittest.mock import Mock
 
 import pytest
 
-from airbyte_cdk import InMemoryMessageRepository
 from airbyte_cdk.sources.concurrent_source.stream_thread_exception import StreamThreadException
+from airbyte_cdk.sources.message.repository import InMemoryMessageRepository
 from airbyte_cdk.sources.streams.concurrent.cursor import FinalStateCursor
 from airbyte_cdk.sources.streams.concurrent.partition_reader import PartitionReader
 from airbyte_cdk.sources.streams.concurrent.partitions.partition import Partition

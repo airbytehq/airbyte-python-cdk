@@ -1,4 +1,5 @@
-# Copyright (c) 2024 Airbyte, Inc., all rights reserved.
+# Copyright (c) 2025 Airbyte, Inc., all rights reserved.
+
 import logging
 import uuid
 from dataclasses import dataclass, field
@@ -8,9 +9,8 @@ from typing import Any, Dict, Iterable, Mapping, Optional
 import requests
 from requests import Response
 
-from airbyte_cdk import AirbyteMessage
 from airbyte_cdk.logger import lazy_log
-from airbyte_cdk.models import FailureType, Type
+from airbyte_cdk.models import AirbyteMessage, FailureType, Type
 from airbyte_cdk.sources.declarative.async_job.job import AsyncJob
 from airbyte_cdk.sources.declarative.async_job.repository import AsyncJobRepository
 from airbyte_cdk.sources.declarative.async_job.status import AsyncJobStatus

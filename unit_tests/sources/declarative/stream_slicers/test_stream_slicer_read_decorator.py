@@ -1,22 +1,20 @@
 #
 # Copyright (c) 2025 Airbyte, Inc., all rights reserved.
 #
-
+from datetime import timedelta
 from unittest.mock import Mock
 
+import pytest
+
+from airbyte_cdk.sources.connector_state_manager import ConnectorStateManager
 from airbyte_cdk.sources.declarative.async_job.job_orchestrator import (
     AsyncJobOrchestrator,
 )
 from airbyte_cdk.sources.declarative.async_job.job_tracker import JobTracker
-from airbyte_cdk.sources.declarative.datetime.min_max_datetime import MinMaxDatetime
 from airbyte_cdk.sources.declarative.incremental import (
-    CursorFactory,
-    DatetimeBasedCursor,
-    GlobalSubstreamCursor,
-    PerPartitionWithGlobalCursor,
+    ConcurrentCursorFactory,
+    ConcurrentPerPartitionCursor,
 )
-from airbyte_cdk.sources.declarative.incremental.declarative_cursor import DeclarativeCursor
-from airbyte_cdk.sources.declarative.interpolation import InterpolatedString
 from airbyte_cdk.sources.declarative.models import (
     CustomRetriever,
     DeclarativeStream,
@@ -34,8 +32,13 @@ from airbyte_cdk.sources.declarative.stream_slicers import (
     StreamSlicer,
     StreamSlicerTestReadDecorator,
 )
-from airbyte_cdk.sources.message import NoopMessageRepository
+from airbyte_cdk.sources.message import MessageRepository, NoopMessageRepository
+from airbyte_cdk.sources.streams.concurrent.cursor import ConcurrentCursor, Cursor, CursorField
+from airbyte_cdk.sources.streams.concurrent.state_converters.datetime_stream_state_converter import (
+    CustomFormatConcurrentStreamStateConverter,
+)
 from airbyte_cdk.sources.types import StreamSlice
+from airbyte_cdk.utils.datetime_helpers import ab_datetime_parse
 from unit_tests.sources.declarative.async_job.test_integration import MockAsyncJobRepository
 
 CURSOR_SLICE_FIELD = "cursor slice field"
@@ -57,7 +60,7 @@ class MockedCursorBuilder:
         return self
 
     def build(self):
-        cursor = Mock(spec=DeclarativeCursor)
+        cursor = Mock(spec=Cursor)
         cursor.get_stream_state.return_value = self._stream_state
         cursor.stream_slices.return_value = self._stream_slices
         return cursor
@@ -67,20 +70,31 @@ def mocked_partition_router():
     return Mock(spec=PartitionRouter)
 
 
-def date_time_based_cursor_factory() -> DatetimeBasedCursor:
-    return DatetimeBasedCursor(
-        start_datetime=MinMaxDatetime(
-            datetime="2021-01-01", datetime_format=DATE_FORMAT, parameters={}
-        ),
-        end_datetime=MinMaxDatetime(
-            datetime="2021-01-05", datetime_format=DATE_FORMAT, parameters={}
-        ),
-        step="P10Y",
-        cursor_field=InterpolatedString.create("created_at", parameters={}),
+def mocked_message_repository() -> MessageRepository:
+    return Mock(spec=MessageRepository)
+
+
+def mocked_connector_state_manager() -> ConnectorStateManager:
+    return Mock(spec=ConnectorStateManager)
+
+
+def concurrent_cursor_factory() -> ConcurrentCursor:
+    state_converter = CustomFormatConcurrentStreamStateConverter(
         datetime_format=DATE_FORMAT,
-        cursor_granularity="P1D",
-        config={},
-        parameters={},
+        is_sequential_state=False,
+    )
+
+    return ConcurrentCursor(
+        stream_name="test",
+        stream_namespace="",
+        stream_state={},
+        message_repository=mocked_message_repository(),
+        connector_state_manager=mocked_connector_state_manager(),
+        connector_state_converter=state_converter,
+        cursor_field=CursorField("created_at"),
+        slice_boundary_fields=None,
+        start=ab_datetime_parse("2021-01-01"),
+        end_provider=state_converter.get_end_provider(),
     )
 
 
@@ -102,45 +116,7 @@ def create_substream_partition_router():
     )
 
 
-def test_isinstance_global_cursor():
-    first_partition = {"first_partition_key": "first_partition_value"}
-    partition_router = mocked_partition_router()
-    partition_router.stream_slices.return_value = [
-        StreamSlice(
-            partition=first_partition, cursor_slice={}, extra_fields={"extra_field": "extra_value"}
-        ),
-    ]
-    cursor = (
-        MockedCursorBuilder()
-        .with_stream_slices([{CURSOR_SLICE_FIELD: "first slice cursor value"}])
-        .build()
-    )
-
-    global_cursor = GlobalSubstreamCursor(cursor, partition_router)
-    wrapped_slicer = StreamSlicerTestReadDecorator(
-        wrapped_slicer=global_cursor,
-        maximum_number_of_slices=5,
-    )
-    assert isinstance(wrapped_slicer, GlobalSubstreamCursor)
-    assert isinstance(wrapped_slicer.wrapped_slicer, GlobalSubstreamCursor)
-    assert isinstance(wrapped_slicer, StreamSlicerTestReadDecorator)
-
-    assert not isinstance(wrapped_slicer.wrapped_slicer, StreamSlicerTestReadDecorator)
-    assert not isinstance(wrapped_slicer, AsyncJobPartitionRouter)
-    assert not isinstance(wrapped_slicer.wrapped_slicer, AsyncJobPartitionRouter)
-    assert not isinstance(wrapped_slicer, PerPartitionWithGlobalCursor)
-    assert not isinstance(wrapped_slicer.wrapped_slicer, PerPartitionWithGlobalCursor)
-    assert not isinstance(wrapped_slicer, SubstreamPartitionRouter)
-    assert not isinstance(wrapped_slicer.wrapped_slicer, SubstreamPartitionRouter)
-
-    assert isinstance(global_cursor, GlobalSubstreamCursor)
-    assert not isinstance(global_cursor, StreamSlicerTestReadDecorator)
-    assert not isinstance(global_cursor, AsyncJobPartitionRouter)
-    assert not isinstance(global_cursor, PerPartitionWithGlobalCursor)
-    assert not isinstance(global_cursor, SubstreamPartitionRouter)
-
-
-def test_isinstance_global_cursor_aysnc_job_partition_router():
+def test_isinstance_global_cursor_async_job_partition_router():
     async_job_partition_router = AsyncJobPartitionRouter(
         stream_slicer=SinglePartitionRouter(parameters={}),
         job_orchestrator_factory=lambda stream_slices: AsyncJobOrchestrator(
@@ -162,17 +138,14 @@ def test_isinstance_global_cursor_aysnc_job_partition_router():
     assert isinstance(wrapped_slicer, StreamSlicerTestReadDecorator)
 
     assert not isinstance(wrapped_slicer.wrapped_slicer, StreamSlicerTestReadDecorator)
-    assert not isinstance(wrapped_slicer, GlobalSubstreamCursor)
-    assert not isinstance(wrapped_slicer.wrapped_slicer, GlobalSubstreamCursor)
-    assert not isinstance(wrapped_slicer, PerPartitionWithGlobalCursor)
-    assert not isinstance(wrapped_slicer.wrapped_slicer, PerPartitionWithGlobalCursor)
+    assert not isinstance(wrapped_slicer, ConcurrentPerPartitionCursor)
+    assert not isinstance(wrapped_slicer.wrapped_slicer, ConcurrentPerPartitionCursor)
     assert not isinstance(wrapped_slicer, SubstreamPartitionRouter)
     assert not isinstance(wrapped_slicer.wrapped_slicer, SubstreamPartitionRouter)
 
     assert isinstance(async_job_partition_router, AsyncJobPartitionRouter)
     assert not isinstance(async_job_partition_router, StreamSlicerTestReadDecorator)
-    assert not isinstance(async_job_partition_router, GlobalSubstreamCursor)
-    assert not isinstance(async_job_partition_router, PerPartitionWithGlobalCursor)
+    assert not isinstance(async_job_partition_router, ConcurrentPerPartitionCursor)
     assert not isinstance(async_job_partition_router, SubstreamPartitionRouter)
 
 
@@ -189,29 +162,45 @@ def test_isinstance_substream_partition_router():
     assert isinstance(wrapped_slicer, StreamSlicerTestReadDecorator)
 
     assert not isinstance(wrapped_slicer.wrapped_slicer, StreamSlicerTestReadDecorator)
-    assert not isinstance(wrapped_slicer, GlobalSubstreamCursor)
-    assert not isinstance(wrapped_slicer.wrapped_slicer, GlobalSubstreamCursor)
+    assert not isinstance(wrapped_slicer, ConcurrentPerPartitionCursor)
+    assert not isinstance(wrapped_slicer.wrapped_slicer, ConcurrentPerPartitionCursor)
     assert not isinstance(wrapped_slicer, AsyncJobPartitionRouter)
     assert not isinstance(wrapped_slicer.wrapped_slicer, AsyncJobPartitionRouter)
-    assert not isinstance(wrapped_slicer, PerPartitionWithGlobalCursor)
-    assert not isinstance(wrapped_slicer.wrapped_slicer, PerPartitionWithGlobalCursor)
 
     assert isinstance(partition_router, SubstreamPartitionRouter)
     assert not isinstance(partition_router, StreamSlicerTestReadDecorator)
-    assert not isinstance(partition_router, GlobalSubstreamCursor)
+    assert not isinstance(partition_router, ConcurrentPerPartitionCursor)
     assert not isinstance(partition_router, AsyncJobPartitionRouter)
-    assert not isinstance(partition_router, PerPartitionWithGlobalCursor)
 
 
-def test_isinstance_perpartition_with_global_cursor():
+@pytest.mark.parametrize(
+    "use_global_cursor",
+    [
+        pytest.param(True, id="test_with_global_cursor"),
+        pytest.param(False, id="test_with_no_global_cursor"),
+    ],
+)
+def test_isinstance_concurrent_per_partition_cursor(use_global_cursor):
     partition_router = create_substream_partition_router()
-    date_time_based_cursor = date_time_based_cursor_factory()
+    cursor_factory = ConcurrentCursorFactory(concurrent_cursor_factory)
+    connector_state_converter = CustomFormatConcurrentStreamStateConverter(
+        datetime_format="%Y-%m-%dT%H:%M:%SZ",
+        input_datetime_formats=["%Y-%m-%dT%H:%M:%SZ"],
+        is_sequential_state=True,
+        cursor_granularity=timedelta(0),
+    )
 
-    cursor_factory = CursorFactory(date_time_based_cursor_factory)
-    substream_cursor = PerPartitionWithGlobalCursor(
+    substream_cursor = ConcurrentPerPartitionCursor(
         cursor_factory=cursor_factory,
         partition_router=partition_router,
-        stream_cursor=date_time_based_cursor,
+        stream_name="test",
+        stream_namespace="",
+        stream_state={},
+        message_repository=mocked_message_repository(),
+        connector_state_manager=mocked_connector_state_manager(),
+        connector_state_converter=connector_state_converter,
+        cursor_field=CursorField(cursor_field_key="updated_at"),
+        use_global_cursor=use_global_cursor,
     )
 
     wrapped_slicer = StreamSlicerTestReadDecorator(
@@ -219,33 +208,30 @@ def test_isinstance_perpartition_with_global_cursor():
         maximum_number_of_slices=5,
     )
 
-    assert isinstance(wrapped_slicer, PerPartitionWithGlobalCursor)
-    assert isinstance(wrapped_slicer.wrapped_slicer, PerPartitionWithGlobalCursor)
+    assert isinstance(wrapped_slicer, ConcurrentPerPartitionCursor)
+    assert isinstance(wrapped_slicer.wrapped_slicer, ConcurrentPerPartitionCursor)
     assert isinstance(wrapped_slicer, StreamSlicerTestReadDecorator)
 
     assert not isinstance(wrapped_slicer.wrapped_slicer, StreamSlicerTestReadDecorator)
-    assert not isinstance(wrapped_slicer, GlobalSubstreamCursor)
-    assert not isinstance(wrapped_slicer.wrapped_slicer, GlobalSubstreamCursor)
     assert not isinstance(wrapped_slicer, AsyncJobPartitionRouter)
     assert not isinstance(wrapped_slicer.wrapped_slicer, AsyncJobPartitionRouter)
     assert not isinstance(wrapped_slicer, SubstreamPartitionRouter)
     assert not isinstance(wrapped_slicer.wrapped_slicer, SubstreamPartitionRouter)
 
-    assert wrapped_slicer._per_partition_cursor._cursor_factory == cursor_factory
+    assert wrapped_slicer._cursor_factory == cursor_factory
     assert wrapped_slicer._partition_router == partition_router
-    assert wrapped_slicer._global_cursor._stream_cursor == date_time_based_cursor
+    assert wrapped_slicer._use_global_cursor == use_global_cursor
 
-    assert isinstance(substream_cursor, PerPartitionWithGlobalCursor)
+    assert isinstance(substream_cursor, ConcurrentPerPartitionCursor)
     assert not isinstance(substream_cursor, StreamSlicerTestReadDecorator)
-    assert not isinstance(substream_cursor, GlobalSubstreamCursor)
     assert not isinstance(substream_cursor, AsyncJobPartitionRouter)
     assert not isinstance(substream_cursor, SubstreamPartitionRouter)
 
-    assert substream_cursor._per_partition_cursor._cursor_factory == cursor_factory
+    assert substream_cursor._cursor_factory == cursor_factory
     assert substream_cursor._partition_router == partition_router
-    assert substream_cursor._global_cursor._stream_cursor == date_time_based_cursor
+    assert wrapped_slicer._use_global_cursor == use_global_cursor
 
-    assert substream_cursor._get_active_cursor() == wrapped_slicer._get_active_cursor()
+    assert substream_cursor._use_global_cursor == wrapped_slicer._use_global_cursor
 
 
 def test_slice_limiting_functionality():

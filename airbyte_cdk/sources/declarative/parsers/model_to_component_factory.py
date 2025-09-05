@@ -33,6 +33,10 @@ from requests import Response
 from airbyte_cdk.connector_builder.models import (
     LogMessage as ConnectorBuilderLogMessage,
 )
+from airbyte_cdk.legacy.sources.declarative.declarative_stream import DeclarativeStream
+from airbyte_cdk.legacy.sources.declarative.incremental import (
+    DatetimeBasedCursor,
+)
 from airbyte_cdk.models import (
     AirbyteStateBlob,
     AirbyteStateMessage,
@@ -75,7 +79,6 @@ from airbyte_cdk.sources.declarative.checks import (
 )
 from airbyte_cdk.sources.declarative.concurrency_level import ConcurrencyLevel
 from airbyte_cdk.sources.declarative.datetime.min_max_datetime import MinMaxDatetime
-from airbyte_cdk.sources.declarative.declarative_stream import DeclarativeStream
 from airbyte_cdk.sources.declarative.decoders import (
     Decoder,
     IterableDecoder,
@@ -105,10 +108,6 @@ from airbyte_cdk.sources.declarative.extractors.record_filter import (
 from airbyte_cdk.sources.declarative.incremental import (
     ConcurrentCursorFactory,
     ConcurrentPerPartitionCursor,
-    CursorFactory,
-    DatetimeBasedCursor,
-    GlobalSubstreamCursor,
-    PerPartitionWithGlobalCursor,
 )
 from airbyte_cdk.sources.declarative.interpolation import InterpolatedString
 from airbyte_cdk.sources.declarative.interpolation.interpolated_mapping import InterpolatedMapping
@@ -199,9 +198,6 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     CustomErrorHandler as CustomErrorHandlerModel,
-)
-from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
-    CustomIncrementalSync as CustomIncrementalSyncModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     CustomPaginationStrategy as CustomPaginationStrategyModel,
@@ -701,7 +697,6 @@ class ModelToComponentFactory:
             CustomBackoffStrategyModel: self.create_custom_component,
             CustomDecoderModel: self.create_custom_component,
             CustomErrorHandlerModel: self.create_custom_component,
-            CustomIncrementalSyncModel: self.create_custom_component,
             CustomRecordExtractorModel: self.create_custom_component,
             CustomRecordFilterModel: self.create_custom_component,
             CustomRequesterModel: self.create_custom_component,
@@ -1977,7 +1972,7 @@ class ModelToComponentFactory:
 
     def create_default_stream(
         self, model: DeclarativeStreamModel, config: Config, is_parent: bool = False, **kwargs: Any
-    ) -> Union[DeclarativeStream, AbstractStream]:
+    ) -> AbstractStream:
         primary_key = model.primary_key.__root__ if model.primary_key else None
 
         partition_router = self._build_stream_slicer_from_partition_router(
@@ -2618,6 +2613,8 @@ class ModelToComponentFactory:
             fallback_parser=gzip_parser.inner_parser,
         )
 
+    # todo: This method should be removed once we deprecate the SimpleRetriever.cursor field and the various
+    #  state methods
     @staticmethod
     def create_incrementing_count_cursor(
         model: IncrementingCountCursorModel, config: Config, **kwargs: Any
@@ -3148,9 +3145,7 @@ class ModelToComponentFactory:
         transformations: List[RecordTransformation],
         file_uploader: Optional[DefaultFileUploader] = None,
         incremental_sync: Optional[
-            Union[
-                IncrementingCountCursorModel, DatetimeBasedCursorModel, CustomIncrementalSyncModel
-            ]
+            Union[IncrementingCountCursorModel, DatetimeBasedCursorModel]
         ] = None,
         use_cache: Optional[bool] = None,
         log_formatter: Optional[Callable[[Response], Any]] = None,
@@ -3789,7 +3784,6 @@ class ModelToComponentFactory:
                         incremental_sync_model: Union[
                             DatetimeBasedCursorModel,
                             IncrementingCountCursorModel,
-                            CustomIncrementalSyncModel,
                         ] = (
                             model.stream.incremental_sync  # type: ignore  # if we are there, it is because there is incremental_dependency and therefore there is an incremental_sync on the parent stream
                             if isinstance(model.stream, DeclarativeStreamModel)
