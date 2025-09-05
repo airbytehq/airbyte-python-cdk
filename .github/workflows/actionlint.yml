@@ -1,14 +1,13 @@
 name: GitHub action linting
 
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - '.github/workflows/**'
   pull_request:
     paths:
       - '.github/workflows/**'
+
+permissions:
+  contents: read
+  pull-requests: write
 
 jobs:
   actionlint:
