@@ -76,3 +76,47 @@ jobs:
 
       - name: Run mypy
         run: poetry run mypy --config-file mypy.ini airbyte_cdk
+
+  openapi-check:
+    name: OpenAPI Spec Check
+    runs-on: ubuntu-24.04
+    steps:
+      # Common steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Set up Poetry
+        uses: snok/install-poetry@v1
+        with:
+          version: "2.0.1"
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: "poetry"
+      - name: Install dependencies
+        run: poetry install --all-extras
+
+      # Job-specific step(s):
+      - name: Generate OpenAPI spec
+        run: poetry run manifest-server generate-openapi
+
+      - name: Check for changes
+        id: git-diff
+        run: |
+          git diff --quiet && echo "No changes to commit" || echo "changes=true" >> $GITHUB_OUTPUT
+        shell: bash
+
+      - name: Fail if OpenAPI spec is outdated
+        if: steps.git-diff.outputs.changes == 'true'
+        run: |
+          echo "❌ OpenAPI spec is out of date!"
+          echo ""
+          echo "The manifest-server API models have been modified, but the OpenAPI spec hasn't been updated."
+          echo "The following files have changes:"
+          git diff --name-only
+          echo ""
+          echo "Please run the following command and commit the changes:"
+          echo ""
+          echo "  poetry run manifest-server generate-openapi"
+          echo ""
+          exit 1

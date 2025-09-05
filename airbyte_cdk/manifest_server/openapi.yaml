@@ -296,6 +296,10 @@ components:
           $ref: '#/components/schemas/Manifest'
         config:
           $ref: '#/components/schemas/ConnectorConfig'
+        context:
+          anyOf:
+          - $ref: '#/components/schemas/RequestContext'
+          - type: 'null'
       type: object
       required:
       - manifest
@@ -330,6 +334,10 @@ components:
           $ref: '#/components/schemas/Manifest'
         config:
           $ref: '#/components/schemas/ConnectorConfig'
+        context:
+          anyOf:
+          - $ref: '#/components/schemas/RequestContext'
+          - type: 'null'
       type: object
       required:
       - manifest
@@ -357,6 +365,10 @@ components:
           minimum: 1.0
           title: Stream Limit
           default: 100
+        context:
+          anyOf:
+          - $ref: '#/components/schemas/RequestContext'
+          - type: 'null'
       type: object
       required:
       - manifest
@@ -457,10 +469,29 @@ components:
       - manifest
       title: ManifestResponse
       description: Response containing a manifest.
+    RequestContext:
+      properties:
+        workspace_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Workspace Id
+        project_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Project Id
+      type: object
+      title: RequestContext
+      description: Optional context information for tracing and observability.
     ResolveRequest:
       properties:
         manifest:
           $ref: '#/components/schemas/Manifest'
+        context:
+          anyOf:
+          - $ref: '#/components/schemas/RequestContext'
+          - type: 'null'
       type: object
       required:
       - manifest
@@ -542,6 +573,7 @@ components:
           title: Pages
         slice_descriptor:
           anyOf:
+          - type: object
           - type: string
           - type: 'null'
           title: Slice Descriptor
@@ -601,6 +633,10 @@ components:
           minimum: 1.0
           title: Slice Limit
           default: 5
+        context:
+          anyOf:
+          - $ref: '#/components/schemas/RequestContext'
+          - type: 'null'
       type: object
       required:
       - manifest
