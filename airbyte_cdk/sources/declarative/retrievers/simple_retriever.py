@@ -569,6 +569,12 @@ class SimpleRetriever(Retriever):
         """
         return self.stream_slicer.stream_slices()
 
+    # todo: There are a number of things that can be cleaned up when we remove self.cursor and all the related
+    #  SimpleRetriever state management that is handled by the concurrent CDK Framework:
+    #  - ModelToComponentFactory.create_datetime_based_cursor() should be removed since it does need to be instantiated
+    #  - ModelToComponentFactory.create_incrementing_count_cursor() should be removed since it's a placeholder
+    #  - test_simple_retriever.py: Remove all imports and usages of legacy cursor components
+    #  - test_model_to_component_factory.py:test_datetime_based_cursor() test can be removed
     @property
     def state(self) -> Mapping[str, Any]:
         return self.cursor.get_stream_state() if self.cursor else {}

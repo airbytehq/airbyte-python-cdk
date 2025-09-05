@@ -22,6 +22,8 @@ from airbyte_cdk.sources.declarative.requesters.request_option import (
 from airbyte_cdk.sources.types import StreamSlice
 
 
+# todo: All these tests rely on stream_slicers that are of a the deprecated legacy class DatetimeBasedCursor these
+#  should really be ConcurrentCursor, but this fix is a bit tedious and are tested in other parts of the code
 @pytest.mark.parametrize(
     "test_name, stream_slicers, expected_slices",
     [

@@ -10,7 +10,6 @@ from unittest.mock import MagicMock, Mock, patch
 import pytest
 import requests
 
-# todo: These can be removed once SimpleRetriever deprecated the now unused state methods
 from airbyte_cdk.legacy.sources.declarative.incremental import (
     DatetimeBasedCursor,
     DeclarativeCursor,
