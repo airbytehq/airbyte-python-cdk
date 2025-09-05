@@ -1,4 +1,6 @@
 name: Linters
+permissions:
+  contents: read
 
 on:
   push:
