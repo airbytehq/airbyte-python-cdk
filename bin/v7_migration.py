@@ -631,8 +631,11 @@ class Connector:
             new_entry = f"| {next_version} | {current_date} | [TBD](https://github.com/airbytehq/airbyte/pull/TBD) | Update to CDK v7.0.0 |"
 
             # Find the position to insert the new entry (after the table header)
-            table_header_pattern = r"(\| Version \| Date.*?\n\| :--.*?\n)"
-            match = re.search(table_header_pattern, content)
+            # More flexible pattern to handle different table formats:
+            # - Line starting with "|" containing "Version" (case insensitive)
+            # - Followed by separator line starting with "|" containing dashes
+            table_header_pattern = r"(\|.*?Version.*?\|.*?\n\|[\s\-:]+\|.*?\n)"
+            match = re.search(table_header_pattern, content, re.IGNORECASE)
 
             if not match:
                 print(f"Could not find changelog table header in {changelog_file}")
