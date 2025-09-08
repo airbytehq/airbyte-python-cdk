@@ -1976,7 +1976,10 @@ class ModelToComponentFactory:
         primary_key = model.primary_key.__root__ if model.primary_key else None
 
         partition_router = self._build_stream_slicer_from_partition_router(
-            model.retriever, config, stream_name=model.name
+            model.retriever,
+            config,
+            stream_name=model.name,
+            **kwargs,
         )
         concurrent_cursor = self._build_concurrent_cursor(model, partition_router, config)
         if model.incremental_sync and isinstance(model.incremental_sync, DatetimeBasedCursorModel):
@@ -2155,10 +2158,11 @@ class ModelToComponentFactory:
         ],
         config: Config,
         stream_name: Optional[str] = None,
+        **kwargs: Any,
     ) -> PartitionRouter:
         if (
             hasattr(model, "partition_router")
-            and isinstance(model, SimpleRetrieverModel | AsyncRetrieverModel)
+            and isinstance(model, (SimpleRetrieverModel, AsyncRetrieverModel, CustomRetrieverModel))
             and model.partition_router
         ):
             stream_slicer_model = model.partition_router
@@ -2171,6 +2175,16 @@ class ModelToComponentFactory:
                         for slicer in stream_slicer_model
                     ],
                     parameters={},
+                )
+            elif isinstance(stream_slicer_model, dict):
+                # partition router comes from CustomRetrieverModel and has not been and therefore partition_router has not been parsed as a model
+                stream_slicer_model["$parameters"]["stream_name"] = stream_name
+                return self._create_nested_component(
+                    model,
+                    "partition_router",
+                    stream_slicer_model,
+                    config,
+                    **kwargs,
                 )
             else:
                 return self._create_component_from_model(  # type: ignore[no-any-return] # Will be created PartitionRouter as stream_slicer_model is model.partition_router
@@ -2886,7 +2900,7 @@ class ModelToComponentFactory:
         )
 
     def create_parent_stream_config(
-        self, model: ParentStreamConfigModel, config: Config, stream_name: str, **kwargs: Any
+        self, model: ParentStreamConfigModel, config: Config, *, stream_name: str, **kwargs: Any
     ) -> ParentStreamConfig:
         declarative_stream = self._create_component_from_model(
             model.stream,
@@ -3693,14 +3707,19 @@ class ModelToComponentFactory:
         )
 
     def create_substream_partition_router(
-        self, model: SubstreamPartitionRouterModel, config: Config, **kwargs: Any
+        self,
+        model: SubstreamPartitionRouterModel,
+        config: Config,
+        *,
+        stream_name: str,
+        **kwargs: Any,
     ) -> SubstreamPartitionRouter:
         parent_stream_configs = []
         if model.parent_stream_configs:
             parent_stream_configs.extend(
                 [
                     self.create_parent_stream_config_with_substream_wrapper(
-                        model=parent_stream_config, config=config, **kwargs
+                        model=parent_stream_config, config=config, stream_name=stream_name, **kwargs
                     )
                     for parent_stream_config in model.parent_stream_configs
                 ]
@@ -3720,7 +3739,7 @@ class ModelToComponentFactory:
 
         # This flag will be used exclusively for StateDelegatingStream when a parent stream is created
         has_parent_state = bool(
-            self._connector_state_manager.get_stream_state(kwargs.get("stream_name", ""), None)
+            self._connector_state_manager.get_stream_state(stream_name, None)
             if model.incremental_dependency
             else False
         )
@@ -4113,11 +4132,17 @@ class ModelToComponentFactory:
         )
 
     def create_grouping_partition_router(
-        self, model: GroupingPartitionRouterModel, config: Config, **kwargs: Any
+        self,
+        model: GroupingPartitionRouterModel,
+        config: Config,
+        *,
+        stream_name: str,
+        **kwargs: Any,
     ) -> GroupingPartitionRouter:
         underlying_router = self._create_component_from_model(
             model=model.underlying_partition_router,
             config=config,
+            stream_name=stream_name,
             **kwargs,
         )
         if model.group_size < 1:
