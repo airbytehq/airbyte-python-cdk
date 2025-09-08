@@ -6,9 +6,6 @@
 # * Create the PR
 # * Find and replace `[TBD](https://github.com/airbytehq/airbyte/pull/TBD)`
 
-# TODO
-#  * Set the hash for the source-declarative-manifest docker image (hardcoded as "<TBD>" for now)
-
 
 import argparse
 import re
@@ -349,9 +346,10 @@ class Connector:
             and not self.has_custom_retriever()
             and not self.has_custom_partition_router()
             and not self.imports_deprecated_class()
+            and not self.has_pyproject_toml()
         )
 
-    def migrate_to_cdk_v7(self, sha256_hash: str = "<TBD>") -> bool:
+    def migrate_to_cdk_v7(self, sha256_hash: str = "af8807056f8218ecf0d4ec6b6ee717cdf20251fee5d2c1c77b5723771363b9b0") -> bool:
         """
         Migrate the connector to CDK version 7.
 
@@ -359,6 +357,8 @@ class Connector:
         1. If the connector uses source-declarative-manifest, updates the metadata.yaml
            to use baseImage: docker.io/airbyte/source-declarative-manifest:7.0.0@sha256:<TBD>
         2. If the connector is Python, sets the version in pyproject.toml to ^7
+        
+        For both cases, it also increments the dockerImageTag in metadata.yaml.
 
         Args:
             sha256_hash: The SHA256 hash for the v7.0.0 base image (default: "<TBD>")
@@ -428,9 +428,16 @@ class Connector:
 
             updated_content = re.sub(base_image_pattern, replacement, metadata_content)
 
-            # Write back the updated metadata
+            # Write back the updated metadata with the new base image
             with open(metadata_file, "w") as f:
                 f.write(updated_content)
+
+            # Update dockerImageTag in metadata.yaml
+            metadata_updated = self._update_docker_image_tag()
+            if not metadata_updated:
+                print(
+                    f"Warning: dockerImageTag update failed for {self.name}, but baseImage was updated successfully"
+                )
 
             print(f"Successfully migrated {self.name} to use CDK v7 declarative manifest")
             return True
@@ -486,6 +493,13 @@ class Connector:
                         f"Warning: poetry lock failed for {self.name}, but pyproject.toml was updated successfully"
                     )
 
+                # Update dockerImageTag in metadata.yaml
+                metadata_updated = self._update_docker_image_tag()
+                if not metadata_updated:
+                    print(
+                        f"Warning: dockerImageTag update failed for {self.name}, but pyproject.toml was updated successfully"
+                    )
+
                 print(f"Successfully migrated {self.name} to use CDK v7 in pyproject.toml")
                 return True
             else:
@@ -494,6 +508,52 @@ class Connector:
 
         except Exception as e:
             print(f"Error migrating Python connector {self.name}: {e}")
+            return False
+
+    def _update_docker_image_tag(self) -> bool:
+        """
+        Update the dockerImageTag field in metadata.yaml by incrementing the version.
+
+        Returns:
+            True if update was successful, False otherwise
+        """
+        try:
+            metadata_file = self.path / "metadata.yaml"
+
+            if not metadata_file.exists():
+                print(f"No metadata.yaml found for {self.name}")
+                return False
+
+            # Load the current metadata
+            with open(metadata_file, "r") as f:
+                metadata_content = f.read()
+
+            # Update the dockerImageTag field by incrementing the version
+            docker_tag_pattern = r"(dockerImageTag:\s*)([^\n\r]+)"
+            docker_tag_match = re.search(docker_tag_pattern, metadata_content)
+            
+            if docker_tag_match:
+                current_tag = docker_tag_match.group(2).strip()
+                new_tag = self._increment_version(current_tag)
+                
+                updated_content = re.sub(
+                    docker_tag_pattern, 
+                    rf"\g<1>{new_tag}", 
+                    metadata_content
+                )
+                
+                # Write back the updated metadata
+                with open(metadata_file, "w") as f:
+                    f.write(updated_content)
+                
+                print(f"Updated dockerImageTag from {current_tag} to {new_tag} for {self.name}")
+                return True
+            else:
+                print(f"Warning: dockerImageTag not found in metadata.yaml for {self.name}")
+                return False
+
+        except Exception as e:
+            print(f"Error updating dockerImageTag for {self.name}: {e}")
             return False
 
     def _run_poetry_lock(self) -> bool:
