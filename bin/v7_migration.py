@@ -357,7 +357,7 @@ class Connector:
         1. If the connector uses source-declarative-manifest, updates the metadata.yaml
            to use baseImage: docker.io/airbyte/source-declarative-manifest:7.0.0@sha256:<TBD>
         2. If the connector is Python, sets the version in pyproject.toml to ^7
-        
+
         For both cases, it also increments the dockerImageTag in metadata.yaml.
 
         Returns:
@@ -412,9 +412,7 @@ class Connector:
                 metadata_content = f.read()
 
             # Update the baseImage to version 7
-            new_base_image = (
-                f"docker.io/airbyte/source-declarative-manifest:7.0.1@sha256:ff1e701c8f913cf24a0220f62c8e64cc1c3011ba0a636985f4db47fdab1391b6"
-            )
+            new_base_image = f"docker.io/airbyte/source-declarative-manifest:7.0.1@sha256:ff1e701c8f913cf24a0220f62c8e64cc1c3011ba0a636985f4db47fdab1391b6"
 
             # Replace the base image using regex to preserve formatting
             base_image_pattern = r"(baseImage:\s*)[^\n\r]+"
@@ -525,21 +523,17 @@ class Connector:
             # Update the dockerImageTag field by incrementing the version
             docker_tag_pattern = r"(dockerImageTag:\s*)([^\n\r]+)"
             docker_tag_match = re.search(docker_tag_pattern, metadata_content)
-            
+
             if docker_tag_match:
                 current_tag = docker_tag_match.group(2).strip()
                 new_tag = self._increment_version(current_tag)
-                
-                updated_content = re.sub(
-                    docker_tag_pattern, 
-                    rf"\g<1>{new_tag}", 
-                    metadata_content
-                )
-                
+
+                updated_content = re.sub(docker_tag_pattern, rf"\g<1>{new_tag}", metadata_content)
+
                 # Write back the updated metadata
                 with open(metadata_file, "w") as f:
                     f.write(updated_content)
-                
+
                 print(f"Updated dockerImageTag from {current_tag} to {new_tag} for {self.name}")
                 return True
             else:
