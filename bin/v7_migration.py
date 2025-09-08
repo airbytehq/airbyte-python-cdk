@@ -349,7 +349,7 @@ class Connector:
             and not self.has_pyproject_toml()
         )
 
-    def migrate_to_cdk_v7(self, sha256_hash: str = "af8807056f8218ecf0d4ec6b6ee717cdf20251fee5d2c1c77b5723771363b9b0") -> bool:
+    def migrate_to_cdk_v7(self) -> bool:
         """
         Migrate the connector to CDK version 7.
 
@@ -360,9 +360,6 @@ class Connector:
         
         For both cases, it also increments the dockerImageTag in metadata.yaml.
 
-        Args:
-            sha256_hash: The SHA256 hash for the v7.0.0 base image (default: "<TBD>")
-
         Returns:
             True if migration was successful, False otherwise
         """
@@ -371,7 +368,7 @@ class Connector:
 
         # Case 1: Handle source-declarative-manifest connectors
         if self._uses_declarative_manifest():
-            success = self._migrate_declarative_manifest_to_v7(sha256_hash)
+            success = self._migrate_declarative_manifest_to_v7()
 
         # Case 2: Handle Python connectors
         if self.has_pyproject_toml():
@@ -396,12 +393,9 @@ class Connector:
         base_image = build_options.get("baseImage", "")
         return "source-declarative-manifest" in base_image
 
-    def _migrate_declarative_manifest_to_v7(self, sha256_hash: str) -> bool:
+    def _migrate_declarative_manifest_to_v7(self) -> bool:
         """
         Migrate a declarative manifest connector to use CDK v7 base image.
-
-        Args:
-            sha256_hash: The SHA256 hash for the v7.0.0 base image
 
         Returns:
             True if migration was successful, False otherwise
@@ -419,7 +413,7 @@ class Connector:
 
             # Update the baseImage to version 7
             new_base_image = (
-                f"docker.io/airbyte/source-declarative-manifest:7.0.0@sha256:{sha256_hash}"
+                f"docker.io/airbyte/source-declarative-manifest:7.0.1@sha256:ff1e701c8f913cf24a0220f62c8e64cc1c3011ba0a636985f4db47fdab1391b6"
             )
 
             # Replace the base image using regex to preserve formatting
