@@ -2177,8 +2177,15 @@ class ModelToComponentFactory:
                     parameters={},
                 )
             elif isinstance(stream_slicer_model, dict):
-                # partition router comes from CustomRetrieverModel and has not been and therefore partition_router has not been parsed as a model
-                stream_slicer_model["$parameters"]["stream_name"] = stream_name
+                # partition router comes from CustomRetrieverModel therefore has not been parsed as a model
+                params = stream_slicer_model.get("$parameters")
+                if not isinstance(params, dict):
+                    params = {}
+                    stream_slicer_model["$parameters"] = params
+
+                if stream_name is not None:
+                    params["stream_name"] = stream_name
+
                 return self._create_nested_component(  # type: ignore[no-any-return] # There is no guarantee that this will return a stream slicer. If not, we expect an AttributeError during the call to `stream_slices`
                     model,
                     "partition_router",
