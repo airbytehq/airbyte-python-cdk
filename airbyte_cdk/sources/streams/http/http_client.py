@@ -545,6 +545,9 @@ class HttpClient:
             data=data,
         )
 
+        env_settings = self._session.merge_environment_settings(request.url, None, None, None, None)
+        request_kwargs = {**request_kwargs, **env_settings}
+
         response: requests.Response = self._send_with_retry(
             request=request,
             request_kwargs=request_kwargs,
