@@ -20,7 +20,7 @@ from typing import (
 
 import orjson
 import yaml
-from airbyte_protocol_dataclasses.models import Level
+from airbyte_protocol_dataclasses.models import AirbyteStreamStatus, Level, StreamDescriptor
 from jsonschema.exceptions import ValidationError
 from jsonschema.validators import validate
 
@@ -88,6 +88,7 @@ from airbyte_cdk.sources.utils.slice_logger import (
     DebugSliceLogger,
     SliceLogger,
 )
+from airbyte_cdk.utils.stream_status_utils import as_airbyte_message
 from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 
 
@@ -630,9 +631,8 @@ class ConcurrentDeclarativeSource(Source):
 
         return dynamic_stream_configs
 
-    @staticmethod
     def _select_streams(
-        streams: List[AbstractStream], configured_catalog: ConfiguredAirbyteCatalog
+        self, streams: List[AbstractStream], configured_catalog: ConfiguredAirbyteCatalog
     ) -> List[AbstractStream]:
         stream_name_to_instance: Mapping[str, AbstractStream] = {s.name: s for s in streams}
         abstract_streams: List[AbstractStream] = []
@@ -640,5 +640,21 @@ class ConcurrentDeclarativeSource(Source):
             stream_instance = stream_name_to_instance.get(configured_stream.stream.name)
             if stream_instance:
                 abstract_streams.append(stream_instance)
+            else:
+                self._message_repository.emit_message(
+                    as_airbyte_message(configured_stream.stream, AirbyteStreamStatus.INCOMPLETE)
+                )
+
+                missing_stream_exception = AirbyteTracedException(
+                    message="A stream listed in your configuration was not found in the source. Please check the logs for more "
+                    "details.",
+                    internal_message=(
+                        f"The stream '{configured_stream.stream.name}' in your connection configuration was not found in the source. "
+                        f"Refresh the schema in your replication settings and remove this stream from future sync attempts."
+                    ),
+                    failure_type=FailureType.config_error,
+                    stream_descriptor=StreamDescriptor(name=configured_stream.stream.name),
+                )
+                self._message_repository.emit_message(missing_stream_exception.as_airbyte_message())
 
         return abstract_streams
