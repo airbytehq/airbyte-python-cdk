@@ -3,16 +3,11 @@
 #
 
 import sys
-from typing import Any, Mapping
 
 from airbyte_cdk.entrypoint import AirbyteEntrypoint, launch
 from airbyte_cdk.sources.declarative.yaml_declarative_source import (
     YamlDeclarativeSource,
 )
-
-configuration: Mapping[str, Any] = {
-    "path_to_yaml": "resources/manifest.yaml",
-}
 
 
 def debug_manifest(source: YamlDeclarativeSource, args: list[str]) -> None:
