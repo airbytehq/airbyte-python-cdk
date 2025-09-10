@@ -18,24 +18,34 @@ def debug_manifest(source: YamlDeclarativeSource, args: list[str]) -> None:
 
 
 def _register_components_from_file(filepath: str) -> None:
-    """Load and register components from a Python file specified in the args."""
+    """
+    Dynamically load a Python file containing custom component definitions and register it 
+    under specific module names in sys.modules to ensure that these classes can be properly 
+    resolved during hydration of the manifest yaml file.
+
+    This is a somewhat hacky replacement for the file structure manipulation we do when building
+    connector images to ensure the custom components can be imported.
+    """
     import importlib.util
     import sys
     from pathlib import Path
-
+    
     components_path = Path(filepath)
+    if not components_path.exists():
+        raise FileNotFoundError(f"Components file not found: {components_path}")
 
     module_name = "components"
     sdm_module_name = "source_declarative_manifest.components"
 
-    # Create module spec
     spec = importlib.util.spec_from_file_location(module_name, components_path)
     if spec is None or spec.loader is None:
         raise ImportError(f"Could not load module from {components_path}")
 
-    # Create module and execute code, registering the module before executing its code
-    # To avoid issues with dataclasses that look up the module
+    # Create module and execute code
     module = importlib.util.module_from_spec(spec)
+
+    # Register then execute the module
+    # we dual-register the module to mirror what is done elsewhere in the CDK
     sys.modules[module_name] = module
     sys.modules[sdm_module_name] = module
 
