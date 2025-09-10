@@ -19,8 +19,8 @@ def debug_manifest(source: YamlDeclarativeSource, args: list[str]) -> None:
 
 def _register_components_from_file(filepath: str) -> None:
     """
-    Dynamically load a Python file containing custom component definitions and register it 
-    under specific module names in sys.modules to ensure that these classes can be properly 
+    Dynamically load a Python file containing custom component definitions and register it
+    under specific module names in sys.modules to ensure that these classes can be properly
     resolved during hydration of the manifest yaml file.
 
     This is a somewhat hacky replacement for the file structure manipulation we do when building
@@ -29,7 +29,7 @@ def _register_components_from_file(filepath: str) -> None:
     import importlib.util
     import sys
     from pathlib import Path
-    
+
     components_path = Path(filepath)
     if not components_path.exists():
         raise FileNotFoundError(f"Components file not found: {components_path}")
