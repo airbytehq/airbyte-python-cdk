@@ -16,6 +16,7 @@ def debug_manifest(source: YamlDeclarativeSource, args: list[str]) -> None:
     """
     launch(source, args)
 
+
 def _register_components_from_file(filepath: str) -> None:
     """Load and register components from a Python file specified in the args."""
     import importlib.util
