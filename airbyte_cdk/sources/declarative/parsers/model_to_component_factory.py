@@ -3603,11 +3603,15 @@ class ModelToComponentFactory:
         status_extractor = self._create_component_from_model(
             model=model.status_extractor, decoder=decoder, config=config, name=name
         )
-        download_target_extractor = self._create_component_from_model(
-            model=model.download_target_extractor,
-            decoder=decoder,
-            config=config,
-            name=name,
+        download_target_extractor = (
+            self._create_component_from_model(
+                model=model.download_target_extractor,
+                decoder=decoder,
+                config=config,
+                name=name,
+            )
+            if model.download_target_extractor
+            else None
         )
 
         job_repository: AsyncJobRepository = AsyncHttpJobRepository(
