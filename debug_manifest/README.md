@@ -31,6 +31,10 @@ To configure the debugger in VSCode to run the `debug_manifest`, follow these st
         "--manifest-path",
         // PATH TO THE MANIFEST FILE
         "resources/manifest.yaml",
+        // SPECIFY A COMPONENTS.PY FILE (OPTIONAL)
+        "--components-path",
+        // PATH TO THE COMPONENTS FILE
+        "resources/components.py",
         // SPECIFY THE CONFIG
         "--config",
         // PATH TO THE CONFIG FILE

@@ -16,11 +16,39 @@ def debug_manifest(source: YamlDeclarativeSource, args: list[str]) -> None:
     """
     launch(source, args)
 
+def _register_components_from_file(filepath: str) -> None:
+    """Load and register components from a Python file specified in the args."""
+    import importlib.util
+    import sys
+    from pathlib import Path
+
+    components_path = Path(filepath)
+
+    module_name = "components"
+    sdm_module_name = "source_declarative_manifest.components"
+
+    # Create module spec
+    spec = importlib.util.spec_from_file_location(module_name, components_path)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"Could not load module from {components_path}")
+
+    # Create module and execute code, registering the module before executing its code
+    # To avoid issues with dataclasses that look up the module
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[module_name] = module
+    sys.modules[sdm_module_name] = module
+
+    spec.loader.exec_module(module)
+
 
 if __name__ == "__main__":
     args = sys.argv[1:]
     parsed_args = AirbyteEntrypoint.parse_args(args)
+
     manifest_path = getattr(parsed_args, "manifest_path", None) or "resources/manifest.yaml"
+    components_path = getattr(parsed_args, "components_path", None)
+    if components_path:
+        _register_components_from_file(components_path)
     catalog_path = AirbyteEntrypoint.extract_catalog(args)
     config_path = AirbyteEntrypoint.extract_config(args)
     state_path = AirbyteEntrypoint.extract_state(args)
