@@ -189,6 +189,7 @@ class ConcurrentPerPartitionCursor(Cursor):
         # FIXME this is a temporary field the time of the migration from declarative cursors to concurrent ones
         self._attempt_to_create_cursor_if_not_provided = attempt_to_create_cursor_if_not_provided
         self._synced_some_data = False
+        self._logged_regarding_datetime_format_error = False
 
     @property
     def cursor_field(self) -> CursorField:
@@ -518,10 +519,17 @@ class ConcurrentPerPartitionCursor(Cursor):
         except ValueError:
             return
 
+        try:
+            record_cursor = self._connector_state_converter.output_format(
+                self._connector_state_converter.parse_value(record_cursor_value)
+            )
+        except ValueError as exception:
+            if not self._logged_regarding_datetime_format_error:
+                logger.warning(f"Tried to parse cursor value `{record_cursor_value}` but go error: {exception}")
+                self._logged_regarding_datetime_format_error = True
+            return
+
         self._synced_some_data = True
-        record_cursor = self._connector_state_converter.output_format(
-            self._connector_state_converter.parse_value(record_cursor_value)
-        )
         self._update_global_cursor(record_cursor)
         if not self._use_global_cursor:
             self._cursor_per_partition[

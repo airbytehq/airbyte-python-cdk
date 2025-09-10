@@ -20,6 +20,7 @@ from airbyte_cdk.sources.declarative.concurrent_declarative_source import (
     ConcurrentDeclarativeSource,
 )
 from airbyte_cdk.sources.declarative.incremental import ConcurrentPerPartitionCursor
+from airbyte_cdk.sources.declarative.partition_routers import ListPartitionRouter
 from airbyte_cdk.sources.declarative.schema import InlineSchemaLoader
 from airbyte_cdk.sources.declarative.stream_slicers.declarative_partition_generator import (
     DeclarativePartition,
@@ -29,7 +30,7 @@ from airbyte_cdk.sources.streams.concurrent.cursor import CursorField
 from airbyte_cdk.sources.streams.concurrent.state_converters.datetime_stream_state_converter import (
     CustomFormatConcurrentStreamStateConverter,
 )
-from airbyte_cdk.sources.types import StreamSlice
+from airbyte_cdk.sources.types import StreamSlice, Record
 from airbyte_cdk.test.catalog_builder import CatalogBuilder, ConfiguredAirbyteStreamBuilder
 from airbyte_cdk.test.entrypoint_wrapper import EntrypointOutput, read
 
@@ -4400,3 +4401,32 @@ def test_duplicate_partition_while_processing():
     assert len(cursor._processing_partitions_indexes) == 0
     assert len(cursor._partition_key_to_index) == 0
     assert len(cursor._partitions_done_generating_stream_slices) == 0
+
+
+def test_given_record_with_bad_cursor_value_the_global_state_parsing_does_not_break_sync():
+    cursor_factory_mock = MagicMock()
+    cursor_factory_mock.create.side_effect = [_make_inner_cursor("2024-01-01T00:00:00Z")]
+    cursor = ConcurrentPerPartitionCursor(
+        cursor_factory=MagicMock(),
+        partition_router=ListPartitionRouter(values=["1"], cursor_field="partition_id", config={}, parameters={}),
+        stream_name="test_stream",
+        stream_namespace=None,
+        stream_state={},
+        message_repository=MagicMock(),
+        connector_state_manager=MagicMock(),
+        connector_state_converter=CustomFormatConcurrentStreamStateConverter(
+            datetime_format="%Y-%m-%dT%H:%M:%SZ",
+            input_datetime_formats=["%Y-%m-%dT%H:%M:%SZ"],
+            is_sequential_state=True,
+            cursor_granularity=timedelta(0),
+        ),
+        cursor_field=CursorField(cursor_field_key="updated_at"),
+    )
+
+    cursor.observe(
+        Record(
+            data={"updated_at": ""},
+            stream_name="test_stream",
+            associated_slice=StreamSlice(partition={"partition_id": "1"}, cursor_slice={})
+        )
+    )
