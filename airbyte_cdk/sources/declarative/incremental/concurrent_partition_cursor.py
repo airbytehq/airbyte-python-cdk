@@ -525,7 +525,9 @@ class ConcurrentPerPartitionCursor(Cursor):
             )
         except ValueError as exception:
             if not self._logged_regarding_datetime_format_error:
-                logger.warning(f"Tried to parse cursor value `{record_cursor_value}` but go error: {exception}")
+                logger.warning(
+                    f"Tried to parse cursor value `{record_cursor_value}` but go error: {exception}"
+                )
                 self._logged_regarding_datetime_format_error = True
             return
 

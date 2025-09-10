@@ -30,7 +30,7 @@ from airbyte_cdk.sources.streams.concurrent.cursor import CursorField
 from airbyte_cdk.sources.streams.concurrent.state_converters.datetime_stream_state_converter import (
     CustomFormatConcurrentStreamStateConverter,
 )
-from airbyte_cdk.sources.types import StreamSlice, Record
+from airbyte_cdk.sources.types import Record, StreamSlice
 from airbyte_cdk.test.catalog_builder import CatalogBuilder, ConfiguredAirbyteStreamBuilder
 from airbyte_cdk.test.entrypoint_wrapper import EntrypointOutput, read
 
@@ -4408,7 +4408,9 @@ def test_given_record_with_bad_cursor_value_the_global_state_parsing_does_not_br
     cursor_factory_mock.create.side_effect = [_make_inner_cursor("2024-01-01T00:00:00Z")]
     cursor = ConcurrentPerPartitionCursor(
         cursor_factory=MagicMock(),
-        partition_router=ListPartitionRouter(values=["1"], cursor_field="partition_id", config={}, parameters={}),
+        partition_router=ListPartitionRouter(
+            values=["1"], cursor_field="partition_id", config={}, parameters={}
+        ),
         stream_name="test_stream",
         stream_namespace=None,
         stream_state={},
@@ -4427,6 +4429,6 @@ def test_given_record_with_bad_cursor_value_the_global_state_parsing_does_not_br
         Record(
             data={"updated_at": ""},
             stream_name="test_stream",
-            associated_slice=StreamSlice(partition={"partition_id": "1"}, cursor_slice={})
+            associated_slice=StreamSlice(partition={"partition_id": "1"}, cursor_slice={}),
         )
     )
