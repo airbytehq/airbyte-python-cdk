@@ -3797,7 +3797,6 @@ definitions:
       - polling_requester
       - download_requester
       - status_extractor
-      - download_target_extractor
     properties:
       type:
         type: string
@@ -3815,7 +3814,7 @@ definitions:
           - "$ref": "#/definitions/DpathExtractor"
           - "$ref": "#/definitions/CustomRecordExtractor"
       download_target_extractor:
-        description: Responsible for fetching the final result `urls` provided by the completed / finished / ready async job.
+        description: Responsible for fetching the information needed to download the completed job from the polling HTTP response.
         anyOf:
           - "$ref": "#/definitions/DpathExtractor"
           - "$ref": "#/definitions/CustomRecordExtractor"
