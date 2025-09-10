@@ -1,6 +1,7 @@
 # AsyncHttpJobRepository sequence diagram
 
 - Components marked as optional are not required and can be ignored.
+- # TODO update 
 - if `download_target_requester` is not provided, `download_target_extractor` will get urls from the `polling_response`
 - interpolation_context, e.g. `creation_response` or `polling_response` can be obtained from stream_slice
 
@@ -37,7 +38,7 @@ sequenceDiagram
         UrlRequester -->> AsyncHttpJobRepository: Download URLs
 
         AsyncHttpJobRepository ->> DownloadRetriever: Download reports
-        DownloadRetriever ->> Reporting Server: Retrieve report data (interpolation_context: `url`)
+        DownloadRetriever ->> Reporting Server: Retrieve report data (interpolation_context: `url`, `creation_response`, `polling_response`)
         Reporting Server -->> DownloadRetriever: Report data
         DownloadRetriever -->> AsyncHttpJobRepository: Report data
     else Status: Failed

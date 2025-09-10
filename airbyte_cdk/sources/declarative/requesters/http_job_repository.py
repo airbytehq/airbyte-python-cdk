@@ -221,6 +221,8 @@ class AsyncHttpJobRepository(AsyncJobRepository):
                 extra_fields={
                     **job_slice.extra_fields,
                     "download_target": target_url,
+                    "creation_response": self._get_creation_response_interpolation_context(job),
+                    "polling_response": self._get_polling_response_interpolation_context(job),
                 },
             )
             for message in self.download_retriever.read_records({}, stream_slice):
