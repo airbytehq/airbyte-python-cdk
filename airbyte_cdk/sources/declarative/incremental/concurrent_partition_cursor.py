@@ -526,7 +526,11 @@ class ConcurrentPerPartitionCursor(Cursor):
         except ValueError as exception:
             if not self._logged_regarding_datetime_format_error:
                 logger.warning(
-                    f"Tried to parse cursor value `{record_cursor_value}` but go error: {exception}"
+                    "Skipping cursor update for stream '%s': failed to parse cursor field '%s' value %r: %s",
+                    self._stream_name,
+                    self._cursor_field.cursor_field_key,
+                    record_cursor_value,
+                    exception,
                 )
                 self._logged_regarding_datetime_format_error = True
             return
