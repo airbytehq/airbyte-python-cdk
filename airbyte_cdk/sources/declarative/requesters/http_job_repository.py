@@ -333,7 +333,7 @@ class AsyncHttpJobRepository(AsyncJobRepository):
 
     def _get_download_targets(self, job: AsyncJob) -> Iterable[str]:
         """Returns an iterable of strings to help target requests for downloading async jobs."""
-        # If neither download_target_extractor nor download_target_requester are provided,return a single empty string
+        # If neither download_target_extractor nor download_target_requester are provided, return a single empty string 
         # to express the need to make a single download request without any download_target value
         if not self.download_target_extractor and not self.download_target_requester:
             lazy_log(
