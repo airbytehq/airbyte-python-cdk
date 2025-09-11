@@ -3467,6 +3467,11 @@ class ModelToComponentFactory:
         transformations: List[RecordTransformation],
         **kwargs: Any,
     ) -> AsyncRetriever:
+        if model.download_target_requester and not model.download_target_extractor:
+            raise ValueError(
+                f"`download_target_extractor` required if using a `download_target_requester`"
+            )
+
         def _get_download_retriever(
             requester: Requester, extractor: RecordExtractor, _decoder: Decoder
         ) -> SimpleRetriever:
@@ -3624,11 +3629,15 @@ class ModelToComponentFactory:
         status_extractor = self._create_component_from_model(
             model=model.status_extractor, decoder=decoder, config=config, name=name
         )
-        download_target_extractor = self._create_component_from_model(
-            model=model.download_target_extractor,
-            decoder=decoder,
-            config=config,
-            name=name,
+        download_target_extractor = (
+            self._create_component_from_model(
+                model=model.download_target_extractor,
+                decoder=decoder,
+                config=config,
+                name=name,
+            )
+            if model.download_target_extractor
+            else None
         )
 
         job_repository: AsyncJobRepository = AsyncHttpJobRepository(

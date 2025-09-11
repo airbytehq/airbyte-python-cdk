@@ -43,7 +43,7 @@ class AsyncHttpJobRepository(AsyncJobRepository):
     delete_requester: Optional[Requester]
     status_extractor: DpathExtractor
     status_mapping: Mapping[str, AsyncJobStatus]
-    download_target_extractor: DpathExtractor
+    download_target_extractor: Optional[DpathExtractor]
 
     # timeout for the job to be completed, passed from `polling_job_timeout`
     job_timeout: Optional[timedelta] = None
@@ -213,14 +213,16 @@ class AsyncHttpJobRepository(AsyncJobRepository):
 
         """
 
-        for target_url in self._get_download_targets(job):
+        for download_target in self._get_download_targets(job):
             job_slice = job.job_parameters()
             stream_slice = StreamSlice(
                 partition=job_slice.partition,
                 cursor_slice=job_slice.cursor_slice,
                 extra_fields={
                     **job_slice.extra_fields,
-                    "download_target": target_url,
+                    "download_target": download_target,
+                    "creation_response": self._get_creation_response_interpolation_context(job),
+                    "polling_response": self._get_polling_response_interpolation_context(job),
                 },
             )
             for message in self.download_retriever.read_records({}, stream_slice):
@@ -330,9 +332,27 @@ class AsyncHttpJobRepository(AsyncJobRepository):
         )
 
     def _get_download_targets(self, job: AsyncJob) -> Iterable[str]:
-        if not self.download_target_requester:
-            url_response = self._polling_job_response_by_id[job.api_job_id()]
-        else:
+        """Returns an iterable of strings to help target requests for downloading async jobs."""
+        # If neither download_target_extractor nor download_target_requester are provided, yield a single empty string
+        # to express the need to make a single download request without any download_target value
+        if not self.download_target_extractor:
+            if not self.download_target_requester:
+                lazy_log(
+                    LOGGER,
+                    logging.DEBUG,
+                    lambda: "No download_target_extractor or download_target_requester provided. Will attempt a single download request without a `download_target`.",
+                )
+                yield ""
+                return
+            else:
+                raise AirbyteTracedException(
+                    internal_message="Must define a `download_target_extractor` when using a `download_target_requester`.",
+                    failure_type=FailureType.config_error,
+                )
+
+        # We have a download_target_extractor, use it to extract the donload_target
+        if self.download_target_requester:
+            # if a download_target_requester if defined, we extract from the response of a request specifically for download targets.
             stream_slice: StreamSlice = StreamSlice(
                 partition={},
                 cursor_slice={},
@@ -346,5 +366,8 @@ class AsyncHttpJobRepository(AsyncJobRepository):
                     internal_message="Always expect a response or an exception from download_target_requester",
                     failure_type=FailureType.system_error,
                 )
+        else:
+            # if no download_target_requester is defined, we extract from the polling response
+            url_response = self._polling_job_response_by_id[job.api_job_id()]
 
         yield from self.download_target_extractor.extract_records(url_response)  # type: ignore # we expect download_target_extractor to always return list of strings
