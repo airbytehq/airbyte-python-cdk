@@ -333,17 +333,26 @@ class AsyncHttpJobRepository(AsyncJobRepository):
 
     def _get_download_targets(self, job: AsyncJob) -> Iterable[str]:
         """Returns an iterable of strings to help target requests for downloading async jobs."""
-        # If neither download_target_extractor nor download_target_requester are provided, return a single empty string 
+        # If neither download_target_extractor nor download_target_requester are provided, yield a single empty string
         # to express the need to make a single download request without any download_target value
-        if not self.download_target_extractor and not self.download_target_requester:
-            lazy_log(
-                LOGGER,
-                logging.DEBUG,
-                lambda: "No download_target_extractor or download_target_requester provided. Using fallback behavior for single download request without download_target.",
-            )
-            return [""]
+        if not self.download_target_extractor:
+            if not self.download_target_requester:
+                lazy_log(
+                    LOGGER,
+                    logging.DEBUG,
+                    lambda: "No download_target_extractor or download_target_requester provided. Will attempt a single download request without a `download_target`.",
+                )
+                yield ""
+                return
+            else:
+                raise AirbyteTracedException(
+                    internal_message="Must define a `download_target_extractor` when using a `download_target_requester`.",
+                    failure_type=FailureType.config_error,
+                )
 
+        # We have a download_target_extractor, use it to extract the donload_target
         if self.download_target_requester:
+            # if a download_target_requester if defined, we extract from the response of a request specifically for download targets.
             stream_slice: StreamSlice = StreamSlice(
                 partition={},
                 cursor_slice={},
@@ -358,7 +367,7 @@ class AsyncHttpJobRepository(AsyncJobRepository):
                     failure_type=FailureType.system_error,
                 )
         else:
-            # if no download_target_requester is provided, we extract directly from the polling response
+            # if no download_target_requester is defined, we extract from the polling response
             url_response = self._polling_job_response_by_id[job.api_job_id()]
 
         yield from self.download_target_extractor.extract_records(url_response)  # type: ignore # we expect download_target_extractor to always return list of strings
