@@ -140,13 +140,13 @@ class SimpleRetriever(Retriever, ComponentConstructor[SimpleRetrieverModel]):
         name: Optional[str] = None,
     ) -> bool:
         if (
-                model.partition_router
-                and isinstance(model.partition_router, SubstreamPartitionRouterModel)
-                and not bool(additional_flags.connector_state_manager.get_stream_state(name, None))
-                and any(
-                    parent_stream_config.lazy_read_pointer
-                    for parent_stream_config in model.partition_router.parent_stream_configs
-        )
+            model.partition_router
+            and isinstance(model.partition_router, SubstreamPartitionRouterModel)
+            and not bool(additional_flags.connector_state_manager.get_stream_state(name, None))
+            and any(
+                parent_stream_config.lazy_read_pointer
+                for parent_stream_config in model.partition_router.parent_stream_configs
+            )
         ):
             if incremental_sync:
                 if incremental_sync.type != "DatetimeBasedCursor":
@@ -324,7 +324,7 @@ class SimpleRetriever(Retriever, ComponentConstructor[SimpleRetrieverModel]):
         if not request_options_provider:
             request_options_provider = DefaultRequestOptionsProvider(parameters={})
         if isinstance(request_options_provider, DefaultRequestOptionsProvider) and isinstance(
-                partition_router, PartitionRouter
+            partition_router, PartitionRouter
         ):
             request_options_provider = partition_router
 
@@ -342,7 +342,7 @@ class SimpleRetriever(Retriever, ComponentConstructor[SimpleRetrieverModel]):
         )
 
         ignore_stream_slicer_parameters_on_paginated_requests = (
-                model.ignore_stream_slicer_parameters_on_paginated_requests or False
+            model.ignore_stream_slicer_parameters_on_paginated_requests or False
         )
 
         resolved_dependencies = {
