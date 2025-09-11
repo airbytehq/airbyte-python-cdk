@@ -3446,6 +3446,11 @@ class ModelToComponentFactory:
         transformations: List[RecordTransformation],
         **kwargs: Any,
     ) -> AsyncRetriever:
+        if model.download_target_requester and not model.download_target_extractor:
+            raise ValueError(
+                f"`download_target_extractor` required if using a `download_target_requester`"
+            )
+
         def _get_download_retriever(
             requester: Requester, extractor: RecordExtractor, _decoder: Decoder
         ) -> SimpleRetriever:
