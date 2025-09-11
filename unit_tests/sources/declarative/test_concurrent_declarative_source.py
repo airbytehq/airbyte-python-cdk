@@ -4,17 +4,28 @@
 
 import copy
 import json
+import logging
 import math
+import os
+import sys
+from copy import deepcopy
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple, Union
-from unittest.mock import patch
+from unittest.mock import Mock, call, mock_open, patch
 
 import freezegun
 import isodate
 import pytest
+import requests
+import yaml
+from jsonschema.exceptions import ValidationError
 from typing_extensions import deprecated
 
+import unit_tests.sources.declarative.external_component  # Needed for dynamic imports to work
+from airbyte_cdk.legacy.sources.declarative.declarative_stream import DeclarativeStream
 from airbyte_cdk.models import (
+    AirbyteLogMessage,
     AirbyteMessage,
     AirbyteRecordMessage,
     AirbyteStateBlob,
@@ -26,19 +37,21 @@ from airbyte_cdk.models import (
     ConfiguredAirbyteStream,
     DestinationSyncMode,
     FailureType,
+    Level,
     Status,
     StreamDescriptor,
     SyncMode,
+    Type,
 )
 from airbyte_cdk.sources.declarative.async_job.job_tracker import ConcurrentJobLimitReached
 from airbyte_cdk.sources.declarative.concurrent_declarative_source import (
     ConcurrentDeclarativeSource,
 )
-from airbyte_cdk.sources.declarative.declarative_stream import DeclarativeStream
 from airbyte_cdk.sources.declarative.extractors.record_filter import (
     ClientSideIncrementalRecordFilterDecorator,
 )
 from airbyte_cdk.sources.declarative.partition_routers import AsyncJobPartitionRouter
+from airbyte_cdk.sources.declarative.retrievers.simple_retriever import SimpleRetriever
 from airbyte_cdk.sources.declarative.stream_slicers.declarative_partition_generator import (
     StreamSlicerPartitionGenerator,
 )
@@ -54,6 +67,8 @@ from airbyte_cdk.sources.types import Record, StreamSlice
 from airbyte_cdk.test.mock_http import HttpMocker, HttpRequest, HttpResponse
 from airbyte_cdk.utils import AirbyteTracedException
 from airbyte_cdk.utils.datetime_helpers import AirbyteDateTime, ab_datetime_parse
+
+logger = logging.getLogger("airbyte")
 
 _CONFIG = {"start_date": "2024-07-01T00:00:00.000Z"}
 
@@ -599,6 +614,14 @@ _MANIFEST = {
 }
 
 
+EXTERNAL_CONNECTION_SPECIFICATION = {
+    "type": "object",
+    "required": ["api_token"],
+    "additionalProperties": False,
+    "properties": {"api_token": {"type": "string"}},
+}
+
+
 @deprecated("See note in docstring for more information")
 class DeclarativeStreamDecorator(Stream):
     """
@@ -662,86 +685,6 @@ class DeclarativeStreamDecorator(Stream):
         return self._declarative_stream.get_cursor()
 
 
-def test_group_streams():
-    """
-    Tests the grouping of low-code streams into ones that can be processed concurrently vs ones that must be processed concurrently
-    """
-
-    catalog = ConfiguredAirbyteCatalog(
-        streams=[
-            ConfiguredAirbyteStream(
-                stream=AirbyteStream(
-                    name="party_members",
-                    json_schema={},
-                    supported_sync_modes=[SyncMode.incremental],
-                ),
-                sync_mode=SyncMode.full_refresh,
-                destination_sync_mode=DestinationSyncMode.append,
-            ),
-            ConfiguredAirbyteStream(
-                stream=AirbyteStream(
-                    name="palaces", json_schema={}, supported_sync_modes=[SyncMode.full_refresh]
-                ),
-                sync_mode=SyncMode.full_refresh,
-                destination_sync_mode=DestinationSyncMode.append,
-            ),
-            ConfiguredAirbyteStream(
-                stream=AirbyteStream(
-                    name="locations", json_schema={}, supported_sync_modes=[SyncMode.incremental]
-                ),
-                sync_mode=SyncMode.full_refresh,
-                destination_sync_mode=DestinationSyncMode.append,
-            ),
-            ConfiguredAirbyteStream(
-                stream=AirbyteStream(
-                    name="party_members_skills",
-                    json_schema={},
-                    supported_sync_modes=[SyncMode.full_refresh],
-                ),
-                sync_mode=SyncMode.full_refresh,
-                destination_sync_mode=DestinationSyncMode.append,
-            ),
-        ]
-    )
-
-    state = []
-
-    source = ConcurrentDeclarativeSource(
-        source_config=_MANIFEST, config=_CONFIG, catalog=catalog, state=state
-    )
-    concurrent_streams, synchronous_streams = source._group_streams(config=_CONFIG)
-
-    # 1 full refresh stream, 3 incremental streams, 1 substream w/o incremental, 1 list based substream w/o incremental
-    # 1 async job stream, 1 substream w/ incremental
-    assert len(concurrent_streams) == 8
-    (
-        concurrent_stream_0,
-        concurrent_stream_1,
-        concurrent_stream_2,
-        concurrent_stream_3,
-        concurrent_stream_4,
-        concurrent_stream_5,
-        concurrent_stream_6,
-        concurrent_stream_7,
-    ) = concurrent_streams
-    assert isinstance(concurrent_stream_0, DefaultStream)
-    assert concurrent_stream_0.name == "party_members"
-    assert isinstance(concurrent_stream_1, DefaultStream)
-    assert concurrent_stream_1.name == "palaces"
-    assert isinstance(concurrent_stream_2, DefaultStream)
-    assert concurrent_stream_2.name == "locations"
-    assert isinstance(concurrent_stream_3, DefaultStream)
-    assert concurrent_stream_3.name == "party_members_skills"
-    assert isinstance(concurrent_stream_4, DefaultStream)
-    assert concurrent_stream_4.name == "arcana_personas"
-    assert isinstance(concurrent_stream_5, DefaultStream)
-    assert concurrent_stream_5.name == "palace_enemies"
-    assert isinstance(concurrent_stream_6, DefaultStream)
-    assert concurrent_stream_6.name == "async_job_stream"
-    assert isinstance(concurrent_stream_7, DefaultStream)
-    assert concurrent_stream_7.name == "incremental_counting_stream"
-
-
 @freezegun.freeze_time(time_to_freeze=datetime(2024, 9, 1, 0, 0, 0, 0, tzinfo=timezone.utc))
 def test_create_concurrent_cursor():
     """
@@ -769,9 +712,9 @@ def test_create_concurrent_cursor():
     source = ConcurrentDeclarativeSource(
         source_config=_MANIFEST, config=_CONFIG, catalog=_CATALOG, state=state
     )
-    concurrent_streams, synchronous_streams = source._group_streams(config=_CONFIG)
+    streams = source.streams(config=_CONFIG)
 
-    party_members_stream = concurrent_streams[0]
+    party_members_stream = streams[0]
     assert isinstance(party_members_stream, DefaultStream)
     party_members_cursor = party_members_stream.cursor
 
@@ -787,7 +730,7 @@ def test_create_concurrent_cursor():
     assert party_members_cursor._lookback_window == timedelta(days=5)
     assert party_members_cursor._cursor_granularity == timedelta(days=1)
 
-    locations_stream = concurrent_streams[2]
+    locations_stream = streams[2]
     assert isinstance(locations_stream, DefaultStream)
     locations_cursor = locations_stream.cursor
 
@@ -812,7 +755,7 @@ def test_create_concurrent_cursor():
         "state_type": "date-range",
     }
 
-    incremental_counting_stream = concurrent_streams[7]
+    incremental_counting_stream = streams[7]
     assert isinstance(incremental_counting_stream, DefaultStream)
     incremental_counting_cursor = incremental_counting_stream.cursor
 
@@ -960,6 +903,10 @@ def mocked_init(self, is_sequential_state: bool = True):
 @patch(
     "airbyte_cdk.sources.streams.concurrent.state_converters.abstract_stream_state_converter.AbstractStreamStateConverter.__init__",
     mocked_init,
+)
+@pytest.mark.skipif(
+    sys.version_info >= (3, 12),
+    reason="SQLite threading compatibility issue: Python 3.12+ has stricter thread safety checks that cause 'InterfaceError: bad parameter or other API misuse' when SQLite connections are shared across threads in the concurrent framework",
 )
 def test_read_with_concurrent_and_synchronous_streams():
     """
@@ -1443,11 +1390,9 @@ def test_concurrent_declarative_source_runs_state_migrations_provided_in_manifes
     source = ConcurrentDeclarativeSource(
         source_config=manifest, config=_CONFIG, catalog=_CATALOG, state=state
     )
-    concurrent_streams, synchronous_streams = source._group_streams(_CONFIG)
-    assert concurrent_streams[0].cursor.state.get("state") != state_blob.__dict__, (
-        "State was not migrated."
-    )
-    assert concurrent_streams[0].cursor.state.get("states") == [
+    streams = source.streams(_CONFIG)
+    assert streams[0].cursor.state.get("state") != state_blob.__dict__, "State was not migrated."
+    assert streams[0].cursor.state.get("states") == [
         {"cursor": {"updated_at": "2024-08-21"}, "partition": {"type": "type_1"}},
         {"cursor": {"updated_at": "2024-08-21"}, "partition": {"type": "type_2"}},
     ], "State was migrated, but actual state don't match expected"
@@ -1507,6 +1452,8 @@ def test_read_concurrent_with_failing_partition_in_the_middle():
             ):
                 messages.append(message)
         except AirbyteTracedException:
+            locations_states = get_states_for_stream(stream_name="locations", messages=messages)
+            assert len(locations_states) == 3
             assert (
                 get_states_for_stream(stream_name="locations", messages=messages)[
                     -1
@@ -1660,145 +1607,6 @@ def test_concurrency_level_initial_number_partitions_to_generate_is_always_one_o
     assert source._concurrent_source._initial_number_partitions_to_generate == 1
 
 
-def test_given_partition_routing_and_incremental_sync_then_stream_is_concurrent():
-    manifest = {
-        "version": "5.0.0",
-        "definitions": {
-            "selector": {
-                "type": "RecordSelector",
-                "extractor": {"type": "DpathExtractor", "field_path": []},
-            },
-            "requester": {
-                "type": "HttpRequester",
-                "url_base": "https://persona.metaverse.com",
-                "http_method": "GET",
-                "authenticator": {
-                    "type": "BasicHttpAuthenticator",
-                    "username": "{{ config['api_key'] }}",
-                    "password": "{{ config['secret_key'] }}",
-                },
-                "error_handler": {
-                    "type": "DefaultErrorHandler",
-                    "response_filters": [
-                        {
-                            "http_codes": [403],
-                            "action": "FAIL",
-                            "failure_type": "config_error",
-                            "error_message": "Access denied due to lack of permission or invalid API/Secret key or wrong data region.",
-                        },
-                        {
-                            "http_codes": [404],
-                            "action": "IGNORE",
-                            "error_message": "No data available for the time range requested.",
-                        },
-                    ],
-                },
-            },
-            "retriever": {
-                "type": "SimpleRetriever",
-                "record_selector": {"$ref": "#/definitions/selector"},
-                "paginator": {"type": "NoPagination"},
-                "requester": {"$ref": "#/definitions/requester"},
-            },
-            "incremental_cursor": {
-                "type": "DatetimeBasedCursor",
-                "start_datetime": {
-                    "datetime": "{{ format_datetime(config['start_date'], '%Y-%m-%d') }}"
-                },
-                "end_datetime": {"datetime": "{{ now_utc().strftime('%Y-%m-%d') }}"},
-                "datetime_format": "%Y-%m-%d",
-                "cursor_datetime_formats": ["%Y-%m-%d", "%Y-%m-%dT%H:%M:%S"],
-                "cursor_granularity": "P1D",
-                "step": "P15D",
-                "cursor_field": "updated_at",
-                "lookback_window": "P5D",
-                "start_time_option": {
-                    "type": "RequestOption",
-                    "field_name": "start",
-                    "inject_into": "request_parameter",
-                },
-                "end_time_option": {
-                    "type": "RequestOption",
-                    "field_name": "end",
-                    "inject_into": "request_parameter",
-                },
-            },
-            "base_stream": {"retriever": {"$ref": "#/definitions/retriever"}},
-            "base_incremental_stream": {
-                "retriever": {
-                    "$ref": "#/definitions/retriever",
-                    "requester": {"$ref": "#/definitions/requester"},
-                },
-                "incremental_sync": {"$ref": "#/definitions/incremental_cursor"},
-            },
-            "incremental_party_members_skills_stream": {
-                "$ref": "#/definitions/base_incremental_stream",
-                "retriever": {
-                    "$ref": "#/definitions/base_incremental_stream/retriever",
-                    "partition_router": {
-                        "type": "ListPartitionRouter",
-                        "cursor_field": "party_member_id",
-                        "values": ["party_member1", "party_member2"],
-                    },
-                },
-                "$parameters": {
-                    "name": "incremental_party_members_skills",
-                    "primary_key": "id",
-                    "path": "/party_members/{{stream_slice.party_member_id}}/skills",
-                },
-                "schema_loader": {
-                    "type": "InlineSchemaLoader",
-                    "schema": {
-                        "$schema": "https://json-schema.org/draft-07/schema#",
-                        "type": "object",
-                        "properties": {
-                            "id": {
-                                "description": "The identifier",
-                                "type": ["null", "string"],
-                            },
-                            "name": {
-                                "description": "The name of the party member",
-                                "type": ["null", "string"],
-                            },
-                        },
-                    },
-                },
-            },
-        },
-        "streams": ["#/definitions/incremental_party_members_skills_stream"],
-        "check": {"stream_names": ["incremental_party_members_skills"]},
-        "concurrency_level": {
-            "type": "ConcurrencyLevel",
-            "default_concurrency": "{{ config['num_workers'] or 10 }}",
-            "max_concurrency": 25,
-        },
-    }
-
-    catalog = ConfiguredAirbyteCatalog(
-        streams=[
-            ConfiguredAirbyteStream(
-                stream=AirbyteStream(
-                    name="incremental_party_members_skills",
-                    json_schema={},
-                    supported_sync_modes=[SyncMode.full_refresh],
-                ),
-                sync_mode=SyncMode.incremental,
-                destination_sync_mode=DestinationSyncMode.append,
-            )
-        ]
-    )
-
-    state = []
-
-    source = ConcurrentDeclarativeSource(
-        source_config=manifest, config=_CONFIG, catalog=catalog, state=state
-    )
-    concurrent_streams, synchronous_streams = source._group_streams(config=_CONFIG)
-
-    assert len(concurrent_streams) == 1
-    assert len(synchronous_streams) == 0
-
-
 def test_async_incremental_stream_uses_concurrent_cursor_with_state():
     state = [
         AirbyteStateMessage(
@@ -1826,8 +1634,8 @@ def test_async_incremental_stream_uses_concurrent_cursor_with_state():
         "state_type": "date-range",
     }
 
-    concurrent_streams, _ = source._group_streams(config=_CONFIG)
-    async_job_stream = concurrent_streams[6]
+    streams = source.streams(config=_CONFIG)
+    async_job_stream = streams[6]
     assert isinstance(async_job_stream, DefaultStream)
     cursor = async_job_stream._cursor
     assert isinstance(cursor, ConcurrentCursor)
@@ -1883,9 +1691,9 @@ def test_stream_using_is_client_side_incremental_has_cursor_state():
         catalog=_CATALOG,
         state=state,
     )
-    concurrent_streams, synchronous_streams = source._group_streams(config=_CONFIG)
+    streams = source.streams(config=_CONFIG)
 
-    locations_stream = concurrent_streams[2]
+    locations_stream = streams[2]
     assert isinstance(locations_stream, DefaultStream)
 
     simple_retriever = locations_stream._stream_partition_generator._partition_factory._retriever
@@ -1943,9 +1751,9 @@ def test_stream_using_is_client_side_incremental_has_transform_before_filtering_
         catalog=_CATALOG,
         state=state,
     )
-    concurrent_streams, synchronous_streams = source._group_streams(config=_CONFIG)
+    streams = source.streams(config=_CONFIG)
 
-    locations_stream = concurrent_streams[2]
+    locations_stream = streams[2]
     assert isinstance(locations_stream, DefaultStream)
 
     simple_retriever = locations_stream._stream_partition_generator._partition_factory._retriever
@@ -2108,3 +1916,2651 @@ def get_states_for_stream(
         for message in messages
         if message.state and message.state.stream.stream_descriptor.name == stream_name
     ]
+
+
+# The tests below were originally written to test the ManifestDeclarativeSource class. However,
+# after deprecating the class when migrating away from legacy synchronous CDK flow, the tests
+# were adjusted to validate ConcurrentDeclarativeSource.
+
+
+class MockConcurrentDeclarativeSource(ConcurrentDeclarativeSource):
+    """
+    Mock test class that is needed to monkey patch how we read from various files that make up a declarative source because of how our
+    tests write configuration files during testing. It is also used to properly namespace where files get written in specific
+    cases like when we temporarily write files like spec.yaml to the package unit_tests, which is the directory where it will
+    be read in during the tests.
+    """
+
+
+def create_catalog(stream_name: str) -> ConfiguredAirbyteCatalog:
+    return ConfiguredAirbyteCatalog(
+        streams=[
+            ConfiguredAirbyteStream(
+                stream=AirbyteStream(
+                    name=stream_name, json_schema={}, supported_sync_modes=[SyncMode.full_refresh]
+                ),
+                sync_mode=SyncMode.full_refresh,
+                destination_sync_mode=DestinationSyncMode.append,
+            )
+        ]
+    )
+
+
+class TestConcurrentDeclarativeSource:
+    @pytest.fixture
+    def use_external_yaml_spec(self):
+        # Our way of resolving the absolute path to root of the airbyte-cdk unit test directory where spec.yaml files should
+        # be written to (i.e. ~/airbyte/airbyte-cdk/python/unit-tests) because that is where they are read from during testing.
+        module = sys.modules[__name__]
+        module_path = os.path.abspath(module.__file__)
+        test_path = os.path.dirname(module_path)
+        spec_root = test_path.split("/sources/declarative")[0]
+
+        spec = {
+            "documentationUrl": "https://airbyte.com/#yaml-from-external",
+            "connectionSpecification": EXTERNAL_CONNECTION_SPECIFICATION,
+        }
+
+        yaml_path = os.path.join(spec_root, "spec.yaml")
+        with open(yaml_path, "w") as f:
+            f.write(yaml.dump(spec))
+        yield
+        os.remove(yaml_path)
+
+    @pytest.fixture
+    def _base_manifest(self):
+        """Base manifest without streams or dynamic streams."""
+        return {
+            "version": "3.8.2",
+            "description": "This is a sample source connector that is very valid.",
+            "check": {"type": "CheckStream", "stream_names": ["lists"]},
+        }
+
+    @pytest.fixture
+    def _declarative_stream(self):
+        def declarative_stream_config(
+            name="lists", requester_type="HttpRequester", custom_requester=None
+        ):
+            """Generates a DeclarativeStream configuration."""
+            requester_config = {
+                "type": requester_type,
+                "path": "/v3/marketing/lists",
+                "authenticator": {
+                    "type": "BearerAuthenticator",
+                    "api_token": "{{ config.apikey }}",
+                },
+                "request_parameters": {"page_size": "{{ 10 }}"},
+            }
+            if custom_requester:
+                requester_config.update(custom_requester)
+
+            return {
+                "type": "DeclarativeStream",
+                "$parameters": {
+                    "name": name,
+                    "primary_key": "id",
+                    "url_base": "https://api.sendgrid.com",
+                },
+                "schema_loader": {
+                    "name": "{{ parameters.stream_name }}",
+                    "file_path": f"./source_sendgrid/schemas/{{{{ parameters.name }}}}.yaml",
+                },
+                "retriever": {
+                    "paginator": {
+                        "type": "DefaultPaginator",
+                        "page_size": 10,
+                        "page_size_option": {
+                            "type": "RequestOption",
+                            "inject_into": "request_parameter",
+                            "field_name": "page_size",
+                        },
+                        "page_token_option": {"type": "RequestPath"},
+                        "pagination_strategy": {
+                            "type": "CursorPagination",
+                            "cursor_value": "{{ response._metadata.next }}",
+                            "page_size": 10,
+                        },
+                    },
+                    "requester": requester_config,
+                    "record_selector": {"extractor": {"field_path": ["result"]}},
+                },
+            }
+
+        return declarative_stream_config
+
+    @pytest.fixture
+    def _dynamic_declarative_stream(self, _declarative_stream):
+        """Generates a DynamicDeclarativeStream configuration."""
+        return {
+            "type": "DynamicDeclarativeStream",
+            "stream_template": _declarative_stream(),
+            "components_resolver": {
+                "type": "HttpComponentsResolver",
+                "$parameters": {
+                    "name": "lists",
+                    "primary_key": "id",
+                    "url_base": "https://api.sendgrid.com",
+                },
+                "retriever": {
+                    "paginator": {
+                        "type": "DefaultPaginator",
+                        "page_size": 10,
+                        "page_size_option": {
+                            "type": "RequestOption",
+                            "inject_into": "request_parameter",
+                            "field_name": "page_size",
+                        },
+                        "page_token_option": {"type": "RequestPath"},
+                        "pagination_strategy": {
+                            "type": "CursorPagination",
+                            "cursor_value": "{{ response._metadata.next }}",
+                            "page_size": 10,
+                        },
+                    },
+                    "requester": {
+                        "path": "/v3/marketing/lists",
+                        "authenticator": {
+                            "type": "BearerAuthenticator",
+                            "api_token": "{{ config.apikey }}",
+                        },
+                        "request_parameters": {"page_size": "{{ 10 }}"},
+                    },
+                    "record_selector": {"extractor": {"field_path": ["result"]}},
+                },
+                "components_mapping": [
+                    {
+                        "type": "ComponentMappingDefinition",
+                        "field_path": ["name"],
+                        "value": "{{ components_value['name'] }}",
+                    }
+                ],
+            },
+        }
+
+    def test_valid_manifest(self):
+        manifest = {
+            "version": "3.8.2",
+            "definitions": {},
+            "description": "This is a sample source connector that is very valid.",
+            "streams": [
+                {
+                    "type": "DeclarativeStream",
+                    "$parameters": {
+                        "name": "lists",
+                        "primary_key": "id",
+                        "url_base": "https://api.sendgrid.com",
+                    },
+                    "schema_loader": {
+                        "type": "InlineSchemaLoader",
+                        "schema": {
+                            "$schema": "http://json-schema.org/schema#",
+                            "properties": {
+                                "id": {"type": "string"},
+                            },
+                            "type": "object",
+                        },
+                    },
+                    "retriever": {
+                        "paginator": {
+                            "type": "DefaultPaginator",
+                            "page_size": 10,
+                            "page_size_option": {
+                                "type": "RequestOption",
+                                "inject_into": "request_parameter",
+                                "field_name": "page_size",
+                            },
+                            "page_token_option": {"type": "RequestPath"},
+                            "pagination_strategy": {
+                                "type": "CursorPagination",
+                                "cursor_value": "{{ response._metadata.next }}",
+                                "page_size": 10,
+                            },
+                        },
+                        "requester": {
+                            "path": "/v3/marketing/lists",
+                            "authenticator": {
+                                "type": "BearerAuthenticator",
+                                "api_token": "{{ config.apikey }}",
+                            },
+                        },
+                        "record_selector": {"extractor": {"field_path": ["result"]}},
+                    },
+                },
+                {
+                    "type": "DeclarativeStream",
+                    "$parameters": {
+                        "name": "stream_with_custom_requester",
+                        "primary_key": "id",
+                        "url_base": "https://api.sendgrid.com",
+                    },
+                    "schema_loader": {
+                        "type": "InlineSchemaLoader",
+                        "schema": {
+                            "$schema": "http://json-schema.org/schema#",
+                            "properties": {
+                                "id": {"type": "string"},
+                            },
+                            "type": "object",
+                        },
+                    },
+                    "retriever": {
+                        "paginator": {
+                            "type": "DefaultPaginator",
+                            "page_size": 10,
+                            "page_size_option": {
+                                "type": "RequestOption",
+                                "inject_into": "request_parameter",
+                                "field_name": "page_size",
+                            },
+                            "page_token_option": {"type": "RequestPath"},
+                            "pagination_strategy": {
+                                "type": "CursorPagination",
+                                "cursor_value": "{{ response._metadata.next }}",
+                                "page_size": 10,
+                            },
+                        },
+                        "requester": {
+                            "type": "CustomRequester",
+                            "class_name": "unit_tests.sources.declarative.external_component.SampleCustomComponent",
+                            "path": "/v3/marketing/lists",
+                            "custom_request_parameters": {"page_size": 10},
+                        },
+                        "record_selector": {"extractor": {"field_path": ["result"]}},
+                    },
+                },
+            ],
+            "check": {"type": "CheckStream", "stream_names": ["lists"]},
+        }
+        assert "unit_tests" in sys.modules
+        assert "unit_tests.sources" in sys.modules
+        assert "unit_tests.sources.declarative" in sys.modules
+        assert "unit_tests.sources.declarative.external_component" in sys.modules
+
+        source = ConcurrentDeclarativeSource(
+            source_config=manifest, config={}, catalog=create_catalog("lists"), state=None
+        )
+
+        pages = [_create_page({"records": [{"id": 0}], "_metadata": {}})]
+        with patch.object(SimpleRetriever, "_fetch_next_page", side_effect=pages):
+            connection_status = source.check(logging.getLogger(""), {})
+            assert connection_status.status == Status.SUCCEEDED
+
+        streams = source.streams({})
+        assert len(streams) == 2
+        assert isinstance(streams[0], DefaultStream)
+        assert isinstance(streams[1], DefaultStream)
+        assert (
+            source.resolved_manifest["description"]
+            == "This is a sample source connector that is very valid."
+        )
+
+    def test_manifest_with_spec(self):
+        manifest = {
+            "version": "0.29.3",
+            "definitions": {
+                "schema_loader": {
+                    "name": "{{ parameters.stream_name }}",
+                    "file_path": "./source_sendgrid/schemas/{{ parameters.name }}.yaml",
+                },
+                "retriever": {
+                    "paginator": {
+                        "type": "DefaultPaginator",
+                        "page_size": 10,
+                        "page_size_option": {
+                            "type": "RequestOption",
+                            "inject_into": "request_parameter",
+                            "field_name": "page_size",
+                        },
+                        "page_token_option": {"type": "RequestPath"},
+                        "pagination_strategy": {
+                            "type": "CursorPagination",
+                            "cursor_value": "{{ response._metadata.next }}",
+                        },
+                    },
+                    "requester": {
+                        "path": "/v3/marketing/lists",
+                        "authenticator": {
+                            "type": "BearerAuthenticator",
+                            "api_token": "{{ config.apikey }}",
+                        },
+                        "request_parameters": {"page_size": "{{ 10 }}"},
+                    },
+                    "record_selector": {"extractor": {"field_path": ["result"]}},
+                },
+            },
+            "streams": [
+                {
+                    "type": "DeclarativeStream",
+                    "$parameters": {
+                        "name": "lists",
+                        "primary_key": "id",
+                        "url_base": "https://api.sendgrid.com",
+                    },
+                    "schema_loader": {
+                        "name": "{{ parameters.stream_name }}",
+                        "file_path": "./source_sendgrid/schemas/{{ parameters.name }}.yaml",
+                    },
+                    "retriever": {
+                        "paginator": {
+                            "type": "DefaultPaginator",
+                            "page_size": 10,
+                            "page_size_option": {
+                                "type": "RequestOption",
+                                "inject_into": "request_parameter",
+                                "field_name": "page_size",
+                            },
+                            "page_token_option": {"type": "RequestPath"},
+                            "pagination_strategy": {
+                                "type": "CursorPagination",
+                                "cursor_value": "{{ response._metadata.next }}",
+                            },
+                        },
+                        "requester": {
+                            "path": "/v3/marketing/lists",
+                            "authenticator": {
+                                "type": "BearerAuthenticator",
+                                "api_token": "{{ config.apikey }}",
+                            },
+                            "request_parameters": {"page_size": "{{ 10 }}"},
+                        },
+                        "record_selector": {"extractor": {"field_path": ["result"]}},
+                    },
+                }
+            ],
+            "check": {"type": "CheckStream", "stream_names": ["lists"]},
+            "spec": {
+                "type": "Spec",
+                "documentation_url": "https://airbyte.com/#yaml-from-manifest",
+                "connection_specification": {
+                    "title": "Test Spec",
+                    "type": "object",
+                    "required": ["api_key"],
+                    "additionalProperties": False,
+                    "properties": {
+                        "api_key": {
+                            "type": "string",
+                            "airbyte_secret": True,
+                            "title": "API Key",
+                            "description": "Test API Key",
+                            "order": 0,
+                        }
+                    },
+                },
+            },
+        }
+        source = ConcurrentDeclarativeSource(
+            source_config=manifest, config={}, catalog=create_catalog("lists"), state=None
+        )
+        connector_specification = source.spec(logger)
+        assert connector_specification is not None
+        assert connector_specification.documentationUrl == "https://airbyte.com/#yaml-from-manifest"
+        assert connector_specification.connectionSpecification["title"] == "Test Spec"
+        assert connector_specification.connectionSpecification["required"][0] == "api_key"
+        assert connector_specification.connectionSpecification["additionalProperties"] is False
+        assert connector_specification.connectionSpecification["properties"]["api_key"] == {
+            "type": "string",
+            "airbyte_secret": True,
+            "title": "API Key",
+            "description": "Test API Key",
+            "order": 0,
+        }
+
+    def test_manifest_with_external_spec(self, use_external_yaml_spec):
+        manifest = {
+            "version": "0.29.3",
+            "definitions": {
+                "schema_loader": {
+                    "name": "{{ parameters.stream_name }}",
+                    "file_path": "./source_sendgrid/schemas/{{ parameters.name }}.yaml",
+                },
+                "retriever": {
+                    "paginator": {
+                        "type": "DefaultPaginator",
+                        "page_size": 10,
+                        "page_size_option": {
+                            "type": "RequestOption",
+                            "inject_into": "request_parameter",
+                            "field_name": "page_size",
+                        },
+                        "page_token_option": {"type": "RequestPath"},
+                        "pagination_strategy": {
+                            "type": "CursorPagination",
+                            "cursor_value": "{{ response._metadata.next }}",
+                        },
+                    },
+                    "requester": {
+                        "path": "/v3/marketing/lists",
+                        "authenticator": {
+                            "type": "BearerAuthenticator",
+                            "api_token": "{{ config.apikey }}",
+                        },
+                        "request_parameters": {"page_size": "{{ 10 }}"},
+                    },
+                    "record_selector": {"extractor": {"field_path": ["result"]}},
+                },
+            },
+            "streams": [
+                {
+                    "type": "DeclarativeStream",
+                    "$parameters": {
+                        "name": "lists",
+                        "primary_key": "id",
+                        "url_base": "https://api.sendgrid.com",
+                    },
+                    "schema_loader": {
+                        "name": "{{ parameters.stream_name }}",
+                        "file_path": "./source_sendgrid/schemas/{{ parameters.name }}.yaml",
+                    },
+                    "retriever": {
+                        "paginator": {
+                            "type": "DefaultPaginator",
+                            "page_size": 10,
+                            "page_size_option": {
+                                "type": "RequestOption",
+                                "inject_into": "request_parameter",
+                                "field_name": "page_size",
+                            },
+                            "page_token_option": {"type": "RequestPath"},
+                            "pagination_strategy": {
+                                "type": "CursorPagination",
+                                "cursor_value": "{{ response._metadata.next }}",
+                            },
+                        },
+                        "requester": {
+                            "path": "/v3/marketing/lists",
+                            "authenticator": {
+                                "type": "BearerAuthenticator",
+                                "api_token": "{{ config.apikey }}",
+                            },
+                            "request_parameters": {"page_size": "{{ 10 }}"},
+                        },
+                        "record_selector": {"extractor": {"field_path": ["result"]}},
+                    },
+                }
+            ],
+            "check": {"type": "CheckStream", "stream_names": ["lists"]},
+        }
+        source = MockConcurrentDeclarativeSource(
+            source_config=manifest, config={}, catalog=create_catalog("lists"), state=None
+        )
+
+        connector_specification = source.spec(logger)
+
+        assert connector_specification.documentationUrl == "https://airbyte.com/#yaml-from-external"
+        assert connector_specification.connectionSpecification == EXTERNAL_CONNECTION_SPECIFICATION
+
+    def test_source_is_not_created_if_toplevel_fields_are_unknown(self):
+        manifest = {
+            "version": "0.29.3",
+            "definitions": {
+                "schema_loader": {
+                    "name": "{{ parameters.stream_name }}",
+                    "file_path": "./source_sendgrid/schemas/{{ parameters.name }}.yaml",
+                },
+                "retriever": {
+                    "paginator": {
+                        "type": "DefaultPaginator",
+                        "page_size": 10,
+                        "page_size_option": {
+                            "type": "RequestOption",
+                            "inject_into": "request_parameter",
+                            "field_name": "page_size",
+                        },
+                        "page_token_option": {"type": "RequestPath"},
+                        "pagination_strategy": {
+                            "type": "CursorPagination",
+                            "cursor_value": "{{ response._metadata.next }}",
+                        },
+                    },
+                    "requester": {
+                        "path": "/v3/marketing/lists",
+                        "authenticator": {
+                            "type": "BearerAuthenticator",
+                            "api_token": "{{ config.apikey }}",
+                        },
+                        "request_parameters": {"page_size": 10},
+                    },
+                    "record_selector": {"extractor": {"field_path": ["result"]}},
+                },
+            },
+            "streams": [
+                {
+                    "type": "DeclarativeStream",
+                    "$parameters": {
+                        "name": "lists",
+                        "primary_key": "id",
+                        "url_base": "https://api.sendgrid.com",
+                    },
+                    "schema_loader": {
+                        "name": "{{ parameters.stream_name }}",
+                        "file_path": "./source_sendgrid/schemas/{{ parameters.name }}.yaml",
+                    },
+                    "retriever": {
+                        "paginator": {
+                            "type": "DefaultPaginator",
+                            "page_size": 10,
+                            "page_size_option": {
+                                "type": "RequestOption",
+                                "inject_into": "request_parameter",
+                                "field_name": "page_size",
+                            },
+                            "page_token_option": {"type": "RequestPath"},
+                            "pagination_strategy": {
+                                "type": "CursorPagination",
+                                "cursor_value": "{{ response._metadata.next }}",
+                            },
+                        },
+                        "requester": {
+                            "path": "/v3/marketing/lists",
+                            "authenticator": {
+                                "type": "BearerAuthenticator",
+                                "api_token": "{{ config.apikey }}",
+                            },
+                            "request_parameters": {"page_size": 10},
+                        },
+                        "record_selector": {"extractor": {"field_path": ["result"]}},
+                    },
+                }
+            ],
+            "check": {"type": "CheckStream", "stream_names": ["lists"]},
+            "not_a_valid_field": "error",
+        }
+        with pytest.raises(ValidationError):
+            ConcurrentDeclarativeSource(
+                source_config=manifest, config={}, catalog=create_catalog("lists"), state=None
+            )
+
+    def test_source_missing_checker_fails_validation(self):
+        manifest = {
+            "version": "0.29.3",
+            "definitions": {
+                "schema_loader": {
+                    "name": "{{ parameters.stream_name }}",
+                    "file_path": "./source_sendgrid/schemas/{{ parameters.name }}.yaml",
+                },
+                "retriever": {
+                    "paginator": {
+                        "type": "DefaultPaginator",
+                        "page_size": 10,
+                        "page_size_option": {
+                            "type": "RequestOption",
+                            "inject_into": "request_parameter",
+                            "field_name": "page_size",
+                        },
+                        "page_token_option": {"type": "RequestPath"},
+                        "pagination_strategy": {
+                            "type": "CursorPagination",
+                            "cursor_value": "{{ response._metadata.next }}",
+                        },
+                    },
+                    "requester": {
+                        "path": "/v3/marketing/lists",
+                        "authenticator": {
+                            "type": "BearerAuthenticator",
+                            "api_token": "{{ config.apikey }}",
+                        },
+                        "request_parameters": {"page_size": 10},
+                    },
+                    "record_selector": {"extractor": {"field_path": ["result"]}},
+                },
+            },
+            "streams": [
+                {
+                    "type": "DeclarativeStream",
+                    "$parameters": {
+                        "name": "lists",
+                        "primary_key": "id",
+                        "url_base": "https://api.sendgrid.com",
+                    },
+                    "schema_loader": {
+                        "name": "{{ parameters.stream_name }}",
+                        "file_path": "./source_sendgrid/schemas/{{ parameters.name }}.yaml",
+                    },
+                    "retriever": {
+                        "paginator": {
+                            "type": "DefaultPaginator",
+                            "page_size": 10,
+                            "page_size_option": {
+                                "type": "RequestOption",
+                                "inject_into": "request_parameter",
+                                "field_name": "page_size",
+                            },
+                            "page_token_option": {"type": "RequestPath"},
+                            "pagination_strategy": {
+                                "type": "CursorPagination",
+                                "cursor_value": "{{ response._metadata.next }}",
+                            },
+                        },
+                        "requester": {
+                            "path": "/v3/marketing/lists",
+                            "authenticator": {
+                                "type": "BearerAuthenticator",
+                                "api_token": "{{ config.apikey }}",
+                            },
+                            "request_parameters": {"page_size": 10},
+                        },
+                        "record_selector": {"extractor": {"field_path": ["result"]}},
+                    },
+                }
+            ],
+        }
+        with pytest.raises(ValidationError):
+            ConcurrentDeclarativeSource(
+                source_config=manifest, config={}, catalog=create_catalog("lists"), state=None
+            )
+
+    def test_source_with_missing_streams_and_dynamic_streams_fails(
+        self, _base_manifest, _dynamic_declarative_stream, _declarative_stream
+    ):
+        # test case for manifest without streams or dynamic streams
+        manifest_without_streams_and_dynamic_streams = _base_manifest
+        with pytest.raises(ValidationError):
+            ConcurrentDeclarativeSource(
+                source_config=manifest_without_streams_and_dynamic_streams,
+                config={},
+                catalog=create_catalog("lists"),
+                state=None,
+            )
+
+        # test case for manifest with streams
+        manifest_with_streams = {
+            **manifest_without_streams_and_dynamic_streams,
+            "streams": [
+                _declarative_stream(name="lists"),
+                _declarative_stream(
+                    name="stream_with_custom_requester",
+                    requester_type="CustomRequester",
+                    custom_requester={
+                        "class_name": "unit_tests.sources.declarative.external_component.SampleCustomComponent",
+                        "custom_request_parameters": {"page_size": 10},
+                    },
+                ),
+            ],
+        }
+        ConcurrentDeclarativeSource(
+            source_config=manifest_with_streams,
+            config={},
+            catalog=create_catalog("lists"),
+            state=None,
+        )
+
+        # test case for manifest with dynamic streams
+        manifest_with_dynamic_streams = {
+            **manifest_without_streams_and_dynamic_streams,
+            "dynamic_streams": [_dynamic_declarative_stream],
+        }
+        ConcurrentDeclarativeSource(
+            source_config=manifest_with_dynamic_streams,
+            config={},
+            catalog=create_catalog("lists"),
+            state=None,
+        )
+
+    def test_source_with_missing_version_fails(self):
+        manifest = {
+            "definitions": {
+                "schema_loader": {
+                    "name": "{{ parameters.stream_name }}",
+                    "file_path": "./source_sendgrid/schemas/{{ parameters.name }}.yaml",
+                },
+                "retriever": {
+                    "paginator": {
+                        "type": "DefaultPaginator",
+                        "page_size": 10,
+                        "page_size_option": {
+                            "type": "RequestOption",
+                            "inject_into": "request_parameter",
+                            "field_name": "page_size",
+                        },
+                        "page_token_option": {"type": "RequestPath"},
+                        "pagination_strategy": {
+                            "type": "CursorPagination",
+                            "cursor_value": "{{ response._metadata.next }}",
+                        },
+                    },
+                    "requester": {
+                        "path": "/v3/marketing/lists",
+                        "authenticator": {
+                            "type": "BearerAuthenticator",
+                            "api_token": "{{ config.apikey }}",
+                        },
+                        "request_parameters": {"page_size": 10},
+                    },
+                    "record_selector": {"extractor": {"field_path": ["result"]}},
+                },
+            },
+            "streams": [
+                {
+                    "type": "DeclarativeStream",
+                    "$parameters": {
+                        "name": "lists",
+                        "primary_key": "id",
+                        "url_base": "https://api.sendgrid.com",
+                    },
+                    "schema_loader": {
+                        "name": "{{ parameters.stream_name }}",
+                        "file_path": "./source_sendgrid/schemas/{{ parameters.name }}.yaml",
+                    },
+                    "retriever": {
+                        "paginator": {
+                            "type": "DefaultPaginator",
+                            "page_size": 10,
+                            "page_size_option": {
+                                "type": "RequestOption",
+                                "inject_into": "request_parameter",
+                                "field_name": "page_size",
+                            },
+                            "page_token_option": {"type": "RequestPath"},
+                            "pagination_strategy": {
+                                "type": "CursorPagination",
+                                "cursor_value": "{{ response._metadata.next }}",
+                            },
+                        },
+                        "requester": {
+                            "path": "/v3/marketing/lists",
+                            "authenticator": {
+                                "type": "BearerAuthenticator",
+                                "api_token": "{{ config.apikey }}",
+                            },
+                            "request_parameters": {"page_size": 10},
+                        },
+                        "record_selector": {"extractor": {"field_path": ["result"]}},
+                    },
+                }
+            ],
+            "check": {"type": "CheckStream", "stream_names": ["lists"]},
+        }
+        with pytest.raises(ValidationError):
+            ConcurrentDeclarativeSource(
+                source_config=manifest, config={}, catalog=create_catalog("lists"), state=None
+            )
+
+    def test_source_with_invalid_stream_config_fails_validation(self):
+        manifest = {
+            "version": "0.29.3",
+            "definitions": {
+                "schema_loader": {
+                    "name": "{{ parameters.stream_name }}",
+                    "file_path": "./source_sendgrid/schemas/{{ parameters.name }}.yaml",
+                }
+            },
+            "streams": [
+                {
+                    "type": "DeclarativeStream",
+                    "$parameters": {
+                        "name": "lists",
+                        "primary_key": "id",
+                        "url_base": "https://api.sendgrid.com",
+                    },
+                    "schema_loader": {
+                        "name": "{{ parameters.stream_name }}",
+                        "file_path": "./source_sendgrid/schemas/{{ parameters.name }}.yaml",
+                    },
+                }
+            ],
+            "check": {"type": "CheckStream", "stream_names": ["lists"]},
+        }
+        with pytest.raises(ValidationError):
+            ConcurrentDeclarativeSource(
+                source_config=manifest, config={}, catalog=create_catalog("lists"), state=None
+            )
+
+    def test_source_with_no_external_spec_and_no_in_yaml_spec_fails(self):
+        manifest = {
+            "version": "0.29.3",
+            "definitions": {
+                "schema_loader": {
+                    "name": "{{ parameters.stream_name }}",
+                    "file_path": "./source_sendgrid/schemas/{{ parameters.name }}.yaml",
+                },
+                "retriever": {
+                    "paginator": {
+                        "type": "DefaultPaginator",
+                        "page_size": 10,
+                        "page_size_option": {
+                            "type": "RequestOption",
+                            "inject_into": "request_parameter",
+                            "field_name": "page_size",
+                        },
+                        "page_token_option": {"type": "RequestPath"},
+                        "pagination_strategy": {
+                            "type": "CursorPagination",
+                            "cursor_value": "{{ response._metadata.next }}",
+                        },
+                    },
+                    "requester": {
+                        "path": "/v3/marketing/lists",
+                        "authenticator": {
+                            "type": "BearerAuthenticator",
+                            "api_token": "{{ config.apikey }}",
+                        },
+                        "request_parameters": {"page_size": "{{ 10 }}"},
+                    },
+                    "record_selector": {"extractor": {"field_path": ["result"]}},
+                },
+            },
+            "streams": [
+                {
+                    "type": "DeclarativeStream",
+                    "$parameters": {
+                        "name": "lists",
+                        "primary_key": "id",
+                        "url_base": "https://api.sendgrid.com",
+                    },
+                    "schema_loader": {
+                        "name": "{{ parameters.stream_name }}",
+                        "file_path": "./source_sendgrid/schemas/{{ parameters.name }}.yaml",
+                    },
+                    "retriever": {
+                        "paginator": {
+                            "type": "DefaultPaginator",
+                            "page_size": 10,
+                            "page_size_option": {
+                                "type": "RequestOption",
+                                "inject_into": "request_parameter",
+                                "field_name": "page_size",
+                            },
+                            "page_token_option": {"type": "RequestPath"},
+                            "pagination_strategy": {
+                                "type": "CursorPagination",
+                                "cursor_value": "{{ response._metadata.next }}",
+                            },
+                        },
+                        "requester": {
+                            "path": "/v3/marketing/lists",
+                            "authenticator": {
+                                "type": "BearerAuthenticator",
+                                "api_token": "{{ config.apikey }}",
+                            },
+                            "request_parameters": {"page_size": "{{ 10 }}"},
+                        },
+                        "record_selector": {"extractor": {"field_path": ["result"]}},
+                    },
+                }
+            ],
+            "check": {"type": "CheckStream", "stream_names": ["lists"]},
+        }
+        source = ConcurrentDeclarativeSource(
+            source_config=manifest, config={}, catalog=create_catalog("lists"), state=None
+        )
+
+        # We expect to fail here because we have not created a temporary spec.yaml file
+        with pytest.raises(FileNotFoundError):
+            source.spec(logger)
+
+    @pytest.mark.parametrize(
+        "is_sandbox, expected_stream_count",
+        [
+            pytest.param(True, 3, id="test_sandbox_config_includes_conditional_streams"),
+            pytest.param(False, 1, id="test_non_sandbox_config_skips_conditional_streams"),
+        ],
+    )
+    def test_conditional_streams_manifest(self, is_sandbox, expected_stream_count):
+        manifest = {
+            "version": "3.8.2",
+            "definitions": {},
+            "description": "This is a sample source connector that is very valid.",
+            "streams": [
+                {
+                    "type": "DeclarativeStream",
+                    "$parameters": {
+                        "name": "students",
+                        "primary_key": "id",
+                        "url_base": "https://api.yasogamihighschool.com",
+                    },
+                    "schema_loader": {
+                        "type": "InlineSchemaLoader",
+                        "schema": {
+                            "$schema": "http://json-schema.org/schema#",
+                            "properties": {
+                                "id": {"type": "string"},
+                                "first_name": {"type": "string"},
+                                "last_name": {"type": "string"},
+                                "grade": {"type": "number"},
+                            },
+                            "type": "object",
+                        },
+                    },
+                    "retriever": {
+                        "paginator": {
+                            "type": "DefaultPaginator",
+                            "page_size": 10,
+                            "page_size_option": {
+                                "type": "RequestOption",
+                                "inject_into": "request_parameter",
+                                "field_name": "page_size",
+                            },
+                            "page_token_option": {"type": "RequestPath"},
+                            "pagination_strategy": {
+                                "type": "CursorPagination",
+                                "cursor_value": "{{ response._metadata.next }}",
+                                "page_size": 10,
+                            },
+                        },
+                        "requester": {
+                            "path": "/v1/students",
+                            "authenticator": {
+                                "type": "BearerAuthenticator",
+                                "api_token": "{{ config.apikey }}",
+                            },
+                        },
+                        "record_selector": {"extractor": {"field_path": ["result"]}},
+                    },
+                },
+                {
+                    "type": "ConditionalStreams",
+                    "condition": "{{ config['is_sandbox'] }}",
+                    "streams": [
+                        {
+                            "type": "DeclarativeStream",
+                            "$parameters": {
+                                "name": "classrooms",
+                                "primary_key": "id",
+                                "url_base": "https://api.yasogamihighschool.com",
+                            },
+                            "schema_loader": {
+                                "type": "InlineSchemaLoader",
+                                "schema": {
+                                    "$schema": "http://json-schema.org/schema#",
+                                    "properties": {
+                                        "id": {"type": "string"},
+                                        "floor": {"type": "number"},
+                                        "room_number": {"type": "number"},
+                                    },
+                                    "type": "object",
+                                },
+                            },
+                            "retriever": {
+                                "paginator": {
+                                    "type": "DefaultPaginator",
+                                    "page_size": 10,
+                                    "page_size_option": {
+                                        "type": "RequestOption",
+                                        "inject_into": "request_parameter",
+                                        "field_name": "page_size",
+                                    },
+                                    "page_token_option": {"type": "RequestPath"},
+                                    "pagination_strategy": {
+                                        "type": "CursorPagination",
+                                        "cursor_value": "{{ response._metadata.next }}",
+                                        "page_size": 10,
+                                    },
+                                },
+                                "requester": {
+                                    "path": "/v1/classrooms",
+                                    "authenticator": {
+                                        "type": "BearerAuthenticator",
+                                        "api_token": "{{ config.apikey }}",
+                                    },
+                                },
+                                "record_selector": {"extractor": {"field_path": ["result"]}},
+                            },
+                        },
+                        {
+                            "type": "DeclarativeStream",
+                            "$parameters": {
+                                "name": "clubs",
+                                "primary_key": "id",
+                                "url_base": "https://api.yasogamihighschool.com",
+                            },
+                            "schema_loader": {
+                                "type": "InlineSchemaLoader",
+                                "schema": {
+                                    "$schema": "http://json-schema.org/schema#",
+                                    "properties": {
+                                        "id": {"type": "string"},
+                                        "name": {"type": "string"},
+                                        "category": {"type": "string"},
+                                    },
+                                    "type": "object",
+                                },
+                            },
+                            "retriever": {
+                                "paginator": {
+                                    "type": "DefaultPaginator",
+                                    "page_size": 10,
+                                    "page_size_option": {
+                                        "type": "RequestOption",
+                                        "inject_into": "request_parameter",
+                                        "field_name": "page_size",
+                                    },
+                                    "page_token_option": {"type": "RequestPath"},
+                                    "pagination_strategy": {
+                                        "type": "CursorPagination",
+                                        "cursor_value": "{{ response._metadata.next }}",
+                                        "page_size": 10,
+                                    },
+                                },
+                                "requester": {
+                                    "path": "/v1/clubs",
+                                    "authenticator": {
+                                        "type": "BearerAuthenticator",
+                                        "api_token": "{{ config.apikey }}",
+                                    },
+                                },
+                                "record_selector": {"extractor": {"field_path": ["result"]}},
+                            },
+                        },
+                    ],
+                },
+            ],
+            "check": {"type": "CheckStream", "stream_names": ["students"]},
+        }
+
+        assert "unit_tests" in sys.modules
+        assert "unit_tests.sources" in sys.modules
+        assert "unit_tests.sources.declarative" in sys.modules
+        assert "unit_tests.sources.declarative.external_component" in sys.modules
+
+        config = {"is_sandbox": is_sandbox}
+        catalog = create_catalog("students")
+
+        source = ConcurrentDeclarativeSource(
+            source_config=manifest, config=config, catalog=catalog, state=None
+        )
+
+        pages = [
+            _create_page(
+                {
+                    "students": [{"id": 0, "first_name": "yu", "last_name": "narukami"}],
+                    "_metadata": {},
+                }
+            )
+        ]
+        with patch.object(SimpleRetriever, "_fetch_next_page", side_effect=pages):
+            connection_status = source.check(logging.getLogger(""), config=config)
+            assert connection_status.status == Status.SUCCEEDED
+
+        actual_streams = source.streams(config=config)
+        assert len(actual_streams) == expected_stream_count
+        assert isinstance(actual_streams[0], DefaultStream)
+        assert actual_streams[0].name == "students"
+
+        if is_sandbox:
+            assert isinstance(actual_streams[1], DefaultStream)
+            assert actual_streams[1].name == "classrooms"
+            assert isinstance(actual_streams[2], DefaultStream)
+            assert actual_streams[2].name == "clubs"
+
+        assert (
+            source.resolved_manifest["description"]
+            == "This is a sample source connector that is very valid."
+        )
+
+    @pytest.mark.parametrize(
+        "field_to_remove,expected_error",
+        [
+            pytest.param("condition", ValidationError, id="test_no_condition_raises_error"),
+            pytest.param("streams", ValidationError, id="test_no_streams_raises_error"),
+        ],
+    )
+    def test_conditional_streams_invalid_manifest(self, field_to_remove, expected_error):
+        manifest = {
+            "version": "3.8.2",
+            "definitions": {},
+            "description": "This is a sample source connector that is very valid.",
+            "streams": [
+                {
+                    "type": "DeclarativeStream",
+                    "$parameters": {
+                        "name": "students",
+                        "primary_key": "id",
+                        "url_base": "https://api.yasogamihighschool.com",
+                    },
+                    "schema_loader": {
+                        "name": "{{ parameters.stream_name }}",
+                        "file_path": "./source_yasogami_high_school/schemas/{{ parameters.name }}.yaml",
+                    },
+                    "retriever": {
+                        "paginator": {
+                            "type": "DefaultPaginator",
+                            "page_size": 10,
+                            "page_size_option": {
+                                "type": "RequestOption",
+                                "inject_into": "request_parameter",
+                                "field_name": "page_size",
+                            },
+                            "page_token_option": {"type": "RequestPath"},
+                            "pagination_strategy": {
+                                "type": "CursorPagination",
+                                "cursor_value": "{{ response._metadata.next }}",
+                                "page_size": 10,
+                            },
+                        },
+                        "requester": {
+                            "path": "/v1/students",
+                            "authenticator": {
+                                "type": "BearerAuthenticator",
+                                "api_token": "{{ config.apikey }}",
+                            },
+                            "request_parameters": {"page_size": "{{ 10 }}"},
+                        },
+                        "record_selector": {"extractor": {"field_path": ["result"]}},
+                    },
+                },
+                {
+                    "type": "ConditionalStreams",
+                    "condition": "{{ config['is_sandbox'] }}",
+                    "streams": [
+                        {
+                            "type": "DeclarativeStream",
+                            "$parameters": {
+                                "name": "classrooms",
+                                "primary_key": "id",
+                                "url_base": "https://api.yasogamihighschool.com",
+                            },
+                            "schema_loader": {
+                                "name": "{{ parameters.stream_name }}",
+                                "file_path": "./source_yasogami_high_school/schemas/{{ parameters.name }}.yaml",
+                            },
+                            "retriever": {
+                                "paginator": {
+                                    "type": "DefaultPaginator",
+                                    "page_size": 10,
+                                    "page_size_option": {
+                                        "type": "RequestOption",
+                                        "inject_into": "request_parameter",
+                                        "field_name": "page_size",
+                                    },
+                                    "page_token_option": {"type": "RequestPath"},
+                                    "pagination_strategy": {
+                                        "type": "CursorPagination",
+                                        "cursor_value": "{{ response._metadata.next }}",
+                                        "page_size": 10,
+                                    },
+                                },
+                                "requester": {
+                                    "path": "/v1/classrooms",
+                                    "authenticator": {
+                                        "type": "BearerAuthenticator",
+                                        "api_token": "{{ config.apikey }}",
+                                    },
+                                    "request_parameters": {"page_size": "{{ 10 }}"},
+                                },
+                                "record_selector": {"extractor": {"field_path": ["result"]}},
+                            },
+                        },
+                        {
+                            "type": "DeclarativeStream",
+                            "$parameters": {
+                                "name": "clubs",
+                                "primary_key": "id",
+                                "url_base": "https://api.yasogamihighschool.com",
+                            },
+                            "schema_loader": {
+                                "name": "{{ parameters.stream_name }}",
+                                "file_path": "./source_yasogami_high_school/schemas/{{ parameters.name }}.yaml",
+                            },
+                            "retriever": {
+                                "paginator": {
+                                    "type": "DefaultPaginator",
+                                    "page_size": 10,
+                                    "page_size_option": {
+                                        "type": "RequestOption",
+                                        "inject_into": "request_parameter",
+                                        "field_name": "page_size",
+                                    },
+                                    "page_token_option": {"type": "RequestPath"},
+                                    "pagination_strategy": {
+                                        "type": "CursorPagination",
+                                        "cursor_value": "{{ response._metadata.next }}",
+                                        "page_size": 10,
+                                    },
+                                },
+                                "requester": {
+                                    "path": "/v1/clubs",
+                                    "authenticator": {
+                                        "type": "BearerAuthenticator",
+                                        "api_token": "{{ config.apikey }}",
+                                    },
+                                    "request_parameters": {"page_size": "{{ 10 }}"},
+                                },
+                                "record_selector": {"extractor": {"field_path": ["result"]}},
+                            },
+                        },
+                    ],
+                },
+            ],
+            "check": {"type": "CheckStream", "stream_names": ["students"]},
+        }
+
+        assert "unit_tests" in sys.modules
+        assert "unit_tests.sources" in sys.modules
+        assert "unit_tests.sources.declarative" in sys.modules
+        assert "unit_tests.sources.declarative.external_component" in sys.modules
+
+        del manifest["streams"][1][field_to_remove]
+
+        with pytest.raises(ValidationError):
+            ConcurrentDeclarativeSource(
+                source_config=manifest, config={}, catalog=create_catalog("lists"), state=None
+            )
+
+
+def request_log_message(request: dict) -> AirbyteMessage:
+    return AirbyteMessage(
+        type=Type.LOG,
+        log=AirbyteLogMessage(level=Level.INFO, message=f"request:{json.dumps(request)}"),
+    )
+
+
+def response_log_message(response: dict) -> AirbyteMessage:
+    return AirbyteMessage(
+        type=Type.LOG,
+        log=AirbyteLogMessage(level=Level.INFO, message=f"response:{json.dumps(response)}"),
+    )
+
+
+def _create_request():
+    url = "https://example.com/api"
+    headers = {"Content-Type": "application/json"}
+    return requests.Request("POST", url, headers=headers, json={"key": "value"}).prepare()
+
+
+def _create_response(body):
+    response = requests.Response()
+    response.status_code = 200
+    response._content = bytes(json.dumps(body), "utf-8")
+    response.headers["Content-Type"] = "application/json"
+    return response
+
+
+def _create_page(response_body):
+    response = _create_response(response_body)
+    response.request = _create_request()
+    return response
+
+
+@pytest.mark.parametrize(
+    "test_name, manifest, pages, expected_records, expected_calls",
+    [
+        (
+            "test_read_manifest_no_pagination_no_partitions",
+            {
+                "version": "0.34.2",
+                "type": "DeclarativeSource",
+                "check": {"type": "CheckStream", "stream_names": ["Rates"]},
+                "streams": [
+                    {
+                        "type": "DeclarativeStream",
+                        "name": "Rates",
+                        "primary_key": [],
+                        "schema_loader": {
+                            "type": "InlineSchemaLoader",
+                            "schema": {
+                                "$schema": "http://json-schema.org/schema#",
+                                "properties": {
+                                    "ABC": {"type": "number"},
+                                    "AED": {"type": "number"},
+                                },
+                                "type": "object",
+                            },
+                        },
+                        "retriever": {
+                            "type": "SimpleRetriever",
+                            "requester": {
+                                "type": "HttpRequester",
+                                "url_base": "https://api.apilayer.com",
+                                "path": "/exchangerates_data/latest",
+                                "http_method": "GET",
+                                "request_parameters": {},
+                                "request_headers": {},
+                                "request_body_json": {},
+                                "authenticator": {
+                                    "type": "ApiKeyAuthenticator",
+                                    "header": "apikey",
+                                    "api_token": "{{ config['api_key'] }}",
+                                },
+                            },
+                            "record_selector": {
+                                "type": "RecordSelector",
+                                "extractor": {"type": "DpathExtractor", "field_path": ["rates"]},
+                            },
+                            "paginator": {"type": "NoPagination"},
+                        },
+                    }
+                ],
+                "spec": {
+                    "connection_specification": {
+                        "$schema": "http://json-schema.org/draft-07/schema#",
+                        "type": "object",
+                        "required": ["api_key"],
+                        "properties": {
+                            "api_key": {
+                                "type": "string",
+                                "title": "API Key",
+                                "airbyte_secret": True,
+                            }
+                        },
+                        "additionalProperties": True,
+                    },
+                    "documentation_url": "https://example.org",
+                    "type": "Spec",
+                },
+            },
+            (
+                _create_page({"rates": [{"ABC": 0}, {"AED": 1}], "_metadata": {"next": "next"}}),
+                _create_page({"rates": [{"USD": 2}], "_metadata": {"next": "next"}}),
+            )
+            * 10,
+            [{"ABC": 0}, {"AED": 1}],
+            [call({}, {}, None)],
+        ),
+        (
+            "test_read_manifest_with_added_fields",
+            {
+                "version": "0.34.2",
+                "type": "DeclarativeSource",
+                "check": {"type": "CheckStream", "stream_names": ["Rates"]},
+                "streams": [
+                    {
+                        "type": "DeclarativeStream",
+                        "name": "Rates",
+                        "primary_key": [],
+                        "schema_loader": {
+                            "type": "InlineSchemaLoader",
+                            "schema": {
+                                "$schema": "http://json-schema.org/schema#",
+                                "properties": {
+                                    "ABC": {"type": "number"},
+                                    "AED": {"type": "number"},
+                                },
+                                "type": "object",
+                            },
+                        },
+                        "transformations": [
+                            {
+                                "type": "AddFields",
+                                "fields": [
+                                    {
+                                        "type": "AddedFieldDefinition",
+                                        "path": ["added_field_key"],
+                                        "value": "added_field_value",
+                                    }
+                                ],
+                            }
+                        ],
+                        "retriever": {
+                            "type": "SimpleRetriever",
+                            "requester": {
+                                "type": "HttpRequester",
+                                "url_base": "https://api.apilayer.com",
+                                "path": "/exchangerates_data/latest",
+                                "http_method": "GET",
+                                "request_parameters": {},
+                                "request_headers": {},
+                                "request_body_json": {},
+                                "authenticator": {
+                                    "type": "ApiKeyAuthenticator",
+                                    "header": "apikey",
+                                    "api_token": "{{ config['api_key'] }}",
+                                },
+                            },
+                            "record_selector": {
+                                "type": "RecordSelector",
+                                "extractor": {"type": "DpathExtractor", "field_path": ["rates"]},
+                            },
+                            "paginator": {"type": "NoPagination"},
+                        },
+                    }
+                ],
+                "spec": {
+                    "connection_specification": {
+                        "$schema": "http://json-schema.org/draft-07/schema#",
+                        "type": "object",
+                        "required": ["api_key"],
+                        "properties": {
+                            "api_key": {
+                                "type": "string",
+                                "title": "API Key",
+                                "airbyte_secret": True,
+                            }
+                        },
+                        "additionalProperties": True,
+                    },
+                    "documentation_url": "https://example.org",
+                    "type": "Spec",
+                },
+            },
+            (
+                _create_page({"rates": [{"ABC": 0}, {"AED": 1}], "_metadata": {"next": "next"}}),
+                _create_page({"rates": [{"USD": 2}], "_metadata": {"next": "next"}}),
+            )
+            * 10,
+            [
+                {"ABC": 0, "added_field_key": "added_field_value"},
+                {"AED": 1, "added_field_key": "added_field_value"},
+            ],
+            [call({}, {}, None)],
+        ),
+        (
+            "test_read_manifest_with_flatten_fields",
+            {
+                "version": "0.34.2",
+                "type": "DeclarativeSource",
+                "check": {"type": "CheckStream", "stream_names": ["Rates"]},
+                "streams": [
+                    {
+                        "type": "DeclarativeStream",
+                        "name": "Rates",
+                        "primary_key": [],
+                        "schema_loader": {
+                            "type": "InlineSchemaLoader",
+                            "schema": {
+                                "$schema": "http://json-schema.org/schema#",
+                                "properties": {
+                                    "ABC": {"type": "number"},
+                                    "AED": {"type": "number"},
+                                },
+                                "type": "object",
+                            },
+                        },
+                        "transformations": [{"type": "FlattenFields"}],
+                        "retriever": {
+                            "type": "SimpleRetriever",
+                            "requester": {
+                                "type": "HttpRequester",
+                                "url_base": "https://api.apilayer.com",
+                                "path": "/exchangerates_data/latest",
+                                "http_method": "GET",
+                                "request_parameters": {},
+                                "request_headers": {},
+                                "request_body_json": {},
+                                "authenticator": {
+                                    "type": "ApiKeyAuthenticator",
+                                    "header": "apikey",
+                                    "api_token": "{{ config['api_key'] }}",
+                                },
+                            },
+                            "record_selector": {
+                                "type": "RecordSelector",
+                                "extractor": {"type": "DpathExtractor", "field_path": ["rates"]},
+                            },
+                            "paginator": {"type": "NoPagination"},
+                        },
+                    }
+                ],
+                "spec": {
+                    "connection_specification": {
+                        "$schema": "http://json-schema.org/draft-07/schema#",
+                        "type": "object",
+                        "required": ["api_key"],
+                        "properties": {
+                            "api_key": {
+                                "type": "string",
+                                "title": "API Key",
+                                "airbyte_secret": True,
+                            }
+                        },
+                        "additionalProperties": True,
+                    },
+                    "documentation_url": "https://example.org",
+                    "type": "Spec",
+                },
+            },
+            (
+                _create_page(
+                    {
+                        "rates": [
+                            {"nested_fields": {"ABC": 0}, "id": 1},
+                            {"nested_fields": {"AED": 1}, "id": 2},
+                        ],
+                        "_metadata": {"next": "next"},
+                    }
+                ),
+                _create_page({"rates": [{"USD": 2}], "_metadata": {"next": "next"}}),
+            )
+            * 10,
+            [
+                {"ABC": 0, "id": 1},
+                {"AED": 1, "id": 2},
+            ],
+            [call({}, {}, None)],
+        ),
+        (
+            "test_read_with_pagination_no_partitions",
+            {
+                "version": "0.34.2",
+                "type": "DeclarativeSource",
+                "check": {"type": "CheckStream", "stream_names": ["Rates"]},
+                "streams": [
+                    {
+                        "type": "DeclarativeStream",
+                        "name": "Rates",
+                        "primary_key": [],
+                        "schema_loader": {
+                            "type": "InlineSchemaLoader",
+                            "schema": {
+                                "$schema": "http://json-schema.org/schema#",
+                                "properties": {
+                                    "ABC": {"type": "number"},
+                                    "AED": {"type": "number"},
+                                    "USD": {"type": "number"},
+                                },
+                                "type": "object",
+                            },
+                        },
+                        "retriever": {
+                            "type": "SimpleRetriever",
+                            "requester": {
+                                "type": "HttpRequester",
+                                "url_base": "https://api.apilayer.com",
+                                "path": "/exchangerates_data/latest",
+                                "http_method": "GET",
+                                "request_parameters": {},
+                                "request_headers": {},
+                                "request_body_json": {},
+                                "authenticator": {
+                                    "type": "ApiKeyAuthenticator",
+                                    "header": "apikey",
+                                    "api_token": "{{ config['api_key'] }}",
+                                },
+                            },
+                            "record_selector": {
+                                "type": "RecordSelector",
+                                "extractor": {"type": "DpathExtractor", "field_path": ["rates"]},
+                            },
+                            "paginator": {
+                                "type": "DefaultPaginator",
+                                "page_size": 2,
+                                "page_size_option": {
+                                    "inject_into": "request_parameter",
+                                    "field_name": "page_size",
+                                },
+                                "page_token_option": {"inject_into": "path", "type": "RequestPath"},
+                                "pagination_strategy": {
+                                    "type": "CursorPagination",
+                                    "cursor_value": "{{ response._metadata.next }}",
+                                    "page_size": 2,
+                                },
+                            },
+                        },
+                    }
+                ],
+                "spec": {
+                    "connection_specification": {
+                        "$schema": "http://json-schema.org/draft-07/schema#",
+                        "type": "object",
+                        "required": ["api_key"],
+                        "properties": {
+                            "api_key": {
+                                "type": "string",
+                                "title": "API Key",
+                                "airbyte_secret": True,
+                            }
+                        },
+                        "additionalProperties": True,
+                    },
+                    "documentation_url": "https://example.org",
+                    "type": "Spec",
+                },
+            },
+            (
+                _create_page({"rates": [{"ABC": 0}, {"AED": 1}], "_metadata": {"next": "next"}}),
+                _create_page({"rates": [{"USD": 2}], "_metadata": {}}),
+            )
+            * 10,
+            [{"ABC": 0}, {"AED": 1}, {"USD": 2}],
+            [
+                call({}, {}, None),
+                call({}, {}, {"next_page_token": "next"}),
+            ],
+        ),
+        (
+            "test_no_pagination_with_partition_router",
+            {
+                "version": "0.34.2",
+                "type": "DeclarativeSource",
+                "check": {"type": "CheckStream", "stream_names": ["Rates"]},
+                "streams": [
+                    {
+                        "type": "DeclarativeStream",
+                        "name": "Rates",
+                        "primary_key": [],
+                        "schema_loader": {
+                            "type": "InlineSchemaLoader",
+                            "schema": {
+                                "$schema": "http://json-schema.org/schema#",
+                                "properties": {
+                                    "ABC": {"type": "number"},
+                                    "AED": {"type": "number"},
+                                    "partition": {"type": "number"},
+                                },
+                                "type": "object",
+                            },
+                        },
+                        "retriever": {
+                            "type": "SimpleRetriever",
+                            "requester": {
+                                "type": "HttpRequester",
+                                "url_base": "https://api.apilayer.com",
+                                "path": "/exchangerates_data/latest",
+                                "http_method": "GET",
+                                "request_parameters": {},
+                                "request_headers": {},
+                                "request_body_json": {},
+                                "authenticator": {
+                                    "type": "ApiKeyAuthenticator",
+                                    "header": "apikey",
+                                    "api_token": "{{ config['api_key'] }}",
+                                },
+                            },
+                            "partition_router": {
+                                "type": "ListPartitionRouter",
+                                "values": ["0", "1"],
+                                "cursor_field": "partition",
+                            },
+                            "record_selector": {
+                                "type": "RecordSelector",
+                                "extractor": {"type": "DpathExtractor", "field_path": ["rates"]},
+                            },
+                            "paginator": {"type": "NoPagination"},
+                        },
+                    }
+                ],
+                "spec": {
+                    "connection_specification": {
+                        "$schema": "http://json-schema.org/draft-07/schema#",
+                        "type": "object",
+                        "required": ["api_key"],
+                        "properties": {
+                            "api_key": {
+                                "type": "string",
+                                "title": "API Key",
+                                "airbyte_secret": True,
+                            }
+                        },
+                        "additionalProperties": True,
+                    },
+                    "documentation_url": "https://example.org",
+                    "type": "Spec",
+                },
+            },
+            (
+                _create_page(
+                    {
+                        "rates": [{"ABC": 0, "partition": 0}, {"AED": 1, "partition": 0}],
+                        "_metadata": {"next": "next"},
+                    }
+                ),
+                _create_page(
+                    {"rates": [{"ABC": 2, "partition": 1}], "_metadata": {"next": "next"}}
+                ),
+            ),
+            [{"ABC": 0, "partition": 0}, {"AED": 1, "partition": 0}, {"ABC": 2, "partition": 1}],
+            [
+                call({}, {"partition": "0"}, None),
+                call({}, {"partition": "1"}, None),
+            ],
+        ),
+        (
+            "test_with_pagination_and_partition_router",
+            {
+                "version": "0.34.2",
+                "type": "DeclarativeSource",
+                "check": {"type": "CheckStream", "stream_names": ["Rates"]},
+                "streams": [
+                    {
+                        "type": "DeclarativeStream",
+                        "name": "Rates",
+                        "primary_key": [],
+                        "schema_loader": {
+                            "type": "InlineSchemaLoader",
+                            "schema": {
+                                "$schema": "http://json-schema.org/schema#",
+                                "properties": {
+                                    "ABC": {"type": "number"},
+                                    "AED": {"type": "number"},
+                                    "partition": {"type": "number"},
+                                },
+                                "type": "object",
+                            },
+                        },
+                        "retriever": {
+                            "type": "SimpleRetriever",
+                            "requester": {
+                                "type": "HttpRequester",
+                                "url_base": "https://api.apilayer.com",
+                                "path": "/exchangerates_data/latest",
+                                "http_method": "GET",
+                                "request_parameters": {},
+                                "request_headers": {},
+                                "request_body_json": {},
+                                "authenticator": {
+                                    "type": "ApiKeyAuthenticator",
+                                    "header": "apikey",
+                                    "api_token": "{{ config['api_key'] }}",
+                                },
+                            },
+                            "partition_router": {
+                                "type": "ListPartitionRouter",
+                                "values": ["0", "1"],
+                                "cursor_field": "partition",
+                            },
+                            "record_selector": {
+                                "type": "RecordSelector",
+                                "extractor": {"type": "DpathExtractor", "field_path": ["rates"]},
+                            },
+                            "paginator": {
+                                "type": "DefaultPaginator",
+                                "page_size": 2,
+                                "page_size_option": {
+                                    "inject_into": "request_parameter",
+                                    "field_name": "page_size",
+                                },
+                                "page_token_option": {"inject_into": "path", "type": "RequestPath"},
+                                "pagination_strategy": {
+                                    "type": "CursorPagination",
+                                    "cursor_value": "{{ response._metadata.next }}",
+                                    "page_size": 2,
+                                },
+                            },
+                        },
+                    }
+                ],
+                "spec": {
+                    "connection_specification": {
+                        "$schema": "http://json-schema.org/draft-07/schema#",
+                        "type": "object",
+                        "required": ["api_key"],
+                        "properties": {
+                            "api_key": {
+                                "type": "string",
+                                "title": "API Key",
+                                "airbyte_secret": True,
+                            }
+                        },
+                        "additionalProperties": True,
+                    },
+                    "documentation_url": "https://example.org",
+                    "type": "Spec",
+                },
+            },
+            (
+                _create_page(
+                    {
+                        "rates": [{"ABC": 0, "partition": 0}, {"AED": 1, "partition": 0}],
+                        "_metadata": {"next": "next"},
+                    }
+                ),
+                _create_page({"rates": [{"USD": 3, "partition": 0}], "_metadata": {}}),
+                _create_page({"rates": [{"ABC": 2, "partition": 1}], "_metadata": {}}),
+            ),
+            [
+                {"ABC": 0, "partition": 0},
+                {"AED": 1, "partition": 0},
+                {"USD": 3, "partition": 0},
+                {"ABC": 2, "partition": 1},
+            ],
+            [
+                call({}, {"partition": "0"}, None),
+                call({}, {"partition": "0"}, {"next_page_token": "next"}),
+                call({}, {"partition": "1"}, None),
+            ],
+        ),
+    ],
+)
+def test_read_concurrent_declarative_source(
+    test_name, manifest, pages, expected_records, expected_calls
+):
+    _stream_name = "Rates"
+    with patch.object(SimpleRetriever, "_fetch_next_page", side_effect=pages) as mock_retriever:
+        output_data = [
+            message.record.data for message in _run_read(manifest, _stream_name) if message.record
+        ]
+        assert output_data == expected_records
+        mock_retriever.assert_has_calls(expected_calls)
+
+
+def test_only_parent_streams_use_cache():
+    applications_stream = {
+        "type": "DeclarativeStream",
+        "$parameters": {
+            "name": "applications",
+            "primary_key": "id",
+            "url_base": "https://harvest.greenhouse.io/v1/",
+        },
+        "schema_loader": {
+            "name": "{{ parameters.stream_name }}",
+            "file_path": "./source_sendgrid/schemas/{{ parameters.name }}.yaml",
+        },
+        "retriever": {
+            "paginator": {
+                "type": "DefaultPaginator",
+                "page_size": 10,
+                "page_size_option": {
+                    "type": "RequestOption",
+                    "inject_into": "request_parameter",
+                    "field_name": "per_page",
+                },
+                "page_token_option": {"type": "RequestPath"},
+                "pagination_strategy": {
+                    "type": "CursorPagination",
+                    "cursor_value": "{{ headers['link']['next']['url'] }}",
+                    "stop_condition": "{{ 'next' not in headers['link'] }}",
+                    "page_size": 100,
+                },
+            },
+            "requester": {
+                "path": "applications",
+                "authenticator": {
+                    "type": "BasicHttpAuthenticator",
+                    "username": "{{ config['api_key'] }}",
+                },
+            },
+            "record_selector": {"extractor": {"type": "DpathExtractor", "field_path": []}},
+        },
+    }
+
+    manifest = {
+        "version": "0.29.3",
+        "definitions": {},
+        "streams": [
+            deepcopy(applications_stream),
+            {
+                "type": "DeclarativeStream",
+                "$parameters": {
+                    "name": "applications_interviews",
+                    "primary_key": "id",
+                    "url_base": "https://harvest.greenhouse.io/v1/",
+                },
+                "schema_loader": {
+                    "name": "{{ parameters.stream_name }}",
+                    "file_path": "./source_sendgrid/schemas/{{ parameters.name }}.yaml",
+                },
+                "retriever": {
+                    "paginator": {
+                        "type": "DefaultPaginator",
+                        "page_size": 10,
+                        "page_size_option": {
+                            "type": "RequestOption",
+                            "inject_into": "request_parameter",
+                            "field_name": "per_page",
+                        },
+                        "page_token_option": {"type": "RequestPath"},
+                        "pagination_strategy": {
+                            "type": "CursorPagination",
+                            "cursor_value": "{{ headers['link']['next']['url'] }}",
+                            "stop_condition": "{{ 'next' not in headers['link'] }}",
+                            "page_size": 100,
+                        },
+                    },
+                    "requester": {
+                        "path": "applications_interviews",
+                        "authenticator": {
+                            "type": "BasicHttpAuthenticator",
+                            "username": "{{ config['api_key'] }}",
+                        },
+                    },
+                    "record_selector": {"extractor": {"type": "DpathExtractor", "field_path": []}},
+                    "partition_router": {
+                        "parent_stream_configs": [
+                            {
+                                "parent_key": "id",
+                                "partition_field": "parent_id",
+                                "stream": deepcopy(applications_stream),
+                            }
+                        ],
+                        "type": "SubstreamPartitionRouter",
+                    },
+                },
+            },
+            {
+                "type": "DeclarativeStream",
+                "$parameters": {
+                    "name": "jobs",
+                    "primary_key": "id",
+                    "url_base": "https://harvest.greenhouse.io/v1/",
+                },
+                "schema_loader": {
+                    "name": "{{ parameters.stream_name }}",
+                    "file_path": "./source_sendgrid/schemas/{{ parameters.name }}.yaml",
+                },
+                "retriever": {
+                    "paginator": {
+                        "type": "DefaultPaginator",
+                        "page_size": 10,
+                        "page_size_option": {
+                            "type": "RequestOption",
+                            "inject_into": "request_parameter",
+                            "field_name": "per_page",
+                        },
+                        "page_token_option": {"type": "RequestPath"},
+                        "pagination_strategy": {
+                            "type": "CursorPagination",
+                            "cursor_value": "{{ headers['link']['next']['url'] }}",
+                            "stop_condition": "{{ 'next' not in headers['link'] }}",
+                            "page_size": 100,
+                        },
+                    },
+                    "requester": {
+                        "path": "jobs",
+                        "authenticator": {
+                            "type": "BasicHttpAuthenticator",
+                            "username": "{{ config['api_key'] }}",
+                        },
+                    },
+                    "record_selector": {"extractor": {"type": "DpathExtractor", "field_path": []}},
+                },
+            },
+        ],
+        "check": {"type": "CheckStream", "stream_names": ["applications"]},
+    }
+    source = ConcurrentDeclarativeSource(
+        source_config=manifest, config={}, catalog=create_catalog("lists"), state=None
+    )
+
+    streams = source.streams({})
+    assert len(streams) == 3
+
+    # Main stream with caching (parent for substream `applications_interviews`)
+    stream_0 = streams[0]
+    assert stream_0.name == "applications"
+    assert isinstance(stream_0, DefaultStream)
+    assert stream_0._stream_partition_generator._partition_factory._retriever.requester.use_cache
+
+    # Substream
+    stream_1 = streams[1]
+    assert stream_1.name == "applications_interviews"
+    assert isinstance(stream_1, DefaultStream)
+    assert (
+        not stream_1._stream_partition_generator._partition_factory._retriever.requester.use_cache
+    )
+
+    # Parent stream created for substream
+    assert (
+        stream_1._stream_partition_generator._stream_slicer.parent_stream_configs[0].stream.name
+        == "applications"
+    )
+    assert stream_1._stream_partition_generator._stream_slicer.parent_stream_configs[
+        0
+    ].stream._stream_partition_generator._partition_factory._retriever.requester.use_cache
+
+    # Main stream without caching
+    stream_2 = streams[2]
+    assert stream_2.name == "jobs"
+    assert isinstance(stream_2, DefaultStream)
+    assert (
+        not stream_2._stream_partition_generator._partition_factory._retriever.requester.use_cache
+    )
+
+
+def _run_read(manifest: Mapping[str, Any], stream_name: str) -> List[AirbyteMessage]:
+    source = ConcurrentDeclarativeSource(
+        source_config=manifest, config={}, catalog=create_catalog("lists"), state=None
+    )
+    catalog = ConfiguredAirbyteCatalog(
+        streams=[
+            ConfiguredAirbyteStream(
+                stream=AirbyteStream(
+                    name=stream_name, json_schema={}, supported_sync_modes=[SyncMode.full_refresh]
+                ),
+                sync_mode=SyncMode.full_refresh,
+                destination_sync_mode=DestinationSyncMode.append,
+            )
+        ]
+    )
+    return list(source.read(logger, {}, catalog, {}))
+
+
+def test_declarative_component_schema_valid_ref_links():
+    def load_yaml(file_path) -> Mapping[str, Any]:
+        with open(file_path, "r") as file:
+            return yaml.safe_load(file)
+
+    def extract_refs(data, base_path="#") -> List[str]:
+        refs = []
+        if isinstance(data, dict):
+            for key, value in data.items():
+                if key == "$ref" and isinstance(value, str) and value.startswith("#"):
+                    ref_path = value
+                    refs.append(ref_path)
+                else:
+                    refs.extend(extract_refs(value, base_path))
+        elif isinstance(data, list):
+            for item in data:
+                refs.extend(extract_refs(item, base_path))
+        return refs
+
+    def resolve_pointer(data: Mapping[str, Any], pointer: str) -> bool:
+        parts = pointer.split("/")[1:]  # Skip the first empty part due to leading '#/'
+        current = data
+        try:
+            for part in parts:
+                part = part.replace("~1", "/").replace("~0", "~")  # Unescape JSON Pointer
+                current = current[part]
+            return True
+        except (KeyError, TypeError):
+            return False
+
+    def validate_refs(yaml_file: str) -> List[str]:
+        data = load_yaml(yaml_file)
+        refs = extract_refs(data)
+        invalid_refs = [ref for ref in refs if not resolve_pointer(data, ref.replace("#", ""))]
+        return invalid_refs
+
+    yaml_file_path = (
+        Path(__file__).resolve().parent.parent.parent.parent
+        / "airbyte_cdk/sources/declarative/declarative_component_schema.yaml"
+    )
+    assert not validate_refs(yaml_file_path)
+
+
+@pytest.mark.parametrize(
+    "test_name, manifest, pages, expected_states_qty",
+    [
+        (
+            "test_with_pagination_and_partition_router",
+            {
+                "version": "0.34.2",
+                "type": "DeclarativeSource",
+                "check": {"type": "CheckStream", "stream_names": ["Rates"]},
+                "streams": [
+                    {
+                        "type": "DeclarativeStream",
+                        "name": "Rates",
+                        "primary_key": [],
+                        "schema_loader": {
+                            "type": "InlineSchemaLoader",
+                            "schema": {
+                                "$schema": "http://json-schema.org/schema#",
+                                "properties": {
+                                    "ABC": {"type": "number"},
+                                    "AED": {"type": "number"},
+                                    "partition": {"type": "number"},
+                                },
+                                "type": "object",
+                            },
+                        },
+                        "retriever": {
+                            "type": "SimpleRetriever",
+                            "requester": {
+                                "type": "HttpRequester",
+                                "url_base": "https://api.apilayer.com",
+                                "path": "/exchangerates_data/latest",
+                                "http_method": "GET",
+                                "request_parameters": {},
+                                "request_headers": {},
+                                "request_body_json": {},
+                                "authenticator": {
+                                    "type": "ApiKeyAuthenticator",
+                                    "header": "apikey",
+                                    "api_token": "{{ config['api_key'] }}",
+                                },
+                            },
+                            "partition_router": {
+                                "type": "ListPartitionRouter",
+                                "values": ["0", "1"],
+                                "cursor_field": "partition",
+                            },
+                            "record_selector": {
+                                "type": "RecordSelector",
+                                "extractor": {"type": "DpathExtractor", "field_path": ["rates"]},
+                            },
+                            "paginator": {
+                                "type": "DefaultPaginator",
+                                "page_size": 2,
+                                "page_size_option": {
+                                    "inject_into": "request_parameter",
+                                    "field_name": "page_size",
+                                },
+                                "page_token_option": {"inject_into": "path", "type": "RequestPath"},
+                                "pagination_strategy": {
+                                    "type": "CursorPagination",
+                                    "cursor_value": "{{ response._metadata.next }}",
+                                    "page_size": 2,
+                                },
+                            },
+                        },
+                        "incremental_sync": {
+                            "type": "DatetimeBasedCursor",
+                            "cursor_datetime_formats": ["%Y-%m-%dT%H:%M:%S.%fZ"],
+                            "datetime_format": "%Y-%m-%dT%H:%M:%S.%fZ",
+                            "cursor_field": "updated_at",
+                            "start_datetime": {
+                                "datetime": "{{ config.get('start_date', '2020-10-16T00:00:00.000Z') }}"
+                            },
+                        },
+                    }
+                ],
+                "spec": {
+                    "connection_specification": {
+                        "$schema": "http://json-schema.org/draft-07/schema#",
+                        "type": "object",
+                        "required": ["api_key"],
+                        "properties": {
+                            "api_key": {
+                                "type": "string",
+                                "title": "API Key",
+                                "airbyte_secret": True,
+                            },
+                            "start_date": {
+                                "title": "Start Date",
+                                "description": "UTC date and time in the format YYYY-MM-DDTHH:MM:SS.000Z. During incremental sync, any data generated before this date will not be replicated. If left blank, the start date will be set to 2 years before the present date.",
+                                "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$",
+                                "pattern_descriptor": "YYYY-MM-DDTHH:MM:SS.000Z",
+                                "examples": ["2020-11-16T00:00:00.000Z"],
+                                "type": "string",
+                                "format": "date-time",
+                            },
+                        },
+                        "additionalProperties": True,
+                    },
+                    "documentation_url": "https://example.org",
+                    "type": "Spec",
+                },
+            },
+            (
+                _create_page(
+                    {
+                        "rates": [
+                            {"ABC": 0, "partition": 0, "updated_at": "2020-11-16T00:00:00.000Z"},
+                            {"AED": 1, "partition": 0, "updated_at": "2020-11-16T00:00:00.000Z"},
+                        ],
+                        "_metadata": {"next": "next"},
+                    }
+                ),
+                _create_page(
+                    {
+                        "rates": [
+                            {"USD": 3, "partition": 0, "updated_at": "2020-11-16T00:00:00.000Z"}
+                        ],
+                        "_metadata": {},
+                    }
+                ),
+                _create_page(
+                    {
+                        "rates": [
+                            {"ABC": 2, "partition": 1, "updated_at": "2020-11-16T00:00:00.000Z"}
+                        ],
+                        "_metadata": {},
+                    }
+                ),
+            ),
+            2,
+        ),
+    ],
+)
+def test_slice_checkpoint(test_name, manifest, pages, expected_states_qty):
+    _stream_name = "Rates"
+    with patch.object(SimpleRetriever, "_fetch_next_page", side_effect=pages):
+        states = [message.state for message in _run_read(manifest, _stream_name) if message.state]
+        assert len(states) == expected_states_qty
+
+
+@pytest.fixture
+def migration_mocks(monkeypatch):
+    mock_message_repository = Mock()
+    mock_message_repository.consume_queue.return_value = [Mock()]
+
+    _mock_open = mock_open()
+    mock_json_dump = Mock()
+    mock_print = Mock()
+    mock_serializer_dump = Mock()
+
+    mock_decoded_bytes = Mock()
+    mock_decoded_bytes.decode.return_value = "decoded_message"
+    mock_orjson_dumps = Mock(return_value=mock_decoded_bytes)
+
+    monkeypatch.setattr("builtins.open", _mock_open)
+    monkeypatch.setattr("json.dump", mock_json_dump)
+    monkeypatch.setattr("builtins.print", mock_print)
+    monkeypatch.setattr(
+        "airbyte_cdk.models.airbyte_protocol_serializers.AirbyteMessageSerializer.dump",
+        mock_serializer_dump,
+    )
+    monkeypatch.setattr(
+        "airbyte_cdk.sources.declarative.concurrent_declarative_source.orjson.dumps",
+        mock_orjson_dumps,
+    )
+
+    return {
+        "message_repository": mock_message_repository,
+        "open": _mock_open,
+        "json_dump": mock_json_dump,
+        "print": mock_print,
+        "serializer_dump": mock_serializer_dump,
+        "orjson_dumps": mock_orjson_dumps,
+        "decoded_bytes": mock_decoded_bytes,
+    }
+
+
+def test_given_unmigrated_config_when_migrating_then_config_is_migrated(migration_mocks) -> None:
+    input_config = {"planet": "CRSC"}
+
+    manifest = {
+        "version": "0.34.2",
+        "type": "DeclarativeSource",
+        "check": {"type": "CheckStream", "stream_names": ["Test"]},
+        "streams": [
+            {
+                "type": "DeclarativeStream",
+                "name": "Test",
+                "schema_loader": {
+                    "type": "InlineSchemaLoader",
+                    "schema": {"type": "object"},
+                },
+                "retriever": {
+                    "type": "SimpleRetriever",
+                    "requester": {
+                        "type": "HttpRequester",
+                        "url_base": "https://example.org",
+                        "path": "/test",
+                        "authenticator": {"type": "NoAuth"},
+                    },
+                    "record_selector": {
+                        "type": "RecordSelector",
+                        "extractor": {"type": "DpathExtractor", "field_path": []},
+                    },
+                },
+            }
+        ],
+        "spec": {
+            "type": "Spec",
+            "documentation_url": "https://example.org",
+            "connection_specification": {},
+            "config_normalization_rules": {
+                "type": "ConfigNormalizationRules",
+                "config_migrations": [
+                    {
+                        "type": "ConfigMigration",
+                        "description": "Test migration",
+                        "transformations": [
+                            {
+                                "type": "ConfigRemapField",
+                                "map": {"CRSC": "Coruscant"},
+                                "field_path": ["planet"],
+                            }
+                        ],
+                    }
+                ],
+            },
+        },
+    }
+
+    ConcurrentDeclarativeSource(
+        source_config=manifest,
+        config=input_config,
+        config_path="/fake/config/path",
+        catalog=create_catalog("lists"),
+        state=None,
+    )
+
+    migration_mocks["open"].assert_called_once_with("/fake/config/path", "w")
+    migration_mocks["json_dump"].assert_called_once()
+    migration_mocks["print"].assert_called()
+    migration_mocks["serializer_dump"].assert_called()
+    migration_mocks["orjson_dumps"].assert_called()
+    migration_mocks["decoded_bytes"].decode.assert_called()
+
+
+def test_given_already_migrated_config_no_control_message_is_emitted(migration_mocks) -> None:
+    input_config = {"planet": "Coruscant"}
+
+    manifest = {
+        "version": "0.34.2",
+        "type": "DeclarativeSource",
+        "check": {"type": "CheckStream", "stream_names": ["Test"]},
+        "streams": [
+            {
+                "type": "DeclarativeStream",
+                "name": "Test",
+                "schema_loader": {
+                    "type": "InlineSchemaLoader",
+                    "schema": {"type": "object"},
+                },
+                "retriever": {
+                    "type": "SimpleRetriever",
+                    "requester": {
+                        "type": "HttpRequester",
+                        "url_base": "https://example.org",
+                        "path": "/test",
+                        "authenticator": {"type": "NoAuth"},
+                    },
+                    "record_selector": {
+                        "type": "RecordSelector",
+                        "extractor": {"type": "DpathExtractor", "field_path": []},
+                    },
+                },
+            }
+        ],
+        "spec": {
+            "type": "Spec",
+            "documentation_url": "https://example.org",
+            "connection_specification": {},
+            "config_normalization_rules": {
+                "type": "ConfigNormalizationRules",
+                "config_migrations": [
+                    {
+                        "type": "ConfigMigration",
+                        "description": "Test migration",
+                        "transformations": [
+                            {
+                                "type": "ConfigRemapField",
+                                "map": {"CRSC": "Coruscant"},
+                                "field_path": ["planet"],
+                            }
+                        ],
+                    }
+                ],
+            },
+        },
+    }
+
+    ConcurrentDeclarativeSource(
+        source_config=manifest,
+        config=input_config,
+        config_path="/fake/config/path",
+        catalog=create_catalog("lists"),
+        state=None,
+    )
+
+    migration_mocks["open"].assert_not_called()
+    migration_mocks["json_dump"].assert_not_called()
+    migration_mocks["print"].assert_not_called()
+    migration_mocks["serializer_dump"].assert_not_called()
+    migration_mocks["orjson_dumps"].assert_not_called()
+    migration_mocks["decoded_bytes"].decode.assert_not_called()
+
+
+def test_given_transformations_config_is_transformed():
+    input_config = {"planet": "CRSC"}
+
+    manifest = {
+        "version": "0.34.2",
+        "type": "DeclarativeSource",
+        "check": {"type": "CheckStream", "stream_names": ["Test"]},
+        "streams": [
+            {
+                "type": "DeclarativeStream",
+                "name": "Test",
+                "schema_loader": {
+                    "type": "InlineSchemaLoader",
+                    "schema": {"type": "object"},
+                },
+                "retriever": {
+                    "type": "SimpleRetriever",
+                    "requester": {
+                        "type": "HttpRequester",
+                        "url_base": "https://example.org",
+                        "path": "/test",
+                        "authenticator": {"type": "NoAuth"},
+                    },
+                    "record_selector": {
+                        "type": "RecordSelector",
+                        "extractor": {"type": "DpathExtractor", "field_path": []},
+                    },
+                },
+            }
+        ],
+        "spec": {
+            "type": "Spec",
+            "documentation_url": "https://example.org",
+            "connection_specification": {},
+            "config_normalization_rules": {
+                "type": "ConfigNormalizationRules",
+                "transformations": [
+                    {
+                        "type": "ConfigAddFields",
+                        "fields": [
+                            {
+                                "type": "AddedFieldDefinition",
+                                "path": ["population"],
+                                "value": "{{ config['planet'] }}",
+                            }
+                        ],
+                    },
+                    {
+                        "type": "ConfigRemapField",
+                        "map": {"CRSC": "Coruscant"},
+                        "field_path": ["planet"],
+                    },
+                    {
+                        "type": "ConfigRemapField",
+                        "map": {"CRSC": 3_000_000_000_000},
+                        "field_path": ["population"],
+                    },
+                ],
+            },
+        },
+    }
+
+    source = ConcurrentDeclarativeSource(
+        source_config=manifest,
+        config=input_config,
+        catalog=create_catalog("lists"),
+        state=None,
+    )
+
+    source.write_config = Mock(return_value=None)
+
+    config = source.configure(input_config, "/fake/temp/dir")
+
+    assert config != input_config
+    assert config == {"planet": "Coruscant", "population": 3_000_000_000_000}
+
+
+def test_given_valid_config_streams_validates_config_and_does_not_raise():
+    input_config = {"schema_to_validate": {"planet": "Coruscant"}}
+
+    manifest = {
+        "version": "0.34.2",
+        "type": "DeclarativeSource",
+        "check": {"type": "CheckStream", "stream_names": ["Test"]},
+        "streams": [
+            {
+                "type": "DeclarativeStream",
+                "name": "Test",
+                "schema_loader": {
+                    "type": "InlineSchemaLoader",
+                    "schema": {"type": "object"},
+                },
+                "retriever": {
+                    "type": "SimpleRetriever",
+                    "requester": {
+                        "type": "HttpRequester",
+                        "url_base": "https://example.org",
+                        "path": "/test",
+                        "authenticator": {"type": "NoAuth"},
+                    },
+                    "record_selector": {
+                        "type": "RecordSelector",
+                        "extractor": {"type": "DpathExtractor", "field_path": []},
+                    },
+                },
+            }
+        ],
+        "spec": {
+            "type": "Spec",
+            "documentation_url": "https://example.org",
+            "connection_specification": {},
+            "parameters": {},
+            "config_normalization_rules": {
+                "type": "ConfigNormalizationRules",
+                "validations": [
+                    {
+                        "type": "DpathValidator",
+                        "field_path": ["schema_to_validate"],
+                        "validation_strategy": {
+                            "type": "ValidateAdheresToSchema",
+                            "base_schema": {
+                                "$schema": "http://json-schema.org/draft-07/schema#",
+                                "title": "Test Spec",
+                                "type": "object",
+                                "properties": {"planet": {"type": "string"}},
+                                "required": ["planet"],
+                                "additionalProperties": False,
+                            },
+                        },
+                    }
+                ],
+            },
+        },
+    }
+
+    source = ConcurrentDeclarativeSource(
+        source_config=manifest,
+        config=input_config,
+        catalog=create_catalog("lists"),
+        state=None,
+    )
+
+    source.streams(input_config)
+
+
+def test_given_invalid_config_streams_validates_config_and_raises():
+    input_config = {"schema_to_validate": {"will_fail": "Coruscant"}}
+
+    manifest = {
+        "version": "0.34.2",
+        "type": "DeclarativeSource",
+        "check": {"type": "CheckStream", "stream_names": ["Test"]},
+        "streams": [
+            {
+                "type": "DeclarativeStream",
+                "name": "Test",
+                "schema_loader": {
+                    "type": "InlineSchemaLoader",
+                    "schema": {"type": "object"},
+                },
+                "retriever": {
+                    "type": "SimpleRetriever",
+                    "requester": {
+                        "type": "HttpRequester",
+                        "url_base": "https://example.org",
+                        "path": "/test",
+                        "authenticator": {"type": "NoAuth"},
+                    },
+                    "record_selector": {
+                        "type": "RecordSelector",
+                        "extractor": {"type": "DpathExtractor", "field_path": []},
+                    },
+                },
+            }
+        ],
+        "spec": {
+            "type": "Spec",
+            "documentation_url": "https://example.org",
+            "connection_specification": {},
+            "parameters": {},
+            "config_normalization_rules": {
+                "type": "ConfigNormalizationRules",
+                "validations": [
+                    {
+                        "type": "DpathValidator",
+                        "field_path": ["schema_to_validate"],
+                        "validation_strategy": {
+                            "type": "ValidateAdheresToSchema",
+                            "base_schema": {
+                                "$schema": "http://json-schema.org/draft-07/schema#",
+                                "title": "Test Spec",
+                                "type": "object",
+                                "properties": {"planet": {"type": "string"}},
+                                "required": ["planet"],
+                                "additionalProperties": False,
+                            },
+                        },
+                    }
+                ],
+            },
+        },
+    }
+    source = ConcurrentDeclarativeSource(
+        source_config=manifest,
+        config=input_config,
+        catalog=create_catalog("lists"),
+        state=None,
+    )
+
+    with pytest.raises(ValueError):
+        source.streams(input_config)
+
+
+def test_parameter_propagation_for_concurrent_cursor():
+    cursor_field_parameter_override = "created_at"
+    manifest = {
+        "version": "5.0.0",
+        "definitions": {
+            "selector": {
+                "type": "RecordSelector",
+                "extractor": {"type": "DpathExtractor", "field_path": []},
+            },
+            "requester": {
+                "type": "HttpRequester",
+                "url_base": "https://persona.metaverse.com",
+                "http_method": "GET",
+            },
+            "retriever": {
+                "type": "SimpleRetriever",
+                "record_selector": {"$ref": "#/definitions/selector"},
+                "paginator": {"type": "NoPagination"},
+                "requester": {"$ref": "#/definitions/requester"},
+            },
+            "incremental_cursor": {
+                "type": "DatetimeBasedCursor",
+                "start_datetime": {"datetime": "2024-01-01"},
+                "end_datetime": "2024-12-31",
+                "datetime_format": "%Y-%m-%d",
+                "cursor_datetime_formats": ["%Y-%m-%d"],
+                "cursor_granularity": "P1D",
+                "step": "P400D",
+                "cursor_field": "{{ parameters.get('cursor_field',  'updated_at') }}",
+                "start_time_option": {
+                    "type": "RequestOption",
+                    "field_name": "start",
+                    "inject_into": "request_parameter",
+                },
+                "end_time_option": {
+                    "type": "RequestOption",
+                    "field_name": "end",
+                    "inject_into": "request_parameter",
+                },
+            },
+            "base_stream": {"retriever": {"$ref": "#/definitions/retriever"}},
+            "incremental_stream": {
+                "retriever": {
+                    "$ref": "#/definitions/retriever",
+                    "requester": {"$ref": "#/definitions/requester"},
+                },
+                "incremental_sync": {"$ref": "#/definitions/incremental_cursor"},
+                "$parameters": {
+                    "name": "stream_name",
+                    "primary_key": "id",
+                    "path": "/path",
+                    "cursor_field": cursor_field_parameter_override,
+                },
+                "schema_loader": {
+                    "type": "InlineSchemaLoader",
+                    "schema": {
+                        "$schema": "https://json-schema.org/draft-07/schema#",
+                        "type": "object",
+                        "properties": {
+                            "id": {
+                                "description": "The identifier",
+                                "type": ["null", "string"],
+                            },
+                        },
+                    },
+                },
+            },
+        },
+        "streams": [
+            "#/definitions/incremental_stream",
+        ],
+        "check": {"stream_names": ["stream_name"]},
+        "concurrency_level": {
+            "type": "ConcurrencyLevel",
+            "default_concurrency": "{{ config['num_workers'] or 10 }}",
+            "max_concurrency": 25,
+        },
+    }
+
+    source = ConcurrentDeclarativeSource(
+        source_config=manifest,
+        config={},
+        catalog=create_catalog("stream_name"),
+        state=None,
+    )
+    streams = source.streams({})
+
+    assert streams[0].cursor.cursor_field.cursor_field_key == cursor_field_parameter_override

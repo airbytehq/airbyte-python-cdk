@@ -174,24 +174,6 @@ class CustomErrorHandler(BaseModel):
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
 
-class CustomIncrementalSync(BaseModel):
-    class Config:
-        extra = Extra.allow
-
-    type: Literal["CustomIncrementalSync"]
-    class_name: str = Field(
-        ...,
-        description="Fully-qualified name of the class that will be implementing the custom incremental sync. The format is `source_<name>.<package>.<class_name>`.",
-        examples=["source_railz.components.MyCustomIncrementalSync"],
-        title="Class Name",
-    )
-    cursor_field: str = Field(
-        ...,
-        description="The location of the value on a record that will be used as a bookmark during sync.",
-    )
-    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
-
-
 class CustomPaginationStrategy(BaseModel):
     class Config:
         extra = Extra.allow
@@ -1463,11 +1445,9 @@ class ComponentMappingDefinition(BaseModel):
         ...,
         description="A list of potentially nested fields indicating the full path where value will be added or updated.",
         examples=[
-            ["data"],
-            ["data", "records"],
-            ["data", 1, "name"],
-            ["data", "{{ components_values.name }}"],
-            ["data", "*", "record"],
+            ["name"],
+            ["retriever", "requester", "url"],
+            ["retriever", "requester", "{{ components_values.field }}"],
             ["*", "**", "name"],
         ],
         title="Field Path",
@@ -2434,9 +2414,7 @@ class DeclarativeStream(BaseModel):
         description="Component used to coordinate how records are extracted across stream slices and request pages.",
         title="Retriever",
     )
-    incremental_sync: Optional[
-        Union[DatetimeBasedCursor, IncrementingCountCursor, CustomIncrementalSync]
-    ] = Field(
+    incremental_sync: Optional[Union[DatetimeBasedCursor, IncrementingCountCursor]] = Field(
         None,
         description="Component used to fetch data incrementally based on a time field in the data.",
         title="Incremental Sync",

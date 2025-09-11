@@ -8,6 +8,7 @@ from copy import deepcopy
 
 import pytest
 
+from airbyte_cdk.models import Status
 from airbyte_cdk.sources.declarative.concurrent_declarative_source import (
     ConcurrentDeclarativeSource,
 )
@@ -109,23 +110,23 @@ _MANIFEST = {
     [
         pytest.param(
             404,
-            False,
+            Status.FAILED,
             True,
             ["Not found. The requested resource was not found on the server."],
             id="test_stream_unavailable_unhandled_error",
         ),
         pytest.param(
             403,
-            False,
+            Status.FAILED,
             True,
             ["Forbidden. You don't have permission to access this resource."],
             id="test_stream_unavailable_handled_error",
         ),
-        pytest.param(200, True, True, [], id="test_stream_available"),
-        pytest.param(200, True, False, [], id="test_stream_available"),
+        pytest.param(200, Status.SUCCEEDED, True, [], id="test_stream_available"),
+        pytest.param(200, Status.SUCCEEDED, False, [], id="test_stream_available"),
         pytest.param(
             401,
-            False,
+            Status.FAILED,
             True,
             ["Unauthorized. Please ensure you are authenticated correctly."],
             id="test_stream_unauthorized_error",
@@ -160,10 +161,10 @@ def test_check_dynamic_stream(
             state=None,
         )
 
-        stream_is_available, reason = source.check_connection(logger, _CONFIG)
+        connection_status = source.check(logger, _CONFIG)
 
         http_mocker.assert_number_of_calls(item_request, item_request_count)
 
-    assert stream_is_available == available_expectation
+    assert connection_status.status == available_expectation
     for message in expected_messages:
-        assert message in reason
+        assert message in connection_status.message

@@ -6,7 +6,6 @@ import json
 from collections import defaultdict
 from dataclasses import InitVar, dataclass, field
 from functools import partial
-from itertools import islice
 from typing import (
     Any,
     Callable,
@@ -23,22 +22,15 @@ from typing import (
 )
 
 import requests
-from pydantic import BaseModel
 from requests import Response
 from typing_extensions import deprecated
 
+from airbyte_cdk.legacy.sources.declarative.incremental import ResumableFullRefreshCursor
+from airbyte_cdk.legacy.sources.declarative.incremental.declarative_cursor import DeclarativeCursor
 from airbyte_cdk.models import AirbyteMessage
 from airbyte_cdk.sources.declarative.decoders import JsonDecoder
 from airbyte_cdk.sources.declarative.extractors.http_selector import HttpSelector
-from airbyte_cdk.sources.declarative.incremental import (
-    DatetimeBasedCursor,
-    ResumableFullRefreshCursor,
-)
-from airbyte_cdk.sources.declarative.incremental.declarative_cursor import DeclarativeCursor
 from airbyte_cdk.sources.declarative.interpolation import InterpolatedString
-from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
-    CustomIncrementalSync as CustomIncrementalSyncModel,
-)
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     CustomRequester as CustomRequesterModel,
 )
@@ -67,6 +59,7 @@ from airbyte_cdk.sources.declarative.parsers.component_constructor import (
 from airbyte_cdk.sources.declarative.partition_routers.single_partition_router import (
     SinglePartitionRouter,
 )
+from airbyte_cdk.sources.declarative.partition_routers import PartitionRouter
 from airbyte_cdk.sources.declarative.requesters.paginators.no_pagination import NoPagination
 from airbyte_cdk.sources.declarative.requesters.paginators.paginator import Paginator
 from airbyte_cdk.sources.declarative.requesters.query_properties import QueryProperties
@@ -88,6 +81,8 @@ from airbyte_cdk.sources.types import Config, Record, StreamSlice, StreamState
 from airbyte_cdk.utils.mapping_helpers import combine_mappings
 
 FULL_REFRESH_SYNC_COMPLETE_KEY = "__ab_full_refresh_sync_complete"
+
+_NO_STREAM_SLICING = SinglePartitionRouter(parameters={})
 
 
 @dataclass
@@ -140,22 +135,18 @@ class SimpleRetriever(Retriever, ComponentConstructor[SimpleRetrieverModel]):
         model: SimpleRetrieverModel,
         additional_flags: AdditionalFlags,
         incremental_sync: Optional[
-            Union[
-                IncrementingCountCursorModel, DatetimeBasedCursorModel, CustomIncrementalSyncModel
-            ]
+            Union[IncrementingCountCursorModel, DatetimeBasedCursorModel]
         ] = None,
         name: Optional[str] = None,
     ) -> bool:
-        if name is None:
-            raise ValueError(f"name argument is required to instance a {cls.__name__}")
         if (
-            model.partition_router
-            and isinstance(model.partition_router, SubstreamPartitionRouterModel)
-            and not bool(additional_flags.connector_state_manager.get_stream_state(name, None))
-            and any(
-                parent_stream_config.lazy_read_pointer
-                for parent_stream_config in model.partition_router.parent_stream_configs
-            )
+                model.partition_router
+                and isinstance(model.partition_router, SubstreamPartitionRouterModel)
+                and not bool(additional_flags.connector_state_manager.get_stream_state(name, None))
+                and any(
+                    parent_stream_config.lazy_read_pointer
+                    for parent_stream_config in model.partition_router.parent_stream_configs
+        )
         ):
             if incremental_sync:
                 if incremental_sync.type != "DatetimeBasedCursor":
@@ -186,25 +177,23 @@ class SimpleRetriever(Retriever, ComponentConstructor[SimpleRetrieverModel]):
         *,
         name: Optional[str] = None,
         primary_key: Optional[Union[str, List[str], List[List[str]]]] = None,
-        stream_slicer: Optional[StreamSlicer] = None,
         request_options_provider: Optional[RequestOptionsProvider] = None,
         stop_condition_cursor: Optional[Cursor] = None,
         client_side_incremental_sync: Optional[Dict[str, Any]] = None,
-        transformations: Optional[List[RecordTransformation]] = None,
+        transformations: Optional[RecordTransformation] = None,
         file_uploader: Optional[DefaultFileUploader] = None,
         incremental_sync: Optional[
-            Union[
-                IncrementingCountCursorModel, DatetimeBasedCursorModel, CustomIncrementalSyncModel
-            ]
+            Union[IncrementingCountCursorModel, DatetimeBasedCursorModel]
         ] = None,
         use_cache: Optional[bool] = None,
         log_formatter: Optional[Callable[[Response], Any]] = None,
+        partition_router: Optional[PartitionRouter] = None,
         **kwargs: Any,
     ) -> Mapping[str, Any]:
         if name is None:
             raise ValueError(f"name argument is required to instance a {cls.__name__}")
 
-        def _get_url() -> str:
+        def _get_url(req: Requester) -> str:
             """
             Closure to get the URL from the requester. This is used to get the URL in the case of a lazy retriever.
             This is needed because the URL is not set until the requester is created.
@@ -213,12 +202,12 @@ class SimpleRetriever(Retriever, ComponentConstructor[SimpleRetrieverModel]):
             _url: str = (
                 model.requester.url
                 if hasattr(model.requester, "url") and model.requester.url is not None
-                else requester.get_url()
+                else req.get_url(stream_state=None, stream_slice=None, next_page_token=None)
             )
             _url_base: str = (
                 model.requester.url_base
                 if hasattr(model.requester, "url_base") and model.requester.url_base is not None
-                else requester.get_url_base()
+                else req.get_url_base(stream_state=None, stream_slice=None, next_page_token=None)
             )
 
             return _url or _url_base
@@ -332,36 +321,18 @@ class SimpleRetriever(Retriever, ComponentConstructor[SimpleRetrieverModel]):
             config=config,
         )
 
-        # Define cursor only if per partition or common incremental support is needed
-        cursor = stream_slicer if isinstance(stream_slicer, DeclarativeCursor) else None
-
-        if (
-            not isinstance(stream_slicer, DatetimeBasedCursor)
-            or type(stream_slicer) is not DatetimeBasedCursor
-        ):
-            # Many of the custom component implementations of DatetimeBasedCursor override get_request_params() (or other methods).
-            # Because we're decoupling RequestOptionsProvider from the Cursor, custom components will eventually need to reimplement
-            # their own RequestOptionsProvider. However, right now the existing StreamSlicer/Cursor still can act as the SimpleRetriever's
-            # request_options_provider
-            request_options_provider = stream_slicer or DefaultRequestOptionsProvider(parameters={})
-        elif not request_options_provider:
+        if not request_options_provider:
             request_options_provider = DefaultRequestOptionsProvider(parameters={})
-
-        stream_slicer = stream_slicer or SinglePartitionRouter(parameters={})
-        if additional_flags.should_limit_slices_fetched:
-            stream_slicer = cast(
-                StreamSlicer,
-                StreamSlicerTestReadDecorator(
-                    wrapped_slicer=stream_slicer,
-                    maximum_number_of_slices=additional_flags.limit_slices_fetched or 5,
-                ),
-            )
+        if isinstance(request_options_provider, DefaultRequestOptionsProvider) and isinstance(
+                partition_router, PartitionRouter
+        ):
+            request_options_provider = partition_router
 
         paginator = (
             dependency_constructor(
                 model=model.paginator,
                 config=config,
-                url_base=_get_url(),
+                url_base=_get_url(requester),
                 extractor_model=model.record_selector.extractor,
                 decoder=decoder,
                 cursor_used_for_stop_condition=stop_condition_cursor or None,
@@ -371,7 +342,7 @@ class SimpleRetriever(Retriever, ComponentConstructor[SimpleRetrieverModel]):
         )
 
         ignore_stream_slicer_parameters_on_paginated_requests = (
-            model.ignore_stream_slicer_parameters_on_paginated_requests or False
+                model.ignore_stream_slicer_parameters_on_paginated_requests or False
         )
 
         resolved_dependencies = {
@@ -380,9 +351,9 @@ class SimpleRetriever(Retriever, ComponentConstructor[SimpleRetrieverModel]):
             "primary_key": primary_key,
             "requester": requester,
             "record_selector": record_selector,
-            "stream_slicer": stream_slicer,
+            "stream_slicer": _NO_STREAM_SLICING,
             "request_option_provider": request_options_provider,
-            "cursor": cursor,
+            "cursor": None,
             "config": config,
             "ignore_stream_slicer_parameters_on_paginated_requests": ignore_stream_slicer_parameters_on_paginated_requests,
             "parameters": model.parameters or {},
@@ -906,6 +877,12 @@ class SimpleRetriever(Retriever, ComponentConstructor[SimpleRetrieverModel]):
         """
         return self.stream_slicer.stream_slices()
 
+    # todo: There are a number of things that can be cleaned up when we remove self.cursor and all the related
+    #  SimpleRetriever state management that is handled by the concurrent CDK Framework:
+    #  - ModelToComponentFactory.create_datetime_based_cursor() should be removed since it does need to be instantiated
+    #  - ModelToComponentFactory.create_incrementing_count_cursor() should be removed since it's a placeholder
+    #  - test_simple_retriever.py: Remove all imports and usages of legacy cursor components
+    #  - test_model_to_component_factory.py:test_datetime_based_cursor() test can be removed
     @property
     def state(self) -> Mapping[str, Any]:
         return self.cursor.get_stream_state() if self.cursor else {}

@@ -10,20 +10,21 @@ from unittest.mock import MagicMock, Mock, patch
 import pytest
 import requests
 
-from airbyte_cdk import YamlDeclarativeSource
-from airbyte_cdk.models import AirbyteLogMessage, AirbyteMessage, Level, SyncMode, Type
-from airbyte_cdk.sources.declarative.auth.declarative_authenticator import NoAuth
-from airbyte_cdk.sources.declarative.decoders import JsonDecoder
-from airbyte_cdk.sources.declarative.extractors import DpathExtractor, RecordSelector
-from airbyte_cdk.sources.declarative.incremental import (
+from airbyte_cdk.legacy.sources.declarative.incremental import (
     DatetimeBasedCursor,
     DeclarativeCursor,
     ResumableFullRefreshCursor,
 )
-from airbyte_cdk.sources.declarative.models import DeclarativeStream as DeclarativeStreamModel
-from airbyte_cdk.sources.declarative.parsers.model_to_component_factory import (
-    ModelToComponentFactory,
+from airbyte_cdk.models import (
+    AirbyteLogMessage,
+    AirbyteMessage,
+    Level,
+    SyncMode,
+    Type,
 )
+from airbyte_cdk.sources.declarative.auth.declarative_authenticator import NoAuth
+from airbyte_cdk.sources.declarative.decoders import JsonDecoder
+from airbyte_cdk.sources.declarative.extractors import DpathExtractor, RecordSelector
 from airbyte_cdk.sources.declarative.partition_routers import SinglePartitionRouter
 from airbyte_cdk.sources.declarative.requesters.paginators import DefaultPaginator
 from airbyte_cdk.sources.declarative.requesters.paginators.strategies import (
@@ -263,120 +264,6 @@ def test_simple_retriever_resumable_full_refresh_cursor_page_increment(
     assert len(actual_records) == 3
     assert actual_records == expected_records[5:]
     assert retriever.state == {"__ab_full_refresh_sync_complete": True}
-
-
-@pytest.mark.parametrize(
-    "initial_state, expected_reset_value, expected_next_page",
-    [
-        pytest.param(None, None, 1, id="test_initial_sync_no_state"),
-        pytest.param(
-            {
-                "next_page_token": "https://for-all-mankind.nasa.com/api/v1/astronauts?next_page=tracy_stevens"
-            },
-            "https://for-all-mankind.nasa.com/api/v1/astronauts?next_page=tracy_stevens",
-            "https://for-all-mankind.nasa.com/api/v1/astronauts?next_page=gordo_stevens",
-            id="test_reset_with_next_page_token",
-        ),
-    ],
-)
-def test_simple_retriever_resumable_full_refresh_cursor_reset_cursor_pagination(
-    initial_state, expected_reset_value, expected_next_page, requests_mock
-):
-    expected_records = [
-        Record(data={"name": "ed_baldwin"}, associated_slice=None, stream_name="users"),
-        Record(data={"name": "danielle_poole"}, associated_slice=None, stream_name="users"),
-        Record(data={"name": "tracy_stevens"}, associated_slice=None, stream_name="users"),
-        Record(data={"name": "deke_slayton"}, associated_slice=None, stream_name="users"),
-        Record(data={"name": "molly_cobb"}, associated_slice=None, stream_name="users"),
-        Record(data={"name": "gordo_stevens"}, associated_slice=None, stream_name="users"),
-        Record(data={"name": "margo_madison"}, associated_slice=None, stream_name="users"),
-        Record(data={"name": "ellen_waverly"}, associated_slice=None, stream_name="users"),
-    ]
-
-    content = """
-name: users
-type: DeclarativeStream
-retriever:
-  type: SimpleRetriever
-  decoder:
-    type: JsonDecoder
-  paginator:
-    type: "DefaultPaginator"
-    page_token_option:
-      type: RequestPath
-    pagination_strategy:
-      type: "CursorPagination"
-      cursor_value: "{{ response.next_page }}"
-  requester:
-    path: /astronauts
-    type: HttpRequester
-    url_base: "https://for-all-mankind.nasa.com/api/v1"
-    http_method: GET
-    authenticator:
-      type: ApiKeyAuthenticator
-      api_token: "{{ config['api_key'] }}"
-      inject_into:
-        type: RequestOption
-        field_name: Api-Key
-        inject_into: header
-    request_headers: {}
-    request_body_json: {}
-  record_selector:
-    type: RecordSelector
-    extractor:
-      type: DpathExtractor
-      field_path: ["data"]
-  partition_router: []
-primary_key: []
-    """
-
-    factory = ModelToComponentFactory()
-    stream_manifest = YamlDeclarativeSource._parse(content)
-    stream = factory.create_component(
-        model_type=DeclarativeStreamModel, component_definition=stream_manifest, config={}
-    )
-    response_body = {
-        "data": [r.data for r in expected_records[:5]],
-        "next_page": "https://for-all-mankind.nasa.com/api/v1/astronauts?next_page=gordo_stevens",
-    }
-    requests_mock.get("https://for-all-mankind.nasa.com/api/v1/astronauts", json=response_body)
-    requests_mock.get(
-        "https://for-all-mankind.nasa.com/astronauts?next_page=tracy_stevens", json=response_body
-    )
-    response_body_2 = {
-        "data": [r.data for r in expected_records[5:]],
-    }
-    requests_mock.get(
-        "https://for-all-mankind.nasa.com/api/v1/astronauts?next_page=gordo_stevens",
-        json=response_body_2,
-    )
-    stream_slicer = ResumableFullRefreshCursor(parameters={})
-    if initial_state:
-        stream_slicer.set_initial_state(initial_state)
-    stream.retriever.stream_slices = stream_slicer
-    stream.retriever.cursor = stream_slicer
-    stream_slice = list(stream_slicer.stream_slices())[0]
-    actual_records = [
-        r for r in stream.retriever.read_records(records_schema={}, stream_slice=stream_slice)
-    ]
-
-    assert len(actual_records) == 5
-    assert actual_records == expected_records[:5]
-    assert stream.retriever.state == {
-        "next_page_token": "https://for-all-mankind.nasa.com/api/v1/astronauts?next_page=gordo_stevens"
-    }
-    requests_mock.get(
-        "https://for-all-mankind.nasa.com/astronauts?next_page=tracy_stevens", json=response_body
-    )
-    requests_mock.get(
-        "https://for-all-mankind.nasa.com/astronauts?next_page=gordo_stevens", json=response_body_2
-    )
-    actual_records = [
-        r for r in stream.retriever.read_records(records_schema={}, stream_slice=stream_slice)
-    ]
-    assert len(actual_records) == 3
-    assert actual_records == expected_records[5:]
-    assert stream.retriever.state == {"__ab_full_refresh_sync_complete": True}
 
 
 def test_simple_retriever_resumable_full_refresh_cursor_reset_skip_completed_stream():
