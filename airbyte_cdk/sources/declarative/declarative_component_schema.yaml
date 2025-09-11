@@ -1593,7 +1593,7 @@ definitions:
               - "$ref": "#/definitions/HttpRequester"
               - "$ref": "#/definitions/CustomRequester"
           download_target_extractor:
-            description: Responsible for fetching the url where the file is located. This is applied on each records and not on the HTTP response
+            description: Responsible for fetching the final result `urls` provided by the completed / finished / ready async job.
             anyOf:
               - "$ref": "#/definitions/DpathExtractor"
               - "$ref": "#/definitions/CustomRecordExtractor"
