@@ -632,6 +632,10 @@ from airbyte_cdk.sources.streams.concurrent.state_converters.incrementing_count_
 from airbyte_cdk.sources.streams.http.error_handlers.response_models import ResponseAction
 from airbyte_cdk.sources.types import Config
 from airbyte_cdk.sources.utils.transform import TransformConfig, TypeTransformer
+from airbyte_cdk.sources.declarative.parsers.component_constructor import (
+    AdditionalFlags,
+    ComponentConstructor,
+)
 
 ComponentDefinition = Mapping[str, Any]
 
