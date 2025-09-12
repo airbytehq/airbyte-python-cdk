@@ -4,8 +4,6 @@ from typing import List
 from unittest import TestCase
 from unittest.mock import Mock
 
-# This allows for the global total_record_counter to be reset between tests
-import airbyte_cdk.sources.declarative.stream_slicers.declarative_partition_generator as declarative_partition_generator
 from airbyte_cdk.models import AirbyteLogMessage, AirbyteMessage, Level, Type
 from airbyte_cdk.sources.declarative.retrievers import Retriever
 from airbyte_cdk.sources.declarative.schema import InlineSchemaLoader
@@ -35,7 +33,7 @@ class StreamSlicerPartitionGeneratorTest(TestCase):
     def test_given_multiple_slices_partition_generator_uses_the_same_retriever(self) -> None:
         retriever = self._mock_retriever([])
         message_repository = Mock(spec=MessageRepository)
-        partition_factory = declarative_partition_generator.DeclarativePartitionFactory(
+        partition_factory = DeclarativePartitionFactory(
             _STREAM_NAME,
             _SCHEMA_LOADER,
             retriever,
@@ -50,7 +48,7 @@ class StreamSlicerPartitionGeneratorTest(TestCase):
     def test_given_a_mapping_when_read_then_yield_record(self) -> None:
         retriever = self._mock_retriever([_A_RECORD])
         message_repository = Mock(spec=MessageRepository)
-        partition_factory = declarative_partition_generator.DeclarativePartitionFactory(
+        partition_factory = DeclarativePartitionFactory(
             _STREAM_NAME,
             _SCHEMA_LOADER,
             retriever,
@@ -68,7 +66,7 @@ class StreamSlicerPartitionGeneratorTest(TestCase):
     def test_given_not_a_record_when_read_then_send_to_message_repository(self) -> None:
         retriever = self._mock_retriever([_AIRBYTE_LOG_MESSAGE])
         message_repository = Mock(spec=MessageRepository)
-        partition_factory = declarative_partition_generator.DeclarativePartitionFactory(
+        partition_factory = DeclarativePartitionFactory(
             _STREAM_NAME,
             _SCHEMA_LOADER,
             retriever,
@@ -80,8 +78,6 @@ class StreamSlicerPartitionGeneratorTest(TestCase):
         message_repository.emit_message.assert_called_once_with(_AIRBYTE_LOG_MESSAGE)
 
     def test_max_records_reached_stops_reading(self) -> None:
-        declarative_partition_generator.total_record_counter = 0
-
         expected_records = [
             Record(data={"id": 1, "name": "Max"}, stream_name="stream_name"),
             Record(data={"id": 1, "name": "Oscar"}, stream_name="stream_name"),
@@ -97,7 +93,7 @@ class StreamSlicerPartitionGeneratorTest(TestCase):
 
         retriever = self._mock_retriever(mock_records)
         message_repository = Mock(spec=MessageRepository)
-        partition_factory = declarative_partition_generator.DeclarativePartitionFactory(
+        partition_factory = DeclarativePartitionFactory(
             _STREAM_NAME,
             _SCHEMA_LOADER,
             retriever,
@@ -113,8 +109,6 @@ class StreamSlicerPartitionGeneratorTest(TestCase):
         assert actual_records == expected_records
 
     def test_max_records_reached_on_previous_partition(self) -> None:
-        declarative_partition_generator.total_record_counter = 0
-
         expected_records = [
             Record(data={"id": 1, "name": "Max"}, stream_name="stream_name"),
             Record(data={"id": 1, "name": "Oscar"}, stream_name="stream_name"),
@@ -128,7 +122,7 @@ class StreamSlicerPartitionGeneratorTest(TestCase):
 
         retriever = self._mock_retriever(mock_records)
         message_repository = Mock(spec=MessageRepository)
-        partition_factory = declarative_partition_generator.DeclarativePartitionFactory(
+        partition_factory = DeclarativePartitionFactory(
             _STREAM_NAME,
             _SCHEMA_LOADER,
             retriever,
@@ -150,6 +144,55 @@ class StreamSlicerPartitionGeneratorTest(TestCase):
         # the max_records_limit has already been reached. So we only expect to see read_records()
         # called for the first partition read and not the second
         retriever.read_records.assert_called_once()
+
+    def test_record_counter_isolation_between_different_factories(self) -> None:
+        """Test that record counters are isolated between different DeclarativePartitionFactory instances."""
+
+        # Create mock records that exceed the limit
+        records = [
+            Record(data={"id": 1, "name": "Record1"}, stream_name="stream_name"),
+            Record(data={"id": 2, "name": "Record2"}, stream_name="stream_name"),
+            Record(
+                data={"id": 3, "name": "Record3"}, stream_name="stream_name"
+            ),  # Should be blocked by limit
+        ]
+
+        # Create first factory with record limit of 2
+        retriever1 = self._mock_retriever(records)
+        message_repository1 = Mock(spec=MessageRepository)
+        factory1 = DeclarativePartitionFactory(
+            _STREAM_NAME,
+            _SCHEMA_LOADER,
+            retriever1,
+            message_repository1,
+            max_records_limit=2,
+        )
+
+        # First factory should read up to limit (2 records)
+        partition1 = factory1.create(_A_STREAM_SLICE)
+        first_factory_records = list(partition1.read())
+        assert len(first_factory_records) == 2
+
+        # Create second factory with same limit - should be independent
+        retriever2 = self._mock_retriever(records)
+        message_repository2 = Mock(spec=MessageRepository)
+        factory2 = DeclarativePartitionFactory(
+            _STREAM_NAME,
+            _SCHEMA_LOADER,
+            retriever2,
+            message_repository2,
+            max_records_limit=2,
+        )
+
+        # Second factory should also be able to read up to limit (2 records)
+        # This would fail before the fix because record counter was global
+        partition2 = factory2.create(_A_STREAM_SLICE)
+        second_factory_records = list(partition2.read())
+        assert len(second_factory_records) == 2
+
+        # Verify both retrievers were called (confirming isolation)
+        retriever1.read_records.assert_called_once()
+        retriever2.read_records.assert_called_once()
 
     @staticmethod
     def _mock_retriever(read_return_value: List[StreamData]) -> Mock:

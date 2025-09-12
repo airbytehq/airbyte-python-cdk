@@ -50,12 +50,6 @@ class SinglePartitionRouter(PartitionRouter):
     def stream_slices(self) -> Iterable[StreamSlice]:
         yield StreamSlice(partition={}, cursor_slice={})
 
-    def set_initial_state(self, stream_state: StreamState) -> None:
-        """
-        SinglePartitionRouter doesn't have parent streams
-        """
-        pass
-
     def get_stream_state(self) -> Optional[Mapping[str, StreamState]]:
         """
         SinglePartitionRouter doesn't have parent streams

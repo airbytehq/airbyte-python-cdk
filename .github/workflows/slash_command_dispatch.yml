@@ -8,6 +8,14 @@ jobs:
   slashCommandDispatch:
     runs-on: ubuntu-24.04
     steps:
+      - name: Authenticate as GitHub App
+        uses: actions/create-github-app-token@v2
+        id: get-app-token
+        with:
+          owner: "airbytehq"
+          repositories: "airbyte-python-cdk"
+          app-id: ${{ secrets.OCTAVIA_BOT_APP_ID }}
+          private-key: ${{ secrets.OCTAVIA_BOT_PRIVATE_KEY }}
       - name: Slash Command Dispatch
         id: dispatch
         # TODO: Revert to `peter-evans/slash-command-dispatch@v4` after PR merges:
@@ -15,7 +23,7 @@ jobs:
         uses: aaronsteers/slash-command-dispatch@aj/fix/add-dispatched-bool-output
         with:
           repository: ${{ github.repository }}
-          token: ${{ secrets.GH_PAT_MAINTENANCE_OCTAVIA }}
+          token: ${{ steps.get-app-token.outputs.token }}
           dispatch-type: workflow
           issue-type: both
 

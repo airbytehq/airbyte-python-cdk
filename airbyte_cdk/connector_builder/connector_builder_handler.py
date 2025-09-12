@@ -19,8 +19,6 @@ from airbyte_cdk.sources.declarative.concurrent_declarative_source import (
     ConcurrentDeclarativeSource,
     TestLimits,
 )
-from airbyte_cdk.sources.declarative.declarative_source import DeclarativeSource
-from airbyte_cdk.sources.declarative.manifest_declarative_source import ManifestDeclarativeSource
 from airbyte_cdk.utils.airbyte_secrets_utils import filter_secrets
 from airbyte_cdk.utils.datetime_helpers import ab_datetime_now
 from airbyte_cdk.utils.traced_exception import AirbyteTracedException
@@ -64,10 +62,10 @@ def should_normalize_manifest(config: Mapping[str, Any]) -> bool:
 
 def create_source(
     config: Mapping[str, Any],
-    limits: TestLimits,
-    catalog: Optional[ConfiguredAirbyteCatalog],
-    state: Optional[List[AirbyteStateMessage]],
-) -> ConcurrentDeclarativeSource[Optional[List[AirbyteStateMessage]]]:
+    limits: TestLimits | None = None,
+    catalog: ConfiguredAirbyteCatalog | None = None,
+    state: List[AirbyteStateMessage] | None = None,
+) -> ConcurrentDeclarativeSource:
     manifest = config["__injected_declarative_manifest"]
 
     # We enforce a concurrency level of 1 so that the stream is processed on a single thread
@@ -90,7 +88,7 @@ def create_source(
 
 
 def read_stream(
-    source: DeclarativeSource,
+    source: ConcurrentDeclarativeSource,
     config: Mapping[str, Any],
     configured_catalog: ConfiguredAirbyteCatalog,
     state: List[AirbyteStateMessage],
@@ -128,7 +126,9 @@ def read_stream(
         return error.as_airbyte_message()
 
 
-def resolve_manifest(source: ManifestDeclarativeSource) -> AirbyteMessage:
+def resolve_manifest(
+    source: ConcurrentDeclarativeSource,
+) -> AirbyteMessage:
     try:
         return AirbyteMessage(
             type=Type.RECORD,
@@ -145,7 +145,9 @@ def resolve_manifest(source: ManifestDeclarativeSource) -> AirbyteMessage:
         return error.as_airbyte_message()
 
 
-def full_resolve_manifest(source: ManifestDeclarativeSource, limits: TestLimits) -> AirbyteMessage:
+def full_resolve_manifest(
+    source: ConcurrentDeclarativeSource, limits: TestLimits
+) -> AirbyteMessage:
     try:
         manifest = {**source.resolved_manifest}
         streams = manifest.get("streams", [])

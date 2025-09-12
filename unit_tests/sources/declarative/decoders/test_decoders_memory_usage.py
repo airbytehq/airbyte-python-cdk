@@ -8,12 +8,12 @@ import os
 import pytest
 import requests
 
-from airbyte_cdk import YamlDeclarativeSource
 from airbyte_cdk.models import SyncMode
 from airbyte_cdk.sources.declarative.models import DeclarativeStream as DeclarativeStreamModel
 from airbyte_cdk.sources.declarative.parsers.model_to_component_factory import (
     ModelToComponentFactory,
 )
+from airbyte_cdk.sources.declarative.yaml_declarative_source import YamlDeclarativeSource
 
 
 @pytest.mark.slow

@@ -7,7 +7,7 @@ import traceback
 from dataclasses import InitVar, dataclass
 from typing import Any, Dict, List, Mapping, Optional, Tuple, Union
 
-from airbyte_cdk.sources.abstract_source import AbstractSource
+from airbyte_cdk.sources import Source
 from airbyte_cdk.sources.declarative.checks.connection_checker import ConnectionChecker
 from airbyte_cdk.sources.streams.concurrent.abstract_stream import AbstractStream
 from airbyte_cdk.sources.streams.core import Stream
@@ -64,7 +64,10 @@ class CheckStream(ConnectionChecker):
         return False, error_message
 
     def check_connection(
-        self, source: AbstractSource, logger: logging.Logger, config: Mapping[str, Any]
+        self,
+        source: Source,
+        logger: logging.Logger,
+        config: Mapping[str, Any],
     ) -> Tuple[bool, Any]:
         """Checks the connection to the source and its streams."""
         try:
@@ -118,7 +121,7 @@ class CheckStream(ConnectionChecker):
 
     def _check_dynamic_streams_availability(
         self,
-        source: AbstractSource,
+        source: Source,
         stream_name_to_stream: Dict[str, Union[Stream, AbstractStream]],
         logger: logging.Logger,
     ) -> Tuple[bool, Any]:

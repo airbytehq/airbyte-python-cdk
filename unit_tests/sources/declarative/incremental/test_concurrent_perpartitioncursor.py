@@ -20,15 +20,17 @@ from airbyte_cdk.sources.declarative.concurrent_declarative_source import (
     ConcurrentDeclarativeSource,
 )
 from airbyte_cdk.sources.declarative.incremental import ConcurrentPerPartitionCursor
+from airbyte_cdk.sources.declarative.partition_routers import ListPartitionRouter
 from airbyte_cdk.sources.declarative.schema import InlineSchemaLoader
 from airbyte_cdk.sources.declarative.stream_slicers.declarative_partition_generator import (
     DeclarativePartition,
+    RecordCounter,
 )
 from airbyte_cdk.sources.streams.concurrent.cursor import CursorField
 from airbyte_cdk.sources.streams.concurrent.state_converters.datetime_stream_state_converter import (
     CustomFormatConcurrentStreamStateConverter,
 )
-from airbyte_cdk.sources.types import StreamSlice
+from airbyte_cdk.sources.types import Record, StreamSlice
 from airbyte_cdk.test.catalog_builder import CatalogBuilder, ConfiguredAirbyteStreamBuilder
 from airbyte_cdk.test.entrypoint_wrapper import EntrypointOutput, read
 
@@ -298,10 +300,6 @@ SUBSTREAM_MANIFEST: MutableMapping[str, Any] = {
 }
 
 STREAM_NAME = "post_comment_votes"
-CONFIG = {
-    "start_date": "2024-01-01T00:00:01Z",
-    "credentials": {"email": "email", "api_token": "api_token"},
-}
 
 SUBSTREAM_MANIFEST_NO_DEPENDENCY = deepcopy(SUBSTREAM_MANIFEST)
 # Disable incremental_dependency
@@ -454,6 +452,10 @@ LOOKBACK_DATE = (
 ).isoformat() + "Z"
 
 PARTITION_SYNC_START_TIME = "2024-01-02T00:00:00Z"
+CONFIG = {
+    "start_date": START_DATE,
+    "credentials": {"email": "email", "api_token": "api_token"},
+}
 
 
 @pytest.mark.parametrize(
@@ -1119,6 +1121,11 @@ def run_incremental_parent_state_test(
 
         # Assert that the number of intermediate states is as expected
         assert len(intermediate_states) - 1 == num_intermediate_states
+        # Assert that ensure_at_least_one_state_emitted is called before yielding the last record from the last slice
+        assert (
+            intermediate_states[-1][0].stream.stream_state.__dict__["parent_state"]
+            == intermediate_states[-2][0].stream.stream_state.__dict__["parent_state"]
+        )
 
         # For each intermediate state, perform another read starting from that state
         for state, records_before_state in intermediate_states[:-1]:
@@ -1182,6 +1189,11 @@ def run_incremental_parent_state_test(
                 (
                     f"https://api.example.com/community/posts?per_page=100&start_time={PARENT_POSTS_CURSOR}&page=2",
                     {"posts": [{"id": 3, "updated_at": POST_3_UPDATED_AT}]},
+                ),
+                # FIXME this is an interesting case. The previous solution would not update the parent state until `ensure_at_least_one_state_emitted` but the concurrent cursor does just before which is probably fine too
+                (
+                    f"https://api.example.com/community/posts?per_page=100&start_time={POST_1_UPDATED_AT}",
+                    {"posts": [{"id": 1, "updated_at": POST_1_UPDATED_AT}]},
                 ),
                 # Fetch the first page of comments for post 1
                 (
@@ -1476,6 +1488,10 @@ def run_incremental_parent_state_test(
                         ]
                     },
                 ),
+                (
+                    f"https://api.example.com/community/posts?per_page=100&start_time={POST_1_UPDATED_AT}",
+                    {"posts": [{"id": 1, "updated_at": POST_1_UPDATED_AT}]},
+                ),
                 # Fetch the first page of comments for post 1
                 (
                     "https://api.example.com/community/posts/1/comments?per_page=100",
@@ -1617,6 +1633,10 @@ def run_incremental_parent_state_test(
                         ]
                     },
                 ),
+                (
+                    f"https://api.example.com/community/posts?per_page=100&start_time={POST_1_UPDATED_AT}",
+                    {"posts": [{"id": 1, "updated_at": POST_1_UPDATED_AT}]},
+                ),
                 # Fetch the first page of comments for post 1
                 (
                     "https://api.example.com/community/posts/1/comments?per_page=100",
@@ -1721,7 +1741,7 @@ def run_incremental_parent_state_test(
                         ],
                     }
                 },
-                "lookback_window": 1,
+                "lookback_window": 86400,
                 "use_global_cursor": False,
                 "states": [
                     {
@@ -2115,10 +2135,10 @@ def test_incremental_parent_state_migration(
                         "states": [
                             {
                                 "partition": {"id": 1, "parent_slice": {}},
-                                "cursor": {"updated_at": PARENT_COMMENT_CURSOR_PARTITION_1},
+                                "cursor": {"updated_at": START_DATE},
                             }
                         ],
-                        "state": {},
+                        "lookback_window": 0,
                         "use_global_cursor": False,
                         "parent_state": {"posts": {"updated_at": PARENT_POSTS_CURSOR}},
                     }
@@ -2315,7 +2335,7 @@ def test_incremental_parent_state_no_slices(
             },
             # Expected state
             {
-                "lookback_window": 1,
+                "lookback_window": 0,
                 "use_global_cursor": False,
                 "state": {"created_at": INITIAL_STATE_PARTITION_11_CURSOR},
                 "states": [
@@ -2580,16 +2600,22 @@ def test_incremental_parent_state_no_records(
             },
             # Expected state
             {
-                # The global state, lookback window and the parent state are the same because sync failed for comment 20
+                # The global state and lookback window are the same because sync failed for comment 20.
+                # The parent state will be updated up until the child records that were successful i.t. until post 2.
+                # Note that we still have an entry for the partition with post 2 but it is populated with the start date.
                 "parent_state": {
                     "post_comments": {
                         "states": [
                             {
                                 "partition": {"id": 1, "parent_slice": {}},
-                                "cursor": {"updated_at": PARENT_COMMENT_CURSOR_PARTITION_1},
-                            }
+                                "cursor": {"updated_at": COMMENT_10_UPDATED_AT},
+                            },
+                            {
+                                "partition": {"id": 2, "parent_slice": {}},
+                                "cursor": {"updated_at": START_DATE},
+                            },
                         ],
-                        "state": {},
+                        "lookback_window": 0,
                         "use_global_cursor": False,
                         "parent_state": {"posts": {"updated_at": PARENT_POSTS_CURSOR}},
                     }
@@ -3624,6 +3650,7 @@ def test_given_no_partitions_processed_when_close_partition_then_no_state_update
                 message_repository=MagicMock(),
                 max_records_limit=None,
                 stream_slice=slice,
+                record_counter=RecordCounter(),
             )
         )
 
@@ -3709,6 +3736,7 @@ def test_given_unfinished_first_parent_partition_no_parent_state_update():
                 message_repository=MagicMock(),
                 max_records_limit=None,
                 stream_slice=slice,
+                record_counter=RecordCounter(),
             )
         )
     cursor.ensure_at_least_one_state_emitted()
@@ -3804,6 +3832,7 @@ def test_given_unfinished_last_parent_partition_with_partial_parent_state_update
                 message_repository=MagicMock(),
                 max_records_limit=None,
                 stream_slice=slice,
+                record_counter=RecordCounter(),
             )
         )
     cursor.ensure_at_least_one_state_emitted()
@@ -3894,6 +3923,7 @@ def test_given_all_partitions_finished_when_close_partition_then_final_state_emi
                 message_repository=MagicMock(),
                 max_records_limit=None,
                 stream_slice=slice,
+                record_counter=RecordCounter(),
             )
         )
 
@@ -3904,7 +3934,7 @@ def test_given_all_partitions_finished_when_close_partition_then_final_state_emi
     assert len(final_state["states"]) == 2
     assert final_state["state"]["updated_at"] == "2024-01-02T00:00:00Z"
     assert final_state["parent_state"] == {"posts": {"updated_at": "2024-01-06T00:00:00Z"}}
-    assert final_state["lookback_window"] == 1
+    assert final_state["lookback_window"] == 86400
     assert cursor._message_repository.emit_message.call_count == 2
     assert mock_cursor.stream_slices.call_count == 2  # Called once for each partition
 
@@ -3968,6 +3998,7 @@ def test_given_partition_limit_exceeded_when_close_partition_then_switch_to_glob
                 message_repository=MagicMock(),
                 max_records_limit=None,
                 stream_slice=slice,
+                record_counter=RecordCounter(),
             )
         )
     cursor.ensure_at_least_one_state_emitted()
@@ -4053,6 +4084,7 @@ def test_semaphore_cleanup():
                 message_repository=MagicMock(),
                 max_records_limit=None,
                 stream_slice=s,
+                record_counter=RecordCounter(),
             )
         )
 
@@ -4173,6 +4205,7 @@ def test_duplicate_partition_after_closing_partition_cursor_deleted():
             message_repository=MagicMock(),
             max_records_limit=None,
             stream_slice=first_1,
+            record_counter=RecordCounter(),
         )
     )
 
@@ -4185,6 +4218,7 @@ def test_duplicate_partition_after_closing_partition_cursor_deleted():
             message_repository=MagicMock(),
             max_records_limit=None,
             stream_slice=two,
+            record_counter=RecordCounter(),
         )
     )
 
@@ -4197,6 +4231,7 @@ def test_duplicate_partition_after_closing_partition_cursor_deleted():
             message_repository=MagicMock(),
             max_records_limit=None,
             stream_slice=second_1,
+            record_counter=RecordCounter(),
         )
     )
 
@@ -4258,6 +4293,7 @@ def test_duplicate_partition_after_closing_partition_cursor_exists():
             message_repository=MagicMock(),
             max_records_limit=None,
             stream_slice=first_1,
+            record_counter=RecordCounter(),
         )
     )
 
@@ -4270,6 +4306,7 @@ def test_duplicate_partition_after_closing_partition_cursor_exists():
             message_repository=MagicMock(),
             max_records_limit=None,
             stream_slice=two,
+            record_counter=RecordCounter(),
         )
     )
 
@@ -4283,6 +4320,7 @@ def test_duplicate_partition_after_closing_partition_cursor_exists():
             message_repository=MagicMock(),
             max_records_limit=None,
             stream_slice=second_1,
+            record_counter=RecordCounter(),
         )
     )
 
@@ -4341,6 +4379,7 @@ def test_duplicate_partition_while_processing():
             message_repository=MagicMock(),
             max_records_limit=None,
             stream_slice=generated[1],
+            record_counter=RecordCounter(),
         )
     )
     # Now close the initial “1”
@@ -4352,6 +4391,7 @@ def test_duplicate_partition_while_processing():
             message_repository=MagicMock(),
             max_records_limit=None,
             stream_slice=generated[0],
+            record_counter=RecordCounter(),
         )
     )
 
@@ -4361,3 +4401,34 @@ def test_duplicate_partition_while_processing():
     assert len(cursor._processing_partitions_indexes) == 0
     assert len(cursor._partition_key_to_index) == 0
     assert len(cursor._partitions_done_generating_stream_slices) == 0
+
+
+def test_given_record_with_bad_cursor_value_the_global_state_parsing_does_not_break_sync():
+    cursor_factory_mock = MagicMock()
+    cursor_factory_mock.create.side_effect = [_make_inner_cursor("2024-01-01T00:00:00Z")]
+    cursor = ConcurrentPerPartitionCursor(
+        cursor_factory=MagicMock(),
+        partition_router=ListPartitionRouter(
+            values=["1"], cursor_field="partition_id", config={}, parameters={}
+        ),
+        stream_name="test_stream",
+        stream_namespace=None,
+        stream_state={},
+        message_repository=MagicMock(),
+        connector_state_manager=MagicMock(),
+        connector_state_converter=CustomFormatConcurrentStreamStateConverter(
+            datetime_format="%Y-%m-%dT%H:%M:%SZ",
+            input_datetime_formats=["%Y-%m-%dT%H:%M:%SZ"],
+            is_sequential_state=True,
+            cursor_granularity=timedelta(0),
+        ),
+        cursor_field=CursorField(cursor_field_key="updated_at"),
+    )
+
+    cursor.observe(
+        Record(
+            data={"updated_at": ""},
+            stream_name="test_stream",
+            associated_slice=StreamSlice(partition={"partition_id": "1"}, cursor_slice={}),
+        )
+    )

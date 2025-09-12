@@ -7,12 +7,16 @@ import importlib
 import json
 import os
 import pkgutil
-from typing import Any, ClassVar, Dict, List, Mapping, MutableMapping, Optional, Tuple
+from copy import deepcopy
+from typing import TYPE_CHECKING, Any, ClassVar, Dict, List, Mapping, MutableMapping, Tuple, cast
 
 import jsonref
-from jsonschema import RefResolver, validate
+from jsonschema import validate
 from jsonschema.exceptions import ValidationError
 from pydantic.v1 import BaseModel, Field
+from referencing import Registry, Resource
+from referencing._core import Resolver  # used for type hints
+from referencing.jsonschema import DRAFT7
 
 from airbyte_cdk.models import ConnectorSpecification, FailureType
 from airbyte_cdk.utils.traced_exception import AirbyteTracedException
@@ -63,18 +67,30 @@ def resolve_ref_links(obj: Any) -> Any:
         return obj
 
 
-def _expand_refs(schema: Any, ref_resolver: Optional[RefResolver] = None) -> None:
+def get_ref_resolver_registry(schema: dict[str, Any]) -> Registry:
+    """Get a reference resolver registry for the given schema."""
+    resource: Resource = Resource.from_contents(
+        contents=schema,
+        default_specification=DRAFT7,
+    )
+    return cast(  # Mypy has a hard time detecting this return type.
+        "Registry",
+        Registry().with_resource(
+            uri="",
+            resource=resource,
+        ),
+    )
+
+
+def _expand_refs(schema: Any, ref_resolver: Resolver) -> None:
     """Internal function to iterate over schema and replace all occurrences of $ref with their definitions. Recursive.
 
     :param schema: schema that will be patched
-    :param ref_resolver: resolver to get definition from $ref, if None pass it will be instantiated
     """
-    ref_resolver = ref_resolver or RefResolver.from_schema(schema)
-
     if isinstance(schema, MutableMapping):
         if "$ref" in schema:
             ref_url = schema.pop("$ref")
-            _, definition = ref_resolver.resolve(ref_url)
+            definition = ref_resolver.lookup(ref_url).contents
             _expand_refs(
                 definition, ref_resolver=ref_resolver
             )  # expand refs in definitions as well
@@ -90,10 +106,14 @@ def _expand_refs(schema: Any, ref_resolver: Optional[RefResolver] = None) -> Non
 def expand_refs(schema: Any) -> None:
     """Iterate over schema and replace all occurrences of $ref with their definitions.
 
+    If a "definitions" section is present at the root of the schema, it will be removed
+    after $ref resolution is complete.
+
     :param schema: schema that will be patched
     """
-    _expand_refs(schema)
-    schema.pop("definitions", None)  # remove definitions created by $ref
+    ref_resolver = get_ref_resolver_registry(schema).resolver()
+    _expand_refs(schema, ref_resolver)
+    schema.pop("definitions", None)
 
 
 def rename_key(schema: Any, old_key: str, new_key: str) -> None:

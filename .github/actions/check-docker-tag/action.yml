@@ -1,0 +1,28 @@
+name: 'Check Docker Tag Exists'
+description: 'Check if a Docker tag exists on DockerHub to prevent overwrites'
+inputs:
+  image_name:
+    description: 'Docker image name (e.g. airbyte/source-declarative-manifest)'
+    required: true
+  tag:
+    description: 'Docker tag to check'
+    required: true
+runs:
+  using: "composite"
+  steps:
+    - name: "Check for existing tag (${{ inputs.image_name }}:${{ inputs.tag }})"
+      shell: bash
+      run: |
+        image="${{ inputs.image_name }}"
+        tag_input="${{ inputs.tag }}"
+        if [ -z "$image" ] || [ -z "$tag_input" ]; then
+          echo "Error: image_name and tag are required."
+          exit 1
+        fi
+        tag="${image}:${tag_input}"
+        echo "Checking if tag '$tag' exists on DockerHub..."
+        if DOCKER_CLI_EXPERIMENTAL=enabled docker manifest inspect "$tag" > /dev/null 2>&1; then
+          echo "The tag '$tag' already exists on DockerHub. Skipping publish to prevent overwrite."
+          exit 1
+        fi
+        echo "No existing tag '$tag' found. Proceeding with publish."
