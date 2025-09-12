@@ -7,5 +7,4 @@
 
 set -e
 
-pip install dagger-io==0.13.3
 python bin/generate_component_manifest_files.py
