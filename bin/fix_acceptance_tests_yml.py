@@ -6,7 +6,7 @@ This script transforms YAML files from the old format:
   tests:
     spec: [...]
     connection: [...]
-    
+
 To the new format:
   acceptance_tests:
     spec:
@@ -15,10 +15,11 @@ To the new format:
       tests: [...]
 """
 
-import yaml
 import sys
 from pathlib import Path
-from typing import Dict, Any
+from typing import Any, Dict
+
+import yaml
 
 
 class FixingListIndentationDumper(yaml.Dumper):
@@ -38,42 +39,46 @@ class FixingListIndentationDumper(yaml.Dumper):
     ```
 
     """
+
     def increase_indent(self, flow=False, indentless=False):
         return super(FixingListIndentationDumper, self).increase_indent(flow, False)
 
 
 class AlreadyUpdatedError(Exception):
     """Exception raised when the YAML file has already been updated."""
+
     pass
 
 
 def transform(file_path: Path) -> None:
-    with open(file_path, 'r') as f:
+    with open(file_path, "r") as f:
         data = yaml.safe_load(f)
-    
-    if 'acceptance_tests' in data:
+
+    if "acceptance_tests" in data:
         raise AlreadyUpdatedError()
 
-    if 'tests' not in data:
+    if "tests" not in data:
         raise ValueError(f"No 'tests' key found in {file_path}, skipping transformation")
-    
+
     # Extract the tests data
-    tests_data = data.pop('tests')
-    
+    tests_data = data.pop("tests")
+
     if not isinstance(tests_data, dict):
         raise ValueError(f"Error: 'tests' key in {file_path} is not a dictionary")
-    
+
     # Create the new acceptance_tests structure
-    data['acceptance_tests'] = {}
-    
+    data["acceptance_tests"] = {}
+
     # Transform each test type
     for test_type, test_content in tests_data.items():
-        data['acceptance_tests'][test_type] = {'tests': test_content}
-    
+        data["acceptance_tests"][test_type] = {"tests": test_content}
+
     # Write back to file with preserved formatting
-    with open(file_path, 'w') as f:
-        yaml.dump(data, f, Dumper=FixingListIndentationDumper, default_flow_style=False, sort_keys=False)
-    
+    with open(file_path, "w") as f:
+        yaml.dump(
+            data, f, Dumper=FixingListIndentationDumper, default_flow_style=False, sort_keys=False
+        )
+
     print(f"Successfully transformed {file_path}")
 
 
@@ -81,10 +86,12 @@ def main():
     if len(sys.argv) != 2:
         print("Usage: python fix_acceptance_tests_yml.py <airbyte_repo_path>")
         sys.exit(1)
-    
+
     repo_path = Path(sys.argv[1])
 
-    for file_path in repo_path.glob('airbyte-integrations/connectors/source-*/acceptance-test-config.yml'):
+    for file_path in repo_path.glob(
+        "airbyte-integrations/connectors/source-*/acceptance-test-config.yml"
+    ):
         try:
             transform(file_path)
         except AlreadyUpdatedError:
