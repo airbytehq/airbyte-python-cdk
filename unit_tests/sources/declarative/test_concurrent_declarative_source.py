@@ -1918,15 +1918,6 @@ def test_catalog_contains_missing_stream_in_source():
                 emitted_at=1735689600000.0,
             ),
         ),
-        AirbyteTracedException(
-            message="A stream listed in your configuration was not found in the source. Please check the logs for more "
-            "details.",
-            internal_message=(
-                "The stream 'missing' in your connection configuration was not found in the source. Refresh the schema in your replication settings and remove this stream from future sync attempts."
-            ),
-            failure_type=FailureType.config_error,
-            stream_descriptor=StreamDescriptor(name="missing"),
-        ).as_airbyte_message(stream_descriptor=StreamDescriptor(name="missing")),
     ]
 
     catalog = ConfiguredAirbyteCatalog(

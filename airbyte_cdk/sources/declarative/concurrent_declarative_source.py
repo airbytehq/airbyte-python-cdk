@@ -641,20 +641,12 @@ class ConcurrentDeclarativeSource(Source):
             if stream_instance:
                 abstract_streams.append(stream_instance)
             else:
+                # Previous behavior in the legacy synchronous CDK was to also raise an error TRACE message if
+                # the source was configured with raise_exception_on_missing_stream=True. This was used on very
+                # few sources like facebook-marketing and google-ads. We decided not to port this feature over,
+                # but we can do so if we feel it necessary. With the current behavior,we should still result
+                # in a partial failure since missing streams will be marked as INCOMPLETE.
                 self._message_repository.emit_message(
                     as_airbyte_message(configured_stream.stream, AirbyteStreamStatus.INCOMPLETE)
                 )
-
-                missing_stream_exception = AirbyteTracedException(
-                    message="A stream listed in your configuration was not found in the source. Please check the logs for more "
-                    "details.",
-                    internal_message=(
-                        f"The stream '{configured_stream.stream.name}' in your connection configuration was not found in the source. "
-                        f"Refresh the schema in your replication settings and remove this stream from future sync attempts."
-                    ),
-                    failure_type=FailureType.config_error,
-                    stream_descriptor=StreamDescriptor(name=configured_stream.stream.name),
-                )
-                self._message_repository.emit_message(missing_stream_exception.as_airbyte_message())
-
         return abstract_streams
