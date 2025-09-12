@@ -21,6 +21,27 @@ from pathlib import Path
 from typing import Dict, Any
 
 
+class FixingListIndentationDumper(yaml.Dumper):
+    """
+    The original indentation for list generates formatting issues on our side. So this dumper goes from:
+    ```
+    tests:
+    - config_path: secrets/config.json
+      status: succeed
+    ```
+
+    ...to:
+    ```
+    tests:
+      - config_path: secrets/config.json
+        status: succeed
+    ```
+
+    """
+    def increase_indent(self, flow=False, indentless=False):
+        return super(FixingListIndentationDumper, self).increase_indent(flow, False)
+
+
 class AlreadyUpdatedError(Exception):
     """Exception raised when the YAML file has already been updated."""
     pass
@@ -51,7 +72,7 @@ def transform(file_path: Path) -> None:
     
     # Write back to file with preserved formatting
     with open(file_path, 'w') as f:
-        yaml.dump(data, f, default_flow_style=False, sort_keys=False, indent=2)
+        yaml.dump(data, f, Dumper=FixingListIndentationDumper, default_flow_style=False, sort_keys=False)
     
     print(f"Successfully transformed {file_path}")
 
