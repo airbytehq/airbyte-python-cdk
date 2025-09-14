@@ -10,11 +10,14 @@ from typing import Any, Callable, Mapping, Optional
 import backoff
 from requests import PreparedRequest, RequestException, Response, codes, exceptions
 
+from airbyte_cdk.utils.datetime_helpers import ab_datetime_now
+
 from .exceptions import (
     DefaultBackoffException,
     RateLimitBackoffException,
     UserDefinedBackoffException,
 )
+from airbyte_cdk.sources.declarative.request_local import RequestLocal
 
 TRANSIENT_EXCEPTIONS = (
     DefaultBackoffException,
@@ -101,7 +104,10 @@ def http_client_default_backoff_handler(
 
 
 def user_defined_backoff_handler(
-    max_tries: Optional[int], max_time: Optional[int] = None, **kwargs: Any
+    max_tries: Optional[int],
+    max_time: Optional[int] = None,
+    stream_slice: Optional[Mapping[str, Any]] = None,
+    **kwargs: Any,
 ) -> Callable[[SendRequestCallableType], SendRequestCallableType]:
     def sleep_on_ratelimit(details: Mapping[str, Any]) -> None:
         _, exc, _ = sys.exc_info()
@@ -111,7 +117,14 @@ def user_defined_backoff_handler(
                     f"Status code: {exc.response.status_code!r}, Response Content: {exc.response.content!r}"
                 )
             retry_after = exc.backoff
-            logger.info(f"Retrying. Sleeping for {retry_after} seconds")
+            # server logs are misleading as several sleeping messages are logged at the same timestamp
+            logging_message = (
+                f"Retrying. Sleeping for {retry_after} seconds at {ab_datetime_now()} UTC"
+            )
+            request_local = RequestLocal()
+            if request_local.stream_slice:
+                logging_message += f" for slice: {request_local.stream_slice}"
+            logger.info(logging_message)
             time.sleep(retry_after + 1)  # extra second to cover any fractions of second
 
     def log_give_up(details: Mapping[str, Any]) -> None:
@@ -145,9 +158,14 @@ def rate_limit_default_backoff_handler(
             logger.info(
                 f"Status code: {exc.response.status_code!r}, Response Content: {exc.response.content!r}"
             )
-        logger.info(
-            f"Caught retryable error '{str(exc)}' after {details['tries']} tries. Waiting {details['wait']} seconds then retrying..."
+        logger_slice_info = ""
+        request_local = RequestLocal()
+        if request_local.stream_slice:
+            logger_slice_info = f" for slice: {request_local.stream_slice}"
+        logger_info_message = (
+            f"Caught retryable error '{str(exc)}' after {details['tries']} tries. Waiting {details['wait']} seconds then retrying{logger_slice_info}..."
         )
+        logger.info(logger_info_message)
 
     return backoff.on_exception(  # type: ignore # Decorator function returns a function with a different signature than the input function, so mypy can't infer the type of the returned function
         backoff.expo,

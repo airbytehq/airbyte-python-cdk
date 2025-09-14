@@ -31,6 +31,7 @@ from airbyte_cdk.utils.mapping_helpers import (
     combine_mappings,
     get_interpolation_context,
 )
+from airbyte_cdk.sources.declarative.request_local import RequestLocal
 
 
 @dataclass
@@ -455,6 +456,9 @@ class HttpRequester(Requester):
         request_body_json: Optional[Mapping[str, Any]] = None,
         log_formatter: Optional[Callable[[requests.Response], Any]] = None,
     ) -> Optional[requests.Response]:
+        request_local = RequestLocal()
+        request_local.stream_slice = stream_slice
+
         request, response = self._http_client.send_request(
             http_method=self.get_method().value,
             url=self._get_url(
@@ -479,6 +483,7 @@ class HttpRequester(Requester):
             dedupe_query_params=True,
             log_formatter=log_formatter,
             exit_on_rate_limit=self._exit_on_rate_limit,
+            stream_slice=stream_slice,
         )
 
         return response
