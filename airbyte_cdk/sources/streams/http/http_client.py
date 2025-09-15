@@ -305,18 +305,9 @@ class HttpClient:
         except BaseBackoffException as e:
             self._logger.error(f"Retries exhausted with backoff exception.", exc_info=True)
             raise MessageRepresentationAirbyteTracedErrors(
-                internal_message=f"Exhausted available request attempts. No more requests will be attempted.",
-                message="Exhausted available request attempts. No more requests will be attempted. Please see logs for more details.",
+                internal_message=f"Exhausted available request attempts. Exception: {e}",
+                message=f"Exhausted available request attempts. Please see logs for more details. Exception: {e}",
                 failure_type=FailureType.transient_error,
-                exception=e,
-                stream_descriptor=StreamDescriptor(name=self._name),
-            )
-        except Exception as e:
-            self._logger.error(f"Retries exhausted with unexpected exception.", exc_info=True)
-            raise MessageRepresentationAirbyteTracedErrors(
-                internal_message=f"Exhausted available request attempts. No more requests will be attempted.",
-                message="Exhausted available request attempts. No more requests will be attempted. Please see logs for more details.",
-                failure_type=FailureType.system_error,
                 exception=e,
                 stream_descriptor=StreamDescriptor(name=self._name),
             )

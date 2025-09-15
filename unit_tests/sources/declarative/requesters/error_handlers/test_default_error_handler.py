@@ -92,7 +92,7 @@ def test_default_error_handler_with_default_response_filter(
             ),
             ResponseAction.RETRY,
             FailureType.system_error,
-            "Bad request. Please check your request parameters.",
+            "HTTP Status Code: 400. Error: Bad request. Please check your request parameters.",
         ),
         (
             "_with_http_response_status_402_fail_with_default_failure_type",
@@ -118,7 +118,7 @@ def test_default_error_handler_with_default_response_filter(
             ),
             ResponseAction.FAIL,
             FailureType.config_error,
-            "Forbidden. You don't have permission to access this resource.",
+            "HTTP Status Code: 403. Error: Forbidden. You don't have permission to access this resource.",
         ),
         (
             "_with_http_response_status_200_fail_with_contained_error_message",
