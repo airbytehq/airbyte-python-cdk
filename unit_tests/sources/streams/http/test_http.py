@@ -607,7 +607,7 @@ def test_http_stream_adapter_http_status_error_handler_should_retry_false_raise_
 
 @pytest.mark.parametrize("status_code", range(400, 600))
 def test_send_raise_on_http_errors_logs(mocker, status_code):
-    stream = AutoFailTrueHttpStream(disable_retries=True)
+    stream = AutoFailTrueHttpStream()
     res = Mock(spec=requests.Response)
     res.status_code = status_code
     res.headers = {}
