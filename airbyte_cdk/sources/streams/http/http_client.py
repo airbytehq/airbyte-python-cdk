@@ -11,6 +11,7 @@ from typing import Any, Callable, Dict, List, Mapping, Optional, Tuple, Union
 import orjson
 import requests
 import requests_cache
+from airbyte_protocol_dataclasses.models import FailureType
 from requests.auth import AuthBase
 
 from airbyte_cdk.models import (
@@ -35,6 +36,7 @@ from airbyte_cdk.sources.streams.http.error_handlers import (
     ResponseAction,
 )
 from airbyte_cdk.sources.streams.http.exceptions import (
+    BaseBackoffException,
     DefaultBackoffException,
     RateLimitBackoffException,
     RequestBodyException,
@@ -290,15 +292,34 @@ class HttpClient:
         backoff_handler = http_client_default_backoff_handler(
             max_tries=max_tries, max_time=max_time
         )
-        # backoff handlers wrap _send, so it will always return a response
-        response = backoff_handler(rate_limit_backoff_handler(user_backoff_handler))(
-            request,
-            request_kwargs,
-            log_formatter=log_formatter,
-            exit_on_rate_limit=exit_on_rate_limit,
-        )  # type: ignore # mypy can't infer that backoff_handler wraps _send
+        # backoff handlers wrap _send, so it will always return a response -- except when all retries are exhausted
+        try:
+            response = backoff_handler(rate_limit_backoff_handler(user_backoff_handler))(
+                request,
+                request_kwargs,
+                log_formatter=log_formatter,
+                exit_on_rate_limit=exit_on_rate_limit,
+            )  # type: ignore # mypy can't infer that backoff_handler wraps _send
 
-        return response
+            return response
+        except BaseBackoffException as e:
+            self._logger.error(f"Retries exhausted with backoff exception.", exc_info=True)
+            raise AirbyteTracedException(
+                internal_message=f"Exhausted available request attempts. No more requests will be attempted.",
+                message="Exhausted available request attempts. No more requests will be attempted. Please see logs for more details.",
+                failure_type=FailureType.transient_error,
+                exception=e,
+                stream_descriptor=StreamDescriptor(name=self._name),
+            )
+        except Exception as e:
+            self._logger.error(f"Retries exhausted with unexpected exception.", exc_info=True)
+            raise AirbyteTracedException(
+                internal_message=f"Exhausted available request attempts. No more requests will be attempted.",
+                message="Exhausted available request attempts. No more requests will be attempted. Please see logs for more details.",
+                failure_type=FailureType.system_error,
+                exception=e,
+                stream_descriptor=StreamDescriptor(name=self._name),
+            )
 
     def _send(
         self,
