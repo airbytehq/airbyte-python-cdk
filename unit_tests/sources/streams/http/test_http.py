@@ -573,7 +573,7 @@ class AutoFailTrueHttpStream(StubBasicReadHttpStream):
     raise_on_http_errors = True
 
     def __init__(self, **kwargs):
-        super().__init__(disable_retries=True)
+        super().__init__(disable_retries=True, **kwargs)
 
     def should_retry(self, *args, **kwargs):
         return True
