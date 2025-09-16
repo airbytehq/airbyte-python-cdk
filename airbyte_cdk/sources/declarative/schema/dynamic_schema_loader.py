@@ -222,7 +222,7 @@ class DynamicSchemaLoader(SchemaLoader):
         ):
             first_type = self._get_airbyte_type(mapped_field_type[0])
             second_type = self._get_airbyte_type(mapped_field_type[1])
-            return {"oneOf": [first_type, second_type]}
+            return {"type": ["null", first_type, second_type]}
 
         elif isinstance(mapped_field_type, str):
             return self._get_airbyte_type(mapped_field_type)
