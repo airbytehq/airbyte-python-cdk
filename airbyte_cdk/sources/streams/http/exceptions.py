@@ -64,32 +64,8 @@ class UserDefinedBackoffException(BaseBackoffException):
 
 
 class DefaultBackoffException(BaseBackoffException):
-    def __init__(
-        self,
-        request: requests.PreparedRequest,
-        response: Optional[Union[requests.Response, Exception]],
-        error_message: str = "",
-        failure_type: Optional[FailureType] = None,
-    ):
-        super().__init__(
-            request=request,
-            response=response,
-            error_message=error_message,
-            failure_type=failure_type,
-        )
+    pass
 
 
 class RateLimitBackoffException(BaseBackoffException):
-    def __init__(
-        self,
-        request: requests.PreparedRequest,
-        response: Optional[Union[requests.Response, Exception]],
-        error_message: str = "",
-        failure_type: Optional[FailureType] = None,
-    ):
-        super().__init__(
-            request=request,
-            response=response,
-            error_message=error_message,
-            failure_type=failure_type,
-        )
+    pass
