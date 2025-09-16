@@ -5,16 +5,20 @@
 
 from typing import Optional, Union
 
+from airbyte_cdk.models import FailureType
 import requests
 
 
 class BaseBackoffException(requests.exceptions.HTTPError):
+
     def __init__(
         self,
         request: requests.PreparedRequest,
         response: Optional[Union[requests.Response, Exception]],
         error_message: str = "",
+        failure_type: Optional[FailureType] = None,
     ):
+        self.failure_type = failure_type
         if isinstance(response, requests.Response):
             error_message = (
                 error_message
@@ -43,6 +47,7 @@ class UserDefinedBackoffException(BaseBackoffException):
         request: requests.PreparedRequest,
         response: Optional[Union[requests.Response, Exception]],
         error_message: str = "",
+        failure_type: Optional[FailureType] = None,
     ):
         """
         :param backoff: how long to backoff in seconds

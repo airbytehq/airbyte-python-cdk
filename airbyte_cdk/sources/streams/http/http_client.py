@@ -307,7 +307,7 @@ class HttpClient:
             raise MessageRepresentationAirbyteTracedErrors(
                 internal_message=f"Exhausted available request attempts. Exception: {e}",
                 message=f"Exhausted available request attempts. Please see logs for more details. Exception: {e}",
-                failure_type=FailureType.transient_error,
+                failure_type=e.failure_type or FailureType.system_error,
                 exception=e,
                 stream_descriptor=StreamDescriptor(name=self._name),
             )
@@ -504,6 +504,7 @@ class HttpClient:
                     request=request,
                     response=(response if response is not None else exc),
                     error_message=error_message,
+                    failure_type=error_resolution.failure_type,
                 )
 
             elif retry_endlessly:
@@ -511,12 +512,14 @@ class HttpClient:
                     request=request,
                     response=(response if response is not None else exc),
                     error_message=error_message,
+                    failure_type=error_resolution.failure_type,
                 )
 
             raise DefaultBackoffException(
                 request=request,
                 response=(response if response is not None else exc),
                 error_message=error_message,
+                failure_type=error_resolution.failure_type,
             )
 
         elif response:
