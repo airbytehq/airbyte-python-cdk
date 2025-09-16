@@ -744,3 +744,56 @@ def test_given_different_headers_then_response_is_not_cached(requests_mock):
     )
 
     assert second_response.json()["test"] == "second response"
+
+
+@pytest.mark.usefixtures("mock_sleep")
+@pytest.mark.parametrize(
+    "response_code, expected_failure_type, error_message, exception_class",
+    [
+        (400, FailureType.system_error, "test error message", UserDefinedBackoffException),
+        (401, FailureType.config_error, "test error message", UserDefinedBackoffException),
+        (403, FailureType.transient_error, "test error message", UserDefinedBackoffException),
+        (400, FailureType.system_error, "test error message", DefaultBackoffException),
+        (401, FailureType.config_error, "test error message", DefaultBackoffException),
+        (403, FailureType.transient_error, "test error message", DefaultBackoffException),
+        (400, FailureType.system_error, "test error message", RateLimitBackoffException),
+        (401, FailureType.config_error, "test error message", RateLimitBackoffException),
+        (403, FailureType.transient_error, "test error message", RateLimitBackoffException),
+    ],
+)
+def test_send_with_retry_raises_airbyte_traced_exception_with_failure_type(
+    response_code, expected_failure_type, error_message, exception_class
+):
+    error_mapping = {
+        response_code: ErrorResolution(ResponseAction.RETRY, expected_failure_type, error_message),
+    }
+    http_client = HttpClient(
+        name="test",
+        logger=MagicMock(spec=logging.Logger),
+        error_handler=HttpStatusErrorHandler(
+            logger=MagicMock(), error_mapping=error_mapping, max_retries=1
+        ),
+    )
+    http_client._send = MagicMock(spec=http_client._send)
+    http_client._send.__name__ = "_send"
+    prepared_request = MagicMock(spec=requests.PreparedRequest)
+    mocked_response = MagicMock(spec=requests.Response)
+    mocked_response.status_code = response_code
+    if exception_class == UserDefinedBackoffException:
+        http_client._send.side_effect = exception_class(
+            backoff=0,
+            request=prepared_request,
+            response=mocked_response,
+            error_message=error_message,
+            failure_type=expected_failure_type,
+        )
+    else:
+        http_client._send.side_effect = exception_class(
+            request=prepared_request,
+            response=mocked_response,
+            error_message=error_message,
+            failure_type=expected_failure_type,
+        )
+    with pytest.raises(AirbyteTracedException) as e:
+        http_client._send_with_retry(prepared_request, {})
+    assert e.value.failure_type == expected_failure_type

@@ -5,12 +5,12 @@
 
 from typing import Optional, Union
 
-from airbyte_cdk.models import FailureType
 import requests
+
+from airbyte_cdk.models import FailureType
 
 
 class BaseBackoffException(requests.exceptions.HTTPError):
-
     def __init__(
         self,
         request: requests.PreparedRequest,
@@ -55,12 +55,41 @@ class UserDefinedBackoffException(BaseBackoffException):
         :param response: the response that triggered the backoff exception
         """
         self.backoff = backoff
-        super().__init__(request=request, response=response, error_message=error_message)
+        super().__init__(
+            request=request,
+            response=response,
+            error_message=error_message,
+            failure_type=failure_type,
+        )
 
 
 class DefaultBackoffException(BaseBackoffException):
-    pass
+    def __init__(
+        self,
+        request: requests.PreparedRequest,
+        response: Optional[Union[requests.Response, Exception]],
+        error_message: str = "",
+        failure_type: Optional[FailureType] = None,
+    ):
+        super().__init__(
+            request=request,
+            response=response,
+            error_message=error_message,
+            failure_type=failure_type,
+        )
 
 
 class RateLimitBackoffException(BaseBackoffException):
-    pass
+    def __init__(
+        self,
+        request: requests.PreparedRequest,
+        response: Optional[Union[requests.Response, Exception]],
+        error_message: str = "",
+        failure_type: Optional[FailureType] = None,
+    ):
+        super().__init__(
+            request=request,
+            response=response,
+            error_message=error_message,
+            failure_type=failure_type,
+        )
