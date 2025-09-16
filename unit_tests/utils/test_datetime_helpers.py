@@ -73,6 +73,12 @@ def test_now():
         ),  # With timezone offset
         ("2023-03-14T15:09:26Z", "2023-03-14T15:09:26+00:00", None, None),  # With Z timezone
         (
+            "2025-03-25T17:06:19Z",
+            "2025-03-25T17:06:19+00:00",
+            None,
+            None,
+        ),  # Test case for user request
+        (
             "2023-03-14T00:00:00+00:00",
             "2023-03-14T00:00:00+00:00",
             None,
