@@ -19,8 +19,8 @@ from .schema_helpers import get_ref_resolver_registry
 
 try:
     from jsonschema.validators import Validator
-except:
-    from jsonschema import Validator
+except ImportError:
+    from jsonschema.protocols import Validator
 
 
 MAX_NESTING_DEPTH = 3
