@@ -29,18 +29,12 @@ from airbyte_cdk.sources.declarative.requesters.request_options import (
     InterpolatedRequestOptionsProvider,
 )
 from airbyte_cdk.sources.message import MessageRepository
-from airbyte_cdk.sources.streams.call_rate import (
-    AbstractAPIBudget,
-    HttpAPIBudget,
-    MovingWindowCallRatePolicy,
-    Rate,
-)
-from airbyte_cdk.sources.streams.http.error_handlers.response_models import ResponseAction
+from airbyte_cdk.sources.streams.call_rate import HttpAPIBudget
 from airbyte_cdk.sources.streams.http.exceptions import (
     RequestBodyException,
 )
-from airbyte_cdk.sources.streams.http.http_client import MessageRepresentationAirbyteTracedErrors
 from airbyte_cdk.sources.types import Config
+from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 
 
 @pytest.fixture
@@ -880,7 +874,7 @@ def test_request_attempt_count_is_tracked_across_retries(http_requester_factory)
     response.status_code = 500
     http_requester._http_client._session.send.return_value = response
 
-    with pytest.raises(MessageRepresentationAirbyteTracedErrors):
+    with pytest.raises(AirbyteTracedException):
         http_requester._http_client._send_with_retry(request=request_mock, request_kwargs={})
 
     assert (
@@ -906,7 +900,7 @@ def test_request_attempt_count_with_exponential_backoff_strategy(http_requester_
     response.status_code = 500
     http_requester._http_client._session.send.return_value = response
 
-    with pytest.raises(MessageRepresentationAirbyteTracedErrors):
+    with pytest.raises(AirbyteTracedException):
         http_requester._http_client._send_with_retry(request=request_mock, request_kwargs={})
 
     assert (
@@ -937,7 +931,7 @@ def test_backoff_strategy_from_manifest_is_respected(http_requester_factory: Any
     response.status_code = 500
     http_requester._http_client._session.send.return_value = response
 
-    with pytest.raises(MessageRepresentationAirbyteTracedErrors):
+    with pytest.raises(AirbyteTracedException):
         http_requester._http_client._send_with_retry(request=request_mock, request_kwargs={})
 
     assert (

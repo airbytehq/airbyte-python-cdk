@@ -10,7 +10,6 @@ from unittest.mock import ANY, MagicMock, Mock, patch
 
 import pytest
 import requests
-from requests.auth import AuthBase
 from requests.exceptions import InvalidURL
 
 from airbyte_cdk.models import AirbyteLogMessage, AirbyteMessage, Level, SyncMode, Type
@@ -29,15 +28,12 @@ from airbyte_cdk.sources.streams.http.error_handlers.response_models import (
     ResponseAction,
 )
 from airbyte_cdk.sources.streams.http.exceptions import (
-    DefaultBackoffException,
     RequestBodyException,
     UserDefinedBackoffException,
 )
-from airbyte_cdk.sources.streams.http.http_client import (
-    HttpClient,
-    MessageRepresentationAirbyteTracedErrors,
-)
+from airbyte_cdk.sources.streams.http.http_client import HttpClient
 from airbyte_cdk.sources.streams.http.requests_native_auth import TokenAuthenticator
+from airbyte_cdk.utils import AirbyteTracedException
 from airbyte_cdk.utils.airbyte_secrets_utils import update_secrets
 
 
@@ -190,7 +186,7 @@ def test_stub_custom_backoff_http_stream(mocker):
 
     send_mock = mocker.patch.object(requests.Session, "send", return_value=req)
 
-    with pytest.raises(MessageRepresentationAirbyteTracedErrors):
+    with pytest.raises(AirbyteTracedException):
         list(stream.read_records(SyncMode.full_refresh))
     assert send_mock.call_count == stream.max_retries + 1
 
@@ -251,7 +247,7 @@ def test_4xx_error_codes_http_stream(mocker, http_code):
     req.status_code = http_code
     mocker.patch.object(requests.Session, "send", return_value=req)
 
-    with pytest.raises(MessageRepresentationAirbyteTracedErrors):
+    with pytest.raises(AirbyteTracedException):
         list(stream.read_records(SyncMode.full_refresh))
 
 
@@ -283,7 +279,7 @@ def test_error_codes_http_stream_error_resolution_with_response_secrets_filtered
     mocker.patch.object(requests.Session, "send", return_value=res)
 
     # proceed
-    with pytest.raises(MessageRepresentationAirbyteTracedErrors) as err:
+    with pytest.raises(AirbyteTracedException) as err:
         list(stream.read_records(SyncMode.full_refresh))
 
     # we expect the header secrets are obscured
@@ -308,7 +304,7 @@ def test_raise_on_http_errors_off_429(mocker):
 
     mocker.patch.object(requests.Session, "send", return_value=req)
     with pytest.raises(
-        MessageRepresentationAirbyteTracedErrors,
+        AirbyteTracedException,
         match="Exhausted available request attempts. Please see logs for more details. Exception: HTTP Status Code: 429. Error: Too many requests.",
     ):
         stream.exit_on_rate_limit = True
@@ -323,7 +319,7 @@ def test_raise_on_http_errors_off_5xx(mocker, status_code):
     req.status_code = status_code
 
     send_mock = mocker.patch.object(requests.Session, "send", return_value=req)
-    with pytest.raises(MessageRepresentationAirbyteTracedErrors):
+    with pytest.raises(AirbyteTracedException):
         list(stream.read_records(SyncMode.full_refresh))
     assert send_mock.call_count == stream.max_retries + 1
 
@@ -354,7 +350,7 @@ def test_raise_on_http_errors(mocker, error):
     stream = AutoFailFalseHttpStream()
     send_mock = mocker.patch.object(requests.Session, "send", side_effect=error())
 
-    with pytest.raises(MessageRepresentationAirbyteTracedErrors):
+    with pytest.raises(AirbyteTracedException):
         list(stream.read_records(SyncMode.full_refresh))
     assert send_mock.call_count == stream.max_retries + 1
 
@@ -613,7 +609,7 @@ def test_send_raise_on_http_errors_logs(mocker, status_code):
     res.headers = {}
     mocker.patch.object(requests.Session, "send", return_value=res)
     mocker.patch.object(stream._http_client, "_logger")
-    with pytest.raises(MessageRepresentationAirbyteTracedErrors):
+    with pytest.raises(AirbyteTracedException):
         _, response = stream._http_client.send_request(
             "GET", "https://g", {}, exit_on_rate_limit=True
         )
