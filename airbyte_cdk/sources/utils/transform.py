@@ -8,6 +8,7 @@ from enum import Flag, auto
 from typing import TYPE_CHECKING, Any, Callable, Dict, Generator, Mapping, Optional, cast
 
 from jsonschema import Draft7Validator, ValidationError, validators
+from jsonschema.protocols import Validator
 from referencing import Registry, Resource
 from referencing._core import Resolver
 from referencing.exceptions import Unresolvable
@@ -16,12 +17,6 @@ from referencing.jsonschema import DRAFT7
 from airbyte_cdk.sources.utils.schema_helpers import expand_refs
 
 from .schema_helpers import get_ref_resolver_registry
-
-try:
-    from jsonschema.validators import Validator
-except:
-    from jsonschema import Validator
-
 
 MAX_NESTING_DEPTH = 3
 json_to_python_simple = {

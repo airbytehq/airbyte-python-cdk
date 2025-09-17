@@ -2852,8 +2852,8 @@ class AsyncRetriever(BaseModel):
     status_extractor: Union[DpathExtractor, CustomRecordExtractor] = Field(
         ..., description="Responsible for fetching the actual status of the async job."
     )
-    download_target_extractor: Union[DpathExtractor, CustomRecordExtractor] = Field(
-        ...,
+    download_target_extractor: Optional[Union[DpathExtractor, CustomRecordExtractor]] = Field(
+        None,
         description="Responsible for fetching the final result `urls` provided by the completed / finished / ready async job.",
     )
     download_extractor: Optional[

@@ -3797,7 +3797,6 @@ definitions:
       - polling_requester
       - download_requester
       - status_extractor
-      - download_target_extractor
     properties:
       type:
         type: string
