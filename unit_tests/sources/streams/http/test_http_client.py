@@ -762,38 +762,44 @@ def test_given_different_headers_then_response_is_not_cached(requests_mock):
     ],
 )
 def test_send_with_retry_raises_airbyte_traced_exception_with_failure_type(
-    response_code, expected_failure_type, error_message, exception_class
+    response_code, expected_failure_type, error_message, exception_class, requests_mock
 ):
+    if exception_class == UserDefinedBackoffException:
+
+        class CustomBackoffStrategy:
+            def backoff_time(self, response_or_exception, attempt_count):
+                return 0.1
+
+        backoff_strategy = CustomBackoffStrategy()
+        response_action = ResponseAction.RETRY
+    elif exception_class == RateLimitBackoffException:
+        backoff_strategy = None
+        response_action = ResponseAction.RATE_LIMITED
+    else:
+        backoff_strategy = None
+        response_action = ResponseAction.RETRY
+
     error_mapping = {
-        response_code: ErrorResolution(ResponseAction.RETRY, expected_failure_type, error_message),
+        response_code: ErrorResolution(response_action, expected_failure_type, error_message),
     }
+
     http_client = HttpClient(
         name="test",
         logger=MagicMock(spec=logging.Logger),
         error_handler=HttpStatusErrorHandler(
             logger=MagicMock(), error_mapping=error_mapping, max_retries=1
         ),
+        backoff_strategy=backoff_strategy,
     )
-    http_client._send = MagicMock(spec=http_client._send)
-    http_client._send.__name__ = "_send"
-    prepared_request = MagicMock(spec=requests.PreparedRequest)
-    mocked_response = MagicMock(spec=requests.Response)
-    mocked_response.status_code = response_code
-    if exception_class == UserDefinedBackoffException:
-        http_client._send.side_effect = exception_class(
-            backoff=0,
-            request=prepared_request,
-            response=mocked_response,
-            error_message=error_message,
-            failure_type=expected_failure_type,
-        )
-    else:
-        http_client._send.side_effect = exception_class(
-            request=prepared_request,
-            response=mocked_response,
-            error_message=error_message,
-            failure_type=expected_failure_type,
-        )
+
+    requests_mock.register_uri(
+        "GET",
+        "https://airbyte.io/",
+        status_code=response_code,
+        json={"error": error_message},
+        headers={},
+    )
+
     with pytest.raises(AirbyteTracedException) as e:
-        http_client._send_with_retry(prepared_request, {})
+        http_client.send_request(http_method="get", url="https://airbyte.io/", request_kwargs={})
     assert e.value.failure_type == expected_failure_type
