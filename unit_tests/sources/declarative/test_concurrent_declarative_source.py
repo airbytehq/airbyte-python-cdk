@@ -19,6 +19,12 @@ import isodate
 import pytest
 import requests
 import yaml
+from airbyte_protocol_dataclasses.models import (
+    AirbyteStreamStatus,
+    AirbyteStreamStatusTraceMessage,
+    AirbyteTraceMessage,
+    TraceType,
+)
 from jsonschema.exceptions import ValidationError
 from typing_extensions import deprecated
 
@@ -1896,6 +1902,46 @@ def get_mocked_read_records_output(stream_name: str) -> Mapping[tuple[str, str],
         ]
         for _slice in slices
     }
+
+
+@freezegun.freeze_time("2025-01-01T00:00:00")
+def test_catalog_contains_missing_stream_in_source():
+    expected_messages = [
+        AirbyteMessage(
+            type=Type.TRACE,
+            trace=AirbyteTraceMessage(
+                type=TraceType.STREAM_STATUS,
+                stream_status=AirbyteStreamStatusTraceMessage(
+                    stream_descriptor=StreamDescriptor(name="missing"),
+                    status=AirbyteStreamStatus.INCOMPLETE,
+                ),
+                emitted_at=1735689600000.0,
+            ),
+        ),
+    ]
+
+    catalog = ConfiguredAirbyteCatalog(
+        streams=[
+            ConfiguredAirbyteStream(
+                stream=AirbyteStream(
+                    name="missing", json_schema={}, supported_sync_modes=[SyncMode.full_refresh]
+                ),
+                sync_mode=SyncMode.full_refresh,
+                destination_sync_mode=DestinationSyncMode.append,
+            ),
+        ]
+    )
+
+    source = ConcurrentDeclarativeSource(
+        source_config=_MANIFEST, config=_CONFIG, catalog=catalog, state=[]
+    )
+
+    list(source.read(logger=source.logger, config=_CONFIG, catalog=catalog, state=[]))
+    queue = source._concurrent_source._queue
+
+    for expected_message in expected_messages:
+        queue_message = queue.get()
+        assert queue_message == expected_message
 
 
 def get_records_for_stream(

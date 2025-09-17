@@ -20,7 +20,7 @@ from typing import (
 
 import orjson
 import yaml
-from airbyte_protocol_dataclasses.models import Level
+from airbyte_protocol_dataclasses.models import AirbyteStreamStatus, Level, StreamDescriptor
 from jsonschema.exceptions import ValidationError
 from jsonschema.validators import validate
 
@@ -88,6 +88,7 @@ from airbyte_cdk.sources.utils.slice_logger import (
     DebugSliceLogger,
     SliceLogger,
 )
+from airbyte_cdk.utils.stream_status_utils import as_airbyte_message
 from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 
 
@@ -630,9 +631,8 @@ class ConcurrentDeclarativeSource(Source):
 
         return dynamic_stream_configs
 
-    @staticmethod
     def _select_streams(
-        streams: List[AbstractStream], configured_catalog: ConfiguredAirbyteCatalog
+        self, streams: List[AbstractStream], configured_catalog: ConfiguredAirbyteCatalog
     ) -> List[AbstractStream]:
         stream_name_to_instance: Mapping[str, AbstractStream] = {s.name: s for s in streams}
         abstract_streams: List[AbstractStream] = []
@@ -640,5 +640,13 @@ class ConcurrentDeclarativeSource(Source):
             stream_instance = stream_name_to_instance.get(configured_stream.stream.name)
             if stream_instance:
                 abstract_streams.append(stream_instance)
-
+            else:
+                # Previous behavior in the legacy synchronous CDK was to also raise an error TRACE message if
+                # the source was configured with raise_exception_on_missing_stream=True. This was used on very
+                # few sources like facebook-marketing and google-ads. We decided not to port this feature over,
+                # but we can do so if we feel it necessary. With the current behavior,we should still result
+                # in a partial failure since missing streams will be marked as INCOMPLETE.
+                self._message_repository.emit_message(
+                    as_airbyte_message(configured_stream.stream, AirbyteStreamStatus.INCOMPLETE)
+                )
         return abstract_streams

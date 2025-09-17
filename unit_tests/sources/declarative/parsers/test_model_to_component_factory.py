@@ -992,6 +992,202 @@ a_stream:
     assert get_retriever(stream).record_selector.transformations
 
 
+def test_stream_with_custom_retriever_and_partition_router():
+    content = """
+a_stream:
+  type: DeclarativeStream
+  primary_key: id
+  schema_loader:
+    type: InlineSchemaLoader
+    schema:
+      $schema: "http://json-schema.org/draft-07/schema"
+      type: object
+      properties:
+        id:
+          type: string
+  retriever:
+    type: CustomRetriever
+    class_name: unit_tests.sources.declarative.parsers.testing_components.TestingCustomRetriever
+    record_selector:
+      type: RecordSelector
+      extractor:
+        field_path: []
+    requester:
+      type: HttpRequester
+      url_base: "https://api.sendgrid.com/v3/"
+      http_method: "GET"
+    partition_router:
+      type: SubstreamPartitionRouter
+      parent_stream_configs:
+        - parent_key: id
+          partition_field: id
+          stream:
+            type: DeclarativeStream
+            primary_key: id
+            schema_loader:
+              type: InlineSchemaLoader
+              schema:
+                $schema: "http://json-schema.org/draft-07/schema"
+                type: object
+                properties:
+                  id:
+                    type: string
+            retriever:
+              type: SimpleRetriever
+              requester:
+                type: HttpRequester
+                url_base: "https://api.sendgrid.com/v3/parent"
+                http_method: "GET"
+              record_selector:
+                type: RecordSelector
+                extractor:
+                  field_path: []
+  $parameters:
+   name: a_stream
+"""
+
+    parsed_manifest = YamlDeclarativeSource._parse(content)
+    resolved_manifest = resolver.preprocess_manifest(parsed_manifest)
+    stream_manifest = transformer.propagate_types_and_parameters(
+        "", resolved_manifest["a_stream"], {}
+    )
+
+    stream = factory.create_component(
+        model_type=DeclarativeStreamModel, component_definition=stream_manifest, config=input_config
+    )
+
+    assert isinstance(stream, DefaultStream)
+    assert isinstance(stream._stream_partition_generator._stream_slicer, SubstreamPartitionRouter)
+
+
+def test_stream_with_custom_retriever_with_partition_router_field_that_is_not_a_partition_router():
+    """
+    This test documents the behavior where if a custom retriever has a field named partition_router, it will assume
+    it can generate stream_slices with this parameter. In this test, the partition_router is a RecordSelector that can't
+    generate stream_slices so there will be an AttributeError.
+    """
+    content = """
+a_stream:
+  type: DeclarativeStream
+  primary_key: id
+  schema_loader:
+    type: InlineSchemaLoader
+    schema:
+      $schema: "http://json-schema.org/draft-07/schema"
+      type: object
+      properties:
+        id:
+          type: string
+  retriever:
+    type: CustomRetriever
+    class_name: unit_tests.sources.declarative.parsers.testing_components.TestingCustomRetriever
+    record_selector:
+      type: RecordSelector
+      extractor:
+        field_path: []
+    requester:
+      type: HttpRequester
+      url_base: "https://api.sendgrid.com/v3/"
+      http_method: "GET"
+    partition_router:
+      type: RecordSelector
+      extractor:
+        field_path: []
+  $parameters:
+   name: a_stream
+"""
+
+    parsed_manifest = YamlDeclarativeSource._parse(content)
+    resolved_manifest = resolver.preprocess_manifest(parsed_manifest)
+    stream_manifest = transformer.propagate_types_and_parameters(
+        "", resolved_manifest["a_stream"], {}
+    )
+
+    stream = factory.create_component(
+        model_type=DeclarativeStreamModel, component_definition=stream_manifest, config=input_config
+    )
+
+    assert isinstance(stream, DefaultStream)
+    with pytest.raises(AttributeError) as e:
+        list(stream.generate_partitions())
+    assert e.value.args[0] == "'RecordSelector' object has no attribute 'stream_slices'"
+
+
+def test_incremental_stream_with_custom_retriever_and_partition_router():
+    content = """
+a_stream:
+  type: DeclarativeStream
+  primary_key: id
+  schema_loader:
+    type: InlineSchemaLoader
+    schema:
+      $schema: "http://json-schema.org/draft-07/schema"
+      type: object
+      properties:
+        id:
+          type: string
+  incremental_sync:
+    type: DatetimeBasedCursor
+    datetime_format: "%Y-%m-%dT%H:%M:%S.%f%z"
+    start_datetime: "{{ config['start_time'] }}"
+    cursor_field: "created"
+  retriever:
+    type: CustomRetriever
+    class_name: unit_tests.sources.declarative.parsers.testing_components.TestingCustomRetriever
+    record_selector:
+      type: RecordSelector
+      extractor:
+        field_path: []
+    requester:
+      type: HttpRequester
+      url_base: "https://api.sendgrid.com/v3/"
+      http_method: "GET"
+    partition_router:
+      type: SubstreamPartitionRouter
+      parent_stream_configs:
+        - parent_key: id
+          partition_field: id
+          stream:
+            type: DeclarativeStream
+            primary_key: id
+            schema_loader:
+              type: InlineSchemaLoader
+              schema:
+                $schema: "http://json-schema.org/draft-07/schema"
+                type: object
+                properties:
+                  id:
+                    type: string
+            retriever:
+              type: SimpleRetriever
+              requester:
+                type: HttpRequester
+                url_base: "https://api.sendgrid.com/v3/parent"
+                http_method: "GET"
+              record_selector:
+                type: RecordSelector
+                extractor:
+                  field_path: []
+  $parameters:
+   name: a_stream
+"""
+
+    parsed_manifest = YamlDeclarativeSource._parse(content)
+    resolved_manifest = resolver.preprocess_manifest(parsed_manifest)
+    stream_manifest = transformer.propagate_types_and_parameters(
+        "", resolved_manifest["a_stream"], {}
+    )
+
+    stream = factory.create_component(
+        model_type=DeclarativeStreamModel, component_definition=stream_manifest, config=input_config
+    )
+
+    assert isinstance(stream, DefaultStream)
+    assert isinstance(
+        stream._stream_partition_generator._stream_slicer, ConcurrentPerPartitionCursor
+    )
+
+
 @pytest.mark.parametrize(
     "use_legacy_state",
     [
