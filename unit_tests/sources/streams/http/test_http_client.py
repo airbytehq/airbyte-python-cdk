@@ -746,6 +746,7 @@ def test_given_different_headers_then_response_is_not_cached(requests_mock):
 
     assert second_response.json()["test"] == "second response"
 
+
 @patch.dict("os.environ", {"REQUESTS_CA_BUNDLE": "/path/to/ca-bundle.crt"})
 def test_send_request_respects_environment_variables():
     """Test that send_request respects REQUESTS_CA_BUNDLE environment variable."""
@@ -754,14 +755,12 @@ def test_send_request_respects_environment_variables():
         logger=MagicMock(),
     )
 
-    with patch.object(http_client, '_send_with_retry') as mock_send_with_retry:
+    with patch.object(http_client, "_send_with_retry") as mock_send_with_retry:
         http_client.send_request(
-            http_method="GET",
-            url="https://api.example.com",
-            request_kwargs={"timeout": 10}
+            http_method="GET", url="https://api.example.com", request_kwargs={"timeout": 10}
         )
-        
+
         passed_kwargs = mock_send_with_retry.call_args[1]["request_kwargs"]
-        
+
         assert "verify" in passed_kwargs
         assert passed_kwargs["verify"] == "/path/to/ca-bundle.crt"
