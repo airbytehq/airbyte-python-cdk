@@ -19,7 +19,6 @@ from airbyte_cdk.sources.declarative.async_job.job_orchestrator import (
 from airbyte_cdk.sources.declarative.async_job.job_tracker import JobTracker
 from airbyte_cdk.sources.declarative.async_job.repository import AsyncJobRepository
 from airbyte_cdk.sources.message import MessageRepository
-from airbyte_cdk.sources.streams.http.http_client import MessageRepresentationAirbyteTracedErrors
 from airbyte_cdk.sources.types import StreamSlice
 from airbyte_cdk.utils import AirbyteTracedException
 
@@ -244,7 +243,7 @@ class AsyncJobOrchestratorTest(TestCase):
         Since this is a config error, we assume the other jobs will fail for the same reasons.
         """
         job_tracker = JobTracker(1)
-        self._job_repository.start.side_effect = MessageRepresentationAirbyteTracedErrors(
+        self._job_repository.start.side_effect = AirbyteTracedException(
             "Can't create job", failure_type=FailureType.config_error
         )
 

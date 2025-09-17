@@ -240,7 +240,11 @@ class AbstractOauth2Authenticator(AuthBase):
         except requests.exceptions.RequestException as e:
             if e.response is not None:
                 if e.response.status_code == 429 or e.response.status_code >= 500:
-                    raise DefaultBackoffException(request=e.response.request, response=e.response)
+                    raise DefaultBackoffException(
+                        request=e.response.request,
+                        response=e.response,
+                        failure_type=FailureType.transient_error,
+                    )
             if self._wrap_refresh_token_exception(e):
                 message = "Refresh token is invalid or expired. Please re-authenticate from Sources/<your source>/Settings."
                 raise AirbyteTracedException(

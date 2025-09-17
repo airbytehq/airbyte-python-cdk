@@ -555,7 +555,7 @@ def test_disable_retries():
     session_send.return_value = mocked_response
 
     with patch.object(requests.Session, "send", return_value=mocked_response) as mocked_send:
-        with pytest.raises(UserDefinedBackoffException):
+        with pytest.raises(AirbyteTracedException) as e:
             http_client.send_request(
                 http_method="get", url="https://test_base_url.com/v1/endpoint", request_kwargs={}
             )
@@ -583,7 +583,7 @@ def test_default_max_retries():
     session_send.return_value = mocked_response
 
     with patch.object(requests.Session, "send", return_value=mocked_response) as mocked_send:
-        with pytest.raises(UserDefinedBackoffException):
+        with pytest.raises(AirbyteTracedException) as e:
             http_client.send_request(
                 http_method="get", url="https://test_base_url.com/v1/endpoint", request_kwargs={}
             )
@@ -613,7 +613,7 @@ def test_backoff_strategy_max_retries():
     session_send.return_value = mocked_response
 
     with patch.object(requests.Session, "send", return_value=mocked_response) as mocked_send:
-        with pytest.raises(UserDefinedBackoffException):
+        with pytest.raises(AirbyteTracedException) as e:
             http_client.send_request(
                 http_method="get", url="https://test_base_url.com/v1/endpoint", request_kwargs={}
             )
@@ -652,7 +652,7 @@ def test_backoff_strategy_max_time():
     session_send.return_value = mocked_response
 
     with patch.object(requests.Session, "send", return_value=mocked_response) as mocked_send:
-        with pytest.raises(UserDefinedBackoffException):
+        with pytest.raises(AirbyteTracedException) as e:
             http_client.send_request(
                 http_method="get", url="https://test_base_url.com/v1/endpoint", request_kwargs={}
             )
@@ -680,7 +680,7 @@ def test_send_emit_stream_status_with_rate_limit_reason(capsys):
     session_send.return_value = mocked_response
 
     with patch.object(requests.Session, "send", return_value=mocked_response) as mocked_send:
-        with pytest.raises(UserDefinedBackoffException):
+        with pytest.raises(AirbyteTracedException) as e:
             http_client.send_request(
                 http_method="get", url="https://test_base_url.com/v1/endpoint", request_kwargs={}
             )
@@ -709,7 +709,7 @@ def test_backoff_strategy_endless(
     session_send.return_value = mocked_response
 
     with patch.object(requests.Session, "send", return_value=mocked_response) as mocked_send:
-        with pytest.raises(expected_error):
+        with pytest.raises(AirbyteTracedException) as e:
             http_client.send_request(
                 http_method="get",
                 url="https://test_base_url.com/v1/endpoint",
@@ -744,3 +744,62 @@ def test_given_different_headers_then_response_is_not_cached(requests_mock):
     )
 
     assert second_response.json()["test"] == "second response"
+
+
+@pytest.mark.usefixtures("mock_sleep")
+@pytest.mark.parametrize(
+    "response_code, expected_failure_type, error_message, exception_class",
+    [
+        (400, FailureType.system_error, "test error message", UserDefinedBackoffException),
+        (401, FailureType.config_error, "test error message", UserDefinedBackoffException),
+        (403, FailureType.transient_error, "test error message", UserDefinedBackoffException),
+        (400, FailureType.system_error, "test error message", DefaultBackoffException),
+        (401, FailureType.config_error, "test error message", DefaultBackoffException),
+        (403, FailureType.transient_error, "test error message", DefaultBackoffException),
+        (400, FailureType.system_error, "test error message", RateLimitBackoffException),
+        (401, FailureType.config_error, "test error message", RateLimitBackoffException),
+        (403, FailureType.transient_error, "test error message", RateLimitBackoffException),
+    ],
+)
+def test_send_with_retry_raises_airbyte_traced_exception_with_failure_type(
+    response_code, expected_failure_type, error_message, exception_class, requests_mock
+):
+    if exception_class == UserDefinedBackoffException:
+
+        class CustomBackoffStrategy:
+            def backoff_time(self, response_or_exception, attempt_count):
+                return 0.1
+
+        backoff_strategy = CustomBackoffStrategy()
+        response_action = ResponseAction.RETRY
+    elif exception_class == RateLimitBackoffException:
+        backoff_strategy = None
+        response_action = ResponseAction.RATE_LIMITED
+    else:
+        backoff_strategy = None
+        response_action = ResponseAction.RETRY
+
+    error_mapping = {
+        response_code: ErrorResolution(response_action, expected_failure_type, error_message),
+    }
+
+    http_client = HttpClient(
+        name="test",
+        logger=MagicMock(spec=logging.Logger),
+        error_handler=HttpStatusErrorHandler(
+            logger=MagicMock(), error_mapping=error_mapping, max_retries=1
+        ),
+        backoff_strategy=backoff_strategy,
+    )
+
+    requests_mock.register_uri(
+        "GET",
+        "https://airbyte.io/",
+        status_code=response_code,
+        json={"error": error_message},
+        headers={},
+    )
+
+    with pytest.raises(AirbyteTracedException) as e:
+        http_client.send_request(http_method="get", url="https://airbyte.io/", request_kwargs={})
+    assert e.value.failure_type == expected_failure_type
