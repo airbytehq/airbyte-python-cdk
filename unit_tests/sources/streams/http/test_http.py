@@ -92,7 +92,10 @@ def test_requests_native_token_authenticator():
 
 def test_request_kwargs_used(mocker, requests_mock):
     stream = StubBasicReadHttpStream()
-    request_kwargs = {"cert": None, "proxies": "google.com"}
+    request_kwargs = {
+        "cert": None,
+        "proxies": {"http": "http://example.com", "https": "http://example.com"},
+    }
     mocker.patch.object(stream, "request_kwargs", return_value=request_kwargs)
     send_mock = mocker.patch.object(
         stream._http_client._session, "send", wraps=stream._http_client._session.send
@@ -101,8 +104,16 @@ def test_request_kwargs_used(mocker, requests_mock):
 
     list(stream.read_records(sync_mode=SyncMode.full_refresh))
 
-    stream._http_client._session.send.assert_any_call(ANY, **request_kwargs)
     assert send_mock.call_count == 1
+    call_args = send_mock.call_args_list[0]
+    call_kwargs = call_args.kwargs
+
+    assert call_kwargs.get("cert") is None
+
+    proxies = call_kwargs.get("proxies")
+    assert proxies is not None
+    assert proxies["http"] == "http://example.com"
+    assert proxies["https"] == "http://example.com"
 
 
 def test_stub_basic_read_http_stream_read_records(mocker):
