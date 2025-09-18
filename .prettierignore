@@ -1,3 +1,10 @@
 # Ignore artifacts:
 build
 coverage
+
+# Ignore auto-generated files:
+airbyte_cdk/manifest_server/openapi.yaml
+
+# Ignore GitHub workflow files:
+.github/**/*.yml
+.github/**/*.yaml

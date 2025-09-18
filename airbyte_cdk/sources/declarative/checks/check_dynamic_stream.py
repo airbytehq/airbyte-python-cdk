@@ -49,8 +49,9 @@ class CheckDynamicStream(ConnectionChecker):
             for stream in streams[: min(self.stream_count, len(streams))]:
                 stream_is_available, reason = evaluate_availability(stream, logger)
                 if not stream_is_available:
-                    logger.warning(f"Stream {stream.name} is not available: {reason}")
-                    return False, reason
+                    message = f"Stream {stream.name} is not available: {reason}"
+                    logger.warning(message)
+                    return False, message
         except Exception as error:
             error_message = (
                 f"Encountered an error trying to connect to stream {stream.name}. Error: {error}"
