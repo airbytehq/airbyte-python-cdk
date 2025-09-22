@@ -2125,7 +2125,9 @@ class ModelToComponentFactory:
         else:
             state_transformations = []
         stream_state = self.apply_stream_state_migrations(state_transformations, stream_state)
-        self._connector_state_manager.update_state_for_stream(stream_name=model.name, namespace=None, value=stream_state)
+        self._connector_state_manager.update_state_for_stream(
+            stream_name=model.name, namespace=None, value=stream_state
+        )
 
     def _is_stop_condition_on_cursor(self, model: DeclarativeStreamModel) -> bool:
         return bool(

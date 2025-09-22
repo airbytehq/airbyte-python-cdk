@@ -3,7 +3,7 @@
 #
 
 from dataclasses import dataclass, field
-from typing import ClassVar, List, Optional, Any, Mapping
+from typing import Any, ClassVar, List, Mapping, Optional
 
 from airbyte_cdk.sources.declarative.extractors import DpathExtractor
 from airbyte_cdk.sources.declarative.migrations.state_migration import StateMigration
@@ -78,5 +78,7 @@ class TestingStateMigrationWithParentState(StateMigration):
 
     def migrate(self, stream_state: Mapping[str, Any]) -> Mapping[str, Any]:
         stream_state["lookback_window"] = 20
-        stream_state["parent_state"]["parent_stream"] = {"updated_at": "2024-02-01T00:00:00.000000+00:00"}
+        stream_state["parent_state"]["parent_stream"] = {
+            "updated_at": "2024-02-01T00:00:00.000000+00:00"
+        }
         return stream_state

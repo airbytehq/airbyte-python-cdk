@@ -3542,9 +3542,13 @@ def test_create_default_stream_with_datetime_cursor_then_runs_state_migrations()
             )
         ]
     )
-    factory = ModelToComponentFactory(emit_connector_builder_messages=True, connector_state_manager=connector_state_manager)
+    factory = ModelToComponentFactory(
+        emit_connector_builder_messages=True, connector_state_manager=connector_state_manager
+    )
     stream = factory.create_component(
-        model_type=DeclarativeStreamModel, component_definition=YamlDeclarativeSource._parse(content), config=input_config
+        model_type=DeclarativeStreamModel,
+        component_definition=YamlDeclarativeSource._parse(content),
+        config=input_config,
     )
     assert stream.cursor.state["states"] == [
         {"cursor": {"updated_at": stream_state["updated_at"]}, "partition": {"type": "type_1"}},
@@ -3627,9 +3631,7 @@ def test_create_concurrent_cursor_from_perpartition_cursor_runs_state_migrations
 
     stream_state = {
         "state": {"updated_at": "2025-01-01T00:00:00.000000+00:00"},
-        "parent_state": {
-            "parent_stream": {"updated_at": "2025-01-01T00:00:00.000000+00:00"}
-        }
+        "parent_state": {"parent_stream": {"updated_at": "2025-01-01T00:00:00.000000+00:00"}},
     }
     connector_state_manager = ConnectorStateManager(
         state=[
@@ -3642,14 +3644,19 @@ def test_create_concurrent_cursor_from_perpartition_cursor_runs_state_migrations
             )
         ]
     )
-    factory = ModelToComponentFactory(emit_connector_builder_messages=True,
-                                      connector_state_manager=connector_state_manager)
+    factory = ModelToComponentFactory(
+        emit_connector_builder_messages=True, connector_state_manager=connector_state_manager
+    )
     stream = factory.create_component(
-        model_type=DeclarativeStreamModel, component_definition=YamlDeclarativeSource._parse(content),
-        config=input_config
+        model_type=DeclarativeStreamModel,
+        component_definition=YamlDeclarativeSource._parse(content),
+        config=input_config,
     )
     assert stream.cursor.state["lookback_window"] == 20
-    assert stream.cursor._partition_router.parent_stream_configs[0].stream.cursor.state["updated_at"] == "2024-02-01T00:00:00.000000+0000"
+    assert (
+        stream.cursor._partition_router.parent_stream_configs[0].stream.cursor.state["updated_at"]
+        == "2024-02-01T00:00:00.000000+0000"
+    )
 
 
 def test_create_concurrent_cursor_uses_min_max_datetime_format_if_defined():
