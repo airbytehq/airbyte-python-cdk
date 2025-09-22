@@ -1951,7 +1951,7 @@ class ModelToComponentFactory:
         self, model: DeclarativeStreamModel, config: Config, is_parent: bool = False, **kwargs: Any
     ) -> AbstractStream:
         primary_key = model.primary_key.__root__ if model.primary_key else None
-        self._migrate_state(config, model)
+        self._migrate_state(model, config)
 
         partition_router = self._build_stream_slicer_from_partition_router(
             model.retriever,
@@ -2113,7 +2113,7 @@ class ModelToComponentFactory:
             supports_file_transfer=hasattr(model, "file_uploader") and bool(model.file_uploader),
         )
 
-    def _migrate_state(self, config, model):
+    def _migrate_state(self, model: DeclarativeStreamModel, config: Config):
         stream_state = self._connector_state_manager.get_stream_state(
             stream_name=model.name, namespace=None
         )
@@ -2200,7 +2200,7 @@ class ModelToComponentFactory:
         config: Config,
     ) -> Cursor:
         stream_name = model.name or ""
-        stream_state = self._connector_state_manager.get_stream_state(model.name, None)
+        stream_state = self._connector_state_manager.get_stream_state(stream_name, None)
 
         if (
             model.incremental_sync
