@@ -2113,9 +2113,10 @@ class ModelToComponentFactory:
             supports_file_transfer=hasattr(model, "file_uploader") and bool(model.file_uploader),
         )
 
-    def _migrate_state(self, model: DeclarativeStreamModel, config: Config):
+    def _migrate_state(self, model: DeclarativeStreamModel, config: Config) -> None:
+        stream_name = model.name or ""
         stream_state = self._connector_state_manager.get_stream_state(
-            stream_name=model.name, namespace=None
+            stream_name=stream_name, namespace=None
         )
         if model.state_migrations:
             state_transformations = [
@@ -2126,7 +2127,7 @@ class ModelToComponentFactory:
             state_transformations = []
         stream_state = self.apply_stream_state_migrations(state_transformations, stream_state)
         self._connector_state_manager.update_state_for_stream(
-            stream_name=model.name, namespace=None, value=stream_state
+            stream_name=stream_name, namespace=None, value=stream_state
         )
 
     def _is_stop_condition_on_cursor(self, model: DeclarativeStreamModel) -> bool:
