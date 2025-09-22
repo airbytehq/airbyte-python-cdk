@@ -195,6 +195,7 @@ input_config = {
 }
 CONFIG_START_TIME = ab_datetime_parse(input_config["start_time"])
 CONFIG_END_TIME = ab_datetime_parse(input_config["end_time"])
+_NO_STATE = {}
 
 
 def get_factory_with_parameters(
@@ -3467,8 +3468,8 @@ def test_create_concurrent_cursor_from_datetime_based_cursor(
                 component_definition=cursor_component_definition,
                 stream_name=stream_name,
                 stream_namespace=None,
+                stream_state=_NO_STATE,
                 config=config,
-                stream_state={},
             )
     else:
         concurrent_cursor = (
@@ -3478,8 +3479,8 @@ def test_create_concurrent_cursor_from_datetime_based_cursor(
                 component_definition=cursor_component_definition,
                 stream_name=stream_name,
                 stream_namespace=None,
+                stream_state=_NO_STATE,
                 config=config,
-                stream_state={},
             )
         )
 
@@ -3708,8 +3709,8 @@ def test_create_concurrent_cursor_uses_min_max_datetime_format_if_defined():
             component_definition=cursor_component_definition,
             stream_name=stream_name,
             stream_namespace=None,
+            stream_state=_NO_STATE,
             config=config,
-            stream_state={},
         )
     )
 
@@ -3808,8 +3809,8 @@ def test_create_concurrent_cursor_from_datetime_based_cursor_with_clamping(
                 component_definition=cursor_component_definition,
                 stream_name=stream_name,
                 stream_namespace=None,
+                stream_state=_NO_STATE,
                 config=config,
-                stream_state={},
             )
 
     else:
@@ -3820,8 +3821,8 @@ def test_create_concurrent_cursor_from_datetime_based_cursor_with_clamping(
                 component_definition=cursor_component_definition,
                 stream_name=stream_name,
                 stream_namespace=None,
+                stream_state=_NO_STATE,
                 config=config,
-                stream_state={},
             )
         )
 
