@@ -3,9 +3,10 @@
 #
 
 from dataclasses import dataclass, field
-from typing import ClassVar, List, Optional
+from typing import Any, ClassVar, List, Mapping, Optional
 
 from airbyte_cdk.sources.declarative.extractors import DpathExtractor
+from airbyte_cdk.sources.declarative.migrations.state_migration import StateMigration
 from airbyte_cdk.sources.declarative.partition_routers import SubstreamPartitionRouter
 from airbyte_cdk.sources.declarative.requesters import RequestOption
 from airbyte_cdk.sources.declarative.requesters.error_handlers import DefaultErrorHandler
@@ -49,3 +50,35 @@ class TestingCustomSubstreamPartitionRouter(SubstreamPartitionRouter):
 @dataclass
 class TestingCustomRetriever(SimpleRetriever):
     pass
+
+
+class TestingStateMigration(StateMigration):
+    def should_migrate(self, stream_state: Mapping[str, Any]) -> bool:
+        return True
+
+    def migrate(self, stream_state: Mapping[str, Any]) -> Mapping[str, Any]:
+        updated_at = stream_state["updated_at"]
+        return {
+            "states": [
+                {
+                    "partition": {"type": "type_1"},
+                    "cursor": {"updated_at": updated_at},
+                },
+                {
+                    "partition": {"type": "type_2"},
+                    "cursor": {"updated_at": updated_at},
+                },
+            ]
+        }
+
+
+class TestingStateMigrationWithParentState(StateMigration):
+    def should_migrate(self, stream_state: Mapping[str, Any]) -> bool:
+        return True
+
+    def migrate(self, stream_state: Mapping[str, Any]) -> Mapping[str, Any]:
+        stream_state["lookback_window"] = 20
+        stream_state["parent_state"]["parent_stream"] = {
+            "updated_at": "2024-02-01T00:00:00.000000+00:00"
+        }
+        return stream_state

@@ -1264,22 +1264,12 @@ class ModelToComponentFactory:
         component_definition: ComponentDefinition,
         stream_name: str,
         stream_namespace: Optional[str],
+        stream_state: MutableMapping[str, Any],
         config: Config,
         message_repository: Optional[MessageRepository] = None,
         runtime_lookback_window: Optional[datetime.timedelta] = None,
-        stream_state_migrations: Optional[List[Any]] = None,
         **kwargs: Any,
     ) -> ConcurrentCursor:
-        # Per-partition incremental streams can dynamically create child cursors which will pass their current
-        # state via the stream_state keyword argument. Incremental syncs without parent streams use the
-        # incoming state and connector_state_manager that is initialized when the component factory is created
-        stream_state = (
-            self._connector_state_manager.get_stream_state(stream_name, stream_namespace)
-            if "stream_state" not in kwargs
-            else kwargs["stream_state"]
-        )
-        stream_state = self.apply_stream_state_migrations(stream_state_migrations, stream_state)
-
         component_type = component_definition.get("type")
         if component_definition.get("type") != model_type.__name__:
             raise ValueError(
@@ -1498,21 +1488,11 @@ class ModelToComponentFactory:
         component_definition: ComponentDefinition,
         stream_name: str,
         stream_namespace: Optional[str],
+        stream_state: MutableMapping[str, Any],
         config: Config,
         message_repository: Optional[MessageRepository] = None,
-        stream_state_migrations: Optional[List[Any]] = None,
         **kwargs: Any,
     ) -> ConcurrentCursor:
-        # Per-partition incremental streams can dynamically create child cursors which will pass their current
-        # state via the stream_state keyword argument. Incremental syncs without parent streams use the
-        # incoming state and connector_state_manager that is initialized when the component factory is created
-        stream_state = (
-            self._connector_state_manager.get_stream_state(stream_name, stream_namespace)
-            if "stream_state" not in kwargs
-            else kwargs["stream_state"]
-        )
-        stream_state = self.apply_stream_state_migrations(stream_state_migrations, stream_state)
-
         component_type = component_definition.get("type")
         if component_definition.get("type") != model_type.__name__:
             raise ValueError(
@@ -1587,7 +1567,6 @@ class ModelToComponentFactory:
         config: Config,
         stream_state: MutableMapping[str, Any],
         partition_router: PartitionRouter,
-        stream_state_migrations: Optional[List[Any]] = None,
         attempt_to_create_cursor_if_not_provided: bool = False,
         **kwargs: Any,
     ) -> ConcurrentPerPartitionCursor:
@@ -1647,11 +1626,9 @@ class ModelToComponentFactory:
                 stream_namespace=stream_namespace,
                 config=config,
                 message_repository=NoopMessageRepository(),
-                # stream_state_migrations=stream_state_migrations,  # FIXME is it expected to run migration on per partition state too?
             )
         )
 
-        stream_state = self.apply_stream_state_migrations(stream_state_migrations, stream_state)
         # Per-partition state doesn't make sense for GroupingPartitionRouter, so force the global state
         use_global_cursor = isinstance(
             partition_router, GroupingPartitionRouter
@@ -1974,6 +1951,7 @@ class ModelToComponentFactory:
         self, model: DeclarativeStreamModel, config: Config, is_parent: bool = False, **kwargs: Any
     ) -> AbstractStream:
         primary_key = model.primary_key.__root__ if model.primary_key else None
+        self._migrate_state(model, config)
 
         partition_router = self._build_stream_slicer_from_partition_router(
             model.retriever,
@@ -2135,6 +2113,23 @@ class ModelToComponentFactory:
             supports_file_transfer=hasattr(model, "file_uploader") and bool(model.file_uploader),
         )
 
+    def _migrate_state(self, model: DeclarativeStreamModel, config: Config) -> None:
+        stream_name = model.name or ""
+        stream_state = self._connector_state_manager.get_stream_state(
+            stream_name=stream_name, namespace=None
+        )
+        if model.state_migrations:
+            state_transformations = [
+                self._create_component_from_model(state_migration, config, declarative_stream=model)
+                for state_migration in model.state_migrations
+            ]
+        else:
+            state_transformations = []
+        stream_state = self.apply_stream_state_migrations(state_transformations, stream_state)
+        self._connector_state_manager.update_state_for_stream(
+            stream_name=stream_name, namespace=None, value=stream_state
+        )
+
     def _is_stop_condition_on_cursor(self, model: DeclarativeStreamModel) -> bool:
         return bool(
             model.incremental_sync
@@ -2206,17 +2201,7 @@ class ModelToComponentFactory:
         config: Config,
     ) -> Cursor:
         stream_name = model.name or ""
-        stream_state = self._connector_state_manager.get_stream_state(
-            stream_name=stream_name, namespace=None
-        )
-
-        if model.state_migrations:
-            state_transformations = [
-                self._create_component_from_model(state_migration, config, declarative_stream=model)
-                for state_migration in model.state_migrations
-            ]
-        else:
-            state_transformations = []
+        stream_state = self._connector_state_manager.get_stream_state(stream_name, None)
 
         if (
             model.incremental_sync
@@ -2228,10 +2213,9 @@ class ModelToComponentFactory:
                 model_type=DatetimeBasedCursorModel,
                 component_definition=model.incremental_sync.__dict__,
                 stream_name=stream_name,
+                stream_state=stream_state,
                 stream_namespace=None,
                 config=config or {},
-                stream_state=stream_state,
-                stream_state_migrations=state_transformations,
                 partition_router=stream_slicer,
                 attempt_to_create_cursor_if_not_provided=True,  # FIXME can we remove that now?
             )
@@ -2242,8 +2226,8 @@ class ModelToComponentFactory:
                     component_definition=model.incremental_sync.__dict__,
                     stream_name=stream_name,
                     stream_namespace=None,
+                    stream_state=stream_state,
                     config=config or {},
-                    stream_state_migrations=state_transformations,
                 )
             elif type(model.incremental_sync) == DatetimeBasedCursorModel:
                 return self.create_concurrent_cursor_from_datetime_based_cursor(  # type: ignore # This is a known issue that we are creating and returning a ConcurrentCursor which does not technically implement the (low-code) StreamSlicer. However, (low-code) StreamSlicer and ConcurrentCursor both implement StreamSlicer.stream_slices() which is the primary method needed for checkpointing
@@ -2251,8 +2235,8 @@ class ModelToComponentFactory:
                     component_definition=model.incremental_sync.__dict__,
                     stream_name=stream_name,
                     stream_namespace=None,
+                    stream_state=stream_state,
                     config=config or {},
-                    stream_state_migrations=state_transformations,
                     attempt_to_create_cursor_if_not_provided=True,
                 )
             else:
