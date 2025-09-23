@@ -390,7 +390,9 @@ def test_component_mapping_conditions(manifest, config, expected_conditional_par
 
 
 _MANIFEST_WITH_VALUE_TYPE_STR = deepcopy(_MANIFEST)
-_MANIFEST_WITH_VALUE_TYPE_STR["dynamic_streams"][0]["components_resolver"]["components_mapping"].extend(
+_MANIFEST_WITH_VALUE_TYPE_STR["dynamic_streams"][0]["components_resolver"][
+    "components_mapping"
+].extend(
     [
         {
             "type": "ComponentMappingDefinition",
@@ -430,7 +432,7 @@ _MANIFEST_WITH_VALUE_TYPE_STR["dynamic_streams"][0]["components_resolver"]["comp
             "field_path": ["retriever", "requester", "$parameters", "date_yaml_parsed"],
             "value": "2024-07-10",  # no value_type -> YAML should parse to datetime.date
             "create_or_update": True,
-        }
+        },
     ]
 )
 
@@ -475,4 +477,3 @@ def test_value_type_str_avoids_yaml_parsing():
         assert "date_yaml_parsed" in params
         assert isinstance(params["date_yaml_parsed"], dt_date)
         assert params["date_yaml_parsed"].isoformat() == "2024-07-10"
-
