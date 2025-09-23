@@ -195,6 +195,7 @@ input_config = {
 }
 CONFIG_START_TIME = ab_datetime_parse(input_config["start_time"])
 CONFIG_END_TIME = ab_datetime_parse(input_config["end_time"])
+_NO_STATE = {}
 
 
 def get_factory_with_parameters(
@@ -3325,21 +3326,7 @@ def test_create_concurrent_cursor_from_datetime_based_cursor_all_fields(
 
     stream_name = "test"
 
-    connector_state_manager = ConnectorStateManager(
-        state=[
-            AirbyteStateMessage(
-                type=AirbyteStateType.STREAM,
-                stream=AirbyteStreamState(
-                    stream_descriptor=StreamDescriptor(name=stream_name),
-                    stream_state=AirbyteStateBlob(stream_state),
-                ),
-            )
-        ]
-    )
-
-    connector_builder_factory = ModelToComponentFactory(
-        emit_connector_builder_messages=True, connector_state_manager=connector_state_manager
-    )
+    connector_builder_factory = ModelToComponentFactory(emit_connector_builder_messages=True)
 
     cursor_component_definition = {
         "type": "DatetimeBasedCursor",
@@ -3360,13 +3347,13 @@ def test_create_concurrent_cursor_from_datetime_based_cursor_all_fields(
             component_definition=cursor_component_definition,
             stream_name=stream_name,
             stream_namespace=None,
+            stream_state=stream_state,
             config=config,
         )
     )
 
     assert concurrent_cursor._stream_name == stream_name
     assert not concurrent_cursor._stream_namespace
-    assert concurrent_cursor._connector_state_manager == connector_state_manager
     assert concurrent_cursor.cursor_field.cursor_field_key == expected_cursor_field
     assert concurrent_cursor._slice_range == expected_step
     assert concurrent_cursor._lookback_window == expected_lookback_window
@@ -3481,8 +3468,8 @@ def test_create_concurrent_cursor_from_datetime_based_cursor(
                 component_definition=cursor_component_definition,
                 stream_name=stream_name,
                 stream_namespace=None,
+                stream_state=_NO_STATE,
                 config=config,
-                stream_state={},
             )
     else:
         concurrent_cursor = (
@@ -3492,131 +3479,184 @@ def test_create_concurrent_cursor_from_datetime_based_cursor(
                 component_definition=cursor_component_definition,
                 stream_name=stream_name,
                 stream_namespace=None,
+                stream_state=_NO_STATE,
                 config=config,
-                stream_state={},
             )
         )
 
         assert getattr(concurrent_cursor, assertion_field) == expected_value
 
 
-def test_create_concurrent_cursor_from_datetime_based_cursor_runs_state_migrations():
-    class DummyStateMigration:
-        def should_migrate(self, stream_state: Mapping[str, Any]) -> bool:
-            return True
+def test_create_default_stream_with_datetime_cursor_then_runs_state_migrations():
+    content = """
+  type: DeclarativeStream
+  primary_key: "id"
+  name: test
+  schema_loader:
+    type: InlineSchemaLoader
+    schema:
+      $schema: "http://json-schema.org/draft-07/schema"
+      type: object
+      properties:
+        id:
+          type: string
+  incremental_sync:
+    type: "DatetimeBasedCursor"
+    cursor_field: "updated_at"
+    datetime_format: "%Y-%m-%dT%H:%M:%S.%f%z"
+    start_datetime: "{{ config['start_time'] }}"
+    end_datetime: "{{ config['end_time'] }}"
+    partition_field_start: "custom_start"
+    partition_field_end: "custom_end"
+    step: "P10D"
+    cursor_granularity: "PT0.000001S"
+    lookback_window: "P3D"
+  retriever:
+    type: SimpleRetriever
+    name: test
+    requester:
+      type: HttpRequester
+      name: "test"
+      url_base: "https://api.test.com/v3/"
+      http_method: "GET"
+      authenticator:
+        type: NoAuth
+    record_selector:
+      type: RecordSelector
+      extractor:
+        type: DpathExtractor
+        field_path: []
+  state_migrations:
+    - type: CustomStateMigration
+      class_name: unit_tests.sources.declarative.parsers.testing_components.TestingStateMigration
+    """
 
-        def migrate(self, stream_state: Mapping[str, Any]) -> Mapping[str, Any]:
-            updated_at = stream_state["updated_at"]
-            return {
-                "states": [
-                    {
-                        "partition": {"type": "type_1"},
-                        "cursor": {"updated_at": updated_at},
-                    },
-                    {
-                        "partition": {"type": "type_2"},
-                        "cursor": {"updated_at": updated_at},
-                    },
-                ]
-            }
-
-    stream_name = "test"
-    config = {
-        "start_time": "2024-08-01T00:00:00.000000Z",
-        "end_time": "2024-09-01T00:00:00.000000Z",
-    }
-    stream_state = {"updated_at": "2025-01-01T00:00:00.000000Z"}
-    connector_builder_factory = ModelToComponentFactory(emit_connector_builder_messages=True)
-    connector_state_manager = ConnectorStateManager()
-    cursor_component_definition = {
-        "type": "DatetimeBasedCursor",
-        "cursor_field": "updated_at",
-        "datetime_format": "%Y-%m-%dT%H:%M:%S.%fZ",
-        "start_datetime": "{{ config['start_time'] }}",
-        "end_datetime": "{{ config['end_time'] }}",
-        "partition_field_start": "custom_start",
-        "partition_field_end": "custom_end",
-        "step": "P10D",
-        "cursor_granularity": "PT0.000001S",
-        "lookback_window": "P3D",
-    }
-    concurrent_cursor = (
-        connector_builder_factory.create_concurrent_cursor_from_datetime_based_cursor(
-            state_manager=connector_state_manager,
-            model_type=DatetimeBasedCursorModel,
-            component_definition=cursor_component_definition,
-            stream_name=stream_name,
-            stream_namespace=None,
-            config=config,
-            stream_state=stream_state,
-            stream_state_migrations=[DummyStateMigration()],
-        )
+    stream_state = {"updated_at": "2025-01-01T00:00:00.000000+00:00"}
+    connector_state_manager = ConnectorStateManager(
+        state=[
+            AirbyteStateMessage(
+                type=AirbyteStateType.STREAM,
+                stream=AirbyteStreamState(
+                    stream_descriptor=StreamDescriptor(name="test"),
+                    stream_state=AirbyteStateBlob(stream_state),
+                ),
+            )
+        ]
     )
-    assert concurrent_cursor.state["states"] == [
+    factory = ModelToComponentFactory(
+        emit_connector_builder_messages=True, connector_state_manager=connector_state_manager
+    )
+    stream = factory.create_component(
+        model_type=DeclarativeStreamModel,
+        component_definition=YamlDeclarativeSource._parse(content),
+        config=input_config,
+    )
+    assert stream.cursor.state["states"] == [
         {"cursor": {"updated_at": stream_state["updated_at"]}, "partition": {"type": "type_1"}},
         {"cursor": {"updated_at": stream_state["updated_at"]}, "partition": {"type": "type_2"}},
     ]
 
 
-def test_create_concurrent_cursor_from_perpartition_cursor_runs_state_migrations():
-    class DummyStateMigration:
-        def should_migrate(self, stream_state: Mapping[str, Any]) -> bool:
-            return True
+def test_create_concurrent_cursor_from_perpartition_cursor_runs_state_migrations_on_both_child_and_parent():
+    content = """
+    type: DeclarativeStream
+    primary_key: "id"
+    name: test
+    schema_loader:
+      type: InlineSchemaLoader
+      schema:
+        $schema: "http://json-schema.org/draft-07/schema"
+        type: object
+        properties:
+          id:
+            type: string
+    incremental_sync:
+      type: "DatetimeBasedCursor"
+      cursor_field: "updated_at"
+      datetime_format: "%Y-%m-%dT%H:%M:%S.%f%z"
+      start_datetime: "{{ config['start_time'] }}"
+    retriever:
+      type: SimpleRetriever
+      name: test
+      requester:
+        type: HttpRequester
+        name: "test"
+        url_base: "https://api.test.com/v3/"
+        http_method: "GET"
+        authenticator:
+          type: NoAuth
+      record_selector:
+        type: RecordSelector
+        extractor:
+          type: DpathExtractor
+          field_path: []
+      partition_router:
+        type: SubstreamPartitionRouter
+        parent_stream_configs:
+          - type: ParentStreamConfig
+            parent_key: id
+            partition_field: id
+            incremental_dependency: true
+            stream:
+              type: DeclarativeStream
+              primary_key: id
+              name: parent_stream
+              schema_loader:
+                type: InlineSchemaLoader
+                schema:
+                  $schema: "http://json-schema.org/draft-07/schema"
+                  type: object
+                  properties:
+                    id:
+                      type: string
+              incremental_sync:
+                type: "DatetimeBasedCursor"
+                cursor_field: "updated_at"
+                datetime_format: "%Y-%m-%dT%H:%M:%S.%f%z"
+                start_datetime: "{{ config['start_time'] }}"
+              retriever:
+                type: SimpleRetriever
+                requester:
+                  type: HttpRequester
+                  url_base: "https://api.test.com/v3/parent"
+                  http_method: "GET"
+                record_selector:
+                  type: RecordSelector
+                  extractor:
+                    type: DpathExtractor
+                    field_path: []
+    state_migrations:
+      - type: CustomStateMigration
+        class_name: unit_tests.sources.declarative.parsers.testing_components.TestingStateMigrationWithParentState
+      """
 
-        def migrate(self, stream_state: Mapping[str, Any]) -> Mapping[str, Any]:
-            stream_state["lookback_window"] = 10 * 2
-            return stream_state
-
-    state = {
-        "states": [
-            {
-                "partition": {"type": "typ_1"},
-                "cursor": {"updated_at": "2024-08-01T00:00:00.000000Z"},
-            }
-        ],
-        "state": {"updated_at": "2024-08-01T00:00:00.000000Z"},
-        "lookback_window": 10,
-        "parent_state": {"parent_test": {"last_updated": "2024-08-01T00:00:00.000000Z"}},
+    stream_state = {
+        "state": {"updated_at": "2025-01-01T00:00:00.000000+00:00"},
+        "parent_state": {"parent_stream": {"updated_at": "2025-01-01T00:00:00.000000+00:00"}},
     }
-    config = {
-        "start_time": "2024-08-01T00:00:00.000000Z",
-        "end_time": "2024-09-01T00:00:00.000000Z",
-    }
-    list_partition_router = ListPartitionRouter(
-        cursor_field="id",
-        values=["type_1", "type_2", "type_3"],
-        config=config,
-        parameters={},
+    connector_state_manager = ConnectorStateManager(
+        state=[
+            AirbyteStateMessage(
+                type=AirbyteStateType.STREAM,
+                stream=AirbyteStreamState(
+                    stream_descriptor=StreamDescriptor(name="test"),
+                    stream_state=AirbyteStateBlob(stream_state),
+                ),
+            )
+        ]
     )
-    connector_state_manager = ConnectorStateManager()
-    stream_name = "test"
-    cursor_component_definition = {
-        "type": "DatetimeBasedCursor",
-        "cursor_field": "updated_at",
-        "datetime_format": "%Y-%m-%dT%H:%M:%S.%fZ",
-        "start_datetime": "{{ config['start_time'] }}",
-        "end_datetime": "{{ config['end_time'] }}",
-        "partition_field_start": "custom_start",
-        "partition_field_end": "custom_end",
-        "step": "P10D",
-        "cursor_granularity": "PT0.000001S",
-        "lookback_window": "P3D",
-    }
-    connector_builder_factory = ModelToComponentFactory(emit_connector_builder_messages=True)
-    cursor = connector_builder_factory.create_concurrent_cursor_from_perpartition_cursor(
-        state_manager=connector_state_manager,
-        model_type=DatetimeBasedCursorModel,
-        component_definition=cursor_component_definition,
-        stream_name=stream_name,
-        stream_namespace=None,
-        config=config,
-        stream_state=state,
-        partition_router=list_partition_router,
-        stream_state_migrations=[DummyStateMigration()],
+    factory = ModelToComponentFactory(
+        emit_connector_builder_messages=True, connector_state_manager=connector_state_manager
     )
-    assert cursor.state["lookback_window"] != 10, "State migration wasn't called"
-    assert cursor.state["lookback_window"] == 20, (
-        "State migration was called, but actual state don't match expected"
+    stream = factory.create_component(
+        model_type=DeclarativeStreamModel,
+        component_definition=YamlDeclarativeSource._parse(content),
+        config=input_config,
+    )
+    assert stream.cursor.state["lookback_window"] == 20
+    assert (
+        stream.cursor._partition_router.parent_stream_configs[0].stream.cursor.state["updated_at"]
+        == "2024-02-01T00:00:00.000000+0000"
     )
 
 
@@ -3669,8 +3709,8 @@ def test_create_concurrent_cursor_uses_min_max_datetime_format_if_defined():
             component_definition=cursor_component_definition,
             stream_name=stream_name,
             stream_namespace=None,
+            stream_state=_NO_STATE,
             config=config,
-            stream_state={},
         )
     )
 
@@ -3769,8 +3809,8 @@ def test_create_concurrent_cursor_from_datetime_based_cursor_with_clamping(
                 component_definition=cursor_component_definition,
                 stream_name=stream_name,
                 stream_namespace=None,
+                stream_state=_NO_STATE,
                 config=config,
-                stream_state={},
             )
 
     else:
@@ -3781,8 +3821,8 @@ def test_create_concurrent_cursor_from_datetime_based_cursor_with_clamping(
                 component_definition=cursor_component_definition,
                 stream_name=stream_name,
                 stream_namespace=None,
+                stream_state=_NO_STATE,
                 config=config,
-                stream_state={},
             )
         )
 
