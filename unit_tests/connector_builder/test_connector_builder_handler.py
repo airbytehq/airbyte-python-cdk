@@ -1442,11 +1442,10 @@ def test_read_stream_error_message_does_not_contain_config_and_catalog():
     # Mock the source
     mock_source = MagicMock()
 
-    # Patch the handler to raise a meaningful exception
     with patch(
         "airbyte_cdk.connector_builder.test_reader.TestReader.run_test_read"
     ) as mock_handler:
-        # Simulate a common error like the datetime parsing error from the user's example
+        # Simulate a common error like a datetime parsing error
         mock_handler.side_effect = ValueError("time data '' does not match format '%Y-%m-%dT%H:%M:%SZ'")
 
         # Call the read_stream function
@@ -1463,15 +1462,14 @@ def test_read_stream_error_message_does_not_contain_config_and_catalog():
         assert "__injected_declarative_manifest" not in user_message
         
         # But it should contain the actual error
-        assert "time data" in user_message
-        assert "does not match format" in user_message
+        stream_name = catalog.streams[0].stream.name
+        assert user_message == f"Error reading stream {stream_name}: time data '' does not match format '%Y-%m-%dT%H:%M:%SZ'"
         
         # The internal message should contain technical details for debugging
         internal_message = response.trace.error.internal_message
         assert "verbose_config_data" in internal_message
         assert "verbose_catalog_schema" in internal_message
-        assert "Error reading stream with config=" in internal_message
-        assert "and catalog=" in internal_message
+        assert f"Error reading stream {stream_name} with config=" in internal_message
 
 
 def test_full_resolve_manifest(valid_resolve_manifest_config_file):
