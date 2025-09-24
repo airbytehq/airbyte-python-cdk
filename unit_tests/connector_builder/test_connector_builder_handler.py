@@ -1412,24 +1412,24 @@ def test_read_stream_error_message_does_not_contain_config_and_catalog():
     """
     Test that error messages in read_stream are clean and user-friendly,
     without embedding verbose config and catalog information.
-    
+
     This test verifies that:
     1. The user-facing `message` is clean and doesn't contain config/catalog dumps
     2. The technical `internal_message` still contains full context for debugging
     """
     # Create a config and catalog with identifiable content
     config = {
-        "__injected_declarative_manifest": "test_manifest", 
+        "__injected_declarative_manifest": "test_manifest",
         "verbose_config_data": "this_should_not_appear_in_user_message",
-        "api_key": "secret_key_value"
+        "api_key": "secret_key_value",
     }
     catalog = ConfiguredAirbyteCatalog(
         streams=[
             ConfiguredAirbyteStream(
                 stream=AirbyteStream(
-                    name=_stream_name, 
-                    json_schema={"properties": {"verbose_catalog_schema": {"type": "string"}}}, 
-                    supported_sync_modes=[SyncMode.full_refresh]
+                    name=_stream_name,
+                    json_schema={"properties": {"verbose_catalog_schema": {"type": "string"}}},
+                    supported_sync_modes=[SyncMode.full_refresh],
                 ),
                 sync_mode=SyncMode.full_refresh,
                 destination_sync_mode=DestinationSyncMode.append,
@@ -1446,7 +1446,9 @@ def test_read_stream_error_message_does_not_contain_config_and_catalog():
         "airbyte_cdk.connector_builder.test_reader.TestReader.run_test_read"
     ) as mock_handler:
         # Simulate a common error like a datetime parsing error
-        mock_handler.side_effect = ValueError("time data '' does not match format '%Y-%m-%dT%H:%M:%SZ'")
+        mock_handler.side_effect = ValueError(
+            "time data '' does not match format '%Y-%m-%dT%H:%M:%SZ'"
+        )
 
         # Call the read_stream function
         response = read_stream(mock_source, config, catalog, state, limits)
@@ -1454,17 +1456,20 @@ def test_read_stream_error_message_does_not_contain_config_and_catalog():
         # Verify it's a trace message with an error
         assert response.type == Type.TRACE
         assert response.trace.type.value == "ERROR"
-        
+
         # The user-facing message should be clean - no config or catalog dumps
         user_message = response.trace.error.message
         assert "verbose_config_data" not in user_message
         assert "verbose_catalog_schema" not in user_message
         assert "__injected_declarative_manifest" not in user_message
-        
+
         # But it should contain the actual error
         stream_name = catalog.streams[0].stream.name
-        assert user_message == f"Error reading stream {stream_name}: time data '' does not match format '%Y-%m-%dT%H:%M:%SZ'"
-        
+        assert (
+            user_message
+            == f"Error reading stream {stream_name}: time data '' does not match format '%Y-%m-%dT%H:%M:%SZ'"
+        )
+
         # The internal message should contain technical details for debugging
         internal_message = response.trace.error.internal_message
         assert "verbose_config_data" in internal_message
