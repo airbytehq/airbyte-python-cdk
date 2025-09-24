@@ -1408,6 +1408,72 @@ def test_read_stream_exception_with_secrets():
         assert "super_secret_key" not in response.trace.error.message
 
 
+def test_read_stream_error_message_does_not_contain_config_and_catalog():
+    """
+    Test that error messages in read_stream are clean and user-friendly,
+    without embedding verbose config and catalog information.
+    
+    This test verifies that:
+    1. The user-facing `message` is clean and doesn't contain config/catalog dumps
+    2. The technical `internal_message` still contains full context for debugging
+    """
+    # Create a config and catalog with identifiable content
+    config = {
+        "__injected_declarative_manifest": "test_manifest", 
+        "verbose_config_data": "this_should_not_appear_in_user_message",
+        "api_key": "secret_key_value"
+    }
+    catalog = ConfiguredAirbyteCatalog(
+        streams=[
+            ConfiguredAirbyteStream(
+                stream=AirbyteStream(
+                    name=_stream_name, 
+                    json_schema={"properties": {"verbose_catalog_schema": {"type": "string"}}}, 
+                    supported_sync_modes=[SyncMode.full_refresh]
+                ),
+                sync_mode=SyncMode.full_refresh,
+                destination_sync_mode=DestinationSyncMode.append,
+            )
+        ]
+    )
+    state = []
+    limits = TestLimits()
+
+    # Mock the source
+    mock_source = MagicMock()
+
+    # Patch the handler to raise a meaningful exception
+    with patch(
+        "airbyte_cdk.connector_builder.test_reader.TestReader.run_test_read"
+    ) as mock_handler:
+        # Simulate a common error like the datetime parsing error from the user's example
+        mock_handler.side_effect = ValueError("time data '' does not match format '%Y-%m-%dT%H:%M:%SZ'")
+
+        # Call the read_stream function
+        response = read_stream(mock_source, config, catalog, state, limits)
+
+        # Verify it's a trace message with an error
+        assert response.type == Type.TRACE
+        assert response.trace.type.value == "ERROR"
+        
+        # The user-facing message should be clean - no config or catalog dumps
+        user_message = response.trace.error.message
+        assert "verbose_config_data" not in user_message
+        assert "verbose_catalog_schema" not in user_message
+        assert "__injected_declarative_manifest" not in user_message
+        
+        # But it should contain the actual error
+        assert "time data" in user_message
+        assert "does not match format" in user_message
+        
+        # The internal message should contain technical details for debugging
+        internal_message = response.trace.error.internal_message
+        assert "verbose_config_data" in internal_message
+        assert "verbose_catalog_schema" in internal_message
+        assert "Error reading stream with config=" in internal_message
+        assert "and catalog=" in internal_message
+
+
 def test_full_resolve_manifest(valid_resolve_manifest_config_file):
     config = copy.deepcopy(RESOLVE_DYNAMIC_STREAM_MANIFEST_CONFIG)
     command = config["__command"]

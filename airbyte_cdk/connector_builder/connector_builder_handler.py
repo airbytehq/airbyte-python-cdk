@@ -117,11 +117,15 @@ def read_stream(
             ),
         )
     except Exception as exc:
+        # - message: user-friendly error for display
+        # - internal_message: technical details for debugging (including config/catalog)
         error = AirbyteTracedException.from_exception(
             exc,
-            message=filter_secrets(
-                f"Error reading stream with config={config} and catalog={configured_catalog}: {str(exc)}"
-            ),
+            message=filter_secrets(f"Error reading stream: {str(exc)}"),
+        )
+        # Override internal_message to include context for debugging
+        error.internal_message = filter_secrets(
+            f"Error reading stream with config={config} and catalog={configured_catalog}: {str(exc)}"
         )
         return error.as_airbyte_message()
 
