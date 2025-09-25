@@ -9,7 +9,6 @@ from datetime import datetime
 from typing import Any, Mapping, Optional, Union, cast
 
 import jwt
-from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ec import EllipticCurvePrivateKey
 from cryptography.hazmat.primitives.asymmetric.ed448 import Ed448PrivateKey
@@ -179,7 +178,6 @@ class JwtAuthenticator(DeclarativeAuthenticator):
             private_key = serialization.load_pem_private_key(
                 secret_key.encode(),
                 password=self._passphrase.eval(self.config, json_loads=json.loads).encode(),
-                backend=default_backend(),
             )
             return cast(JwtKeyTypes, private_key)
         else:
