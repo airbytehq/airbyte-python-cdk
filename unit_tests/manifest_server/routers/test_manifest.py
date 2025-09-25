@@ -527,3 +527,126 @@ class TestManifestRouter:
         assert response.status_code == 422
         data = response.json()
         assert "Connector did not return a discovered catalog" in data["detail"]
+
+    # Test cases for error handling improvements
+    @patch("airbyte_cdk.manifest_server.routers.manifest.ManifestCommandProcessor")
+    @patch("airbyte_cdk.manifest_server.routers.manifest.build_source")
+    def test_test_read_cdk_error_handling(
+        self, mock_build_source, mock_runner_class, sample_manifest, sample_config, mock_source
+    ):
+        """Test that CDK errors in test_read are properly caught and converted to HTTP 400."""
+        request_data = {
+            "manifest": sample_manifest,
+            "config": sample_config,
+            "stream_name": "products"
+        }
+
+        mock_build_source.return_value = mock_source
+
+        mock_runner = Mock()
+        # Simulate a CDK error (like datetime parsing error)
+        mock_runner.test_read.side_effect = ValueError("time data '' does not match format '%Y-%m-%dT%H:%M:%SZ'")
+        mock_runner_class.return_value = mock_runner
+
+        response = client.post("/v1/manifest/test_read", json=request_data)
+
+        assert response.status_code == 400
+        data = response.json()
+        assert "detail" in data
+        assert "Error reading stream:" in data["detail"]
+        assert "time data" in data["detail"]
+        assert "does not match format" in data["detail"]
+
+    @patch("airbyte_cdk.manifest_server.routers.manifest.ManifestCommandProcessor")
+    @patch("airbyte_cdk.manifest_server.routers.manifest.build_source")
+    def test_check_cdk_error_handling(
+        self, mock_build_source, mock_runner_class, sample_manifest, sample_config, mock_source
+    ):
+        """Test that CDK errors in check are properly caught and converted to HTTP 400."""
+        request_data = {
+            "manifest": sample_manifest,
+            "config": sample_config,
+        }
+
+        mock_build_source.return_value = mock_source
+
+        mock_runner = Mock()
+        # Simulate a CDK error (like connection error)
+        mock_runner.check_connection.side_effect = ConnectionError("Failed to connect to API")
+        mock_runner_class.return_value = mock_runner
+
+        response = client.post("/v1/manifest/check", json=request_data)
+
+        assert response.status_code == 400
+        data = response.json()
+        assert "detail" in data
+        assert "Error checking connection:" in data["detail"]
+        assert "Failed to connect to API" in data["detail"]
+
+    @patch("airbyte_cdk.manifest_server.routers.manifest.ManifestCommandProcessor")
+    @patch("airbyte_cdk.manifest_server.routers.manifest.build_source")
+    def test_discover_cdk_error_handling(
+        self, mock_build_source, mock_runner_class, sample_manifest, sample_config, mock_source
+    ):
+        """Test that CDK errors in discover are properly caught and converted to HTTP 400."""
+        request_data = {
+            "manifest": sample_manifest,
+            "config": sample_config,
+        }
+
+        mock_build_source.return_value = mock_source
+
+        mock_runner = Mock()
+        # Simulate a CDK error
+        mock_runner.discover.side_effect = RuntimeError("Schema validation failed")
+        mock_runner_class.return_value = mock_runner
+
+        response = client.post("/v1/manifest/discover", json=request_data)
+
+        assert response.status_code == 400
+        data = response.json()
+        assert "detail" in data
+        assert "Error discovering streams:" in data["detail"]
+        assert "Schema validation failed" in data["detail"]
+
+    @patch("airbyte_cdk.manifest_server.routers.manifest.build_source")
+    def test_resolve_cdk_error_handling(
+        self, mock_build_source, sample_manifest
+    ):
+        """Test that CDK errors in resolve are properly caught and converted to HTTP 400."""
+        request_data = {
+            "manifest": sample_manifest,
+        }
+
+        # Simulate a CDK error during source building
+        mock_build_source.side_effect = AttributeError("'NoneType' object has no attribute 'get'")
+
+        response = client.post("/v1/manifest/resolve", json=request_data)
+
+        assert response.status_code == 400
+        data = response.json()
+        assert "detail" in data
+        assert "Error resolving manifest:" in data["detail"]
+        assert "'NoneType' object has no attribute 'get'" in data["detail"]
+
+    @patch("airbyte_cdk.manifest_server.routers.manifest.build_source")
+    def test_full_resolve_cdk_error_handling(
+        self, mock_build_source, sample_manifest, sample_config
+    ):
+        """Test that CDK errors in full_resolve are properly caught and converted to HTTP 400."""
+        request_data = {
+            "manifest": sample_manifest,
+            "config": sample_config,
+            "stream_limit": 10
+        }
+
+        # Simulate a CDK error during source building
+        mock_build_source.side_effect = KeyError("Missing required field 'streams'")
+
+        response = client.post("/v1/manifest/full_resolve", json=request_data)
+
+        assert response.status_code == 400
+        data = response.json()
+        assert "detail" in data
+        assert "Error full resolving manifest:" in data["detail"]
+        assert "Missing required field 'streams'" in data["detail"]

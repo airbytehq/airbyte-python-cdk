@@ -5,8 +5,10 @@ from typing import Any, Dict, List, Mapping, Optional
 import jsonschema
 from airbyte_protocol_dataclasses.models import AirbyteStateMessage, ConfiguredAirbyteCatalog
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import JSONResponse
 
 from airbyte_cdk.models import AirbyteStateMessageSerializer
+from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 from airbyte_cdk.sources.declarative.concurrent_declarative_source import (
     ConcurrentDeclarativeSource,
 )
@@ -98,15 +100,21 @@ def test_read(request: StreamTestReadRequest) -> StreamReadResponse:
     )
 
     runner = ManifestCommandProcessor(source)
-    cdk_result = runner.test_read(
-        config_dict,
-        catalog,
-        converted_state,
-        request.record_limit,
-        request.page_limit,
-        request.slice_limit,
-    )
-    return StreamReadResponse.model_validate(asdict(cdk_result))
+    try:
+        cdk_result = runner.test_read(
+            config_dict,
+            catalog,
+            converted_state,
+            request.record_limit,
+            request.page_limit,
+            request.slice_limit,
+        )
+        return StreamReadResponse.model_validate(asdict(cdk_result))
+    except Exception as exc:
+        error = AirbyteTracedException.from_exception(
+            exc, message=f"Error reading stream: {str(exc)}"
+        )
+        raise HTTPException(status_code=400, detail=error.message)
 
 
 @router.post("/check", operation_id="check")
@@ -119,10 +127,16 @@ def check(request: CheckRequest) -> CheckResponse:
             project_id=request.context.project_id,
         )
 
-    source = safe_build_source(request.manifest.model_dump(), request.config.model_dump())
-    runner = ManifestCommandProcessor(source)
-    success, message = runner.check_connection(request.config.model_dump())
-    return CheckResponse(success=success, message=message)
+    try:
+        source = safe_build_source(request.manifest.model_dump(), request.config.model_dump())
+        runner = ManifestCommandProcessor(source)
+        success, message = runner.check_connection(request.config.model_dump())
+        return CheckResponse(success=success, message=message)
+    except Exception as exc:
+        error = AirbyteTracedException.from_exception(
+            exc, message=f"Error checking connection: {str(exc)}"
+        )
+        raise HTTPException(status_code=400, detail=error.message)
 
 
 @router.post("/discover", operation_id="discover")
@@ -135,12 +149,21 @@ def discover(request: DiscoverRequest) -> DiscoverResponse:
             project_id=request.context.project_id,
         )
 
-    source = safe_build_source(request.manifest.model_dump(), request.config.model_dump())
-    runner = ManifestCommandProcessor(source)
-    catalog = runner.discover(request.config.model_dump())
-    if catalog is None:
-        raise HTTPException(status_code=422, detail="Connector did not return a discovered catalog")
-    return DiscoverResponse(catalog=catalog)
+    try:
+        source = safe_build_source(request.manifest.model_dump(), request.config.model_dump())
+        runner = ManifestCommandProcessor(source)
+        catalog = runner.discover(request.config.model_dump())
+        if catalog is None:
+            raise HTTPException(status_code=422, detail="Connector did not return a discovered catalog")
+        return DiscoverResponse(catalog=catalog)
+    except HTTPException:
+        # Re-raise HTTPExceptions as-is (like the catalog None check above)
+        raise
+    except Exception as exc:
+        error = AirbyteTracedException.from_exception(
+            exc, message=f"Error discovering streams: {str(exc)}"
+        )
+        raise HTTPException(status_code=400, detail=error.message)
 
 
 @router.post("/resolve", operation_id="resolve")
@@ -153,8 +176,14 @@ def resolve(request: ResolveRequest) -> ManifestResponse:
             project_id=request.context.project_id,
         )
 
-    source = safe_build_source(request.manifest.model_dump(), {})
-    return ManifestResponse(manifest=Manifest(**source.resolved_manifest))
+    try:
+        source = safe_build_source(request.manifest.model_dump(), {})
+        return ManifestResponse(manifest=Manifest(**source.resolved_manifest))
+    except Exception as exc:
+        error = AirbyteTracedException.from_exception(
+            exc, message=f"Error resolving manifest: {str(exc)}"
+        )
+        raise HTTPException(status_code=400, detail=error.message)
 
 
 @router.post("/full_resolve", operation_id="fullResolve")
@@ -171,21 +200,27 @@ def full_resolve(request: FullResolveRequest) -> ManifestResponse:
             project_id=request.context.project_id,
         )
 
-    source = safe_build_source(request.manifest.model_dump(), request.config.model_dump())
-    manifest = {**source.resolved_manifest}
-    streams = manifest.get("streams", [])
-    for stream in streams:
-        stream["dynamic_stream_name"] = None
+    try:
+        source = safe_build_source(request.manifest.model_dump(), request.config.model_dump())
+        manifest = {**source.resolved_manifest}
+        streams = manifest.get("streams", [])
+        for stream in streams:
+            stream["dynamic_stream_name"] = None
 
-    mapped_streams: Dict[str, List[Dict[str, Any]]] = {}
-    for stream in source.dynamic_streams:
-        generated_streams = mapped_streams.setdefault(stream["dynamic_stream_name"], [])
+        mapped_streams: Dict[str, List[Dict[str, Any]]] = {}
+        for stream in source.dynamic_streams:
+            generated_streams = mapped_streams.setdefault(stream["dynamic_stream_name"], [])
 
-        if len(generated_streams) < request.stream_limit:
-            generated_streams += [stream]
+            if len(generated_streams) < request.stream_limit:
+                generated_streams += [stream]
 
-    for generated_streams_list in mapped_streams.values():
-        streams.extend(generated_streams_list)
+        for generated_streams_list in mapped_streams.values():
+            streams.extend(generated_streams_list)
 
-    manifest["streams"] = streams
-    return ManifestResponse(manifest=Manifest(**manifest))
+        manifest["streams"] = streams
+        return ManifestResponse(manifest=Manifest(**manifest))
+    except Exception as exc:
+        error = AirbyteTracedException.from_exception(
+            exc, message=f"Error full resolving manifest: {str(exc)}"
+        )
+        raise HTTPException(status_code=400, detail=error.message)
