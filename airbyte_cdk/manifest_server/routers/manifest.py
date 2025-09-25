@@ -8,7 +8,6 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import JSONResponse
 
 from airbyte_cdk.models import AirbyteStateMessageSerializer
-from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 from airbyte_cdk.sources.declarative.concurrent_declarative_source import (
     ConcurrentDeclarativeSource,
 )
@@ -16,6 +15,7 @@ from airbyte_cdk.sources.declarative.parsers.custom_code_compiler import (
     INJECTED_COMPONENTS_PY,
     INJECTED_COMPONENTS_PY_CHECKSUMS,
 )
+from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 
 from ..api_models import (
     CheckRequest,
@@ -154,7 +154,9 @@ def discover(request: DiscoverRequest) -> DiscoverResponse:
         runner = ManifestCommandProcessor(source)
         catalog = runner.discover(request.config.model_dump())
         if catalog is None:
-            raise HTTPException(status_code=422, detail="Connector did not return a discovered catalog")
+            raise HTTPException(
+                status_code=422, detail="Connector did not return a discovered catalog"
+            )
         return DiscoverResponse(catalog=catalog)
     except HTTPException:
         # Re-raise HTTPExceptions as-is (like the catalog None check above)
