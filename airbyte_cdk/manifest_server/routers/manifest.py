@@ -5,8 +5,6 @@ from typing import Any, Dict, List, Mapping, Optional
 import jsonschema
 from airbyte_protocol_dataclasses.models import AirbyteStateMessage, ConfiguredAirbyteCatalog
 from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import JSONResponse
-
 from airbyte_cdk.models import AirbyteStateMessageSerializer
 from airbyte_cdk.sources.declarative.concurrent_declarative_source import (
     ConcurrentDeclarativeSource,
