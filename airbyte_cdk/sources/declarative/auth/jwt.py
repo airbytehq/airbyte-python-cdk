@@ -6,17 +6,26 @@ import base64
 import json
 from dataclasses import InitVar, dataclass
 from datetime import datetime
-from typing import Any, Mapping, Optional, Union
+from typing import Any, Mapping, Optional, Union, cast
 
 import jwt
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric.ec import EllipticCurvePrivateKey
+from cryptography.hazmat.primitives.asymmetric.ed448 import Ed448PrivateKey
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+from cryptography.hazmat.primitives.asymmetric.rsa import RSAPrivateKey
 from cryptography.hazmat.primitives.asymmetric.types import PrivateKeyTypes
 
 from airbyte_cdk.sources.declarative.auth.declarative_authenticator import DeclarativeAuthenticator
 from airbyte_cdk.sources.declarative.interpolation.interpolated_boolean import InterpolatedBoolean
 from airbyte_cdk.sources.declarative.interpolation.interpolated_mapping import InterpolatedMapping
 from airbyte_cdk.sources.declarative.interpolation.interpolated_string import InterpolatedString
+
+# Type alias for keys that JWT library accepts
+JwtKeyTypes = Union[
+    RSAPrivateKey, EllipticCurvePrivateKey, Ed25519PrivateKey, Ed448PrivateKey, str, bytes
+]
 
 
 class JwtAlgorithm(str):
@@ -158,18 +167,21 @@ class JwtAuthenticator(DeclarativeAuthenticator):
         payload["nbf"] = nbf
         return payload
 
-    def _get_secret_key(self) -> PrivateKeyTypes | str | bytes:
+    def _get_secret_key(self) -> JwtKeyTypes:
         """
         Returns the secret key used to sign the JWT.
         """
         secret_key: str = self._secret_key.eval(self.config, json_loads=json.loads)
 
         if self._passphrase:
-            return serialization.load_pem_private_key(
+            # Load encrypted private key and cast to JWT-compatible type
+            # The JWT algorithms we support (RSA, ECDSA, EdDSA) use compatible key types
+            private_key = serialization.load_pem_private_key(
                 secret_key.encode(),
                 password=self._passphrase.eval(self.config, json_loads=json.loads).encode(),
                 backend=default_backend(),
             )
+            return cast(JwtKeyTypes, private_key)
         else:
             return (
                 base64.b64encode(secret_key.encode()).decode()

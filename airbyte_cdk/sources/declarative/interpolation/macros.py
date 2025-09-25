@@ -208,9 +208,12 @@ def camel_case_to_snake_case(value: str) -> str:
     return re.sub(r"(?<!^)(?=[A-Z])", "_", value).lower()
 
 
-def random_uuid() -> str:
+def generate_uuid() -> str:
     """
     Generates a UUID4
+
+    Usage:
+    `"{{ generate_uuid() }}"`
     """
     return str(uuid.uuid4())
 
@@ -228,5 +231,6 @@ _macros_list = [
     str_to_datetime,
     sanitize_url,
     camel_case_to_snake_case,
+    generate_uuid,
 ]
 macros = {f.__name__: f for f in _macros_list}
