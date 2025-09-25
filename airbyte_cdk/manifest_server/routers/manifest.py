@@ -22,6 +22,7 @@ from ..api_models import (
     CheckResponse,
     DiscoverRequest,
     DiscoverResponse,
+    ErrorResponse,
     FullResolveRequest,
     Manifest,
     ManifestResponse,
@@ -66,7 +67,9 @@ router = APIRouter(
 )
 
 
-@router.post("/test_read", operation_id="testRead")
+@router.post("/test_read", operation_id="testRead", responses={
+    400: {"description": "Bad Request - Error processing request", "model": ErrorResponse}
+})
 def test_read(request: StreamTestReadRequest) -> StreamReadResponse:
     """
     Test reading from a specific stream in the manifest.
@@ -117,7 +120,9 @@ def test_read(request: StreamTestReadRequest) -> StreamReadResponse:
         raise HTTPException(status_code=400, detail=error.message)
 
 
-@router.post("/check", operation_id="check")
+@router.post("/check", operation_id="check", responses={
+    400: {"description": "Bad Request - Error processing request", "model": ErrorResponse}
+})
 def check(request: CheckRequest) -> CheckResponse:
     """Check configuration against a manifest"""
     # Apply trace tags from context if provided
@@ -139,7 +144,9 @@ def check(request: CheckRequest) -> CheckResponse:
         raise HTTPException(status_code=400, detail=error.message)
 
 
-@router.post("/discover", operation_id="discover")
+@router.post("/discover", operation_id="discover", responses={
+    400: {"description": "Bad Request - Error processing request", "model": ErrorResponse}
+})
 def discover(request: DiscoverRequest) -> DiscoverResponse:
     """Discover streams from a manifest"""
     # Apply trace tags from context if provided
@@ -166,7 +173,9 @@ def discover(request: DiscoverRequest) -> DiscoverResponse:
         raise HTTPException(status_code=400, detail=error.message)
 
 
-@router.post("/resolve", operation_id="resolve")
+@router.post("/resolve", operation_id="resolve", responses={
+    400: {"description": "Bad Request - Error processing request", "model": ErrorResponse}
+})
 def resolve(request: ResolveRequest) -> ManifestResponse:
     """Resolve a manifest to its final configuration."""
     # Apply trace tags from context if provided
@@ -186,7 +195,9 @@ def resolve(request: ResolveRequest) -> ManifestResponse:
         raise HTTPException(status_code=400, detail=error.message)
 
 
-@router.post("/full_resolve", operation_id="fullResolve")
+@router.post("/full_resolve", operation_id="fullResolve", responses={
+    400: {"description": "Bad Request - Error processing request", "model": ErrorResponse}
+})
 def full_resolve(request: FullResolveRequest) -> ManifestResponse:
     """
     Fully resolve a manifest, including dynamic streams.

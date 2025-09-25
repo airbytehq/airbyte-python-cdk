@@ -10,6 +10,7 @@ from .manifest import (
     CheckResponse,
     DiscoverRequest,
     DiscoverResponse,
+    ErrorResponse,
     FullResolveRequest,
     ManifestResponse,
     RequestContext,
@@ -40,6 +41,7 @@ __all__ = [
     "CheckResponse",
     "DiscoverRequest",
     "DiscoverResponse",
+    "ErrorResponse",
     # Stream models
     "AuxiliaryRequest",
     "HttpRequest",
