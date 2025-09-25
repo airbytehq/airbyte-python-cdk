@@ -6,14 +6,25 @@ import base64
 import json
 from dataclasses import InitVar, dataclass
 from datetime import datetime
-from typing import Any, Mapping, Optional, Union
+from typing import Any, Mapping, Optional, Union, cast
 
 import jwt
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric.ec import EllipticCurvePrivateKey
+from cryptography.hazmat.primitives.asymmetric.ed448 import Ed448PrivateKey
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+from cryptography.hazmat.primitives.asymmetric.rsa import RSAPrivateKey
+from cryptography.hazmat.primitives.asymmetric.types import PrivateKeyTypes
 
 from airbyte_cdk.sources.declarative.auth.declarative_authenticator import DeclarativeAuthenticator
 from airbyte_cdk.sources.declarative.interpolation.interpolated_boolean import InterpolatedBoolean
 from airbyte_cdk.sources.declarative.interpolation.interpolated_mapping import InterpolatedMapping
 from airbyte_cdk.sources.declarative.interpolation.interpolated_string import InterpolatedString
+
+# Type alias for keys that JWT library accepts
+JwtKeyTypes = Union[
+    RSAPrivateKey, EllipticCurvePrivateKey, Ed25519PrivateKey, Ed448PrivateKey, str, bytes
+]
 
 
 class JwtAlgorithm(str):
@@ -74,6 +85,7 @@ class JwtAuthenticator(DeclarativeAuthenticator):
     aud: Optional[Union[InterpolatedString, str]] = None
     additional_jwt_headers: Optional[Mapping[str, Any]] = None
     additional_jwt_payload: Optional[Mapping[str, Any]] = None
+    passphrase: Optional[Union[InterpolatedString, str]] = None
 
     def __post_init__(self, parameters: Mapping[str, Any]) -> None:
         self._secret_key = InterpolatedString.create(self.secret_key, parameters=parameters)
@@ -102,6 +114,11 @@ class JwtAuthenticator(DeclarativeAuthenticator):
         )
         self._additional_jwt_payload = InterpolatedMapping(
             self.additional_jwt_payload or {}, parameters=parameters
+        )
+        self._passphrase = (
+            InterpolatedString.create(self.passphrase, parameters=parameters)
+            if self.passphrase
+            else None
         )
 
     def _get_jwt_headers(self) -> dict[str, Any]:
@@ -149,11 +166,21 @@ class JwtAuthenticator(DeclarativeAuthenticator):
         payload["nbf"] = nbf
         return payload
 
-    def _get_secret_key(self) -> str:
+    def _get_secret_key(self) -> JwtKeyTypes:
         """
         Returns the secret key used to sign the JWT.
         """
         secret_key: str = self._secret_key.eval(self.config, json_loads=json.loads)
+
+        if self._passphrase:
+            passphrase_value = self._passphrase.eval(self.config, json_loads=json.loads)
+            if passphrase_value:
+                private_key = serialization.load_pem_private_key(
+                    secret_key.encode(),
+                    password=passphrase_value.encode(),
+                )
+                return cast(JwtKeyTypes, private_key)
+
         return (
             base64.b64encode(secret_key.encode()).decode()
             if self._base64_encode_secret_key
