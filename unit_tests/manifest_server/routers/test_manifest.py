@@ -538,14 +538,16 @@ class TestManifestRouter:
         request_data = {
             "manifest": sample_manifest,
             "config": sample_config,
-            "stream_name": "products"
+            "stream_name": "products",
         }
 
         mock_build_source.return_value = mock_source
 
         mock_runner = Mock()
         # Simulate a CDK error (like datetime parsing error)
-        mock_runner.test_read.side_effect = ValueError("time data '' does not match format '%Y-%m-%dT%H:%M:%SZ'")
+        mock_runner.test_read.side_effect = ValueError(
+            "time data '' does not match format '%Y-%m-%dT%H:%M:%SZ'"
+        )
         mock_runner_class.return_value = mock_runner
 
         response = client.post("/v1/manifest/test_read", json=request_data)
@@ -610,9 +612,7 @@ class TestManifestRouter:
         assert "Schema validation failed" in data["detail"]
 
     @patch("airbyte_cdk.manifest_server.routers.manifest.build_source")
-    def test_resolve_cdk_error_handling(
-        self, mock_build_source, sample_manifest
-    ):
+    def test_resolve_cdk_error_handling(self, mock_build_source, sample_manifest):
         """Test that CDK errors in resolve are properly caught and converted to HTTP 400."""
         request_data = {
             "manifest": sample_manifest,
@@ -634,11 +634,7 @@ class TestManifestRouter:
         self, mock_build_source, sample_manifest, sample_config
     ):
         """Test that CDK errors in full_resolve are properly caught and converted to HTTP 400."""
-        request_data = {
-            "manifest": sample_manifest,
-            "config": sample_config,
-            "stream_limit": 10
-        }
+        request_data = {"manifest": sample_manifest, "config": sample_config, "stream_limit": 10}
 
         # Simulate a CDK error during source building
         mock_build_source.side_effect = KeyError("Missing required field 'streams'")
