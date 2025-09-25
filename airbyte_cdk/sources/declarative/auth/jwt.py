@@ -173,19 +173,19 @@ class JwtAuthenticator(DeclarativeAuthenticator):
         secret_key: str = self._secret_key.eval(self.config, json_loads=json.loads)
 
         if self._passphrase:
-            # Load encrypted private key and cast to JWT-compatible type
-            # The JWT algorithms we support (RSA, ECDSA, EdDSA) use compatible key types
-            private_key = serialization.load_pem_private_key(
-                secret_key.encode(),
-                password=self._passphrase.eval(self.config, json_loads=json.loads).encode(),
-            )
-            return cast(JwtKeyTypes, private_key)
-        else:
-            return (
-                base64.b64encode(secret_key.encode()).decode()
-                if self._base64_encode_secret_key
-                else secret_key
-            )
+            passphrase_value = self._passphrase.eval(self.config, json_loads=json.loads)
+            if passphrase_value:
+                private_key = serialization.load_pem_private_key(
+                    secret_key.encode(),
+                    password=passphrase_value.encode(),
+                )
+                return cast(JwtKeyTypes, private_key)
+
+        return (
+            base64.b64encode(secret_key.encode()).decode()
+            if self._base64_encode_secret_key
+            else secret_key
+        )
 
     def _get_signed_token(self) -> Union[str, Any]:
         """
