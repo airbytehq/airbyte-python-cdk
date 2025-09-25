@@ -9,6 +9,9 @@ from datetime import datetime
 from typing import Any, Mapping, Optional, Union
 
 import jwt
+from cryptography.hazmat.backends import default_backend
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric.types import PrivateKeyTypes
 
 from airbyte_cdk.sources.declarative.auth.declarative_authenticator import DeclarativeAuthenticator
 from airbyte_cdk.sources.declarative.interpolation.interpolated_boolean import InterpolatedBoolean
@@ -74,6 +77,7 @@ class JwtAuthenticator(DeclarativeAuthenticator):
     aud: Optional[Union[InterpolatedString, str]] = None
     additional_jwt_headers: Optional[Mapping[str, Any]] = None
     additional_jwt_payload: Optional[Mapping[str, Any]] = None
+    passphrase: Optional[Union[InterpolatedString, str]] = None
 
     def __post_init__(self, parameters: Mapping[str, Any]) -> None:
         self._secret_key = InterpolatedString.create(self.secret_key, parameters=parameters)
@@ -102,6 +106,11 @@ class JwtAuthenticator(DeclarativeAuthenticator):
         )
         self._additional_jwt_payload = InterpolatedMapping(
             self.additional_jwt_payload or {}, parameters=parameters
+        )
+        self._passphrase = (
+            InterpolatedString.create(self.passphrase, parameters=parameters)
+            if self.passphrase
+            else None
         )
 
     def _get_jwt_headers(self) -> dict[str, Any]:
@@ -149,16 +158,24 @@ class JwtAuthenticator(DeclarativeAuthenticator):
         payload["nbf"] = nbf
         return payload
 
-    def _get_secret_key(self) -> str:
+    def _get_secret_key(self) -> PrivateKeyTypes | str | bytes:
         """
         Returns the secret key used to sign the JWT.
         """
         secret_key: str = self._secret_key.eval(self.config, json_loads=json.loads)
-        return (
-            base64.b64encode(secret_key.encode()).decode()
-            if self._base64_encode_secret_key
-            else secret_key
-        )
+
+        if self._passphrase:
+            return serialization.load_pem_private_key(
+                secret_key.encode(),
+                password=self._passphrase.eval(self.config, json_loads=json.loads).encode(),
+                backend=default_backend(),
+            )
+        else:
+            return (
+                base64.b64encode(secret_key.encode()).decode()
+                if self._base64_encode_secret_key
+                else secret_key
+            )
 
     def _get_signed_token(self) -> Union[str, Any]:
         """

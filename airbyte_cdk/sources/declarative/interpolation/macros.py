@@ -6,6 +6,7 @@ import builtins
 import datetime
 import re
 import typing
+import uuid
 from typing import Optional, Union
 from urllib.parse import quote_plus
 
@@ -205,6 +206,13 @@ def camel_case_to_snake_case(value: str) -> str:
      :return: snake_case formatted string
     """
     return re.sub(r"(?<!^)(?=[A-Z])", "_", value).lower()
+
+
+def random_uuid() -> str:
+    """
+    Generates a UUID4
+    """
+    return str(uuid.uuid4())
 
 
 _macros_list = [

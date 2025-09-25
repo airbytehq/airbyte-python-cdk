@@ -2705,6 +2705,7 @@ class ModelToComponentFactory:
             aud=jwt_payload.aud,
             additional_jwt_headers=model.additional_jwt_headers,
             additional_jwt_payload=model.additional_jwt_payload,
+            passphrase=model.passphrase,
         )
 
     def create_list_partition_router(

@@ -448,6 +448,12 @@ class JwtAuthenticator(BaseModel):
         description="Additional properties to be added to the JWT payload.",
         title="Additional JWT Payload Properties",
     )
+    passphrase: Optional[str] = Field(
+        None,
+        description="A passphrase/password used to encrypt the private key. Only provide a passphrase if required by the API for JWT authentication. The API will typically provide the passphrase when generating the public/private key pair.",
+        examples=["{{ config['passphrase'] }}"],
+        title="Passphrase",
+    )
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
 

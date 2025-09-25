@@ -1270,6 +1270,12 @@ definitions:
         title: Additional JWT Payload Properties
         description: Additional properties to be added to the JWT payload.
         additionalProperties: true
+      passphrase:
+        title: Passphrase
+        description: A passphrase/password used to encrypt the private key. Only provide a passphrase if required by the API for JWT authentication. The API will typically provide the passphrase when generating the public/private key pair.
+        type: string
+        examples:
+          - "{{ config['passphrase'] }}"
       $parameters:
         type: object
         additionalProperties: true

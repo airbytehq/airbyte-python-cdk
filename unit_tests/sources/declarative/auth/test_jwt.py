@@ -8,6 +8,9 @@ from datetime import datetime
 import freezegun
 import jwt
 import pytest
+from cryptography.hazmat.backends import default_backend
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import rsa
 
 from airbyte_cdk.sources.declarative.auth.jwt import JwtAuthenticator
 
@@ -185,3 +188,100 @@ class TestJwtAuthenticator:
             header_prefix=header_prefix,
         )
         assert authenticator._get_header_prefix() == expected
+
+    def test_get_secret_key_with_passphrase(self):
+        """Test _get_secret_key method with encrypted private key and passphrase."""
+        # Generate a test RSA private key
+        private_key = rsa.generate_private_key(
+            public_exponent=65537, key_size=2048, backend=default_backend()
+        )
+
+        passphrase = b"test_passphrase"
+        encrypted_pem = private_key.private_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PrivateFormat.PKCS8,
+            encryption_algorithm=serialization.BestAvailableEncryption(passphrase),
+        )
+
+        authenticator = JwtAuthenticator(
+            config={},
+            parameters={},
+            secret_key=encrypted_pem.decode(),
+            algorithm="RS256",
+            token_duration=1200,
+            passphrase="test_passphrase",
+        )
+
+        result_key = authenticator._get_secret_key()
+
+        assert isinstance(result_key, rsa.RSAPrivateKey)
+
+        original_public_key = private_key.public_key()
+        result_public_key = result_key.public_key()
+
+        original_public_numbers = original_public_key.public_numbers()
+        result_public_numbers = result_public_key.public_numbers()
+
+        assert original_public_numbers.n == result_public_numbers.n
+        assert original_public_numbers.e == result_public_numbers.e
+
+    def test_get_secret_key_with_wrong_passphrase_raises_error(self):
+        """Test that _get_secret_key raises error with wrong passphrase."""
+        private_key = rsa.generate_private_key(
+            public_exponent=65537, key_size=2048, backend=default_backend()
+        )
+
+        passphrase = b"correct_passphrase"
+        encrypted_pem = private_key.private_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PrivateFormat.PKCS8,
+            encryption_algorithm=serialization.BestAvailableEncryption(passphrase),
+        )
+
+        authenticator = JwtAuthenticator(
+            config={},
+            parameters={},
+            secret_key=encrypted_pem.decode(),
+            algorithm="RS256",
+            token_duration=1200,
+            passphrase="wrong_passphrase",
+        )
+
+        with pytest.raises(Exception):
+            authenticator._get_secret_key()
+
+    def test_get_signed_token_with_passphrase_protected_key(self):
+        """Test that JWT signing works with passphrase-protected RSA private key."""
+        private_key = rsa.generate_private_key(
+            public_exponent=65537, key_size=2048, backend=default_backend()
+        )
+
+        passphrase = b"test_passphrase"
+        encrypted_pem = private_key.private_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PrivateFormat.PKCS8,
+            encryption_algorithm=serialization.BestAvailableEncryption(passphrase),
+        )
+
+        authenticator = JwtAuthenticator(
+            config={},
+            parameters={},
+            secret_key=encrypted_pem.decode(),
+            algorithm="RS256",
+            token_duration=1000,
+            passphrase="test_passphrase",
+            typ="JWT",
+            iss="test_issuer",
+        )
+
+        signed_token = authenticator._get_signed_token()
+
+        assert isinstance(signed_token, str)
+        assert len(signed_token.split(".")) == 3
+
+        public_key = private_key.public_key()
+        decoded_payload = jwt.decode(signed_token, public_key, algorithms=["RS256"])
+
+        assert decoded_payload["iss"] == "test_issuer"
+        assert "iat" in decoded_payload
+        assert "exp" in decoded_payload
