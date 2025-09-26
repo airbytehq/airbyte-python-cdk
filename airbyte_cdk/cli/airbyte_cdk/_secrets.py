@@ -466,7 +466,8 @@ def _print_ci_secret_mask_for_string(secret: str) -> None:
     For multi-line secrets, we must print a secret mask for each line separately.
     """
     for line in secret.splitlines():
-        print(f"::add-mask::{line!s}")
+        if line.strip():  # Skip empty lines
+            print(f"::add-mask::{line!s}")
 
 
 def _print_ci_secret_mask_for_value(value: Any) -> None:
@@ -491,7 +492,8 @@ def _print_ci_secret_mask_for_value(value: Any) -> None:
     # For any other types besides dict and list, we convert to string and mask each line
     # separately to handle multi-line secrets (e.g. private keys).
     for line in str(value).splitlines():
-        _print_ci_secret_mask_for_string(line)
+        if line.strip():  # Skip empty lines
+            _print_ci_secret_mask_for_string(line)
 
 
 def _print_ci_secrets_masks_for_config(
