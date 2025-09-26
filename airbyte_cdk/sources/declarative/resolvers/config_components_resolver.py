@@ -177,7 +177,11 @@ class ConfigComponentsResolver(ComponentsResolver):
                 )
 
                 path = [path.eval(self.config, **kwargs) for path in resolved_component.field_path]
-                parsed_value = self._parse_yaml_if_possible(value)
+                # Avoid parsing strings that are meant to be strings
+                if not (isinstance(value, str) and valid_types == (str,)):
+                    parsed_value = self._parse_yaml_if_possible(value)
+                else:
+                    parsed_value = value
                 updated = dpath.set(updated_config, path, parsed_value)
 
                 if parsed_value and not updated and resolved_component.create_or_update:
