@@ -459,31 +459,39 @@ def _print_ci_secrets_masks(
         _print_ci_secrets_masks_for_config(config=config_dict)
 
 
+def _print_ci_secret_mask_for_string(secret: str) -> None:
+    """Print GitHub CI mask for a single secret string.
+
+    We expect single-line secrets, but we also handle the case where the secret contains newlines.
+    For multi-line secrets, we must print a secret mask for each line separately.
+    """
+    for line in secret.splitlines():
+        print(f"::add-mask::{line!s}")
+
+
 def _print_ci_secret_mask_for_value(value: Any) -> None:
     """Print GitHub CI mask for a single secret value.
 
-    Dict and list values masked as their JSON stringified versions.
+    Call this function for any values identified as secrets, regardless of type.
     """
     if isinstance(value, dict):
-        # For nested dicts, we also need to mask the json-stringified version
+        # For nested dicts, we call recursively on each value
         for v in value.values():
             _print_ci_secret_mask_for_value(v)
 
         return
 
     if isinstance(value, list):
-        # For lists, we also need to mask the json-stringified version
+        # For lists, we call recursively on each list item
         for list_item in value:
             _print_ci_secret_mask_for_value(list_item)
 
         return
 
-    # For other types besides dict and list, we convert to string and mask each line
-    # separately to handle multi-line secrets (e.g. private keys)
-
-    secret_str_lines = str(value).splitlines()
-    for line in secret_str_lines:
-        print(f"::add-mask::{line!s}")
+    # For any other types besides dict and list, we convert to string and mask each line
+    # separately to handle multi-line secrets (e.g. private keys).
+    for line in str(value).splitlines():
+        _print_ci_secret_mask_for_string(line)
 
 
 def _print_ci_secrets_masks_for_config(
