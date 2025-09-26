@@ -1,5 +1,6 @@
 # Copyright (c) 2025 Airbyte, Inc., all rights reserved.
 """Unit tests for the secret masking functionality in the Airbyte CDK CLI."""
+
 from unittest.mock import patch
 
 import pytest
