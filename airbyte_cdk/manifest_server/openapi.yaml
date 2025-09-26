@@ -8,7 +8,7 @@ info:
   contact:
     name: Airbyte
     url: https://airbyte.com/
-  version: 0.1.0
+  version: 0.2.0
 paths:
   /health/:
     get:
@@ -62,6 +62,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/StreamReadResponse'
+        '400':
+          description: Bad Request - Error processing request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '422':
           description: Validation Error
           content:
@@ -90,6 +96,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/CheckResponse'
+        '400':
+          description: Bad Request - Error processing request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '422':
           description: Validation Error
           content:
@@ -118,6 +130,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/DiscoverResponse'
+        '400':
+          description: Bad Request - Error processing request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '422':
           description: Validation Error
           content:
@@ -146,6 +164,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ManifestResponse'
+        '400':
+          description: Bad Request - Error processing request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '422':
           description: Validation Error
           content:
@@ -180,6 +204,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ManifestResponse'
+        '400':
+          description: Bad Request - Error processing request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '422':
           description: Validation Error
           content:
@@ -353,6 +383,16 @@ components:
       - catalog
       title: DiscoverResponse
       description: Response to discover a manifest.
+    ErrorResponse:
+      properties:
+        detail:
+          type: string
+          title: Detail
+      type: object
+      required:
+      - detail
+      title: ErrorResponse
+      description: Error response for API requests.
     FullResolveRequest:
       properties:
         manifest:
