@@ -1,8 +1,107 @@
 # Copyright (c) 2024 Airbyte, Inc., all rights reserved.
-"""Run acceptance tests in PyTest.
+"""Models to define test scenarios (smoke tests) which leverage the Standard Tests framework.
 
-These tests leverage the same `acceptance-test-config.yml` configuration files as the
-acceptance tests in CAT, but they run in PyTest instead of CAT. This allows us to run
+NOTE: The `acceptance-test-config.yml` file has been deprecated in favor of the new format.
+
+Connector smoke tests should be defined in the connector's `metadata.yaml` file, under the
+`connectorTestSuitesOptions` section, as shown in the example below:
+
+## Basic Configuration of Scenarios
+
+```yaml
+data:
+  # ...
+  connectorTestSuitesOptions:
+    # ...
+    - suite: smokeTests
+      scenarios:
+        - name: default
+          config_file: secrets/config_oauth.json
+        - name: invalid_config
+          config_file: integration_tests/invalid_config.json
+          expect_failure: true
+```
+
+You can also specify config settings inline, instead of using a config file:
+
+```yaml
+data:
+  # ...
+  connectorTestSuitesOptions:
+    # ...
+    - suite: smokeTests
+      scenarios:
+        - name: default
+          config_file: secrets/config_oauth.json
+          config_settings:
+            # This will override any matching settings in `config_file`:
+            start_date: "2025-01-01T00:00:00Z"
+        - name: invalid_config
+          # No config file needed if using fully hard-coded settings:
+          config_settings:
+            client_id: invalid
+            client_secret: invalid
+```
+
+## Streams Filtering
+
+There are several ways to filter which streams are read during a test scenario:
+
+- `only_streams`: A list of stream names to include in the scenario.
+- `exclude_streams`: A list of stream names to exclude from the scenario.
+- `suggested_streams_only`: A boolean indicating whether to limit to the connector's suggested
+  streams list, if present. (Looks for `data.suggestedStreams` field in `metadata.yaml`.)
+
+### Stream Filtering Examples
+
+Filter for just one stream:
+
+```yaml
+data:
+  # ...
+  connectorTestSuitesOptions:
+    # ...
+    - suite: smokeTests
+      scenarios:
+        - name: default
+          config_file: secrets/config_oauth.json
+          only_streams:
+            - users
+```
+
+Exclude a set of premium or restricted streams:
+
+```yaml
+data:
+  # ...
+  connectorTestSuitesOptions:
+    # ...
+    - suite: smokeTests
+      scenarios:
+        - name: default # exclude premium streams
+          exclude_streams:
+            - premium_users
+            - restricted_users
+```
+
+Filter to just the suggested streams, minus a specific excluded streams:
+
+```yaml
+data:
+  # ...
+  connectorTestSuitesOptions:
+    # ...
+    - suite: smokeTests
+      scenarios:
+        - name: default # suggested streams, except restricted_users
+          suggested_streams_only: true
+          exclude_streams:
+            - restricted_users
+
+## Legacy Configuration
+
+For legacy purposes, these tests can leverage the same `acceptance-test-config.yml` configuration
+files as the acceptance tests in CAT, but they run in PyTest instead of CAT. This allows us to run
 the acceptance tests in the same local environment as we are developing in, speeding
 up iteration cycles.
 """
