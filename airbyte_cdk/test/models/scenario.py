@@ -11,12 +11,13 @@ from __future__ import annotations
 
 import json
 import tempfile
+from collections.abc import Callable, Generator
 from contextlib import contextmanager, suppress
 from pathlib import Path  # noqa: TC003  # Pydantic needs this (don't move to 'if typing' block)
 from typing import TYPE_CHECKING, Any, Literal, cast
 
 import yaml
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from airbyte_cdk.test.models.outcome import ExpectedOutcome
 
@@ -24,8 +25,260 @@ if TYPE_CHECKING:
     from collections.abc import Generator
 
 
+_LEGACY_FAILURE_STATUSES: set[str] = {"failed", "exception"}
+
+
 class ConnectorTestScenario(BaseModel):
-    """Acceptance test scenario, as a Pydantic model.
+    """Smoke test scenario, as a Pydantic model."""
+
+    name: str = Field(kw_only=True)
+    """What to call this scenario in test reports.
+
+    Common names include:
+    - "default": the default scenario for a connector, with a valid config.
+    - "invalid_config": a scenario with an invalid config, to test error handling.
+    - "oauth_config": a scenario that uses OAuth for authentication.
+    """
+
+    config_file: Path | None = Field(kw_only=True, default=None)
+    """Relative path to the config file to use for this scenario."""
+
+    config_settings: dict[str, Any] | None = Field(default=None, kw_only=True)
+    """Optional dictionary of config settings to use for this scenario.
+
+    If both `config_settings` and `config_file` are provided, keys in `config_settings` take precedence over
+    corresponding settings within `config_file`. This allows a single secrets file to be used for multiple scenarios,
+    with scenario-specific overrides applied as needed.
+    """
+
+    expect_failure: bool = Field(default=False, kw_only=True)
+    """Whether the scenario is expected to fail."""
+
+    only_streams: list[str] | None = Field(default=None, kw_only=True)
+    """List of stream names to include in the scenario."""
+
+    exclude_streams: list[str] | None = Field(default=None, kw_only=True)
+    """List of stream names to exclude from the scenario."""
+
+    suggested_streams_only: bool = Field(default=False, kw_only=True)
+    """Whether to limit to the connector's suggested streams list, if present."""
+
+    suggested_streams: list[str] | None = Field(default=None, kw_only=True)
+    """List of suggested stream names for the connector (if provided)."""
+
+    configured_catalog_path: Path | None = Field(default=None, kw_only=True)
+    """Path to the configured catalog file for the scenario."""
+
+    def get_streams_filter(
+        self,
+    ) -> Callable[[str], bool]:
+        """Return a function that filters streams based on the scenario's only_streams and exclude_streams.
+
+        If neither only_streams nor exclude_streams are set, return None.
+        """
+
+        def filter_fn(stream_name: str) -> bool:
+            if self.only_streams is not None and stream_name not in self.only_streams:
+                # Stream is not in the `only_streams` list, exclude it.
+                return False
+
+            if self.exclude_streams is not None and stream_name in self.exclude_streams:
+                # Stream is in the `exclude_streams` list, exclude it.
+                return False
+
+            # No exclusion reason found, include the stream.
+            return True
+
+        return filter_fn
+
+    @classmethod
+    def from_metadata_yaml(cls, metadata_yaml: Path) -> list[ConnectorTestScenario] | None:
+        """Return a list of scenarios defined within a metadata YAML file.
+
+        Example `metadata_yaml` content:
+        ```yaml
+
+        scenarios:
+        data:
+            # ...
+            connectorTestSuitesOptions:
+                # ...
+                - suite: smokeTests
+                scenarios:
+                    - name: default
+                    config_file: secrets/config_oauth.json
+                    - name: invalid_config
+                    config_file: integration_tests/invalid_config.json
+                    expect_failure: true
+        ```
+
+        This simpler config replaces the legacy `acceptance-test-config.yml` file for
+        defining smoke test (previously called "Acceptance Test") scenarios for a connector.
+
+        Returns:
+          - None if the `smokeTests` suite is not defined in the metadata.
+          - An empty list if the `smokeTests` suite is defined but has no scenarios.
+          - A list of `ConnectorTestScenario` instances if the `smokeTests` suite is defined
+            and has scenarios.
+        """
+        metadata_data = yaml.safe_load(metadata_yaml.read_text()).get("data", {})
+        if not metadata_data:
+            raise ValueError(f"Metadata YAML file {metadata_yaml} is missing 'data' section.")
+
+        connector_test_suite_options = metadata_data.get("connectorTestSuitesOptions", [])
+        smoke_test_config: dict[str, Any] | None = next(
+            (
+                option
+                for option in connector_test_suite_options
+                if option.get("suite") == "smokeTests"
+            ),
+            None,
+        )
+        if smoke_test_config is None:
+            # Return `None` because the `smokeTests` suite is fully undefined.
+            return None
+
+        suggested_streams = metadata_data.get("suggestedStreams")
+
+        result: list[ConnectorTestScenario] = []
+
+        return [
+            cls.from_metadata_smoke_test_definition(
+                definition=scenario,
+                connector_root=metadata_yaml.parent,
+                suggested_streams=suggested_streams,
+            )
+            for scenario in smoke_test_config.get("scenarios", [])
+        ]
+
+    @classmethod
+    def from_metadata_smoke_test_definition(
+        cls,
+        definition: dict[str, Any],
+        connector_root: Path,
+        suggested_streams: list[str] | None,
+    ) -> ConnectorTestScenario:
+        """Return a scenario defined within a smoke test definition.
+
+        Example `definition` content:
+        ```yaml
+        name: default
+        config_file: secrets/config_oauth.json
+        expect_failure: true
+        ```
+
+        This simpler config replaces the legacy `acceptance-test-config.yml` file for
+        defining smoke test (previously called "Acceptance Test") scenarios for a connector.
+        """
+        if "config_file" not in definition:
+            raise ValueError("Smoke test scenario definition must include a 'config_file' field.")
+        if "name" not in definition:
+            raise ValueError("Smoke test scenario definition must include a 'name' field.")
+
+        return ConnectorTestScenario.model_validate({
+            **definition,
+            "suggested_streams": suggested_streams,
+        })
+
+    def with_expecting_failure(self) -> ConnectorTestScenario:
+        """Return a copy of the scenario that expects failure.
+
+        This is useful when deriving new scenarios from existing ones.
+        """
+        if self.expect_failure is True:
+            return self
+
+        return ConnectorTestScenario(
+            **self.model_dump(exclude={"expect_failure"}),
+            expect_failure=True,
+        )
+
+    def with_expecting_success(self) -> ConnectorTestScenario:
+        """Return a copy of the scenario that expects success.
+
+        This is useful when deriving new scenarios from existing ones.
+        """
+        if self.expect_failure is False:
+            return self
+
+        return ConnectorTestScenario(
+            **self.model_dump(exclude={"expect_failure"}),
+            expect_failure=False,
+        )
+
+    @property
+    def requires_creds(self) -> bool:
+        """Return True if the scenario requires credentials to run."""
+        return bool(self.config_file and "secrets" in self.config_file.parts)
+
+    def get_config_dict(
+        self,
+        *,
+        connector_root: Path,
+        empty_if_missing: bool,
+    ) -> dict[str, Any]:
+        """Return the config dictionary.
+
+        If a config dictionary has already been loaded, return it. Otherwise, load
+        the config file and return the dictionary.
+
+        If `self.config_dict` and `self.config_path` are both `None`:
+        - return an empty dictionary if `empty_if_missing` is True
+        - raise a ValueError if `empty_if_missing` is False
+        """
+        if not empty_if_missing and self.config_file is None and self.config_settings is None:
+            raise ValueError("No config dictionary or path provided.")
+
+        result: dict[str, Any] = {}
+        if self.config_file is not None:
+            config_path = self.config_file
+            if not config_path.is_absolute():
+                # We usually receive a relative path here. Let's resolve it.
+                config_path = (connector_root / self.config_file).resolve().absolute()
+
+            result.update(
+                cast(
+                    dict[str, Any],
+                    yaml.safe_load(config_path.read_text()),
+                )
+            )
+
+        if self.config_settings is not None:
+            result.update(self.config_settings)
+
+        return result
+
+    @contextmanager
+    def with_temp_config_file(
+        self,
+        connector_root: Path,
+    ) -> Generator[Path, None, None]:
+        """Yield a temporary JSON file path containing the config dict and delete it on exit."""
+        config = self.get_config_dict(
+            empty_if_missing=True,
+            connector_root=connector_root,
+        )
+        with tempfile.NamedTemporaryFile(
+            prefix="config-",
+            suffix=".json",
+            mode="w",
+            delete=False,  # Don't fail if cannot delete the file on exit
+            encoding="utf-8",
+        ) as temp_file:
+            temp_file.write(json.dumps(config))
+            temp_file.flush()
+            # Allow the file to be read by other processes
+            temp_path = Path(temp_file.name)
+            temp_path.chmod(temp_path.stat().st_mode | 0o444)
+            yield temp_path
+
+        # attempt cleanup, ignore errors
+        with suppress(OSError):
+            temp_path.unlink()
+
+
+class LegacyAcceptanceTestScenario(BaseModel):
+    """Legacy acceptance test scenario, as a Pydantic model.
 
     This class represents an acceptance test scenario, which is a single test case
     that can be run against a connector. It is used to deserialize and validate the
@@ -64,40 +317,6 @@ class ConnectorTestScenario(BaseModel):
     file_types: AcceptanceTestFileTypes | None = None
     status: Literal["succeed", "failed", "exception"] | None = None
 
-    def get_config_dict(
-        self,
-        *,
-        connector_root: Path,
-        empty_if_missing: bool,
-    ) -> dict[str, Any]:
-        """Return the config dictionary.
-
-        If a config dictionary has already been loaded, return it. Otherwise, load
-        the config file and return the dictionary.
-
-        If `self.config_dict` and `self.config_path` are both `None`:
-        - return an empty dictionary if `empty_if_missing` is True
-        - raise a ValueError if `empty_if_missing` is False
-        """
-        if self.config_dict is not None:
-            return self.config_dict
-
-        if self.config_path is not None:
-            config_path = self.config_path
-            if not config_path.is_absolute():
-                # We usually receive a relative path here. Let's resolve it.
-                config_path = (connector_root / self.config_path).resolve().absolute()
-
-            return cast(
-                dict[str, Any],
-                yaml.safe_load(config_path.read_text()),
-            )
-
-        if empty_if_missing:
-            return {}
-
-        raise ValueError("No config dictionary or path provided.")
-
     @property
     def expected_outcome(self) -> ExpectedOutcome:
         """Whether the test scenario expects an exception to be raised.
@@ -124,70 +343,20 @@ class ConnectorTestScenario(BaseModel):
     def __str__(self) -> str:
         return f"'{self.id}' Test Scenario"
 
-    @contextmanager
-    def with_temp_config_file(
-        self,
-        connector_root: Path,
-    ) -> Generator[Path, None, None]:
-        """Yield a temporary JSON file path containing the config dict and delete it on exit."""
-        config = self.get_config_dict(
-            empty_if_missing=True,
-            connector_root=connector_root,
-        )
-        with tempfile.NamedTemporaryFile(
-            prefix="config-",
-            suffix=".json",
-            mode="w",
-            delete=False,  # Don't fail if cannot delete the file on exit
-            encoding="utf-8",
-        ) as temp_file:
-            temp_file.write(json.dumps(config))
-            temp_file.flush()
-            # Allow the file to be read by other processes
-            temp_path = Path(temp_file.name)
-            temp_path.chmod(temp_path.stat().st_mode | 0o444)
-            yield temp_path
+    def as_test_scenario(self) -> ConnectorTestScenario:
+        """Return a ConnectorTestScenario representation of this scenario.
 
-        # attempt cleanup, ignore errors
-        with suppress(OSError):
-            temp_path.unlink()
-
-    def without_expected_outcome(self) -> ConnectorTestScenario:
-        """Return a copy of the scenario that does not expect failure or success.
-
-        This is useful when running multiple steps, to defer the expectations to a later step.
+        This is useful when we want to run the same scenario as both a legacy acceptance test
+        and a smoke test.
         """
-        return ConnectorTestScenario(
-            **self.model_dump(exclude={"status"}),
-        )
-
-    def with_expecting_failure(self) -> ConnectorTestScenario:
-        """Return a copy of the scenario that expects failure.
-
-        This is useful when deriving new scenarios from existing ones.
-        """
-        if self.status == "failed":
-            return self
+        if not self.config_path:
+            raise ValueError("Cannot convert to ConnectorTestScenario without a config_path.")
 
         return ConnectorTestScenario(
-            **self.model_dump(exclude={"status"}),
-            status="failed",
+            name=self.id,
+            config_file=self.config_path,
+            config_settings=self.config_dict,
+            exclude_streams=[s.name for s in self.empty_streams or []],
+            expect_failure=bool(self.status and self.status in _LEGACY_FAILURE_STATUSES),
+            configured_catalog_path=self.configured_catalog_path,
         )
-
-    def with_expecting_success(self) -> ConnectorTestScenario:
-        """Return a copy of the scenario that expects success.
-
-        This is useful when deriving new scenarios from existing ones.
-        """
-        if self.status == "succeed":
-            return self
-
-        return ConnectorTestScenario(
-            **self.model_dump(exclude={"status"}),
-            status="succeed",
-        )
-
-    @property
-    def requires_creds(self) -> bool:
-        """Return True if the scenario requires credentials to run."""
-        return bool(self.config_path and "secrets" in self.config_path.parts)
