@@ -12,7 +12,6 @@ from typing import Any, Callable, Iterable, List, MutableMapping, Optional, Set,
 
 from wcmatch.glob import GLOBSTAR, globmatch
 
-from airbyte_cdk.models import AirbyteRecordMessageFileReference
 from airbyte_cdk.sources.file_based.config.abstract_file_based_spec import AbstractFileBasedSpec
 from airbyte_cdk.sources.file_based.config.validate_config_transfer_modes import (
     include_identities_stream,
@@ -156,7 +155,7 @@ class AbstractFileBasedStreamReader(ABC):
     @abstractmethod
     def upload(
         self, file: RemoteFile, local_directory: str, logger: logging.Logger
-    ) -> Tuple[FileRecordData, AirbyteRecordMessageFileReference]:
+    ) -> Tuple[FileRecordData, Any]:
         """
         This is required for connectors that will support writing to
         files. It will handle the logic to download,get,read,acquire or
@@ -168,7 +167,7 @@ class AbstractFileBasedStreamReader(ABC):
                logger (logging.Logger): Logger for logging information and errors.
 
            Returns:
-               AirbyteRecordMessageFileReference: A file reference object containing:
+               Any: A file reference object containing:
                    - staging_file_url (str): The absolute path to the referenced file in the staging area.
                    - file_size_bytes (int): The size of the referenced file in bytes.
                    - source_file_relative_path (str): The relative path to the referenced file in source.
