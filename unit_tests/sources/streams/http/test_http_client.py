@@ -756,9 +756,7 @@ def test_given_noproxy_for_another_url_when_send_request_then_do_not_break(reque
         json={"test": "a response"},
     )
 
-    x = http_client.send_request(
-        "GET", "https://google.com/", request_kwargs={}
-    )
+    x = http_client.send_request("GET", "https://google.com/", request_kwargs={})
 
     assert x
 
