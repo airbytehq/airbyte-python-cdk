@@ -2683,12 +2683,16 @@ class ModelToComponentFactory:
             file_path=model.file_path or "", config=config, parameters=model.parameters or {}
         )
 
-    @staticmethod
     def create_jwt_authenticator(
-        model: JwtAuthenticatorModel, config: Config, **kwargs: Any
+        self, model: JwtAuthenticatorModel, config: Config, **kwargs: Any
     ) -> JwtAuthenticator:
         jwt_headers = model.jwt_headers or JwtHeadersModel(kid=None, typ="JWT", cty=None)
         jwt_payload = model.jwt_payload or JwtPayloadModel(iss=None, sub=None, aud=None)
+        request_option = (
+            self._create_component_from_model(model.request_option, config)
+            if model.request_option
+            else None
+        )
         return JwtAuthenticator(
             config=config,
             parameters=model.parameters or {},
@@ -2706,6 +2710,7 @@ class ModelToComponentFactory:
             additional_jwt_headers=model.additional_jwt_headers,
             additional_jwt_payload=model.additional_jwt_payload,
             passphrase=model.passphrase,
+            request_option=request_option,
         )
 
     def create_list_partition_router(

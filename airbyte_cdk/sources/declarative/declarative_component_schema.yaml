@@ -1276,6 +1276,10 @@ definitions:
         type: string
         examples:
           - "{{ config['passphrase'] }}"
+      request_option:
+        title: Request Option
+        description: A request option describing where the signed JWT token that is generated should be injected into the outbound API request.
+        "$ref": "#/definitions/RequestOption"
       $parameters:
         type: object
         additionalProperties: true
