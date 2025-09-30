@@ -3034,6 +3034,10 @@ def test_create_custom_retriever():
                     aud: "test aud"
                 additional_jwt_payload:
                     test: "test custom payload"
+                request_option:
+                    type: RequestOption
+                    inject_into: body_json
+                    field_name: authorization
             """,
             {
                 "secret_key": "secret_key",
@@ -3140,6 +3144,11 @@ def test_create_jwt_authenticator(config, manifest, expected):
         }
     )
     assert authenticator._get_jwt_payload() == jwt_payload
+
+    if authenticator_manifest.get("request_option"):
+        assert authenticator._request_option.inject_into.value == authenticator_manifest.get(
+            "request_option", {}
+        ).get("inject_into")
 
 
 def test_use_request_options_provider_for_datetime_based_cursor():

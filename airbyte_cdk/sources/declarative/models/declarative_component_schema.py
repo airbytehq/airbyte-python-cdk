@@ -350,6 +350,35 @@ class Algorithm(Enum):
     EdDSA = "EdDSA"
 
 
+class InjectInto(Enum):
+    request_parameter = "request_parameter"
+    header = "header"
+    body_data = "body_data"
+    body_json = "body_json"
+
+
+class RequestOption(BaseModel):
+    type: Literal["RequestOption"]
+    inject_into: InjectInto = Field(
+        ...,
+        description="Configures where the descriptor should be set on the HTTP requests. Note that request parameters that are already encoded in the URL path will not be duplicated.",
+        examples=["request_parameter", "header", "body_data", "body_json"],
+        title="Inject Into",
+    )
+    field_name: Optional[str] = Field(
+        None,
+        description="Configures which key should be used in the location that the descriptor is being injected into. We hope to eventually deprecate this field in favor of `field_path` for all request_options, but must currently maintain it for backwards compatibility in the Builder.",
+        examples=["segment_id"],
+        title="Field Name",
+    )
+    field_path: Optional[List[str]] = Field(
+        None,
+        description="Configures a path to be used for nested structures in JSON body requests (e.g. GraphQL queries)",
+        examples=[["data", "viewer", "id"]],
+        title="Field Path",
+    )
+
+
 class JwtHeaders(BaseModel):
     class Config:
         extra = Extra.forbid
@@ -453,6 +482,11 @@ class JwtAuthenticator(BaseModel):
         description="A passphrase/password used to encrypt the private key. Only provide a passphrase if required by the API for JWT authentication. The API will typically provide the passphrase when generating the public/private key pair.",
         examples=["{{ config['passphrase'] }}"],
         title="Passphrase",
+    )
+    request_option: Optional[RequestOption] = Field(
+        None,
+        description="A request option describing where the generated JWT token should be injected into the outbound API request.",
+        title="Request Option",
     )
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
@@ -1292,35 +1326,6 @@ class RemoveFields(BaseModel):
 
 class RequestPath(BaseModel):
     type: Literal["RequestPath"]
-
-
-class InjectInto(Enum):
-    request_parameter = "request_parameter"
-    header = "header"
-    body_data = "body_data"
-    body_json = "body_json"
-
-
-class RequestOption(BaseModel):
-    type: Literal["RequestOption"]
-    inject_into: InjectInto = Field(
-        ...,
-        description="Configures where the descriptor should be set on the HTTP requests. Note that request parameters that are already encoded in the URL path will not be duplicated.",
-        examples=["request_parameter", "header", "body_data", "body_json"],
-        title="Inject Into",
-    )
-    field_name: Optional[str] = Field(
-        None,
-        description="Configures which key should be used in the location that the descriptor is being injected into. We hope to eventually deprecate this field in favor of `field_path` for all request_options, but must currently maintain it for backwards compatibility in the Builder.",
-        examples=["segment_id"],
-        title="Field Name",
-    )
-    field_path: Optional[List[str]] = Field(
-        None,
-        description="Configures a path to be used for nested structures in JSON body requests (e.g. GraphQL queries)",
-        examples=[["data", "viewer", "id"]],
-        title="Field Path",
-    )
 
 
 class Schemas(BaseModel):
