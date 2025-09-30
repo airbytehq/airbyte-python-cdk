@@ -747,6 +747,20 @@ def test_given_different_headers_then_response_is_not_cached(requests_mock):
     assert second_response.json()["test"] == "second response"
 
 
+def test_given_noproxy_for_another_url_when_send_request_then_do_not_break(requests_mock):
+    http_client = HttpClient(name="test", logger=MagicMock(), use_cache=True)
+    os.environ["no_proxy"] = "another.com"
+    requests_mock.register_uri(
+        "GET",
+        "https://google.com/",
+        json={"test": "a response"},
+    )
+
+    x = http_client.send_request("GET", "https://google.com/", request_kwargs={})
+
+    assert x
+
+
 @patch.dict("os.environ", {"REQUESTS_CA_BUNDLE": "/path/to/ca-bundle.crt"})
 def test_send_request_respects_environment_variables():
     """Test that send_request respects REQUESTS_CA_BUNDLE environment variable."""
