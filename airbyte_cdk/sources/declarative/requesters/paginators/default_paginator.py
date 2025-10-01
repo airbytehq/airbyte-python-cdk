@@ -3,6 +3,7 @@
 #
 
 from dataclasses import InitVar, dataclass, field
+from sqlite3 import Cursor
 from typing import Any, Mapping, MutableMapping, Optional, Union
 
 import requests
@@ -22,11 +23,9 @@ from airbyte_cdk.sources.declarative.requesters.request_option import (
     RequestOptionType,
 )
 from airbyte_cdk.sources.declarative.requesters.request_path import RequestPath
+from airbyte_cdk.sources.streams.concurrent.cursor import Cursor
 from airbyte_cdk.sources.types import Config, Record, StreamSlice, StreamState
-from airbyte_cdk.utils.mapping_helpers import (
-    _validate_component_request_option_paths,
-    get_interpolation_context,
-)
+from airbyte_cdk.utils.mapping_helpers import _validate_component_request_option_paths
 
 
 @dataclass
@@ -100,6 +99,7 @@ class DefaultPaginator(Paginator):
     """
 
     pagination_strategy: PaginationStrategy
+    cursor: Cursor
     config: Config
     url_base: Union[InterpolatedString, str]
     parameters: InitVar[Mapping[str, Any]]
@@ -223,6 +223,9 @@ class DefaultPaginator(Paginator):
 
         return options
 
+    def generate_stream_slice_on_reset(self, stream_slice: StreamSlice) -> Optional[StreamSlice]:
+        return self.cursor.reduce_slice_range(stream_slice)
+
 
 class PaginatorTestReadDecorator(Paginator):
     """
@@ -318,3 +321,10 @@ class PaginatorTestReadDecorator(Paginator):
         return self._decorated.get_request_body_json(
             stream_state=stream_state, stream_slice=stream_slice, next_page_token=next_page_token
         )
+
+    def generate_stream_slice_on_reset(self, stream_slice: StreamSlice) -> Optional[StreamSlice]:
+        """
+        We assume that this will not happen during test read because the feature relates to very long pagination and
+        hence we should not hit the maximum_number_of_pages limit.
+        """
+        return stream_slice

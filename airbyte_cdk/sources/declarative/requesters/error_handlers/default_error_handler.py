@@ -13,7 +13,7 @@ from airbyte_cdk.sources.declarative.requesters.error_handlers.default_http_resp
 from airbyte_cdk.sources.declarative.requesters.error_handlers.http_response_filter import (
     HttpResponseFilter,
 )
-from airbyte_cdk.sources.streams.http.error_handlers import BackoffStrategy, ErrorHandler
+from airbyte_cdk.sources.streams.http.error_handlers import BackoffStrategy, ErrorHandler, ResponseAction
 from airbyte_cdk.sources.streams.http.error_handlers.response_models import (
     SUCCESS_RESOLUTION,
     ErrorResolution,
@@ -106,6 +106,16 @@ class DefaultErrorHandler(ErrorHandler):
         if not self.response_filters:
             self.response_filters = [HttpResponseFilter(config=self.config, parameters={})]
 
+        self.response_filters = [
+            # FIXME I have not wired up the RESET_PAGINATION in the model but assume I did and I configured this in the manifest.yaml...
+            HttpResponseFilter(
+                action=ResponseAction.RESET_PAGINATION,
+                http_codes={400},
+                error_message_contains="You cannot access tickets beyond the 300th page",
+                config=self.config,
+                parameters={}
+            )
+        ] + self.response_filters
         self._last_request_to_attempt_count: MutableMapping[requests.PreparedRequest, int] = {}
 
     def interpret_response(

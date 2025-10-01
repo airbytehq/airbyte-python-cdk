@@ -3,6 +3,7 @@
 #
 
 import json
+import logging
 from collections import defaultdict
 from dataclasses import InitVar, dataclass, field
 from functools import partial
@@ -43,10 +44,13 @@ from airbyte_cdk.sources.declarative.retrievers.retriever import Retriever
 from airbyte_cdk.sources.declarative.stream_slicers.stream_slicer import StreamSlicer
 from airbyte_cdk.sources.source import ExperimentalClassWarning
 from airbyte_cdk.sources.streams.core import StreamData
+from airbyte_cdk.sources.streams.http.http_client import PaginationResetRequiredException
 from airbyte_cdk.sources.types import Config, Record, StreamSlice, StreamState
 from airbyte_cdk.utils.mapping_helpers import combine_mappings
 
 FULL_REFRESH_SYNC_COMPLETE_KEY = "__ab_full_refresh_sync_complete"
+
+LOGGER = logging.getLogger("airbyte")
 
 
 @dataclass
@@ -392,56 +396,65 @@ class SimpleRetriever(Retriever):
                         extra_fields={"query_properties": properties},
                     )
 
-                response = self._fetch_next_page(stream_state, stream_slice, next_page_token)
-                for current_record in records_generator_fn(response):
-                    if (
-                        current_record
-                        and self.additional_query_properties
-                        and self.additional_query_properties.property_chunking
-                    ):
-                        merge_key = (
-                            self.additional_query_properties.property_chunking.get_merge_key(
-                                current_record
+                try:
+                    response = self._fetch_next_page(stream_state, stream_slice, next_page_token)
+                    for current_record in records_generator_fn(response):
+                        if (
+                            current_record
+                            and self.additional_query_properties
+                            and self.additional_query_properties.property_chunking
+                        ):
+                            merge_key = (
+                                self.additional_query_properties.property_chunking.get_merge_key(
+                                    current_record
+                                )
                             )
-                        )
-                        if merge_key:
-                            _deep_merge(merged_records[merge_key], current_record)
+                            if merge_key:
+                                _deep_merge(merged_records[merge_key], current_record)
+                            else:
+                                # We should still emit records even if the record did not have a merge key
+                                last_page_size += 1
+                                last_record = current_record
+                                yield current_record
                         else:
-                            # We should still emit records even if the record did not have a merge key
                             last_page_size += 1
                             last_record = current_record
                             yield current_record
+
+                    if (
+                            self.additional_query_properties
+                            and self.additional_query_properties.property_chunking
+                    ):
+                        for merged_record in merged_records.values():
+                            record = Record(
+                                data=merged_record, stream_name=self.name, associated_slice=stream_slice
+                            )
+                            last_page_size += 1
+                            last_record = record
+                            yield record
+
+                    if not response:
+                        pagination_complete = True
                     else:
-                        last_page_size += 1
-                        last_record = current_record
-                        yield current_record
-
-            if (
-                self.additional_query_properties
-                and self.additional_query_properties.property_chunking
-            ):
-                for merged_record in merged_records.values():
-                    record = Record(
-                        data=merged_record, stream_name=self.name, associated_slice=stream_slice
+                        last_page_token_value = (
+                            next_page_token.get("next_page_token") if next_page_token else None
+                        )
+                        next_page_token = self._next_page_token(
+                            response=response,
+                            last_page_size=last_page_size,
+                            last_record=last_record,
+                            last_page_token_value=last_page_token_value,
+                        )
+                        if not next_page_token:
+                            pagination_complete = True
+                except PaginationResetRequiredException:
+                    initial_token = self._paginator.get_initial_token()
+                    next_page_token: Optional[Mapping[str, Any]] = (
+                        {"next_page_token": initial_token} if initial_token is not None else None
                     )
-                    last_page_size += 1
-                    last_record = record
-                    yield record
-
-            if not response:
-                pagination_complete = True
-            else:
-                last_page_token_value = (
-                    next_page_token.get("next_page_token") if next_page_token else None
-                )
-                next_page_token = self._next_page_token(
-                    response=response,
-                    last_page_size=last_page_size,
-                    last_record=last_record,
-                    last_page_token_value=last_page_token_value,
-                )
-                if not next_page_token:
-                    pagination_complete = True
+                    previous_slice = stream_slice
+                    stream_slice = self._paginator.generate_stream_slice_on_reset(stream_slice)
+                    LOGGER.info(f"Hitting PaginationReset event. StreamSlice used will go from {previous_slice} to {stream_slice}")
 
         # Always return an empty generator just in case no records were ever yielded
         yield from []

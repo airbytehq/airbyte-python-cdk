@@ -63,3 +63,7 @@ class Paginator(ABC, RequestOptionsProvider):
         :return: path to hit to fetch the next request. Returning None means the path is not defined by the next_page_token
         """
         pass
+
+    @abstractmethod
+    def generate_stream_slice_on_reset(self, stream_slice: StreamSlice) -> Optional[StreamSlice]:
+        pass

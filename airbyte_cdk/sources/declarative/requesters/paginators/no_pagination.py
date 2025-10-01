@@ -74,3 +74,6 @@ class NoPagination(Paginator):
         last_page_token_value: Optional[Any],
     ) -> Optional[Mapping[str, Any]]:
         return {}
+
+    def generate_stream_slice_on_reset(self, stream_slice: StreamSlice) -> Optional[StreamSlice]:
+        return stream_slice

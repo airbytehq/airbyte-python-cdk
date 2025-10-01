@@ -2057,6 +2057,7 @@ class ModelToComponentFactory:
             client_side_incremental_sync={"cursor": concurrent_cursor}
             if self._is_client_side_filtering_enabled(model)
             else None,
+            cursor=concurrent_cursor,
             transformations=transformations,
             file_uploader=file_uploader,
             incremental_sync=model.incremental_sync,
@@ -2279,6 +2280,7 @@ class ModelToComponentFactory:
         config: Config,
         *,
         url_base: str,
+        cursor: Cursor,
         extractor_model: Optional[Union[CustomRecordExtractorModel, DpathExtractorModel]] = None,
         decoder: Optional[Decoder] = None,
         cursor_used_for_stop_condition: Optional[Cursor] = None,
@@ -2316,6 +2318,7 @@ class ModelToComponentFactory:
             page_token_option=page_token_option,
             pagination_strategy=pagination_strategy,
             url_base=url_base,
+            cursor=cursor,
             config=config,
             parameters=model.parameters or {},
         )
@@ -3149,6 +3152,7 @@ class ModelToComponentFactory:
         config: Config,
         *,
         name: str,
+        cursor: Cursor,
         primary_key: Optional[Union[str, List[str], List[List[str]]]],
         request_options_provider: Optional[RequestOptionsProvider] = None,
         stop_condition_cursor: Optional[Cursor] = None,
@@ -3271,6 +3275,7 @@ class ModelToComponentFactory:
                 extractor_model=model.record_selector.extractor,
                 decoder=decoder,
                 cursor_used_for_stop_condition=stop_condition_cursor or None,
+                cursor=cursor,
             )
             if model.paginator
             else NoPagination(parameters={})
