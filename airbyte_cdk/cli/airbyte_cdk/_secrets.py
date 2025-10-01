@@ -459,25 +459,60 @@ def _print_ci_secrets_masks(
         _print_ci_secrets_masks_for_config(config=config_dict)
 
 
+def _print_ci_secret_mask_for_string(secret: str) -> None:
+    """Print GitHub CI mask for a single secret string.
+
+    We expect single-line secrets, but we also handle the case where the secret contains newlines.
+    For multi-line secrets, we must print a secret mask for each line separately.
+    """
+    for line in secret.splitlines():
+        if line.strip():  # Skip empty lines
+            print(f"::add-mask::{line!s}")
+
+
+def _print_ci_secret_mask_for_value(value: Any) -> None:
+    """Print GitHub CI mask for a single secret value.
+
+    Call this function for any values identified as secrets, regardless of type.
+    """
+    if isinstance(value, dict):
+        # For nested dicts, we call recursively on each value
+        for v in value.values():
+            _print_ci_secret_mask_for_value(v)
+
+        return
+
+    if isinstance(value, list):
+        # For lists, we call recursively on each list item
+        for list_item in value:
+            _print_ci_secret_mask_for_value(list_item)
+
+        return
+
+    # For any other types besides dict and list, we convert to string and mask each line
+    # separately to handle multi-line secrets (e.g. private keys).
+    for line in str(value).splitlines():
+        if line.strip():  # Skip empty lines
+            _print_ci_secret_mask_for_string(line)
+
+
 def _print_ci_secrets_masks_for_config(
     config: dict[str, str] | list[Any] | Any,
 ) -> None:
     """Print GitHub CI mask for secrets config, navigating child nodes recursively."""
     if isinstance(config, list):
+        # Check each item in the list to look for nested dicts that may contain secrets:
         for item in config:
             _print_ci_secrets_masks_for_config(item)
 
-    if isinstance(config, dict):
+    elif isinstance(config, dict):
         for key, value in config.items():
             if _is_secret_property(key):
                 logger.debug(f"Masking secret for config key: {key}")
-                print(f"::add-mask::{value!s}")
-                if isinstance(value, dict):
-                    # For nested dicts, we also need to mask the json-stringified version
-                    print(f"::add-mask::{json.dumps(value)!s}")
-
-            if isinstance(value, (dict, list)):
-                _print_ci_secrets_masks_for_config(config=value)
+                _print_ci_secret_mask_for_value(value)
+            elif isinstance(value, (dict, list)):
+                # Recursively check nested dicts and lists
+                _print_ci_secrets_masks_for_config(value)
 
 
 def _is_secret_property(property_name: str) -> bool:
