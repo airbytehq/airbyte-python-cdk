@@ -9,7 +9,7 @@ from datetime import datetime
 from enum import Enum
 from io import IOBase
 from os import makedirs, path
-from typing import Any, Callable, Iterable, List, MutableMapping, Optional, Set, Tuple
+from typing import Any, Callable, Iterable, List, MutableMapping, Optional, Set, Tuple, Type
 
 from airbyte_protocol_dataclasses.models import FailureType
 from wcmatch.glob import GLOBSTAR, globmatch
@@ -43,10 +43,9 @@ class AbstractFileBasedStreamReader(ABC):
 
     def __init__(self) -> None:
         self._config = None
-
         if (
             self.file_transfer_reader_class is None
-            and self.upload.__func__ == AbstractFileBasedStreamReader.upload
+            and type(self).upload is AbstractFileBasedStreamReader.upload
         ):
             raise NotImplementedError(
                 "One of file_transfer_reader_class or upload method must be defined to support file transfer."
@@ -127,16 +126,6 @@ class AbstractFileBasedStreamReader(ABC):
                     seen.add(file.uri)
                     yield file
 
-    @abstractmethod
-    def file_size(self, file: RemoteFile) -> int:
-        """Utility method to get size of the remote file.
-
-        This is required for connectors that will support writing to
-        files. If the connector does not support writing files, then the
-        subclass can simply `return 0`.
-        """
-        ...
-
     @staticmethod
     def file_matches_globs(file: RemoteFile, globs: List[str]) -> bool:
         # Use the GLOBSTAR flag to enable recursive ** matching
@@ -168,7 +157,7 @@ class AbstractFileBasedStreamReader(ABC):
         return False
 
     @property
-    def file_transfer_reader_class(self) -> AbstractFileBasedFileTransferReader | None:
+    def file_transfer_reader_class(self) -> Type[AbstractFileBasedFileTransferReader] | None:
         return None
 
     def upload(
@@ -190,14 +179,16 @@ class AbstractFileBasedStreamReader(ABC):
                    - file_size_bytes (int): The size of the referenced file in bytes.
                    - source_file_relative_path (str): The relative path to the referenced file in source.
         """
-        # if self.file_transfer_reader_class is None and self.upload.__func__ == AbstractFileBasedStreamReader.upload:
-        #     raise NotImplementedError("One of file_transfer_reader_class or upload method must be defined to support file transfer.")
+        if self.file_transfer_reader_class is None:
+            raise NotImplementedError(
+                "file_transfer_reader_class must be defined to support default file transfer upload method."
+            )
 
         file_transfer = self.file_transfer_reader_class(file)
         file_size = file_transfer.file_size
 
         if file_size > file_transfer.FILE_SIZE_LIMIT:
-            message = "File size exceeds the 1 GB limit."
+            message = "File size exceeds the 1.5 GB limit."
             raise FileSizeLimitError(
                 message=message, internal_message=message, failure_type=FailureType.config_error
             )

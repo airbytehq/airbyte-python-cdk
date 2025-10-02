@@ -57,7 +57,7 @@ class AbstractFileBasedFileTransferReader(ABC):
         ...
 
     @property
-    def file_uri_for_logging(self):
+    def file_uri_for_logging(self) -> str:
         """
         Returns the URI for the file being logged.
         """
