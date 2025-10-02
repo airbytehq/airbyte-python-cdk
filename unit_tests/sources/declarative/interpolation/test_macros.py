@@ -3,6 +3,7 @@
 #
 
 import datetime
+import uuid
 
 import pytest
 
@@ -20,6 +21,7 @@ from airbyte_cdk.sources.declarative.interpolation.macros import macros
         ("test_format_datetime", "format_datetime", True),
         ("test_duration", "duration", True),
         ("test_camel_case_to_snake_case", "camel_case_to_snake_case", True),
+        ("test_generate_uuid", "generate_uuid", True),
         ("test_not_a_macro", "thisisnotavalidmacro", False),
     ],
 )
@@ -275,3 +277,26 @@ def test_sanitize_url(test_name, input_value, expected_output):
 )
 def test_camel_case_to_snake_case(value, expected_value):
     assert macros["camel_case_to_snake_case"](value) == expected_value
+
+
+def test_generate_uuid():
+    """Test uuid macro generates valid UUID4 strings."""
+    uuid_fn = macros["generate_uuid"]
+
+    # Test that uuid function returns a string
+    result = uuid_fn()
+    assert isinstance(result, str)
+
+    # Test that the result is a valid UUID format
+    # This will raise ValueError if not a valid UUID
+    parsed_uuid = uuid.UUID(result)
+
+    # Test that it's specifically a UUID4 (version 4)
+    assert parsed_uuid.version == 4
+
+    # Test that multiple calls return different UUIDs
+    result2 = uuid_fn()
+    assert result != result2
+
+    # Test that both results are valid UUIDs
+    uuid.UUID(result2)  # Will raise ValueError if invalid

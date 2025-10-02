@@ -562,7 +562,7 @@ class HttpClient:
 
         env_settings = self._session.merge_environment_settings(
             url=request.url,
-            proxies=request_kwargs.get("proxies"),
+            proxies=request_kwargs.get("proxies", {}),
             stream=request_kwargs.get("stream"),
             verify=request_kwargs.get("verify"),
             cert=request_kwargs.get("cert"),
