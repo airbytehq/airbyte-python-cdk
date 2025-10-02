@@ -7,11 +7,16 @@ from datetime import datetime
 from io import IOBase
 from os import path
 from typing import Any, ClassVar, Dict, Iterable, List, Mapping, Optional, Set
+from unittest.mock import MagicMock
 
 import pytest
 from pydantic.v1 import AnyUrl
 
 from airbyte_cdk.sources.file_based.config.abstract_file_based_spec import AbstractFileBasedSpec
+from airbyte_cdk.sources.file_based.exceptions import FileSizeLimitError
+from airbyte_cdk.sources.file_based.file_based_file_transfer_reader import (
+    AbstractFileBasedFileTransferReader,
+)
 from airbyte_cdk.sources.file_based.file_based_stream_reader import AbstractFileBasedStreamReader
 from airbyte_cdk.sources.file_based.remote_file import RemoteFile
 from airbyte_cdk.sources.utils.files_directory import get_files_directory
@@ -62,6 +67,69 @@ FILES = make_remote_files(FILEPATHS)
 DEFAULT_CONFIG = {
     "streams": [],
 }
+
+
+class TestFileBasedFileTransferReader(AbstractFileBasedFileTransferReader):
+    @property
+    def file_id(self) -> str:
+        return "test_file_id"
+
+    @property
+    def file_created_at(self) -> str:
+        return "2025-05-05"
+
+    @property
+    def file_updated_at(self) -> str:
+        return "2025-05-06"
+
+    @property
+    def file_size(self) -> int:
+        return self.remote_file.size
+
+    def download_to_local_directory(self, local_file_path: str) -> None:
+        pass
+
+    @property
+    def source_file_relative_path(self) -> str:
+        return "source/path"
+
+    @property
+    def file_uri_for_logging(self) -> str:
+        return "logging/url"
+
+
+class TestStreamReaderWithFileTransferClass(AbstractFileBasedStreamReader):
+    __test__: ClassVar[bool] = False  # Tell Pytest this is not a Pytest class, despite its name
+
+    file_transfer_reader_class = TestFileBasedFileTransferReader
+
+    @property
+    def config(self) -> Optional[AbstractFileBasedSpec]:
+        return self._config
+
+    @config.setter
+    def config(self, value: AbstractFileBasedSpec) -> None:
+        self._config = value
+
+    def get_matching_files(self, globs: List[str]) -> Iterable[RemoteFile]:
+        pass
+
+    def open_file(self, file: RemoteFile) -> IOBase:
+        pass
+
+    def get_file_acl_permissions(self, file: RemoteFile, logger: logging.Logger) -> Dict[str, Any]:
+        return {}
+
+    def load_identity_groups(self, logger: logging.Logger) -> Iterable[Dict[str, Any]]:
+        return [{}]
+
+    @property
+    def file_permissions_schema(self) -> Dict[str, Any]:
+        return {"type": "object", "properties": {}}
+
+    @property
+    def identities_schema(self) -> Dict[str, Any]:
+        return {"type": "object", "properties": {}}
 
 
 class TestStreamReader(AbstractFileBasedStreamReader):
@@ -458,3 +526,24 @@ def test_preserve_sub_directories_scenarios(
     assert file_paths[AbstractFileBasedStreamReader.LOCAL_FILE_PATH] == expected_local_file_path
     assert file_paths[AbstractFileBasedStreamReader.FILE_NAME] == path.basename(source_file_path)
     assert file_paths[AbstractFileBasedStreamReader.FILE_FOLDER] == path.dirname(source_file_path)
+
+
+def test_upload_with_file_transfer_reader():
+    stream_reader = TestStreamReaderWithFileTransferClass()
+    logger = logging.getLogger("airbyte")
+
+    remote_file = MagicMock()
+    remote_file.size = 200
+    remote_file.uri = "test_url"
+    remote_file.mime_type = "test_mime_type"
+    file_record_data, file_reference = stream_reader.upload(remote_file, "test_directory", logger)
+    assert file_record_data
+    assert file_reference
+
+    remote_file = MagicMock()
+    remote_file.size = 2_500_000_000
+    remote_file.uri = "test_url"
+    remote_file.mime_type = "test_mime_type"
+    logger = logging.getLogger("airbyte")
+    with pytest.raises(FileSizeLimitError):
+        stream_reader.upload(remote_file, "test_directory", logger)
