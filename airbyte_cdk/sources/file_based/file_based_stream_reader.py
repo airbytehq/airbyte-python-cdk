@@ -11,6 +11,7 @@ from io import IOBase
 from os import makedirs, path
 from typing import Any, Callable, Iterable, List, MutableMapping, Optional, Set, Tuple
 
+from airbyte_protocol_dataclasses.models import FailureType
 from wcmatch.glob import GLOBSTAR, globmatch
 
 from airbyte_cdk.models import AirbyteRecordMessageFileReference
@@ -20,13 +21,12 @@ from airbyte_cdk.sources.file_based.config.validate_config_transfer_modes import
     preserve_directory_structure,
     use_file_transfer,
 )
+from airbyte_cdk.sources.file_based.exceptions import FileSizeLimitError
 from airbyte_cdk.sources.file_based.file_based_file_transfer_reader import (
     AbstractFileBasedFileTransferReader,
 )
 from airbyte_cdk.sources.file_based.file_record_data import FileRecordData
 from airbyte_cdk.sources.file_based.remote_file import RemoteFile
-from airbyte_protocol_dataclasses.models import FailureType
-from airbyte_cdk.sources.file_based.exceptions import FileSizeLimitError
 
 
 class FileReadMode(Enum):
