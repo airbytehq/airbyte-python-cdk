@@ -544,6 +544,7 @@ def test_upload_with_file_transfer_reader():
     remote_file.size = 2_500_000_000
     remote_file.uri = "test_url"
     remote_file.mime_type = "test_mime_type"
-    logger = logging.getLogger("airbyte")
+    with pytest.raises(FileSizeLimitError):
+        stream_reader.upload(remote_file, "test_directory", logger)
     with pytest.raises(FileSizeLimitError):
         stream_reader.upload(remote_file, "test_directory", logger)
