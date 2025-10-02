@@ -188,7 +188,7 @@ class AbstractFileBasedStreamReader(ABC):
         file_size = file_transfer.file_size
 
         if file_size > file_transfer.FILE_SIZE_LIMIT:
-            message = f"File size exceeds the {file_transfer.FILE_SIZE_LIMIT / 1e+9} GB limit."
+            message = f"File size exceeds the {file_transfer.FILE_SIZE_LIMIT / 1e9} GB limit."
             raise FileSizeLimitError(
                 message=message, internal_message=message, failure_type=FailureType.config_error
             )
