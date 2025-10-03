@@ -14,11 +14,8 @@ from pydantic.v1 import AnyUrl
 
 from airbyte_cdk.sources.file_based.config.abstract_file_based_spec import AbstractFileBasedSpec
 from airbyte_cdk.sources.file_based.exceptions import FileSizeLimitError
-from airbyte_cdk.sources.file_based.file_based_file_transfer_reader import (
-    AbstractFileBasedFileTransferReader,
-)
 from airbyte_cdk.sources.file_based.file_based_stream_reader import AbstractFileBasedStreamReader
-from airbyte_cdk.sources.file_based.remote_file import RemoteFile
+from airbyte_cdk.sources.file_based.remote_file import RemoteFile, UploadableRemoteFile
 from airbyte_cdk.sources.utils.files_directory import get_files_directory
 from unit_tests.sources.file_based.helpers import make_remote_files
 
@@ -69,39 +66,8 @@ DEFAULT_CONFIG = {
 }
 
 
-class TestFileBasedFileTransferReader(AbstractFileBasedFileTransferReader):
-    @property
-    def file_id(self) -> str:
-        return "test_file_id"
-
-    @property
-    def file_created_at(self) -> str:
-        return "2025-05-05"
-
-    @property
-    def file_updated_at(self) -> str:
-        return "2025-05-06"
-
-    @property
-    def file_size(self) -> int:
-        return self.remote_file.size
-
-    def download_to_local_directory(self, local_file_path: str) -> None:
-        pass
-
-    @property
-    def source_file_relative_path(self) -> str:
-        return "source/path"
-
-    @property
-    def file_uri_for_logging(self) -> str:
-        return "logging/url"
-
-
-class TestStreamReaderWithFileTransferClass(AbstractFileBasedStreamReader):
+class TestStreamReaderWithDefaultUpload(AbstractFileBasedStreamReader):
     __test__: ClassVar[bool] = False  # Tell Pytest this is not a Pytest class, despite its name
-
-    file_transfer_reader_class = TestFileBasedFileTransferReader
 
     @property
     def config(self) -> Optional[AbstractFileBasedSpec]:
@@ -529,22 +495,34 @@ def test_preserve_sub_directories_scenarios(
 
 
 def test_upload_with_file_transfer_reader():
-    stream_reader = TestStreamReaderWithFileTransferClass()
+    stream_reader = TestStreamReaderWithDefaultUpload()
+
+    class TestUploadableRemoteFile(UploadableRemoteFile):
+        blob: Any
+
+        @property
+        def size(self) -> int:
+            return self.blob.size
+
+        def download_to_local_directory(self, local_file_path: str) -> None:
+            pass
+
+    blob = MagicMock()
+    blob.size = 200
+    uploadable_remote_file = TestUploadableRemoteFile(
+        uri="test/uri", last_modified=datetime.now(), blob=blob
+    )
+
     logger = logging.getLogger("airbyte")
 
-    remote_file = MagicMock()
-    remote_file.size = 200
-    remote_file.uri = "test_url"
-    remote_file.mime_type = "test_mime_type"
-    file_record_data, file_reference = stream_reader.upload(remote_file, "test_directory", logger)
+    file_record_data, file_reference = stream_reader.upload(
+        uploadable_remote_file, "test_directory", logger
+    )
     assert file_record_data
     assert file_reference
 
-    remote_file = MagicMock()
-    remote_file.size = 2_500_000_000
-    remote_file.uri = "test_url"
-    remote_file.mime_type = "test_mime_type"
+    blob.size = 2_500_000_000
     with pytest.raises(FileSizeLimitError):
-        stream_reader.upload(remote_file, "test_directory", logger)
+        stream_reader.upload(uploadable_remote_file, "test_directory", logger)
     with pytest.raises(FileSizeLimitError):
-        stream_reader.upload(remote_file, "test_directory", logger)
+        stream_reader.upload(uploadable_remote_file, "test_directory", logger)

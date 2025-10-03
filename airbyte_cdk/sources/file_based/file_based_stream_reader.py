@@ -9,7 +9,7 @@ from datetime import datetime
 from enum import Enum
 from io import IOBase
 from os import makedirs, path
-from typing import Any, Callable, Iterable, List, MutableMapping, Optional, Set, Tuple, Type
+from typing import Any, Iterable, List, MutableMapping, Optional, Set, Tuple
 
 from airbyte_protocol_dataclasses.models import FailureType
 from wcmatch.glob import GLOBSTAR, globmatch
@@ -22,11 +22,8 @@ from airbyte_cdk.sources.file_based.config.validate_config_transfer_modes import
     use_file_transfer,
 )
 from airbyte_cdk.sources.file_based.exceptions import FileSizeLimitError
-from airbyte_cdk.sources.file_based.file_based_file_transfer_reader import (
-    AbstractFileBasedFileTransferReader,
-)
 from airbyte_cdk.sources.file_based.file_record_data import FileRecordData
-from airbyte_cdk.sources.file_based.remote_file import RemoteFile
+from airbyte_cdk.sources.file_based.remote_file import RemoteFile, UploadableRemoteFile
 
 
 class FileReadMode(Enum):
@@ -40,16 +37,10 @@ class AbstractFileBasedStreamReader(ABC):
     FILE_NAME = "file_name"
     LOCAL_FILE_PATH = "local_file_path"
     FILE_FOLDER = "file_folder"
+    FILE_SIZE_LIMIT = 1_500_000_000
 
     def __init__(self) -> None:
         self._config = None
-        if (
-            self.file_transfer_reader_class is None
-            and type(self).upload is AbstractFileBasedStreamReader.upload
-        ):
-            raise NotImplementedError(
-                "One of file_transfer_reader_class or upload method must be defined to support file transfer."
-            )
 
     @property
     def config(self) -> Optional[AbstractFileBasedSpec]:
@@ -156,12 +147,8 @@ class AbstractFileBasedStreamReader(ABC):
             return include_identities_stream(self.config)
         return False
 
-    @property
-    def file_transfer_reader_class(self) -> Type[AbstractFileBasedFileTransferReader] | None:
-        return None
-
     def upload(
-        self, file: RemoteFile, local_directory: str, logger: logging.Logger
+        self, file: UploadableRemoteFile, local_directory: str, logger: logging.Logger
     ) -> Tuple[FileRecordData, AirbyteRecordMessageFileReference]:
         """
         This is required for connectors that will support writing to
@@ -179,22 +166,19 @@ class AbstractFileBasedStreamReader(ABC):
                    - file_size_bytes (int): The size of the referenced file in bytes.
                    - source_file_relative_path (str): The relative path to the referenced file in source.
         """
-        if self.file_transfer_reader_class is None:
-            raise NotImplementedError(
-                "file_transfer_reader_class must be defined to support default file transfer upload method."
-            )
+        if not isinstance(file, UploadableRemoteFile):
+            raise TypeError(f"Expected UploadableRemoteFile, got {type(file)}")
 
-        file_transfer = self.file_transfer_reader_class(file)
-        file_size = file_transfer.file_size
+        file_size = file.size
 
-        if file_size > file_transfer.FILE_SIZE_LIMIT:
-            message = f"File size exceeds the {file_transfer.FILE_SIZE_LIMIT / 1e9} GB limit."
+        if file_size > self.FILE_SIZE_LIMIT:
+            message = f"File size exceeds the {self.FILE_SIZE_LIMIT / 1e9} GB limit."
             raise FileSizeLimitError(
                 message=message, internal_message=message, failure_type=FailureType.config_error
             )
 
         file_paths = self._get_file_transfer_paths(
-            source_file_relative_path=file_transfer.source_file_relative_path,
+            source_file_relative_path=file.source_file_relative_path,
             staging_directory=local_directory,
         )
         local_file_path = file_paths[self.LOCAL_FILE_PATH]
@@ -202,25 +186,25 @@ class AbstractFileBasedStreamReader(ABC):
         file_name = file_paths[self.FILE_NAME]
 
         logger.info(
-            f"Starting to download the file {file_transfer.file_uri_for_logging} with size: {file_size / (1024 * 1024):,.2f} MB ({file_size / (1024 * 1024 * 1024):.2f} GB)"
+            f"Starting to download the file {file.file_uri_for_logging} with size: {file_size / (1024 * 1024):,.2f} MB ({file_size / (1024 * 1024 * 1024):.2f} GB)"
         )
         start_download_time = time.time()
 
-        file_transfer.download_to_local_directory(local_file_path)
+        file.download_to_local_directory(local_file_path)
 
         write_duration = time.time() - start_download_time
         logger.info(
-            f"Finished downloading the file {file_transfer.file_uri_for_logging} and saved to {local_file_path} in {write_duration:,.2f} seconds."
+            f"Finished downloading the file {file.file_uri_for_logging} and saved to {local_file_path} in {write_duration:,.2f} seconds."
         )
 
         file_record_data = FileRecordData(
             folder=file_paths[self.FILE_FOLDER],
             file_name=file_name,
             bytes=file_size,
-            id=file_transfer.file_id,
+            id=file.id,
             mime_type=file.mime_type,
-            created_at=file_transfer.file_created_at,
-            updated_at=file_transfer.file_updated_at,
+            created_at=file.created_at,
+            updated_at=file.updated_at,
             source_uri=file.uri,
         )
         file_reference = AirbyteRecordMessageFileReference(
