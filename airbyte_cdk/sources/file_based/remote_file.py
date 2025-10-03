@@ -24,8 +24,8 @@ class UploadableRemoteFile(RemoteFile, ABC):
     """
 
     id: Optional[str] = None
-    created_at: Optional[datetime] = None
-    updated_at: Optional[datetime] = None
+    created_at: Optional[str] = None
+    updated_at: Optional[str] = None
 
     @property
     @abstractmethod
