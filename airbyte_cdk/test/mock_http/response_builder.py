@@ -75,6 +75,25 @@ class NestedPath(Path):
         return f"NestedPath(path={self._path})"
 
 
+class RootPath(Path):
+    """
+    Path to use when the root of the response is an array.
+    """
+
+    def write(self, template: List[Dict[str, Any]], value: List[Dict[str, Any]]) -> None:
+        template.extend(value)
+
+    def update(self, template: List[Dict[str, Any]], value: List[Any]) -> None:
+        template.clear()
+        template.extend(value)
+
+    def extract(self, template: List[Dict[str, Any]]) -> Any:
+        return template
+
+    def __str__(self) -> str:
+        return f"RootPath"
+
+
 class PaginationStrategy(ABC):
     @abstractmethod
     def update(self, response: Dict[str, Any]) -> None:
@@ -95,7 +114,7 @@ class RecordBuilder:
         self,
         template: Dict[str, Any],
         id_path: Optional[Path],
-        cursor_path: Optional[Union[FieldPath, NestedPath]],
+        cursor_path: Optional[Union[FieldPath, NestedPath, RootPath]],
     ):
         self._record = template
         self._id_path = id_path
@@ -150,7 +169,7 @@ class HttpResponseBuilder:
     def __init__(
         self,
         template: Dict[str, Any],
-        records_path: Union[FieldPath, NestedPath],
+        records_path: Union[FieldPath, NestedPath, RootPath],
         pagination_strategy: Optional[PaginationStrategy],
     ):
         self._response = template
@@ -208,9 +227,9 @@ def find_binary_response(resource: str, execution_folder: str) -> bytes:
 
 def create_record_builder(
     response_template: Dict[str, Any],
-    records_path: Union[FieldPath, NestedPath],
+    records_path: Union[FieldPath, NestedPath, RootPath],
     record_id_path: Optional[Path] = None,
-    record_cursor_path: Optional[Union[FieldPath, NestedPath]] = None,
+    record_cursor_path: Optional[Union[FieldPath, NestedPath, RootPath]] = None,
 ) -> RecordBuilder:
     """
     This will use the first record define at `records_path` as a template for the records. If more records are defined, they will be ignored
@@ -231,7 +250,7 @@ def create_record_builder(
 
 def create_response_builder(
     response_template: Dict[str, Any],
-    records_path: Union[FieldPath, NestedPath],
+    records_path: Union[FieldPath, NestedPath, RootPath],
     pagination_strategy: Optional[PaginationStrategy] = None,
 ) -> HttpResponseBuilder:
     return HttpResponseBuilder(response_template, records_path, pagination_strategy)
