@@ -450,7 +450,7 @@ class SimpleRetriever(Retriever):
                     next_page_token.get("next_page_token") if next_page_token else None
                 )
                 next_page_token = self._next_page_token(
-                    response=response,
+                    response=response,  # type:ignore # we are breaking from the loop on the try/else if there are no response so this should be fine
                     last_page_size=last_page_size,
                     last_record=last_record,
                     last_page_token_value=last_page_token_value,
@@ -461,7 +461,7 @@ class SimpleRetriever(Retriever):
         # Always return an empty generator just in case no records were ever yielded
         yield from []
 
-    def _get_initial_next_page_token(self):
+    def _get_initial_next_page_token(self) -> Optional[Mapping[str, Any]]:
         initial_token = self._paginator.get_initial_token()
         next_page_token = {"next_page_token": initial_token} if initial_token is not None else None
         return next_page_token

@@ -3355,8 +3355,11 @@ class ModelToComponentFactory:
         )
 
     def _create_pagination_tracker_factory(
-        self, model: PaginationResetModel, cursor: Cursor
+        self, model: Optional[PaginationResetModel], cursor: Cursor
     ) -> Callable[[], PaginationTracker]:
+        if model is None:
+            return lambda: PaginationTracker()
+
         # Until we figure out a way to use any cursor for PaginationTracker, we will have to have this cursor selector logic
         cursor_for_pagination_tracking = None
         if isinstance(cursor, ConcurrentCursor):
