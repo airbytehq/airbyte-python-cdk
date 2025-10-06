@@ -262,8 +262,13 @@ def create_response_builder(
     return HttpResponseBuilder(response_template, records_path, pagination_strategy)
 
 
-def _validate_path_with_response(records_path: Union[FieldPath, NestedPath, RootPath], response_template: Union[Dict[str, Any], List[Dict[str, Any]]]) -> None:
+def _validate_path_with_response(
+    records_path: Union[FieldPath, NestedPath, RootPath],
+    response_template: Union[Dict[str, Any], List[Dict[str, Any]]],
+) -> None:
     if isinstance(response_template, List) and not isinstance(records_path, RootPath):
         raise ValueError("templates of type lists require RootPath")
-    elif isinstance(response_template, Dict) and not isinstance(records_path, (FieldPath, NestedPath)):
+    elif isinstance(response_template, Dict) and not isinstance(
+        records_path, (FieldPath, NestedPath)
+    ):
         raise ValueError("templates of type dict either require FieldPath or NestedPath")
