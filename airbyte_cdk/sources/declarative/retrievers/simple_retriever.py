@@ -7,7 +7,6 @@ import logging
 from collections import defaultdict
 from dataclasses import InitVar, dataclass, field
 from functools import partial
-from itertools import islice
 from typing import (
     Any,
     Callable,
@@ -44,6 +43,7 @@ from airbyte_cdk.sources.declarative.retrievers.pagination_tracker import Pagina
 from airbyte_cdk.sources.declarative.retrievers.retriever import Retriever
 from airbyte_cdk.sources.declarative.stream_slicers.stream_slicer import StreamSlicer
 from airbyte_cdk.sources.source import ExperimentalClassWarning
+from airbyte_cdk.sources.streams.concurrent.cursor import Cursor
 from airbyte_cdk.sources.streams.core import StreamData
 from airbyte_cdk.sources.streams.http.pagination_reset_exception import (
     PaginationResetRequiredException,
@@ -103,6 +103,9 @@ class SimpleRetriever(Retriever):
     )
 
     def __post_init__(self, parameters: Mapping[str, Any]) -> None:
+        # while changing `ModelToComponentFactory.create_simple_retriever` to accept a cursor, the sources implementing
+        # a CustomRetriever inheriting for SimpleRetriever needed to have the following validation added.
+        self.cursor = None if isinstance(self.cursor, Cursor) else self.cursor
         self._paginator = self.paginator or NoPagination(parameters=parameters)
         self._parameters = parameters
         self._name = (
