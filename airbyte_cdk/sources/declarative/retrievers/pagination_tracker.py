@@ -43,12 +43,13 @@ class PaginationTracker:
 
     def reset(self) -> None:
         self._record_count = 0
+        self._number_of_attempt_with_same_slice = 0
 
     def reduce_slice_range_if_possible(self, stream_slice: StreamSlice) -> StreamSlice:
         new_slice = self._cursor.reduce_slice_range(stream_slice) if self._cursor else stream_slice
 
-        self._number_of_attempt_with_same_slice += 1
         if new_slice == stream_slice:
+            self._number_of_attempt_with_same_slice += 1
             if (
                 self._number_of_attempt_with_same_slice
                 >= self._allowed_number_of_attempt_with_same_slice
@@ -57,5 +58,7 @@ class PaginationTracker:
                     internal_message=f"There were {self._number_of_attempt_with_same_slice} attempts with the same slice already while the max allowed is {self._allowed_number_of_attempt_with_same_slice}",
                     failure_type=FailureType.system_error,
                 )
+        else:
+            self._number_of_attempt_with_same_slice = 0
 
         return new_slice
