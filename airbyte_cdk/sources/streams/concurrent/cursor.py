@@ -41,7 +41,7 @@ class CursorField:
     def __init__(self, cursor_field_key: str) -> None:
         self.cursor_field_key = cursor_field_key
 
-    def extract_value(self, record: Record) -> CursorValueType:
+    def extract_value(self, record: Record) -> Any:
         cursor_value = record.data.get(self.cursor_field_key)
         if cursor_value is None:
             raise ValueError(f"Could not find cursor field {self.cursor_field_key} in record")
@@ -174,6 +174,7 @@ class ConcurrentCursor(Cursor):
         # Flag to track if the logger has been triggered (per stream)
         self._should_be_synced_logger_triggered = False
         self._clamping_strategy = clamping_strategy
+        self._is_ascending_order = True
 
         # A lock is required when closing a partition because updating the cursor's concurrent_state is
         # not thread safe. When multiple partitions are being closed by the cursor at the same time, it is
@@ -245,6 +246,8 @@ class ConcurrentCursor(Cursor):
 
             if most_recent_cursor_value is None or most_recent_cursor_value < cursor_value:
                 self._most_recent_cursor_value_per_partition[record.associated_slice] = cursor_value
+            elif most_recent_cursor_value > cursor_value:
+                self._is_ascending_order = False
         except ValueError:
             self._log_for_record_without_cursor_value()
 
@@ -516,3 +519,26 @@ class ConcurrentCursor(Cursor):
                 f"Could not find cursor field `{self.cursor_field.cursor_field_key}` in record for stream {self._stream_name}. The incremental sync will assume it needs to be synced"
             )
             self._should_be_synced_logger_triggered = True
+
+    def reduce_slice_range(self, stream_slice: StreamSlice) -> StreamSlice:
+        # In theory, we might be more flexible here meaning that it doesn't need to be in ascending order but it just
+        # needs to be ordered. For now though, we will only support ascending order.
+        if not self._is_ascending_order:
+            LOGGER.warning(
+                "Attempting to reduce slice while records are not returned in incremental order might lead to missing records"
+            )
+
+        return StreamSlice(
+            partition=stream_slice.partition,
+            cursor_slice={
+                self._slice_boundary_fields_wrapper[
+                    self._START_BOUNDARY
+                ]: self._connector_state_converter.output_format(
+                    self._most_recent_cursor_value_per_partition[stream_slice]
+                ),
+                self._slice_boundary_fields_wrapper[self._END_BOUNDARY]: stream_slice.cursor_slice[
+                    self._slice_boundary_fields_wrapper[self._END_BOUNDARY]
+                ],
+            },
+            extra_fields=stream_slice.extra_fields,
+        )

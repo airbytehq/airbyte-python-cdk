@@ -24,9 +24,9 @@ from airbyte_cdk.models import (
 )
 from airbyte_cdk.sources.declarative.auth.declarative_authenticator import NoAuth
 from airbyte_cdk.sources.declarative.decoders import JsonDecoder
-from airbyte_cdk.sources.declarative.extractors import DpathExtractor, RecordSelector
+from airbyte_cdk.sources.declarative.extractors import DpathExtractor, HttpSelector, RecordSelector
 from airbyte_cdk.sources.declarative.partition_routers import SinglePartitionRouter
-from airbyte_cdk.sources.declarative.requesters.paginators import DefaultPaginator
+from airbyte_cdk.sources.declarative.requesters.paginators import DefaultPaginator, Paginator
 from airbyte_cdk.sources.declarative.requesters.paginators.strategies import (
     CursorPaginationStrategy,
     PageIncrement,
@@ -40,13 +40,19 @@ from airbyte_cdk.sources.declarative.requesters.query_properties.property_chunki
     PropertyLimitType,
 )
 from airbyte_cdk.sources.declarative.requesters.request_option import RequestOptionType
-from airbyte_cdk.sources.declarative.requesters.requester import HttpMethod
+from airbyte_cdk.sources.declarative.requesters.requester import HttpMethod, Requester
+from airbyte_cdk.sources.declarative.retrievers.pagination_tracker import PaginationTracker
 from airbyte_cdk.sources.declarative.retrievers.simple_retriever import SimpleRetriever
 from airbyte_cdk.sources.declarative.stream_slicers import StreamSlicerTestReadDecorator
+from airbyte_cdk.sources.streams.http.pagination_reset_exception import (
+    PaginationResetRequiredException,
+)
 from airbyte_cdk.sources.types import Record, StreamSlice
 from airbyte_cdk.sources.utils.transform import TransformConfig, TypeTransformer
 
+A_RECORD_SCHEMA = {}
 A_SLICE_STATE = {"slice_state": "slice state value"}
+A_STREAM_NAME = "stream_name"
 A_STREAM_SLICE = StreamSlice(cursor_slice={"stream slice": "slice value"}, partition={})
 A_STREAM_STATE = {"stream state": "state value"}
 
@@ -1446,3 +1452,115 @@ def test_simple_retriever_still_emit_records_if_no_merge_key():
 
     assert len(actual_records) == 10
     assert actual_records == expected_records
+
+
+def test_given_requester_raise_pagination_reset_exception_when_read_records_than_reduce_slice_range_and_retry_with_new_slice():
+    requester = Mock(spec=Requester)
+    requester.send_request.side_effect = [
+        [{"id": 1}],
+        PaginationResetRequiredException(),
+        [{"id": 2}],
+    ]
+    record_selector = Mock(spec=HttpSelector)
+    record_selector.select_records.side_effect = [
+        [{"id": 1}],
+        [{"id": 2}],
+    ]
+    pagination_tracker = Mock(spec=PaginationTracker)
+    pagination_tracker.has_reached_limit.return_value = False
+    paginator = _mock_paginator()
+    paginator.get_initial_token.return_value = 1
+    paginator.next_page_token.side_effect = [
+        {"next_page_token": 2},
+        None,
+    ]
+    retriever = SimpleRetriever(
+        name=A_STREAM_NAME,
+        primary_key=primary_key,
+        requester=requester,
+        record_selector=record_selector,
+        paginator=paginator,
+        pagination_tracker_factory=lambda: pagination_tracker,
+        parameters={},
+        config={},
+    )
+
+    x = list(retriever.read_records(A_RECORD_SCHEMA, A_STREAM_SLICE))
+
+    assert len(x) == 2
+    assert pagination_tracker.reset.call_count == 1
+    assert requester.send_request.call_count == 3
+    assert requester.send_request.call_args_list[1].kwargs["stream_slice"] == A_STREAM_SLICE
+    assert requester.send_request.call_args_list[1].kwargs["next_page_token"] == {
+        "next_page_token": 2
+    }
+    assert (
+        requester.send_request.call_args_list[2].kwargs["stream_slice"]
+        == pagination_tracker.reduce_slice_range_if_possible.return_value
+    )
+    assert requester.send_request.call_args_list[2].kwargs["next_page_token"] == {
+        "next_page_token": 1
+    }
+
+
+def test_given_reach_pagination_limit_after_two_pages_when_read_records_than_reduce_slice_range_and_retry_with_new_slice():
+    requester = Mock(spec=Requester)
+    requester.send_request.side_effect = [
+        [{"id": 1}],
+        [{"id": 2}],
+        [{"id": 3}],
+    ]
+    record_selector = Mock(spec=HttpSelector)
+    record_selector.select_records.side_effect = [
+        [{"id": 1}],
+        [{"id": 2}],
+        [{"id": 3}],
+    ]
+    pagination_tracker = Mock(spec=PaginationTracker)
+    pagination_tracker.has_reached_limit.side_effect = [
+        False,
+        True,
+        False,
+    ]
+    paginator = _mock_paginator()
+    paginator.get_initial_token.return_value = 1
+    paginator.next_page_token.side_effect = [
+        {"next_page_token": 2},
+        None,
+    ]
+    retriever = SimpleRetriever(
+        name=A_STREAM_NAME,
+        primary_key=primary_key,
+        requester=requester,
+        record_selector=record_selector,
+        paginator=paginator,
+        pagination_tracker_factory=lambda: pagination_tracker,
+        parameters={},
+        config={},
+    )
+
+    x = list(retriever.read_records(A_RECORD_SCHEMA, A_STREAM_SLICE))
+
+    assert len(x) == 3
+    assert pagination_tracker.reset.call_count == 1
+    assert requester.send_request.call_count == 3
+    assert requester.send_request.call_args_list[1].kwargs["stream_slice"] == A_STREAM_SLICE
+    assert requester.send_request.call_args_list[1].kwargs["next_page_token"] == {
+        "next_page_token": 2
+    }
+    assert (
+        requester.send_request.call_args_list[2].kwargs["stream_slice"]
+        == pagination_tracker.reduce_slice_range_if_possible.return_value
+    )
+    assert requester.send_request.call_args_list[2].kwargs["next_page_token"] == {
+        "next_page_token": 1
+    }
+
+
+def _mock_paginator():
+    paginator = Mock(spec=Paginator)
+    paginator.get_request_params.__name__ = "get_request_params"
+    paginator.get_request_headers.__name__ = "get_request_headers"
+    paginator.get_request_body_data.__name__ = "get_request_body_data"
+    paginator.get_request_body_json.__name__ = "get_request_body_json"
+    return paginator

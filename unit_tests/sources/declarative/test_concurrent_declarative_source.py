@@ -4610,3 +4610,320 @@ def test_parameter_propagation_for_concurrent_cursor():
     streams = source.streams({})
 
     assert streams[0].cursor.cursor_field.cursor_field_key == cursor_field_parameter_override
+
+
+def test_given_response_action_is_pagination_reset_when_read_then_reset_pagination():
+    input_config = {}
+    manifest = {
+        "version": "0.34.2",
+        "type": "DeclarativeSource",
+        "check": {"type": "CheckStream", "stream_names": ["Test"]},
+        "streams": [
+            {
+                "type": "DeclarativeStream",
+                "name": "Test",
+                "schema_loader": {
+                    "type": "InlineSchemaLoader",
+                    "schema": {"type": "object"},
+                },
+                "retriever": {
+                    "type": "SimpleRetriever",
+                    "requester": {
+                        "type": "HttpRequester",
+                        "url_base": "https://example.org",
+                        "path": "/test",
+                        "authenticator": {"type": "NoAuth"},
+                        "error_handler": {
+                            "type": "DefaultErrorHandler",
+                            "response_filters": [
+                                {
+                                    "http_codes": [400],
+                                    "action": "RESET_PAGINATION",
+                                    "failure_type": "system_error",
+                                },
+                            ],
+                        },
+                    },
+                    "record_selector": {
+                        "type": "RecordSelector",
+                        "extractor": {"type": "DpathExtractor", "field_path": []},
+                    },
+                },
+            }
+        ],
+        "spec": {
+            "type": "Spec",
+            "documentation_url": "https://example.org",
+            "connection_specification": {},
+        },
+    }
+
+    catalog = create_catalog("Test")
+    source = ConcurrentDeclarativeSource(
+        source_config=manifest,
+        config=input_config,
+        catalog=catalog,
+        state=None,
+    )
+
+    with HttpMocker() as http_mocker:
+        http_mocker.get(
+            HttpRequest("https://example.org/test"),
+            [
+                HttpResponse("", 400),
+                HttpResponse(json.dumps([{"id": 1}]), 200),
+            ],
+        )
+        messages = list(
+            source.read(logger=source.logger, config=input_config, catalog=catalog, state=[])
+        )
+
+    assert len(list(filter(lambda message: message.type == Type.RECORD, messages)))
+
+
+def test_given_pagination_limit_reached_when_read_then_reset_pagination():
+    input_config = {}
+    manifest = {
+        "version": "0.34.2",
+        "type": "DeclarativeSource",
+        "check": {"type": "CheckStream", "stream_names": ["Test"]},
+        "streams": [
+            {
+                "type": "DeclarativeStream",
+                "name": "Test",
+                "schema_loader": {
+                    "type": "InlineSchemaLoader",
+                    "schema": {"type": "object"},
+                },
+                "retriever": {
+                    "type": "SimpleRetriever",
+                    "requester": {
+                        "type": "HttpRequester",
+                        "url_base": "https://example.org",
+                        "path": "/test?from={{ stream_interval.start_time }}",
+                        "authenticator": {"type": "NoAuth"},
+                    },
+                    "record_selector": {
+                        "type": "RecordSelector",
+                        "extractor": {"type": "DpathExtractor", "field_path": []},
+                    },
+                    "pagination_reset": {
+                        "type": "PaginationReset",
+                        "action": "SPLIT_USING_CURSOR",
+                        "limits": {
+                            "type": "PaginationResetLimits",
+                            "number_of_records": 2,
+                        },
+                    },
+                },
+                "incremental_sync": {
+                    "type": "DatetimeBasedCursor",
+                    "start_datetime": {"datetime": "2022-01-01"},
+                    "end_datetime": "2023-12-31",
+                    "datetime_format": "%Y-%m-%d",
+                    "cursor_datetime_formats": ["%Y-%m-%d"],
+                    "cursor_granularity": "P1D",
+                    "step": "P1Y",
+                    "cursor_field": "updated_at",
+                },
+            }
+        ],
+        "spec": {
+            "type": "Spec",
+            "documentation_url": "https://example.org",
+            "connection_specification": {},
+        },
+    }
+
+    catalog = create_catalog("Test")
+    source = ConcurrentDeclarativeSource(
+        source_config=manifest,
+        config=input_config,
+        catalog=catalog,
+        state=None,
+    )
+
+    with HttpMocker() as http_mocker:
+        # Slice from 2022-01-01 to 2022-12-31
+        http_mocker.get(
+            HttpRequest("https://example.org/test?from=2022-01-01"),
+            HttpResponse(
+                json.dumps(
+                    [{"id": 1, "updated_at": "2022-02-01"}, {"id": 2, "updated_at": "2022-03-01"}]
+                ),
+                200,
+            ),
+        )
+        http_mocker.get(
+            HttpRequest("https://example.org/test?from=2022-03-01"),
+            HttpResponse(json.dumps([{"id": 3, "updated_at": "2022-04-01"}]), 200),
+        )
+        # Slice from 2023-01-01 to 2023-12-31
+        http_mocker.get(
+            HttpRequest("https://example.org/test?from=2023-01-01"),
+            HttpResponse(json.dumps([{"id": 4, "updated_at": "2023-04-01"}]), 200),
+        )
+        messages = list(
+            source.read(logger=source.logger, config=input_config, catalog=catalog, state=[])
+        )
+
+    assert len(list(filter(lambda message: message.type == Type.RECORD, messages))) == 4
+
+
+def test_given_per_partition_cursor_when_read_then_reset_pagination():
+    input_config = {}
+    manifest = {
+        "version": "0.34.2",
+        "type": "DeclarativeSource",
+        "check": {"type": "CheckStream", "stream_names": ["Test"]},
+        "streams": [
+            {
+                "type": "DeclarativeStream",
+                "name": "Test",
+                "schema_loader": {
+                    "type": "InlineSchemaLoader",
+                    "schema": {"type": "object"},
+                },
+                "retriever": {
+                    "type": "SimpleRetriever",
+                    "requester": {
+                        "type": "HttpRequester",
+                        "url_base": "https://example.org",
+                        "path": "/test?partition={{ stream_partition.parent_id }}&from={{ stream_interval.start_time }}",
+                        "authenticator": {"type": "NoAuth"},
+                    },
+                    "record_selector": {
+                        "type": "RecordSelector",
+                        "extractor": {"type": "DpathExtractor", "field_path": []},
+                    },
+                    "pagination_reset": {
+                        "type": "PaginationReset",
+                        "action": "SPLIT_USING_CURSOR",
+                        "limits": {
+                            "type": "PaginationResetLimits",
+                            "number_of_records": 2,
+                        },
+                    },
+                    "partition_router": {
+                        "type": "ListPartitionRouter",
+                        "cursor_field": "parent_id",
+                        "values": ["1", "2"],
+                    },
+                },
+                "incremental_sync": {
+                    "type": "DatetimeBasedCursor",
+                    "start_datetime": {"datetime": "2022-01-01"},
+                    "end_datetime": "2022-12-31",
+                    "datetime_format": "%Y-%m-%d",
+                    "cursor_datetime_formats": ["%Y-%m-%d"],
+                    "cursor_granularity": "P1D",
+                    "step": "P1Y",
+                    "cursor_field": "updated_at",
+                },
+            }
+        ],
+        "spec": {
+            "type": "Spec",
+            "documentation_url": "https://example.org",
+            "connection_specification": {},
+        },
+    }
+
+    catalog = create_catalog("Test")
+    source = ConcurrentDeclarativeSource(
+        source_config=manifest,
+        config=input_config,
+        catalog=catalog,
+        state=None,
+    )
+
+    with HttpMocker() as http_mocker:
+        # Partition 1
+        http_mocker.get(
+            HttpRequest("https://example.org/test?partition=1&from=2022-01-01"),
+            HttpResponse(
+                json.dumps(
+                    [{"id": 1, "updated_at": "2022-02-01"}, {"id": 2, "updated_at": "2022-03-01"}]
+                ),
+                200,
+            ),
+        )
+        http_mocker.get(
+            HttpRequest("https://example.org/test?partition=1&from=2022-03-01"),
+            HttpResponse(json.dumps([{"id": 3, "updated_at": "2022-04-01"}]), 200),
+        )
+        # Partition 2
+        http_mocker.get(
+            HttpRequest("https://example.org/test?partition=2&from=2022-01-01"),
+            HttpResponse(json.dumps([{"id": 4, "updated_at": "2023-04-01"}]), 200),
+        )
+        messages = list(
+            source.read(logger=source.logger, config=input_config, catalog=catalog, state=[])
+        )
+
+    assert len(list(filter(lambda message: message.type == Type.RECORD, messages))) == 4
+
+
+def test_given_record_selector_is_filtering_when_read_then_raise_error():
+    """
+    This test is here to show the limitations of pagination reset. If it starts failing, maybe we just want to delete
+    it. Basically, since the filtering happens before we count the number of entries, than we might not have an
+    accurate picture of the number of records passed through the HTTP response.
+    """
+    input_config = {}
+    manifest = {
+        "version": "0.34.2",
+        "type": "DeclarativeSource",
+        "check": {"type": "CheckStream", "stream_names": ["Test"]},
+        "streams": [
+            {
+                "type": "DeclarativeStream",
+                "name": "Test",
+                "schema_loader": {
+                    "type": "InlineSchemaLoader",
+                    "schema": {"type": "object"},
+                },
+                "retriever": {
+                    "type": "SimpleRetriever",
+                    "requester": {
+                        "type": "HttpRequester",
+                        "url_base": "https://example.org",
+                        "path": "/test?from={{ stream_interval.start_time }}",
+                        "authenticator": {"type": "NoAuth"},
+                    },
+                    "record_selector": {
+                        "type": "RecordSelector",
+                        "extractor": {"type": "DpathExtractor", "field_path": []},
+                        "record_filter": {
+                            "type": "RecordFilter",
+                            "condition": "{{ record['id'] != 1 }}",
+                        },
+                    },
+                    "pagination_reset": {
+                        "type": "PaginationReset",
+                        "action": "SPLIT_USING_CURSOR",
+                        "limits": {
+                            "type": "PaginationResetLimits",
+                            "number_of_records": 2,
+                        },
+                    },
+                },
+            }
+        ],
+        "spec": {
+            "type": "Spec",
+            "documentation_url": "https://example.org",
+            "connection_specification": {},
+        },
+    }
+
+    catalog = create_catalog("Test")
+    source = ConcurrentDeclarativeSource(
+        source_config=manifest,
+        config=input_config,
+        catalog=catalog,
+        state=None,
+    )
+
+    with pytest.raises(ValueError):
+        list(source.read(logger=source.logger, config=input_config, catalog=catalog, state=[]))

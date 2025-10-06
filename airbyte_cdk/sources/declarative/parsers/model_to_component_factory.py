@@ -116,6 +116,7 @@ from airbyte_cdk.sources.declarative.migrations.legacy_to_per_partition_state_mi
 )
 from airbyte_cdk.sources.declarative.models import (
     CustomStateMigration,
+    PaginationResetLimits,
 )
 from airbyte_cdk.sources.declarative.models.base_model_with_deprecations import (
     DEPRECATION_LOGS_TAG,
@@ -359,6 +360,9 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
     PageIncrement as PageIncrementModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    PaginationReset as PaginationResetModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     ParametrizedComponentsResolver as ParametrizedComponentsResolverModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
@@ -529,6 +533,7 @@ from airbyte_cdk.sources.declarative.retrievers.file_uploader import (
     LocalFileSystemFileWriter,
     NoopFileWriter,
 )
+from airbyte_cdk.sources.declarative.retrievers.pagination_tracker import PaginationTracker
 from airbyte_cdk.sources.declarative.schema import (
     ComplexFieldType,
     DefaultSchemaLoader,
@@ -643,6 +648,8 @@ _NO_STREAM_SLICING = SinglePartitionRouter(parameters={})
 # Ideally this should use the value defined in ConcurrentDeclarativeSource, but
 # this would be a circular import
 MAX_SLICES = 5
+
+LOGGER = logging.getLogger(f"airbyte.model_to_component_factory")
 
 
 class ModelToComponentFactory:
@@ -2043,6 +2050,7 @@ class ModelToComponentFactory:
             if isinstance(concurrent_cursor, FinalStateCursor)
             else concurrent_cursor
         )
+
         retriever = self._create_component_from_model(
             model=model.retriever,
             config=config,
@@ -2051,12 +2059,9 @@ class ModelToComponentFactory:
             request_options_provider=request_options_provider,
             stream_slicer=stream_slicer,
             partition_router=partition_router,
-            stop_condition_cursor=concurrent_cursor
-            if self._is_stop_condition_on_cursor(model)
-            else None,
-            client_side_incremental_sync={"cursor": concurrent_cursor}
-            if self._is_client_side_filtering_enabled(model)
-            else None,
+            has_stop_condition_cursor=self._is_stop_condition_on_cursor(model),
+            is_client_side_incremental_sync=self._is_client_side_filtering_enabled(model),
+            cursor=concurrent_cursor,
             transformations=transformations,
             file_uploader=file_uploader,
             incremental_sync=model.incremental_sync,
@@ -3050,7 +3055,7 @@ class ModelToComponentFactory:
         name: str,
         transformations: List[RecordTransformation] | None = None,
         decoder: Decoder | None = None,
-        client_side_incremental_sync: Dict[str, Any] | None = None,
+        client_side_incremental_sync_cursor: Optional[Cursor] = None,
         file_uploader: Optional[DefaultFileUploader] = None,
         **kwargs: Any,
     ) -> RecordSelector:
@@ -3066,14 +3071,14 @@ class ModelToComponentFactory:
         transform_before_filtering = (
             False if model.transform_before_filtering is None else model.transform_before_filtering
         )
-        if client_side_incremental_sync:
+        if client_side_incremental_sync_cursor:
             record_filter = ClientSideIncrementalRecordFilterDecorator(
                 config=config,
                 parameters=model.parameters,
                 condition=model.record_filter.condition
                 if (model.record_filter and hasattr(model.record_filter, "condition"))
                 else None,
-                **client_side_incremental_sync,
+                cursor=client_side_incremental_sync_cursor,
             )
             transform_before_filtering = (
                 True
@@ -3151,8 +3156,9 @@ class ModelToComponentFactory:
         name: str,
         primary_key: Optional[Union[str, List[str], List[List[str]]]],
         request_options_provider: Optional[RequestOptionsProvider] = None,
-        stop_condition_cursor: Optional[Cursor] = None,
-        client_side_incremental_sync: Optional[Dict[str, Any]] = None,
+        cursor: Optional[Cursor] = None,
+        has_stop_condition_cursor: bool = False,
+        is_client_side_incremental_sync: bool = False,
         transformations: List[RecordTransformation],
         file_uploader: Optional[DefaultFileUploader] = None,
         incremental_sync: Optional[
@@ -3182,6 +3188,9 @@ class ModelToComponentFactory:
 
             return _url or _url_base
 
+        if cursor is None:
+            cursor = FinalStateCursor(name, None, self._message_repository)
+
         decoder = (
             self._create_component_from_model(model=model.decoder, config=config)
             if model.decoder
@@ -3193,7 +3202,7 @@ class ModelToComponentFactory:
             config=config,
             decoder=decoder,
             transformations=transformations,
-            client_side_incremental_sync=client_side_incremental_sync,
+            client_side_incremental_sync_cursor=cursor if is_client_side_incremental_sync else None,
             file_uploader=file_uploader,
         )
 
@@ -3270,7 +3279,7 @@ class ModelToComponentFactory:
                 url_base=_get_url(requester),
                 extractor_model=model.record_selector.extractor,
                 decoder=decoder,
-                cursor_used_for_stop_condition=stop_condition_cursor or None,
+                cursor_used_for_stop_condition=cursor if has_stop_condition_cursor else None,
             )
             if model.paginator
             else NoPagination(parameters={})
@@ -3319,6 +3328,13 @@ class ModelToComponentFactory:
                 parameters=model.parameters or {},
             )
 
+        if (
+            model.record_selector.record_filter
+            and model.pagination_reset
+            and model.pagination_reset.limits
+        ):
+            raise ValueError("PaginationResetLimits are not support while having record filter.")
+
         return SimpleRetriever(
             name=name,
             paginator=paginator,
@@ -3332,8 +3348,30 @@ class ModelToComponentFactory:
             ignore_stream_slicer_parameters_on_paginated_requests=ignore_stream_slicer_parameters_on_paginated_requests,
             additional_query_properties=query_properties,
             log_formatter=self._get_log_formatter(log_formatter, name),
+            pagination_tracker_factory=self._create_pagination_tracker_factory(
+                model.pagination_reset, cursor
+            ),
             parameters=model.parameters or {},
         )
+
+    def _create_pagination_tracker_factory(
+        self, model: PaginationResetModel, cursor: Cursor
+    ) -> Callable[[], PaginationTracker]:
+        # Until we figure out a way to use any cursor for PaginationTracker, we will have to have this cursor selector logic
+        cursor_for_pagination_tracking = None
+        if isinstance(cursor, ConcurrentCursor):
+            cursor_for_pagination_tracking = cursor
+        elif isinstance(cursor, ConcurrentPerPartitionCursor):
+            cursor_for_pagination_tracking = cursor._cursor_factory.create(  # type: ignore  # if this becomes a problem, we would need to extract the cursor_factory instantiation logic and make it accessible here
+                {}, datetime.timedelta(0)
+            )
+        elif not isinstance(cursor, FinalStateCursor):
+            LOGGER.warning(
+                "Unknown cursor for PaginationTracker. Pagination resets might not work properly"
+            )
+
+        limit = model.limits.number_of_records if model and model.limits else None
+        return lambda: PaginationTracker(cursor_for_pagination_tracking, limit)
 
     def _get_log_formatter(
         self, log_formatter: Callable[[Response], Any] | None, name: str
