@@ -75,7 +75,7 @@ class NestedPath(Path):
         return f"NestedPath(path={self._path})"
 
 
-class RootPath(Path):
+class RootPath:
     """
     Path to use when the root of the response is an array.
     """
