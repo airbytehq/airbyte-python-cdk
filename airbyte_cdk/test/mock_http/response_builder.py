@@ -234,7 +234,7 @@ def create_record_builder(
     response_template: Dict[str, Any],
     records_path: Union[FieldPath, NestedPath, RootPath],
     record_id_path: Optional[Path] = None,
-    record_cursor_path: Optional[Union[FieldPath, NestedPath, RootPath]] = None,
+    record_cursor_path: Optional[Union[FieldPath, NestedPath]] = None,
 ) -> RecordBuilder:
     """
     This will use the first record define at `records_path` as a template for the records. If more records are defined, they will be ignored
