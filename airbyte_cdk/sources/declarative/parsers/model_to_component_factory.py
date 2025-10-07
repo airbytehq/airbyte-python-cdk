@@ -3218,6 +3218,9 @@ class ModelToComponentFactory:
                     model=query_properties_definitions[0], config=config
                 )
 
+            # Removes QueryProperties components from the interpolated mappings because it has been designed
+            # to be used by the SimpleRetriever and will be resolved from the provider from the slice directly
+            # instead of through jinja interpolation
             if isinstance(model.requester.request_parameters, Mapping):
                 model.requester.request_parameters = self._remove_query_properties(
                     model.requester.request_parameters
@@ -3244,9 +3247,6 @@ class ModelToComponentFactory:
                 config=config,
             )
 
-        # Removes QueryProperties components from the interpolated mappings because it has been designed
-        # to be used by the SimpleRetriever and will be resolved from the provider from the slice directly
-        # instead of through jinja interpolation
         requester = self._create_component_from_model(
             model=model.requester,
             decoder=decoder,
