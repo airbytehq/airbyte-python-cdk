@@ -3221,7 +3221,9 @@ class ModelToComponentFactory:
             # Removes QueryProperties components from the interpolated mappings because it has been designed
             # to be used by the SimpleRetriever and will be resolved from the provider from the slice directly
             # instead of through jinja interpolation
-            if hasattr(model.requester, "request_parameters") and isinstance(model.requester.request_parameters, Mapping):
+            if hasattr(model.requester, "request_parameters") and isinstance(
+                model.requester.request_parameters, Mapping
+            ):
                 model.requester.request_parameters = self._remove_query_properties(
                     model.requester.request_parameters
                 )
