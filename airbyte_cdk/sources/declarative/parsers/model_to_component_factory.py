@@ -2208,6 +2208,14 @@ class ModelToComponentFactory:
             and stream_slicer
             and not isinstance(stream_slicer, SinglePartitionRouter)
         ):
+            if isinstance(model.incremental_sync, IncrementingCountCursorModel):
+                # We don't currently support usage of partition routing and IncrementingCountCursor at the
+                # same time because we didn't solve for design questions like what the lookback window would
+                # be as well as global cursor fall backs. We have not seen customers that have needed both
+                # at the same time yet and are currently punting on this until we need to solve it.
+                raise ValueError(
+                    f"The low-code framework does not currently support usage of a PartitionRouter and an IncrementingCountCursor at the same time. Please specify only one of these options for stream {stream_name}."
+                )
             return self.create_concurrent_cursor_from_perpartition_cursor(  # type: ignore # This is a known issue that we are creating and returning a ConcurrentCursor which does not technically implement the (low-code) StreamSlicer. However, (low-code) StreamSlicer and ConcurrentCursor both implement StreamSlicer.stream_slices() which is the primary method needed for checkpointing
                 state_manager=self._connector_state_manager,
                 model_type=DatetimeBasedCursorModel,

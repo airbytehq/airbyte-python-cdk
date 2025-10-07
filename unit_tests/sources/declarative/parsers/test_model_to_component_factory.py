@@ -3669,6 +3669,58 @@ def test_create_concurrent_cursor_from_perpartition_cursor_runs_state_migrations
     )
 
 
+def test_incrementing_count_cursor_with_partition_router_raises_error():
+    content = """
+    type: DeclarativeStream
+    primary_key: "id"
+    name: test
+    schema_loader:
+      type: InlineSchemaLoader
+      schema:
+        $schema: "http://json-schema.org/draft-07/schema"
+        type: object
+        properties:
+          id:
+            type: string
+    incremental_sync:
+      type: "IncrementingCountCursor"
+      cursor_field: "mid"
+      start_value: "0"
+    retriever:
+      type: SimpleRetriever
+      name: test
+      requester:
+        type: HttpRequester
+        name: "test"
+        url_base: "https://api.test.com/v3/"
+        http_method: "GET"
+        authenticator:
+          type: NoAuth
+      record_selector:
+        type: RecordSelector
+        extractor:
+          type: DpathExtractor
+          field_path: []
+      partition_router:
+        type: ListPartitionRouter
+        cursor_field: arbitrary
+        values:
+          - item_1
+          - item_2
+      """
+
+    factory = ModelToComponentFactory(
+        emit_connector_builder_messages=True, connector_state_manager=ConnectorStateManager()
+    )
+
+    with pytest.raises(ValueError):
+        factory.create_component(
+            model_type=DeclarativeStreamModel,
+            component_definition=YamlDeclarativeSource._parse(content),
+            config=input_config,
+        )
+
+
 def test_create_concurrent_cursor_uses_min_max_datetime_format_if_defined():
     """
     Validates a special case for when the start_time.datetime_format and end_time.datetime_format are defined, the date to
