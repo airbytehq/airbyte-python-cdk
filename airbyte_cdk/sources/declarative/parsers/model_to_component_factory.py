@@ -2208,6 +2208,14 @@ class ModelToComponentFactory:
             and stream_slicer
             and not isinstance(stream_slicer, SinglePartitionRouter)
         ):
+            if isinstance(model.incremental_sync, IncrementingCountCursorModel):
+                # We don't currently support usage of partition routing and IncrementingCountCursor at the
+                # same time because we didn't solve for design questions like what the lookback window would
+                # be as well as global cursor fall backs. We have not seen customers that have needed both
+                # at the same time yet and are currently punting on this until we need to solve it.
+                raise ValueError(
+                    f"The low-code framework does not currently support usage of a PartitionRouter and an IncrementingCountCursor at the same time. Please specify only one of these options for stream {stream_name}."
+                )
             return self.create_concurrent_cursor_from_perpartition_cursor(  # type: ignore # This is a known issue that we are creating and returning a ConcurrentCursor which does not technically implement the (low-code) StreamSlicer. However, (low-code) StreamSlicer and ConcurrentCursor both implement StreamSlicer.stream_slices() which is the primary method needed for checkpointing
                 state_manager=self._connector_state_manager,
                 model_type=DatetimeBasedCursorModel,
@@ -2395,21 +2403,12 @@ class ModelToComponentFactory:
 
         api_budget = self._api_budget
 
-        # Removes QueryProperties components from the interpolated mappings because it has been designed
-        # to be used by the SimpleRetriever and will be resolved from the provider from the slice directly
-        # instead of through jinja interpolation
-        request_parameters: Optional[Union[str, Mapping[str, str]]]
-        if isinstance(model.request_parameters, Mapping):
-            request_parameters = self._remove_query_properties(model.request_parameters)
-        else:
-            request_parameters = model.request_parameters
-
         request_options_provider = InterpolatedRequestOptionsProvider(
             request_body=model.request_body,
             request_body_data=model.request_body_data,
             request_body_json=model.request_body_json,
             request_headers=model.request_headers,
-            request_parameters=request_parameters,
+            request_parameters=model.request_parameters,  # type: ignore  # QueryProperties have been removed in `create_simple_retriever`
             query_properties_key=query_properties_key,
             config=config,
             parameters=model.parameters or {},
@@ -3199,7 +3198,8 @@ class ModelToComponentFactory:
 
         query_properties: Optional[QueryProperties] = None
         query_properties_key: Optional[str] = None
-        if self._query_properties_in_request_parameters(model.requester):
+        self._ensure_query_properties_to_model(model.requester)
+        if self._has_query_properties_in_request_parameters(model.requester):
             # It is better to be explicit about an error if PropertiesFromEndpoint is defined in multiple
             # places instead of default to request_parameters which isn't clearly documented
             if (
@@ -3211,7 +3211,7 @@ class ModelToComponentFactory:
                 )
 
             query_properties_definitions = []
-            for key, request_parameter in model.requester.request_parameters.items():  # type: ignore # request_parameters is already validated to be a Mapping using _query_properties_in_request_parameters()
+            for key, request_parameter in model.requester.request_parameters.items():  # type: ignore # request_parameters is already validated to be a Mapping using _has_query_properties_in_request_parameters()
                 if isinstance(request_parameter, QueryPropertiesModel):
                     query_properties_key = key
                     query_properties_definitions.append(request_parameter)
@@ -3224,6 +3224,16 @@ class ModelToComponentFactory:
             if len(query_properties_definitions) == 1:
                 query_properties = self._create_component_from_model(
                     model=query_properties_definitions[0], config=config
+                )
+
+            # Removes QueryProperties components from the interpolated mappings because it has been designed
+            # to be used by the SimpleRetriever and will be resolved from the provider from the slice directly
+            # instead of through jinja interpolation
+            if hasattr(model.requester, "request_parameters") and isinstance(
+                model.requester.request_parameters, Mapping
+            ):
+                model.requester.request_parameters = self._remove_query_properties(
+                    model.requester.request_parameters
                 )
         elif (
             hasattr(model.requester, "fetch_properties_from_endpoint")
@@ -3361,7 +3371,7 @@ class ModelToComponentFactory:
         return bool(self._limit_slices_fetched or self._emit_connector_builder_messages)
 
     @staticmethod
-    def _query_properties_in_request_parameters(
+    def _has_query_properties_in_request_parameters(
         requester: Union[HttpRequesterModel, CustomRequesterModel],
     ) -> bool:
         if not hasattr(requester, "request_parameters"):
@@ -4175,3 +4185,26 @@ class ModelToComponentFactory:
             deduplicate=model.deduplicate if model.deduplicate is not None else True,
             config=config,
         )
+
+    def _ensure_query_properties_to_model(
+        self, requester: Union[HttpRequesterModel, CustomRequesterModel]
+    ) -> None:
+        """
+        For some reason, it seems like CustomRequesterModel request_parameters stays as dictionaries which means that
+        the other conditions relying on it being QueryPropertiesModel instead of a dict fail. Here, we migrate them to
+        proper model.
+        """
+        if not hasattr(requester, "request_parameters"):
+            return
+
+        request_parameters = requester.request_parameters
+        if request_parameters and isinstance(request_parameters, Dict):
+            for request_parameter_key in request_parameters.keys():
+                request_parameter = request_parameters[request_parameter_key]
+                if (
+                    isinstance(request_parameter, Dict)
+                    and request_parameter.get("type") == "QueryProperties"
+                ):
+                    request_parameters[request_parameter_key] = QueryPropertiesModel.parse_obj(
+                        request_parameter
+                    )

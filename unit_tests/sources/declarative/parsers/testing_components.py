@@ -8,11 +8,17 @@ from typing import Any, ClassVar, List, Mapping, Optional
 from airbyte_cdk.sources.declarative.extractors import DpathExtractor
 from airbyte_cdk.sources.declarative.migrations.state_migration import StateMigration
 from airbyte_cdk.sources.declarative.partition_routers import SubstreamPartitionRouter
-from airbyte_cdk.sources.declarative.requesters import RequestOption
+from airbyte_cdk.sources.declarative.requesters import HttpRequester, RequestOption
 from airbyte_cdk.sources.declarative.requesters.error_handlers import DefaultErrorHandler
 from airbyte_cdk.sources.declarative.requesters.paginators import (
     DefaultPaginator,
     PaginationStrategy,
+)
+from airbyte_cdk.sources.declarative.requesters.request_options import (
+    InterpolatedRequestOptionsProvider,
+)
+from airbyte_cdk.sources.declarative.requesters.request_options.interpolated_request_options_provider import (
+    RequestInput,
 )
 from airbyte_cdk.sources.declarative.retrievers import SimpleRetriever
 
@@ -82,3 +88,20 @@ class TestingStateMigrationWithParentState(StateMigration):
             "updated_at": "2024-02-01T00:00:00.000000+00:00"
         }
         return stream_state
+
+
+@dataclass
+class TestingRequester(HttpRequester):
+    request_parameters: Optional[RequestInput] = None
+
+    def __post_init__(self, parameters: Mapping[str, Any]) -> None:
+        """
+        Initializes the request options provider with the provided parameters and any
+        configured request components like headers, parameters, or bodies.
+        """
+        self.request_options_provider = InterpolatedRequestOptionsProvider(
+            request_parameters=self.request_parameters,
+            config=self.config,
+            parameters=parameters or {},
+        )
+        super().__post_init__(parameters)
