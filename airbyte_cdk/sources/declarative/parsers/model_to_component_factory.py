@@ -3361,11 +3361,11 @@ class ModelToComponentFactory:
             return lambda: PaginationTracker()
 
         # Until we figure out a way to use any cursor for PaginationTracker, we will have to have this cursor selector logic
-        cursor_for_pagination_tracking = None
+        cursor_factory: Callable[[], Optional[ConcurrentCursor]] = lambda: None
         if isinstance(cursor, ConcurrentCursor):
-            cursor_for_pagination_tracking = cursor
+            cursor_factory = lambda: cursor.copy_without_state()  # type: ignore  # the if condition validates that it is a ConcurrentCursor
         elif isinstance(cursor, ConcurrentPerPartitionCursor):
-            cursor_for_pagination_tracking = cursor._cursor_factory.create(  # type: ignore  # if this becomes a problem, we would need to extract the cursor_factory instantiation logic and make it accessible here
+            cursor_factory = lambda: cursor._cursor_factory.create(  # type: ignore  # if this becomes a problem, we would need to extract the cursor_factory instantiation logic and make it accessible here
                 {}, datetime.timedelta(0)
             )
         elif not isinstance(cursor, FinalStateCursor):
@@ -3374,7 +3374,7 @@ class ModelToComponentFactory:
             )
 
         limit = model.limits.number_of_records if model and model.limits else None
-        return lambda: PaginationTracker(cursor_for_pagination_tracking, limit)
+        return lambda: PaginationTracker(cursor_factory(), limit)
 
     def _get_log_formatter(
         self, log_formatter: Callable[[Response], Any] | None, name: str

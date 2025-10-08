@@ -19,7 +19,7 @@ from typing import (
 )
 
 from airbyte_cdk.sources.connector_state_manager import ConnectorStateManager
-from airbyte_cdk.sources.message import MessageRepository
+from airbyte_cdk.sources.message import MessageRepository, NoopMessageRepository
 from airbyte_cdk.sources.streams import NO_CURSOR_STATE_KEY
 from airbyte_cdk.sources.streams.concurrent.clamping import ClampingStrategy, NoClamping
 from airbyte_cdk.sources.streams.concurrent.cursor_types import CursorValueType, GapType
@@ -135,6 +135,24 @@ class FinalStateCursor(Cursor):
 class ConcurrentCursor(Cursor):
     _START_BOUNDARY = 0
     _END_BOUNDARY = 1
+
+    def copy_without_state(self) -> "ConcurrentCursor":
+        return self.__class__(
+            stream_name=self._stream_name,
+            stream_namespace=self._stream_namespace,
+            stream_state={},
+            message_repository=NoopMessageRepository(),
+            connector_state_manager=ConnectorStateManager(),
+            connector_state_converter=self._connector_state_converter,
+            cursor_field=self._cursor_field,
+            slice_boundary_fields=self._slice_boundary_fields,
+            start=self._start,
+            end_provider=self._end_provider,
+            lookback_window=self._lookback_window,
+            slice_range=self._slice_range,
+            cursor_granularity=self._cursor_granularity,
+            clamping_strategy=self._clamping_strategy,
+        )
 
     def __init__(
         self,
