@@ -79,6 +79,10 @@ def monkey_patched_get_item(self, key):  # type: ignore # this interface is a co
 requests_cache.SQLiteDict.__getitem__ = monkey_patched_get_item  # type: ignore # see the method doc for more information
 
 
+class PaginationResetRequiredException(Exception):
+    pass
+
+
 class MessageRepresentationAirbyteTracedErrors(AirbyteTracedException):
     """
     Before the migration to the HttpClient in low-code, the exception raised was
@@ -427,6 +431,9 @@ class HttpClient:
     ) -> None:
         if error_resolution.response_action not in self._ACTIONS_TO_RETRY_ON:
             self._evict_key(request)
+
+        if error_resolution.response_action == ResponseAction.RESET_PAGINATION:
+            raise PaginationResetRequiredException()
 
         # Emit stream status RUNNING with the reason RATE_LIMITED to log that the rate limit has been reached
         if error_resolution.response_action == ResponseAction.RATE_LIMITED:

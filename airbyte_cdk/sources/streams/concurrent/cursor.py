@@ -86,6 +86,9 @@ class Cursor(StreamSlicer, ABC):
         """
         yield StreamSlice(partition={}, cursor_slice={})
 
+    def reduce_slice_range(self, stream_slice: StreamSlice) -> StreamSlice:
+        return stream_slice
+
 
 class FinalStateCursor(Cursor):
     """Cursor that is used to guarantee at least one state message is emitted for a concurrent stream."""
@@ -516,3 +519,17 @@ class ConcurrentCursor(Cursor):
                 f"Could not find cursor field `{self.cursor_field.cursor_field_key}` in record for stream {self._stream_name}. The incremental sync will assume it needs to be synced"
             )
             self._should_be_synced_logger_triggered = True
+
+    def reduce_slice_range(self, stream_slice: StreamSlice) -> StreamSlice:
+        return StreamSlice(
+            partition=stream_slice.partition,
+            cursor_slice={
+                self._slice_boundary_fields_wrapper[
+                    self._START_BOUNDARY
+                ]: self._connector_state_converter.output_format(self._most_recent_cursor_value_per_partition[stream_slice]),
+                self._slice_boundary_fields_wrapper[
+                    self._END_BOUNDARY
+                ]: stream_slice.cursor_slice[self._slice_boundary_fields_wrapper[self._END_BOUNDARY]],
+            },
+            extra_fields=stream_slice.extra_fields,
+        )

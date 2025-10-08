@@ -17,6 +17,7 @@ class ResponseAction(Enum):
     FAIL = "FAIL"
     IGNORE = "IGNORE"
     RATE_LIMITED = "RATE_LIMITED"
+    RESET_PAGINATION = "RESET_PAGINATION"
 
 
 @dataclass
