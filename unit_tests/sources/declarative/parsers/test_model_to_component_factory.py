@@ -1,6 +1,7 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
+import json
 from copy import deepcopy
 
 # mypy: ignore-errors
@@ -1187,6 +1188,73 @@ a_stream:
     assert isinstance(
         stream._stream_partition_generator._stream_slicer, ConcurrentPerPartitionCursor
     )
+
+
+def test_stream_with_custom_requester_and_query_properties(requests_mock):
+    content = """
+a_stream:
+  type: DeclarativeStream
+  primary_key: id
+  schema_loader:
+    type: InlineSchemaLoader
+    schema:
+      $schema: "http://json-schema.org/draft-07/schema"
+      type: object
+      properties:
+        id:
+          type: string
+  retriever:
+    type: SimpleRetriever
+    name: "{{ parameters['name'] }}"
+    decoder:
+      type: JsonDecoder
+    requester:
+      type: CustomRequester
+      class_name: unit_tests.sources.declarative.parsers.testing_components.TestingRequester
+      name: "{{ parameters['name'] }}"
+      url_base: "https://api.sendgrid.com/v3/"
+      path: "path"
+      http_method: "GET"
+      request_parameters:
+        not_query: 1
+        query: 
+          type: QueryProperties
+          property_list:
+            - id
+            - field
+          always_include_properties:
+            - id
+          property_chunking:
+            type: PropertyChunking
+            property_limit_type: property_count
+            property_limit: 18
+    record_selector:
+      type: RecordSelector
+      extractor:
+        type: DpathExtractor
+        field_path: ["records"]
+  $parameters:
+   name: a_stream
+"""
+
+    parsed_manifest = YamlDeclarativeSource._parse(content)
+    resolved_manifest = resolver.preprocess_manifest(parsed_manifest)
+    stream_manifest = transformer.propagate_types_and_parameters(
+        "", resolved_manifest["a_stream"], {}
+    )
+
+    stream = factory.create_component(
+        model_type=DeclarativeStreamModel, component_definition=stream_manifest, config=input_config
+    )
+    requests_mock.get(
+        "https://api.sendgrid.com/v3/path",
+        text=json.dumps({"records": [{"id": "1"}]}),
+        status_code=200,
+    )
+
+    x = list(next(stream.generate_partitions()).read())
+
+    assert len(x) == 1
 
 
 @pytest.mark.parametrize(
