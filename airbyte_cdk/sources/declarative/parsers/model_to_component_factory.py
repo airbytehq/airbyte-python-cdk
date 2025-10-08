@@ -19,6 +19,7 @@ from typing import (
     MutableMapping,
     Optional,
     Type,
+    TypeVar,
     Union,
     cast,
     get_args,
@@ -631,6 +632,10 @@ from airbyte_cdk.sources.streams.concurrent.state_converters.incrementing_count_
 from airbyte_cdk.sources.streams.http.error_handlers.response_models import ResponseAction
 from airbyte_cdk.sources.types import Config
 from airbyte_cdk.sources.utils.transform import TransformConfig, TypeTransformer
+from airbyte_cdk.sources.declarative.parsers.component_constructor import (
+    AdditionalFlags,
+    ComponentConstructor,
+)
 
 ComponentDefinition = Mapping[str, Any]
 
@@ -644,8 +649,17 @@ _NO_STREAM_SLICING = SinglePartitionRouter(parameters={})
 # this would be a circular import
 MAX_SLICES = 5
 
+M = TypeVar("M", bound=BaseModel)
+D = TypeVar("D", bound=BaseModel)
+
 
 class ModelToComponentFactory:
+    """
+    The default Model > Component Factory implementation.
+    The Custom components are built separately from the default implementations,
+    to provide the reasonable decoupling from the standard and Custom implementation build technique.
+    """
+
     EPOCH_DATETIME_FORMAT = "%s"
 
     def __init__(
@@ -674,8 +688,20 @@ class ModelToComponentFactory:
         # placeholder for deprecation warnings
         self._collected_deprecation_logs: List[ConnectorBuilderLogMessage] = []
 
+        # support the dependency constructors with the re-usable parts from this Factory
+        self._flags = AdditionalFlags(
+            emit_connector_builder_messages=self._emit_connector_builder_messages,
+            disable_retries=self._disable_retries,
+            message_repository=self._message_repository,
+            connector_state_manager=self._connector_state_manager,
+            limit_pages_fetched_per_slice=self._limit_pages_fetched_per_slice,
+            limit_slices_fetched=self._limit_slices_fetched,
+        )
+
     def _init_mappings(self) -> None:
-        self.PYDANTIC_MODEL_TO_CONSTRUCTOR: Mapping[Type[BaseModel], Callable[..., Any]] = {
+        self.PYDANTIC_MODEL_TO_CONSTRUCTOR: Dict[
+            Type[BaseModel], Union[Type[ComponentConstructor[Any]], Callable[..., Any]]
+        ] = {
             AddedFieldDefinitionModel: self.create_added_field_definition,
             AddFieldsModel: self.create_add_fields,
             ApiKeyAuthenticatorModel: self.create_api_key_authenticator,
@@ -751,15 +777,15 @@ class ModelToComponentFactory:
             PredicateValidatorModel: self.create_predicate_validator,
             PropertiesFromEndpointModel: self.create_properties_from_endpoint,
             PropertyChunkingModel: self.create_property_chunking,
-            QueryPropertiesModel: self.create_query_properties,
-            RecordFilterModel: self.create_record_filter,
+            QueryPropertiesModel: QueryProperties,
+            RecordFilterModel: RecordFilter,
             RecordSelectorModel: self.create_record_selector,
             RemoveFieldsModel: self.create_remove_fields,
             RequestPathModel: self.create_request_path,
             RequestOptionModel: self.create_request_option,
             LegacySessionTokenAuthenticatorModel: self.create_legacy_session_token_authenticator,
             SelectiveAuthenticatorModel: self.create_selective_authenticator,
-            SimpleRetrieverModel: self.create_simple_retriever,
+            SimpleRetrieverModel: SimpleRetriever,
             StateDelegatingStreamModel: self.create_state_delegating_stream,
             SpecModel: self.create_spec,
             SubstreamPartitionRouterModel: self.create_substream_partition_router,
@@ -821,20 +847,37 @@ class ModelToComponentFactory:
             model=declarative_component_model, config=config, **kwargs
         )
 
-    def _create_component_from_model(self, model: BaseModel, config: Config, **kwargs: Any) -> Any:
+    def _create_component_from_model(
+        self,
+        model: BaseModel,
+        config: Config,
+        **kwargs: Any,
+    ) -> Any:  # TODO: change -> Any to -> ComponentConstructor[BaseModel] once all components are updated with ComponentConstructor logic
         if model.__class__ not in self.PYDANTIC_MODEL_TO_CONSTRUCTOR:
             raise ValueError(
                 f"{model.__class__} with attributes {model} is not a valid component type"
             )
-        component_constructor = self.PYDANTIC_MODEL_TO_CONSTRUCTOR.get(model.__class__)
-        if not component_constructor:
+
+        component = self.PYDANTIC_MODEL_TO_CONSTRUCTOR.get(model.__class__)
+        if not component:
             raise ValueError(f"Could not find constructor for {model.__class__}")
 
-        # collect deprecation warnings for supported models.
-        if isinstance(model, BaseModelWithDeprecations):
-            self._collect_model_deprecations(model)
-
-        return component_constructor(model=model, config=config, **kwargs)
+        if inspect.isclass(component) and issubclass(component, ComponentConstructor):
+            # Default components flow
+            component_instance: ComponentConstructor[BaseModel] = component.build(
+                model=model,
+                config=config,
+                dependency_constructor=self._create_component_from_model,
+                additional_flags=self._flags,
+                **kwargs,
+            )
+            return component_instance
+        if inspect.ismethod(component) or inspect.isfunction(component):
+            return component(model=model, config=config, **kwargs)
+        raise ValueError(
+            f"Unexpected component mapping type for {model.__class__}. "
+            f"Instance should be one of ComponentConstructor or method implemented in ModelToComponentFactory"
+        )
 
     def get_model_deprecations(self) -> List[ConnectorBuilderLogMessage]:
         """
@@ -2987,40 +3030,6 @@ class ModelToComponentFactory:
             parameters=model.parameters or {},
         )
 
-    def create_query_properties(
-        self, model: QueryPropertiesModel, config: Config, **kwargs: Any
-    ) -> QueryProperties:
-        if isinstance(model.property_list, list):
-            property_list = model.property_list
-        else:
-            property_list = self._create_component_from_model(
-                model=model.property_list, config=config, **kwargs
-            )
-
-        property_chunking = (
-            self._create_component_from_model(
-                model=model.property_chunking, config=config, **kwargs
-            )
-            if model.property_chunking
-            else None
-        )
-
-        return QueryProperties(
-            property_list=property_list,
-            always_include_properties=model.always_include_properties,
-            property_chunking=property_chunking,
-            config=config,
-            parameters=model.parameters or {},
-        )
-
-    @staticmethod
-    def create_record_filter(
-        model: RecordFilterModel, config: Config, **kwargs: Any
-    ) -> RecordFilter:
-        return RecordFilter(
-            condition=model.condition or "", config=config, parameters=model.parameters or {}
-        )
-
     @staticmethod
     def create_request_path(model: RequestPathModel, config: Config, **kwargs: Any) -> RequestPath:
         return RequestPath(parameters={})
@@ -3151,198 +3160,6 @@ class ModelToComponentFactory:
             parameters=model.parameters or {},
         )
 
-    def create_simple_retriever(
-        self,
-        model: SimpleRetrieverModel,
-        config: Config,
-        *,
-        name: str,
-        primary_key: Optional[Union[str, List[str], List[List[str]]]],
-        request_options_provider: Optional[RequestOptionsProvider] = None,
-        stop_condition_cursor: Optional[Cursor] = None,
-        client_side_incremental_sync: Optional[Dict[str, Any]] = None,
-        transformations: List[RecordTransformation],
-        file_uploader: Optional[DefaultFileUploader] = None,
-        incremental_sync: Optional[
-            Union[IncrementingCountCursorModel, DatetimeBasedCursorModel]
-        ] = None,
-        use_cache: Optional[bool] = None,
-        log_formatter: Optional[Callable[[Response], Any]] = None,
-        partition_router: Optional[PartitionRouter] = None,
-        **kwargs: Any,
-    ) -> SimpleRetriever:
-        def _get_url(req: Requester) -> str:
-            """
-            Closure to get the URL from the requester. This is used to get the URL in the case of a lazy retriever.
-            This is needed because the URL is not set until the requester is created.
-            """
-
-            _url: str = (
-                model.requester.url
-                if hasattr(model.requester, "url") and model.requester.url is not None
-                else req.get_url(stream_state=None, stream_slice=None, next_page_token=None)
-            )
-            _url_base: str = (
-                model.requester.url_base
-                if hasattr(model.requester, "url_base") and model.requester.url_base is not None
-                else req.get_url_base(stream_state=None, stream_slice=None, next_page_token=None)
-            )
-
-            return _url or _url_base
-
-        decoder = (
-            self._create_component_from_model(model=model.decoder, config=config)
-            if model.decoder
-            else JsonDecoder(parameters={})
-        )
-        record_selector = self._create_component_from_model(
-            model=model.record_selector,
-            name=name,
-            config=config,
-            decoder=decoder,
-            transformations=transformations,
-            client_side_incremental_sync=client_side_incremental_sync,
-            file_uploader=file_uploader,
-        )
-
-        query_properties: Optional[QueryProperties] = None
-        query_properties_key: Optional[str] = None
-        if self._query_properties_in_request_parameters(model.requester):
-            # It is better to be explicit about an error if PropertiesFromEndpoint is defined in multiple
-            # places instead of default to request_parameters which isn't clearly documented
-            if (
-                hasattr(model.requester, "fetch_properties_from_endpoint")
-                and model.requester.fetch_properties_from_endpoint
-            ):
-                raise ValueError(
-                    f"PropertiesFromEndpoint should only be specified once per stream, but found in {model.requester.type}.fetch_properties_from_endpoint and {model.requester.type}.request_parameters"
-                )
-
-            query_properties_definitions = []
-            for key, request_parameter in model.requester.request_parameters.items():  # type: ignore # request_parameters is already validated to be a Mapping using _query_properties_in_request_parameters()
-                if isinstance(request_parameter, QueryPropertiesModel):
-                    query_properties_key = key
-                    query_properties_definitions.append(request_parameter)
-
-            if len(query_properties_definitions) > 1:
-                raise ValueError(
-                    f"request_parameters only supports defining one QueryProperties field, but found {len(query_properties_definitions)} usages"
-                )
-
-            if len(query_properties_definitions) == 1:
-                query_properties = self._create_component_from_model(
-                    model=query_properties_definitions[0], config=config
-                )
-        elif (
-            hasattr(model.requester, "fetch_properties_from_endpoint")
-            and model.requester.fetch_properties_from_endpoint
-        ):
-            # todo: Deprecate this condition once dependent connectors migrate to query_properties
-            query_properties_definition = QueryPropertiesModel(
-                type="QueryProperties",
-                property_list=model.requester.fetch_properties_from_endpoint,
-                always_include_properties=None,
-                property_chunking=None,
-            )  # type: ignore # $parameters has a default value
-
-            query_properties = self.create_query_properties(
-                model=query_properties_definition,
-                config=config,
-            )
-        elif hasattr(model.requester, "query_properties") and model.requester.query_properties:
-            query_properties = self.create_query_properties(
-                model=model.requester.query_properties,
-                config=config,
-            )
-
-        requester = self._create_component_from_model(
-            model=model.requester,
-            decoder=decoder,
-            name=name,
-            query_properties_key=query_properties_key,
-            use_cache=use_cache,
-            config=config,
-        )
-
-        if not request_options_provider:
-            request_options_provider = DefaultRequestOptionsProvider(parameters={})
-        if isinstance(request_options_provider, DefaultRequestOptionsProvider) and isinstance(
-            partition_router, PartitionRouter
-        ):
-            request_options_provider = partition_router
-
-        paginator = (
-            self._create_component_from_model(
-                model=model.paginator,
-                config=config,
-                url_base=_get_url(requester),
-                extractor_model=model.record_selector.extractor,
-                decoder=decoder,
-                cursor_used_for_stop_condition=stop_condition_cursor or None,
-            )
-            if model.paginator
-            else NoPagination(parameters={})
-        )
-
-        ignore_stream_slicer_parameters_on_paginated_requests = (
-            model.ignore_stream_slicer_parameters_on_paginated_requests or False
-        )
-
-        if (
-            model.partition_router
-            and isinstance(model.partition_router, SubstreamPartitionRouterModel)
-            and not bool(self._connector_state_manager.get_stream_state(name, None))
-            and any(
-                parent_stream_config.lazy_read_pointer
-                for parent_stream_config in model.partition_router.parent_stream_configs
-            )
-        ):
-            if incremental_sync:
-                if incremental_sync.type != "DatetimeBasedCursor":
-                    raise ValueError(
-                        f"LazySimpleRetriever only supports DatetimeBasedCursor. Found: {incremental_sync.type}."
-                    )
-
-                elif incremental_sync.step or incremental_sync.cursor_granularity:
-                    raise ValueError(
-                        f"Found more that one slice per parent. LazySimpleRetriever only supports single slice read for stream - {name}."
-                    )
-
-            if model.decoder and model.decoder.type != "JsonDecoder":
-                raise ValueError(
-                    f"LazySimpleRetriever only supports JsonDecoder. Found: {model.decoder.type}."
-                )
-
-            return LazySimpleRetriever(
-                name=name,
-                paginator=paginator,
-                primary_key=primary_key,
-                requester=requester,
-                record_selector=record_selector,
-                stream_slicer=_NO_STREAM_SLICING,
-                request_option_provider=request_options_provider,
-                cursor=None,
-                config=config,
-                ignore_stream_slicer_parameters_on_paginated_requests=ignore_stream_slicer_parameters_on_paginated_requests,
-                parameters=model.parameters or {},
-            )
-
-        return SimpleRetriever(
-            name=name,
-            paginator=paginator,
-            primary_key=primary_key,
-            requester=requester,
-            record_selector=record_selector,
-            stream_slicer=_NO_STREAM_SLICING,
-            request_option_provider=request_options_provider,
-            cursor=None,
-            config=config,
-            ignore_stream_slicer_parameters_on_paginated_requests=ignore_stream_slicer_parameters_on_paginated_requests,
-            additional_query_properties=query_properties,
-            log_formatter=self._get_log_formatter(log_formatter, name),
-            parameters=model.parameters or {},
-        )
-
     def _get_log_formatter(
         self, log_formatter: Callable[[Response], Any] | None, name: str
     ) -> Callable[[Response], Any] | None:
@@ -3367,19 +3184,6 @@ class ModelToComponentFactory:
         This is used to limit the number of slices fetched during tests.
         """
         return bool(self._limit_slices_fetched or self._emit_connector_builder_messages)
-
-    @staticmethod
-    def _query_properties_in_request_parameters(
-        requester: Union[HttpRequesterModel, CustomRequesterModel],
-    ) -> bool:
-        if not hasattr(requester, "request_parameters"):
-            return False
-        request_parameters = requester.request_parameters
-        if request_parameters and isinstance(request_parameters, Mapping):
-            for request_parameter in request_parameters.values():
-                if isinstance(request_parameter, QueryPropertiesModel):
-                    return True
-        return False
 
     @staticmethod
     def _remove_query_properties(
