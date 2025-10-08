@@ -2275,6 +2275,7 @@ class ModelToComponentFactory:
 
         return DefaultErrorHandler(
             backoff_strategies=backoff_strategies,
+            max_time=model.max_time,
             max_retries=model.max_retries,
             response_filters=response_filters,
             config=config,
