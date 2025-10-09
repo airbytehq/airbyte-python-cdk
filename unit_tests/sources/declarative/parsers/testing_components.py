@@ -91,6 +91,15 @@ class TestingStateMigrationWithParentState(StateMigration):
 
 
 @dataclass
+class TestingCustomErrorHandler(DefaultErrorHandler):
+    """
+    A test class based on DefaultErrorHandler used for testing manifests that use custom error handlers.
+    """
+
+    __test__: ClassVar[bool] = False  # Tell Pytest this is not a Pytest class, despite its name
+
+
+@dataclass
 class TestingRequester(HttpRequester):
     request_parameters: Optional[RequestInput] = None
 
