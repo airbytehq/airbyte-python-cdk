@@ -546,17 +546,20 @@ class ConcurrentCursor(Cursor):
                 "Attempting to reduce slice while records are not returned in incremental order might lead to missing records"
             )
 
-        return StreamSlice(
-            partition=stream_slice.partition,
-            cursor_slice={
-                self._slice_boundary_fields_wrapper[
-                    self._START_BOUNDARY
-                ]: self._connector_state_converter.output_format(
-                    self._most_recent_cursor_value_per_partition[stream_slice]
-                ),
-                self._slice_boundary_fields_wrapper[self._END_BOUNDARY]: stream_slice.cursor_slice[
-                    self._slice_boundary_fields_wrapper[self._END_BOUNDARY]
-                ],
-            },
-            extra_fields=stream_slice.extra_fields,
-        )
+        if stream_slice in self._most_recent_cursor_value_per_partition:
+            return StreamSlice(
+                partition=stream_slice.partition,
+                cursor_slice={
+                    self._slice_boundary_fields_wrapper[
+                        self._START_BOUNDARY
+                    ]: self._connector_state_converter.output_format(
+                        self._most_recent_cursor_value_per_partition[stream_slice]
+                    ),
+                    self._slice_boundary_fields_wrapper[self._END_BOUNDARY]: stream_slice.cursor_slice[
+                        self._slice_boundary_fields_wrapper[self._END_BOUNDARY]
+                    ],
+                },
+                extra_fields=stream_slice.extra_fields,
+            )
+        else:
+            return stream_slice

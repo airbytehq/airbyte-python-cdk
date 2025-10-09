@@ -3333,7 +3333,7 @@ class ModelToComponentFactory:
             and model.pagination_reset
             and model.pagination_reset.limits
         ):
-            raise ValueError("PaginationResetLimits are not support while having record filter.")
+            raise ValueError("PaginationResetLimits are not supported while having record filter.")
 
         return SimpleRetriever(
             name=name,
