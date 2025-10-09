@@ -437,7 +437,6 @@ class SimpleRetriever(Retriever):
                     break
 
             if reset_pagination or pagination_tracker.has_reached_limit():
-                pagination_tracker.reset()
                 next_page_token = self._get_initial_next_page_token()
                 previous_slice = stream_slice
                 stream_slice = pagination_tracker.reduce_slice_range_if_possible(stream_slice)

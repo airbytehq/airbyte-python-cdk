@@ -363,6 +363,9 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
     PaginationReset as PaginationResetModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    Action1 as PaginationResetActionModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     ParametrizedComponentsResolver as ParametrizedComponentsResolverModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
@@ -3362,16 +3365,22 @@ class ModelToComponentFactory:
 
         # Until we figure out a way to use any cursor for PaginationTracker, we will have to have this cursor selector logic
         cursor_factory: Callable[[], Optional[ConcurrentCursor]] = lambda: None
-        if isinstance(cursor, ConcurrentCursor):
-            cursor_factory = lambda: cursor.copy_without_state()  # type: ignore  # the if condition validates that it is a ConcurrentCursor
-        elif isinstance(cursor, ConcurrentPerPartitionCursor):
-            cursor_factory = lambda: cursor._cursor_factory.create(  # type: ignore  # if this becomes a problem, we would need to extract the cursor_factory instantiation logic and make it accessible here
-                {}, datetime.timedelta(0)
-            )
-        elif not isinstance(cursor, FinalStateCursor):
-            LOGGER.warning(
-                "Unknown cursor for PaginationTracker. Pagination resets might not work properly"
-            )
+        if model.action == PaginationResetActionModel.RESET:
+            # in that case, we will let cursor_factory to return None even if the stream has a cursor
+            pass
+        elif model.action == PaginationResetActionModel.SPLIT_USING_CURSOR:
+            if isinstance(cursor, ConcurrentCursor):
+                cursor_factory = lambda: cursor.copy_without_state()  # type: ignore  # the if condition validates that it is a ConcurrentCursor
+            elif isinstance(cursor, ConcurrentPerPartitionCursor):
+                cursor_factory = lambda: cursor._cursor_factory.create(  # type: ignore  # if this becomes a problem, we would need to extract the cursor_factory instantiation logic and make it accessible here
+                    {}, datetime.timedelta(0)
+                )
+            elif not isinstance(cursor, FinalStateCursor):
+                LOGGER.warning(
+                    "Unknown cursor for PaginationTracker. Pagination resets might not work properly"
+                )
+        else:
+            raise ValueError(f"Unknown PaginationReset action: {model.action}")
 
         limit = model.limits.number_of_records if model and model.limits else None
         return lambda: PaginationTracker(cursor_factory(), limit)

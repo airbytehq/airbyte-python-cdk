@@ -44,11 +44,11 @@ class TestPaginationTracker(TestCase):
 
         assert tracker.has_reached_limit()
 
-    def test_given_reset_before_limit_reached_when_has_reached_limit_return_true(self):
+    def test_given_reduce_slice_before_limit_reached_when_has_reached_limit_return_true(self):
         tracker = PaginationTracker(max_number_of_records=2)
 
         tracker.observe(_A_RECORD)
-        tracker.reset()
+        tracker.reduce_slice_range_if_possible(_A_STREAM_SLICE)
         tracker.observe(_A_RECORD)
 
         assert not tracker.has_reached_limit()

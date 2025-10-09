@@ -4864,6 +4864,117 @@ def test_given_per_partition_cursor_when_read_then_reset_pagination():
     assert len(list(filter(lambda message: message.type == Type.RECORD, messages))) == 4
 
 
+def test_given_pagination_reset_action_is_reset_even_though_stream_is_incremental_when_read_then_reset_pagination():
+    input_config = {}
+    manifest = {
+        "version": "0.34.2",
+        "type": "DeclarativeSource",
+        "check": {"type": "CheckStream", "stream_names": ["Test"]},
+        "streams": [
+            {
+                "type": "DeclarativeStream",
+                "name": "Test",
+                "schema_loader": {
+                    "type": "InlineSchemaLoader",
+                    "schema": {"type": "object"},
+                },
+                "retriever": {
+                    "type": "SimpleRetriever",
+                    "requester": {
+                        "type": "HttpRequester",
+                        "url_base": "https://example.org",
+                        "path": "/test?from={{ stream_interval.start_time }}",
+                        "authenticator": {"type": "NoAuth"},
+                        "error_handler": {
+                            "type": "DefaultErrorHandler",
+                            "response_filters": [
+                                {
+                                    "http_codes": [400],
+                                    "action": "RESET_PAGINATION",
+                                    "failure_type": "system_error",
+                                },
+                            ],
+                        },
+                    },
+                    "record_selector": {
+                        "type": "RecordSelector",
+                        "extractor": {"type": "DpathExtractor", "field_path": ["results"]},
+                    },
+                    "paginator": {
+                        "type": "DefaultPaginator",
+                        "page_token_option": {"type": "RequestPath"},
+                        "pagination_strategy": {
+                            "type": "CursorPagination",
+                            "cursor_value": "{{ response.next }}",
+                        },
+                    },
+                    "pagination_reset": {
+                        "type": "PaginationReset",
+                        "action": "RESET",
+                    },
+                },
+                "incremental_sync": {
+                    "type": "DatetimeBasedCursor",
+                    "start_datetime": {"datetime": "2022-01-01"},
+                    "end_datetime": "2022-12-31",
+                    "datetime_format": "%Y-%m-%d",
+                    "cursor_datetime_formats": ["%Y-%m-%d"],
+                    "cursor_granularity": "P1D",
+                    "step": "P1Y",
+                    "cursor_field": "updated_at",
+                },
+            }
+        ],
+        "spec": {
+            "type": "Spec",
+            "documentation_url": "https://example.org",
+            "connection_specification": {},
+        },
+    }
+
+    catalog = create_catalog("Test")
+    source = ConcurrentDeclarativeSource(
+        source_config=manifest,
+        config=input_config,
+        catalog=catalog,
+        state=None,
+    )
+
+    with HttpMocker() as http_mocker:
+        # Slice from 2022-01-01 to 2022-12-31
+        http_mocker.get(
+            HttpRequest("https://example.org/test?from=2022-01-01"),
+            HttpResponse(
+                json.dumps(
+                    {
+                        "results": [{"id": 1, "updated_at": "2022-02-01"}, {"id": 2, "updated_at": "2022-03-01"}],
+                        "next": "https://example.org/test?from=2022-01-01&cursor=toto"
+                    }
+                ),
+                200,
+            ),
+        )
+        http_mocker.get(
+            HttpRequest("https://example.org/test?from=2022-01-01&cursor=toto"),
+            [
+                HttpResponse(json.dumps({}), 400),
+                HttpResponse(
+                    json.dumps(
+                        {
+                            "results": [{"id": 3, "updated_at": "2022-04-01"}]
+                        }
+                    ),
+                    200
+                ),
+            ]
+        )
+        messages = list(
+            source.read(logger=source.logger, config=input_config, catalog=catalog, state=[])
+        )
+
+    assert len(list(filter(lambda message: message.type == Type.RECORD, messages))) == 5
+
+
 def test_given_record_selector_is_filtering_when_read_then_raise_error():
     """
     This test is here to show the limitations of pagination reset. If it starts failing, maybe we just want to delete

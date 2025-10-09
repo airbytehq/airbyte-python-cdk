@@ -22,7 +22,7 @@ class PaginationTracker:
         """
         self._cursor = cursor
         self._limit = max_number_of_records
-        self.reset()
+        self._reset()
 
         """
         Given we have a cursor, we do not allow for the same slice to be processed twice because we assume we will
@@ -41,9 +41,8 @@ class PaginationTracker:
     def has_reached_limit(self) -> bool:
         return self._limit is not None and self._record_count >= self._limit
 
-    def reset(self) -> None:
+    def _reset(self) -> None:
         self._record_count = 0
-        self._number_of_attempt_with_same_slice = 0
 
     def reduce_slice_range_if_possible(self, stream_slice: StreamSlice) -> StreamSlice:
         new_slice = self._cursor.reduce_slice_range(stream_slice) if self._cursor else stream_slice
@@ -61,4 +60,5 @@ class PaginationTracker:
         else:
             self._number_of_attempt_with_same_slice = 0
 
+        self._reset()
         return new_slice
