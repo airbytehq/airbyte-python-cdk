@@ -19,6 +19,17 @@ class DatetimeParser:
     _UNIX_EPOCH = datetime.datetime(1970, 1, 1, tzinfo=datetime.timezone.utc)
 
     def parse(self, date: Union[str, int], format: str) -> datetime.datetime:
+        if date is None:
+            raise ValueError(
+                f"Cannot parse None as a datetime. Expected a string, integer, or float representing a timestamp."
+            )
+        
+        if isinstance(date, (list, dict)):
+            raise TypeError(
+                f"Cannot parse {type(date).__name__} as a datetime. "
+                f"Expected a string, integer, or float representing a timestamp, but got: {date}"
+            )
+        
         # "%s" is a valid (but unreliable) directive for formatting, but not for parsing
         # It is defined as
         # The number of seconds since the Epoch, 1970-01-01 00:00:00+0000 (UTC). https://man7.org/linux/man-pages/man3/strptime.3.html
@@ -26,13 +37,25 @@ class DatetimeParser:
         # The recommended way to parse a date from its timestamp representation is to use datetime.fromtimestamp
         # See https://stackoverflow.com/a/4974930
         if format == "%s":
-            return datetime.datetime.fromtimestamp(int(date), tz=datetime.timezone.utc)
+            try:
+                return datetime.datetime.fromtimestamp(int(date), tz=datetime.timezone.utc)
+            except (ValueError, OverflowError) as e:
+                raise ValueError(f"Cannot parse '{date}' as a Unix timestamp: {e}")
         elif format == "%s_as_float":
-            return datetime.datetime.fromtimestamp(float(date), tz=datetime.timezone.utc)
+            try:
+                return datetime.datetime.fromtimestamp(float(date), tz=datetime.timezone.utc)
+            except (ValueError, OverflowError) as e:
+                raise ValueError(f"Cannot parse '{date}' as a float Unix timestamp: {e}")
         elif format == "%epoch_microseconds":
-            return self._UNIX_EPOCH + datetime.timedelta(microseconds=int(date))
+            try:
+                return self._UNIX_EPOCH + datetime.timedelta(microseconds=int(date))
+            except (ValueError, OverflowError) as e:
+                raise ValueError(f"Cannot parse '{date}' as epoch microseconds: {e}")
         elif format == "%ms":
-            return self._UNIX_EPOCH + datetime.timedelta(milliseconds=int(date))
+            try:
+                return self._UNIX_EPOCH + datetime.timedelta(milliseconds=int(date))
+            except (ValueError, OverflowError) as e:
+                raise ValueError(f"Cannot parse '{date}' as milliseconds: {e}")
         elif "%_ms" in format:
             format = format.replace("%_ms", "%f")
         parsed_datetime = datetime.datetime.strptime(str(date), format)

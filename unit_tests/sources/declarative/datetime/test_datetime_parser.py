@@ -125,3 +125,61 @@ def test_format_datetime(input_dt: datetime.datetime, datetimeformat: str, expec
     parser = DatetimeParser()
     output_date = parser.format(input_dt, datetimeformat)
     assert output_date == expected_output
+
+
+@pytest.mark.parametrize(
+    "input_date, date_format, expected_error_type, expected_error_message",
+    [
+        (
+            None,
+            "%s",
+            ValueError,
+            "Cannot parse None as a datetime",
+        ),
+        (
+            [1694902531, 1694902532],
+            "%s",
+            TypeError,
+            "Cannot parse list as a datetime",
+        ),
+        (
+            {"timestamp": 1694902531},
+            "%s",
+            TypeError,
+            "Cannot parse dict as a datetime",
+        ),
+        (
+            [1694902531],
+            "%s_as_float",
+            TypeError,
+            "Cannot parse list as a datetime",
+        ),
+        (
+            None,
+            "%ms",
+            ValueError,
+            "Cannot parse None as a datetime",
+        ),
+        (
+            {"states": [{"cursor": {"updated_at": "1694902531"}}]},
+            "%s",
+            TypeError,
+            "Cannot parse dict as a datetime",
+        ),
+    ],
+    ids=[
+        "test_parse_none_raises_value_error",
+        "test_parse_list_raises_type_error",
+        "test_parse_dict_raises_type_error",
+        "test_parse_list_float_format_raises_type_error",
+        "test_parse_none_ms_format_raises_value_error",
+        "test_parse_partitioned_state_dict_raises_type_error",
+    ],
+)
+def test_parse_invalid_types(
+    input_date, date_format: str, expected_error_type, expected_error_message: str
+):
+    parser = DatetimeParser()
+    with pytest.raises(expected_error_type) as exc_info:
+        parser.parse(input_date, date_format)
+    assert expected_error_message in str(exc_info.value)
