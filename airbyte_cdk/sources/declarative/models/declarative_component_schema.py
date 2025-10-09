@@ -2149,7 +2149,9 @@ class ConfigAddFields(BaseModel):
 
 class CompositeErrorHandler(BaseModel):
     type: Literal["CompositeErrorHandler"]
-    error_handlers: List[Union[CompositeErrorHandler, DefaultErrorHandler]] = Field(
+    error_handlers: List[
+        Union[CompositeErrorHandler, DefaultErrorHandler, CustomErrorHandler]
+    ] = Field(
         ...,
         description="List of error handlers to iterate on to determine how to handle a failed response.",
         title="Error Handlers",

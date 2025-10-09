@@ -2027,6 +2027,44 @@ def test_create_composite_error_handler():
     assert error_handler_1.response_filters[0].action == ResponseAction.RETRY
 
 
+def test_create_composite_error_handler_with_custom_error_handler():
+    content = """
+        error_handler:
+          type: "CompositeErrorHandler"
+          error_handlers:
+            - type: "CustomErrorHandler"
+              class_name: "unit_tests.sources.declarative.parsers.testing_components.TestingCustomErrorHandler"
+            - response_filters:
+                - http_codes: [ 429 ]
+                  action: RETRY
+    """
+    parsed_manifest = YamlDeclarativeSource._parse(content)
+    resolved_manifest = resolver.preprocess_manifest(parsed_manifest)
+    error_handler_manifest = transformer.propagate_types_and_parameters(
+        "", resolved_manifest["error_handler"], {}
+    )
+
+    error_handler = factory.create_component(
+        model_type=CompositeErrorHandlerModel,
+        component_definition=error_handler_manifest,
+        config=input_config,
+    )
+
+    assert isinstance(error_handler, CompositeErrorHandler)
+    assert len(error_handler.error_handlers) == 2
+
+    # First error handler should be a custom error handler
+    error_handler_0 = error_handler.error_handlers[0]
+    assert error_handler_0.__class__.__name__ == "TestingCustomErrorHandler"
+
+    # Second error handler should be a default error handler
+    error_handler_1 = error_handler.error_handlers[1]
+    assert isinstance(error_handler_1, DefaultErrorHandler)
+    assert isinstance(error_handler_1.response_filters[0], HttpResponseFilter)
+    assert error_handler_1.response_filters[0].http_codes == {429}
+    assert error_handler_1.response_filters[0].action == ResponseAction.RETRY
+
+
 # This might be a better test for the manifest transformer but also worth testing end-to-end here as well
 def test_config_with_defaults():
     content = """

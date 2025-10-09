@@ -391,6 +391,7 @@ definitions:
           anyOf:
             - "$ref": "#/definitions/CompositeErrorHandler"
             - "$ref": "#/definitions/DefaultErrorHandler"
+            - "$ref": "#/definitions/CustomErrorHandler"
       $parameters:
         type: object
         additionalProperties: true
