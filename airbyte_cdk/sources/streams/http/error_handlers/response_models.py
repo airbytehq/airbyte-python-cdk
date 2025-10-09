@@ -16,6 +16,7 @@ class ResponseAction(Enum):
     RETRY = "RETRY"
     FAIL = "FAIL"
     IGNORE = "IGNORE"
+    RESET_PAGINATION = "RESET_PAGINATION"
     RATE_LIMITED = "RATE_LIMITED"
 
 

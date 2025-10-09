@@ -151,7 +151,7 @@ class ConcurrentPerPartitionCursor(Cursor):
         self._connector_state_converter = connector_state_converter
         self._cursor_field = cursor_field
 
-        self._cursor_factory = cursor_factory
+        self._cursor_factory = cursor_factory  # self._cursor_factory is flagged as private but is used in model_to_component_factory to ease pagination reset instantiation
         self._partition_router = partition_router
 
         # The dict is ordered to ensure that once the maximum number of partitions is reached,

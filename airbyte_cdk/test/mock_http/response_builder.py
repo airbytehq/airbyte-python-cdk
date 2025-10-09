@@ -75,6 +75,25 @@ class NestedPath(Path):
         return f"NestedPath(path={self._path})"
 
 
+class RootPath:
+    """
+    Path to use when the root of the response is an array.
+    """
+
+    def write(self, template: List[Dict[str, Any]], value: List[Dict[str, Any]]) -> None:
+        template.extend(value)
+
+    def update(self, template: List[Dict[str, Any]], value: List[Any]) -> None:
+        template.clear()
+        template.extend(value)
+
+    def extract(self, template: List[Dict[str, Any]]) -> Any:
+        return template
+
+    def __str__(self) -> str:
+        return f"RootPath"
+
+
 class PaginationStrategy(ABC):
     @abstractmethod
     def update(self, response: Dict[str, Any]) -> None:
@@ -149,12 +168,14 @@ class RecordBuilder:
 class HttpResponseBuilder:
     def __init__(
         self,
-        template: Dict[str, Any],
-        records_path: Union[FieldPath, NestedPath],
+        template: Union[Dict[str, Any], List[Dict[str, Any]]],
+        records_path: Union[FieldPath, NestedPath, RootPath],
         pagination_strategy: Optional[PaginationStrategy],
     ):
-        self._response = template
+        _validate_path_with_response(records_path, template)
+
         self._records: List[RecordBuilder] = []
+        self._response = template
         self._records_path = records_path
         self._pagination_strategy = pagination_strategy
         self._status_code = 200
@@ -169,6 +190,9 @@ class HttpResponseBuilder:
                 "`pagination_strategy` was not provided and hence, fields related to the pagination can't be modified. Please provide "
                 "`pagination_strategy` while instantiating ResponseBuilder to leverage this capability"
             )
+        elif isinstance(self._response, List):
+            raise ValueError("pagination_strategy requires the response to be a dict but was list")
+
         self._pagination_strategy.update(self._response)
         return self
 
@@ -177,7 +201,7 @@ class HttpResponseBuilder:
         return self
 
     def build(self) -> HttpResponse:
-        self._records_path.update(self._response, [record.build() for record in self._records])
+        self._records_path.update(self._response, [record.build() for record in self._records])  # type: ignore  # validated using _validate_path_with_response
         return HttpResponse(json.dumps(self._response), self._status_code)
 
 
@@ -208,15 +232,16 @@ def find_binary_response(resource: str, execution_folder: str) -> bytes:
 
 def create_record_builder(
     response_template: Dict[str, Any],
-    records_path: Union[FieldPath, NestedPath],
+    records_path: Union[FieldPath, NestedPath, RootPath],
     record_id_path: Optional[Path] = None,
     record_cursor_path: Optional[Union[FieldPath, NestedPath]] = None,
 ) -> RecordBuilder:
     """
     This will use the first record define at `records_path` as a template for the records. If more records are defined, they will be ignored
     """
+    _validate_path_with_response(records_path, response_template)
     try:
-        record_template = records_path.extract(response_template)[0]
+        record_template = records_path.extract(response_template)[0]  # type: ignore  # validated using _validate_path_with_response
         if not record_template:
             raise ValueError(
                 f"Could not extract any record from template at path `{records_path}`. "
@@ -230,8 +255,20 @@ def create_record_builder(
 
 
 def create_response_builder(
-    response_template: Dict[str, Any],
-    records_path: Union[FieldPath, NestedPath],
+    response_template: Union[Dict[str, Any], List[Dict[str, Any]]],
+    records_path: Union[FieldPath, NestedPath, RootPath],
     pagination_strategy: Optional[PaginationStrategy] = None,
 ) -> HttpResponseBuilder:
     return HttpResponseBuilder(response_template, records_path, pagination_strategy)
+
+
+def _validate_path_with_response(
+    records_path: Union[FieldPath, NestedPath, RootPath],
+    response_template: Union[Dict[str, Any], List[Dict[str, Any]]],
+) -> None:
+    if isinstance(response_template, List) and not isinstance(records_path, RootPath):
+        raise ValueError("templates of type lists require RootPath")
+    elif isinstance(response_template, Dict) and not isinstance(
+        records_path, (FieldPath, NestedPath)
+    ):
+        raise ValueError("templates of type dict either require FieldPath or NestedPath")
