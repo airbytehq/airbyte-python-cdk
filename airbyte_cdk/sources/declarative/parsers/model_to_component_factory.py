@@ -123,6 +123,9 @@ from airbyte_cdk.sources.declarative.models.base_model_with_deprecations import 
     BaseModelWithDeprecations,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    Action1 as PaginationResetActionModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     AddedFieldDefinition as AddedFieldDefinitionModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
@@ -361,9 +364,6 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     PaginationReset as PaginationResetModel,
-)
-from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
-    Action1 as PaginationResetActionModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     ParametrizedComponentsResolver as ParametrizedComponentsResolverModel,

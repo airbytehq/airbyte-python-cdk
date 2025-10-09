@@ -555,7 +555,9 @@ class ConcurrentCursor(Cursor):
                     ]: self._connector_state_converter.output_format(
                         self._most_recent_cursor_value_per_partition[stream_slice]
                     ),
-                    self._slice_boundary_fields_wrapper[self._END_BOUNDARY]: stream_slice.cursor_slice[
+                    self._slice_boundary_fields_wrapper[
+                        self._END_BOUNDARY
+                    ]: stream_slice.cursor_slice[
                         self._slice_boundary_fields_wrapper[self._END_BOUNDARY]
                     ],
                 },

@@ -4947,8 +4947,11 @@ def test_given_pagination_reset_action_is_reset_even_though_stream_is_incrementa
             HttpResponse(
                 json.dumps(
                     {
-                        "results": [{"id": 1, "updated_at": "2022-02-01"}, {"id": 2, "updated_at": "2022-03-01"}],
-                        "next": "https://example.org/test?from=2022-01-01&cursor=toto"
+                        "results": [
+                            {"id": 1, "updated_at": "2022-02-01"},
+                            {"id": 2, "updated_at": "2022-03-01"},
+                        ],
+                        "next": "https://example.org/test?from=2022-01-01&cursor=toto",
                     }
                 ),
                 200,
@@ -4958,15 +4961,8 @@ def test_given_pagination_reset_action_is_reset_even_though_stream_is_incrementa
             HttpRequest("https://example.org/test?from=2022-01-01&cursor=toto"),
             [
                 HttpResponse(json.dumps({}), 400),
-                HttpResponse(
-                    json.dumps(
-                        {
-                            "results": [{"id": 3, "updated_at": "2022-04-01"}]
-                        }
-                    ),
-                    200
-                ),
-            ]
+                HttpResponse(json.dumps({"results": [{"id": 3, "updated_at": "2022-04-01"}]}), 200),
+            ],
         )
         messages = list(
             source.read(logger=source.logger, config=input_config, catalog=catalog, state=[])
