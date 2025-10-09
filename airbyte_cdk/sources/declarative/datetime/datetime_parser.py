@@ -23,13 +23,13 @@ class DatetimeParser:
             raise ValueError(
                 f"Cannot parse None as a datetime. Expected a string, integer, or float representing a timestamp."
             )
-        
+
         if isinstance(date, (list, dict)):
             raise TypeError(
                 f"Cannot parse {type(date).__name__} as a datetime. "
                 f"Expected a string, integer, or float representing a timestamp, but got: {date}"
             )
-        
+
         # "%s" is a valid (but unreliable) directive for formatting, but not for parsing
         # It is defined as
         # The number of seconds since the Epoch, 1970-01-01 00:00:00+0000 (UTC). https://man7.org/linux/man-pages/man3/strptime.3.html
