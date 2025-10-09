@@ -1488,7 +1488,7 @@ def test_given_requester_raise_pagination_reset_exception_when_read_records_than
     x = list(retriever.read_records(A_RECORD_SCHEMA, A_STREAM_SLICE))
 
     assert len(x) == 2
-    assert pagination_tracker.reset.call_count == 1
+    assert pagination_tracker.reduce_slice_range_if_possible.call_count == 1
     assert requester.send_request.call_count == 3
     assert requester.send_request.call_args_list[1].kwargs["stream_slice"] == A_STREAM_SLICE
     assert requester.send_request.call_args_list[1].kwargs["next_page_token"] == {
@@ -1542,7 +1542,7 @@ def test_given_reach_pagination_limit_after_two_pages_when_read_records_than_red
     x = list(retriever.read_records(A_RECORD_SCHEMA, A_STREAM_SLICE))
 
     assert len(x) == 3
-    assert pagination_tracker.reset.call_count == 1
+    assert pagination_tracker.reduce_slice_range_if_possible.call_count == 1
     assert requester.send_request.call_count == 3
     assert requester.send_request.call_args_list[1].kwargs["stream_slice"] == A_STREAM_SLICE
     assert requester.send_request.call_args_list[1].kwargs["next_page_token"] == {
