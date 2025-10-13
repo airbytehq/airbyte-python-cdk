@@ -3746,7 +3746,7 @@ definitions:
     properties:
       type:
         type: string
-        enum: [ PaginationReset ]
+        enum: [PaginationReset]
       action:
         type: string
         enum:
@@ -3763,7 +3763,7 @@ definitions:
     properties:
       type:
         type: string
-        enum: [ PaginationResetLimits ]
+        enum: [PaginationResetLimits]
       number_of_records:
         type: integer
   GzipDecoder:
