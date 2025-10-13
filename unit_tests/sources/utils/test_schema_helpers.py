@@ -215,27 +215,15 @@ def test_internal_config(limit, record_count, expected):
 def test_expand_refs_handles_circular_references():
     schema = {
         "definitions": {
-            "A": {
-                "type": "object",
-                "properties": {
-                    "b": {"$ref": "#/definitions/B"}
-                }
-            },
-            "B": {
-                "type": "object",
-                "properties": {
-                    "a": {"$ref": "#/definitions/A"}
-                }
-            }
+            "A": {"type": "object", "properties": {"b": {"$ref": "#/definitions/B"}}},
+            "B": {"type": "object", "properties": {"a": {"$ref": "#/definitions/A"}}},
         },
         "type": "object",
-        "properties": {
-            "root": {"$ref": "#/definitions/A"}
-        }
+        "properties": {"root": {"$ref": "#/definitions/A"}},
     }
-    
+
     expand_refs(schema)
-    
+
     assert "root" in schema["properties"]
     assert schema["properties"]["root"]["type"] == "object"
     assert "definitions" not in schema
@@ -243,20 +231,13 @@ def test_expand_refs_handles_circular_references():
 
 def test_expand_refs_expands_simple_refs():
     schema = {
-        "definitions": {
-            "StringType": {
-                "type": "string",
-                "minLength": 1
-            }
-        },
+        "definitions": {"StringType": {"type": "string", "minLength": 1}},
         "type": "object",
-        "properties": {
-            "name": {"$ref": "#/definitions/StringType"}
-        }
+        "properties": {"name": {"$ref": "#/definitions/StringType"}},
     }
-    
+
     expand_refs(schema)
-    
+
     assert schema["properties"]["name"]["type"] == "string"
     assert schema["properties"]["name"]["minLength"] == 1
     assert "definitions" not in schema
