@@ -47,7 +47,7 @@ class HttpStatusErrorHandler(ErrorHandler):
 
     def interpret_response(
         self, response_or_exception: Optional[Union[requests.Response, Exception]] = None
-    ) -> ErrorResolution:
+    ) -> Optional[ErrorResolution]:
         """
         Interpret the response and return the corresponding response action, failure type, and error message.
 
