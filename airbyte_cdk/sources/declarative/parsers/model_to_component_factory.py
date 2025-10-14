@@ -3865,7 +3865,9 @@ class ModelToComponentFactory:
 
                 if not parent_state and not isinstance(parent_state, dict):
                     cursor_values = child_state.values()
-                    if cursor_values:
+                    if cursor_values and len(cursor_values) == 1:
+                        # We assume the child state is a pair `{<cursor_field>: <cursor_value>}` and we will use the
+                        # cursor value as a parent state.
                         incremental_sync_model: Union[
                             DatetimeBasedCursorModel,
                             IncrementingCountCursorModel,
