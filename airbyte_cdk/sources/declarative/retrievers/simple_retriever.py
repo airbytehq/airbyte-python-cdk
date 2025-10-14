@@ -25,7 +25,10 @@ from typing_extensions import deprecated
 
 from airbyte_cdk.legacy.sources.declarative.incremental import ResumableFullRefreshCursor
 from airbyte_cdk.legacy.sources.declarative.incremental.declarative_cursor import DeclarativeCursor
-from airbyte_cdk.models import AirbyteMessage
+from airbyte_cdk.models import (
+    AirbyteMessage,
+    ConfiguredAirbyteStream,
+)
 from airbyte_cdk.sources.declarative.extractors.http_selector import HttpSelector
 from airbyte_cdk.sources.declarative.interpolation import InterpolatedString
 from airbyte_cdk.sources.declarative.partition_routers.single_partition_router import (
@@ -97,6 +100,7 @@ class SimpleRetriever(Retriever):
     cursor: Optional[DeclarativeCursor] = None
     ignore_stream_slicer_parameters_on_paginated_requests: bool = False
     additional_query_properties: Optional[QueryProperties] = None
+    configured_airbyte_stream: Optional[ConfiguredAirbyteStream] = None
     log_formatter: Optional[Callable[[requests.Response], Any]] = None
     pagination_tracker_factory: Callable[[], PaginationTracker] = field(
         default_factory=lambda: lambda: PaginationTracker()
@@ -389,7 +393,8 @@ class SimpleRetriever(Retriever):
                     and self.additional_query_properties.property_chunking
                 ):
                     for properties in self.additional_query_properties.get_request_property_chunks(
-                        stream_slice=stream_slice
+                        stream_slice=stream_slice,
+                        configured_stream=self.configured_airbyte_stream,
                     ):
                         stream_slice = StreamSlice(
                             partition=stream_slice.partition or {},

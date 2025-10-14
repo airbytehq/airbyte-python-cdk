@@ -26,6 +26,7 @@ from typing import (
     get_type_hints,
 )
 
+from airbyte_protocol_dataclasses.models import ConfiguredAirbyteStream
 from isodate import parse_duration
 from pydantic.v1 import BaseModel
 from requests import Response
@@ -42,6 +43,7 @@ from airbyte_cdk.models import (
     AirbyteStateMessage,
     AirbyteStateType,
     AirbyteStreamState,
+    ConfiguredAirbyteCatalog,
     FailureType,
     Level,
     StreamDescriptor,
@@ -668,6 +670,7 @@ class ModelToComponentFactory:
         message_repository: Optional[MessageRepository] = None,
         connector_state_manager: Optional[ConnectorStateManager] = None,
         max_concurrent_async_job_count: Optional[int] = None,
+        configured_catalog: Optional[ConfiguredAirbyteCatalog] = None,
     ):
         self._init_mappings()
         self._limit_pages_fetched_per_slice = limit_pages_fetched_per_slice
@@ -677,6 +680,9 @@ class ModelToComponentFactory:
         self._disable_cache = disable_cache
         self._message_repository = message_repository or InMemoryMessageRepository(
             self._evaluate_log_level(emit_connector_builder_messages)
+        )
+        self._stream_name_to_configured_stream = self._create_stream_name_to_configured_stream(
+            configured_catalog
         )
         self._connector_state_manager = connector_state_manager or ConnectorStateManager()
         self._api_budget: Optional[Union[APIBudget, HttpAPIBudget]] = None
@@ -795,6 +801,14 @@ class ModelToComponentFactory:
 
         # Needed for the case where we need to perform a second parse on the fields of a custom component
         self.TYPE_NAME_TO_MODEL = {cls.__name__: cls for cls in self.PYDANTIC_MODEL_TO_CONSTRUCTOR}
+
+    @staticmethod
+    def _create_stream_name_to_configured_stream(
+        configured_catalog: Optional[ConfiguredAirbyteCatalog],
+    ) -> Mapping[str, ConfiguredAirbyteStream]:
+        if configured_catalog is None:
+            return {}
+        return {stream.stream.name: stream for stream in configured_catalog.streams}
 
     def create_component(
         self,
@@ -3302,6 +3316,8 @@ class ModelToComponentFactory:
             model.ignore_stream_slicer_parameters_on_paginated_requests or False
         )
 
+        configured_stream = self._stream_name_to_configured_stream.get(name)
+
         if (
             model.partition_router
             and isinstance(model.partition_router, SubstreamPartitionRouterModel)
@@ -3337,6 +3353,7 @@ class ModelToComponentFactory:
                 request_option_provider=request_options_provider,
                 cursor=None,
                 config=config,
+                configured_airbyte_stream=configured_stream,
                 ignore_stream_slicer_parameters_on_paginated_requests=ignore_stream_slicer_parameters_on_paginated_requests,
                 parameters=model.parameters or {},
             )
@@ -3358,6 +3375,7 @@ class ModelToComponentFactory:
             request_option_provider=request_options_provider,
             cursor=None,
             config=config,
+            configured_airbyte_stream=configured_stream,
             ignore_stream_slicer_parameters_on_paginated_requests=ignore_stream_slicer_parameters_on_paginated_requests,
             additional_query_properties=query_properties,
             log_formatter=self._get_log_formatter(log_formatter, name),
