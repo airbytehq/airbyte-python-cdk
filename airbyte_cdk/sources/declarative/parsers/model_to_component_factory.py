@@ -806,9 +806,11 @@ class ModelToComponentFactory:
     def _create_stream_name_to_configured_stream(
         configured_catalog: Optional[ConfiguredAirbyteCatalog],
     ) -> Mapping[str, ConfiguredAirbyteStream]:
-        if configured_catalog is None:
-            return {}
-        return {stream.stream.name: stream for stream in configured_catalog.streams}
+        return (
+            {stream.stream.name: stream for stream in configured_catalog.streams}
+            if configured_catalog
+            else {}
+        )
 
     def create_component(
         self,

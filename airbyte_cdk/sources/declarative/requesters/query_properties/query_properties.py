@@ -39,13 +39,13 @@ class QueryProperties:
         :param configured_stream: The customer configured stream being synced which is needed to identify which
         record fields to query for and emit.
         """
+        configured_properties = self._get_configured_properties(configured_stream)
+
         fields: Union[Iterable[str], List[str]]
         if isinstance(self.property_list, PropertiesFromEndpoint):
             fields = self.property_list.get_properties_from_endpoint(stream_slice=stream_slice)
         else:
             fields = self.property_list if self.property_list else []
-
-        configured_properties = self._get_configured_properties(configured_stream)
 
         if self.property_chunking:
             yield from self.property_chunking.get_request_property_chunks(
@@ -54,7 +54,6 @@ class QueryProperties:
                 configured_properties=configured_properties,
             )
         else:
-            # A schema might have no extra properties enabled which is valid and represented by an empty set
             if configured_properties is not None:
                 yield from [[field for field in fields if field in configured_properties]]
             else:
@@ -64,7 +63,13 @@ class QueryProperties:
     def _get_configured_properties(
         configured_stream: Optional[ConfiguredAirbyteStream] = None,
     ) -> Optional[Set[str]]:
+        """
+        Returns the set of properties that have been selected for the configured stream. The intent being that
+        we should only query for selected properties not all since disabled properties are discarded.
+
+        When configured_stream is None, then there was no incoming catalog and all fields should be retrieved.
+        This is different from the empty set where the json_schema was empty and no schema fields were selected.
+        """
         if configured_stream:
-            # todo double check that configured catalog only contains enabled fields
             return set(configured_stream.stream.json_schema.get("properties", {}).keys())
         return None
