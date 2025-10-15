@@ -64,16 +64,7 @@ def build_source(
     page_limit: Optional[int] = None,
     slice_limit: Optional[int] = None,
 ) -> ConcurrentDeclarativeSource:
-    # We enforce a concurrency level of 1 so that the stream is processed on a single thread
-    # to retain ordering for the grouping of the builder message responses.
     definition = copy.deepcopy(manifest)
-    if "concurrency_level" in definition:
-        definition["concurrency_level"]["default_concurrency"] = 1
-    else:
-        definition["concurrency_level"] = {
-            "type": "ConcurrencyLevel",
-            "default_concurrency": 1,
-        }
 
     should_normalize = should_normalize_manifest(manifest)
     if should_normalize:

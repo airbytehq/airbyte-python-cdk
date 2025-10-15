@@ -109,8 +109,12 @@ class TestManifestRouter:
 
         assert response.status_code == 200
         # Verify build_source was called with correct arguments
+        expected_source_config = {
+            **sample_manifest,
+            "concurrency_level": {"type": "ConcurrencyLevel", "default_concurrency": 1},
+        }
         mock_build_source.assert_called_once_with(
-            sample_manifest,
+            expected_source_config,
             mock_build_catalog.return_value,
             sample_config,
             [],
@@ -169,8 +173,13 @@ class TestManifestRouter:
         assert config_arg["__injected_components_py_checksums"]["md5"] == expected_checksum
 
         # Verify other arguments
+        # Verify build_source was called with correct arguments
+        expected_source_config = {
+            **sample_manifest,
+            "concurrency_level": {"type": "ConcurrencyLevel", "default_concurrency": 1},
+        }
         mock_build_source.assert_called_once_with(
-            sample_manifest,
+            expected_source_config,
             mock_build_catalog.return_value,
             config_arg,
             [],
