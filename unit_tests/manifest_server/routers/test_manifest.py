@@ -172,7 +172,6 @@ class TestManifestRouter:
         assert "__injected_components_py_checksums" in config_arg
         assert config_arg["__injected_components_py_checksums"]["md5"] == expected_checksum
 
-
         # Verify other arguments
         # Verify build_source was called with correct arguments
         expected_source_config = {
