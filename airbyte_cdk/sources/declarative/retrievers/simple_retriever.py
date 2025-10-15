@@ -384,10 +384,7 @@ class SimpleRetriever(Retriever):
 
             response = None
             try:
-                if (
-                    self.additional_query_properties
-                    and self.additional_query_properties.property_chunking
-                ):
+                if self.additional_query_properties:
                     for properties in self.additional_query_properties.get_request_property_chunks(
                         stream_slice=stream_slice
                     ):
