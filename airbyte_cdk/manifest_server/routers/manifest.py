@@ -1,3 +1,4 @@
+import copy
 import hashlib
 from dataclasses import asdict
 from typing import Any, Dict, List, Mapping, Optional
@@ -87,8 +88,19 @@ def test_read(request: StreamTestReadRequest) -> StreamReadResponse:
             "md5": hashlib.md5(request.custom_components_code.encode()).hexdigest()
         }
 
+    # We enforce a concurrency level of 1 so that the stream is processed on a single thread
+    # to retain ordering for the grouping of the builder message responses.
+    manifest = copy.deepcopy(request.manifest.model_dump())
+    if "concurrency_level" in manifest:
+        manifest["concurrency_level"]["default_concurrency"] = 1
+    else:
+        manifest["concurrency_level"] = {
+            "type": "ConcurrencyLevel",
+            "default_concurrency": 1,
+        }
+
     source = safe_build_source(
-        request.manifest.model_dump(),
+        manifest,
         config_dict,
         catalog,
         converted_state,
