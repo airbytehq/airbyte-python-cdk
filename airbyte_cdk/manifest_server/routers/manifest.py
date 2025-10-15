@@ -15,7 +15,6 @@ from airbyte_cdk.sources.declarative.parsers.custom_code_compiler import (
     INJECTED_COMPONENTS_PY_CHECKSUMS,
 )
 from airbyte_cdk.utils.airbyte_secrets_utils import filter_secrets
-from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 
 from ..api_models import (
     CheckRequest,
@@ -129,11 +128,8 @@ def test_read(request: StreamTestReadRequest) -> StreamReadResponse:
         )
         return StreamReadResponse.model_validate(asdict(cdk_result))
     except Exception as exc:
-        error = AirbyteTracedException.from_exception(
-            exc, message=f"Error reading stream: {str(exc)}"
-        )
         # Filter secrets from error message before returning to client
-        sanitized_message = filter_secrets(error.message or str(exc))
+        sanitized_message = filter_secrets(f"Error reading stream: {str(exc)}")
         raise HTTPException(status_code=400, detail=sanitized_message)
 
 
@@ -159,11 +155,8 @@ def check(request: CheckRequest) -> CheckResponse:
         success, message = runner.check_connection(request.config.model_dump())
         return CheckResponse(success=success, message=message)
     except Exception as exc:
-        error = AirbyteTracedException.from_exception(
-            exc, message=f"Error checking connection: {str(exc)}"
-        )
         # Filter secrets from error message before returning to client
-        sanitized_message = filter_secrets(error.message or str(exc))
+        sanitized_message = filter_secrets(f"Error checking connection: {str(exc)}")
         raise HTTPException(status_code=400, detail=sanitized_message)
 
 
@@ -196,11 +189,8 @@ def discover(request: DiscoverRequest) -> DiscoverResponse:
         # Re-raise HTTPExceptions as-is (like the catalog None check above)
         raise
     except Exception as exc:
-        error = AirbyteTracedException.from_exception(
-            exc, message=f"Error discovering streams: {str(exc)}"
-        )
         # Filter secrets from error message before returning to client
-        sanitized_message = filter_secrets(error.message or str(exc))
+        sanitized_message = filter_secrets(f"Error discovering streams: {str(exc)}")
         raise HTTPException(status_code=400, detail=sanitized_message)
 
 
@@ -224,11 +214,8 @@ def resolve(request: ResolveRequest) -> ManifestResponse:
         source = safe_build_source(request.manifest.model_dump(), {})
         return ManifestResponse(manifest=Manifest(**source.resolved_manifest))
     except Exception as exc:
-        error = AirbyteTracedException.from_exception(
-            exc, message=f"Error resolving manifest: {str(exc)}"
-        )
         # Filter secrets from error message before returning to client
-        sanitized_message = filter_secrets(error.message or str(exc))
+        sanitized_message = filter_secrets(f"Error resolving manifest: {str(exc)}")
         raise HTTPException(status_code=400, detail=sanitized_message)
 
 
@@ -272,9 +259,6 @@ def full_resolve(request: FullResolveRequest) -> ManifestResponse:
         manifest["streams"] = streams
         return ManifestResponse(manifest=Manifest(**manifest))
     except Exception as exc:
-        error = AirbyteTracedException.from_exception(
-            exc, message=f"Error full resolving manifest: {str(exc)}"
-        )
         # Filter secrets from error message before returning to client
-        sanitized_message = filter_secrets(error.message or str(exc))
+        sanitized_message = filter_secrets(f"Error full resolving manifest: {str(exc)}")
         raise HTTPException(status_code=400, detail=sanitized_message)
