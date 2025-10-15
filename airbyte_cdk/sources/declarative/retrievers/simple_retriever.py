@@ -398,15 +398,21 @@ class SimpleRetriever(Retriever):
                         )
 
                         for current_record in records_generator_fn(response):
-                            merge_key = (
-                                self.additional_query_properties.property_chunking.get_merge_key(
-                                    current_record
+                            if self.additional_query_properties.property_chunking:
+                                merge_key = (
+                                    self.additional_query_properties.property_chunking.get_merge_key(
+                                        current_record
+                                    )
                                 )
-                            )
-                            if merge_key:
-                                _deep_merge(merged_records[merge_key], current_record)
+                                if merge_key:
+                                    _deep_merge(merged_records[merge_key], current_record)
+                                else:
+                                    # We should still emit records even if the record did not have a merge key
+                                    pagination_tracker.observe(current_record)
+                                    last_page_size += 1
+                                    last_record = current_record
+                                    yield current_record
                             else:
-                                # We should still emit records even if the record did not have a merge key
                                 pagination_tracker.observe(current_record)
                                 last_page_size += 1
                                 last_record = current_record
