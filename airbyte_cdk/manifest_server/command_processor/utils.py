@@ -72,7 +72,7 @@ def build_source(
     else:
         definition["concurrency_level"] = {
             "type": "ConcurrencyLevel",
-            "default_concurrency": 1,
+            "default_concurrency": 2,
         }
 
     should_normalize = should_normalize_manifest(manifest)
