@@ -14,6 +14,7 @@ from airbyte_cdk.sources.declarative.parsers.custom_code_compiler import (
     INJECTED_COMPONENTS_PY,
     INJECTED_COMPONENTS_PY_CHECKSUMS,
 )
+from airbyte_cdk.utils.airbyte_secrets_utils import filter_secrets
 from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 
 from ..api_models import (
@@ -131,7 +132,9 @@ def test_read(request: StreamTestReadRequest) -> StreamReadResponse:
         error = AirbyteTracedException.from_exception(
             exc, message=f"Error reading stream: {str(exc)}"
         )
-        raise HTTPException(status_code=400, detail=error.message)
+        # Filter secrets from error message before returning to client
+        sanitized_message = filter_secrets(error.message or str(exc))
+        raise HTTPException(status_code=400, detail=sanitized_message)
 
 
 @router.post(
@@ -159,7 +162,9 @@ def check(request: CheckRequest) -> CheckResponse:
         error = AirbyteTracedException.from_exception(
             exc, message=f"Error checking connection: {str(exc)}"
         )
-        raise HTTPException(status_code=400, detail=error.message)
+        # Filter secrets from error message before returning to client
+        sanitized_message = filter_secrets(error.message or str(exc))
+        raise HTTPException(status_code=400, detail=sanitized_message)
 
 
 @router.post(
@@ -194,7 +199,9 @@ def discover(request: DiscoverRequest) -> DiscoverResponse:
         error = AirbyteTracedException.from_exception(
             exc, message=f"Error discovering streams: {str(exc)}"
         )
-        raise HTTPException(status_code=400, detail=error.message)
+        # Filter secrets from error message before returning to client
+        sanitized_message = filter_secrets(error.message or str(exc))
+        raise HTTPException(status_code=400, detail=sanitized_message)
 
 
 @router.post(
@@ -220,7 +227,9 @@ def resolve(request: ResolveRequest) -> ManifestResponse:
         error = AirbyteTracedException.from_exception(
             exc, message=f"Error resolving manifest: {str(exc)}"
         )
-        raise HTTPException(status_code=400, detail=error.message)
+        # Filter secrets from error message before returning to client
+        sanitized_message = filter_secrets(error.message or str(exc))
+        raise HTTPException(status_code=400, detail=sanitized_message)
 
 
 @router.post(
@@ -266,4 +275,6 @@ def full_resolve(request: FullResolveRequest) -> ManifestResponse:
         error = AirbyteTracedException.from_exception(
             exc, message=f"Error full resolving manifest: {str(exc)}"
         )
-        raise HTTPException(status_code=400, detail=error.message)
+        # Filter secrets from error message before returning to client
+        sanitized_message = filter_secrets(error.message or str(exc))
+        raise HTTPException(status_code=400, detail=sanitized_message)
