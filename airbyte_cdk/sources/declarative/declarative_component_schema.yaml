@@ -391,6 +391,7 @@ definitions:
           anyOf:
             - "$ref": "#/definitions/CompositeErrorHandler"
             - "$ref": "#/definitions/DefaultErrorHandler"
+            - "$ref": "#/definitions/CustomErrorHandler"
       $parameters:
         type: object
         additionalProperties: true
@@ -2279,12 +2280,14 @@ definitions:
           - FAIL
           - RETRY
           - IGNORE
+          - RESET_PAGINATION
           - RATE_LIMITED
         examples:
           - SUCCESS
           - FAIL
           - RETRY
           - IGNORE
+          - RESET_PAGINATION
           - RATE_LIMITED
       failure_type:
         title: Failure Type
@@ -3707,6 +3710,9 @@ definitions:
         anyOf:
           - "$ref": "#/definitions/DefaultPaginator"
           - "$ref": "#/definitions/NoPagination"
+      pagination_reset:
+        description: Describes what triggers pagination reset and how to handle it.
+        "$ref": "#/definitions/PaginationReset"
       ignore_stream_slicer_parameters_on_paginated_requests:
         description: If true, the partition router and incremental request options will be ignored when paginating requests. Request options set directly on the requester will not be ignored.
         type: boolean
@@ -3730,6 +3736,36 @@ definitions:
       $parameters:
         type: object
         additionalProperties: true
+  PaginationReset:
+    title: Pagination Reset
+    description: Describes what triggers pagination reset and how to handle it. If SPLIT_USING_CURSOR, the connector developer is accountable for ensuring that the records are returned in ascending order.
+    type: object
+    required:
+      - type
+      - action
+    properties:
+      type:
+        type: string
+        enum: [ PaginationReset ]
+      action:
+        type: string
+        enum:
+          - SPLIT_USING_CURSOR
+          - RESET
+      limits:
+        "$ref": "#/definitions/PaginationResetLimits"
+  PaginationResetLimits:
+    title: Pagination Reset Limits
+    description: Describes the limits that trigger pagination reset
+    type: object
+    required:
+      - type
+    properties:
+      type:
+        type: string
+        enum: [ PaginationResetLimits ]
+      number_of_records:
+        type: integer
   GzipDecoder:
     title: gzip
     description: Select 'gzip' for response data that is compressed with gzip. Requires specifying an inner data type/decoder to parse the decompressed data.

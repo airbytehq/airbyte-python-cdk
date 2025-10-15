@@ -539,6 +539,7 @@ class Action(Enum):
     FAIL = "FAIL"
     RETRY = "RETRY"
     IGNORE = "IGNORE"
+    RESET_PAGINATION = "RESET_PAGINATION"
     RATE_LIMITED = "RATE_LIMITED"
 
 
@@ -553,7 +554,14 @@ class HttpResponseFilter(BaseModel):
     action: Optional[Action] = Field(
         None,
         description="Action to execute if a response matches the filter.",
-        examples=["SUCCESS", "FAIL", "RETRY", "IGNORE", "RATE_LIMITED"],
+        examples=[
+            "SUCCESS",
+            "FAIL",
+            "RETRY",
+            "IGNORE",
+            "RESET_PAGINATION",
+            "RATE_LIMITED",
+        ],
         title="Action",
     )
     failure_type: Optional[FailureType] = Field(
@@ -1171,6 +1179,16 @@ class LegacySessionTokenAuthenticator(BaseModel):
         title="Validate Session Path",
     )
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
+
+
+class Action1(Enum):
+    SPLIT_USING_CURSOR = "SPLIT_USING_CURSOR"
+    RESET = "RESET"
+
+
+class PaginationResetLimits(BaseModel):
+    type: Literal["PaginationResetLimits"]
+    number_of_records: Optional[int] = None
 
 
 class CsvDecoder(BaseModel):
@@ -2054,6 +2072,12 @@ class RecordSelector(BaseModel):
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
 
+class PaginationReset(BaseModel):
+    type: Literal["PaginationReset"]
+    action: Action1
+    limits: Optional[PaginationResetLimits] = None
+
+
 class GzipDecoder(BaseModel):
     type: Literal["GzipDecoder"]
     decoder: Union[CsvDecoder, GzipDecoder, JsonDecoder, JsonlDecoder]
@@ -2125,10 +2149,12 @@ class ConfigAddFields(BaseModel):
 
 class CompositeErrorHandler(BaseModel):
     type: Literal["CompositeErrorHandler"]
-    error_handlers: List[Union[CompositeErrorHandler, DefaultErrorHandler]] = Field(
-        ...,
-        description="List of error handlers to iterate on to determine how to handle a failed response.",
-        title="Error Handlers",
+    error_handlers: List[Union[CompositeErrorHandler, DefaultErrorHandler, CustomErrorHandler]] = (
+        Field(
+            ...,
+            description="List of error handlers to iterate on to determine how to handle a failed response.",
+            title="Error Handlers",
+        )
     )
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
@@ -2821,6 +2847,10 @@ class SimpleRetriever(BaseModel):
     paginator: Optional[Union[DefaultPaginator, NoPagination]] = Field(
         None,
         description="Paginator component that describes how to navigate through the API's pages.",
+    )
+    pagination_reset: Optional[PaginationReset] = Field(
+        None,
+        description="Describes what triggers pagination reset and how to handle it.",
     )
     ignore_stream_slicer_parameters_on_paginated_requests: Optional[bool] = Field(
         False,
