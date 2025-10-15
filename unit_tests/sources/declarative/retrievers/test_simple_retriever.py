@@ -1118,6 +1118,82 @@ def test_simple_retriever_with_additional_query_properties():
     assert actual_records == expected_records
 
 
+def test_simple_retriever_with_additional_query_properties_but_without_property_chunking():
+    stream_name = "stream_name"
+    expected_records = [
+        Record(
+            data={"id": "a", "field": "value_first_page"},
+            associated_slice=None,
+            stream_name=stream_name,
+        ),
+        Record(
+            data={"id": "b", "field": "value_second_page"},
+            associated_slice=None,
+            stream_name=stream_name,
+        ),
+    ]
+
+    stream_slice = StreamSlice(cursor_slice={}, partition={})
+
+    response = requests.Response()
+    response.status_code = 200
+    response._content = json.dumps({"data": [{"whatever": 1}]}).encode("utf-8")
+
+    requester = MagicMock()
+    requester.send_request.side_effect = [
+        response,
+        response,
+    ]
+
+    record_selector = MagicMock()
+    record_selector.select_records.side_effect = [
+        [
+            Record(
+                data={"id": "a", "field": "value_first_page"},
+                associated_slice=None,
+                stream_name=stream_name,
+            ),
+        ],
+        [
+            Record(
+                data={"id": "b", "field": "value_second_page"},
+                associated_slice=None,
+                stream_name=stream_name,
+            ),
+        ],
+    ]
+
+    query_properties = QueryProperties(
+        property_list=["first_name", "last_name", "nonary", "bracelet"],
+        always_include_properties=[],
+        property_chunking=None,
+        config=config,
+        parameters={},
+    )
+
+    paginator = _mock_paginator()
+    paginator.next_page_token.side_effect = [{"next_page_token": 1}, None]
+
+    retriever = SimpleRetriever(
+        name=stream_name,
+        primary_key=primary_key,
+        requester=requester,
+        record_selector=record_selector,
+        additional_query_properties=query_properties,
+        paginator=paginator,
+        parameters={},
+        config={},
+    )
+
+    actual_records = [
+        r for r in retriever.read_records(records_schema={}, stream_slice=stream_slice)
+    ]
+
+    assert len(actual_records) == 2
+    assert actual_records == expected_records
+    assert requester.send_request.call_args_list[0].kwargs["stream_slice"].extra_fields
+
+
 def test_simple_retriever_with_additional_query_properties_single_chunk():
     stream_name = "stream_name"
     expected_records = [
