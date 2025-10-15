@@ -1,4 +1,3 @@
-import copy
 import hashlib
 from dataclasses import asdict
 from typing import Any, Dict, List, Mapping, Optional
@@ -90,7 +89,7 @@ def test_read(request: StreamTestReadRequest) -> StreamReadResponse:
 
     # We enforce a concurrency level of 1 so that the stream is processed on a single thread
     # to retain ordering for the grouping of the builder message responses.
-    manifest = copy.deepcopy(request.manifest.model_dump())
+    manifest = request.manifest.model_dump()
     if "concurrency_level" in manifest:
         manifest["concurrency_level"]["default_concurrency"] = 1
     else:
