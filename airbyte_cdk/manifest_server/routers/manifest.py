@@ -14,12 +14,14 @@ from airbyte_cdk.sources.declarative.parsers.custom_code_compiler import (
     INJECTED_COMPONENTS_PY,
     INJECTED_COMPONENTS_PY_CHECKSUMS,
 )
+from airbyte_cdk.utils.airbyte_secrets_utils import filter_secrets
 
 from ..api_models import (
     CheckRequest,
     CheckResponse,
     DiscoverRequest,
     DiscoverResponse,
+    ErrorResponse,
     FullResolveRequest,
     Manifest,
     ManifestResponse,
@@ -64,7 +66,13 @@ router = APIRouter(
 )
 
 
-@router.post("/test_read", operation_id="testRead")
+@router.post(
+    "/test_read",
+    operation_id="testRead",
+    responses={
+        400: {"description": "Bad Request - Error processing request", "model": ErrorResponse}
+    },
+)
 def test_read(request: StreamTestReadRequest) -> StreamReadResponse:
     """
     Test reading from a specific stream in the manifest.
@@ -109,18 +117,29 @@ def test_read(request: StreamTestReadRequest) -> StreamReadResponse:
     )
 
     runner = ManifestCommandProcessor(source)
-    cdk_result = runner.test_read(
-        config_dict,
-        catalog,
-        converted_state,
-        request.record_limit,
-        request.page_limit,
-        request.slice_limit,
-    )
-    return StreamReadResponse.model_validate(asdict(cdk_result))
+    try:
+        cdk_result = runner.test_read(
+            config_dict,
+            catalog,
+            converted_state,
+            request.record_limit,
+            request.page_limit,
+            request.slice_limit,
+        )
+        return StreamReadResponse.model_validate(asdict(cdk_result))
+    except Exception as exc:
+        # Filter secrets from error message before returning to client
+        sanitized_message = filter_secrets(f"Error reading stream: {str(exc)}")
+        raise HTTPException(status_code=400, detail=sanitized_message)
 
 
-@router.post("/check", operation_id="check")
+@router.post(
+    "/check",
+    operation_id="check",
+    responses={
+        400: {"description": "Bad Request - Error processing request", "model": ErrorResponse}
+    },
+)
 def check(request: CheckRequest) -> CheckResponse:
     """Check configuration against a manifest"""
     # Apply trace tags from context if provided
@@ -130,13 +149,24 @@ def check(request: CheckRequest) -> CheckResponse:
             project_id=request.context.project_id,
         )
 
-    source = safe_build_source(request.manifest.model_dump(), request.config.model_dump())
-    runner = ManifestCommandProcessor(source)
-    success, message = runner.check_connection(request.config.model_dump())
-    return CheckResponse(success=success, message=message)
+    try:
+        source = safe_build_source(request.manifest.model_dump(), request.config.model_dump())
+        runner = ManifestCommandProcessor(source)
+        success, message = runner.check_connection(request.config.model_dump())
+        return CheckResponse(success=success, message=message)
+    except Exception as exc:
+        # Filter secrets from error message before returning to client
+        sanitized_message = filter_secrets(f"Error checking connection: {str(exc)}")
+        raise HTTPException(status_code=400, detail=sanitized_message)
 
 
-@router.post("/discover", operation_id="discover")
+@router.post(
+    "/discover",
+    operation_id="discover",
+    responses={
+        400: {"description": "Bad Request - Error processing request", "model": ErrorResponse}
+    },
+)
 def discover(request: DiscoverRequest) -> DiscoverResponse:
     """Discover streams from a manifest"""
     # Apply trace tags from context if provided
@@ -146,15 +176,31 @@ def discover(request: DiscoverRequest) -> DiscoverResponse:
             project_id=request.context.project_id,
         )
 
-    source = safe_build_source(request.manifest.model_dump(), request.config.model_dump())
-    runner = ManifestCommandProcessor(source)
-    catalog = runner.discover(request.config.model_dump())
-    if catalog is None:
-        raise HTTPException(status_code=422, detail="Connector did not return a discovered catalog")
-    return DiscoverResponse(catalog=catalog)
+    try:
+        source = safe_build_source(request.manifest.model_dump(), request.config.model_dump())
+        runner = ManifestCommandProcessor(source)
+        catalog = runner.discover(request.config.model_dump())
+        if catalog is None:
+            raise HTTPException(
+                status_code=422, detail="Connector did not return a discovered catalog"
+            )
+        return DiscoverResponse(catalog=catalog)
+    except HTTPException:
+        # Re-raise HTTPExceptions as-is (like the catalog None check above)
+        raise
+    except Exception as exc:
+        # Filter secrets from error message before returning to client
+        sanitized_message = filter_secrets(f"Error discovering streams: {str(exc)}")
+        raise HTTPException(status_code=400, detail=sanitized_message)
 
 
-@router.post("/resolve", operation_id="resolve")
+@router.post(
+    "/resolve",
+    operation_id="resolve",
+    responses={
+        400: {"description": "Bad Request - Error processing request", "model": ErrorResponse}
+    },
+)
 def resolve(request: ResolveRequest) -> ManifestResponse:
     """Resolve a manifest to its final configuration."""
     # Apply trace tags from context if provided
@@ -164,11 +210,22 @@ def resolve(request: ResolveRequest) -> ManifestResponse:
             project_id=request.context.project_id,
         )
 
-    source = safe_build_source(request.manifest.model_dump(), {})
-    return ManifestResponse(manifest=Manifest(**source.resolved_manifest))
+    try:
+        source = safe_build_source(request.manifest.model_dump(), {})
+        return ManifestResponse(manifest=Manifest(**source.resolved_manifest))
+    except Exception as exc:
+        # Filter secrets from error message before returning to client
+        sanitized_message = filter_secrets(f"Error resolving manifest: {str(exc)}")
+        raise HTTPException(status_code=400, detail=sanitized_message)
 
 
-@router.post("/full_resolve", operation_id="fullResolve")
+@router.post(
+    "/full_resolve",
+    operation_id="fullResolve",
+    responses={
+        400: {"description": "Bad Request - Error processing request", "model": ErrorResponse}
+    },
+)
 def full_resolve(request: FullResolveRequest) -> ManifestResponse:
     """
     Fully resolve a manifest, including dynamic streams.
@@ -182,21 +239,26 @@ def full_resolve(request: FullResolveRequest) -> ManifestResponse:
             project_id=request.context.project_id,
         )
 
-    source = safe_build_source(request.manifest.model_dump(), request.config.model_dump())
-    manifest = {**source.resolved_manifest}
-    streams = manifest.get("streams", [])
-    for stream in streams:
-        stream["dynamic_stream_name"] = None
+    try:
+        source = safe_build_source(request.manifest.model_dump(), request.config.model_dump())
+        manifest = {**source.resolved_manifest}
+        streams = manifest.get("streams", [])
+        for stream in streams:
+            stream["dynamic_stream_name"] = None
 
-    mapped_streams: Dict[str, List[Dict[str, Any]]] = {}
-    for stream in source.dynamic_streams:
-        generated_streams = mapped_streams.setdefault(stream["dynamic_stream_name"], [])
+        mapped_streams: Dict[str, List[Dict[str, Any]]] = {}
+        for stream in source.dynamic_streams:
+            generated_streams = mapped_streams.setdefault(stream["dynamic_stream_name"], [])
 
-        if len(generated_streams) < request.stream_limit:
-            generated_streams += [stream]
+            if len(generated_streams) < request.stream_limit:
+                generated_streams += [stream]
 
-    for generated_streams_list in mapped_streams.values():
-        streams.extend(generated_streams_list)
+        for generated_streams_list in mapped_streams.values():
+            streams.extend(generated_streams_list)
 
-    manifest["streams"] = streams
-    return ManifestResponse(manifest=Manifest(**manifest))
+        manifest["streams"] = streams
+        return ManifestResponse(manifest=Manifest(**manifest))
+    except Exception as exc:
+        # Filter secrets from error message before returning to client
+        sanitized_message = filter_secrets(f"Error full resolving manifest: {str(exc)}")
+        raise HTTPException(status_code=400, detail=sanitized_message)
