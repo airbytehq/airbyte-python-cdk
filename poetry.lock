@@ -346,9 +346,10 @@ files = [
 name = "bytecode"
 version = "0.16.2"
 description = "Python module to generate and modify bytecode"
-optional = false
+optional = true
 python-versions = ">=3.8"
 groups = ["main"]
+markers = "extra == \"manifest-server\" and python_version <= \"3.13.0\""
 files = [
     {file = "bytecode-0.16.2-py3-none-any.whl", hash = "sha256:0a7dea0387ec5cae5ec77578690c5ca7470c8a202c50ce64a426d86380cddd7f"},
     {file = "bytecode-0.16.2.tar.gz", hash = "sha256:f05020b6dc1f48cdadd946f7c3a03131ba0f312bd103767c5d75559de5c308f8"},
@@ -1054,9 +1055,10 @@ langdetect = ["langdetect (>=1.0.0)"]
 name = "ddtrace"
 version = "3.12.0"
 description = "Datadog APM client library"
-optional = false
+optional = true
 python-versions = ">=3.8"
 groups = ["main"]
+markers = "extra == \"manifest-server\""
 files = [
     {file = "ddtrace-3.12.0-cp310-cp310-macosx_12_0_arm64.whl", hash = "sha256:a20a2ca9685ada9a50486d98afb9cdc22946e64952c92ca5989291498ca4f0f0"},
     {file = "ddtrace-3.12.0-cp310-cp310-macosx_12_0_x86_64.whl", hash = "sha256:b4d6ae49e66e2e6530a8601ccda16bcb99a88a8cb38e9a04e8a41b2ef8a6f022"},
@@ -1126,7 +1128,7 @@ bytecode = [
     {version = ">=0.16.0", markers = "python_version >= \"3.13.0\""},
     {version = ">=0.15.1", markers = "python_version ~= \"3.12.0\""},
     {version = ">=0.14.0", markers = "python_version ~= \"3.11.0\""},
-    {version = ">=0.13.0", markers = "python_version < \"3.11.0\""},
+    {version = ">=0.13.0", markers = "python_version < \"3.11\""},
 ]
 envier = ">=0.6.1,<0.7.0"
 legacy-cgi = {version = ">=2.0.0", markers = "python_version >= \"3.13.0\""}
@@ -1220,9 +1222,10 @@ dev = ["coverage", "pytest (>=7.4.4)"]
 name = "envier"
 version = "0.6.1"
 description = "Python application configuration via the environment"
-optional = false
+optional = true
 python-versions = ">=3.7"
 groups = ["main"]
+markers = "extra == \"manifest-server\""
 files = [
     {file = "envier-0.6.1-py3-none-any.whl", hash = "sha256:73609040a76be48bbcb97074d9969666484aa0de706183a6e9ef773156a8a6a9"},
     {file = "envier-0.6.1.tar.gz", hash = "sha256:3309a01bb3d8850c9e7a31a5166d5a836846db2faecb79b9cb32654dd50ca9f9"},
@@ -1650,7 +1653,7 @@ google-auth = ">=2.14.1,<3.0.0"
 googleapis-common-protos = ">=1.56.2,<2.0.0"
 grpcio = [
     {version = ">=1.49.1,<2.0dev", optional = true, markers = "python_version >= \"3.11\" and extra == \"grpc\""},
-    {version = ">=1.33.2,<2.0dev", optional = true, markers = "extra == \"grpc\""},
+    {version = ">=1.33.2,<2.0dev", optional = true, markers = "python_version < \"3.11\" and extra == \"grpc\""},
 ]
 grpcio-status = [
     {version = ">=1.49.1,<2.0.dev0", optional = true, markers = "python_version >= \"3.11\" and extra == \"grpc\""},
@@ -1714,7 +1717,7 @@ google-auth = ">=2.14.1,<2.24.0 || >2.24.0,<2.25.0 || >2.25.0,<3.0.0"
 grpc-google-iam-v1 = ">=0.14.0,<1.0.0"
 proto-plus = [
     {version = ">=1.25.0,<2.0.0", markers = "python_version >= \"3.13\""},
-    {version = ">=1.22.3,<2.0.0"},
+    {version = ">=1.22.3,<2.0.0", markers = "python_version < \"3.13\""},
 ]
 protobuf = ">=3.20.2,<4.21.0 || >4.21.0,<4.21.1 || >4.21.1,<4.21.2 || >4.21.2,<4.21.3 || >4.21.3,<4.21.4 || >4.21.4,<4.21.5 || >4.21.5,<7.0.0"
 
@@ -1787,7 +1790,7 @@ description = "Lightweight in-process concurrent programming"
 optional = true
 python-versions = ">=3.7"
 groups = ["main"]
-markers = "(extra == \"vector-db-based\" or extra == \"sql\") and (platform_machine == \"aarch64\" or platform_machine == \"ppc64le\" or platform_machine == \"x86_64\" or platform_machine == \"amd64\" or platform_machine == \"AMD64\" or platform_machine == \"win32\" or platform_machine == \"WIN32\")"
+markers = "(platform_machine == \"aarch64\" or platform_machine == \"ppc64le\" or platform_machine == \"x86_64\" or platform_machine == \"amd64\" or platform_machine == \"AMD64\" or platform_machine == \"win32\" or platform_machine == \"WIN32\") and (extra == \"vector-db-based\" or extra == \"sql\")"
 files = [
     {file = "greenlet-3.1.1-cp310-cp310-macosx_11_0_universal2.whl", hash = "sha256:0bbae94a29c9e5c7e4a2b7f0aae5c17e8e90acbfd3bf6270eeba60c39fce3563"},
     {file = "greenlet-3.1.1-cp310-cp310-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:0fde093fb93f35ca72a556cf72c92ea3ebfda3d79fc35bb19fbe685853869a83"},
@@ -2126,6 +2129,7 @@ files = [
     {file = "importlib_metadata-8.7.0-py3-none-any.whl", hash = "sha256:e5dd1551894c77868a30651cef00984d50e1002d06942a7101d34870c5f02afd"},
     {file = "importlib_metadata-8.7.0.tar.gz", hash = "sha256:d13b81ad223b890aa16c5471f2ac3056cf76c5f10f82d6f9292f0b415f389000"},
 ]
+markers = {main = "extra == \"manifest-server\""}
 
 [package.dependencies]
 zipp = ">=3.20"
@@ -2521,10 +2525,10 @@ langsmith-pyo3 = ["langsmith-pyo3 (>=0.1.0rc2,<0.2.0)"]
 name = "legacy-cgi"
 version = "2.6.3"
 description = "Fork of the standard library cgi and cgitb modules removed in Python 3.13"
-optional = false
+optional = true
 python-versions = ">=3.8"
 groups = ["main"]
-markers = "python_version >= \"3.13.0\""
+markers = "extra == \"manifest-server\" and python_version == \"3.13\""
 files = [
     {file = "legacy_cgi-2.6.3-py3-none-any.whl", hash = "sha256:6df2ea5ae14c71ef6f097f8b6372b44f6685283dc018535a75c924564183cdab"},
     {file = "legacy_cgi-2.6.3.tar.gz", hash = "sha256:4c119d6cb8e9d8b6ad7cc0ddad880552c62df4029622835d06dfd18f438a8154"},
@@ -3322,6 +3326,7 @@ files = [
     {file = "opentelemetry_api-1.36.0-py3-none-any.whl", hash = "sha256:02f20bcacf666e1333b6b1f04e647dc1d5111f86b8e510238fcc56d7762cda8c"},
     {file = "opentelemetry_api-1.36.0.tar.gz", hash = "sha256:9a72572b9c416d004d492cbc6e61962c0501eaf945ece9b5a0f56597d8348aa0"},
 ]
+markers = {main = "extra == \"manifest-server\""}
 
 [package.dependencies]
 importlib-metadata = ">=6.0,<8.8.0"
@@ -6484,6 +6489,7 @@ files = [
     {file = "wrapt-1.17.3-py3-none-any.whl", hash = "sha256:7171ae35d2c33d326ac19dd8facb1e82e5fd04ef8c6c0e394d7af55a55051c22"},
     {file = "wrapt-1.17.3.tar.gz", hash = "sha256:f66eb08feaa410fe4eebd17f2a2c8e2e46d3476e9f8c783daa8e09e0faa666d0"},
 ]
+markers = {main = "extra == \"manifest-server\""}
 
 [[package]]
 name = "xlsxwriter"
@@ -6619,6 +6625,7 @@ files = [
     {file = "zipp-3.23.0-py3-none-any.whl", hash = "sha256:071652d6115ed432f5ce1d34c336c0adfd6a884660d1e9712a256d3d3bd4b14e"},
     {file = "zipp-3.23.0.tar.gz", hash = "sha256:a07157588a12518c9d4034df3fbbee09c814741a33ff63c05fa29d26a2404166"},
 ]
+markers = {main = "extra == \"manifest-server\""}
 
 [package.extras]
 check = ["pytest-checkdocs (>=2.4)", "pytest-ruff (>=0.2.1) ; sys_platform != \"cygwin\""]
@@ -6638,4 +6645,4 @@ vector-db-based = ["cohere", "langchain", "openai", "tiktoken"]
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.10,<3.14"
-content-hash = "d3b0c5b86b2f23ed74f2b7a5f5cb9ee163f469be57181481e1d16a1e7a69e77e"
+content-hash = "f592e8538fcae401225fd55b723e82c792fd081bcb11ea1b48c6b195eda90573"
