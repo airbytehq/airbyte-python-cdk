@@ -384,10 +384,7 @@ class SimpleRetriever(Retriever):
 
             response = None
             try:
-                if (
-                    self.additional_query_properties
-                    and self.additional_query_properties.property_chunking
-                ):
+                if self.additional_query_properties:
                     for properties in self.additional_query_properties.get_request_property_chunks(
                         stream_slice=stream_slice
                     ):
@@ -401,15 +398,19 @@ class SimpleRetriever(Retriever):
                         )
 
                         for current_record in records_generator_fn(response):
-                            merge_key = (
-                                self.additional_query_properties.property_chunking.get_merge_key(
+                            if self.additional_query_properties.property_chunking:
+                                merge_key = self.additional_query_properties.property_chunking.get_merge_key(
                                     current_record
                                 )
-                            )
-                            if merge_key:
-                                _deep_merge(merged_records[merge_key], current_record)
+                                if merge_key:
+                                    _deep_merge(merged_records[merge_key], current_record)
+                                else:
+                                    # We should still emit records even if the record did not have a merge key
+                                    pagination_tracker.observe(current_record)
+                                    last_page_size += 1
+                                    last_record = current_record
+                                    yield current_record
                             else:
-                                # We should still emit records even if the record did not have a merge key
                                 pagination_tracker.observe(current_record)
                                 last_page_size += 1
                                 last_record = current_record
