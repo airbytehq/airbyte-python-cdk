@@ -139,7 +139,7 @@ class ExcelParser(FileTypeParser):
     @staticmethod
     def dtype_to_json_type(
         current_type: Optional[str],
-        dtype: Any,  # pandas dtype
+        dtype: Any,  # Type object from pandas DataFrame (e.g., numpy.dtype, pandas ExtensionDtype, or str)
     ) -> str:
         """
         Convert Pandas DataFrame types to Airbyte Types.
