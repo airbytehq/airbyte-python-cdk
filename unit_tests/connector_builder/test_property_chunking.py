@@ -186,7 +186,12 @@ CONFIGURED_CATALOG = {
                 "json_schema": {
                     "$schema": "http://json-schema.org/draft-07/schema#",
                     "type": "object",
-                    "properties": {},
+                    "properties": {
+                        "one": {"type": ["null", "string"]},
+                        "two": {"type": ["null", "string"]},
+                        "three": {"type": ["null", "string"]},
+                        "four": {"type": ["null", "string"]},
+                    },
                 },
                 "supported_sync_modes": ["full_refresh"],
                 "source_defined_cursor": False,

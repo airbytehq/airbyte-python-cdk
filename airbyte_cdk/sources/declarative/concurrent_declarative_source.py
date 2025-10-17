@@ -169,6 +169,7 @@ class ConcurrentDeclarativeSource(Source):
         component_factory = ModelToComponentFactory(
             emit_connector_builder_messages=emit_connector_builder_messages,
             message_repository=ConcurrentMessageRepository(queue, message_repository),
+            configured_catalog=catalog,
             connector_state_manager=self._connector_state_manager,
             max_concurrent_async_job_count=source_config.get("max_concurrent_async_job_count"),
             limit_pages_fetched_per_slice=limits.max_pages_per_slice if limits else None,

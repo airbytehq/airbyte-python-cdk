@@ -12,6 +12,13 @@ from typing import Any, Iterable, Mapping, Optional, Union
 import freezegun
 import pytest
 import requests
+from airbyte_protocol_dataclasses.models.airbyte_protocol import (
+    AirbyteStream,
+    ConfiguredAirbyteCatalog,
+    ConfiguredAirbyteStream,
+    DestinationSyncMode,
+    SyncMode,
+)
 from freezegun.api import FakeDatetime
 from pydantic.v1 import ValidationError
 
@@ -228,6 +235,28 @@ def test_create_component_type_mismatch():
 
     with pytest.raises(ValueError):
         factory.create_component(CheckStreamModel, manifest["check"], {})
+
+
+def test_create_component_with_configured_catalog():
+    configured_catalog = ConfiguredAirbyteCatalog(
+        streams=[
+            ConfiguredAirbyteStream(
+                stream=AirbyteStream(
+                    name="test",
+                    json_schema={"type": "object", "properties": {"id": {"type": "string"}}},
+                    supported_sync_modes=[SyncMode.full_refresh],
+                ),
+                sync_mode=SyncMode.full_refresh,
+                destination_sync_mode=DestinationSyncMode.overwrite,
+            )
+        ]
+    )
+
+    factory_with_catalog = ModelToComponentFactory(configured_catalog=configured_catalog)
+
+    assert factory_with_catalog._stream_name_to_configured_stream == {
+        "test": configured_catalog.streams[0]
+    }
 
 
 def test_full_config_stream():
@@ -1217,7 +1246,7 @@ a_stream:
       http_method: "GET"
       request_parameters:
         not_query: 1
-        query: 
+        query:
           type: QueryProperties
           property_list:
             - id

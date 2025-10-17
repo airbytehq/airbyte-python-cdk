@@ -1,8 +1,9 @@
 # Copyright (c) 2025 Airbyte, Inc., all rights reserved.
 
 from dataclasses import InitVar, dataclass
-from typing import Any, Iterable, List, Mapping, Optional, Union
+from typing import Any, Iterable, List, Mapping, Optional, Set, Union
 
+from airbyte_cdk.models import ConfiguredAirbyteStream
 from airbyte_cdk.sources.declarative.requesters.query_properties import (
     PropertiesFromEndpoint,
     PropertyChunking,
@@ -26,14 +27,20 @@ class QueryProperties:
     parameters: InitVar[Mapping[str, Any]]
 
     def get_request_property_chunks(
-        self, stream_slice: Optional[StreamSlice] = None
+        self,
+        stream_slice: Optional[StreamSlice] = None,
+        configured_stream: Optional[ConfiguredAirbyteStream] = None,
     ) -> Iterable[List[str]]:
         """
         Uses the defined property_list to fetch the total set of properties dynamically or from a static list
         and based on the resulting properties, performs property chunking if applicable.
         :param stream_slice: The StreamSlice of the current partition being processed during the sync. This is included
         because subcomponents of QueryProperties can make use of interpolation of the top-level StreamSlice object
+        :param configured_stream: The customer configured stream being synced which is needed to identify which
+        record fields to query for and emit.
         """
+        configured_properties = self._get_configured_properties(configured_stream)
+
         fields: Union[Iterable[str], List[str]]
         if isinstance(self.property_list, PropertiesFromEndpoint):
             fields = self.property_list.get_properties_from_endpoint(stream_slice=stream_slice)
@@ -42,7 +49,27 @@ class QueryProperties:
 
         if self.property_chunking:
             yield from self.property_chunking.get_request_property_chunks(
-                property_fields=fields, always_include_properties=self.always_include_properties
+                property_fields=fields,
+                always_include_properties=self.always_include_properties,
+                configured_properties=configured_properties,
             )
         else:
-            yield list(fields)
+            if configured_properties is not None:
+                yield from [[field for field in fields if field in configured_properties]]
+            else:
+                yield list(fields)
+
+    @staticmethod
+    def _get_configured_properties(
+        configured_stream: Optional[ConfiguredAirbyteStream] = None,
+    ) -> Optional[Set[str]]:
+        """
+        Returns the set of properties that have been selected for the configured stream. The intent being that
+        we should only query for selected properties not all since disabled properties are discarded.
+
+        When configured_stream is None, then there was no incoming catalog and all fields should be retrieved.
+        This is different from the empty set where the json_schema was empty and no schema fields were selected.
+        """
+        if configured_stream:
+            return set(configured_stream.stream.json_schema.get("properties", {}).keys())
+        return None
