@@ -5,7 +5,7 @@
 # Example:
 # docker build -f airbyte_cdk/manifest_server/Dockerfile -t airbyte/manifest-server .
 
-FROM python:3.12-slim-bookworm
+FROM python:3.13-slim-bookworm@sha256:ee6c0814498e24cc54424475b9611edb99072250b2b30f9fb83d9256a1469b7a
 
 # Install git (needed for dynamic versioning) and poetry
 RUN apt-get update && \
