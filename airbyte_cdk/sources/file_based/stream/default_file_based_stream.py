@@ -21,7 +21,7 @@ from airbyte_cdk.sources.file_based.exceptions import (
     MissingSchemaError,
     RecordParseError,
     SchemaInferenceError,
-    StopSyncPerValidationPolicy,
+    StopSyncPerValidationPolicy, EmptyFileSchemaInferenceError,
 )
 from airbyte_cdk.sources.file_based.file_types import FileTransfer
 from airbyte_cdk.sources.file_based.remote_file import RemoteFile
@@ -246,12 +246,12 @@ class DefaultFileBasedStream(AbstractFileBasedStream, IncrementalMixin):
                 exception=AirbyteTracedException(exception=config_exception),
                 failure_type=FailureType.config_error,
             )
+        except EmptyFileSchemaInferenceError as exc:
+            self._raise_schema_inference_error(exc)
         except AirbyteTracedException as ate:
             raise ate
         except Exception as exc:
-            raise SchemaInferenceError(
-                FileBasedSourceError.SCHEMA_INFERENCE_ERROR, stream=self.name
-            ) from exc
+            self._raise_schema_inference_error(exc)
         else:
             return {"type": "object", "properties": {**extra_fields, **schema["properties"]}}
 
@@ -385,12 +385,17 @@ class DefaultFileBasedStream(AbstractFileBasedStream, IncrementalMixin):
             return await self.get_parser().infer_schema(
                 self.config, file, self.stream_reader, self.logger
             )
+        except EmptyFileSchemaInferenceError as exc:
+            self._raise_schema_inference_error(exc, file)
         except AirbyteTracedException as ate:
             raise ate
         except Exception as exc:
-            raise SchemaInferenceError(
-                FileBasedSourceError.SCHEMA_INFERENCE_ERROR,
-                file=file.uri,
-                format=str(self.config.format),
-                stream=self.name,
-            ) from exc
+            self._raise_schema_inference_error(exc, file)
+
+    def _raise_schema_inference_error(self, exc: Exception, file: Optional[RemoteFile] = None) -> None:
+        raise SchemaInferenceError(
+            FileBasedSourceError.SCHEMA_INFERENCE_ERROR,
+            file=file.uri if file else None,
+            format=str(self.config.format) if self.config.format else None,
+            stream=self.name,
+        ) from exc

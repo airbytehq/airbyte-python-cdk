@@ -157,3 +157,7 @@ class CustomFileBasedException(AirbyteTracedException):
 
 class FileSizeLimitError(CustomFileBasedException):
     pass
+
+
+class EmptyFileSchemaInferenceError(AirbyteTracedException):
+    pass

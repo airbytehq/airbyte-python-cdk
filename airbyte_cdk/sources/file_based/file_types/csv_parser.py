@@ -22,7 +22,8 @@ from airbyte_cdk.sources.file_based.config.csv_format import (
     InferenceType,
 )
 from airbyte_cdk.sources.file_based.config.file_based_stream_config import FileBasedStreamConfig
-from airbyte_cdk.sources.file_based.exceptions import FileBasedSourceError, RecordParseError
+from airbyte_cdk.sources.file_based.exceptions import FileBasedSourceError, RecordParseError, \
+    EmptyFileSchemaInferenceError
 from airbyte_cdk.sources.file_based.file_based_stream_reader import (
     AbstractFileBasedStreamReader,
     FileReadMode,
@@ -203,7 +204,7 @@ class CsvParser(FileTypeParser):
                 break
 
         if not type_inferrer_by_field:
-            raise AirbyteTracedException(
+            raise EmptyFileSchemaInferenceError(
                 message=f"Could not infer schema as there are no rows in {file.uri}. If having an empty CSV file is expected, ignore this. "
                 f"Else, please contact Airbyte.",
                 failure_type=FailureType.config_error,
