@@ -83,3 +83,9 @@ class FullResolveRequest(BaseModel):
     config: ConnectorConfig
     stream_limit: int = Field(default=100, ge=1, le=100)
     context: Optional[RequestContext] = None
+
+
+class ErrorResponse(BaseModel):
+    """Error response for API requests."""
+
+    detail: str

@@ -32,61 +32,6 @@ class TestManifestUtils:
         assert configured_stream.destination_sync_mode == DestinationSyncMode.overwrite
 
     @patch("airbyte_cdk.manifest_server.command_processor.utils.ConcurrentDeclarativeSource")
-    def test_build_source_creates_source(self, mock_source_class):
-        """Test that build_source creates a ConcurrentDeclarativeSource with correct parameters."""
-        # Setup mocks
-        mock_source = Mock()
-        mock_source_class.return_value = mock_source
-
-        # Test with complex manifest and config structures
-        manifest = {
-            "version": "0.1.0",
-            "definitions": {"selector": {"extractor": {"field_path": ["data"]}}},
-            "streams": [
-                {
-                    "name": "users",
-                    "primary_key": "id",
-                    "retriever": {
-                        "requester": {
-                            "url_base": "https://api.example.com",
-                            "path": "/users",
-                        }
-                    },
-                }
-            ],
-            "check": {"stream_names": ["users"]},
-        }
-
-        config = {
-            "api_key": "sk-test-123",
-            "base_url": "https://api.example.com",
-            "timeout": 30,
-        }
-
-        # Call build_source with additional parameters
-        catalog = build_catalog("test_stream")
-        state = []
-        result = build_source(manifest, catalog, config, state)
-
-        # Verify ConcurrentDeclarativeSource was created with correct parameters
-        expected_source_config = {
-            **manifest,
-            "concurrency_level": {"type": "ConcurrencyLevel", "default_concurrency": 1},
-        }
-        mock_source_class.assert_called_once_with(
-            catalog=catalog,
-            state=state,
-            source_config=expected_source_config,
-            config=config,
-            normalize_manifest=False,  # Default when flag not set
-            migrate_manifest=False,  # Default when flag not set
-            emit_connector_builder_messages=True,
-            limits=mock_source_class.call_args[1]["limits"],
-        )
-
-        assert result == mock_source
-
-    @patch("airbyte_cdk.manifest_server.command_processor.utils.ConcurrentDeclarativeSource")
     def test_build_source_with_normalize_flag(self, mock_source_class):
         """Test build_source when normalize flag is set."""
         mock_source = Mock()

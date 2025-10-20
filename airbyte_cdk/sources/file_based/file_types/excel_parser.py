@@ -9,8 +9,6 @@ from typing import Any, Dict, Iterable, Mapping, Optional, Tuple, Union
 
 import orjson
 import pandas as pd
-from numpy import datetime64, issubdtype
-from numpy import dtype as dtype_
 from pydantic.v1 import BaseModel
 
 from airbyte_cdk.sources.file_based.config.file_based_stream_config import (
@@ -141,7 +139,7 @@ class ExcelParser(FileTypeParser):
     @staticmethod
     def dtype_to_json_type(
         current_type: Optional[str],
-        dtype: dtype_,  # type: ignore [type-arg]
+        dtype: Any,  # Type object from pandas DataFrame
     ) -> str:
         """
         Convert Pandas DataFrame types to Airbyte Types.
@@ -163,7 +161,7 @@ class ExcelParser(FileTypeParser):
             return "number"
         if dtype == "bool" and (not current_type or current_type == "boolean"):
             return "boolean"
-        if issubdtype(dtype, datetime64):
+        if pd.api.types.is_datetime64_any_dtype(dtype):
             return "date-time"
         return "string"
 

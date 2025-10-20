@@ -11,7 +11,7 @@ from .routers import capabilities, health, manifest
 app = FastAPI(
     title="Manifest Server",
     description="A service for running low-code Airbyte connectors",
-    version="0.1.0",
+    version="0.2.0",
     contact={
         "name": "Airbyte",
         "url": "https://airbyte.com",
