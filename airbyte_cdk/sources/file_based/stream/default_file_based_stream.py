@@ -9,7 +9,19 @@ from collections import defaultdict
 from copy import deepcopy
 from functools import cache
 from os import path
-from typing import Any, Dict, Iterable, List, Mapping, MutableMapping, Optional, Set, Tuple, Union
+from typing import (
+    Any,
+    Dict,
+    Iterable,
+    List,
+    Mapping,
+    MutableMapping,
+    Optional,
+    Set,
+    Tuple,
+    Union,
+    NoReturn,
+)
 
 from airbyte_cdk.models import AirbyteLogMessage, AirbyteMessage, AirbyteStream, FailureType, Level
 from airbyte_cdk.models import Type as MessageType
@@ -395,7 +407,7 @@ class DefaultFileBasedStream(AbstractFileBasedStream, IncrementalMixin):
 
     def _raise_schema_inference_error(
         self, exc: Exception, file: Optional[RemoteFile] = None
-    ) -> None:
+    ) -> NoReturn:
         raise SchemaInferenceError(
             FileBasedSourceError.SCHEMA_INFERENCE_ERROR,
             file=file.uri if file else None,
