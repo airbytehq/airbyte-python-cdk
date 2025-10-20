@@ -8,6 +8,9 @@ from airbyte_cdk.sources.declarative.requesters.query_properties import (
     PropertiesFromEndpoint,
     PropertyChunking,
 )
+from airbyte_cdk.sources.declarative.requesters.query_properties.property_selector import (
+    PropertySelector,
+)
 from airbyte_cdk.sources.types import Config, StreamSlice
 
 
@@ -23,13 +26,13 @@ class QueryProperties:
     property_list: Optional[Union[List[str], PropertiesFromEndpoint]]
     always_include_properties: Optional[List[str]]
     property_chunking: Optional[PropertyChunking]
+    property_selector: Optional[PropertySelector]
     config: Config
     parameters: InitVar[Mapping[str, Any]]
 
     def get_request_property_chunks(
         self,
         stream_slice: Optional[StreamSlice] = None,
-        configured_stream: Optional[ConfiguredAirbyteStream] = None,
     ) -> Iterable[List[str]]:
         """
         Uses the defined property_list to fetch the total set of properties dynamically or from a static list
@@ -39,7 +42,7 @@ class QueryProperties:
         :param configured_stream: The customer configured stream being synced which is needed to identify which
         record fields to query for and emit.
         """
-        configured_properties = self._get_configured_properties(configured_stream)
+        configured_properties = self.property_selector.select() if self.property_selector else None
 
         fields: Union[Iterable[str], List[str]]
         if isinstance(self.property_list, PropertiesFromEndpoint):
@@ -58,18 +61,3 @@ class QueryProperties:
                 yield from [[field for field in fields if field in configured_properties]]
             else:
                 yield list(fields)
-
-    @staticmethod
-    def _get_configured_properties(
-        configured_stream: Optional[ConfiguredAirbyteStream] = None,
-    ) -> Optional[Set[str]]:
-        """
-        Returns the set of properties that have been selected for the configured stream. The intent being that
-        we should only query for selected properties not all since disabled properties are discarded.
-
-        When configured_stream is None, then there was no incoming catalog and all fields should be retrieved.
-        This is different from the empty set where the json_schema was empty and no schema fields were selected.
-        """
-        if configured_stream:
-            return set(configured_stream.stream.json_schema.get("properties", {}).keys())
-        return None

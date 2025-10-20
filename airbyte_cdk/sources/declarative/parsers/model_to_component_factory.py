@@ -317,6 +317,9 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
     JsonlDecoder as JsonlDecoderModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    JsonSchemaPropertySelector as JsonSchemaPropertySelectorModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     JwtAuthenticator as JwtAuthenticatorModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
@@ -502,6 +505,9 @@ from airbyte_cdk.sources.declarative.requesters.query_properties import (
 )
 from airbyte_cdk.sources.declarative.requesters.query_properties.property_chunking import (
     PropertyLimitType,
+)
+from airbyte_cdk.sources.declarative.requesters.query_properties.property_selector import (
+    JsonSchemaPropertySelector,
 )
 from airbyte_cdk.sources.declarative.requesters.query_properties.strategies import (
     GroupByKey,
@@ -740,6 +746,7 @@ class ModelToComponentFactory:
             InlineSchemaLoaderModel: self.create_inline_schema_loader,
             JsonDecoderModel: self.create_json_decoder,
             JsonlDecoderModel: self.create_jsonl_decoder,
+            JsonSchemaPropertySelectorModel: self.create_json_schema_property_selector,
             GzipDecoderModel: self.create_gzip_decoder,
             KeysToLowerModel: self.create_keys_to_lower_transformation,
             KeysToSnakeCaseModel: self.create_keys_to_snake_transformation,
@@ -3003,7 +3010,7 @@ class ModelToComponentFactory:
         )
 
     def create_query_properties(
-        self, model: QueryPropertiesModel, config: Config, **kwargs: Any
+        self, model: QueryPropertiesModel, config: Config, *, stream_name: str, **kwargs: Any
     ) -> QueryProperties:
         if isinstance(model.property_list, list):
             property_list = model.property_list
@@ -3020,10 +3027,43 @@ class ModelToComponentFactory:
             else None
         )
 
+        property_selector = (
+            self._create_component_from_model(
+                model=model.property_selector, config=config, stream_name=stream_name, **kwargs
+            )
+            if model.property_selector
+            else None
+        )
+
         return QueryProperties(
             property_list=property_list,
             always_include_properties=model.always_include_properties,
             property_chunking=property_chunking,
+            property_selector=property_selector,
+            config=config,
+            parameters=model.parameters or {},
+        )
+
+    def create_json_schema_property_selector(
+        self,
+        model: JsonSchemaPropertySelectorModel,
+        config: Config,
+        *,
+        stream_name: str,
+        **kwargs: Any,
+    ) -> JsonSchemaPropertySelector:
+        configured_stream = self._stream_name_to_configured_stream.get(stream_name)
+
+        transformations = []
+        if model.transformations:
+            for transformation_model in model.transformations:
+                transformations.append(
+                    self._create_component_from_model(model=transformation_model, config=config)
+                )
+
+        return JsonSchemaPropertySelector(
+            configured_stream=configured_stream,
+            properties_transformations=transformations,
             config=config,
             parameters=model.parameters or {},
         )
@@ -3251,7 +3291,7 @@ class ModelToComponentFactory:
 
             if len(query_properties_definitions) == 1:
                 query_properties = self._create_component_from_model(
-                    model=query_properties_definitions[0], config=config
+                    model=query_properties_definitions[0], stream_name=name, config=config
                 )
 
             # Removes QueryProperties components from the interpolated mappings because it has been designed
@@ -3277,11 +3317,13 @@ class ModelToComponentFactory:
 
             query_properties = self.create_query_properties(
                 model=query_properties_definition,
+                stream_name=name,
                 config=config,
             )
         elif hasattr(model.requester, "query_properties") and model.requester.query_properties:
             query_properties = self.create_query_properties(
                 model=model.requester.query_properties,
+                stream_name=name,
                 config=config,
             )
 
@@ -3318,8 +3360,6 @@ class ModelToComponentFactory:
             model.ignore_stream_slicer_parameters_on_paginated_requests or False
         )
 
-        configured_stream = self._stream_name_to_configured_stream.get(name)
-
         if (
             model.partition_router
             and isinstance(model.partition_router, SubstreamPartitionRouterModel)
@@ -3355,7 +3395,6 @@ class ModelToComponentFactory:
                 request_option_provider=request_options_provider,
                 cursor=None,
                 config=config,
-                configured_airbyte_stream=configured_stream,
                 ignore_stream_slicer_parameters_on_paginated_requests=ignore_stream_slicer_parameters_on_paginated_requests,
                 parameters=model.parameters or {},
             )
@@ -3377,7 +3416,6 @@ class ModelToComponentFactory:
             request_option_provider=request_options_provider,
             cursor=None,
             config=config,
-            configured_airbyte_stream=configured_stream,
             ignore_stream_slicer_parameters_on_paginated_requests=ignore_stream_slicer_parameters_on_paginated_requests,
             additional_query_properties=query_properties,
             log_formatter=self._get_log_formatter(log_formatter, name),

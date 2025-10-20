@@ -140,6 +140,9 @@ from airbyte_cdk.sources.declarative.requesters.query_properties import (
 from airbyte_cdk.sources.declarative.requesters.query_properties.property_chunking import (
     PropertyLimitType,
 )
+from airbyte_cdk.sources.declarative.requesters.query_properties.property_selector import (
+    JsonSchemaPropertySelector,
+)
 from airbyte_cdk.sources.declarative.requesters.query_properties.strategies import GroupByKey
 from airbyte_cdk.sources.declarative.requesters.request_option import (
     RequestOption,
@@ -163,6 +166,9 @@ from airbyte_cdk.sources.declarative.stream_slicers.declarative_partition_genera
 )
 from airbyte_cdk.sources.declarative.transformations import AddFields, RemoveFields
 from airbyte_cdk.sources.declarative.transformations.add_fields import AddedFieldDefinition
+from airbyte_cdk.sources.declarative.transformations.keys_replace_transformation import (
+    KeysReplaceTransformation,
+)
 from airbyte_cdk.sources.declarative.yaml_declarative_source import YamlDeclarativeSource
 from airbyte_cdk.sources.message.repository import StateFilteringMessageRepository
 from airbyte_cdk.sources.streams.call_rate import MovingWindowCallRatePolicy
@@ -4510,6 +4516,12 @@ def test_simple_retriever_with_query_properties():
             record_merge_strategy:
               type: GroupByKeyMergeStrategy
               key: ["id"]
+          property_selector:
+            type: JsonSchemaPropertySelector
+            transformations:
+              - type: KeysReplace
+                old: "properties_"
+                new: ""
     analytics_stream:
       type: DeclarativeStream
       incremental_sync:
@@ -4550,6 +4562,13 @@ def test_simple_retriever_with_query_properties():
         "created_at",
     ]
     assert query_properties.always_include_properties == ["id"]
+
+    property_selector = query_properties.property_selector
+    assert isinstance(property_selector, JsonSchemaPropertySelector)
+    assert len(property_selector.properties_transformations) == 1
+    assert property_selector.properties_transformations == [
+        KeysReplaceTransformation(old="properties_", new="", parameters={})
+    ]
 
     property_chunking = retriever.additional_query_properties.property_chunking
     assert isinstance(property_chunking, PropertyChunking)
