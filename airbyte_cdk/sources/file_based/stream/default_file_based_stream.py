@@ -16,12 +16,13 @@ from airbyte_cdk.models import Type as MessageType
 from airbyte_cdk.sources.file_based.config.file_based_stream_config import PrimaryKeyType
 from airbyte_cdk.sources.file_based.exceptions import (
     DuplicatedFilesError,
+    EmptyFileSchemaInferenceError,
     FileBasedSourceError,
     InvalidSchemaError,
     MissingSchemaError,
     RecordParseError,
     SchemaInferenceError,
-    StopSyncPerValidationPolicy, EmptyFileSchemaInferenceError,
+    StopSyncPerValidationPolicy,
 )
 from airbyte_cdk.sources.file_based.file_types import FileTransfer
 from airbyte_cdk.sources.file_based.remote_file import RemoteFile
@@ -392,7 +393,9 @@ class DefaultFileBasedStream(AbstractFileBasedStream, IncrementalMixin):
         except Exception as exc:
             self._raise_schema_inference_error(exc, file)
 
-    def _raise_schema_inference_error(self, exc: Exception, file: Optional[RemoteFile] = None) -> None:
+    def _raise_schema_inference_error(
+        self, exc: Exception, file: Optional[RemoteFile] = None
+    ) -> None:
         raise SchemaInferenceError(
             FileBasedSourceError.SCHEMA_INFERENCE_ERROR,
             file=file.uri if file else None,

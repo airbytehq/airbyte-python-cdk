@@ -22,8 +22,11 @@ from airbyte_cdk.sources.file_based.config.csv_format import (
     InferenceType,
 )
 from airbyte_cdk.sources.file_based.config.file_based_stream_config import FileBasedStreamConfig
-from airbyte_cdk.sources.file_based.exceptions import FileBasedSourceError, RecordParseError, \
-    EmptyFileSchemaInferenceError
+from airbyte_cdk.sources.file_based.exceptions import (
+    EmptyFileSchemaInferenceError,
+    FileBasedSourceError,
+    RecordParseError,
+)
 from airbyte_cdk.sources.file_based.file_based_stream_reader import (
     AbstractFileBasedStreamReader,
     FileReadMode,
