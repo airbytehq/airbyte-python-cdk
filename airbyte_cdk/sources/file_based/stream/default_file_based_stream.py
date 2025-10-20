@@ -16,11 +16,11 @@ from typing import (
     List,
     Mapping,
     MutableMapping,
+    NoReturn,
     Optional,
     Set,
     Tuple,
     Union,
-    NoReturn,
 )
 
 from airbyte_cdk.models import AirbyteLogMessage, AirbyteMessage, AirbyteStream, FailureType, Level
