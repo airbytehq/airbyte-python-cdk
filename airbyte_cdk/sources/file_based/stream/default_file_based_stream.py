@@ -231,7 +231,7 @@ class DefaultFileBasedStream(AbstractFileBasedStream, IncrementalMixin):
         return self.ab_last_mod_col
 
     @cache
-    def get_json_schema(self) -> JsonSchema:
+    def get_json_schema(self) -> JsonSchema:  # type: ignore
         if self.use_file_transfer:
             return file_transfer_schema
         extra_fields = {
@@ -381,7 +381,7 @@ class DefaultFileBasedStream(AbstractFileBasedStream, IncrementalMixin):
 
         return base_schema
 
-    async def _infer_file_schema(self, file: RemoteFile) -> SchemaType:
+    async def _infer_file_schema(self, file: RemoteFile) -> SchemaType:  # type: ignore
         try:
             return await self.get_parser().infer_schema(
                 self.config, file, self.stream_reader, self.logger
