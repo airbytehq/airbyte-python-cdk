@@ -24,8 +24,8 @@ RUN pip install dist/*.whl
 RUN mkdir -p source_declarative_manifest \
     && echo 'from source_declarative_manifest.run import run\n\nif __name__ == "__main__":\n    run()' > main.py \
     && touch source_declarative_manifest/__init__.py \
-    && cp /usr/local/lib/python3.11/site-packages/airbyte_cdk/cli/source_declarative_manifest/_run.py source_declarative_manifest/run.py \
-    && cp /usr/local/lib/python3.11/site-packages/airbyte_cdk/cli/source_declarative_manifest/spec.json source_declarative_manifest/
+    && cp /usr/local/lib/python3.13/site-packages/airbyte_cdk/cli/source_declarative_manifest/_run.py source_declarative_manifest/run.py \
+    && cp /usr/local/lib/python3.13/site-packages/airbyte_cdk/cli/source_declarative_manifest/spec.json source_declarative_manifest/
 
 # Remove unnecessary build files
 RUN rm -rf dist/ pyproject.toml poetry.lock README.md
