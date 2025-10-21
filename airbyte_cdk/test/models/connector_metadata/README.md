@@ -1,4 +1,4 @@
-# Airbyte Metadata Models
+# Airbyte Connector Metadata Models
 
 This package contains Pydantic models for validating Airbyte connector `metadata.yaml` files.
 
@@ -18,7 +18,7 @@ During the CDK build process (`poetry run poe build`), these schemas are downloa
 ```python
 from pathlib import Path
 import yaml
-from airbyte_cdk.metadata_models import ConnectorMetadataDefinitionV0
+from airbyte_cdk.test.models.connector_metadata import ConnectorMetadataDefinitionV0
 
 # Load metadata.yaml
 metadata_path = Path("path/to/metadata.yaml")
@@ -35,7 +35,7 @@ except Exception as e:
 ### Accessing metadata fields
 
 ```python
-from airbyte_cdk.metadata_models import ConnectorMetadataDefinitionV0
+from airbyte_cdk.test.models.connector_metadata import ConnectorMetadataDefinitionV0
 
 metadata = ConnectorMetadataDefinitionV0(**metadata_dict)
 
@@ -70,7 +70,7 @@ poetry run poe build
 This command:
 1. Downloads the latest schema YAML files from the airbyte repository
 2. Generates Pydantic models using `datamodel-code-generator`
-3. Outputs models to `airbyte_cdk/metadata_models/generated/`
+3. Outputs models to `airbyte_cdk/test/models/connector_metadata/`
 
 ## Schema Source
 

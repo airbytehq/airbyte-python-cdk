@@ -16,7 +16,7 @@ LOCAL_OUTPUT_DIR_PATH = "airbyte_cdk/sources/declarative/models"
 
 METADATA_SCHEMAS_GITHUB_URL = "https://api.github.com/repos/airbytehq/airbyte/contents/airbyte-ci/connectors/metadata_service/lib/metadata_service/models/src"
 METADATA_SCHEMAS_RAW_URL_BASE = "https://raw.githubusercontent.com/airbytehq/airbyte/master/airbyte-ci/connectors/metadata_service/lib/metadata_service/models/src"
-LOCAL_METADATA_OUTPUT_DIR_PATH = "airbyte_cdk/metadata_models/generated"
+LOCAL_METADATA_OUTPUT_DIR_PATH = "airbyte_cdk/test/models/connector_metadata"
 
 PIP_DEPENDENCIES = [
     "datamodel_code_generator==0.26.3",
