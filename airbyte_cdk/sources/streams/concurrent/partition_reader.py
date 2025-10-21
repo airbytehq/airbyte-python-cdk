@@ -60,7 +60,7 @@ class PartitionReader:
         self._queue = queue
         self._partition_logger = partition_logger
 
-    def process_partition(self, partition: Partition, cursor: Cursor) -> None:
+    def process_partition(self, partition: Partition) -> None:
         """
         Process a partition and put the records in the output queue.
         When all the partitions are added to the queue, a sentinel is added to the queue to indicate that all the partitions have been generated.
@@ -78,8 +78,6 @@ class PartitionReader:
 
             for record in partition.read():
                 self._queue.put(record)
-                cursor.observe(record)
-            cursor.close_partition(partition)
             self._queue.put(PartitionCompleteSentinel(partition, self._IS_SUCCESSFUL))
         except Exception as e:
             self._queue.put(StreamThreadException(e, partition.stream_name()))
