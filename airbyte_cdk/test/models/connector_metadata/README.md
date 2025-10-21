@@ -18,7 +18,7 @@ During the CDK build process (`poetry run poe build`), these schemas are downloa
 ```python
 from pathlib import Path
 import yaml
-from airbyte_cdk.test.models.connector_metadata import ConnectorMetadataDefinitionV0
+from airbyte_cdk.test.models import ConnectorMetadataDefinitionV0
 
 # Load metadata.yaml
 metadata_path = Path("path/to/metadata.yaml")
@@ -35,7 +35,7 @@ except Exception as e:
 ### Accessing metadata fields
 
 ```python
-from airbyte_cdk.test.models.connector_metadata import ConnectorMetadataDefinitionV0
+from airbyte_cdk.test.models import ConnectorMetadataDefinitionV0
 
 metadata = ConnectorMetadataDefinitionV0(**metadata_dict)
 
@@ -44,6 +44,19 @@ print(f"Connector: {metadata.data.name}")
 print(f"Docker repository: {metadata.data.dockerRepository}")
 print(f"Docker image tag: {metadata.data.dockerImageTag}")
 print(f"Support level: {metadata.data.supportLevel}")
+```
+
+### Accessing other models
+
+All generated models are available in the `generated` submodule:
+
+```python
+from airbyte_cdk.test.models.connector_metadata.generated import (
+    ConnectorBreakingChanges,
+    ConnectorReleases,
+    ReleaseStage,
+    SupportLevel,
+)
 ```
 
 ### Available models
@@ -70,7 +83,7 @@ poetry run poe build
 This command:
 1. Downloads the latest schema YAML files from the airbyte repository
 2. Generates Pydantic models using `datamodel-code-generator`
-3. Outputs models to `airbyte_cdk/test/models/connector_metadata/`
+3. Outputs models to `airbyte_cdk/test/models/connector_metadata/generated/`
 
 ## Schema Source
 
