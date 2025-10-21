@@ -50,7 +50,7 @@ async def download_metadata_schemas(temp_dir: Path) -> list[str]:
     }
     if token:
         headers["Authorization"] = f"Bearer {token}"
-    
+
     async with httpx.AsyncClient(headers=headers, timeout=30.0) as client:
         try:
             response = await client.get(METADATA_SCHEMAS_GITHUB_URL)
@@ -64,21 +64,21 @@ async def download_metadata_schemas(temp_dir: Path) -> list[str]:
                 )
                 raise
             raise
-        
+
         yaml_files = []
         for file_info in files_info:
             if file_info["name"].endswith(".yaml"):
                 file_name = file_info["name"]
                 file_url = f"{METADATA_SCHEMAS_RAW_URL_BASE}/{file_name}"
-                
+
                 print(f"Downloading {file_name}...", file=sys.stderr)
                 file_response = await client.get(file_url)
                 file_response.raise_for_status()
-                
+
                 file_path = temp_dir / file_name
                 file_path.write_text(file_response.text)
                 yaml_files.append(Path(file_name).stem)
-        
+
         return yaml_files
 
 
@@ -173,11 +173,9 @@ async def post_process_metadata_models(codegen_container: dagger.Container):
             original_content = await codegen_container.file(
                 f"/generated/{generated_file}"
             ).contents()
-            
-            post_processed_content = original_content.replace(
-                "from pydantic", "from pydantic.v1"
-            )
-            
+
+            post_processed_content = original_content.replace("from pydantic", "from pydantic.v1")
+
             codegen_container = codegen_container.with_new_file(
                 f"/generated_post_processed/{generated_file}", contents=post_processed_content
             )
@@ -194,7 +192,7 @@ async def generate_models_from_schemas(
 ) -> None:
     """Generate Pydantic models from YAML schemas using datamodel-codegen."""
     init_module_content = generate_init_module_content(yaml_files)
-    
+
     codegen_container = (
         dagger_client.container()
         .from_(PYTHON_IMAGE)
@@ -205,7 +203,7 @@ async def generate_models_from_schemas(
         )
         .with_new_file("/generated/__init__.py", contents=init_module_content)
     )
-    
+
     for yaml_file in yaml_files:
         codegen_container = codegen_container.with_exec(
             [
@@ -226,7 +224,7 @@ async def generate_models_from_schemas(
             ],
             use_entrypoint=True,
         )
-    
+
     if post_process:
         codegen_container = await post_process_codegen(codegen_container)
         await codegen_container.directory("/generated_post_processed").export(output_dir_path)
@@ -240,16 +238,16 @@ async def generate_models_from_schemas(
 def consolidate_yaml_schemas_to_json(yaml_dir_path: Path, output_json_path: str) -> None:
     """Consolidate all YAML schemas into a single JSON schema file."""
     schemas = {}
-    
+
     for yaml_file in yaml_dir_path.glob("*.yaml"):
         schema_name = yaml_file.stem
-        with yaml_file.open('r') as f:
+        with yaml_file.open("r") as f:
             schema_content = yaml.safe_load(f)
             schemas[schema_name] = schema_content
-    
+
     # Find the main schema (ConnectorMetadataDefinitionV0)
     main_schema = schemas.get("ConnectorMetadataDefinitionV0")
-    
+
     if main_schema:
         # Create a consolidated schema with definitions
         consolidated = {
@@ -257,18 +255,21 @@ def consolidate_yaml_schemas_to_json(yaml_dir_path: Path, output_json_path: str)
             "title": "Connector Metadata Schema",
             "description": "Consolidated JSON schema for Airbyte connector metadata validation",
             **main_schema,
-            "definitions": {}
+            "definitions": {},
         }
-        
+
         # Add all other schemas as definitions
         for schema_name, schema_content in schemas.items():
             if schema_name != "ConnectorMetadataDefinitionV0":
                 consolidated["definitions"][schema_name] = schema_content
-        
+
         Path(output_json_path).write_text(json.dumps(consolidated, indent=2))
         print(f"Generated consolidated JSON schema: {output_json_path}", file=sys.stderr)
     else:
-        print("Warning: ConnectorMetadataDefinitionV0 not found, generating simple consolidation", file=sys.stderr)
+        print(
+            "Warning: ConnectorMetadataDefinitionV0 not found, generating simple consolidation",
+            file=sys.stderr,
+        )
         Path(output_json_path).write_text(json.dumps(schemas, indent=2))
 
 
@@ -287,7 +288,7 @@ async def generate_metadata_models_single_file(
             "/yaml", dagger_client.host().directory(yaml_dir_path, include=["*.yaml"])
         )
     )
-    
+
     codegen_container = codegen_container.with_exec(
         [
             "datamodel-codegen",
@@ -307,16 +308,14 @@ async def generate_metadata_models_single_file(
         ],
         use_entrypoint=True,
     )
-    
+
     original_content = await codegen_container.file("/generated/models.py").contents()
-    post_processed_content = original_content.replace(
-        "from pydantic", "from pydantic.v1"
-    )
-    
+    post_processed_content = original_content.replace("from pydantic", "from pydantic.v1")
+
     codegen_container = codegen_container.with_new_file(
         "/generated/models_processed.py", contents=post_processed_content
     )
-    
+
     await codegen_container.file("/generated/models_processed.py").export(output_file_path)
 
 
@@ -331,15 +330,15 @@ async def main():
             yaml_files=declarative_yaml_files,
             post_process=True,
         )
-        
+
         print("\nGenerating metadata models...", file=sys.stderr)
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_path = Path(temp_dir)
             await download_metadata_schemas(temp_path)
-            
+
             output_dir = Path(LOCAL_METADATA_OUTPUT_DIR_PATH)
             output_dir.mkdir(parents=True, exist_ok=True)
-            
+
             print("Generating single Python file with all models...", file=sys.stderr)
             output_file = str(output_dir / "models.py")
             await generate_metadata_models_single_file(
@@ -347,11 +346,11 @@ async def main():
                 yaml_dir_path=str(temp_path),
                 output_file_path=output_file,
             )
-            
+
             print("Generating consolidated JSON schema...", file=sys.stderr)
             json_schema_file = str(output_dir / "metadata_schema.json")
             consolidate_yaml_schemas_to_json(temp_path, json_schema_file)
-        
+
         print("\nModel generation complete!", file=sys.stderr)
 
 
