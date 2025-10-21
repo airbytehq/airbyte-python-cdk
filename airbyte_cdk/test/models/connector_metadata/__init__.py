@@ -1,5 +1,4 @@
-from .generated.ConnectorMetadataDefinitionV0 import ConnectorMetadataDefinitionV0
-from .generated.ConnectorTestSuiteOptions import ConnectorTestSuiteOptions
+from .generated.models import ConnectorMetadataDefinitionV0, ConnectorTestSuiteOptions
 
 __all__ = [
     "ConnectorMetadataDefinitionV0",

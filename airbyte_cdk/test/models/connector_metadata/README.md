@@ -9,7 +9,7 @@ The models are automatically generated from JSON Schema YAML files maintained in
 airbyte-ci/connectors/metadata_service/lib/metadata_service/models/src/
 ```
 
-During the CDK build process (`poetry run poe build`), these schemas are downloaded from GitHub and used to generate Pydantic models via `datamodel-code-generator`.
+During the CDK build process (`poetry run poe build`), these schemas are downloaded from GitHub and used to generate Pydantic models via `datamodel-code-generator`. All models are generated into a single Python file for simplicity and easier imports.
 
 ## Usage
 
@@ -48,10 +48,10 @@ print(f"Support level: {metadata.data.supportLevel}")
 
 ### Accessing other models
 
-All generated models are available in the `generated` submodule:
+All generated models are available in the `generated.models` module:
 
 ```python
-from airbyte_cdk.test.models.connector_metadata.generated import (
+from airbyte_cdk.test.models.connector_metadata.generated.models import (
     ConnectorBreakingChanges,
     ConnectorReleases,
     ReleaseStage,
@@ -82,8 +82,11 @@ poetry run poe build
 
 This command:
 1. Downloads the latest schema YAML files from the airbyte repository
-2. Generates Pydantic models using `datamodel-code-generator`
-3. Outputs models to `airbyte_cdk/test/models/connector_metadata/generated/`
+2. Generates all Pydantic models into a single file using `datamodel-code-generator`
+3. Generates a consolidated JSON schema file for external validation tools
+4. Outputs to `airbyte_cdk/test/models/connector_metadata/generated/`:
+   - `models.py` - All Pydantic models in a single file
+   - `metadata_schema.json` - Consolidated JSON schema
 
 ## Schema Source
 
