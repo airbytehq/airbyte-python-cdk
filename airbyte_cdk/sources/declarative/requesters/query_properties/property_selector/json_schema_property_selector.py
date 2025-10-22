@@ -36,7 +36,7 @@ class JsonSchemaPropertySelector(PropertySelector):
         This is different from the empty set where the json_schema was empty and no schema fields were selected.
         """
 
-        # For CHECK/DISCOVER operations, there is no catalog and therefor no configured stream or selected
+        # For CHECK/DISCOVER operations, there is no catalog and therefore no configured stream or selected
         # columns. In this case we return None which is interpreted by the QueryProperties component to not
         # perform any filtering of schema properties and fetch all of them
         if self.configured_stream is None:

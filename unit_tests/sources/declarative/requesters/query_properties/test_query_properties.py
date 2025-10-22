@@ -149,6 +149,105 @@ def test_get_request_property_chunks_static_list_with_always_include_properties(
     assert property_chunks[2] == ["zero", "seven", "lotus", "nine"]
 
 
+def test_get_request_no_property_chunking_selected_properties_always_include_properties():
+    configured_airbyte_stream = _create_configured_airbyte_stream(
+        ["santa", "clover", "junpei", "june", "remove_me"]
+    )
+
+    stream_slice = StreamSlice(cursor_slice={}, partition={})
+
+    query_properties = QueryProperties(
+        property_list=[
+            "ace",
+            "snake",
+            "santa",
+            "clover",
+            "junpei",
+            "june",
+            "seven",
+            "lotus",
+            "nine",
+        ],
+        always_include_properties=["zero"],
+        property_chunking=None,
+        property_selector=JsonSchemaPropertySelector(
+            configured_stream=configured_airbyte_stream,
+            properties_transformations=[
+                RemoveFields(field_pointers=[["remove_me"]], parameters={}),
+            ],
+            config=CONFIG,
+            parameters={},
+        ),
+        config=CONFIG,
+        parameters={},
+    )
+
+    property_chunks = list(query_properties.get_request_property_chunks(stream_slice=stream_slice))
+
+    assert len(property_chunks) == 1
+    assert property_chunks[0] == ["zero", "santa", "clover", "junpei", "june"]
+
+
+def test_get_request_no_property_chunking_always_include_properties():
+    configured_airbyte_stream = _create_configured_airbyte_stream(
+        [
+            "ace",
+            "snake",
+            "santa",
+            "clover",
+            "junpei",
+            "june",
+            "seven",
+            "lotus",
+            "nine",
+        ]
+    )
+
+    stream_slice = StreamSlice(cursor_slice={}, partition={})
+
+    query_properties = QueryProperties(
+        property_list=[
+            "ace",
+            "snake",
+            "santa",
+            "clover",
+            "junpei",
+            "june",
+            "seven",
+            "lotus",
+            "nine",
+        ],
+        always_include_properties=["zero"],
+        property_chunking=None,
+        property_selector=JsonSchemaPropertySelector(
+            configured_stream=configured_airbyte_stream,
+            properties_transformations=[
+                RemoveFields(field_pointers=[["remove_me"]], parameters={}),
+            ],
+            config=CONFIG,
+            parameters={},
+        ),
+        config=CONFIG,
+        parameters={},
+    )
+
+    property_chunks = list(query_properties.get_request_property_chunks(stream_slice=stream_slice))
+
+    assert len(property_chunks) == 1
+    assert property_chunks[0] == [
+        "zero",
+        "ace",
+        "snake",
+        "santa",
+        "clover",
+        "junpei",
+        "june",
+        "seven",
+        "lotus",
+        "nine",
+    ]
+
+
 def test_get_request_property_chunks_dynamic_endpoint():
     configured_airbyte_stream = _create_configured_airbyte_stream(
         ["alice", "clover", "dio", "k", "luna", "phi", "quark", "sigma", "tenmyouji"]

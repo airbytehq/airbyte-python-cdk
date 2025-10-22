@@ -58,6 +58,15 @@ class QueryProperties:
             )
         else:
             if configured_properties is not None:
-                yield from [[field for field in fields if field in configured_properties]]
+                all_fields = (
+                    [field for field in fields if field in configured_properties]
+                    if configured_properties is not None
+                    else list(fields)
+                )
             else:
-                yield list(fields)
+                all_fields = list(fields)
+
+            if self.always_include_properties:
+                all_fields = list(self.always_include_properties) + all_fields
+
+            yield all_fields
