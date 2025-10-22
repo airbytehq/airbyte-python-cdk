@@ -7,6 +7,7 @@ import dpath
 
 from airbyte_cdk.sources.declarative.interpolation import InterpolatedString
 from airbyte_cdk.sources.declarative.retrievers import Retriever
+from airbyte_cdk.sources.streams.core import StreamData
 from airbyte_cdk.sources.types import Config, StreamSlice
 
 
@@ -22,19 +23,22 @@ class PropertiesFromEndpoint:
     config: Config
     parameters: InitVar[Mapping[str, Any]]
 
+    _cached_properties: Optional[List[str]] = None
+
     def __post_init__(self, parameters: Mapping[str, Any]) -> None:
         self._property_field_path = [
             InterpolatedString(string=property_field, parameters=parameters)
             for property_field in self.property_field_path
         ]
 
-    def get_properties_from_endpoint(self, stream_slice: Optional[StreamSlice]) -> Iterable[str]:
-        response_properties = self.retriever.read_records(
-            records_schema={}, stream_slice=stream_slice
-        )
-        for property_obj in response_properties:
-            path = [
-                node.eval(self.config) if not isinstance(node, str) else node
-                for node in self._property_field_path
-            ]
-            yield dpath.get(property_obj, path, default=[])  # type: ignore # extracted will be a MutableMapping, given input data structure
+    def get_properties_from_endpoint(self, stream_slice: Optional[StreamSlice]) -> List[str]:
+        if self._cached_properties is None:
+            self._cached_properties = list(map(self._get_property, self.retriever.read_records(records_schema={}, stream_slice=stream_slice)))  # type: ignore # extracted will be a MutableMapping, given input data structure
+        return self._cached_properties
+
+    def _get_property(self, property_obj: Mapping[str, Any]) -> str:
+        path = [
+            node.eval(self.config) if not isinstance(node, str) else node
+            for node in self._property_field_path
+        ]
+        return str(dpath.get(property_obj, path, default=[]))  # type: ignore # extracted will be a MutableMapping, given input data structure
