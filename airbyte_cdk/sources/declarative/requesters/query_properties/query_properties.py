@@ -34,7 +34,7 @@ class QueryProperties:
         :param stream_slice: The StreamSlice of the current partition being processed during the sync. This is included
         because subcomponents of QueryProperties can make use of interpolation of the top-level StreamSlice object
         """
-        fields: Union[Iterable[str], List[str]]
+        fields: List[str]
         if isinstance(self.property_list, PropertiesFromEndpoint):
             fields = self.property_list.get_properties_from_endpoint(stream_slice=stream_slice)
         else:

@@ -40,7 +40,7 @@ class PropertyChunking:
         )
 
     def get_request_property_chunks(
-        self, property_fields: Iterable[str], always_include_properties: Optional[List[str]]
+        self, property_fields: List[str], always_include_properties: Optional[List[str]]
     ) -> Iterable[List[str]]:
         if not self.property_limit:
             single_property_chunk = list(property_fields)

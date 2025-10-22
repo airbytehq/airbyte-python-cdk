@@ -72,7 +72,6 @@ def test_get_request_property_chunks(
     property_limit,
     expected_property_chunks,
 ):
-    property_fields = iter(property_fields)
     property_chunking = PropertyChunking(
         property_limit_type=property_limit_type,
         property_limit=property_limit,
@@ -104,3 +103,26 @@ def test_get_merge_key():
 
     merge_key = property_chunking.get_merge_key(record=record)
     assert merge_key == "0"
+
+
+def test_given_single_property_chunk_when_get_request_property_chunks_then_always_include_properties_are_not_added_to_input_list():
+    """
+    This test is used to validate that we don't manipulate the in-memory values from get_request_property_chunks
+    """
+    property_chunking = PropertyChunking(
+        property_limit_type=PropertyLimitType.property_count,
+        property_limit=None,
+        record_merge_strategy=GroupByKey(key="id", config=CONFIG, parameters={}),
+        config=CONFIG,
+        parameters={},
+    )
+
+    property_fields = ["rick", "chelsea", "victoria", "tim", "saxon", "lochlan", "piper"]
+    list(
+        property_chunking.get_request_property_chunks(
+            property_fields=property_fields,
+            always_include_properties=["id"],
+        )
+    )
+
+    assert property_fields == ["rick", "chelsea", "victoria", "tim", "saxon", "lochlan", "piper"]
