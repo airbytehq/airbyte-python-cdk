@@ -8,9 +8,9 @@ from dataclasses import dataclass
 from typing import Any, Dict, List, Mapping, Optional, Tuple
 
 import dpath
-from langchain.text_splitter import Language, RecursiveCharacterTextSplitter
-from langchain.utils import stringify_dict
+from langchain_text_splitters import Language, RecursiveCharacterTextSplitter
 from langchain_core.documents.base import Document
+from langchain_core.utils.strings import stringify_dict
 
 from airbyte_cdk.destinations.vector_db_based.config import (
     ProcessingConfigModel,
