@@ -7,7 +7,12 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import List, Optional, Union, cast
 
-from langchain_community.embeddings import CohereEmbeddings, FakeEmbeddings, LocalAIEmbeddings, OpenAIEmbeddings
+from langchain_community.embeddings import (
+    CohereEmbeddings,
+    FakeEmbeddings,
+    LocalAIEmbeddings,
+    OpenAIEmbeddings,
+)
 
 from airbyte_cdk.destinations.vector_db_based.config import (
     AzureOpenAIEmbeddingConfigModel,
@@ -137,7 +142,9 @@ class CohereEmbedder(Embedder):
         super().__init__()
         # Client is set internally
         self.embeddings = CohereEmbeddings(
-            cohere_api_key=config.cohere_key, model="embed-english-light-v2.0", user_agent="airbyte-cdk"
+            cohere_api_key=config.cohere_key,
+            model="embed-english-light-v2.0",
+            user_agent="airbyte-cdk",
         )  # type: ignore
 
     def check(self) -> Optional[str]:
