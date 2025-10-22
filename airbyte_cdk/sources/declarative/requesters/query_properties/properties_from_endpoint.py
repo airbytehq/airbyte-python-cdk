@@ -33,7 +33,12 @@ class PropertiesFromEndpoint:
 
     def get_properties_from_endpoint(self, stream_slice: Optional[StreamSlice]) -> List[str]:
         if self._cached_properties is None:
-            self._cached_properties = list(map(self._get_property, self.retriever.read_records(records_schema={}, stream_slice=stream_slice)))  # type: ignore # extracted will be a MutableMapping, given input data structure
+            self._cached_properties = list(
+                map(
+                    self._get_property,
+                    self.retriever.read_records(records_schema={}, stream_slice=stream_slice),
+                )
+            )  # type: ignore # extracted will be a MutableMapping, given input data structure
         return self._cached_properties
 
     def _get_property(self, property_obj: Mapping[str, Any]) -> str:

@@ -44,7 +44,9 @@ def test_get_properties_from_endpoint():
         parameters={},
     )
 
-    properties = properties_from_endpoint.get_properties_from_endpoint(stream_slice=StreamSlice(cursor_slice={}, partition={}))
+    properties = properties_from_endpoint.get_properties_from_endpoint(
+        stream_slice=StreamSlice(cursor_slice={}, partition={})
+    )
 
     assert len(properties) == 9
     assert properties == expected_properties
@@ -85,7 +87,9 @@ def test_get_properties_from_endpoint_with_multiple_field_paths():
         parameters={},
     )
 
-    properties = properties_from_endpoint.get_properties_from_endpoint(stream_slice=StreamSlice(cursor_slice={}, partition={}))
+    properties = properties_from_endpoint.get_properties_from_endpoint(
+        stream_slice=StreamSlice(cursor_slice={}, partition={})
+    )
 
     assert len(properties) == 9
     assert properties == expected_properties
@@ -127,7 +131,9 @@ def test_get_properties_from_endpoint_with_interpolation():
         parameters={},
     )
 
-    properties = properties_from_endpoint.get_properties_from_endpoint(stream_slice=StreamSlice(cursor_slice={}, partition={}))
+    properties = properties_from_endpoint.get_properties_from_endpoint(
+        stream_slice=StreamSlice(cursor_slice={}, partition={})
+    )
 
     assert len(properties) == 9
     assert properties == expected_properties
@@ -148,9 +154,15 @@ def test_given_multiple_calls_when_get_properties_from_endpoint_then_only_call_r
         parameters={},
     )
 
-    properties_from_endpoint.get_properties_from_endpoint(stream_slice=StreamSlice(cursor_slice={}, partition={}))
-    properties_from_endpoint.get_properties_from_endpoint(stream_slice=StreamSlice(cursor_slice={}, partition={}))
-    properties_from_endpoint.get_properties_from_endpoint(stream_slice=StreamSlice(cursor_slice={}, partition={}))
+    properties_from_endpoint.get_properties_from_endpoint(
+        stream_slice=StreamSlice(cursor_slice={}, partition={})
+    )
+    properties_from_endpoint.get_properties_from_endpoint(
+        stream_slice=StreamSlice(cursor_slice={}, partition={})
+    )
+    properties_from_endpoint.get_properties_from_endpoint(
+        stream_slice=StreamSlice(cursor_slice={}, partition={})
+    )
 
     assert retriever.read_records.call_count == 1
 
@@ -172,6 +184,8 @@ def test_given_value_is_int_when_get_properties_from_endpoint_then_return_str():
         parameters={},
     )
 
-    properties = properties_from_endpoint.get_properties_from_endpoint(stream_slice=StreamSlice(cursor_slice={}, partition={}))
+    properties = properties_from_endpoint.get_properties_from_endpoint(
+        stream_slice=StreamSlice(cursor_slice={}, partition={})
+    )
 
     assert properties == expected_properties
