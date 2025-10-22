@@ -35,10 +35,10 @@ class PropertiesFromEndpoint:
         if self._cached_properties is None:
             self._cached_properties = list(
                 map(
-                    self._get_property,
+                    self._get_property,  # type: ignore # SimpleRetriever and AsyncRetriever only returns Record. Should we change the return type of Retriever.read_records?
                     self.retriever.read_records(records_schema={}, stream_slice=stream_slice),
                 )
-            )  # type: ignore # extracted will be a MutableMapping, given input data structure
+            )
         return self._cached_properties
 
     def _get_property(self, property_obj: Mapping[str, Any]) -> str:
