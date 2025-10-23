@@ -523,7 +523,6 @@ class SimpleRetriever(Retriever):
         """
         _slice = stream_slice or StreamSlice(partition={}, cursor_slice={})  # None-check
 
-        most_recent_record_from_slice = None
         record_generator = partial(
             self._parse_records,
             stream_slice=stream_slice,
