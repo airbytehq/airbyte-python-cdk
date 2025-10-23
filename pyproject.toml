@@ -64,10 +64,13 @@ wcmatch = "10.0"
 avro = { version = ">=1.11.2,<1.13.0", optional = true }  # TODO: Move into dev dependencies if only used in tests
 cohere = { version = ">=4.21,<6.0.0", optional = true }
 fastavro = { version = ">=1.11.0,<2.0.0", optional = true }
-langchain = { version = "0.1.16", optional = true }
-langchain_core = { version = "0.1.42", optional = true }
+langchain = { version = "0.3.0", optional = true }
+langchain_core = { version = ">=0.3.0,<0.4.0", optional = true }
+langchain-cohere = { version = ">=0.3.0,<0.5.0", optional = true }
+langchain-community = { version = ">=0.3.0,<0.4.0", optional = true }
+langchain-openai = { version = ">=0.2.0,<0.3.0", optional = true }
 markdown = { version = "*", optional = true }  # TODO: Remove if unused
-openai = { version = "0.27.9", extras = ["embeddings"], optional = true }  # Used indirectly by langchain library
+openai = { version = ">=1.40.0,<2.0.0", optional = true }  # Used by langchain-openai library
 pdf2image = { version = "1.16.3", optional = true }
 "pdfminer.six" = { version = "20221105", optional = true }  # Used indirectly by unstructured library
 pyarrow = { version = "^19.0.0", optional = true }
@@ -121,7 +124,7 @@ dagger-io = "0.19.0"
 
 [tool.poetry.extras]
 file-based = ["avro", "fastavro", "pyarrow", "unstructured", "pdf2image", "pdfminer.six", "unstructured.pytesseract", "pytesseract", "markdown", "python-calamine", "python-snappy"]
-vector-db-based = ["langchain", "openai", "cohere", "tiktoken"]
+vector-db-based = ["langchain", "langchain_core", "langchain-cohere", "langchain-community", "langchain-openai", "openai", "cohere", "tiktoken"]
 sql = ["sqlalchemy"]
 dev = ["pytest"]
 manifest-server = ["fastapi", "uvicorn", "ddtrace"]

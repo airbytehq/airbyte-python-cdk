@@ -7,10 +7,9 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import List, Optional, Union, cast
 
-from langchain.embeddings.cohere import CohereEmbeddings
-from langchain.embeddings.fake import FakeEmbeddings
-from langchain.embeddings.localai import LocalAIEmbeddings
-from langchain.embeddings.openai import OpenAIEmbeddings
+from langchain_cohere import CohereEmbeddings
+from langchain_community.embeddings import FakeEmbeddings, LocalAIEmbeddings
+from langchain_openai import AzureOpenAIEmbeddings, OpenAIEmbeddings
 
 from airbyte_cdk.destinations.vector_db_based.config import (
     AzureOpenAIEmbeddingConfigModel,
@@ -118,14 +117,13 @@ class AzureOpenAIEmbedder(BaseOpenAIEmbedder):
     def __init__(self, config: AzureOpenAIEmbeddingConfigModel, chunk_size: int):
         # Azure OpenAI API has — as of 20230927 — a limit of 16 documents per request
         super().__init__(
-            OpenAIEmbeddings(  # type: ignore [call-arg]
-                openai_api_key=config.openai_key,
+            AzureOpenAIEmbeddings(  # type: ignore [call-arg]
+                api_key=config.openai_key,
                 chunk_size=16,
                 max_retries=15,
-                openai_api_type="azure",
-                openai_api_version="2023-05-15",
-                openai_api_base=config.api_base,
-                deployment=config.deployment,
+                api_version="2023-05-15",
+                azure_endpoint=config.api_base,
+                azure_deployment=config.deployment,
                 disallowed_special=(),
             ),
             chunk_size,
