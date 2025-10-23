@@ -17,8 +17,6 @@ CONFIG = {}
 
 
 def test_get_request_property_chunks_static_list_with_chunking():
-    stream_slice = StreamSlice(cursor_slice={}, partition={})
-
     query_properties = QueryProperties(
         property_list=[
             "ace",
@@ -43,7 +41,7 @@ def test_get_request_property_chunks_static_list_with_chunking():
         parameters={},
     )
 
-    property_chunks = list(query_properties.get_request_property_chunks(stream_slice=stream_slice))
+    property_chunks = list(query_properties.get_request_property_chunks())
 
     assert len(property_chunks) == 3
     assert property_chunks[0] == ["ace", "snake", "santa"]
@@ -52,8 +50,6 @@ def test_get_request_property_chunks_static_list_with_chunking():
 
 
 def test_get_request_property_chunks_static_list_with_always_include_properties():
-    stream_slice = StreamSlice(cursor_slice={}, partition={})
-
     query_properties = QueryProperties(
         property_list=[
             "ace",
@@ -78,7 +74,7 @@ def test_get_request_property_chunks_static_list_with_always_include_properties(
         parameters={},
     )
 
-    property_chunks = list(query_properties.get_request_property_chunks(stream_slice=stream_slice))
+    property_chunks = list(query_properties.get_request_property_chunks())
 
     assert len(property_chunks) == 3
     assert property_chunks[0] == ["zero", "ace", "snake", "santa"]
@@ -87,7 +83,6 @@ def test_get_request_property_chunks_static_list_with_always_include_properties(
 
 
 def test_get_request_property_chunks_dynamic_endpoint():
-    stream_slice = StreamSlice(cursor_slice={}, partition={})
 
     properties_from_endpoint_mock = Mock(spec=PropertiesFromEndpoint)
     properties_from_endpoint_mock.get_properties_from_endpoint.return_value = iter(
@@ -108,7 +103,7 @@ def test_get_request_property_chunks_dynamic_endpoint():
         parameters={},
     )
 
-    property_chunks = list(query_properties.get_request_property_chunks(stream_slice=stream_slice))
+    property_chunks = list(query_properties.get_request_property_chunks())
 
     assert len(property_chunks) == 2
     assert property_chunks[0] == ["alice", "clover", "dio", "k", "luna"]

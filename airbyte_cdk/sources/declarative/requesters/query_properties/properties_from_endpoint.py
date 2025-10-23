@@ -30,12 +30,12 @@ class PropertiesFromEndpoint:
             for property_field in self.property_field_path
         ]
 
-    def get_properties_from_endpoint(self, stream_slice: Optional[StreamSlice]) -> List[str]:
+    def get_properties_from_endpoint(self) -> List[str]:
         if self._cached_properties is None:
             self._cached_properties = list(
                 map(
                     self._get_property,  # type: ignore # SimpleRetriever and AsyncRetriever only returns Record. Should we change the return type of Retriever.read_records?
-                    self.retriever.read_records(records_schema={}, stream_slice=stream_slice),
+                    self.retriever.read_records(records_schema={}, stream_slice=StreamSlice(partition={}, cursor_slice={})),
                 )
             )
         return self._cached_properties

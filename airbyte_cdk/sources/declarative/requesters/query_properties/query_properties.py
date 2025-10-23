@@ -25,9 +25,7 @@ class QueryProperties:
     config: Config
     parameters: InitVar[Mapping[str, Any]]
 
-    def get_request_property_chunks(
-        self, stream_slice: Optional[StreamSlice] = None
-    ) -> Iterable[List[str]]:
+    def get_request_property_chunks(self) -> Iterable[List[str]]:
         """
         Uses the defined property_list to fetch the total set of properties dynamically or from a static list
         and based on the resulting properties, performs property chunking if applicable.
@@ -36,7 +34,7 @@ class QueryProperties:
         """
         fields: List[str]
         if isinstance(self.property_list, PropertiesFromEndpoint):
-            fields = self.property_list.get_properties_from_endpoint(stream_slice=stream_slice)
+            fields = self.property_list.get_properties_from_endpoint()
         else:
             fields = self.property_list if self.property_list else []
 
