@@ -386,7 +386,7 @@ class SimpleRetriever(Retriever):
             try:
                 if self.additional_query_properties:
                     for properties in self.additional_query_properties.get_request_property_chunks(
-                        stream_slice=stream_slice
+                        stream_slice=stream_slice,
                     ):
                         stream_slice = StreamSlice(
                             partition=stream_slice.partition or {},

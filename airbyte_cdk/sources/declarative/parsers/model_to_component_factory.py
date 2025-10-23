@@ -26,6 +26,7 @@ from typing import (
     get_type_hints,
 )
 
+from airbyte_protocol_dataclasses.models import ConfiguredAirbyteStream
 from isodate import parse_duration
 from pydantic.v1 import BaseModel
 from requests import Response
@@ -42,6 +43,7 @@ from airbyte_cdk.models import (
     AirbyteStateMessage,
     AirbyteStateType,
     AirbyteStreamState,
+    ConfiguredAirbyteCatalog,
     FailureType,
     Level,
     StreamDescriptor,
@@ -315,6 +317,9 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
     JsonlDecoder as JsonlDecoderModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    JsonSchemaPropertySelector as JsonSchemaPropertySelectorModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     JwtAuthenticator as JwtAuthenticatorModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
@@ -501,6 +506,9 @@ from airbyte_cdk.sources.declarative.requesters.query_properties import (
 from airbyte_cdk.sources.declarative.requesters.query_properties.property_chunking import (
     PropertyLimitType,
 )
+from airbyte_cdk.sources.declarative.requesters.query_properties.property_selector import (
+    JsonSchemaPropertySelector,
+)
 from airbyte_cdk.sources.declarative.requesters.query_properties.strategies import (
     GroupByKey,
 )
@@ -668,6 +676,7 @@ class ModelToComponentFactory:
         message_repository: Optional[MessageRepository] = None,
         connector_state_manager: Optional[ConnectorStateManager] = None,
         max_concurrent_async_job_count: Optional[int] = None,
+        configured_catalog: Optional[ConfiguredAirbyteCatalog] = None,
     ):
         self._init_mappings()
         self._limit_pages_fetched_per_slice = limit_pages_fetched_per_slice
@@ -677,6 +686,9 @@ class ModelToComponentFactory:
         self._disable_cache = disable_cache
         self._message_repository = message_repository or InMemoryMessageRepository(
             self._evaluate_log_level(emit_connector_builder_messages)
+        )
+        self._stream_name_to_configured_stream = self._create_stream_name_to_configured_stream(
+            configured_catalog
         )
         self._connector_state_manager = connector_state_manager or ConnectorStateManager()
         self._api_budget: Optional[Union[APIBudget, HttpAPIBudget]] = None
@@ -734,6 +746,7 @@ class ModelToComponentFactory:
             InlineSchemaLoaderModel: self.create_inline_schema_loader,
             JsonDecoderModel: self.create_json_decoder,
             JsonlDecoderModel: self.create_jsonl_decoder,
+            JsonSchemaPropertySelectorModel: self.create_json_schema_property_selector,
             GzipDecoderModel: self.create_gzip_decoder,
             KeysToLowerModel: self.create_keys_to_lower_transformation,
             KeysToSnakeCaseModel: self.create_keys_to_snake_transformation,
@@ -795,6 +808,16 @@ class ModelToComponentFactory:
 
         # Needed for the case where we need to perform a second parse on the fields of a custom component
         self.TYPE_NAME_TO_MODEL = {cls.__name__: cls for cls in self.PYDANTIC_MODEL_TO_CONSTRUCTOR}
+
+    @staticmethod
+    def _create_stream_name_to_configured_stream(
+        configured_catalog: Optional[ConfiguredAirbyteCatalog],
+    ) -> Mapping[str, ConfiguredAirbyteStream]:
+        return (
+            {stream.stream.name: stream for stream in configured_catalog.streams}
+            if configured_catalog
+            else {}
+        )
 
     def create_component(
         self,
@@ -2987,7 +3010,7 @@ class ModelToComponentFactory:
         )
 
     def create_query_properties(
-        self, model: QueryPropertiesModel, config: Config, **kwargs: Any
+        self, model: QueryPropertiesModel, config: Config, *, stream_name: str, **kwargs: Any
     ) -> QueryProperties:
         if isinstance(model.property_list, list):
             property_list = model.property_list
@@ -3004,10 +3027,43 @@ class ModelToComponentFactory:
             else None
         )
 
+        property_selector = (
+            self._create_component_from_model(
+                model=model.property_selector, config=config, stream_name=stream_name, **kwargs
+            )
+            if model.property_selector
+            else None
+        )
+
         return QueryProperties(
             property_list=property_list,
             always_include_properties=model.always_include_properties,
             property_chunking=property_chunking,
+            property_selector=property_selector,
+            config=config,
+            parameters=model.parameters or {},
+        )
+
+    def create_json_schema_property_selector(
+        self,
+        model: JsonSchemaPropertySelectorModel,
+        config: Config,
+        *,
+        stream_name: str,
+        **kwargs: Any,
+    ) -> JsonSchemaPropertySelector:
+        configured_stream = self._stream_name_to_configured_stream.get(stream_name)
+
+        transformations = []
+        if model.transformations:
+            for transformation_model in model.transformations:
+                transformations.append(
+                    self._create_component_from_model(model=transformation_model, config=config)
+                )
+
+        return JsonSchemaPropertySelector(
+            configured_stream=configured_stream,
+            properties_transformations=transformations,
             config=config,
             parameters=model.parameters or {},
         )
@@ -3235,7 +3291,7 @@ class ModelToComponentFactory:
 
             if len(query_properties_definitions) == 1:
                 query_properties = self._create_component_from_model(
-                    model=query_properties_definitions[0], config=config
+                    model=query_properties_definitions[0], stream_name=name, config=config
                 )
 
             # Removes QueryProperties components from the interpolated mappings because it has been designed
@@ -3261,11 +3317,13 @@ class ModelToComponentFactory:
 
             query_properties = self.create_query_properties(
                 model=query_properties_definition,
+                stream_name=name,
                 config=config,
             )
         elif hasattr(model.requester, "query_properties") and model.requester.query_properties:
             query_properties = self.create_query_properties(
                 model=model.requester.query_properties,
+                stream_name=name,
                 config=config,
             )
 
