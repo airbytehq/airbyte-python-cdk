@@ -10,6 +10,7 @@ from typing import List, Optional, Union, cast
 from langchain_cohere import CohereEmbeddings
 from langchain_community.embeddings import FakeEmbeddings, LocalAIEmbeddings
 from langchain_openai import AzureOpenAIEmbeddings, OpenAIEmbeddings
+from pydantic import SecretStr
 
 from airbyte_cdk.destinations.vector_db_based.config import (
     AzureOpenAIEmbeddingConfigModel,
@@ -118,7 +119,7 @@ class AzureOpenAIEmbedder(BaseOpenAIEmbedder):
         # Azure OpenAI API has — as of 20230927 — a limit of 16 documents per request
         super().__init__(
             AzureOpenAIEmbeddings(  # type: ignore [call-arg]
-                api_key=config.openai_key,
+                api_key=SecretStr(config.openai_key),
                 chunk_size=16,
                 max_retries=15,
                 api_version="2023-05-15",
@@ -138,7 +139,7 @@ class CohereEmbedder(Embedder):
         super().__init__()
         # Client is set internally
         self.embeddings = CohereEmbeddings(
-            cohere_api_key=config.cohere_key, model="embed-english-light-v2.0"
+            cohere_api_key=SecretStr(config.cohere_key), model="embed-english-light-v2.0"
         )  # type: ignore
 
     def check(self) -> Optional[str]:
