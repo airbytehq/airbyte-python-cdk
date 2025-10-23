@@ -83,7 +83,6 @@ def test_get_request_property_chunks_static_list_with_always_include_properties(
 
 
 def test_get_request_property_chunks_dynamic_endpoint():
-
     properties_from_endpoint_mock = Mock(spec=PropertiesFromEndpoint)
     properties_from_endpoint_mock.get_properties_from_endpoint.return_value = iter(
         ["alice", "clover", "dio", "k", "luna", "phi", "quark", "sigma", "tenmyouji"]
