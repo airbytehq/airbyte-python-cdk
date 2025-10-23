@@ -3325,7 +3325,7 @@ definitions:
       - ["code", "type"]
   PropertiesFromEndpoint:
     title: Properties from Endpoint
-    description: Defines the behavior for fetching the list of properties from an API that will be loaded into the requests to extract records.
+    description: Defines the behavior for fetching the list of properties from an API that will be loaded into the requests to extract records. Note that stream_slices can't be interpolated from this retriever.
     type: object
     required:
       - type
