@@ -1,5 +1,5 @@
 # Copyright (c) 2025 Airbyte, Inc., all rights reserved.
-
+import copy
 from dataclasses import InitVar, dataclass, field
 from typing import Any, List, Mapping, Optional, Set
 
@@ -42,11 +42,13 @@ class JsonSchemaPropertySelector(PropertySelector):
         if self.configured_stream is None:
             return None
 
-        schema_properties = self.configured_stream.stream.json_schema.get("properties", {})
+        schema_properties = copy.deepcopy(
+            self.configured_stream.stream.json_schema.get("properties", {})
+        )
         if self.properties_transformations:
             for transformation in self.properties_transformations:
                 transformation.transform(
-                    schema_properties,  # type: ignore  # record has type Mapping[str, Any], but Dict[str, Any] expected
+                    record=schema_properties,
                     config=self.config,
                 )
         return set(schema_properties.keys())
