@@ -5780,6 +5780,19 @@ files = [
 ]
 
 [[package]]
+name = "types-pytz"
+version = "2025.2.0.20250809"
+description = "Typing stubs for pytz"
+optional = false
+python-versions = ">=3.9"
+groups = ["dev"]
+markers = "python_version <= \"3.11\" or python_version >= \"3.12\""
+files = [
+    {file = "types_pytz-2025.2.0.20250809-py3-none-any.whl", hash = "sha256:4f55ed1b43e925cf851a756fe1707e0f5deeb1976e15bf844bcaa025e8fbd0db"},
+    {file = "types_pytz-2025.2.0.20250809.tar.gz", hash = "sha256:222e32e6a29bb28871f8834e8785e3801f2dc4441c715cd2082b271eecbe21e5"},
+]
+
+[[package]]
 name = "types-pyyaml"
 version = "6.0.12.20241230"
 description = "Typing stubs for PyYAML"
@@ -6454,4 +6467,4 @@ vector-db-based = ["cohere", "langchain", "langchain-cohere", "langchain-communi
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.10,<3.14"
-content-hash = "a5ad44094058e94e11a1a9e4e82734ea35d209f7b70783114c149054bac03a41"
+content-hash = "8c9afb3819d4376e5e4c736edf4ba166485c1123438b16716feb979fea3e5784"
