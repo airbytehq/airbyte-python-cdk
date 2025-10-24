@@ -385,9 +385,9 @@ class SimpleRetriever(Retriever):
             response = None
             try:
                 if self.additional_query_properties:
-                    for properties in self.additional_query_properties.get_request_property_chunks(
-                        stream_slice=stream_slice,
-                    ):
+                    for (
+                        properties
+                    ) in self.additional_query_properties.get_request_property_chunks():
                         stream_slice = StreamSlice(
                             partition=stream_slice.partition or {},
                             cursor_slice=stream_slice.cursor_slice or {},
@@ -523,7 +523,6 @@ class SimpleRetriever(Retriever):
         """
         _slice = stream_slice or StreamSlice(partition={}, cursor_slice={})  # None-check
 
-        most_recent_record_from_slice = None
         record_generator = partial(
             self._parse_records,
             stream_slice=stream_slice,
