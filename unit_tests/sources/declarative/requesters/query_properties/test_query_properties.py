@@ -50,8 +50,6 @@ def test_get_request_property_chunks_static_list_with_chunking_property_selectio
         ["santa", "clover", "junpei", "june", "remove_me"]
     )
 
-    stream_slice = StreamSlice(cursor_slice={}, partition={})
-
     query_properties = QueryProperties(
         property_list=[
             "ace",
@@ -85,7 +83,7 @@ def test_get_request_property_chunks_static_list_with_chunking_property_selectio
         parameters={},
     )
 
-    property_chunks = list(query_properties.get_request_property_chunks(stream_slice=stream_slice))
+    property_chunks = list(query_properties.get_request_property_chunks())
 
     assert len(property_chunks) == 2
     assert property_chunks[0] == ["santa", "clover", "junpei"]
@@ -106,8 +104,6 @@ def test_get_request_property_chunks_static_list_with_always_include_properties(
             "nine",
         ]
     )
-
-    stream_slice = StreamSlice(cursor_slice={}, partition={})
 
     query_properties = QueryProperties(
         property_list=[
@@ -141,7 +137,7 @@ def test_get_request_property_chunks_static_list_with_always_include_properties(
         parameters={},
     )
 
-    property_chunks = list(query_properties.get_request_property_chunks(stream_slice=stream_slice))
+    property_chunks = list(query_properties.get_request_property_chunks())
 
     assert len(property_chunks) == 3
     assert property_chunks[0] == ["zero", "ace", "snake", "santa"]
@@ -153,8 +149,6 @@ def test_get_request_no_property_chunking_selected_properties_always_include_pro
     configured_airbyte_stream = _create_configured_airbyte_stream(
         ["santa", "clover", "junpei", "june", "remove_me"]
     )
-
-    stream_slice = StreamSlice(cursor_slice={}, partition={})
 
     query_properties = QueryProperties(
         property_list=[
@@ -182,7 +176,7 @@ def test_get_request_no_property_chunking_selected_properties_always_include_pro
         parameters={},
     )
 
-    property_chunks = list(query_properties.get_request_property_chunks(stream_slice=stream_slice))
+    property_chunks = list(query_properties.get_request_property_chunks())
 
     assert len(property_chunks) == 1
     assert property_chunks[0] == ["zero", "santa", "clover", "junpei", "june"]
@@ -203,8 +197,6 @@ def test_get_request_no_property_chunking_always_include_properties():
         ]
     )
 
-    stream_slice = StreamSlice(cursor_slice={}, partition={})
-
     query_properties = QueryProperties(
         property_list=[
             "ace",
@@ -231,7 +223,7 @@ def test_get_request_no_property_chunking_always_include_properties():
         parameters={},
     )
 
-    property_chunks = list(query_properties.get_request_property_chunks(stream_slice=stream_slice))
+    property_chunks = list(query_properties.get_request_property_chunks())
 
     assert len(property_chunks) == 1
     assert property_chunks[0] == [
@@ -252,9 +244,6 @@ def test_get_request_property_chunks_dynamic_endpoint():
     configured_airbyte_stream = _create_configured_airbyte_stream(
         ["alice", "clover", "dio", "k", "luna", "phi", "quark", "sigma", "tenmyouji"]
     )
-
-    stream_slice = StreamSlice(cursor_slice={}, partition={})
-
     properties_from_endpoint_mock = Mock(spec=PropertiesFromEndpoint)
     properties_from_endpoint_mock.get_properties_from_endpoint.return_value = iter(
         ["alice", "clover", "dio", "k", "luna", "phi", "quark", "sigma", "tenmyouji"]
@@ -282,7 +271,7 @@ def test_get_request_property_chunks_dynamic_endpoint():
         parameters={},
     )
 
-    property_chunks = list(query_properties.get_request_property_chunks(stream_slice=stream_slice))
+    property_chunks = list(query_properties.get_request_property_chunks())
 
     assert len(property_chunks) == 2
     assert property_chunks[0] == ["alice", "clover", "dio", "k", "luna"]
@@ -290,7 +279,6 @@ def test_get_request_property_chunks_dynamic_endpoint():
 
 
 def test_get_request_property_chunks_with_configured_catalog_static_list():
-    stream_slice = StreamSlice(cursor_slice={}, partition={})
     # Simulate configured_airbyte_stream whose json_schema only enables 'luna', 'phi', 'sigma'
     configured_airbyte_stream = _create_configured_airbyte_stream(
         ["santa", "clover", "junpei", "june"]
@@ -328,7 +316,7 @@ def test_get_request_property_chunks_with_configured_catalog_static_list():
         parameters={},
     )
 
-    property_chunks = list(query_properties.get_request_property_chunks(stream_slice=stream_slice))
+    property_chunks = list(query_properties.get_request_property_chunks())
 
     assert len(property_chunks) == 2
     assert property_chunks[0] == ["santa", "clover", "junpei"]
@@ -339,8 +327,6 @@ def test_get_request_property_chunks_with_configured_catalog_dynamic_endpoint():
     configured_airbyte_stream = _create_configured_airbyte_stream(
         ["luna", "phi", "sigma", "remove_me"]
     )
-
-    stream_slice = StreamSlice(cursor_slice={}, partition={})
 
     properties_from_endpoint_mock = Mock(spec=PropertiesFromEndpoint)
     properties_from_endpoint_mock.get_properties_from_endpoint.return_value = iter(
@@ -369,15 +355,13 @@ def test_get_request_property_chunks_with_configured_catalog_dynamic_endpoint():
         parameters={},
     )
 
-    property_chunks = list(query_properties.get_request_property_chunks(stream_slice=stream_slice))
+    property_chunks = list(query_properties.get_request_property_chunks())
 
     assert len(property_chunks) == 1
     assert property_chunks[0] == ["luna", "phi", "sigma"]
 
 
 def test_get_request_property_no_property_selection():
-    stream_slice = StreamSlice(cursor_slice={}, partition={})
-
     query_properties = QueryProperties(
         property_list=[
             "ace",
@@ -403,7 +387,7 @@ def test_get_request_property_no_property_selection():
         parameters={},
     )
 
-    property_chunks = list(query_properties.get_request_property_chunks(stream_slice=stream_slice))
+    property_chunks = list(query_properties.get_request_property_chunks())
 
     assert len(property_chunks) == 3
     assert property_chunks[0] == ["ace", "snake", "santa"]

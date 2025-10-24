@@ -41,7 +41,7 @@ class PropertyChunking:
 
     def get_request_property_chunks(
         self,
-        property_fields: Iterable[str],
+        property_fields: List[str],
         always_include_properties: Optional[List[str]],
         configured_properties: Optional[Set[str]],
     ) -> Iterable[List[str]]:
