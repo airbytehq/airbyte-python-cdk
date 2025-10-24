@@ -551,8 +551,12 @@ from airbyte_cdk.sources.declarative.schema import (
     DynamicSchemaLoader,
     InlineSchemaLoader,
     JsonFileSchemaLoader,
+    SchemaLoader,
     SchemaTypeIdentifier,
     TypesMap,
+)
+from airbyte_cdk.sources.declarative.schema.caching_schema_loader_decorator import (
+    CachingSchemaLoaderDecorator,
 )
 from airbyte_cdk.sources.declarative.schema.composite_schema_loader import CompositeSchemaLoader
 from airbyte_cdk.sources.declarative.spec import ConfigMigration, Spec
@@ -2095,13 +2099,7 @@ class ModelToComponentFactory:
         if isinstance(retriever, AsyncRetriever):
             stream_slicer = retriever.stream_slicer
 
-        schema_loader: Union[
-            CompositeSchemaLoader,
-            DefaultSchemaLoader,
-            DynamicSchemaLoader,
-            InlineSchemaLoader,
-            JsonFileSchemaLoader,
-        ]
+        schema_loader: SchemaLoader
         if model.schema_loader and isinstance(model.schema_loader, list):
             nested_schema_loaders = [
                 self._create_component_from_model(model=nested_schema_loader, config=config)
@@ -2120,6 +2118,7 @@ class ModelToComponentFactory:
             if "name" not in options:
                 options["name"] = model.name
             schema_loader = DefaultSchemaLoader(config=config, parameters=options)
+        schema_loader = CachingSchemaLoaderDecorator(schema_loader)
 
         stream_name = model.name or ""
         return DefaultStream(

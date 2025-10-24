@@ -157,13 +157,12 @@ from airbyte_cdk.sources.declarative.requesters.request_path import RequestPath
 from airbyte_cdk.sources.declarative.requesters.requester import HttpMethod
 from airbyte_cdk.sources.declarative.retrievers import AsyncRetriever, SimpleRetriever
 from airbyte_cdk.sources.declarative.schema import InlineSchemaLoader, JsonFileSchemaLoader
+from airbyte_cdk.sources.declarative.schema.caching_schema_loader_decorator import (
+    CachingSchemaLoaderDecorator,
+)
 from airbyte_cdk.sources.declarative.schema.composite_schema_loader import CompositeSchemaLoader
 from airbyte_cdk.sources.declarative.schema.schema_loader import SchemaLoader
 from airbyte_cdk.sources.declarative.spec import Spec
-from airbyte_cdk.sources.declarative.stream_slicers import StreamSlicerTestReadDecorator
-from airbyte_cdk.sources.declarative.stream_slicers.declarative_partition_generator import (
-    SchemaLoaderCachingDecorator,
-)
 from airbyte_cdk.sources.declarative.transformations import AddFields, RemoveFields
 from airbyte_cdk.sources.declarative.transformations.add_fields import AddedFieldDefinition
 from airbyte_cdk.sources.declarative.transformations.keys_replace_transformation import (
@@ -5107,7 +5106,7 @@ def test_create_stream_with_multiple_schema_loaders():
 def get_schema_loader(stream: DefaultStream):
     assert isinstance(
         stream._stream_partition_generator._partition_factory._schema_loader,
-        SchemaLoaderCachingDecorator,
+        CachingSchemaLoaderDecorator,
     )
     return stream._stream_partition_generator._partition_factory._schema_loader._decorated
 
