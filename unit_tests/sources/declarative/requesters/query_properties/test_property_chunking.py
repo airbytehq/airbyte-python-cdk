@@ -1,4 +1,5 @@
 # Copyright (c) 2025 Airbyte, Inc., all rights reserved.
+from typing import Set
 
 import pytest
 
@@ -72,6 +73,8 @@ def test_get_request_property_chunks(
     property_limit,
     expected_property_chunks,
 ):
+    configured_properties = set(property_fields)
+    property_fields = property_fields
     property_chunking = PropertyChunking(
         property_limit_type=property_limit_type,
         property_limit=property_limit,
@@ -82,13 +85,63 @@ def test_get_request_property_chunks(
 
     property_chunks = list(
         property_chunking.get_request_property_chunks(
-            property_fields=property_fields, always_include_properties=always_include_properties
+            property_fields=property_fields,
+            always_include_properties=always_include_properties,
+            configured_properties=configured_properties,
         )
     )
 
     assert len(property_chunks) == len(expected_property_chunks)
     for i, expected_property_chunk in enumerate(expected_property_chunks):
         assert property_chunks[i] == expected_property_chunk
+
+
+def test_get_request_property_chunks_empty_configured_properties():
+    expected_property_chunks = [["white", "lotus"]]
+
+    always_include_properties = ["white", "lotus"]
+    property_fields = ["maui", "taormina", "koh_samui", "saint_jean_cap_ferrat"]
+    configured_properties: Set[str] = set()
+    property_chunking = PropertyChunking(
+        property_limit_type=PropertyLimitType.property_count,
+        property_limit=3,
+        record_merge_strategy=GroupByKey(key="id", config=CONFIG, parameters={}),
+        config=CONFIG,
+        parameters={},
+    )
+    property_chunks = list(
+        property_chunking.get_request_property_chunks(
+            property_fields=property_fields,
+            always_include_properties=always_include_properties,
+            configured_properties=configured_properties,
+        )
+    )
+    assert property_chunks == expected_property_chunks
+
+
+def test_get_request_property_chunks_none_configured_properties():
+    expected_property_chunks = [
+        ["white", "lotus", "maui", "taormina"],
+        ["white", "lotus", "koh_samui", "saint_jean_cap_ferrat"],
+    ]
+
+    always_include_properties = ["white", "lotus"]
+    property_fields = ["maui", "taormina", "koh_samui", "saint_jean_cap_ferrat"]
+    property_chunking = PropertyChunking(
+        property_limit_type=PropertyLimitType.property_count,
+        property_limit=2,
+        record_merge_strategy=GroupByKey(key="id", config=CONFIG, parameters={}),
+        config=CONFIG,
+        parameters={},
+    )
+    property_chunks = list(
+        property_chunking.get_request_property_chunks(
+            property_fields=property_fields,
+            always_include_properties=always_include_properties,
+            configured_properties=None,
+        )
+    )
+    assert property_chunks == expected_property_chunks
 
 
 def test_get_merge_key():
@@ -122,6 +175,7 @@ def test_given_single_property_chunk_when_get_request_property_chunks_then_alway
         property_chunking.get_request_property_chunks(
             property_fields=property_fields,
             always_include_properties=["id"],
+            configured_properties=None
         )
     )
 

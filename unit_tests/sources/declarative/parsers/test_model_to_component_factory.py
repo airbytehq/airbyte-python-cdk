@@ -12,6 +12,13 @@ from typing import Any, Iterable, Mapping, Optional, Union
 import freezegun
 import pytest
 import requests
+from airbyte_protocol_dataclasses.models.airbyte_protocol import (
+    AirbyteStream,
+    ConfiguredAirbyteCatalog,
+    ConfiguredAirbyteStream,
+    DestinationSyncMode,
+    SyncMode,
+)
 from freezegun.api import FakeDatetime
 from pydantic.v1 import ValidationError
 
@@ -133,6 +140,9 @@ from airbyte_cdk.sources.declarative.requesters.query_properties import (
 from airbyte_cdk.sources.declarative.requesters.query_properties.property_chunking import (
     PropertyLimitType,
 )
+from airbyte_cdk.sources.declarative.requesters.query_properties.property_selector import (
+    JsonSchemaPropertySelector,
+)
 from airbyte_cdk.sources.declarative.requesters.query_properties.strategies import GroupByKey
 from airbyte_cdk.sources.declarative.requesters.request_option import (
     RequestOption,
@@ -156,6 +166,9 @@ from airbyte_cdk.sources.declarative.stream_slicers.declarative_partition_genera
 )
 from airbyte_cdk.sources.declarative.transformations import AddFields, RemoveFields
 from airbyte_cdk.sources.declarative.transformations.add_fields import AddedFieldDefinition
+from airbyte_cdk.sources.declarative.transformations.keys_replace_transformation import (
+    KeysReplaceTransformation,
+)
 from airbyte_cdk.sources.declarative.yaml_declarative_source import YamlDeclarativeSource
 from airbyte_cdk.sources.message.repository import StateFilteringMessageRepository
 from airbyte_cdk.sources.streams.call_rate import MovingWindowCallRatePolicy
@@ -228,6 +241,28 @@ def test_create_component_type_mismatch():
 
     with pytest.raises(ValueError):
         factory.create_component(CheckStreamModel, manifest["check"], {})
+
+
+def test_create_component_with_configured_catalog():
+    configured_catalog = ConfiguredAirbyteCatalog(
+        streams=[
+            ConfiguredAirbyteStream(
+                stream=AirbyteStream(
+                    name="test",
+                    json_schema={"type": "object", "properties": {"id": {"type": "string"}}},
+                    supported_sync_modes=[SyncMode.full_refresh],
+                ),
+                sync_mode=SyncMode.full_refresh,
+                destination_sync_mode=DestinationSyncMode.overwrite,
+            )
+        ]
+    )
+
+    factory_with_catalog = ModelToComponentFactory(configured_catalog=configured_catalog)
+
+    assert factory_with_catalog._stream_name_to_configured_stream == {
+        "test": configured_catalog.streams[0]
+    }
 
 
 def test_full_config_stream():
@@ -1217,7 +1252,7 @@ a_stream:
       http_method: "GET"
       request_parameters:
         not_query: 1
-        query: 
+        query:
           type: QueryProperties
           property_list:
             - id
@@ -4481,6 +4516,12 @@ def test_simple_retriever_with_query_properties():
             record_merge_strategy:
               type: GroupByKeyMergeStrategy
               key: ["id"]
+          property_selector:
+            type: JsonSchemaPropertySelector
+            transformations:
+              - type: KeysReplace
+                old: "properties_"
+                new: ""
     analytics_stream:
       type: DeclarativeStream
       incremental_sync:
@@ -4521,6 +4562,13 @@ def test_simple_retriever_with_query_properties():
         "created_at",
     ]
     assert query_properties.always_include_properties == ["id"]
+
+    property_selector = query_properties.property_selector
+    assert isinstance(property_selector, JsonSchemaPropertySelector)
+    assert len(property_selector.properties_transformations) == 1
+    assert property_selector.properties_transformations == [
+        KeysReplaceTransformation(old="properties_", new="", parameters={})
+    ]
 
     property_chunking = retriever.additional_query_properties.property_chunking
     assert isinstance(property_chunking, PropertyChunking)
