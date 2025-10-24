@@ -34,10 +34,6 @@ class QueryProperties:
         """
         Uses the defined property_list to fetch the total set of properties dynamically or from a static list
         and based on the resulting properties, performs property chunking if applicable.
-        :param stream_slice: The StreamSlice of the current partition being processed during the sync. This is included
-        because subcomponents of QueryProperties can make use of interpolation of the top-level StreamSlice object
-        :param configured_stream: The customer configured stream being synced which is needed to identify which
-        record fields to query for and emit.
         """
         fields: List[str]
         configured_properties = self.property_selector.select() if self.property_selector else None
