@@ -175,7 +175,7 @@ def test_given_single_property_chunk_when_get_request_property_chunks_then_alway
         property_chunking.get_request_property_chunks(
             property_fields=property_fields,
             always_include_properties=["id"],
-            configured_properties=None
+            configured_properties=None,
         )
     )
 
