@@ -2,7 +2,9 @@ from unittest import TestCase
 from unittest.mock import Mock
 
 from airbyte_cdk.sources.declarative.schema import SchemaLoader
-from airbyte_cdk.sources.declarative.schema.caching_schema_loader_decorator import CachingSchemaLoaderDecorator
+from airbyte_cdk.sources.declarative.schema.caching_schema_loader_decorator import (
+    CachingSchemaLoaderDecorator,
+)
 
 
 class CachingSchemaLoaderDecoratorTest(TestCase):

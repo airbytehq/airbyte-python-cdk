@@ -551,10 +551,13 @@ from airbyte_cdk.sources.declarative.schema import (
     DynamicSchemaLoader,
     InlineSchemaLoader,
     JsonFileSchemaLoader,
+    SchemaLoader,
     SchemaTypeIdentifier,
-    TypesMap, SchemaLoader,
+    TypesMap,
 )
-from airbyte_cdk.sources.declarative.schema.caching_schema_loader_decorator import CachingSchemaLoaderDecorator
+from airbyte_cdk.sources.declarative.schema.caching_schema_loader_decorator import (
+    CachingSchemaLoaderDecorator,
+)
 from airbyte_cdk.sources.declarative.schema.composite_schema_loader import CompositeSchemaLoader
 from airbyte_cdk.sources.declarative.spec import ConfigMigration, Spec
 from airbyte_cdk.sources.declarative.stream_slicers import (
