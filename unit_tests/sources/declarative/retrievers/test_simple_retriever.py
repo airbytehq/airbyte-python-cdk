@@ -1096,6 +1096,7 @@ def test_simple_retriever_with_additional_query_properties():
             config=config,
             parameters={},
         ),
+        property_selector=None,
         config=config,
         parameters={},
     )
@@ -1167,6 +1168,7 @@ def test_simple_retriever_with_additional_query_properties_but_without_property_
         property_list=["first_name", "last_name", "nonary", "bracelet"],
         always_include_properties=[],
         property_chunking=None,
+        property_selector=None,
         config=config,
         parameters={},
     )
@@ -1349,6 +1351,7 @@ def test_simple_retriever_with_additional_query_properties_single_chunk():
             config=config,
             parameters={},
         ),
+        property_selector=None,
         config=config,
         parameters={},
     )
@@ -1508,6 +1511,7 @@ def test_simple_retriever_still_emit_records_if_no_merge_key():
             config=config,
             parameters={},
         ),
+        property_selector=None,
         config=config,
         parameters={},
     )

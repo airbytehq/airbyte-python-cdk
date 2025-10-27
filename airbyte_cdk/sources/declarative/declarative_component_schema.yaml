@@ -2520,6 +2520,34 @@ definitions:
       type:
         type: string
         enum: [JsonlDecoder]
+  JsonSchemaPropertySelector:
+    title: Json Schema Property Selector
+    description: When configured, the JSON schema supplied in the catalog containing which columns are selected for the current stream will be used to reduce which query properties will be included in the outbound API request. This can improve the performance of API requests, especially for those requiring multiple requests to get a complete record.
+    type: object
+    required:
+      - type
+    properties:
+      type:
+        type: string
+        enum: [JsonSchemaPropertySelector]
+      transformations:
+        title: Transformations
+        description: A list of transformations to be applied on the customer configured schema that will be used to filter out unselected fields when specifying query properties for API requests.
+        linkable: true
+        type: array
+        items:
+          anyOf:
+            - "$ref": "#/definitions/AddFields"
+            - "$ref": "#/definitions/RemoveFields"
+            - "$ref": "#/definitions/KeysToLower"
+            - "$ref": "#/definitions/KeysToSnakeCase"
+            - "$ref": "#/definitions/FlattenFields"
+            - "$ref": "#/definitions/DpathFlattenFields"
+            - "$ref": "#/definitions/KeysReplace"
+            - "$ref": "#/definitions/CustomTransformation"
+      $parameters:
+        type: object
+        additionalProperties: true
   KeysToLower:
     title: Keys to Lower Case
     description: A transformation that renames all keys to lower case.
@@ -3325,7 +3353,7 @@ definitions:
       - ["code", "type"]
   PropertiesFromEndpoint:
     title: Properties from Endpoint
-    description: Defines the behavior for fetching the list of properties from an API that will be loaded into the requests to extract records.
+    description: Defines the behavior for fetching the list of properties from an API that will be loaded into the requests to extract records. Note that stream_slices can't be interpolated from this retriever.
     type: object
     required:
       - type
@@ -3410,6 +3438,10 @@ definitions:
         title: Property Chunking
         description: Defines how query properties will be grouped into smaller sets for APIs with limitations on the number of properties fetched per API request.
         "$ref": "#/definitions/PropertyChunking"
+      property_selector:
+        title: Property Selector
+        description: Defines where to look for and which query properties that should be sent in outbound API requests. For example, you can specify that only the selected columns of a stream should be in the request.
+        "$ref": "#/definitions/JsonSchemaPropertySelector"
       $parameters:
         type: object
         additionalProperties: true
@@ -3746,7 +3778,7 @@ definitions:
     properties:
       type:
         type: string
-        enum: [ PaginationReset ]
+        enum: [PaginationReset]
       action:
         type: string
         enum:
@@ -3763,7 +3795,7 @@ definitions:
     properties:
       type:
         type: string
-        enum: [ PaginationResetLimits ]
+        enum: [PaginationResetLimits]
       number_of_records:
         type: integer
   GzipDecoder:
