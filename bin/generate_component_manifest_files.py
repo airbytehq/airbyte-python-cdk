@@ -236,6 +236,37 @@ def consolidate_yaml_schemas_to_json(yaml_dir_path: Path, output_json_path: str)
             schema_content = yaml.safe_load(f)
             schemas[schema_name] = schema_content
 
+    all_schema_names = set(schemas.keys())
+    
+    for schema_content in schemas.values():
+        if isinstance(schema_content, dict) and "definitions" in schema_content:
+            all_schema_names.update(schema_content["definitions"].keys())
+
+    def fix_refs(obj, in_definition=False):
+        """Recursively fix $ref and type references in schema objects."""
+        if isinstance(obj, dict):
+            new_obj = {}
+            for key, value in obj.items():
+                if key == "$id" and in_definition:
+                    continue
+                elif key == "$ref" and isinstance(value, str):
+                    if value.endswith(".yaml"):
+                        schema_name = value.replace(".yaml", "")
+                        new_obj[key] = f"#/definitions/{schema_name}"
+                    else:
+                        new_obj[key] = value
+                elif key == "type" and isinstance(value, str) and value in all_schema_names:
+                    new_obj["$ref"] = f"#/definitions/{value}"
+                elif key == "type" and value == "const":
+                    pass
+                else:
+                    new_obj[key] = fix_refs(value, in_definition=in_definition)
+            return new_obj
+        elif isinstance(obj, list):
+            return [fix_refs(item, in_definition=in_definition) for item in obj]
+        else:
+            return obj
+
     # Find the main schema (ConnectorMetadataDefinitionV0)
     main_schema = schemas.get("ConnectorMetadataDefinitionV0")
 
@@ -249,10 +280,18 @@ def consolidate_yaml_schemas_to_json(yaml_dir_path: Path, output_json_path: str)
             "definitions": {},
         }
 
-        # Add all other schemas as definitions
+        # Add all schemas (including their internal definitions) as top-level definitions
         for schema_name, schema_content in schemas.items():
             if schema_name != "ConnectorMetadataDefinitionV0":
-                consolidated["definitions"][schema_name] = schema_content
+                if isinstance(schema_content, dict) and "definitions" in schema_content:
+                    for def_name, def_content in schema_content["definitions"].items():
+                        consolidated["definitions"][def_name] = fix_refs(def_content, in_definition=True)
+                    schema_without_defs = {k: v for k, v in schema_content.items() if k != "definitions"}
+                    consolidated["definitions"][schema_name] = fix_refs(schema_without_defs, in_definition=True)
+                else:
+                    consolidated["definitions"][schema_name] = fix_refs(schema_content, in_definition=True)
+
+        consolidated = fix_refs(consolidated, in_definition=False)
 
         Path(output_json_path).write_text(json.dumps(consolidated, indent=2))
         print(f"Generated consolidated JSON schema: {output_json_path}", file=sys.stderr)

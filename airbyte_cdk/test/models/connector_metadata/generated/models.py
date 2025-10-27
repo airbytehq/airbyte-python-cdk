@@ -42,6 +42,7 @@ class ActorDefinitionResourceRequirements(BaseModel):
     jobSpecific: Optional[List[JobTypeResourceLimit]] = None
 
 
+
 class Sl(Enum):
     integer_0 = 0
     integer_100 = 100
@@ -72,6 +73,7 @@ class AirbyteInternal(BaseModel):
     )
 
 
+
 class AllowedHosts(BaseModel):
     class Config:
         extra = Extra.allow
@@ -80,6 +82,7 @@ class AllowedHosts(BaseModel):
         None,
         description="An array of hosts that this connector can connect to.  AllowedHosts not being present for the source or destination means that access to all hosts is allowed.  An empty list here means that no network access is granted.",
     )
+
 
 
 class DeadlineAction(Enum):
@@ -114,7 +117,9 @@ class VersionBreakingChange(BaseModel):
         ...,
         description="The deadline by which to upgrade before the breaking change takes effect.",
     )
-    message: str = Field(..., description="Descriptive message detailing the breaking change.")
+    message: str = Field(
+        ..., description="Descriptive message detailing the breaking change."
+    )
     deadlineAction: Optional[DeadlineAction] = Field(
         None, description="Action to do when the deadline is reached."
     )
@@ -140,11 +145,13 @@ class ConnectorBreakingChanges(BaseModel):
     )
 
 
+
 class ConnectorBuildOptions(BaseModel):
     class Config:
         extra = Extra.forbid
 
     baseImage: Optional[str] = None
+
 
 
 class SupportedSerializationEnum(Enum):
@@ -172,6 +179,7 @@ class ConnectorIPCOptions(BaseModel):
         extra = Extra.forbid
 
     dataChannel: DataChannel
+
 
 
 class ConnectorType(Enum):
@@ -226,7 +234,9 @@ class Data(BaseModel):
     protocolVersion: Optional[str] = Field(
         None, description="the Airbyte Protocol version supported by the connector"
     )
-    erdUrl: Optional[str] = Field(None, description="The URL where you can visualize the ERD")
+    erdUrl: Optional[str] = Field(
+        None, description="The URL where you can visualize the ERD"
+    )
     connectorSubtype: ConnectorSubtype
     releaseStage: ReleaseStage
     supportLevel: Optional[SupportLevel] = None
@@ -257,6 +267,7 @@ class ConnectorMetadataDefinitionV0(BaseModel):
     data: Data
 
 
+
 class ConnectorMetrics(BaseModel):
     all: Optional[Any] = None
     cloud: Optional[Any] = None
@@ -284,8 +295,10 @@ class ConnectorMetric(BaseModel):
     connector_version: Optional[str] = None
 
 
+
 class ConnectorPackageInfo(BaseModel):
     cdk_version: Optional[str] = None
+
 
 
 class ConnectorRegistryDestinationDefinition(BaseModel):
@@ -338,10 +351,13 @@ class ConnectorRegistryDestinationDefinition(BaseModel):
     supportsDataActivation: Optional[bool] = False
     generated: Optional[GeneratedFields] = None
     packageInfo: Optional[ConnectorPackageInfo] = None
-    language: Optional[str] = Field(None, description="The language the connector is written in")
+    language: Optional[str] = Field(
+        None, description="The language the connector is written in"
+    )
 
 
 ConnectorRegistryDestinationDefinition.update_forward_refs()
+
 
 
 class ConnectorRegistryReleases(BaseModel):
@@ -361,11 +377,11 @@ class ConnectorReleaseCandidates(BaseModel):
     class Config:
         extra = Extra.forbid
 
-    __root__: Dict[constr(regex=r"^\d+\.\d+\.\d+(-[0-9A-Za-z-.]+)?$"), VersionReleaseCandidate] = (
-        Field(
-            ...,
-            description="Each entry denotes a release candidate version of a connector.",
-        )
+    __root__: Dict[
+        constr(regex=r"^\d+\.\d+\.\d+(-[0-9A-Za-z-.]+)?$"), VersionReleaseCandidate
+    ] = Field(
+        ...,
+        description="Each entry denotes a release candidate version of a connector.",
     )
 
 
@@ -373,17 +389,18 @@ class VersionReleaseCandidate(BaseModel):
     class Config:
         extra = Extra.forbid
 
-    __root__: Union[ConnectorRegistrySourceDefinition, ConnectorRegistryDestinationDefinition] = (
-        Field(
-            ...,
-            description="Contains information about a release candidate version of a connector.",
-        )
+    __root__: Union[
+        ConnectorRegistrySourceDefinition, ConnectorRegistryDestinationDefinition
+    ] = Field(
+        ...,
+        description="Contains information about a release candidate version of a connector.",
     )
 
 
 ConnectorRegistryReleases.update_forward_refs()
 ConnectorReleaseCandidates.update_forward_refs()
 VersionReleaseCandidate.update_forward_refs()
+
 
 
 class SourceType(Enum):
@@ -433,19 +450,25 @@ class ConnectorRegistrySourceDefinition(BaseModel):
         None,
         description="Number of seconds allowed between 2 airbyte protocol messages. The source will timeout if this delay is reach",
     )
-    erdUrl: Optional[str] = Field(None, description="The URL where you can visualize the ERD")
+    erdUrl: Optional[str] = Field(
+        None, description="The URL where you can visualize the ERD"
+    )
     releases: Optional[ConnectorRegistryReleases] = None
     ab_internal: Optional[AirbyteInternal] = None
     generated: Optional[GeneratedFields] = None
     packageInfo: Optional[ConnectorPackageInfo] = None
-    language: Optional[str] = Field(None, description="The language the connector is written in")
+    language: Optional[str] = Field(
+        None, description="The language the connector is written in"
+    )
     supportsFileTransfer: Optional[bool] = False
     supportsDataActivation: Optional[bool] = False
+
 
 
 class ConnectorRegistryV0(BaseModel):
     destinations: List[ConnectorRegistryDestinationDefinition]
     sources: List[ConnectorRegistrySourceDefinition]
+
 
 
 class ConnectorReleases(BaseModel):
@@ -458,6 +481,7 @@ class ConnectorReleases(BaseModel):
         None,
         description="URL to documentation on how to migrate from the previous version to the current version. Defaults to ${documentationUrl}-migrations",
     )
+
 
 
 class Suite(Enum):
@@ -481,11 +505,13 @@ class ConnectorTestSuiteOptions(BaseModel):
     )
 
 
+
 class GeneratedFields(BaseModel):
     git: Optional[GitInfo] = None
     source_file_info: Optional[SourceFileInfo] = None
     metrics: Optional[ConnectorMetrics] = None
     sbomUrl: Optional[str] = Field(None, description="URL to the SBOM file")
+
 
 
 class GitInfo(BaseModel):
@@ -510,6 +536,7 @@ class GitInfo(BaseModel):
     )
 
 
+
 class JobType(Enum):
     get_spec = "get_spec"
     check_connection = "check_connection"
@@ -518,6 +545,7 @@ class JobType(Enum):
     reset_connection = "reset_connection"
     connection_updater = "connection_updater"
     replicate = "replicate"
+
 
 
 class NormalizationDestinationDefinitionConfig(BaseModel):
@@ -536,6 +564,7 @@ class NormalizationDestinationDefinitionConfig(BaseModel):
         ...,
         description="a field indicating the type of integration dialect to use for normalization.",
     )
+
 
 
 class RegistryOverrides(BaseModel):
@@ -557,11 +586,13 @@ class RegistryOverrides(BaseModel):
     resourceRequirements: Optional[ActorDefinitionResourceRequirements] = None
 
 
+
 class ReleaseStage(Enum):
     alpha = "alpha"
     beta = "beta"
     generally_available = "generally_available"
     custom = "custom"
+
 
 
 class PyPi(BaseModel):
@@ -579,6 +610,7 @@ class RemoteRegistries(BaseModel):
     pypi: Optional[PyPi] = None
 
 
+
 class ResourceRequirements(BaseModel):
     class Config:
         extra = Extra.forbid
@@ -587,6 +619,7 @@ class ResourceRequirements(BaseModel):
     cpu_limit: Optional[str] = None
     memory_request: Optional[str] = None
     memory_limit: Optional[str] = None
+
 
 
 class RolloutConfiguration(BaseModel):
@@ -610,6 +643,7 @@ class RolloutConfiguration(BaseModel):
     )
 
 
+
 class Secret(BaseModel):
     class Config:
         extra = Extra.forbid
@@ -622,6 +656,7 @@ class Secret(BaseModel):
     secretStore: SecretStore
 
 
+
 class SecretStore(BaseModel):
     class Config:
         extra = Extra.forbid
@@ -630,7 +665,10 @@ class SecretStore(BaseModel):
         None,
         description="The alias of the secret store which can map to its actual secret address",
     )
-    type: Optional[Literal["GSM"]] = Field(None, description="The type of the secret store")
+    type: Optional[Literal["GSM"]] = Field(
+        None, description="The type of the secret store"
+    )
+
 
 
 class SourceFileInfo(BaseModel):
@@ -639,6 +677,7 @@ class SourceFileInfo(BaseModel):
     metadata_bucket_name: Optional[str] = None
     metadata_last_modified: Optional[str] = None
     registry_entry_generated_at: Optional[str] = None
+
 
 
 class SuggestedStreams(BaseModel):
@@ -651,10 +690,12 @@ class SuggestedStreams(BaseModel):
     )
 
 
+
 class SupportLevel(Enum):
     community = "community"
     certified = "certified"
     archived = "archived"
+
 
 
 class TestConnections(BaseModel):

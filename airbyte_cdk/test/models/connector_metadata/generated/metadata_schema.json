@@ -40,12 +40,12 @@
           "format": "uuid"
         },
         "connectorBuildOptions": {
-          "$ref": "ConnectorBuildOptions.yaml"
+          "$ref": "#/definitions/ConnectorBuildOptions"
         },
         "connectorTestSuitesOptions": {
           "type": "array",
           "items": {
-            "$ref": "ConnectorTestSuiteOptions.yaml"
+            "$ref": "#/definitions/ConnectorTestSuiteOptions"
           }
         },
         "connectorType": {
@@ -108,10 +108,10 @@
           ]
         },
         "releaseStage": {
-          "$ref": "ReleaseStage.yaml"
+          "$ref": "#/definitions/ReleaseStage"
         },
         "supportLevel": {
-          "$ref": "SupportLevel.yaml"
+          "$ref": "#/definitions/SupportLevel"
         },
         "tags": {
           "type": "array",
@@ -130,14 +130,14 @@
                 "oss": {
                   "anyOf": [
                     {
-                      "$ref": "RegistryOverrides.yaml"
+                      "$ref": "#/definitions/RegistryOverrides"
                     }
                   ]
                 },
                 "cloud": {
                   "anyOf": [
                     {
-                      "$ref": "RegistryOverrides.yaml"
+                      "$ref": "#/definitions/RegistryOverrides"
                     }
                   ]
                 }
@@ -146,32 +146,32 @@
           ]
         },
         "allowedHosts": {
-          "$ref": "AllowedHosts.yaml"
+          "$ref": "#/definitions/AllowedHosts"
         },
         "releases": {
-          "$ref": "ConnectorReleases.yaml"
+          "$ref": "#/definitions/ConnectorReleases"
         },
         "normalizationConfig": {
-          "$ref": "NormalizationDestinationDefinitionConfig.yaml"
+          "$ref": "#/definitions/NormalizationDestinationDefinitionConfig"
         },
         "suggestedStreams": {
-          "$ref": "SuggestedStreams.yaml"
+          "$ref": "#/definitions/SuggestedStreams"
         },
         "resourceRequirements": {
-          "$ref": "ActorDefinitionResourceRequirements.yaml"
+          "$ref": "#/definitions/ActorDefinitionResourceRequirements"
         },
         "ab_internal": {
-          "$ref": "AirbyteInternal.yaml"
+          "$ref": "#/definitions/AirbyteInternal"
         },
         "remoteRegistries": {
-          "$ref": "RemoteRegistries.yaml"
+          "$ref": "#/definitions/RemoteRegistries"
         },
         "supportsRefreshes": {
           "type": "boolean",
           "default": false
         },
         "generated": {
-          "$ref": "GeneratedFields.yaml"
+          "$ref": "#/definitions/GeneratedFields"
         },
         "supportsFileTransfer": {
           "type": "boolean",
@@ -182,7 +182,7 @@
           "default": false
         },
         "connectorIPCOptions": {
-          "$ref": "ConnectorIPCOptions.yaml"
+          "$ref": "#/definitions/ConnectorIPCOptions"
         }
       }
     }
@@ -190,7 +190,6 @@
   "definitions": {
     "TestConnections": {
       "$schema": "http://json-schema.org/draft-07/schema#",
-      "$id": "https://github.com/airbytehq/airbyte/airbyte-ci/connectors/metadata_service/lib/metadata_service/models/src/TestConnections.yaml",
       "title": "TestConnections",
       "description": "List of sandbox cloud connections that tests can be run against",
       "type": "object",
@@ -212,7 +211,6 @@
     },
     "SupportLevel": {
       "$schema": "http://json-schema.org/draft-07/schema#",
-      "$id": "https://github.com/airbytehq/airbyte/airbyte-ci/connectors_ci/metadata_service/lib/models/src/SupportLevel.yaml",
       "title": "SupportLevel",
       "description": "enum that describes a connector's release stage",
       "type": "string",
@@ -224,7 +222,6 @@
     },
     "SuggestedStreams": {
       "$schema": "http://json-schema.org/draft-07/schema#",
-      "$id": "https://github.com/airbytehq/airbyte/airbyte-ci/connectors/metadata_service/lib/metadata_service/models/src/SuggestedStreams.yaml",
       "title": "SuggestedStreams",
       "description": "A source's suggested streams.  These will be suggested by default for new connections using this source.  Otherwise, all streams will be selected.  This is useful for when your source has a lot of streams, but the average user will only want a subset of them synced.",
       "type": "object",
@@ -241,7 +238,6 @@
     },
     "SourceFileInfo": {
       "$schema": "http://json-schema.org/draft-07/schema#",
-      "$id": "https://github.com/airbytehq/airbyte/airbyte-ci/connectors_ci/metadata_service/lib/models/src/SourceFileInfo.yaml",
       "title": "SourceFileInfo",
       "description": "Information about the source file that generated the registry entry",
       "type": "object",
@@ -265,7 +261,6 @@
     },
     "SecretStore": {
       "$schema": "http://json-schema.org/draft-07/schema#",
-      "$id": "https://github.com/airbytehq/airbyte/airbyte-ci/connectors/metadata_service/lib/metadata_service/models/src/TestSecret.yaml",
       "title": "SecretStore",
       "description": "An object describing a secret store metadata",
       "type": "object",
@@ -290,7 +285,6 @@
     },
     "Secret": {
       "$schema": "http://json-schema.org/draft-07/schema#",
-      "$id": "https://github.com/airbytehq/airbyte/airbyte-ci/connectors/metadata_service/lib/metadata_service/models/src/TestSecret.yaml",
       "title": "Secret",
       "description": "An object describing a secret's metadata",
       "type": "object",
@@ -309,13 +303,12 @@
           "description": "The name of the file to which the secret value would be persisted"
         },
         "secretStore": {
-          "$ref": "SecretStore.yaml"
+          "$ref": "#/definitions/SecretStore"
         }
       }
     },
     "RolloutConfiguration": {
       "$schema": "http://json-schema.org/draft-07/schema#",
-      "$id": "https://github.com/airbytehq/airbyte/airbyte-ci/connectors/metadata_service/lib/metadata_service/models/src/RolloutConfiguration.yaml",
       "title": "RolloutConfiguration",
       "description": "configuration for the rollout of a connector",
       "type": "object",
@@ -350,7 +343,6 @@
     },
     "ResourceRequirements": {
       "$schema": "http://json-schema.org/draft-07/schema#",
-      "$id": "https://github.com/airbytehq/airbyte/airbyte-ci/connectors/metadata_service/lib/metadata_service/models/src/ResourceRequirements.yaml",
       "title": "ResourceRequirements",
       "description": "generic configuration for pod source requirements",
       "type": "object",
@@ -370,9 +362,27 @@
         }
       }
     },
+    "PyPi": {
+      "title": "PyPi",
+      "description": "describes the PyPi publishing options",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "enabled",
+        "packageName"
+      ],
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "packageName": {
+          "type": "string",
+          "description": "The name of the package on PyPi."
+        }
+      }
+    },
     "RemoteRegistries": {
       "$schema": "http://json-schema.org/draft-07/schema#",
-      "$id": "https://github.com/airbytehq/airbyte/airbyte-ci/connectors_ci/metadata_service/lib/models/src/RemoteRegistries.yml",
       "title": "RemoteRegistries",
       "description": "describes how the connector is published to remote registries",
       "type": "object",
@@ -381,32 +391,10 @@
         "pypi": {
           "$ref": "#/definitions/PyPi"
         }
-      },
-      "definitions": {
-        "PyPi": {
-          "title": "PyPi",
-          "description": "describes the PyPi publishing options",
-          "type": "object",
-          "additionalProperties": false,
-          "required": [
-            "enabled",
-            "packageName"
-          ],
-          "properties": {
-            "enabled": {
-              "type": "boolean"
-            },
-            "packageName": {
-              "type": "string",
-              "description": "The name of the package on PyPi."
-            }
-          }
-        }
       }
     },
     "ReleaseStage": {
       "$schema": "http://json-schema.org/draft-07/schema#",
-      "$id": "https://github.com/airbytehq/airbyte-platform/blob/main/airbyte-config/config-models/src/main/resources/types/ReleaseStage.yaml",
       "title": "ReleaseStage",
       "description": "enum that describes a connector's release stage",
       "type": "string",
@@ -419,7 +407,6 @@
     },
     "RegistryOverrides": {
       "$schema": "http://json-schema.org/draft-07/schema#",
-      "$id": "https://github.com/airbytehq/airbyte/airbyte-ci/connectors_ci/metadata_service/lib/models/src/RegistryOverrides.yml",
       "title": "RegistryOverrides",
       "description": "describes the overrides per registry of a connector",
       "type": "object",
@@ -458,22 +445,21 @@
           "type": "string"
         },
         "allowedHosts": {
-          "$ref": "AllowedHosts.yaml"
+          "$ref": "#/definitions/AllowedHosts"
         },
         "normalizationConfig": {
-          "$ref": "NormalizationDestinationDefinitionConfig.yaml"
+          "$ref": "#/definitions/NormalizationDestinationDefinitionConfig"
         },
         "suggestedStreams": {
-          "$ref": "SuggestedStreams.yaml"
+          "$ref": "#/definitions/SuggestedStreams"
         },
         "resourceRequirements": {
-          "$ref": "ActorDefinitionResourceRequirements.yaml"
+          "$ref": "#/definitions/ActorDefinitionResourceRequirements"
         }
       }
     },
     "NormalizationDestinationDefinitionConfig": {
       "$schema": "http://json-schema.org/draft-07/schema#",
-      "$id": "https://github.com/airbytehq/airbyte/airbyte-ci/connectors/metadata_service/lib/metadata_service/models/src/NormalizationDestinationDefinitionConfig.yaml",
       "title": "NormalizationDestinationDefinitionConfig",
       "description": "describes a normalization config for destination definition",
       "type": "object",
@@ -500,7 +486,6 @@
     },
     "JobType": {
       "$schema": "http://json-schema.org/draft-07/schema#",
-      "$id": "https://github.com/airbytehq/airbyte/airbyte-ci/connectors/metadata_service/lib/metadata_service/models/src/JobType.yaml",
       "title": "JobType",
       "description": "enum that describes the different types of jobs that the platform runs.",
       "type": "string",
@@ -516,7 +501,6 @@
     },
     "GitInfo": {
       "$schema": "http://json-schema.org/draft-07/schema#",
-      "$id": "https://github.com/airbytehq/airbyte/airbyte-ci/connectors/metadata_service/lib/metadata_service/models/src/GitInfo.yaml",
       "title": "GitInfo",
       "description": "Information about the author of the last commit that modified this file. DO NOT DEFINE THIS FIELD MANUALLY. It will be overwritten by the CI.",
       "type": "object",
@@ -543,19 +527,18 @@
     },
     "GeneratedFields": {
       "$schema": "http://json-schema.org/draft-07/schema#",
-      "$id": "https://github.com/airbytehq/airbyte/airbyte-ci/connectors_ci/metadata_service/lib/models/src/GeneratedFields.yaml",
       "title": "GeneratedFields",
       "description": "Optional schema for fields generated at metadata upload time",
       "type": "object",
       "properties": {
         "git": {
-          "$ref": "GitInfo.yaml"
+          "$ref": "#/definitions/GitInfo"
         },
         "source_file_info": {
-          "$ref": "SourceFileInfo.yaml"
+          "$ref": "#/definitions/SourceFileInfo"
         },
         "metrics": {
-          "$ref": "ConnectorMetrics.yaml"
+          "$ref": "#/definitions/ConnectorMetrics"
         },
         "sbomUrl": {
           "type": "string",
@@ -565,7 +548,6 @@
     },
     "ConnectorTestSuiteOptions": {
       "$schema": "http://json-schema.org/draft-07/schema#",
-      "$id": "https://github.com/airbytehq/airbyte/airbyte-ci/connectors/metadata_service/lib/metadata_service/models/src/ConnectorTestOptions.yaml",
       "title": "ConnectorTestSuiteOptions",
       "description": "Options for a specific connector test suite.",
       "type": "object",
@@ -588,31 +570,30 @@
           "description": "List of secrets required to run the test suite",
           "type": "array",
           "items": {
-            "$ref": "Secret.yaml"
+            "$ref": "#/definitions/Secret"
           }
         },
         "testConnections": {
           "description": "List of sandbox cloud connections that tests can be run against",
           "type": "array",
           "items": {
-            "$ref": "TestConnections.yaml"
+            "$ref": "#/definitions/TestConnections"
           }
         }
       }
     },
     "ConnectorReleases": {
       "$schema": "http://json-schema.org/draft-07/schema#",
-      "$id": "https://github.com/airbytehq/airbyte/airbyte-ci/connectors/metadata_service/lib/metadata_service/models/src/ConnectorReleases.yaml",
       "title": "ConnectorReleases",
       "description": "Contains information about different types of releases for a connector.",
       "type": "object",
       "additionalProperties": false,
       "properties": {
         "rolloutConfiguration": {
-          "$ref": "RolloutConfiguration.yaml"
+          "$ref": "#/definitions/RolloutConfiguration"
         },
         "breakingChanges": {
-          "$ref": "ConnectorBreakingChanges.yaml"
+          "$ref": "#/definitions/ConnectorBreakingChanges"
         },
         "migrationDocumentationUrl": {
           "description": "URL to documentation on how to migrate from the previous version to the current version. Defaults to ${documentationUrl}-migrations",
@@ -623,7 +604,6 @@
     },
     "ConnectorRegistryV0": {
       "$schema": "http://json-schema.org/draft-07/schema#",
-      "$id": "https://github.com/airbytehq/airbyte-platform/blob/main/airbyte-config/config-models/src/main/resources/types/ConnectorRegistryV0.yaml",
       "title": "ConnectorRegistryV0",
       "description": "describes the collection of connectors retrieved from a registry",
       "type": "object",
@@ -635,20 +615,19 @@
         "destinations": {
           "type": "array",
           "items": {
-            "$ref": "ConnectorRegistryDestinationDefinition.yaml"
+            "$ref": "#/definitions/ConnectorRegistryDestinationDefinition"
           }
         },
         "sources": {
           "type": "array",
           "items": {
-            "$ref": "ConnectorRegistrySourceDefinition.yaml"
+            "$ref": "#/definitions/ConnectorRegistrySourceDefinition"
           }
         }
       }
     },
     "ConnectorRegistrySourceDefinition": {
       "$schema": "http://json-schema.org/draft-07/schema#",
-      "$id": "https://github.com/airbytehq/airbyte-platform/blob/main/airbyte-config/config-models/src/main/resources/types/ConnectorRegistrySourceDefinition.yaml",
       "title": "ConnectorRegistrySourceDefinition",
       "description": "describes a source",
       "type": "object",
@@ -712,10 +691,10 @@
           "default": false
         },
         "releaseStage": {
-          "$ref": "ReleaseStage.yaml"
+          "$ref": "#/definitions/ReleaseStage"
         },
         "supportLevel": {
-          "$ref": "SupportLevel.yaml"
+          "$ref": "#/definitions/SupportLevel"
         },
         "releaseDate": {
           "description": "The date when this connector was first released, in yyyy-mm-dd format.",
@@ -723,17 +702,17 @@
           "format": "date"
         },
         "resourceRequirements": {
-          "$ref": "ActorDefinitionResourceRequirements.yaml"
+          "$ref": "#/definitions/ActorDefinitionResourceRequirements"
         },
         "protocolVersion": {
           "type": "string",
           "description": "the Airbyte Protocol version supported by the connector"
         },
         "allowedHosts": {
-          "$ref": "AllowedHosts.yaml"
+          "$ref": "#/definitions/AllowedHosts"
         },
         "suggestedStreams": {
-          "$ref": "SuggestedStreams.yaml"
+          "$ref": "#/definitions/SuggestedStreams"
         },
         "maxSecondsBetweenMessages": {
           "description": "Number of seconds allowed between 2 airbyte protocol messages. The source will timeout if this delay is reach",
@@ -744,16 +723,16 @@
           "description": "The URL where you can visualize the ERD"
         },
         "releases": {
-          "$ref": "ConnectorRegistryReleases.yaml"
+          "$ref": "#/definitions/ConnectorRegistryReleases"
         },
         "ab_internal": {
-          "$ref": "AirbyteInternal.yaml"
+          "$ref": "#/definitions/AirbyteInternal"
         },
         "generated": {
-          "$ref": "GeneratedFields.yaml"
+          "$ref": "#/definitions/GeneratedFields"
         },
         "packageInfo": {
-          "$ref": "ConnectorPackageInfo.yaml"
+          "$ref": "#/definitions/ConnectorPackageInfo"
         },
         "language": {
           "type": "string",
@@ -769,9 +748,33 @@
         }
       }
     },
+    "ConnectorReleaseCandidates": {
+      "description": "Each entry denotes a release candidate version of a connector.",
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "maxProperties": 1,
+      "patternProperties": {
+        "^\\d+\\.\\d+\\.\\d+(-[0-9A-Za-z-.]+)?$": {
+          "$ref": "#/definitions/VersionReleaseCandidate"
+        }
+      }
+    },
+    "VersionReleaseCandidate": {
+      "description": "Contains information about a release candidate version of a connector.",
+      "additionalProperties": false,
+      "type": "object",
+      "oneOf": [
+        {
+          "$ref": "#/definitions/ConnectorRegistrySourceDefinition"
+        },
+        {
+          "$ref": "#/definitions/ConnectorRegistryDestinationDefinition"
+        }
+      ]
+    },
     "ConnectorRegistryReleases": {
       "$schema": "http://json-schema.org/draft-07/schema#",
-      "$id": "https://github.com/airbytehq/airbyte/airbyte-ci/connectors/metadata_service/lib/metadata_service/models/src/ConnectorRegistryReleases.yaml",
       "title": "ConnectorRegistryReleases",
       "description": "Contains information about different types of releases for a connector.",
       "type": "object",
@@ -781,48 +784,20 @@
           "$ref": "#/definitions/ConnectorReleaseCandidates"
         },
         "rolloutConfiguration": {
-          "$ref": "RolloutConfiguration.yaml"
+          "$ref": "#/definitions/RolloutConfiguration"
         },
         "breakingChanges": {
-          "$ref": "ConnectorBreakingChanges.yaml"
+          "$ref": "#/definitions/ConnectorBreakingChanges"
         },
         "migrationDocumentationUrl": {
           "description": "URL to documentation on how to migrate from the previous version to the current version. Defaults to ${documentationUrl}-migrations",
           "type": "string",
           "format": "uri"
         }
-      },
-      "definitions": {
-        "ConnectorReleaseCandidates": {
-          "description": "Each entry denotes a release candidate version of a connector.",
-          "type": "object",
-          "additionalProperties": false,
-          "minProperties": 1,
-          "maxProperties": 1,
-          "patternProperties": {
-            "^\\d+\\.\\d+\\.\\d+(-[0-9A-Za-z-.]+)?$": {
-              "$ref": "#/definitions/VersionReleaseCandidate"
-            }
-          }
-        },
-        "VersionReleaseCandidate": {
-          "description": "Contains information about a release candidate version of a connector.",
-          "additionalProperties": false,
-          "type": "object",
-          "oneOf": [
-            {
-              "$ref": "ConnectorRegistrySourceDefinition.yaml"
-            },
-            {
-              "$ref": "ConnectorRegistryDestinationDefinition.yaml"
-            }
-          ]
-        }
       }
     },
     "ConnectorRegistryDestinationDefinition": {
       "$schema": "http://json-schema.org/draft-07/schema#",
-      "$id": "https://github.com/airbytehq/airbyte-platform/blob/main/airbyte-config/config-models/src/main/resources/types/ConnectorRegistryDestinationDefinition.yaml",
       "title": "ConnectorRegistryDestinationDefinition",
       "description": "describes a destination",
       "type": "object",
@@ -877,10 +852,10 @@
           "default": false
         },
         "releaseStage": {
-          "$ref": "ReleaseStage.yaml"
+          "$ref": "#/definitions/ReleaseStage"
         },
         "supportLevel": {
-          "$ref": "SupportLevel.yaml"
+          "$ref": "#/definitions/SupportLevel"
         },
         "releaseDate": {
           "description": "The date when this connector was first released, in yyyy-mm-dd format.",
@@ -895,27 +870,27 @@
           }
         },
         "resourceRequirements": {
-          "$ref": "ActorDefinitionResourceRequirements.yaml"
+          "$ref": "#/definitions/ActorDefinitionResourceRequirements"
         },
         "protocolVersion": {
           "type": "string",
           "description": "the Airbyte Protocol version supported by the connector"
         },
         "normalizationConfig": {
-          "$ref": "NormalizationDestinationDefinitionConfig.yaml"
+          "$ref": "#/definitions/NormalizationDestinationDefinitionConfig"
         },
         "supportsDbt": {
           "type": "boolean",
           "description": "an optional flag indicating whether DBT is used in the normalization. If the flag value is NULL - DBT is not used."
         },
         "allowedHosts": {
-          "$ref": "AllowedHosts.yaml"
+          "$ref": "#/definitions/AllowedHosts"
         },
         "releases": {
-          "$ref": "ConnectorRegistryReleases.yaml"
+          "$ref": "#/definitions/ConnectorRegistryReleases"
         },
         "ab_internal": {
-          "$ref": "AirbyteInternal.yaml"
+          "$ref": "#/definitions/AirbyteInternal"
         },
         "supportsRefreshes": {
           "type": "boolean",
@@ -930,10 +905,10 @@
           "default": false
         },
         "generated": {
-          "$ref": "GeneratedFields.yaml"
+          "$ref": "#/definitions/GeneratedFields"
         },
         "packageInfo": {
-          "$ref": "ConnectorPackageInfo.yaml"
+          "$ref": "#/definitions/ConnectorPackageInfo"
         },
         "language": {
           "type": "string",
@@ -943,7 +918,6 @@
     },
     "ConnectorPackageInfo": {
       "$schema": "http://json-schema.org/draft-07/schema#",
-      "$id": "https://github.com/airbytehq/airbyte/airbyte-ci/connectors_ci/metadata_service/lib/models/src/ConnectorPackageInfo.yaml",
       "title": "ConnectorPackageInfo",
       "description": "Information about the contents of the connector image",
       "type": "object",
@@ -953,68 +927,64 @@
         }
       }
     },
+    "ConnectorMetric": {
+      "type": "object",
+      "properties": {
+        "usage": {
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "string",
+              "enum": [
+                "low",
+                "medium",
+                "high"
+              ]
+            }
+          ]
+        },
+        "sync_success_rate": {
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "string",
+              "enum": [
+                "low",
+                "medium",
+                "high"
+              ]
+            }
+          ]
+        },
+        "connector_version": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": true
+    },
     "ConnectorMetrics": {
       "$schema": "http://json-schema.org/draft-07/schema#",
-      "$id": "https://github.com/airbytehq/airbyte/airbyte-ci/connectors_ci/metadata_service/lib/models/src/ConnectorMetrics.yaml",
       "title": "ConnectorMetrics",
       "description": "Information about the source file that generated the registry entry",
       "type": "object",
       "properties": {
         "all": {
-          "type": "ConnectorMetric"
+          "$ref": "#/definitions/ConnectorMetric"
         },
         "cloud": {
-          "type": "ConnectorMetric"
+          "$ref": "#/definitions/ConnectorMetric"
         },
         "oss": {
-          "type": "ConnectorMetric"
-        }
-      },
-      "definitions": {
-        "ConnectorMetric": {
-          "type": "object",
-          "properties": {
-            "usage": {
-              "oneOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "string",
-                  "enum": [
-                    "low",
-                    "medium",
-                    "high"
-                  ]
-                }
-              ]
-            },
-            "sync_success_rate": {
-              "oneOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "string",
-                  "enum": [
-                    "low",
-                    "medium",
-                    "high"
-                  ]
-                }
-              ]
-            },
-            "connector_version": {
-              "type": "string"
-            }
-          },
-          "additionalProperties": true
+          "$ref": "#/definitions/ConnectorMetric"
         }
       }
     },
     "ConnectorIPCOptions": {
       "$schema": "http://json-schema.org/draft-07/schema#",
-      "$id": "https://github.com/airbytehq/airbyte/airbyte-ci/connectors/metadata_service/lib/metadata_service/models/src/ConnectorIPCOptions.yaml",
       "title": "ConnectorIPCOptions",
       "type": "object",
       "required": [
@@ -1061,7 +1031,6 @@
     },
     "ConnectorBuildOptions": {
       "$schema": "http://json-schema.org/draft-07/schema#",
-      "$id": "https://github.com/airbytehq/airbyte/airbyte-ci/connectors/metadata_service/lib/metadata_service/models/src/ConnectorBuildOptions.yaml",
       "title": "ConnectorBuildOptions",
       "description": "metadata specific to the build process.",
       "type": "object",
@@ -1072,9 +1041,80 @@
         }
       }
     },
+    "VersionBreakingChange": {
+      "description": "Contains information about a breaking change, including the deadline to upgrade and a message detailing the change.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "upgradeDeadline",
+        "message"
+      ],
+      "properties": {
+        "upgradeDeadline": {
+          "description": "The deadline by which to upgrade before the breaking change takes effect.",
+          "type": "string",
+          "format": "date"
+        },
+        "message": {
+          "description": "Descriptive message detailing the breaking change.",
+          "type": "string"
+        },
+        "deadlineAction": {
+          "description": "Action to do when the deadline is reached.",
+          "type": "string",
+          "enum": [
+            "auto_upgrade",
+            "disable"
+          ]
+        },
+        "migrationDocumentationUrl": {
+          "description": "URL to documentation on how to migrate to the current version. Defaults to ${documentationUrl}-migrations#${version}",
+          "type": "string",
+          "format": "uri"
+        },
+        "scopedImpact": {
+          "description": "List of scopes that are impacted by the breaking change. If not specified, the breaking change cannot be scoped to reduce impact via the supported scope types.",
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/definitions/BreakingChangeScope"
+          }
+        }
+      }
+    },
+    "BreakingChangeScope": {
+      "description": "A scope that can be used to limit the impact of a breaking change.",
+      "type": "object",
+      "oneOf": [
+        {
+          "$ref": "#/definitions/StreamBreakingChangeScope"
+        }
+      ]
+    },
+    "StreamBreakingChangeScope": {
+      "description": "A scope that can be used to limit the impact of a breaking change to specific streams.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "scopeType",
+        "impactedScopes"
+      ],
+      "properties": {
+        "scopeType": {
+          "const": "stream"
+        },
+        "impactedScopes": {
+          "description": "List of streams that are impacted by the breaking change.",
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
     "ConnectorBreakingChanges": {
       "$schema": "http://json-schema.org/draft-07/schema#",
-      "$id": "https://github.com/airbytehq/airbyte/airbyte-ci/connectors/metadata_service/lib/metadata_service/models/src/ConnectorBreakingChanges.yaml",
       "title": "ConnectorBreakingChanges",
       "description": "Each entry denotes a breaking change in a specific version of a connector that requires user action to upgrade.",
       "type": "object",
@@ -1084,86 +1124,10 @@
         "^\\d+\\.\\d+\\.\\d+$": {
           "$ref": "#/definitions/VersionBreakingChange"
         }
-      },
-      "definitions": {
-        "VersionBreakingChange": {
-          "description": "Contains information about a breaking change, including the deadline to upgrade and a message detailing the change.",
-          "type": "object",
-          "additionalProperties": false,
-          "required": [
-            "upgradeDeadline",
-            "message"
-          ],
-          "properties": {
-            "upgradeDeadline": {
-              "description": "The deadline by which to upgrade before the breaking change takes effect.",
-              "type": "string",
-              "format": "date"
-            },
-            "message": {
-              "description": "Descriptive message detailing the breaking change.",
-              "type": "string"
-            },
-            "deadlineAction": {
-              "description": "Action to do when the deadline is reached.",
-              "type": "string",
-              "enum": [
-                "auto_upgrade",
-                "disable"
-              ]
-            },
-            "migrationDocumentationUrl": {
-              "description": "URL to documentation on how to migrate to the current version. Defaults to ${documentationUrl}-migrations#${version}",
-              "type": "string",
-              "format": "uri"
-            },
-            "scopedImpact": {
-              "description": "List of scopes that are impacted by the breaking change. If not specified, the breaking change cannot be scoped to reduce impact via the supported scope types.",
-              "type": "array",
-              "minItems": 1,
-              "items": {
-                "$ref": "#/definitions/BreakingChangeScope"
-              }
-            }
-          }
-        },
-        "BreakingChangeScope": {
-          "description": "A scope that can be used to limit the impact of a breaking change.",
-          "type": "object",
-          "oneOf": [
-            {
-              "$ref": "#/definitions/StreamBreakingChangeScope"
-            }
-          ]
-        },
-        "StreamBreakingChangeScope": {
-          "description": "A scope that can be used to limit the impact of a breaking change to specific streams.",
-          "type": "object",
-          "additionalProperties": false,
-          "required": [
-            "scopeType",
-            "impactedScopes"
-          ],
-          "properties": {
-            "scopeType": {
-              "type": "const",
-              "const": "stream"
-            },
-            "impactedScopes": {
-              "description": "List of streams that are impacted by the breaking change.",
-              "type": "array",
-              "minItems": 1,
-              "items": {
-                "type": "string"
-              }
-            }
-          }
-        }
       }
     },
     "AllowedHosts": {
       "$schema": "http://json-schema.org/draft-07/schema#",
-      "$id": "https://github.com/airbytehq/airbyte/airbyte-ci/connectors/metadata_service/lib/metadata_service/models/src/AllowedHosts.yaml",
       "title": "AllowedHosts",
       "description": "A connector's allowed hosts.  If present, the platform will limit communication to only hosts which are listed in `AllowedHosts.hosts`.",
       "type": "object",
@@ -1180,7 +1144,6 @@
     },
     "AirbyteInternal": {
       "$schema": "http://json-schema.org/draft-07/schema#",
-      "$id": "https://github.com/airbytehq/airbyte/airbyte-ci/connectors_ci/metadata_service/lib/models/src/AirbyteInternal.yml",
       "title": "AirbyteInternal",
       "description": "Fields for internal use only",
       "type": "object",
@@ -1218,9 +1181,25 @@
         }
       }
     },
+    "JobTypeResourceLimit": {
+      "description": "sets resource requirements for a specific job type for an actor definition. these values override the default, if both are set.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "jobType",
+        "resourceRequirements"
+      ],
+      "properties": {
+        "jobType": {
+          "$ref": "#/definitions/JobType"
+        },
+        "resourceRequirements": {
+          "$ref": "#/definitions/ResourceRequirements"
+        }
+      }
+    },
     "ActorDefinitionResourceRequirements": {
       "$schema": "http://json-schema.org/draft-07/schema#",
-      "$id": "https://github.com/airbytehq/airbyte/airbyte-ci/connectors/metadata_service/lib/metadata_service/models/src/ActorDefinitionResourceRequirements.yaml",
       "title": "ActorDefinitionResourceRequirements",
       "description": "actor definition specific resource requirements",
       "type": "object",
@@ -1228,31 +1207,12 @@
       "properties": {
         "default": {
           "description": "if set, these are the requirements that should be set for ALL jobs run for this actor definition.",
-          "$ref": "ResourceRequirements.yaml"
+          "$ref": "#/definitions/ResourceRequirements"
         },
         "jobSpecific": {
           "type": "array",
           "items": {
             "$ref": "#/definitions/JobTypeResourceLimit"
-          }
-        }
-      },
-      "definitions": {
-        "JobTypeResourceLimit": {
-          "description": "sets resource requirements for a specific job type for an actor definition. these values override the default, if both are set.",
-          "type": "object",
-          "additionalProperties": false,
-          "required": [
-            "jobType",
-            "resourceRequirements"
-          ],
-          "properties": {
-            "jobType": {
-              "$ref": "JobType.yaml"
-            },
-            "resourceRequirements": {
-              "$ref": "ResourceRequirements.yaml"
-            }
           }
         }
       }
