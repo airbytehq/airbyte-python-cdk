@@ -189,7 +189,6 @@
   },
   "definitions": {
     "TestConnections": {
-      "$schema": "http://json-schema.org/draft-07/schema#",
       "title": "TestConnections",
       "description": "List of sandbox cloud connections that tests can be run against",
       "type": "object",
@@ -210,7 +209,6 @@
       }
     },
     "SupportLevel": {
-      "$schema": "http://json-schema.org/draft-07/schema#",
       "title": "SupportLevel",
       "description": "enum that describes a connector's release stage",
       "type": "string",
@@ -221,7 +219,6 @@
       ]
     },
     "SuggestedStreams": {
-      "$schema": "http://json-schema.org/draft-07/schema#",
       "title": "SuggestedStreams",
       "description": "A source's suggested streams.  These will be suggested by default for new connections using this source.  Otherwise, all streams will be selected.  This is useful for when your source has a lot of streams, but the average user will only want a subset of them synced.",
       "type": "object",
@@ -237,7 +234,6 @@
       }
     },
     "SourceFileInfo": {
-      "$schema": "http://json-schema.org/draft-07/schema#",
       "title": "SourceFileInfo",
       "description": "Information about the source file that generated the registry entry",
       "type": "object",
@@ -260,7 +256,6 @@
       }
     },
     "SecretStore": {
-      "$schema": "http://json-schema.org/draft-07/schema#",
       "title": "SecretStore",
       "description": "An object describing a secret store metadata",
       "type": "object",
@@ -284,7 +279,6 @@
       }
     },
     "Secret": {
-      "$schema": "http://json-schema.org/draft-07/schema#",
       "title": "Secret",
       "description": "An object describing a secret's metadata",
       "type": "object",
@@ -308,7 +302,6 @@
       }
     },
     "RolloutConfiguration": {
-      "$schema": "http://json-schema.org/draft-07/schema#",
       "title": "RolloutConfiguration",
       "description": "configuration for the rollout of a connector",
       "type": "object",
@@ -342,7 +335,6 @@
       }
     },
     "ResourceRequirements": {
-      "$schema": "http://json-schema.org/draft-07/schema#",
       "title": "ResourceRequirements",
       "description": "generic configuration for pod source requirements",
       "type": "object",
@@ -382,7 +374,6 @@
       }
     },
     "RemoteRegistries": {
-      "$schema": "http://json-schema.org/draft-07/schema#",
       "title": "RemoteRegistries",
       "description": "describes how the connector is published to remote registries",
       "type": "object",
@@ -394,7 +385,6 @@
       }
     },
     "ReleaseStage": {
-      "$schema": "http://json-schema.org/draft-07/schema#",
       "title": "ReleaseStage",
       "description": "enum that describes a connector's release stage",
       "type": "string",
@@ -406,7 +396,6 @@
       ]
     },
     "RegistryOverrides": {
-      "$schema": "http://json-schema.org/draft-07/schema#",
       "title": "RegistryOverrides",
       "description": "describes the overrides per registry of a connector",
       "type": "object",
@@ -459,7 +448,6 @@
       }
     },
     "NormalizationDestinationDefinitionConfig": {
-      "$schema": "http://json-schema.org/draft-07/schema#",
       "title": "NormalizationDestinationDefinitionConfig",
       "description": "describes a normalization config for destination definition",
       "type": "object",
@@ -485,7 +473,6 @@
       }
     },
     "JobType": {
-      "$schema": "http://json-schema.org/draft-07/schema#",
       "title": "JobType",
       "description": "enum that describes the different types of jobs that the platform runs.",
       "type": "string",
@@ -500,7 +487,6 @@
       ]
     },
     "GitInfo": {
-      "$schema": "http://json-schema.org/draft-07/schema#",
       "title": "GitInfo",
       "description": "Information about the author of the last commit that modified this file. DO NOT DEFINE THIS FIELD MANUALLY. It will be overwritten by the CI.",
       "type": "object",
@@ -526,7 +512,6 @@
       }
     },
     "GeneratedFields": {
-      "$schema": "http://json-schema.org/draft-07/schema#",
       "title": "GeneratedFields",
       "description": "Optional schema for fields generated at metadata upload time",
       "type": "object",
@@ -547,7 +532,6 @@
       }
     },
     "ConnectorTestSuiteOptions": {
-      "$schema": "http://json-schema.org/draft-07/schema#",
       "title": "ConnectorTestSuiteOptions",
       "description": "Options for a specific connector test suite.",
       "type": "object",
@@ -583,7 +567,6 @@
       }
     },
     "ConnectorReleases": {
-      "$schema": "http://json-schema.org/draft-07/schema#",
       "title": "ConnectorReleases",
       "description": "Contains information about different types of releases for a connector.",
       "type": "object",
@@ -603,7 +586,6 @@
       }
     },
     "ConnectorRegistryV0": {
-      "$schema": "http://json-schema.org/draft-07/schema#",
       "title": "ConnectorRegistryV0",
       "description": "describes the collection of connectors retrieved from a registry",
       "type": "object",
@@ -627,7 +609,6 @@
       }
     },
     "ConnectorRegistrySourceDefinition": {
-      "$schema": "http://json-schema.org/draft-07/schema#",
       "title": "ConnectorRegistrySourceDefinition",
       "description": "describes a source",
       "type": "object",
@@ -774,7 +755,6 @@
       ]
     },
     "ConnectorRegistryReleases": {
-      "$schema": "http://json-schema.org/draft-07/schema#",
       "title": "ConnectorRegistryReleases",
       "description": "Contains information about different types of releases for a connector.",
       "type": "object",
@@ -797,7 +777,6 @@
       }
     },
     "ConnectorRegistryDestinationDefinition": {
-      "$schema": "http://json-schema.org/draft-07/schema#",
       "title": "ConnectorRegistryDestinationDefinition",
       "description": "describes a destination",
       "type": "object",
@@ -917,7 +896,6 @@
       }
     },
     "ConnectorPackageInfo": {
-      "$schema": "http://json-schema.org/draft-07/schema#",
       "title": "ConnectorPackageInfo",
       "description": "Information about the contents of the connector image",
       "type": "object",
@@ -967,7 +945,6 @@
       "additionalProperties": true
     },
     "ConnectorMetrics": {
-      "$schema": "http://json-schema.org/draft-07/schema#",
       "title": "ConnectorMetrics",
       "description": "Information about the source file that generated the registry entry",
       "type": "object",
@@ -984,7 +961,6 @@
       }
     },
     "ConnectorIPCOptions": {
-      "$schema": "http://json-schema.org/draft-07/schema#",
       "title": "ConnectorIPCOptions",
       "type": "object",
       "required": [
@@ -1030,7 +1006,6 @@
       }
     },
     "ConnectorBuildOptions": {
-      "$schema": "http://json-schema.org/draft-07/schema#",
       "title": "ConnectorBuildOptions",
       "description": "metadata specific to the build process.",
       "type": "object",
@@ -1114,7 +1089,6 @@
       }
     },
     "ConnectorBreakingChanges": {
-      "$schema": "http://json-schema.org/draft-07/schema#",
       "title": "ConnectorBreakingChanges",
       "description": "Each entry denotes a breaking change in a specific version of a connector that requires user action to upgrade.",
       "type": "object",
@@ -1127,7 +1101,6 @@
       }
     },
     "AllowedHosts": {
-      "$schema": "http://json-schema.org/draft-07/schema#",
       "title": "AllowedHosts",
       "description": "A connector's allowed hosts.  If present, the platform will limit communication to only hosts which are listed in `AllowedHosts.hosts`.",
       "type": "object",
@@ -1143,7 +1116,6 @@
       }
     },
     "AirbyteInternal": {
-      "$schema": "http://json-schema.org/draft-07/schema#",
       "title": "AirbyteInternal",
       "description": "Fields for internal use only",
       "type": "object",
@@ -1199,7 +1171,6 @@
       }
     },
     "ActorDefinitionResourceRequirements": {
-      "$schema": "http://json-schema.org/draft-07/schema#",
       "title": "ActorDefinitionResourceRequirements",
       "description": "actor definition specific resource requirements",
       "type": "object",

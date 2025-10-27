@@ -247,7 +247,7 @@ def consolidate_yaml_schemas_to_json(yaml_dir_path: Path, output_json_path: str)
         if isinstance(obj, dict):
             new_obj = {}
             for key, value in obj.items():
-                if key == "$id" and in_definition:
+                if (key == "$id" or key == "$schema") and in_definition:
                     continue
                 elif key == "$ref" and isinstance(value, str):
                     if value.endswith(".yaml"):
