@@ -5,8 +5,8 @@
 Generate Pydantic models and JSON schema for connector metadata validation.
 
 This script downloads metadata schema YAML files from the airbyte monorepo and generates:
-1. A single Python file with all Pydantic models (models.py)
-2. A consolidated JSON schema file (metadata_schema.json)
+1. A consolidated JSON schema file (metadata_schema.json)
+2. A single Python file with all Pydantic models (models.py) generated from the JSON schema
 
 The generated files are used for validating connector metadata.yaml files.
 """
@@ -60,120 +60,6 @@ def clone_schemas_from_github(temp_dir: Path) -> Path:
     print(f"Cloned schemas to {schemas_dir}", file=sys.stderr)
 
     return schemas_dir
-
-
-def generate_models_single_file(
-    yaml_dir_path: Path,
-    output_file_path: Path,
-    temp_dir: Path,
-) -> None:
-    """Generate all metadata models into a single Python file using datamodel-codegen."""
-    generated_temp = temp_dir / "generated_temp"
-    generated_temp.mkdir(parents=True, exist_ok=True)
-
-    print("Running datamodel-codegen via uvx...", file=sys.stderr)
-
-    subprocess.run(
-        [
-            "uvx",
-            "--from",
-            f"datamodel-code-generator=={DATAMODEL_CODEGEN_VERSION}",
-            "datamodel-codegen",
-            "--input",
-            str(yaml_dir_path),
-            "--output",
-            str(generated_temp),
-            "--disable-timestamp",
-            "--enum-field-as-literal",
-            "one",
-            "--set-default-enum-member",
-            "--use-double-quotes",
-            "--remove-special-field-name-prefix",
-            "--field-extra-keys",
-            "deprecated",
-            "deprecation_message",
-        ],
-        check=True,
-    )
-
-    future_imports = set()
-    stdlib_imports = set()
-    third_party_imports = set()
-    classes_and_updates = []
-
-    for py_file in sorted(generated_temp.glob("*.py")):
-        if py_file.name == "__init__.py":
-            continue
-
-        content = py_file.read_text()
-        lines = content.split("\n")
-        in_imports = True
-        in_relative_import_block = False
-        class_content = []
-
-        for line in lines:
-            if in_imports:
-                if line.startswith("from __future__"):
-                    future_imports.add(line)
-                elif (
-                    line.startswith("from datetime")
-                    or line.startswith("from enum")
-                    or line.startswith("from typing")
-                    or line.startswith("from uuid")
-                ):
-                    stdlib_imports.add(line)
-                elif line.startswith("from pydantic") or line.startswith("import "):
-                    third_party_imports.add(line)
-                elif line.startswith("from ."):
-                    in_relative_import_block = True
-                    if not line.rstrip().endswith(",") and not line.rstrip().endswith("("):
-                        in_relative_import_block = False
-                elif in_relative_import_block:
-                    if line.strip().endswith(")"):
-                        in_relative_import_block = False
-                elif line.strip() and not line.startswith("#"):
-                    in_imports = False
-                    class_content.append(line)
-            else:
-                class_content.append(line)
-
-        if class_content:
-            classes_and_updates.append("\n".join(class_content))
-
-    import_sections = []
-    if future_imports:
-        import_sections.append("\n".join(sorted(future_imports)))
-    if stdlib_imports:
-        import_sections.append("\n".join(sorted(stdlib_imports)))
-    if third_party_imports:
-        import_sections.append("\n".join(sorted(third_party_imports)))
-
-    final_content = "\n\n".join(import_sections) + "\n\n\n" + "\n\n\n".join(classes_and_updates)
-
-    post_processed_content = final_content.replace("from pydantic", "from pydantic.v1")
-
-    lines = post_processed_content.split("\n")
-    filtered_lines = []
-    in_relative_import = False
-
-    for line in lines:
-        if line.strip().startswith("from . import"):
-            in_relative_import = True
-            if not line.rstrip().endswith(",") and not line.rstrip().endswith("("):
-                in_relative_import = False
-            continue
-
-        if in_relative_import:
-            if line.strip().endswith(")"):
-                in_relative_import = False
-            continue
-
-        filtered_lines.append(line)
-
-    post_processed_content = "\n".join(filtered_lines)
-
-    output_file_path.write_text(post_processed_content)
-    print(f"Generated models: {output_file_path}", file=sys.stderr)
 
 
 def consolidate_yaml_schemas_to_json(yaml_dir_path: Path, output_json_path: Path) -> None:
@@ -252,6 +138,42 @@ def consolidate_yaml_schemas_to_json(yaml_dir_path: Path, output_json_path: Path
         output_json_path.write_text(json.dumps(schemas, indent=2))
 
 
+def generate_models_from_json_schema(json_schema_path: Path, output_file_path: Path) -> None:
+    """Generate Pydantic models from consolidated JSON schema."""
+    print("Running datamodel-codegen via uvx...", file=sys.stderr)
+
+    subprocess.run(
+        [
+            "uvx",
+            "--from",
+            f"datamodel-code-generator=={DATAMODEL_CODEGEN_VERSION}",
+            "datamodel-codegen",
+            "--input",
+            str(json_schema_path),
+            "--output",
+            str(output_file_path),
+            "--input-file-type",
+            "jsonschema",
+            "--disable-timestamp",
+            "--enum-field-as-literal",
+            "one",
+            "--set-default-enum-member",
+            "--use-double-quotes",
+            "--remove-special-field-name-prefix",
+            "--field-extra-keys",
+            "deprecated",
+            "deprecation_message",
+        ],
+        check=True,
+    )
+
+    content = output_file_path.read_text()
+    content = content.replace("from pydantic", "from pydantic.v1")
+    output_file_path.write_text(content)
+
+    print(f"Generated models: {output_file_path}", file=sys.stderr)
+
+
 def main():
     print("Generating connector metadata models...", file=sys.stderr)
 
@@ -262,17 +184,13 @@ def main():
         output_dir = Path(OUTPUT_DIR_PATH)
         output_dir.mkdir(parents=True, exist_ok=True)
 
-        print("Generating single Python file with all models...", file=sys.stderr)
-        output_file = output_dir / "models.py"
-        generate_models_single_file(
-            yaml_dir_path=schemas_dir,
-            output_file_path=output_file,
-            temp_dir=temp_path,
-        )
-
-        print("Generating consolidated JSON schema...", file=sys.stderr)
+        print("Consolidating YAML schemas into JSON...", file=sys.stderr)
         json_schema_file = output_dir / "metadata_schema.json"
         consolidate_yaml_schemas_to_json(schemas_dir, json_schema_file)
+
+        print("Generating Python models from JSON schema...", file=sys.stderr)
+        output_file = output_dir / "models.py"
+        generate_models_from_json_schema(json_schema_file, output_file)
 
     print("Connector metadata model generation complete!", file=sys.stderr)
 
