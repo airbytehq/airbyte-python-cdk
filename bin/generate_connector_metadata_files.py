@@ -12,6 +12,7 @@ The generated files are used for validating connector metadata.yaml files.
 """
 
 import json
+import re
 import subprocess
 import sys
 import tempfile
@@ -72,6 +73,7 @@ def consolidate_yaml_schemas_to_json(yaml_dir_path: Path, output_json_path: Path
         schemas[schema_name] = schema_content
 
     all_schema_names = set(schemas.keys())
+    json_primitives = {"string", "number", "integer", "boolean", "object", "array", "null"}
 
     for schema_content in schemas.values():
         if isinstance(schema_content, dict) and "definitions" in schema_content:
@@ -85,13 +87,18 @@ def consolidate_yaml_schemas_to_json(yaml_dir_path: Path, output_json_path: Path
                 if (key == "$id" or key == "$schema") and in_definition:
                     continue
                 elif key == "$ref" and isinstance(value, str):
-                    if value.endswith(".yaml"):
-                        schema_name = value.replace(".yaml", "")
-                        new_obj[key] = f"#/definitions/{schema_name}"
+                    m = re.match(r"(?:.*/)?(?P<name>[^/#]+)\.yaml(?P<frag>#.*)?$", value)
+                    if m:
+                        schema_name = m.group("name")
+                        frag = m.group("frag") or ""
+                        new_obj[key] = f"#/definitions/{schema_name}{frag}"
                     else:
                         new_obj[key] = value
-                elif key == "type" and isinstance(value, str) and value in all_schema_names:
-                    new_obj["$ref"] = f"#/definitions/{value}"
+                elif key == "type" and isinstance(value, str):
+                    if value in all_schema_names and value not in json_primitives:
+                        new_obj["$ref"] = f"#/definitions/{value}"
+                    else:
+                        new_obj[key] = value
                 elif key == "type" and value == "const":
                     pass
                 else:
@@ -106,26 +113,26 @@ def consolidate_yaml_schemas_to_json(yaml_dir_path: Path, output_json_path: Path
     main_schema = schemas.get("ConnectorMetadataDefinitionV0")
 
     if main_schema:
-        # Create a consolidated schema with definitions
-        consolidated = {
-            "$schema": main_schema.get("$schema", "http://json-schema.org/draft-07/schema#"),
-            "title": "Connector Metadata Schema",
-            "description": "Consolidated JSON schema for Airbyte connector metadata validation",
-            **main_schema,
-            "definitions": {},
-        }
+        # Create a consolidated schema preserving main schema structure
+        consolidated = dict(main_schema)  # shallow copy
+        consolidated.setdefault("$schema", "http://json-schema.org/draft-07/schema#")
+        consolidated.setdefault("title", "Connector Metadata Schema")
+        consolidated.setdefault("description", "Consolidated JSON schema for Airbyte connector metadata validation")
+        
+        consolidated_definitions = dict(consolidated.get("definitions", {}))
 
         # Add all schemas (including their internal definitions) as top-level definitions
         for schema_name, schema_content in schemas.items():
             if schema_name != "ConnectorMetadataDefinitionV0":
                 if isinstance(schema_content, dict) and "definitions" in schema_content:
                     for def_name, def_content in schema_content["definitions"].items():
-                        consolidated["definitions"][def_name] = fix_refs(def_content, in_definition=True)
+                        consolidated_definitions[def_name] = fix_refs(def_content, in_definition=True)
                     schema_without_defs = {k: v for k, v in schema_content.items() if k != "definitions"}
-                    consolidated["definitions"][schema_name] = fix_refs(schema_without_defs, in_definition=True)
+                    consolidated_definitions[schema_name] = fix_refs(schema_without_defs, in_definition=True)
                 else:
-                    consolidated["definitions"][schema_name] = fix_refs(schema_content, in_definition=True)
+                    consolidated_definitions[schema_name] = fix_refs(schema_content, in_definition=True)
 
+        consolidated["definitions"] = consolidated_definitions
         consolidated = fix_refs(consolidated, in_definition=False)
 
         output_json_path.write_text(json.dumps(consolidated, indent=2))

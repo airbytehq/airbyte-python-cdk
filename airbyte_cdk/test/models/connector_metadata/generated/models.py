@@ -289,7 +289,7 @@ class StreamBreakingChangeScope(BaseModel):
     class Config:
         extra = Extra.forbid
 
-    scopeType: str = Field("stream", const=True)
+    scopeType: Any = Field("stream", const=True)
     impactedScopes: List[str] = Field(
         ...,
         description="List of streams that are impacted by the breaking change.",
