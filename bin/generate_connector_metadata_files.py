@@ -17,18 +17,16 @@ import sys
 import tempfile
 from pathlib import Path
 
-import anyio
-import dagger
-import yaml
+try:
+    import yaml
+except ImportError:
+    print("Error: pyyaml is required. Install with: pip install pyyaml", file=sys.stderr)
+    sys.exit(1)
 
-PYTHON_IMAGE = "python:3.10"
 OUTPUT_DIR_PATH = "airbyte_cdk/test/models/connector_metadata/generated"
 AIRBYTE_REPO_URL = "https://github.com/airbytehq/airbyte.git"
 SCHEMA_PATH = "airbyte-ci/connectors/metadata_service/lib/metadata_service/models/src"
-
-PIP_DEPENDENCIES = [
-    "datamodel_code_generator==0.26.3",
-]
+DATAMODEL_CODEGEN_VERSION = "0.26.3"
 
 
 def clone_schemas_from_github(temp_dir: Path) -> Path:
@@ -64,29 +62,27 @@ def clone_schemas_from_github(temp_dir: Path) -> Path:
     return schemas_dir
 
 
-async def generate_models_single_file(
-    dagger_client: dagger.Client,
-    yaml_dir_path: str,
-    output_file_path: str,
+def generate_models_single_file(
+    yaml_dir_path: Path,
+    output_file_path: Path,
+    temp_dir: Path,
 ) -> None:
     """Generate all metadata models into a single Python file using datamodel-codegen."""
-    codegen_container = (
-        dagger_client.container()
-        .from_(PYTHON_IMAGE)
-        .with_exec(["mkdir", "-p", "/generated_temp"], use_entrypoint=True)
-        .with_exec(["pip", "install", " ".join(PIP_DEPENDENCIES)], use_entrypoint=True)
-        .with_mounted_directory(
-            "/yaml", dagger_client.host().directory(yaml_dir_path, include=["*.yaml"])
-        )
-    )
+    generated_temp = temp_dir / "generated_temp"
+    generated_temp.mkdir(parents=True, exist_ok=True)
 
-    codegen_container = codegen_container.with_exec(
+    print("Running datamodel-codegen via uvx...", file=sys.stderr)
+
+    subprocess.run(
         [
+            "uvx",
+            "--from",
+            f"datamodel-code-generator=={DATAMODEL_CODEGEN_VERSION}",
             "datamodel-codegen",
             "--input",
-            "/yaml",
+            str(yaml_dir_path),
             "--output",
-            "/generated_temp",
+            str(generated_temp),
             "--disable-timestamp",
             "--enum-field-as-literal",
             "one",
@@ -97,53 +93,52 @@ async def generate_models_single_file(
             "deprecated",
             "deprecation_message",
         ],
-        use_entrypoint=True,
+        check=True,
     )
-
-    generated_files = await codegen_container.directory("/generated_temp").entries()
 
     future_imports = set()
     stdlib_imports = set()
     third_party_imports = set()
     classes_and_updates = []
 
-    for file_name in sorted(generated_files):
-        if file_name.endswith(".py") and file_name != "__init__.py":
-            content = await codegen_container.file(f"/generated_temp/{file_name}").contents()
+    for py_file in sorted(generated_temp.glob("*.py")):
+        if py_file.name == "__init__.py":
+            continue
 
-            lines = content.split("\n")
-            in_imports = True
-            in_relative_import_block = False
-            class_content = []
+        content = py_file.read_text()
+        lines = content.split("\n")
+        in_imports = True
+        in_relative_import_block = False
+        class_content = []
 
-            for line in lines:
-                if in_imports:
-                    if line.startswith("from __future__"):
-                        future_imports.add(line)
-                    elif (
-                        line.startswith("from datetime")
-                        or line.startswith("from enum")
-                        or line.startswith("from typing")
-                        or line.startswith("from uuid")
-                    ):
-                        stdlib_imports.add(line)
-                    elif line.startswith("from pydantic") or line.startswith("import "):
-                        third_party_imports.add(line)
-                    elif line.startswith("from ."):
-                        in_relative_import_block = True
-                        if not line.rstrip().endswith(",") and not line.rstrip().endswith("("):
-                            in_relative_import_block = False
-                    elif in_relative_import_block:
-                        if line.strip().endswith(")"):
-                            in_relative_import_block = False
-                    elif line.strip() and not line.startswith("#"):
-                        in_imports = False
-                        class_content.append(line)
-                else:
+        for line in lines:
+            if in_imports:
+                if line.startswith("from __future__"):
+                    future_imports.add(line)
+                elif (
+                    line.startswith("from datetime")
+                    or line.startswith("from enum")
+                    or line.startswith("from typing")
+                    or line.startswith("from uuid")
+                ):
+                    stdlib_imports.add(line)
+                elif line.startswith("from pydantic") or line.startswith("import "):
+                    third_party_imports.add(line)
+                elif line.startswith("from ."):
+                    in_relative_import_block = True
+                    if not line.rstrip().endswith(",") and not line.rstrip().endswith("("):
+                        in_relative_import_block = False
+                elif in_relative_import_block:
+                    if line.strip().endswith(")"):
+                        in_relative_import_block = False
+                elif line.strip() and not line.startswith("#"):
+                    in_imports = False
                     class_content.append(line)
+            else:
+                class_content.append(line)
 
-            if class_content:
-                classes_and_updates.append("\n".join(class_content))
+        if class_content:
+            classes_and_updates.append("\n".join(class_content))
 
     import_sections = []
     if future_imports:
@@ -177,22 +172,18 @@ async def generate_models_single_file(
 
     post_processed_content = "\n".join(filtered_lines)
 
-    codegen_container = codegen_container.with_new_file(
-        "/generated/models.py", contents=post_processed_content
-    )
-
-    await codegen_container.file("/generated/models.py").export(output_file_path)
+    output_file_path.write_text(post_processed_content)
+    print(f"Generated models: {output_file_path}", file=sys.stderr)
 
 
-def consolidate_yaml_schemas_to_json(yaml_dir_path: Path, output_json_path: str) -> None:
+def consolidate_yaml_schemas_to_json(yaml_dir_path: Path, output_json_path: Path) -> None:
     """Consolidate all YAML schemas into a single JSON schema file."""
     schemas = {}
 
     for yaml_file in yaml_dir_path.glob("*.yaml"):
         schema_name = yaml_file.stem
-        with yaml_file.open("r") as f:
-            schema_content = yaml.safe_load(f)
-            schemas[schema_name] = schema_content
+        schema_content = yaml.safe_load(yaml_file.read_text())
+        schemas[schema_name] = schema_content
 
     all_schema_names = set(schemas.keys())
 
@@ -251,41 +242,40 @@ def consolidate_yaml_schemas_to_json(yaml_dir_path: Path, output_json_path: str)
 
         consolidated = fix_refs(consolidated, in_definition=False)
 
-        Path(output_json_path).write_text(json.dumps(consolidated, indent=2))
+        output_json_path.write_text(json.dumps(consolidated, indent=2))
         print(f"Generated consolidated JSON schema: {output_json_path}", file=sys.stderr)
     else:
         print(
             "Warning: ConnectorMetadataDefinitionV0 not found, generating simple consolidation",
             file=sys.stderr,
         )
-        Path(output_json_path).write_text(json.dumps(schemas, indent=2))
+        output_json_path.write_text(json.dumps(schemas, indent=2))
 
 
-async def main():
-    async with dagger.Connection(dagger.Config(log_output=sys.stderr)) as dagger_client:
-        print("Generating connector metadata models...", file=sys.stderr)
+def main():
+    print("Generating connector metadata models...", file=sys.stderr)
 
-        with tempfile.TemporaryDirectory() as temp_dir:
-            temp_path = Path(temp_dir)
-            schemas_dir = clone_schemas_from_github(temp_path)
+    with tempfile.TemporaryDirectory() as temp_dir:
+        temp_path = Path(temp_dir)
+        schemas_dir = clone_schemas_from_github(temp_path)
 
-            output_dir = Path(OUTPUT_DIR_PATH)
-            output_dir.mkdir(parents=True, exist_ok=True)
+        output_dir = Path(OUTPUT_DIR_PATH)
+        output_dir.mkdir(parents=True, exist_ok=True)
 
-            print("Generating single Python file with all models...", file=sys.stderr)
-            output_file = str(output_dir / "models.py")
-            await generate_models_single_file(
-                dagger_client=dagger_client,
-                yaml_dir_path=str(schemas_dir),
-                output_file_path=output_file,
-            )
+        print("Generating single Python file with all models...", file=sys.stderr)
+        output_file = output_dir / "models.py"
+        generate_models_single_file(
+            yaml_dir_path=schemas_dir,
+            output_file_path=output_file,
+            temp_dir=temp_path,
+        )
 
-            print("Generating consolidated JSON schema...", file=sys.stderr)
-            json_schema_file = str(output_dir / "metadata_schema.json")
-            consolidate_yaml_schemas_to_json(schemas_dir, json_schema_file)
+        print("Generating consolidated JSON schema...", file=sys.stderr)
+        json_schema_file = output_dir / "metadata_schema.json"
+        consolidate_yaml_schemas_to_json(schemas_dir, json_schema_file)
 
-        print("Connector metadata model generation complete!", file=sys.stderr)
+    print("Connector metadata model generation complete!", file=sys.stderr)
 
 
 if __name__ == "__main__":
-    anyio.run(main)
+    main()
