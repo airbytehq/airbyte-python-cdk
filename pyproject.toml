@@ -47,7 +47,7 @@ jsonschema = ">=4.17.3,<5.0"
 packaging = "*"  # Transitive dependency used directly in code
 referencing = ">=0.36.2"
 pandas = "2.2.3"
-psutil = "6.1.0" # TODO: Remove if unused
+psutil = "7.1.2" # TODO: Remove if unused
 pydantic = "^2.7"
 pyrate-limiter = "~3.1.0"
 python-dateutil = "^2.9.0"
