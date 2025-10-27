@@ -85,6 +85,33 @@ poetry run poe build
 
 This will generate the code generator docker image and the component manifest files based on the schemas and templates.
 
+## Regenerating Connector Metadata Models
+
+The CDK includes Pydantic models for validating connector `metadata.yaml` files. These models are automatically generated from JSON Schema YAML files maintained in the [airbytehq/airbyte repository](https://github.com/airbytehq/airbyte/tree/master/airbyte-ci/connectors/metadata_service/lib/metadata_service/models/src).
+
+To regenerate the metadata models, run:
+
+```bash
+poetry run poe build
+```
+
+This command:
+1. Downloads the latest schema YAML files from the airbyte repository
+2. Generates all Pydantic models into a single file using `datamodel-code-generator`
+3. Generates a consolidated JSON schema file for external validation tools
+4. Outputs to `airbyte_cdk/test/models/connector_metadata/generated/`:
+   - `models.py` - All Pydantic models in a single file
+   - `metadata_schema.json` - Consolidated JSON schema
+
+The models can be imported and used for validation:
+
+```python
+from airbyte_cdk.test.models import ConnectorMetadataDefinitionV0
+import yaml
+
+metadata = ConnectorMetadataDefinitionV0(**yaml.safe_load(metadata_yaml))
+```
+
 ## Generating API Reference Docs
 
 Documentation auto-gen code lives in the `/docs` folder. Based on the doc strings of public methods, we generate API documentation using [pdoc](https://pdoc.dev).

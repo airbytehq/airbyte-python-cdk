@@ -2,94 +2,15 @@
 
 This package contains Pydantic models for validating Airbyte connector `metadata.yaml` files.
 
-## Overview
-
-The models are automatically generated from JSON Schema YAML files maintained in the [airbytehq/airbyte](https://github.com/airbytehq/airbyte) repository at:
-```
-airbyte-ci/connectors/metadata_service/lib/metadata_service/models/src/
-```
-
-During the CDK build process (`poetry run poe build`), these schemas are downloaded from GitHub and used to generate Pydantic models via `datamodel-code-generator`. All models are generated into a single Python file for simplicity and easier imports.
-
 ## Usage
 
-### Validating a metadata.yaml file
-
 ```python
-from pathlib import Path
+from airbyte_cdk.test.models import ConnectorMetadataDefinitionV0
 import yaml
-from airbyte_cdk.test.models import ConnectorMetadataDefinitionV0
 
-# Load metadata.yaml
-metadata_path = Path("path/to/metadata.yaml")
-metadata_dict = yaml.safe_load(metadata_path.read_text())
-
-# Validate using Pydantic
-try:
-    metadata = ConnectorMetadataDefinitionV0(**metadata_dict)
-    print("✓ Metadata is valid!")
-except Exception as e:
-    print(f"✗ Validation failed: {e}")
+metadata = ConnectorMetadataDefinitionV0(**yaml.safe_load(metadata_yaml))
 ```
-
-### Accessing metadata fields
-
-```python
-from airbyte_cdk.test.models import ConnectorMetadataDefinitionV0
-
-metadata = ConnectorMetadataDefinitionV0(**metadata_dict)
-
-# Access fields with full type safety
-print(f"Connector: {metadata.data.name}")
-print(f"Docker repository: {metadata.data.dockerRepository}")
-print(f"Docker image tag: {metadata.data.dockerImageTag}")
-print(f"Support level: {metadata.data.supportLevel}")
-```
-
-### Accessing other models
-
-All generated models are available in the `generated.models` module:
-
-```python
-from airbyte_cdk.test.models.connector_metadata.generated.models import (
-    ConnectorBreakingChanges,
-    ConnectorReleases,
-    ReleaseStage,
-    SupportLevel,
-)
-```
-
-### Available models
-
-The main model is `ConnectorMetadataDefinitionV0`, which includes nested models for:
-
-- `ConnectorType` - Source or destination
-- `ConnectorSubtype` - API, database, file, etc.
-- `SupportLevel` - Community, certified, etc.
-- `ReleaseStage` - Alpha, beta, generally_available
-- `ConnectorBreakingChanges` - Breaking change definitions
-- `ConnectorReleases` - Release information
-- `AllowedHosts` - Network access configuration
-- And many more...
 
 ## Regenerating Models
 
-Models are regenerated automatically when you run:
-
-```bash
-poetry run poe build
-```
-
-This command:
-1. Downloads the latest schema YAML files from the airbyte repository
-2. Generates all Pydantic models into a single file using `datamodel-code-generator`
-3. Generates a consolidated JSON schema file for external validation tools
-4. Outputs to `airbyte_cdk/test/models/connector_metadata/generated/`:
-   - `models.py` - All Pydantic models in a single file
-   - `metadata_schema.json` - Consolidated JSON schema
-
-## Schema Source
-
-The authoritative schemas are maintained in the [airbyte monorepo](https://github.com/airbytehq/airbyte/tree/master/airbyte-ci/connectors/metadata_service/lib/metadata_service/models/src).
-
-Any changes to metadata validation should be made there, and will be automatically picked up by the CDK build process.
+See the [Contributing Guide](../../../docs/CONTRIBUTING.md#regenerating-connector-metadata-models) for information on regenerating these models.
