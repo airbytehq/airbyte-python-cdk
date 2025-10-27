@@ -1083,10 +1083,6 @@
       "title": "SecretStore",
       "description": "An object describing a secret store metadata",
       "type": "object",
-      "required": [
-        "type",
-        "alias"
-      ],
       "additionalProperties": false,
       "properties": {
         "alias": {

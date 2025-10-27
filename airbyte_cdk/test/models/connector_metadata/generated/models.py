@@ -272,11 +272,13 @@ class SecretStore(BaseModel):
     class Config:
         extra = Extra.forbid
 
-    alias: str = Field(
-        ...,
+    alias: Optional[str] = Field(
+        None,
         description="The alias of the secret store which can map to its actual secret address",
     )
-    type: Literal["GSM"] = Field(..., description="The type of the secret store")
+    type: Optional[Literal["GSM"]] = Field(
+        None, description="The type of the secret store"
+    )
 
 
 class PyPi(BaseModel):
