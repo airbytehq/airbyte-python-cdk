@@ -8,4 +8,3 @@
 set -e
 
 python bin/generate_component_manifest_files.py
-python bin/generate_connector_metadata_files.py
