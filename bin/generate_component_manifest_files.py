@@ -1,8 +1,8 @@
 # Copyright (c) 2024 Airbyte, Inc., all rights reserved.
 
 import json
-import os
 import re
+import subprocess
 import sys
 import tempfile
 from glob import glob
@@ -10,15 +10,11 @@ from pathlib import Path
 
 import anyio
 import dagger
-import httpx
 import yaml
 
 PYTHON_IMAGE = "python:3.10"
 LOCAL_YAML_DIR_PATH = "airbyte_cdk/sources/declarative"
 LOCAL_OUTPUT_DIR_PATH = "airbyte_cdk/sources/declarative/models"
-
-METADATA_SCHEMAS_GITHUB_URL = "https://api.github.com/repos/airbytehq/airbyte/contents/airbyte-ci/connectors/metadata_service/lib/metadata_service/models/src"
-METADATA_SCHEMAS_RAW_URL_BASE = "https://raw.githubusercontent.com/airbytehq/airbyte/master/airbyte-ci/connectors/metadata_service/lib/metadata_service/models/src"
 LOCAL_METADATA_OUTPUT_DIR_PATH = "airbyte_cdk/test/models/connector_metadata/generated"
 
 PIP_DEPENDENCIES = [
@@ -41,45 +37,40 @@ def generate_init_module_content(yaml_files: list[str]) -> str:
     return header
 
 
-async def download_metadata_schemas(temp_dir: Path) -> list[str]:
-    """Download metadata schema YAML files from GitHub to a temporary directory."""
-    token = os.getenv("GITHUB_TOKEN") or os.getenv("GH_TOKEN")
-    headers = {
-        "User-Agent": "airbyte-python-cdk-build",
-        "Accept": "application/vnd.github.v3+json",
-    }
-    if token:
-        headers["Authorization"] = f"Bearer {token}"
+def clone_metadata_schemas(temp_dir: Path) -> Path:
+    """Clone metadata schema YAML files from GitHub using sparse checkout."""
+    repo_url = "https://github.com/airbytehq/airbyte.git"
+    schema_path = "airbyte-ci/connectors/metadata_service/lib/metadata_service/models/src"
 
-    async with httpx.AsyncClient(headers=headers, timeout=30.0) as client:
-        try:
-            response = await client.get(METADATA_SCHEMAS_GITHUB_URL)
-            response.raise_for_status()
-            files_info = response.json()
-        except httpx.HTTPStatusError as e:
-            if e.response.status_code == 403:
-                print(
-                    "Warning: GitHub API rate limit exceeded. Provide GITHUB_TOKEN to authenticate.",
-                    file=sys.stderr,
-                )
-                raise
-            raise
+    clone_dir = temp_dir / "airbyte"
 
-        yaml_files = []
-        for file_info in files_info:
-            if file_info["name"].endswith(".yaml"):
-                file_name = file_info["name"]
-                file_url = f"{METADATA_SCHEMAS_RAW_URL_BASE}/{file_name}"
+    print("Cloning metadata schemas from airbyte repo...", file=sys.stderr)
 
-                print(f"Downloading {file_name}...", file=sys.stderr)
-                file_response = await client.get(file_url)
-                file_response.raise_for_status()
+    subprocess.run(
+        [
+            "git",
+            "clone",
+            "--depth",
+            "1",
+            "--filter=blob:none",
+            "--sparse",
+            repo_url,
+            str(clone_dir),
+        ],
+        check=True,
+        capture_output=True,
+    )
 
-                file_path = temp_dir / file_name
-                file_path.write_text(file_response.text)
-                yaml_files.append(Path(file_name).stem)
+    subprocess.run(
+        ["git", "-C", str(clone_dir), "sparse-checkout", "set", schema_path],
+        check=True,
+        capture_output=True,
+    )
 
-        return yaml_files
+    schemas_dir = clone_dir / schema_path
+    print(f"Cloned schemas to {schemas_dir}", file=sys.stderr)
+
+    return schemas_dir
 
 
 def replace_base_model_for_classes_with_deprecated_fields(post_processed_content: str) -> str:
@@ -282,7 +273,7 @@ async def generate_metadata_models_single_file(
     codegen_container = (
         dagger_client.container()
         .from_(PYTHON_IMAGE)
-        .with_exec(["mkdir", "-p", "/generated"], use_entrypoint=True)
+        .with_exec(["mkdir", "-p", "/generated_temp"], use_entrypoint=True)
         .with_exec(["pip", "install", " ".join(PIP_DEPENDENCIES)], use_entrypoint=True)
         .with_mounted_directory(
             "/yaml", dagger_client.host().directory(yaml_dir_path, include=["*.yaml"])
@@ -295,7 +286,7 @@ async def generate_metadata_models_single_file(
             "--input",
             "/yaml",
             "--output",
-            "/generated/models.py",
+            "/generated_temp",
             "--disable-timestamp",
             "--enum-field-as-literal",
             "one",
@@ -309,14 +300,88 @@ async def generate_metadata_models_single_file(
         use_entrypoint=True,
     )
 
-    original_content = await codegen_container.file("/generated/models.py").contents()
-    post_processed_content = original_content.replace("from pydantic", "from pydantic.v1")
+    generated_files = await codegen_container.directory("/generated_temp").entries()
+
+    future_imports = set()
+    stdlib_imports = set()
+    third_party_imports = set()
+    classes_and_updates = []
+
+    for file_name in sorted(generated_files):
+        if file_name.endswith(".py") and file_name != "__init__.py":
+            content = await codegen_container.file(f"/generated_temp/{file_name}").contents()
+
+            lines = content.split("\n")
+            in_imports = True
+            in_relative_import_block = False
+            class_content = []
+
+            for line in lines:
+                if in_imports:
+                    if line.startswith("from __future__"):
+                        future_imports.add(line)
+                    elif (
+                        line.startswith("from datetime")
+                        or line.startswith("from enum")
+                        or line.startswith("from typing")
+                        or line.startswith("from uuid")
+                    ):
+                        stdlib_imports.add(line)
+                    elif line.startswith("from pydantic") or line.startswith("import "):
+                        third_party_imports.add(line)
+                    elif line.startswith("from ."):
+                        in_relative_import_block = True
+                        if not line.rstrip().endswith(",") and not line.rstrip().endswith("("):
+                            in_relative_import_block = False
+                    elif in_relative_import_block:
+                        if line.strip().endswith(")"):
+                            in_relative_import_block = False
+                    elif line.strip() and not line.startswith("#"):
+                        in_imports = False
+                        class_content.append(line)
+                else:
+                    class_content.append(line)
+
+            if class_content:
+                classes_and_updates.append("\n".join(class_content))
+
+    import_sections = []
+    if future_imports:
+        import_sections.append("\n".join(sorted(future_imports)))
+    if stdlib_imports:
+        import_sections.append("\n".join(sorted(stdlib_imports)))
+    if third_party_imports:
+        import_sections.append("\n".join(sorted(third_party_imports)))
+
+    final_content = "\n\n".join(import_sections) + "\n\n\n" + "\n\n\n".join(classes_and_updates)
+
+    post_processed_content = final_content.replace("from pydantic", "from pydantic.v1")
+
+    lines = post_processed_content.split("\n")
+    filtered_lines = []
+    in_relative_import = False
+
+    for line in lines:
+        if line.strip().startswith("from . import"):
+            in_relative_import = True
+            if not line.rstrip().endswith(",") and not line.rstrip().endswith("("):
+                in_relative_import = False
+            continue
+
+        if in_relative_import:
+            if line.strip().endswith(")"):
+                in_relative_import = False
+            continue
+
+        filtered_lines.append(line)
+
+    post_processed_content = "\n".join(filtered_lines)
 
     codegen_container = codegen_container.with_new_file(
-        "/generated/models_processed.py", contents=post_processed_content
+        "/generated/models.py", contents=post_processed_content
     )
 
-    await codegen_container.file("/generated/models_processed.py").export(output_file_path)
+    await codegen_container.file("/generated/models.py").export(output_file_path)
 
 
 async def main():
@@ -334,7 +399,7 @@ async def main():
         print("\nGenerating metadata models...", file=sys.stderr)
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_path = Path(temp_dir)
-            await download_metadata_schemas(temp_path)
+            schemas_dir = clone_metadata_schemas(temp_path)
 
             output_dir = Path(LOCAL_METADATA_OUTPUT_DIR_PATH)
             output_dir.mkdir(parents=True, exist_ok=True)
@@ -343,13 +408,13 @@ async def main():
             output_file = str(output_dir / "models.py")
             await generate_metadata_models_single_file(
                 dagger_client=dagger_client,
-                yaml_dir_path=str(temp_path),
+                yaml_dir_path=str(schemas_dir),
                 output_file_path=output_file,
             )
 
             print("Generating consolidated JSON schema...", file=sys.stderr)
             json_schema_file = str(output_dir / "metadata_schema.json")
-            consolidate_yaml_schemas_to_json(temp_path, json_schema_file)
+            consolidate_yaml_schemas_to_json(schemas_dir, json_schema_file)
 
         print("\nModel generation complete!", file=sys.stderr)
 
