@@ -4,7 +4,7 @@
 """
 Generate Pydantic models and JSON schema for connector metadata validation.
 
-This script downloads metadata schema YAML files from the airbyte monorepo and generates:
+This script uses vendored metadata schema YAML files and generates:
 1. A consolidated JSON schema file (metadata_schema.json)
 2. A single Python file with all Pydantic models (models.py) generated from the JSON schema
 
@@ -15,7 +15,6 @@ import json
 import re
 import subprocess
 import sys
-import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -26,41 +25,19 @@ except ImportError:
     sys.exit(1)
 
 OUTPUT_DIR_PATH = "airbyte_cdk/test/models/connector_metadata/generated"
-AIRBYTE_REPO_URL = "https://github.com/airbytehq/airbyte.git"
-SCHEMA_PATH = "airbyte-ci/connectors/metadata_service/lib/metadata_service/models/src"
+VENDORED_SCHEMAS_PATH = "airbyte_cdk/models/connector_metadata/resources"
 DATAMODEL_CODEGEN_VERSION = "0.26.3"
 
 
-def clone_schemas_from_github(temp_dir: Path) -> Path:
-    """Clone metadata schema YAML files from GitHub using sparse checkout."""
-    clone_dir = temp_dir / "airbyte"
+def get_vendored_schemas_dir() -> Path:
+    """Get the path to vendored metadata schema YAML files."""
+    schemas_dir = Path(__file__).parent.parent / VENDORED_SCHEMAS_PATH
 
-    print("Cloning metadata schemas from airbyte repo...", file=sys.stderr)
+    if not schemas_dir.exists():
+        print(f"Error: Vendored schemas directory not found: {schemas_dir}", file=sys.stderr)
+        sys.exit(1)
 
-    subprocess.run(
-        [
-            "git",
-            "clone",
-            "--depth",
-            "1",
-            "--filter=blob:none",
-            "--sparse",
-            AIRBYTE_REPO_URL,
-            str(clone_dir),
-        ],
-        check=True,
-        capture_output=True,
-    )
-
-    subprocess.run(
-        ["git", "-C", str(clone_dir), "sparse-checkout", "set", SCHEMA_PATH],
-        check=True,
-        capture_output=True,
-    )
-
-    schemas_dir = clone_dir / SCHEMA_PATH
-    print(f"Cloned schemas to {schemas_dir}", file=sys.stderr)
-
+    print(f"Using vendored schemas from {schemas_dir}", file=sys.stderr)
     return schemas_dir
 
 
@@ -195,20 +172,18 @@ def generate_models_from_json_schema(json_schema_path: Path, output_file_path: P
 def main() -> None:
     print("Generating connector metadata models...", file=sys.stderr)
 
-    with tempfile.TemporaryDirectory() as temp_dir:
-        temp_path = Path(temp_dir)
-        schemas_dir = clone_schemas_from_github(temp_path)
+    schemas_dir = get_vendored_schemas_dir()
 
-        output_dir = Path(OUTPUT_DIR_PATH)
-        output_dir.mkdir(parents=True, exist_ok=True)
+    output_dir = Path(OUTPUT_DIR_PATH)
+    output_dir.mkdir(parents=True, exist_ok=True)
 
-        print("Consolidating YAML schemas into JSON...", file=sys.stderr)
-        json_schema_file = output_dir / "metadata_schema.json"
-        consolidate_yaml_schemas_to_json(schemas_dir, json_schema_file)
+    print("Consolidating YAML schemas into JSON...", file=sys.stderr)
+    json_schema_file = output_dir / "metadata_schema.json"
+    consolidate_yaml_schemas_to_json(schemas_dir, json_schema_file)
 
-        print("Generating Python models from JSON schema...", file=sys.stderr)
-        output_file = output_dir / "models.py"
-        generate_models_from_json_schema(json_schema_file, output_file)
+    print("Generating Python models from JSON schema...", file=sys.stderr)
+    output_file = output_dir / "models.py"
+    generate_models_from_json_schema(json_schema_file, output_file)
 
     print("Connector metadata model generation complete!", file=sys.stderr)
 

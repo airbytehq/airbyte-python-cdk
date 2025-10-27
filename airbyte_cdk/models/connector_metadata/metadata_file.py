@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import json
 from enum import Enum
 from pathlib import Path
+from typing import Any
 
 import yaml
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 
 
 class ConnectorLanguage(str, Enum):
@@ -109,3 +111,89 @@ class MetadataFile(BaseModel):
 
         metadata_file = MetadataFile.model_validate(metadata_dict)
         return metadata_file
+
+
+class ValidationResult(BaseModel):
+    """Result of metadata validation."""
+
+    valid: bool = Field(..., description="Whether the metadata is valid")
+    errors: list[dict[str, Any]] = Field(
+        default_factory=list, description="List of validation errors"
+    )
+    metadata: dict[str, Any] | None = Field(None, description="Parsed metadata if available")
+
+
+def validate_metadata_file(file_path: Path) -> ValidationResult:
+    """Validate a metadata.yaml file.
+
+    Args:
+        file_path: Path to the metadata.yaml file to validate
+
+    Returns:
+        ValidationResult with validation status, errors, and parsed metadata
+    """
+    errors = []
+    metadata_dict = None
+
+    try:
+        if not file_path.exists():
+            return ValidationResult(
+                valid=False,
+                errors=[
+                    {"type": "file_not_found", "message": f"Metadata file not found: {file_path}"}
+                ],
+                metadata=None,
+            )
+
+        try:
+            metadata_content = file_path.read_text()
+            metadata_dict = yaml.safe_load(metadata_content)
+        except yaml.YAMLError as e:
+            return ValidationResult(
+                valid=False,
+                errors=[{"type": "yaml_parse_error", "message": f"Failed to parse YAML: {e}"}],
+                metadata=None,
+            )
+
+        if not metadata_dict or "data" not in metadata_dict:
+            return ValidationResult(
+                valid=False,
+                errors=[
+                    {
+                        "type": "missing_field",
+                        "path": "data",
+                        "message": "Missing 'data' field in metadata",
+                    }
+                ],
+                metadata=metadata_dict,
+            )
+
+        try:
+            metadata_file = MetadataFile.model_validate(metadata_dict)
+            return ValidationResult(
+                valid=True,
+                errors=[],
+                metadata=metadata_dict,
+            )
+        except ValidationError as e:
+            for error in e.errors():
+                errors.append(
+                    {
+                        "type": error["type"],
+                        "path": ".".join(str(loc) for loc in error["loc"]),
+                        "message": error["msg"],
+                    }
+                )
+
+            return ValidationResult(
+                valid=False,
+                errors=errors,
+                metadata=metadata_dict,
+            )
+
+    except Exception as e:
+        return ValidationResult(
+            valid=False,
+            errors=[{"type": "unexpected_error", "message": f"Unexpected error: {e}"}],
+            metadata=metadata_dict,
+        )
