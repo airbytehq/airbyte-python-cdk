@@ -2,5 +2,10 @@
 target-version = "py310"
 line-length = 100
 
+exclude = [
+    "airbyte_cdk/sources/declarative/models/declarative_component_schema.py",
+    "airbyte_cdk/test/models/connector_metadata/generated/models.py",
+]
+
 [lint]
 select = ["I"]
