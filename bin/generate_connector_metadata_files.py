@@ -17,6 +17,7 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
+from typing import Any
 
 try:
     import yaml
@@ -79,7 +80,7 @@ def consolidate_yaml_schemas_to_json(yaml_dir_path: Path, output_json_path: Path
         if isinstance(schema_content, dict) and "definitions" in schema_content:
             all_schema_names.update(schema_content["definitions"].keys())
 
-    def fix_refs(obj, in_definition=False):
+    def fix_refs(obj: Any, in_definition: bool = False) -> Any:
         """Recursively fix $ref and type references in schema objects."""
         if isinstance(obj, dict):
             new_obj = {}
@@ -117,8 +118,10 @@ def consolidate_yaml_schemas_to_json(yaml_dir_path: Path, output_json_path: Path
         consolidated = dict(main_schema)  # shallow copy
         consolidated.setdefault("$schema", "http://json-schema.org/draft-07/schema#")
         consolidated.setdefault("title", "Connector Metadata Schema")
-        consolidated.setdefault("description", "Consolidated JSON schema for Airbyte connector metadata validation")
-        
+        consolidated.setdefault(
+            "description", "Consolidated JSON schema for Airbyte connector metadata validation"
+        )
+
         consolidated_definitions = dict(consolidated.get("definitions", {}))
 
         # Add all schemas (including their internal definitions) as top-level definitions
@@ -126,11 +129,19 @@ def consolidate_yaml_schemas_to_json(yaml_dir_path: Path, output_json_path: Path
             if schema_name != "ConnectorMetadataDefinitionV0":
                 if isinstance(schema_content, dict) and "definitions" in schema_content:
                     for def_name, def_content in schema_content["definitions"].items():
-                        consolidated_definitions[def_name] = fix_refs(def_content, in_definition=True)
-                    schema_without_defs = {k: v for k, v in schema_content.items() if k != "definitions"}
-                    consolidated_definitions[schema_name] = fix_refs(schema_without_defs, in_definition=True)
+                        consolidated_definitions[def_name] = fix_refs(
+                            def_content, in_definition=True
+                        )
+                    schema_without_defs = {
+                        k: v for k, v in schema_content.items() if k != "definitions"
+                    }
+                    consolidated_definitions[schema_name] = fix_refs(
+                        schema_without_defs, in_definition=True
+                    )
                 else:
-                    consolidated_definitions[schema_name] = fix_refs(schema_content, in_definition=True)
+                    consolidated_definitions[schema_name] = fix_refs(
+                        schema_content, in_definition=True
+                    )
 
         consolidated["definitions"] = consolidated_definitions
         consolidated = fix_refs(consolidated, in_definition=False)
@@ -181,7 +192,7 @@ def generate_models_from_json_schema(json_schema_path: Path, output_file_path: P
     print(f"Generated models: {output_file_path}", file=sys.stderr)
 
 
-def main():
+def main() -> None:
     print("Generating connector metadata models...", file=sys.stderr)
 
     with tempfile.TemporaryDirectory() as temp_dir:
