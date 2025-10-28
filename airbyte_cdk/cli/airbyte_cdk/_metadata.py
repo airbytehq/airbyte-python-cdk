@@ -26,13 +26,21 @@ def metadata_cli_group() -> None:
     help="Path to the metadata.yaml file to validate",
 )
 @click.option(
+    "--schema",
+    "-s",
+    "schema_source",
+    type=str,
+    default=None,
+    help="URL or file path to JSON schema (defaults to monorepo schema)",
+)
+@click.option(
     "--format",
     "output_format",
     type=click.Choice(["json", "text"]),
     default="text",
     help="Output format (json or text)",
 )
-def validate_command(file_path: Path, output_format: str) -> None:
+def validate_command(file_path: Path, schema_source: str | None, output_format: str) -> None:
     """Validate a connector metadata.yaml file.
 
     This command validates a metadata.yaml file against the connector metadata schema
@@ -41,8 +49,9 @@ def validate_command(file_path: Path, output_format: str) -> None:
     Examples:
         airbyte-cdk metadata validate --file metadata.yaml
         airbyte-cdk metadata validate --file metadata.yaml --format json
+        airbyte-cdk metadata validate --file metadata.yaml --schema /path/to/schema.json
     """
-    result = validate_metadata_file(file_path)
+    result = validate_metadata_file(file_path, schema_source)
 
     if output_format == "json":
         click.echo(result.model_dump_json(indent=2))

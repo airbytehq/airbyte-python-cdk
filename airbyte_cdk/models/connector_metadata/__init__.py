@@ -7,6 +7,7 @@ from airbyte_cdk.models.connector_metadata.metadata_file import (
     MetadataFile,
     SuggestedStreams,
     ValidationResult,
+    get_metadata_schema,
     validate_metadata_file,
 )
 
@@ -17,5 +18,6 @@ __all__ = [
     "MetadataFile",
     "SuggestedStreams",
     "ValidationResult",
+    "get_metadata_schema",
     "validate_metadata_file",
 ]

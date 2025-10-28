@@ -6,9 +6,15 @@ import json
 from enum import Enum
 from pathlib import Path
 from typing import Any
+from urllib.request import urlopen
 
+import jsonschema
 import yaml
 from pydantic import BaseModel, Field, ValidationError
+
+# TODO: Update to master branch URL after associated PR merges
+# https://raw.githubusercontent.com/airbytehq/airbyte/master/airbyte-ci/connectors/metadata_service/lib/metadata_service/models/generated/ConnectorMetadataDefinitionV0.json
+DEFAULT_SCHEMA_URL = "https://raw.githubusercontent.com/airbytehq/airbyte/61048d88732df93c50bd3da490de8d3cc1aa66b0/airbyte-ci/connectors/metadata_service/lib/metadata_service/models/generated/ConnectorMetadataDefinitionV0.json"
 
 
 class ConnectorLanguage(str, Enum):
@@ -123,11 +129,41 @@ class ValidationResult(BaseModel):
     metadata: dict[str, Any] | None = Field(None, description="Parsed metadata if available")
 
 
-def validate_metadata_file(file_path: Path) -> ValidationResult:
-    """Validate a metadata.yaml file.
+def get_metadata_schema(schema_source: str | Path | None = None) -> dict[str, Any]:
+    """Load metadata JSON schema from URL or file path.
+
+    Args:
+        schema_source: URL or file path to JSON schema. If None, uses DEFAULT_SCHEMA_URL.
+
+    Returns:
+        Parsed JSON schema as dictionary
+    """
+    if schema_source is None:
+        schema_source = DEFAULT_SCHEMA_URL
+
+    if isinstance(schema_source, Path) or (
+        isinstance(schema_source, str) and not schema_source.startswith(("http://", "https://"))
+    ):
+        schema_path = Path(schema_source)
+        if not schema_path.exists():
+            raise FileNotFoundError(f"Schema file not found: {schema_path}")
+        return json.loads(schema_path.read_text())
+
+    try:
+        with urlopen(schema_source, timeout=10) as response:
+            return json.loads(response.read().decode("utf-8"))
+    except Exception as e:
+        raise RuntimeError(f"Failed to fetch schema from {schema_source}: {e}") from e
+
+
+def validate_metadata_file(
+    file_path: Path, schema_source: str | Path | None = None
+) -> ValidationResult:
+    """Validate a metadata.yaml file against JSON schema.
 
     Args:
         file_path: Path to the metadata.yaml file to validate
+        schema_source: URL or file path to JSON schema. If None, uses DEFAULT_SCHEMA_URL.
 
     Returns:
         ValidationResult with validation status, errors, and parsed metadata
@@ -169,25 +205,38 @@ def validate_metadata_file(file_path: Path) -> ValidationResult:
             )
 
         try:
-            metadata_file = MetadataFile.model_validate(metadata_dict)
+            schema = get_metadata_schema(schema_source)
+        except Exception as e:
+            return ValidationResult(
+                valid=False,
+                errors=[{"type": "schema_load_error", "message": f"Failed to load schema: {e}"}],
+                metadata=metadata_dict,
+            )
+
+        try:
+            jsonschema.validate(instance=metadata_dict, schema=schema)
             return ValidationResult(
                 valid=True,
                 errors=[],
                 metadata=metadata_dict,
             )
-        except ValidationError as e:
-            for error in e.errors():
-                errors.append(
-                    {
-                        "type": error["type"],
-                        "path": ".".join(str(loc) for loc in error["loc"]),
-                        "message": error["msg"],
-                    }
-                )
-
+        except jsonschema.ValidationError as e:
+            errors.append(
+                {
+                    "type": "validation_error",
+                    "path": ".".join(str(p) for p in e.absolute_path) if e.absolute_path else "",
+                    "message": e.message,
+                }
+            )
             return ValidationResult(
                 valid=False,
                 errors=errors,
+                metadata=metadata_dict,
+            )
+        except jsonschema.SchemaError as e:
+            return ValidationResult(
+                valid=False,
+                errors=[{"type": "schema_error", "message": f"Invalid schema: {e.message}"}],
                 metadata=metadata_dict,
             )
 
