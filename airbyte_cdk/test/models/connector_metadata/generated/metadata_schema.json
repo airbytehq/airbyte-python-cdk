@@ -188,118 +188,16 @@
     }
   },
   "definitions": {
-    "TestConnections": {
-      "title": "TestConnections",
-      "description": "List of sandbox cloud connections that tests can be run against",
-      "type": "object",
-      "required": [
-        "name",
-        "id"
-      ],
-      "additionalProperties": false,
-      "properties": {
-        "name": {
-          "type": "string",
-          "description": "The connection name"
-        },
-        "id": {
-          "type": "string",
-          "description": "The connection ID"
-        }
-      }
-    },
-    "SupportLevel": {
-      "title": "SupportLevel",
+    "ReleaseStage": {
+      "title": "ReleaseStage",
       "description": "enum that describes a connector's release stage",
       "type": "string",
       "enum": [
-        "community",
-        "certified",
-        "archived"
+        "alpha",
+        "beta",
+        "generally_available",
+        "custom"
       ]
-    },
-    "SuggestedStreams": {
-      "title": "SuggestedStreams",
-      "description": "A source's suggested streams.  These will be suggested by default for new connections using this source.  Otherwise, all streams will be selected.  This is useful for when your source has a lot of streams, but the average user will only want a subset of them synced.",
-      "type": "object",
-      "additionalProperties": true,
-      "properties": {
-        "streams": {
-          "type": "array",
-          "description": "An array of streams that this connector suggests the average user will want.  SuggestedStreams not being present for the source means that all streams are suggested.  An empty list here means that no streams are suggested.",
-          "items": {
-            "type": "string"
-          }
-        }
-      }
-    },
-    "SourceFileInfo": {
-      "title": "SourceFileInfo",
-      "description": "Information about the source file that generated the registry entry",
-      "type": "object",
-      "properties": {
-        "metadata_etag": {
-          "type": "string"
-        },
-        "metadata_file_path": {
-          "type": "string"
-        },
-        "metadata_bucket_name": {
-          "type": "string"
-        },
-        "metadata_last_modified": {
-          "type": "string"
-        },
-        "registry_entry_generated_at": {
-          "type": "string"
-        }
-      }
-    },
-    "SecretStore": {
-      "title": "SecretStore",
-      "description": "An object describing a secret store metadata",
-      "type": "object",
-      "required": [
-        "name",
-        "secretStore"
-      ],
-      "additionalProperties": false,
-      "properties": {
-        "alias": {
-          "type": "string",
-          "description": "The alias of the secret store which can map to its actual secret address"
-        },
-        "type": {
-          "type": "string",
-          "description": "The type of the secret store",
-          "enum": [
-            "GSM"
-          ]
-        }
-      }
-    },
-    "Secret": {
-      "title": "Secret",
-      "description": "An object describing a secret's metadata",
-      "type": "object",
-      "required": [
-        "name",
-        "secretStore"
-      ],
-      "additionalProperties": false,
-      "properties": {
-        "name": {
-          "type": "string",
-          "description": "The secret name in the secret store"
-        },
-        "fileName": {
-          "type": "string",
-          "description": "The name of the file to which the secret value would be persisted"
-        },
-        "secretStore": {
-          "$ref": "#/definitions/SecretStore"
-        }
-      }
     },
     "RolloutConfiguration": {
       "title": "RolloutConfiguration",
@@ -334,66 +232,120 @@
         }
       }
     },
-    "ResourceRequirements": {
-      "title": "ResourceRequirements",
-      "description": "generic configuration for pod source requirements",
+    "AllowedHosts": {
+      "title": "AllowedHosts",
+      "description": "A connector's allowed hosts.  If present, the platform will limit communication to only hosts which are listed in `AllowedHosts.hosts`.",
       "type": "object",
-      "additionalProperties": false,
+      "additionalProperties": true,
       "properties": {
-        "cpu_request": {
-          "type": "string"
-        },
-        "cpu_limit": {
-          "type": "string"
-        },
-        "memory_request": {
-          "type": "string"
-        },
-        "memory_limit": {
-          "type": "string"
+        "hosts": {
+          "type": "array",
+          "description": "An array of hosts that this connector can connect to.  AllowedHosts not being present for the source or destination means that access to all hosts is allowed.  An empty list here means that no network access is granted.",
+          "items": {
+            "type": "string"
+          }
         }
       }
     },
-    "PyPi": {
-      "title": "PyPi",
-      "description": "describes the PyPi publishing options",
+    "Secret": {
+      "title": "Secret",
+      "description": "An object describing a secret's metadata",
       "type": "object",
-      "additionalProperties": false,
       "required": [
-        "enabled",
-        "packageName"
+        "name",
+        "secretStore"
       ],
+      "additionalProperties": false,
       "properties": {
-        "enabled": {
-          "type": "boolean"
-        },
-        "packageName": {
+        "name": {
           "type": "string",
-          "description": "The name of the package on PyPi."
+          "description": "The secret name in the secret store"
+        },
+        "fileName": {
+          "type": "string",
+          "description": "The name of the file to which the secret value would be persisted"
+        },
+        "secretStore": {
+          "$ref": "#/definitions/SecretStore"
         }
       }
     },
-    "RemoteRegistries": {
-      "title": "RemoteRegistries",
-      "description": "describes how the connector is published to remote registries",
+    "TestConnections": {
+      "title": "TestConnections",
+      "description": "List of sandbox cloud connections that tests can be run against",
+      "type": "object",
+      "required": [
+        "name",
+        "id"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "The connection name"
+        },
+        "id": {
+          "type": "string",
+          "description": "The connection ID"
+        }
+      }
+    },
+    "AirbyteInternal": {
+      "title": "AirbyteInternal",
+      "description": "Fields for internal use only",
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "sl": {
+          "type": "integer",
+          "enum": [
+            0,
+            100,
+            200,
+            300
+          ]
+        },
+        "ql": {
+          "type": "integer",
+          "enum": [
+            0,
+            100,
+            200,
+            300,
+            400,
+            500,
+            600
+          ]
+        },
+        "isEnterprise": {
+          "type": "boolean",
+          "default": false
+        },
+        "requireVersionIncrementsInPullRequests": {
+          "type": "boolean",
+          "default": true,
+          "description": "When false, version increment checks will be skipped for this connector"
+        }
+      }
+    },
+    "ConnectorReleases": {
+      "title": "ConnectorReleases",
+      "description": "Contains information about different types of releases for a connector.",
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "pypi": {
-          "$ref": "#/definitions/PyPi"
+        "rolloutConfiguration": {
+          "$ref": "#/definitions/RolloutConfiguration"
+        },
+        "breakingChanges": {
+          "$ref": "#/definitions/ConnectorBreakingChanges"
+        },
+        "migrationDocumentationUrl": {
+          "description": "URL to documentation on how to migrate from the previous version to the current version. Defaults to ${documentationUrl}-migrations",
+          "type": "string",
+          "format": "uri"
         }
       }
-    },
-    "ReleaseStage": {
-      "title": "ReleaseStage",
-      "description": "enum that describes a connector's release stage",
-      "type": "string",
-      "enum": [
-        "alpha",
-        "beta",
-        "generally_available",
-        "custom"
-      ]
     },
     "RegistryOverrides": {
       "title": "RegistryOverrides",
@@ -447,332 +399,44 @@
         }
       }
     },
-    "NormalizationDestinationDefinitionConfig": {
-      "title": "NormalizationDestinationDefinitionConfig",
-      "description": "describes a normalization config for destination definition",
-      "type": "object",
-      "required": [
-        "normalizationRepository",
-        "normalizationTag",
-        "normalizationIntegrationType"
-      ],
-      "additionalProperties": true,
-      "properties": {
-        "normalizationRepository": {
-          "type": "string",
-          "description": "a field indicating the name of the repository to be used for normalization. If the value of the flag is NULL - normalization is not used."
-        },
-        "normalizationTag": {
-          "type": "string",
-          "description": "a field indicating the tag of the docker repository to be used for normalization."
-        },
-        "normalizationIntegrationType": {
-          "type": "string",
-          "description": "a field indicating the type of integration dialect to use for normalization."
-        }
-      }
-    },
-    "JobType": {
-      "title": "JobType",
-      "description": "enum that describes the different types of jobs that the platform runs.",
-      "type": "string",
-      "enum": [
-        "get_spec",
-        "check_connection",
-        "discover_schema",
-        "sync",
-        "reset_connection",
-        "connection_updater",
-        "replicate"
-      ]
-    },
-    "GitInfo": {
-      "title": "GitInfo",
-      "description": "Information about the author of the last commit that modified this file. DO NOT DEFINE THIS FIELD MANUALLY. It will be overwritten by the CI.",
+    "ConnectorBuildOptions": {
+      "title": "ConnectorBuildOptions",
+      "description": "metadata specific to the build process.",
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "commit_sha": {
-          "type": "string",
-          "description": "The git commit sha of the last commit that modified this file."
-        },
-        "commit_timestamp": {
-          "type": "string",
-          "format": "date-time",
-          "description": "The git commit timestamp of the last commit that modified this file."
-        },
-        "commit_author": {
-          "type": "string",
-          "description": "The git commit author of the last commit that modified this file."
-        },
-        "commit_author_email": {
-          "type": "string",
-          "description": "The git commit author email of the last commit that modified this file."
+        "baseImage": {
+          "type": "string"
         }
       }
     },
-    "GeneratedFields": {
-      "title": "GeneratedFields",
-      "description": "Optional schema for fields generated at metadata upload time",
-      "type": "object",
-      "properties": {
-        "git": {
-          "$ref": "#/definitions/GitInfo"
-        },
-        "source_file_info": {
-          "$ref": "#/definitions/SourceFileInfo"
-        },
-        "metrics": {
-          "$ref": "#/definitions/ConnectorMetrics"
-        },
-        "sbomUrl": {
-          "type": "string",
-          "description": "URL to the SBOM file"
-        }
-      }
-    },
-    "ConnectorTestSuiteOptions": {
-      "title": "ConnectorTestSuiteOptions",
-      "description": "Options for a specific connector test suite.",
-      "type": "object",
-      "required": [
-        "suite"
-      ],
-      "additionalProperties": false,
-      "properties": {
-        "suite": {
-          "description": "Name of the configured test suite",
-          "type": "string",
-          "enum": [
-            "unitTests",
-            "integrationTests",
-            "acceptanceTests",
-            "liveTests"
-          ]
-        },
-        "testSecrets": {
-          "description": "List of secrets required to run the test suite",
-          "type": "array",
-          "items": {
-            "$ref": "#/definitions/Secret"
-          }
-        },
-        "testConnections": {
-          "description": "List of sandbox cloud connections that tests can be run against",
-          "type": "array",
-          "items": {
-            "$ref": "#/definitions/TestConnections"
-          }
-        }
-      }
-    },
-    "ConnectorReleases": {
-      "title": "ConnectorReleases",
-      "description": "Contains information about different types of releases for a connector.",
+    "ResourceRequirements": {
+      "title": "ResourceRequirements",
+      "description": "generic configuration for pod source requirements",
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "rolloutConfiguration": {
-          "$ref": "#/definitions/RolloutConfiguration"
+        "cpu_request": {
+          "type": "string"
         },
-        "breakingChanges": {
-          "$ref": "#/definitions/ConnectorBreakingChanges"
+        "cpu_limit": {
+          "type": "string"
         },
-        "migrationDocumentationUrl": {
-          "description": "URL to documentation on how to migrate from the previous version to the current version. Defaults to ${documentationUrl}-migrations",
-          "type": "string",
-          "format": "uri"
+        "memory_request": {
+          "type": "string"
+        },
+        "memory_limit": {
+          "type": "string"
         }
       }
     },
-    "ConnectorRegistryV0": {
-      "title": "ConnectorRegistryV0",
-      "description": "describes the collection of connectors retrieved from a registry",
+    "ConnectorPackageInfo": {
+      "title": "ConnectorPackageInfo",
+      "description": "Information about the contents of the connector image",
       "type": "object",
-      "required": [
-        "destinations",
-        "sources"
-      ],
       "properties": {
-        "destinations": {
-          "type": "array",
-          "items": {
-            "$ref": "#/definitions/ConnectorRegistryDestinationDefinition"
-          }
-        },
-        "sources": {
-          "type": "array",
-          "items": {
-            "$ref": "#/definitions/ConnectorRegistrySourceDefinition"
-          }
-        }
-      }
-    },
-    "ConnectorRegistrySourceDefinition": {
-      "title": "ConnectorRegistrySourceDefinition",
-      "description": "describes a source",
-      "type": "object",
-      "required": [
-        "sourceDefinitionId",
-        "name",
-        "dockerRepository",
-        "dockerImageTag",
-        "documentationUrl",
-        "spec"
-      ],
-      "additionalProperties": true,
-      "properties": {
-        "sourceDefinitionId": {
-          "type": "string",
-          "format": "uuid"
-        },
-        "name": {
+        "cdk_version": {
           "type": "string"
-        },
-        "dockerRepository": {
-          "type": "string"
-        },
-        "dockerImageTag": {
-          "type": "string"
-        },
-        "documentationUrl": {
-          "type": "string"
-        },
-        "icon": {
-          "type": "string"
-        },
-        "iconUrl": {
-          "type": "string"
-        },
-        "sourceType": {
-          "type": "string",
-          "enum": [
-            "api",
-            "file",
-            "database",
-            "custom"
-          ]
-        },
-        "spec": {
-          "type": "object"
-        },
-        "tombstone": {
-          "description": "if false, the configuration is active. if true, then this configuration is permanently off.",
-          "type": "boolean",
-          "default": false
-        },
-        "public": {
-          "description": "true if this connector definition is available to all workspaces",
-          "type": "boolean",
-          "default": false
-        },
-        "custom": {
-          "description": "whether this is a custom connector definition",
-          "type": "boolean",
-          "default": false
-        },
-        "releaseStage": {
-          "$ref": "#/definitions/ReleaseStage"
-        },
-        "supportLevel": {
-          "$ref": "#/definitions/SupportLevel"
-        },
-        "releaseDate": {
-          "description": "The date when this connector was first released, in yyyy-mm-dd format.",
-          "type": "string",
-          "format": "date"
-        },
-        "resourceRequirements": {
-          "$ref": "#/definitions/ActorDefinitionResourceRequirements"
-        },
-        "protocolVersion": {
-          "type": "string",
-          "description": "the Airbyte Protocol version supported by the connector"
-        },
-        "allowedHosts": {
-          "$ref": "#/definitions/AllowedHosts"
-        },
-        "suggestedStreams": {
-          "$ref": "#/definitions/SuggestedStreams"
-        },
-        "maxSecondsBetweenMessages": {
-          "description": "Number of seconds allowed between 2 airbyte protocol messages. The source will timeout if this delay is reach",
-          "type": "integer"
-        },
-        "erdUrl": {
-          "type": "string",
-          "description": "The URL where you can visualize the ERD"
-        },
-        "releases": {
-          "$ref": "#/definitions/ConnectorRegistryReleases"
-        },
-        "ab_internal": {
-          "$ref": "#/definitions/AirbyteInternal"
-        },
-        "generated": {
-          "$ref": "#/definitions/GeneratedFields"
-        },
-        "packageInfo": {
-          "$ref": "#/definitions/ConnectorPackageInfo"
-        },
-        "language": {
-          "type": "string",
-          "description": "The language the connector is written in"
-        },
-        "supportsFileTransfer": {
-          "type": "boolean",
-          "default": false
-        },
-        "supportsDataActivation": {
-          "type": "boolean",
-          "default": false
-        }
-      }
-    },
-    "ConnectorReleaseCandidates": {
-      "description": "Each entry denotes a release candidate version of a connector.",
-      "type": "object",
-      "additionalProperties": false,
-      "minProperties": 1,
-      "maxProperties": 1,
-      "patternProperties": {
-        "^\\d+\\.\\d+\\.\\d+(-[0-9A-Za-z-.]+)?$": {
-          "$ref": "#/definitions/VersionReleaseCandidate"
-        }
-      }
-    },
-    "VersionReleaseCandidate": {
-      "description": "Contains information about a release candidate version of a connector.",
-      "additionalProperties": false,
-      "type": "object",
-      "oneOf": [
-        {
-          "$ref": "#/definitions/ConnectorRegistrySourceDefinition"
-        },
-        {
-          "$ref": "#/definitions/ConnectorRegistryDestinationDefinition"
-        }
-      ]
-    },
-    "ConnectorRegistryReleases": {
-      "title": "ConnectorRegistryReleases",
-      "description": "Contains information about different types of releases for a connector.",
-      "type": "object",
-      "additionalProperties": false,
-      "properties": {
-        "releaseCandidates": {
-          "$ref": "#/definitions/ConnectorReleaseCandidates"
-        },
-        "rolloutConfiguration": {
-          "$ref": "#/definitions/RolloutConfiguration"
-        },
-        "breakingChanges": {
-          "$ref": "#/definitions/ConnectorBreakingChanges"
-        },
-        "migrationDocumentationUrl": {
-          "description": "URL to documentation on how to migrate from the previous version to the current version. Defaults to ${documentationUrl}-migrations",
-          "type": "string",
-          "format": "uri"
         }
       }
     },
@@ -895,16 +559,6 @@
         }
       }
     },
-    "ConnectorPackageInfo": {
-      "title": "ConnectorPackageInfo",
-      "description": "Information about the contents of the connector image",
-      "type": "object",
-      "properties": {
-        "cdk_version": {
-          "type": "string"
-        }
-      }
-    },
     "ConnectorMetric": {
       "type": "object",
       "properties": {
@@ -960,6 +614,196 @@
         }
       }
     },
+    "NormalizationDestinationDefinitionConfig": {
+      "title": "NormalizationDestinationDefinitionConfig",
+      "description": "describes a normalization config for destination definition",
+      "type": "object",
+      "required": [
+        "normalizationRepository",
+        "normalizationTag",
+        "normalizationIntegrationType"
+      ],
+      "additionalProperties": true,
+      "properties": {
+        "normalizationRepository": {
+          "type": "string",
+          "description": "a field indicating the name of the repository to be used for normalization. If the value of the flag is NULL - normalization is not used."
+        },
+        "normalizationTag": {
+          "type": "string",
+          "description": "a field indicating the tag of the docker repository to be used for normalization."
+        },
+        "normalizationIntegrationType": {
+          "type": "string",
+          "description": "a field indicating the type of integration dialect to use for normalization."
+        }
+      }
+    },
+    "SuggestedStreams": {
+      "title": "SuggestedStreams",
+      "description": "A source's suggested streams.  These will be suggested by default for new connections using this source.  Otherwise, all streams will be selected.  This is useful for when your source has a lot of streams, but the average user will only want a subset of them synced.",
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "streams": {
+          "type": "array",
+          "description": "An array of streams that this connector suggests the average user will want.  SuggestedStreams not being present for the source means that all streams are suggested.  An empty list here means that no streams are suggested.",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "GeneratedFields": {
+      "title": "GeneratedFields",
+      "description": "Optional schema for fields generated at metadata upload time",
+      "type": "object",
+      "properties": {
+        "git": {
+          "$ref": "#/definitions/GitInfo"
+        },
+        "source_file_info": {
+          "$ref": "#/definitions/SourceFileInfo"
+        },
+        "metrics": {
+          "$ref": "#/definitions/ConnectorMetrics"
+        },
+        "sbomUrl": {
+          "type": "string",
+          "description": "URL to the SBOM file"
+        }
+      }
+    },
+    "ConnectorRegistryV0": {
+      "title": "ConnectorRegistryV0",
+      "description": "describes the collection of connectors retrieved from a registry",
+      "type": "object",
+      "required": [
+        "destinations",
+        "sources"
+      ],
+      "properties": {
+        "destinations": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/ConnectorRegistryDestinationDefinition"
+          }
+        },
+        "sources": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/ConnectorRegistrySourceDefinition"
+          }
+        }
+      }
+    },
+    "GitInfo": {
+      "title": "GitInfo",
+      "description": "Information about the author of the last commit that modified this file. DO NOT DEFINE THIS FIELD MANUALLY. It will be overwritten by the CI.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "commit_sha": {
+          "type": "string",
+          "description": "The git commit sha of the last commit that modified this file."
+        },
+        "commit_timestamp": {
+          "type": "string",
+          "format": "date-time",
+          "description": "The git commit timestamp of the last commit that modified this file."
+        },
+        "commit_author": {
+          "type": "string",
+          "description": "The git commit author of the last commit that modified this file."
+        },
+        "commit_author_email": {
+          "type": "string",
+          "description": "The git commit author email of the last commit that modified this file."
+        }
+      }
+    },
+    "ConnectorReleaseCandidates": {
+      "description": "Each entry denotes a release candidate version of a connector.",
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "maxProperties": 1,
+      "patternProperties": {
+        "^\\d+\\.\\d+\\.\\d+(-[0-9A-Za-z-.]+)?$": {
+          "$ref": "#/definitions/VersionReleaseCandidate"
+        }
+      }
+    },
+    "VersionReleaseCandidate": {
+      "description": "Contains information about a release candidate version of a connector.",
+      "additionalProperties": false,
+      "type": "object",
+      "oneOf": [
+        {
+          "$ref": "#/definitions/ConnectorRegistrySourceDefinition"
+        },
+        {
+          "$ref": "#/definitions/ConnectorRegistryDestinationDefinition"
+        }
+      ]
+    },
+    "ConnectorRegistryReleases": {
+      "title": "ConnectorRegistryReleases",
+      "description": "Contains information about different types of releases for a connector.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "releaseCandidates": {
+          "$ref": "#/definitions/ConnectorReleaseCandidates"
+        },
+        "rolloutConfiguration": {
+          "$ref": "#/definitions/RolloutConfiguration"
+        },
+        "breakingChanges": {
+          "$ref": "#/definitions/ConnectorBreakingChanges"
+        },
+        "migrationDocumentationUrl": {
+          "description": "URL to documentation on how to migrate from the previous version to the current version. Defaults to ${documentationUrl}-migrations",
+          "type": "string",
+          "format": "uri"
+        }
+      }
+    },
+    "JobTypeResourceLimit": {
+      "description": "sets resource requirements for a specific job type for an actor definition. these values override the default, if both are set.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "jobType",
+        "resourceRequirements"
+      ],
+      "properties": {
+        "jobType": {
+          "$ref": "#/definitions/JobType"
+        },
+        "resourceRequirements": {
+          "$ref": "#/definitions/ResourceRequirements"
+        }
+      }
+    },
+    "ActorDefinitionResourceRequirements": {
+      "title": "ActorDefinitionResourceRequirements",
+      "description": "actor definition specific resource requirements",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "default": {
+          "description": "if set, these are the requirements that should be set for ALL jobs run for this actor definition.",
+          "$ref": "#/definitions/ResourceRequirements"
+        },
+        "jobSpecific": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/JobTypeResourceLimit"
+          }
+        }
+      }
+    },
     "ConnectorIPCOptions": {
       "title": "ConnectorIPCOptions",
       "type": "object",
@@ -1002,17 +846,6 @@
               }
             }
           }
-        }
-      }
-    },
-    "ConnectorBuildOptions": {
-      "title": "ConnectorBuildOptions",
-      "description": "metadata specific to the build process.",
-      "type": "object",
-      "additionalProperties": false,
-      "properties": {
-        "baseImage": {
-          "type": "string"
         }
       }
     },
@@ -1076,7 +909,7 @@
       ],
       "properties": {
         "scopeType": {
-          "type": "const",
+          "type": "string",
           "const": "stream"
         },
         "impactedScopes": {
@@ -1101,91 +934,254 @@
         }
       }
     },
-    "AllowedHosts": {
-      "title": "AllowedHosts",
-      "description": "A connector's allowed hosts.  If present, the platform will limit communication to only hosts which are listed in `AllowedHosts.hosts`.",
-      "type": "object",
-      "additionalProperties": true,
-      "properties": {
-        "hosts": {
-          "type": "array",
-          "description": "An array of hosts that this connector can connect to.  AllowedHosts not being present for the source or destination means that access to all hosts is allowed.  An empty list here means that no network access is granted.",
-          "items": {
-            "type": "string"
-          }
-        }
-      }
+    "JobType": {
+      "title": "JobType",
+      "description": "enum that describes the different types of jobs that the platform runs.",
+      "type": "string",
+      "enum": [
+        "get_spec",
+        "check_connection",
+        "discover_schema",
+        "sync",
+        "reset_connection",
+        "connection_updater",
+        "replicate"
+      ]
     },
-    "AirbyteInternal": {
-      "title": "AirbyteInternal",
-      "description": "Fields for internal use only",
+    "ConnectorRegistrySourceDefinition": {
+      "title": "ConnectorRegistrySourceDefinition",
+      "description": "describes a source",
       "type": "object",
+      "required": [
+        "sourceDefinitionId",
+        "name",
+        "dockerRepository",
+        "dockerImageTag",
+        "documentationUrl",
+        "spec"
+      ],
       "additionalProperties": true,
       "properties": {
-        "sl": {
-          "type": "integer",
+        "sourceDefinitionId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "name": {
+          "type": "string"
+        },
+        "dockerRepository": {
+          "type": "string"
+        },
+        "dockerImageTag": {
+          "type": "string"
+        },
+        "documentationUrl": {
+          "type": "string"
+        },
+        "icon": {
+          "type": "string"
+        },
+        "iconUrl": {
+          "type": "string"
+        },
+        "sourceType": {
+          "type": "string",
           "enum": [
-            0,
-            100,
-            200,
-            300
+            "api",
+            "file",
+            "database",
+            "custom"
           ]
         },
-        "ql": {
-          "type": "integer",
-          "enum": [
-            0,
-            100,
-            200,
-            300,
-            400,
-            500,
-            600
-          ]
+        "spec": {
+          "type": "object"
         },
-        "isEnterprise": {
+        "tombstone": {
+          "description": "if false, the configuration is active. if true, then this configuration is permanently off.",
           "type": "boolean",
           "default": false
         },
-        "requireVersionIncrementsInPullRequests": {
+        "public": {
+          "description": "true if this connector definition is available to all workspaces",
           "type": "boolean",
-          "default": true,
-          "description": "When false, version increment checks will be skipped for this connector"
+          "default": false
+        },
+        "custom": {
+          "description": "whether this is a custom connector definition",
+          "type": "boolean",
+          "default": false
+        },
+        "releaseStage": {
+          "$ref": "#/definitions/ReleaseStage"
+        },
+        "supportLevel": {
+          "$ref": "#/definitions/SupportLevel"
+        },
+        "releaseDate": {
+          "description": "The date when this connector was first released, in yyyy-mm-dd format.",
+          "type": "string",
+          "format": "date"
+        },
+        "resourceRequirements": {
+          "$ref": "#/definitions/ActorDefinitionResourceRequirements"
+        },
+        "protocolVersion": {
+          "type": "string",
+          "description": "the Airbyte Protocol version supported by the connector"
+        },
+        "allowedHosts": {
+          "$ref": "#/definitions/AllowedHosts"
+        },
+        "suggestedStreams": {
+          "$ref": "#/definitions/SuggestedStreams"
+        },
+        "maxSecondsBetweenMessages": {
+          "description": "Number of seconds allowed between 2 airbyte protocol messages. The source will timeout if this delay is reach",
+          "type": "integer"
+        },
+        "erdUrl": {
+          "type": "string",
+          "description": "The URL where you can visualize the ERD"
+        },
+        "releases": {
+          "$ref": "#/definitions/ConnectorRegistryReleases"
+        },
+        "ab_internal": {
+          "$ref": "#/definitions/AirbyteInternal"
+        },
+        "generated": {
+          "$ref": "#/definitions/GeneratedFields"
+        },
+        "packageInfo": {
+          "$ref": "#/definitions/ConnectorPackageInfo"
+        },
+        "language": {
+          "type": "string",
+          "description": "The language the connector is written in"
+        },
+        "supportsFileTransfer": {
+          "type": "boolean",
+          "default": false
+        },
+        "supportsDataActivation": {
+          "type": "boolean",
+          "default": false
         }
       }
     },
-    "JobTypeResourceLimit": {
-      "description": "sets resource requirements for a specific job type for an actor definition. these values override the default, if both are set.",
+    "SupportLevel": {
+      "title": "SupportLevel",
+      "description": "enum that describes a connector's release stage",
+      "type": "string",
+      "enum": [
+        "community",
+        "certified",
+        "archived"
+      ]
+    },
+    "SecretStore": {
+      "title": "SecretStore",
+      "description": "An object describing a secret store metadata",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "alias": {
+          "type": "string",
+          "description": "The alias of the secret store which can map to its actual secret address"
+        },
+        "type": {
+          "type": "string",
+          "description": "The type of the secret store",
+          "enum": [
+            "GSM"
+          ]
+        }
+      }
+    },
+    "PyPi": {
+      "title": "PyPi",
+      "description": "describes the PyPi publishing options",
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "jobType",
-        "resourceRequirements"
+        "enabled",
+        "packageName"
       ],
       "properties": {
-        "jobType": {
-          "$ref": "#/definitions/JobType"
+        "enabled": {
+          "type": "boolean"
         },
-        "resourceRequirements": {
-          "$ref": "#/definitions/ResourceRequirements"
+        "packageName": {
+          "type": "string",
+          "description": "The name of the package on PyPi."
         }
       }
     },
-    "ActorDefinitionResourceRequirements": {
-      "title": "ActorDefinitionResourceRequirements",
-      "description": "actor definition specific resource requirements",
+    "RemoteRegistries": {
+      "title": "RemoteRegistries",
+      "description": "describes how the connector is published to remote registries",
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "default": {
-          "description": "if set, these are the requirements that should be set for ALL jobs run for this actor definition.",
-          "$ref": "#/definitions/ResourceRequirements"
+        "pypi": {
+          "$ref": "#/definitions/PyPi"
+        }
+      }
+    },
+    "ConnectorTestSuiteOptions": {
+      "title": "ConnectorTestSuiteOptions",
+      "description": "Options for a specific connector test suite.",
+      "type": "object",
+      "required": [
+        "suite"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "suite": {
+          "description": "Name of the configured test suite",
+          "type": "string",
+          "enum": [
+            "unitTests",
+            "integrationTests",
+            "acceptanceTests",
+            "liveTests"
+          ]
         },
-        "jobSpecific": {
+        "testSecrets": {
+          "description": "List of secrets required to run the test suite",
           "type": "array",
           "items": {
-            "$ref": "#/definitions/JobTypeResourceLimit"
+            "$ref": "#/definitions/Secret"
           }
+        },
+        "testConnections": {
+          "description": "List of sandbox cloud connections that tests can be run against",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/TestConnections"
+          }
+        }
+      }
+    },
+    "SourceFileInfo": {
+      "title": "SourceFileInfo",
+      "description": "Information about the source file that generated the registry entry",
+      "type": "object",
+      "properties": {
+        "metadata_etag": {
+          "type": "string"
+        },
+        "metadata_file_path": {
+          "type": "string"
+        },
+        "metadata_bucket_name": {
+          "type": "string"
+        },
+        "metadata_last_modified": {
+          "type": "string"
+        },
+        "registry_entry_generated_at": {
+          "type": "string"
         }
       }
     }

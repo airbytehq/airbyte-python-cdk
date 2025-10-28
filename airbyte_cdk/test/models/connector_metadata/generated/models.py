@@ -27,61 +27,11 @@ class ConnectorSubtype(Enum):
     vectorstore = "vectorstore"
 
 
-class TestConnections(BaseModel):
-    class Config:
-        extra = Extra.forbid
-
-    name: str = Field(..., description="The connection name")
-    id: str = Field(..., description="The connection ID")
-
-
-class SupportLevel(Enum):
-    community = "community"
-    certified = "certified"
-    archived = "archived"
-
-
-class SuggestedStreams(BaseModel):
-    class Config:
-        extra = Extra.allow
-
-    streams: Optional[List[str]] = Field(
-        None,
-        description="An array of streams that this connector suggests the average user will want.  SuggestedStreams not being present for the source means that all streams are suggested.  An empty list here means that no streams are suggested.",
-    )
-
-
-class SourceFileInfo(BaseModel):
-    metadata_etag: Optional[str] = None
-    metadata_file_path: Optional[str] = None
-    metadata_bucket_name: Optional[str] = None
-    metadata_last_modified: Optional[str] = None
-    registry_entry_generated_at: Optional[str] = None
-
-
-class SecretStore(BaseModel):
-    class Config:
-        extra = Extra.forbid
-
-    alias: Optional[str] = Field(
-        None,
-        description="The alias of the secret store which can map to its actual secret address",
-    )
-    type: Optional[Literal["GSM"]] = Field(
-        None, description="The type of the secret store"
-    )
-
-
-class Secret(BaseModel):
-    class Config:
-        extra = Extra.forbid
-
-    name: str = Field(..., description="The secret name in the secret store")
-    fileName: Optional[str] = Field(
-        None,
-        description="The name of the file to which the secret value would be persisted",
-    )
-    secretStore: SecretStore
+class ReleaseStage(Enum):
+    alpha = "alpha"
+    beta = "beta"
+    generally_available = "generally_available"
+    custom = "custom"
 
 
 class RolloutConfiguration(BaseModel):
@@ -105,6 +55,61 @@ class RolloutConfiguration(BaseModel):
     )
 
 
+class AllowedHosts(BaseModel):
+    class Config:
+        extra = Extra.allow
+
+    hosts: Optional[List[str]] = Field(
+        None,
+        description="An array of hosts that this connector can connect to.  AllowedHosts not being present for the source or destination means that access to all hosts is allowed.  An empty list here means that no network access is granted.",
+    )
+
+
+class TestConnections(BaseModel):
+    class Config:
+        extra = Extra.forbid
+
+    name: str = Field(..., description="The connection name")
+    id: str = Field(..., description="The connection ID")
+
+
+class Sl(Enum):
+    integer_0 = 0
+    integer_100 = 100
+    integer_200 = 200
+    integer_300 = 300
+
+
+class Ql(Enum):
+    integer_0 = 0
+    integer_100 = 100
+    integer_200 = 200
+    integer_300 = 300
+    integer_400 = 400
+    integer_500 = 500
+    integer_600 = 600
+
+
+class AirbyteInternal(BaseModel):
+    class Config:
+        extra = Extra.allow
+
+    sl: Optional[Sl] = None
+    ql: Optional[Ql] = None
+    isEnterprise: Optional[bool] = False
+    requireVersionIncrementsInPullRequests: Optional[bool] = Field(
+        True,
+        description="When false, version increment checks will be skipped for this connector",
+    )
+
+
+class ConnectorBuildOptions(BaseModel):
+    class Config:
+        extra = Extra.forbid
+
+    baseImage: Optional[str] = None
+
+
 class ResourceRequirements(BaseModel):
     class Config:
         extra = Extra.forbid
@@ -113,106 +118,6 @@ class ResourceRequirements(BaseModel):
     cpu_limit: Optional[str] = None
     memory_request: Optional[str] = None
     memory_limit: Optional[str] = None
-
-
-class PyPi(BaseModel):
-    class Config:
-        extra = Extra.forbid
-
-    enabled: bool
-    packageName: str = Field(..., description="The name of the package on PyPi.")
-
-
-class RemoteRegistries(BaseModel):
-    class Config:
-        extra = Extra.forbid
-
-    pypi: Optional[PyPi] = None
-
-
-class ReleaseStage(Enum):
-    alpha = "alpha"
-    beta = "beta"
-    generally_available = "generally_available"
-    custom = "custom"
-
-
-class NormalizationDestinationDefinitionConfig(BaseModel):
-    class Config:
-        extra = Extra.allow
-
-    normalizationRepository: str = Field(
-        ...,
-        description="a field indicating the name of the repository to be used for normalization. If the value of the flag is NULL - normalization is not used.",
-    )
-    normalizationTag: str = Field(
-        ...,
-        description="a field indicating the tag of the docker repository to be used for normalization.",
-    )
-    normalizationIntegrationType: str = Field(
-        ...,
-        description="a field indicating the type of integration dialect to use for normalization.",
-    )
-
-
-class JobType(Enum):
-    get_spec = "get_spec"
-    check_connection = "check_connection"
-    discover_schema = "discover_schema"
-    sync = "sync"
-    reset_connection = "reset_connection"
-    connection_updater = "connection_updater"
-    replicate = "replicate"
-
-
-class GitInfo(BaseModel):
-    class Config:
-        extra = Extra.forbid
-
-    commit_sha: Optional[str] = Field(
-        None,
-        description="The git commit sha of the last commit that modified this file.",
-    )
-    commit_timestamp: Optional[datetime] = Field(
-        None,
-        description="The git commit timestamp of the last commit that modified this file.",
-    )
-    commit_author: Optional[str] = Field(
-        None,
-        description="The git commit author of the last commit that modified this file.",
-    )
-    commit_author_email: Optional[str] = Field(
-        None,
-        description="The git commit author email of the last commit that modified this file.",
-    )
-
-
-class Suite(Enum):
-    unitTests = "unitTests"
-    integrationTests = "integrationTests"
-    acceptanceTests = "acceptanceTests"
-    liveTests = "liveTests"
-
-
-class ConnectorTestSuiteOptions(BaseModel):
-    class Config:
-        extra = Extra.forbid
-
-    suite: Suite = Field(..., description="Name of the configured test suite")
-    testSecrets: Optional[List[Secret]] = Field(
-        None, description="List of secrets required to run the test suite"
-    )
-    testConnections: Optional[List[TestConnections]] = Field(
-        None,
-        description="List of sandbox cloud connections that tests can be run against",
-    )
-
-
-class SourceType(Enum):
-    api = "api"
-    file = "file"
-    database = "database"
-    custom = "custom"
 
 
 class ConnectorPackageInfo(BaseModel):
@@ -246,6 +151,56 @@ class ConnectorMetrics(BaseModel):
     oss: Optional[ConnectorMetric] = None
 
 
+class NormalizationDestinationDefinitionConfig(BaseModel):
+    class Config:
+        extra = Extra.allow
+
+    normalizationRepository: str = Field(
+        ...,
+        description="a field indicating the name of the repository to be used for normalization. If the value of the flag is NULL - normalization is not used.",
+    )
+    normalizationTag: str = Field(
+        ...,
+        description="a field indicating the tag of the docker repository to be used for normalization.",
+    )
+    normalizationIntegrationType: str = Field(
+        ...,
+        description="a field indicating the type of integration dialect to use for normalization.",
+    )
+
+
+class SuggestedStreams(BaseModel):
+    class Config:
+        extra = Extra.allow
+
+    streams: Optional[List[str]] = Field(
+        None,
+        description="An array of streams that this connector suggests the average user will want.  SuggestedStreams not being present for the source means that all streams are suggested.  An empty list here means that no streams are suggested.",
+    )
+
+
+class GitInfo(BaseModel):
+    class Config:
+        extra = Extra.forbid
+
+    commit_sha: Optional[str] = Field(
+        None,
+        description="The git commit sha of the last commit that modified this file.",
+    )
+    commit_timestamp: Optional[datetime] = Field(
+        None,
+        description="The git commit timestamp of the last commit that modified this file.",
+    )
+    commit_author: Optional[str] = Field(
+        None,
+        description="The git commit author of the last commit that modified this file.",
+    )
+    commit_author_email: Optional[str] = Field(
+        None,
+        description="The git commit author email of the last commit that modified this file.",
+    )
+
+
 class SupportedSerializationEnum(Enum):
     JSONL = "JSONL"
     PROTOBUF = "PROTOBUF"
@@ -273,13 +228,6 @@ class ConnectorIPCOptions(BaseModel):
     dataChannel: DataChannel
 
 
-class ConnectorBuildOptions(BaseModel):
-    class Config:
-        extra = Extra.forbid
-
-    baseImage: Optional[str] = None
-
-
 class DeadlineAction(Enum):
     auto_upgrade = "auto_upgrade"
     disable = "disable"
@@ -289,7 +237,7 @@ class StreamBreakingChangeScope(BaseModel):
     class Config:
         extra = Extra.forbid
 
-    scopeType: Any = Field("stream", const=True)
+    scopeType: str = Field("stream", const=True)
     impactedScopes: List[str] = Field(
         ...,
         description="List of streams that are impacted by the breaking change.",
@@ -297,44 +245,89 @@ class StreamBreakingChangeScope(BaseModel):
     )
 
 
-class AllowedHosts(BaseModel):
-    class Config:
-        extra = Extra.allow
+class JobType(Enum):
+    get_spec = "get_spec"
+    check_connection = "check_connection"
+    discover_schema = "discover_schema"
+    sync = "sync"
+    reset_connection = "reset_connection"
+    connection_updater = "connection_updater"
+    replicate = "replicate"
 
-    hosts: Optional[List[str]] = Field(
+
+class SourceType(Enum):
+    api = "api"
+    file = "file"
+    database = "database"
+    custom = "custom"
+
+
+class SupportLevel(Enum):
+    community = "community"
+    certified = "certified"
+    archived = "archived"
+
+
+class SecretStore(BaseModel):
+    class Config:
+        extra = Extra.forbid
+
+    alias: Optional[str] = Field(
         None,
-        description="An array of hosts that this connector can connect to.  AllowedHosts not being present for the source or destination means that access to all hosts is allowed.  An empty list here means that no network access is granted.",
+        description="The alias of the secret store which can map to its actual secret address",
+    )
+    type: Optional[Literal["GSM"]] = Field(
+        None, description="The type of the secret store"
     )
 
 
-class Sl(Enum):
-    integer_0 = 0
-    integer_100 = 100
-    integer_200 = 200
-    integer_300 = 300
-
-
-class Ql(Enum):
-    integer_0 = 0
-    integer_100 = 100
-    integer_200 = 200
-    integer_300 = 300
-    integer_400 = 400
-    integer_500 = 500
-    integer_600 = 600
-
-
-class AirbyteInternal(BaseModel):
+class PyPi(BaseModel):
     class Config:
-        extra = Extra.allow
+        extra = Extra.forbid
 
-    sl: Optional[Sl] = None
-    ql: Optional[Ql] = None
-    isEnterprise: Optional[bool] = False
-    requireVersionIncrementsInPullRequests: Optional[bool] = Field(
-        True,
-        description="When false, version increment checks will be skipped for this connector",
+    enabled: bool
+    packageName: str = Field(..., description="The name of the package on PyPi.")
+
+
+class RemoteRegistries(BaseModel):
+    class Config:
+        extra = Extra.forbid
+
+    pypi: Optional[PyPi] = None
+
+
+class Suite(Enum):
+    unitTests = "unitTests"
+    integrationTests = "integrationTests"
+    acceptanceTests = "acceptanceTests"
+    liveTests = "liveTests"
+
+
+class SourceFileInfo(BaseModel):
+    metadata_etag: Optional[str] = None
+    metadata_file_path: Optional[str] = None
+    metadata_bucket_name: Optional[str] = None
+    metadata_last_modified: Optional[str] = None
+    registry_entry_generated_at: Optional[str] = None
+
+
+class Secret(BaseModel):
+    class Config:
+        extra = Extra.forbid
+
+    name: str = Field(..., description="The secret name in the secret store")
+    fileName: Optional[str] = Field(
+        None,
+        description="The name of the file to which the secret value would be persisted",
     )
+    secretStore: SecretStore
+
+
+class GeneratedFields(BaseModel):
+    git: Optional[GitInfo] = None
+    source_file_info: Optional[SourceFileInfo] = None
+    metrics: Optional[ConnectorMetrics] = None
+    sbomUrl: Optional[str] = Field(None, description="URL to the SBOM file")
 
 
 class JobTypeResourceLimit(BaseModel):
@@ -356,6 +349,27 @@ class ActorDefinitionResourceRequirements(BaseModel):
     jobSpecific: Optional[List[JobTypeResourceLimit]] = None
 
 
+class BreakingChangeScope(BaseModel):
+    __root__: StreamBreakingChangeScope = Field(
+        ...,
+        description="A scope that can be used to limit the impact of a breaking change.",
+    )
+
+
+class ConnectorTestSuiteOptions(BaseModel):
+    class Config:
+        extra = Extra.forbid
+
+    suite: Suite = Field(..., description="Name of the configured test suite")
+    testSecrets: Optional[List[Secret]] = Field(
+        None, description="List of secrets required to run the test suite"
+    )
+    testConnections: Optional[List[TestConnections]] = Field(
+        None,
+        description="List of sandbox cloud connections that tests can be run against",
+    )
+
+
 class RegistryOverrides(BaseModel):
     class Config:
         extra = Extra.forbid
@@ -373,28 +387,6 @@ class RegistryOverrides(BaseModel):
     normalizationConfig: Optional[NormalizationDestinationDefinitionConfig] = None
     suggestedStreams: Optional[SuggestedStreams] = None
     resourceRequirements: Optional[ActorDefinitionResourceRequirements] = None
-
-
-class GeneratedFields(BaseModel):
-    git: Optional[GitInfo] = None
-    source_file_info: Optional[SourceFileInfo] = None
-    metrics: Optional[ConnectorMetrics] = None
-    sbomUrl: Optional[str] = Field(None, description="URL to the SBOM file")
-
-
-class BreakingChangeScope(BaseModel):
-    __root__: StreamBreakingChangeScope = Field(
-        ...,
-        description="A scope that can be used to limit the impact of a breaking change.",
-    )
-
-
-class RegistryOverridesModel(BaseModel):
-    class Config:
-        extra = Extra.forbid
-
-    oss: Optional[RegistryOverrides] = None
-    cloud: Optional[RegistryOverrides] = None
 
 
 class VersionBreakingChange(BaseModel):
@@ -431,6 +423,14 @@ class ConnectorBreakingChanges(BaseModel):
         description="Each entry denotes a breaking change in a specific version of a connector that requires user action to upgrade.",
         title="ConnectorBreakingChanges",
     )
+
+
+class RegistryOverridesModel(BaseModel):
+    class Config:
+        extra = Extra.forbid
+
+    oss: Optional[RegistryOverrides] = None
+    cloud: Optional[RegistryOverrides] = None
 
 
 class ConnectorReleases(BaseModel):
@@ -506,9 +506,101 @@ class ConnectorMetadataDefinitionV0(BaseModel):
     data: Data
 
 
+class ConnectorRegistryDestinationDefinition(BaseModel):
+    class Config:
+        extra = Extra.allow
+
+    destinationDefinitionId: UUID
+    name: str
+    dockerRepository: str
+    dockerImageTag: str
+    documentationUrl: str
+    icon: Optional[str] = None
+    iconUrl: Optional[str] = None
+    spec: Dict[str, Any]
+    tombstone: Optional[bool] = Field(
+        False,
+        description="if false, the configuration is active. if true, then this configuration is permanently off.",
+    )
+    public: Optional[bool] = Field(
+        False,
+        description="true if this connector definition is available to all workspaces",
+    )
+    custom: Optional[bool] = Field(
+        False, description="whether this is a custom connector definition"
+    )
+    releaseStage: Optional[ReleaseStage] = None
+    supportLevel: Optional[SupportLevel] = None
+    releaseDate: Optional[date] = Field(
+        None,
+        description="The date when this connector was first released, in yyyy-mm-dd format.",
+    )
+    tags: Optional[List[str]] = Field(
+        None,
+        description="An array of tags that describe the connector. E.g: language:python, keyword:rds, etc.",
+    )
+    resourceRequirements: Optional[ActorDefinitionResourceRequirements] = None
+    protocolVersion: Optional[str] = Field(
+        None, description="the Airbyte Protocol version supported by the connector"
+    )
+    normalizationConfig: Optional[NormalizationDestinationDefinitionConfig] = None
+    supportsDbt: Optional[bool] = Field(
+        None,
+        description="an optional flag indicating whether DBT is used in the normalization. If the flag value is NULL - DBT is not used.",
+    )
+    allowedHosts: Optional[AllowedHosts] = None
+    releases: Optional[ConnectorRegistryReleases] = None
+    ab_internal: Optional[AirbyteInternal] = None
+    supportsRefreshes: Optional[bool] = False
+    supportsFileTransfer: Optional[bool] = False
+    supportsDataActivation: Optional[bool] = False
+    generated: Optional[GeneratedFields] = None
+    packageInfo: Optional[ConnectorPackageInfo] = None
+    language: Optional[str] = Field(
+        None, description="The language the connector is written in"
+    )
+
+
 class ConnectorRegistryV0(BaseModel):
     destinations: List[ConnectorRegistryDestinationDefinition]
     sources: List[ConnectorRegistrySourceDefinition]
+
+
+class ConnectorReleaseCandidates(BaseModel):
+    class Config:
+        extra = Extra.forbid
+
+    __root__: Dict[
+        constr(regex=r"^\d+\.\d+\.\d+(-[0-9A-Za-z-.]+)?$"), VersionReleaseCandidate
+    ] = Field(
+        ...,
+        description="Each entry denotes a release candidate version of a connector.",
+    )
+
+
+class VersionReleaseCandidate(BaseModel):
+    class Config:
+        extra = Extra.forbid
+
+    __root__: Union[
+        ConnectorRegistrySourceDefinition, ConnectorRegistryDestinationDefinition
+    ] = Field(
+        ...,
+        description="Contains information about a release candidate version of a connector.",
+    )
+
+
+class ConnectorRegistryReleases(BaseModel):
+    class Config:
+        extra = Extra.forbid
+
+    releaseCandidates: Optional[ConnectorReleaseCandidates] = None
+    rolloutConfiguration: Optional[RolloutConfiguration] = None
+    breakingChanges: Optional[ConnectorBreakingChanges] = None
+    migrationDocumentationUrl: Optional[AnyUrl] = Field(
+        None,
+        description="URL to documentation on how to migrate from the previous version to the current version. Defaults to ${documentationUrl}-migrations",
+    )
 
 
 class ConnectorRegistrySourceDefinition(BaseModel):
@@ -565,99 +657,7 @@ class ConnectorRegistrySourceDefinition(BaseModel):
     supportsDataActivation: Optional[bool] = False
 
 
-class ConnectorReleaseCandidates(BaseModel):
-    class Config:
-        extra = Extra.forbid
-
-    __root__: Dict[
-        constr(regex=r"^\d+\.\d+\.\d+(-[0-9A-Za-z-.]+)?$"), VersionReleaseCandidate
-    ] = Field(
-        ...,
-        description="Each entry denotes a release candidate version of a connector.",
-    )
-
-
-class VersionReleaseCandidate(BaseModel):
-    class Config:
-        extra = Extra.forbid
-
-    __root__: Union[
-        ConnectorRegistrySourceDefinition, ConnectorRegistryDestinationDefinition
-    ] = Field(
-        ...,
-        description="Contains information about a release candidate version of a connector.",
-    )
-
-
-class ConnectorRegistryReleases(BaseModel):
-    class Config:
-        extra = Extra.forbid
-
-    releaseCandidates: Optional[ConnectorReleaseCandidates] = None
-    rolloutConfiguration: Optional[RolloutConfiguration] = None
-    breakingChanges: Optional[ConnectorBreakingChanges] = None
-    migrationDocumentationUrl: Optional[AnyUrl] = Field(
-        None,
-        description="URL to documentation on how to migrate from the previous version to the current version. Defaults to ${documentationUrl}-migrations",
-    )
-
-
-class ConnectorRegistryDestinationDefinition(BaseModel):
-    class Config:
-        extra = Extra.allow
-
-    destinationDefinitionId: UUID
-    name: str
-    dockerRepository: str
-    dockerImageTag: str
-    documentationUrl: str
-    icon: Optional[str] = None
-    iconUrl: Optional[str] = None
-    spec: Dict[str, Any]
-    tombstone: Optional[bool] = Field(
-        False,
-        description="if false, the configuration is active. if true, then this configuration is permanently off.",
-    )
-    public: Optional[bool] = Field(
-        False,
-        description="true if this connector definition is available to all workspaces",
-    )
-    custom: Optional[bool] = Field(
-        False, description="whether this is a custom connector definition"
-    )
-    releaseStage: Optional[ReleaseStage] = None
-    supportLevel: Optional[SupportLevel] = None
-    releaseDate: Optional[date] = Field(
-        None,
-        description="The date when this connector was first released, in yyyy-mm-dd format.",
-    )
-    tags: Optional[List[str]] = Field(
-        None,
-        description="An array of tags that describe the connector. E.g: language:python, keyword:rds, etc.",
-    )
-    resourceRequirements: Optional[ActorDefinitionResourceRequirements] = None
-    protocolVersion: Optional[str] = Field(
-        None, description="the Airbyte Protocol version supported by the connector"
-    )
-    normalizationConfig: Optional[NormalizationDestinationDefinitionConfig] = None
-    supportsDbt: Optional[bool] = Field(
-        None,
-        description="an optional flag indicating whether DBT is used in the normalization. If the flag value is NULL - DBT is not used.",
-    )
-    allowedHosts: Optional[AllowedHosts] = None
-    releases: Optional[ConnectorRegistryReleases] = None
-    ab_internal: Optional[AirbyteInternal] = None
-    supportsRefreshes: Optional[bool] = False
-    supportsFileTransfer: Optional[bool] = False
-    supportsDataActivation: Optional[bool] = False
-    generated: Optional[GeneratedFields] = None
-    packageInfo: Optional[ConnectorPackageInfo] = None
-    language: Optional[str] = Field(
-        None, description="The language the connector is written in"
-    )
-
-
+ConnectorRegistryDestinationDefinition.update_forward_refs()
 ConnectorRegistryV0.update_forward_refs()
-ConnectorRegistrySourceDefinition.update_forward_refs()
 ConnectorReleaseCandidates.update_forward_refs()
 VersionReleaseCandidate.update_forward_refs()
