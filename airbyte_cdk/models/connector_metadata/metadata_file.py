@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from enum import Enum
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 from urllib.request import urlopen
 
 import jsonschema
@@ -147,11 +147,11 @@ def get_metadata_schema(schema_source: str | Path | None = None) -> dict[str, An
         schema_path = Path(schema_source)
         if not schema_path.exists():
             raise FileNotFoundError(f"Schema file not found: {schema_path}")
-        return json.loads(schema_path.read_text())
+        return cast(dict[str, Any], json.loads(schema_path.read_text()))
 
     try:
         with urlopen(schema_source, timeout=10) as response:
-            return json.loads(response.read().decode("utf-8"))
+            return cast(dict[str, Any], json.loads(response.read().decode("utf-8")))
     except Exception as e:
         raise RuntimeError(f"Failed to fetch schema from {schema_source}: {e}") from e
 
