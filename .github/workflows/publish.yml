@@ -374,7 +374,7 @@ jobs:
           set -euo pipefail
           VALUES_FILE="oss/charts/v2/airbyte/values.yaml"
           # Get the current manifest-server tag from the values.yaml file
-          PREVIOUS_VERSION=$(grep -A4 "^manifestServer:" "$VALUES_FILE" | grep "tag:" | awk '{print $2}')
+          PREVIOUS_VERSION=$(grep -A15 "^manifestServer:" "$VALUES_FILE" | grep -A4 "image:" | grep "tag:" | awk '{print $2}')
           echo "Previous version: ${PREVIOUS_VERSION}"
           echo "New version: ${VERSION}"
           # Update the manifest-server tag in the Helm values file (preserves formatting)
