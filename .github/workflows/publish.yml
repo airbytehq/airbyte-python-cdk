@@ -374,11 +374,11 @@ jobs:
           set -euo pipefail
           VALUES_FILE="oss/charts/v2/airbyte/values.yaml"
           # Get the current manifest-server tag from the values.yaml file
-          PREVIOUS_VERSION=$(yq '.manifestServer.image.tag' "$VALUES_FILE")
+          PREVIOUS_VERSION=$(grep -A4 "^manifestServer:" "$VALUES_FILE" | grep "tag:" | awk '{print $2}')
           echo "Previous version: ${PREVIOUS_VERSION}"
           echo "New version: ${VERSION}"
-          # Update the manifest-server tag in the Helm values file
-          yq -i ".manifestServer.image.tag = \"${VERSION}\"" "$VALUES_FILE"
+          # Update the manifest-server tag in the Helm values file (preserves formatting)
+          sed -i "/^manifestServer:/,/^[a-zA-Z]/ s/tag: ${PREVIOUS_VERSION}/tag: ${VERSION}/" "$VALUES_FILE"
           # Also update the CDK version in the manifest-server-api build file
           sed -i "s/refs\/tags\/v${PREVIOUS_VERSION}/refs\/tags\/v${VERSION}/g" "oss/airbyte-api/manifest-server-api/build.gradle.kts"
           echo ${VERSION} > oss/airbyte-connector-builder-resources/CDK_VERSION
