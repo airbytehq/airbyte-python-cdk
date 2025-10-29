@@ -5,12 +5,13 @@
 import abc
 import dataclasses
 import datetime
+import functools
 import logging
 import re
 import time
 from datetime import timedelta
 from threading import RLock
-from typing import TYPE_CHECKING, Any, Mapping, Optional
+from typing import TYPE_CHECKING, Any, Mapping, Optional, List
 from urllib import parse
 
 import requests
@@ -634,7 +635,8 @@ class HttpAPIBudget(APIBudget):
         self,
         ratelimit_reset_header: str = "ratelimit-reset",
         ratelimit_remaining_header: str = "ratelimit-remaining",
-        status_codes_for_ratelimit_hit: list[int] = [429],
+        status_codes_for_ratelimit_hit: List[int] = [429],
+        path_for_status_code: Optional[List[str]] = None,
         **kwargs: Any,
     ):
         """Constructor
@@ -646,6 +648,7 @@ class HttpAPIBudget(APIBudget):
         self._ratelimit_reset_header = ratelimit_reset_header
         self._ratelimit_remaining_header = ratelimit_remaining_header
         self._status_codes_for_ratelimit_hit = status_codes_for_ratelimit_hit
+        self._path_for_status_code = path_for_status_code
         super().__init__(**kwargs)
 
     def update_from_response(self, request: Any, response: Any) -> None:
@@ -671,7 +674,14 @@ class HttpAPIBudget(APIBudget):
         if response.headers.get(self._ratelimit_remaining_header):
             return int(response.headers[self._ratelimit_remaining_header])
 
-        if response.status_code in self._status_codes_for_ratelimit_hit:
+        if self._path_for_status_code:
+            try:
+                if functools.reduce(lambda a, b: a[b], self._path_for_status_code, response.json()) in self._status_codes_for_ratelimit_hit:
+                    return 0
+            except KeyError:
+                # the status is not present in the response so we will assume that we're not being rate limited
+                pass
+        elif response.status_code in self._status_codes_for_ratelimit_hit:
             return 0
 
         return None

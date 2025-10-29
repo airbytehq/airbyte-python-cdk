@@ -1669,6 +1669,12 @@ definitions:
         items:
           type: integer
         default: [429]
+      path_for_status_code:
+        title: Path to look for the status code in the response
+        description: When the status code is not a HTTP status code but a code in the HTTP response.
+        type: array
+        items:
+          type: string
     additionalProperties: true
   FixedWindowCallRatePolicy:
     title: Fixed Window Call Rate Policy
