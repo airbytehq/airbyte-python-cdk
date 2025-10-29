@@ -391,6 +391,7 @@ definitions:
           anyOf:
             - "$ref": "#/definitions/CompositeErrorHandler"
             - "$ref": "#/definitions/DefaultErrorHandler"
+            - "$ref": "#/definitions/CustomErrorHandler"
       $parameters:
         type: object
         additionalProperties: true
@@ -1276,6 +1277,10 @@ definitions:
         type: string
         examples:
           - "{{ config['passphrase'] }}"
+      request_option:
+        title: Request Option
+        description: A request option describing where the signed JWT token that is generated should be injected into the outbound API request.
+        "$ref": "#/definitions/RequestOption"
       $parameters:
         type: object
         additionalProperties: true
@@ -2275,12 +2280,14 @@ definitions:
           - FAIL
           - RETRY
           - IGNORE
+          - RESET_PAGINATION
           - RATE_LIMITED
         examples:
           - SUCCESS
           - FAIL
           - RETRY
           - IGNORE
+          - RESET_PAGINATION
           - RATE_LIMITED
       failure_type:
         title: Failure Type
@@ -2513,6 +2520,34 @@ definitions:
       type:
         type: string
         enum: [JsonlDecoder]
+  JsonSchemaPropertySelector:
+    title: Json Schema Property Selector
+    description: When configured, the JSON schema supplied in the catalog containing which columns are selected for the current stream will be used to reduce which query properties will be included in the outbound API request. This can improve the performance of API requests, especially for those requiring multiple requests to get a complete record.
+    type: object
+    required:
+      - type
+    properties:
+      type:
+        type: string
+        enum: [JsonSchemaPropertySelector]
+      transformations:
+        title: Transformations
+        description: A list of transformations to be applied on the customer configured schema that will be used to filter out unselected fields when specifying query properties for API requests.
+        linkable: true
+        type: array
+        items:
+          anyOf:
+            - "$ref": "#/definitions/AddFields"
+            - "$ref": "#/definitions/RemoveFields"
+            - "$ref": "#/definitions/KeysToLower"
+            - "$ref": "#/definitions/KeysToSnakeCase"
+            - "$ref": "#/definitions/FlattenFields"
+            - "$ref": "#/definitions/DpathFlattenFields"
+            - "$ref": "#/definitions/KeysReplace"
+            - "$ref": "#/definitions/CustomTransformation"
+      $parameters:
+        type: object
+        additionalProperties: true
   KeysToLower:
     title: Keys to Lower Case
     description: A transformation that renames all keys to lower case.
@@ -3318,7 +3353,7 @@ definitions:
       - ["code", "type"]
   PropertiesFromEndpoint:
     title: Properties from Endpoint
-    description: Defines the behavior for fetching the list of properties from an API that will be loaded into the requests to extract records.
+    description: Defines the behavior for fetching the list of properties from an API that will be loaded into the requests to extract records. Note that stream_slices can't be interpolated from this retriever.
     type: object
     required:
       - type
@@ -3403,6 +3438,10 @@ definitions:
         title: Property Chunking
         description: Defines how query properties will be grouped into smaller sets for APIs with limitations on the number of properties fetched per API request.
         "$ref": "#/definitions/PropertyChunking"
+      property_selector:
+        title: Property Selector
+        description: Defines where to look for and which query properties that should be sent in outbound API requests. For example, you can specify that only the selected columns of a stream should be in the request.
+        "$ref": "#/definitions/JsonSchemaPropertySelector"
       $parameters:
         type: object
         additionalProperties: true
@@ -3703,6 +3742,9 @@ definitions:
         anyOf:
           - "$ref": "#/definitions/DefaultPaginator"
           - "$ref": "#/definitions/NoPagination"
+      pagination_reset:
+        description: Describes what triggers pagination reset and how to handle it.
+        "$ref": "#/definitions/PaginationReset"
       ignore_stream_slicer_parameters_on_paginated_requests:
         description: If true, the partition router and incremental request options will be ignored when paginating requests. Request options set directly on the requester will not be ignored.
         type: boolean
@@ -3726,6 +3768,36 @@ definitions:
       $parameters:
         type: object
         additionalProperties: true
+  PaginationReset:
+    title: Pagination Reset
+    description: Describes what triggers pagination reset and how to handle it. If SPLIT_USING_CURSOR, the connector developer is accountable for ensuring that the records are returned in ascending order.
+    type: object
+    required:
+      - type
+      - action
+    properties:
+      type:
+        type: string
+        enum: [PaginationReset]
+      action:
+        type: string
+        enum:
+          - SPLIT_USING_CURSOR
+          - RESET
+      limits:
+        "$ref": "#/definitions/PaginationResetLimits"
+  PaginationResetLimits:
+    title: Pagination Reset Limits
+    description: Describes the limits that trigger pagination reset
+    type: object
+    required:
+      - type
+    properties:
+      type:
+        type: string
+        enum: [PaginationResetLimits]
+      number_of_records:
+        type: integer
   GzipDecoder:
     title: gzip
     description: Select 'gzip' for response data that is compressed with gzip. Requires specifying an inner data type/decoder to parse the decompressed data.

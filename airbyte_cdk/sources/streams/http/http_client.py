@@ -42,6 +42,9 @@ from airbyte_cdk.sources.streams.http.exceptions import (
     RequestBodyException,
     UserDefinedBackoffException,
 )
+from airbyte_cdk.sources.streams.http.pagination_reset_exception import (
+    PaginationResetRequiredException,
+)
 from airbyte_cdk.sources.streams.http.rate_limiting import (
     http_client_default_backoff_handler,
     rate_limit_default_backoff_handler,
@@ -428,6 +431,9 @@ class HttpClient:
         if error_resolution.response_action not in self._ACTIONS_TO_RETRY_ON:
             self._evict_key(request)
 
+        if error_resolution.response_action == ResponseAction.RESET_PAGINATION:
+            raise PaginationResetRequiredException()
+
         # Emit stream status RUNNING with the reason RATE_LIMITED to log that the rate limit has been reached
         if error_resolution.response_action == ResponseAction.RATE_LIMITED:
             # TODO: Update to handle with message repository when concurrent message repository is ready
@@ -562,7 +568,7 @@ class HttpClient:
 
         env_settings = self._session.merge_environment_settings(
             url=request.url,
-            proxies=request_kwargs.get("proxies"),
+            proxies=request_kwargs.get("proxies", {}),
             stream=request_kwargs.get("stream"),
             verify=request_kwargs.get("verify"),
             cert=request_kwargs.get("cert"),

@@ -6,7 +6,7 @@ import base64
 import json
 from dataclasses import InitVar, dataclass
 from datetime import datetime
-from typing import Any, Mapping, Optional, Union, cast
+from typing import Any, Mapping, MutableMapping, Optional, Union, cast
 
 import jwt
 from cryptography.hazmat.primitives import serialization
@@ -14,12 +14,15 @@ from cryptography.hazmat.primitives.asymmetric.ec import EllipticCurvePrivateKey
 from cryptography.hazmat.primitives.asymmetric.ed448 import Ed448PrivateKey
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from cryptography.hazmat.primitives.asymmetric.rsa import RSAPrivateKey
-from cryptography.hazmat.primitives.asymmetric.types import PrivateKeyTypes
 
 from airbyte_cdk.sources.declarative.auth.declarative_authenticator import DeclarativeAuthenticator
 from airbyte_cdk.sources.declarative.interpolation.interpolated_boolean import InterpolatedBoolean
 from airbyte_cdk.sources.declarative.interpolation.interpolated_mapping import InterpolatedMapping
 from airbyte_cdk.sources.declarative.interpolation.interpolated_string import InterpolatedString
+from airbyte_cdk.sources.declarative.requesters.request_option import (
+    RequestOption,
+    RequestOptionType,
+)
 
 # Type alias for keys that JWT library accepts
 JwtKeyTypes = Union[
@@ -86,6 +89,7 @@ class JwtAuthenticator(DeclarativeAuthenticator):
     additional_jwt_headers: Optional[Mapping[str, Any]] = None
     additional_jwt_payload: Optional[Mapping[str, Any]] = None
     passphrase: Optional[Union[InterpolatedString, str]] = None
+    request_option: Optional[RequestOption] = None
 
     def __post_init__(self, parameters: Mapping[str, Any]) -> None:
         self._secret_key = InterpolatedString.create(self.secret_key, parameters=parameters)
@@ -119,6 +123,13 @@ class JwtAuthenticator(DeclarativeAuthenticator):
             InterpolatedString.create(self.passphrase, parameters=parameters)
             if self.passphrase
             else None
+        )
+
+        # When we first implemented the JWT authenticator, we assumed that the signed token was always supposed
+        # to be loaded into the request headers under the `Authorization` key. This is not always the case, but
+        # this default option allows for backwards compatibility to be retained for existing connectors
+        self._request_option = self.request_option or RequestOption(
+            inject_into=RequestOptionType.header, field_name="Authorization", parameters=parameters
         )
 
     def _get_jwt_headers(self) -> dict[str, Any]:
@@ -213,7 +224,8 @@ class JwtAuthenticator(DeclarativeAuthenticator):
 
     @property
     def auth_header(self) -> str:
-        return "Authorization"
+        options = self._get_request_options(RequestOptionType.header)
+        return next(iter(options.keys()), "")
 
     @property
     def token(self) -> str:
@@ -222,3 +234,18 @@ class JwtAuthenticator(DeclarativeAuthenticator):
             if self._get_header_prefix()
             else self._get_signed_token()
         )
+
+    def get_request_params(self) -> Mapping[str, Any]:
+        return self._get_request_options(RequestOptionType.request_parameter)
+
+    def get_request_body_data(self) -> Union[Mapping[str, Any], str]:
+        return self._get_request_options(RequestOptionType.body_data)
+
+    def get_request_body_json(self) -> Mapping[str, Any]:
+        return self._get_request_options(RequestOptionType.body_json)
+
+    def _get_request_options(self, option_type: RequestOptionType) -> Mapping[str, Any]:
+        options: MutableMapping[str, Any] = {}
+        if self._request_option.inject_into == option_type:
+            self._request_option.inject_into_request(options, self.token, self.config)
+        return options

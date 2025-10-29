@@ -7,11 +7,11 @@ import uuid
 import zlib
 from contextlib import closing
 from dataclasses import InitVar, dataclass
+from math import nan
 from typing import Any, Dict, Iterable, Mapping, Optional, Tuple
 
 import pandas as pd
 import requests
-from numpy import nan
 
 from airbyte_cdk.sources.declarative.extractors.record_extractor import RecordExtractor
 

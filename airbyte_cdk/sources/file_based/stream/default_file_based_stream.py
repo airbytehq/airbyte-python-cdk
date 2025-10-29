@@ -9,13 +9,26 @@ from collections import defaultdict
 from copy import deepcopy
 from functools import cache
 from os import path
-from typing import Any, Dict, Iterable, List, Mapping, MutableMapping, Optional, Set, Tuple, Union
+from typing import (
+    Any,
+    Dict,
+    Iterable,
+    List,
+    Mapping,
+    MutableMapping,
+    NoReturn,
+    Optional,
+    Set,
+    Tuple,
+    Union,
+)
 
 from airbyte_cdk.models import AirbyteLogMessage, AirbyteMessage, AirbyteStream, FailureType, Level
 from airbyte_cdk.models import Type as MessageType
 from airbyte_cdk.sources.file_based.config.file_based_stream_config import PrimaryKeyType
 from airbyte_cdk.sources.file_based.exceptions import (
     DuplicatedFilesError,
+    EmptyFileSchemaInferenceError,
     FileBasedSourceError,
     InvalidSchemaError,
     MissingSchemaError,
@@ -230,7 +243,7 @@ class DefaultFileBasedStream(AbstractFileBasedStream, IncrementalMixin):
         return self.ab_last_mod_col
 
     @cache
-    def get_json_schema(self) -> JsonSchema:
+    def get_json_schema(self) -> JsonSchema:  # type: ignore
         if self.use_file_transfer:
             return file_transfer_schema
         extra_fields = {
@@ -246,12 +259,12 @@ class DefaultFileBasedStream(AbstractFileBasedStream, IncrementalMixin):
                 exception=AirbyteTracedException(exception=config_exception),
                 failure_type=FailureType.config_error,
             )
+        except EmptyFileSchemaInferenceError as exc:
+            self._raise_schema_inference_error(exc)
         except AirbyteTracedException as ate:
             raise ate
         except Exception as exc:
-            raise SchemaInferenceError(
-                FileBasedSourceError.SCHEMA_INFERENCE_ERROR, stream=self.name
-            ) from exc
+            self._raise_schema_inference_error(exc)
         else:
             return {"type": "object", "properties": {**extra_fields, **schema["properties"]}}
 
@@ -380,17 +393,24 @@ class DefaultFileBasedStream(AbstractFileBasedStream, IncrementalMixin):
 
         return base_schema
 
-    async def _infer_file_schema(self, file: RemoteFile) -> SchemaType:
+    async def _infer_file_schema(self, file: RemoteFile) -> SchemaType:  # type: ignore
         try:
             return await self.get_parser().infer_schema(
                 self.config, file, self.stream_reader, self.logger
             )
+        except EmptyFileSchemaInferenceError as exc:
+            self._raise_schema_inference_error(exc, file)
         except AirbyteTracedException as ate:
             raise ate
         except Exception as exc:
-            raise SchemaInferenceError(
-                FileBasedSourceError.SCHEMA_INFERENCE_ERROR,
-                file=file.uri,
-                format=str(self.config.format),
-                stream=self.name,
-            ) from exc
+            self._raise_schema_inference_error(exc, file)
+
+    def _raise_schema_inference_error(
+        self, exc: Exception, file: Optional[RemoteFile] = None
+    ) -> NoReturn:
+        raise SchemaInferenceError(
+            FileBasedSourceError.SCHEMA_INFERENCE_ERROR,
+            file=file.uri if file else None,
+            format=str(self.config.format) if self.config.format else None,
+            stream=self.name,
+        ) from exc

@@ -1,6 +1,7 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
+import json
 from copy import deepcopy
 
 # mypy: ignore-errors
@@ -11,6 +12,13 @@ from typing import Any, Iterable, Mapping, Optional, Union
 import freezegun
 import pytest
 import requests
+from airbyte_protocol_dataclasses.models.airbyte_protocol import (
+    AirbyteStream,
+    ConfiguredAirbyteCatalog,
+    ConfiguredAirbyteStream,
+    DestinationSyncMode,
+    SyncMode,
+)
 from freezegun.api import FakeDatetime
 from pydantic.v1 import ValidationError
 
@@ -132,6 +140,9 @@ from airbyte_cdk.sources.declarative.requesters.query_properties import (
 from airbyte_cdk.sources.declarative.requesters.query_properties.property_chunking import (
     PropertyLimitType,
 )
+from airbyte_cdk.sources.declarative.requesters.query_properties.property_selector import (
+    JsonSchemaPropertySelector,
+)
 from airbyte_cdk.sources.declarative.requesters.query_properties.strategies import GroupByKey
 from airbyte_cdk.sources.declarative.requesters.request_option import (
     RequestOption,
@@ -146,15 +157,17 @@ from airbyte_cdk.sources.declarative.requesters.request_path import RequestPath
 from airbyte_cdk.sources.declarative.requesters.requester import HttpMethod
 from airbyte_cdk.sources.declarative.retrievers import AsyncRetriever, SimpleRetriever
 from airbyte_cdk.sources.declarative.schema import InlineSchemaLoader, JsonFileSchemaLoader
+from airbyte_cdk.sources.declarative.schema.caching_schema_loader_decorator import (
+    CachingSchemaLoaderDecorator,
+)
 from airbyte_cdk.sources.declarative.schema.composite_schema_loader import CompositeSchemaLoader
 from airbyte_cdk.sources.declarative.schema.schema_loader import SchemaLoader
 from airbyte_cdk.sources.declarative.spec import Spec
-from airbyte_cdk.sources.declarative.stream_slicers import StreamSlicerTestReadDecorator
-from airbyte_cdk.sources.declarative.stream_slicers.declarative_partition_generator import (
-    SchemaLoaderCachingDecorator,
-)
 from airbyte_cdk.sources.declarative.transformations import AddFields, RemoveFields
 from airbyte_cdk.sources.declarative.transformations.add_fields import AddedFieldDefinition
+from airbyte_cdk.sources.declarative.transformations.keys_replace_transformation import (
+    KeysReplaceTransformation,
+)
 from airbyte_cdk.sources.declarative.yaml_declarative_source import YamlDeclarativeSource
 from airbyte_cdk.sources.message.repository import StateFilteringMessageRepository
 from airbyte_cdk.sources.streams.call_rate import MovingWindowCallRatePolicy
@@ -227,6 +240,28 @@ def test_create_component_type_mismatch():
 
     with pytest.raises(ValueError):
         factory.create_component(CheckStreamModel, manifest["check"], {})
+
+
+def test_create_component_with_configured_catalog():
+    configured_catalog = ConfiguredAirbyteCatalog(
+        streams=[
+            ConfiguredAirbyteStream(
+                stream=AirbyteStream(
+                    name="test",
+                    json_schema={"type": "object", "properties": {"id": {"type": "string"}}},
+                    supported_sync_modes=[SyncMode.full_refresh],
+                ),
+                sync_mode=SyncMode.full_refresh,
+                destination_sync_mode=DestinationSyncMode.overwrite,
+            )
+        ]
+    )
+
+    factory_with_catalog = ModelToComponentFactory(configured_catalog=configured_catalog)
+
+    assert factory_with_catalog._stream_name_to_configured_stream == {
+        "test": configured_catalog.streams[0]
+    }
 
 
 def test_full_config_stream():
@@ -1189,6 +1224,73 @@ a_stream:
     )
 
 
+def test_stream_with_custom_requester_and_query_properties(requests_mock):
+    content = """
+a_stream:
+  type: DeclarativeStream
+  primary_key: id
+  schema_loader:
+    type: InlineSchemaLoader
+    schema:
+      $schema: "http://json-schema.org/draft-07/schema"
+      type: object
+      properties:
+        id:
+          type: string
+  retriever:
+    type: SimpleRetriever
+    name: "{{ parameters['name'] }}"
+    decoder:
+      type: JsonDecoder
+    requester:
+      type: CustomRequester
+      class_name: unit_tests.sources.declarative.parsers.testing_components.TestingRequester
+      name: "{{ parameters['name'] }}"
+      url_base: "https://api.sendgrid.com/v3/"
+      path: "path"
+      http_method: "GET"
+      request_parameters:
+        not_query: 1
+        query:
+          type: QueryProperties
+          property_list:
+            - id
+            - field
+          always_include_properties:
+            - id
+          property_chunking:
+            type: PropertyChunking
+            property_limit_type: property_count
+            property_limit: 18
+    record_selector:
+      type: RecordSelector
+      extractor:
+        type: DpathExtractor
+        field_path: ["records"]
+  $parameters:
+   name: a_stream
+"""
+
+    parsed_manifest = YamlDeclarativeSource._parse(content)
+    resolved_manifest = resolver.preprocess_manifest(parsed_manifest)
+    stream_manifest = transformer.propagate_types_and_parameters(
+        "", resolved_manifest["a_stream"], {}
+    )
+
+    stream = factory.create_component(
+        model_type=DeclarativeStreamModel, component_definition=stream_manifest, config=input_config
+    )
+    requests_mock.get(
+        "https://api.sendgrid.com/v3/path",
+        text=json.dumps({"records": [{"id": "1"}]}),
+        status_code=200,
+    )
+
+    x = list(next(stream.generate_partitions()).read())
+
+    assert len(x) == 1
+
+
 @pytest.mark.parametrize(
     "use_legacy_state",
     [
@@ -1956,6 +2058,44 @@ def test_create_composite_error_handler():
     assert isinstance(error_handler_1, DefaultErrorHandler)
     assert isinstance(error_handler_1.response_filters[0], HttpResponseFilter)
     assert error_handler_1.response_filters[0].http_codes == {403}
+    assert error_handler_1.response_filters[0].action == ResponseAction.RETRY
+
+
+def test_create_composite_error_handler_with_custom_error_handler():
+    content = """
+        error_handler:
+          type: "CompositeErrorHandler"
+          error_handlers:
+            - type: "CustomErrorHandler"
+              class_name: "unit_tests.sources.declarative.parsers.testing_components.TestingCustomErrorHandler"
+            - response_filters:
+                - http_codes: [ 429 ]
+                  action: RETRY
+    """
+    parsed_manifest = YamlDeclarativeSource._parse(content)
+    resolved_manifest = resolver.preprocess_manifest(parsed_manifest)
+    error_handler_manifest = transformer.propagate_types_and_parameters(
+        "", resolved_manifest["error_handler"], {}
+    )
+
+    error_handler = factory.create_component(
+        model_type=CompositeErrorHandlerModel,
+        component_definition=error_handler_manifest,
+        config=input_config,
+    )
+
+    assert isinstance(error_handler, CompositeErrorHandler)
+    assert len(error_handler.error_handlers) == 2
+
+    # First error handler should be a custom error handler
+    error_handler_0 = error_handler.error_handlers[0]
+    assert error_handler_0.__class__.__name__ == "TestingCustomErrorHandler"
+
+    # Second error handler should be a default error handler
+    error_handler_1 = error_handler.error_handlers[1]
+    assert isinstance(error_handler_1, DefaultErrorHandler)
+    assert isinstance(error_handler_1.response_filters[0], HttpResponseFilter)
+    assert error_handler_1.response_filters[0].http_codes == {429}
     assert error_handler_1.response_filters[0].action == ResponseAction.RETRY
 
 
@@ -3034,6 +3174,10 @@ def test_create_custom_retriever():
                     aud: "test aud"
                 additional_jwt_payload:
                     test: "test custom payload"
+                request_option:
+                    type: RequestOption
+                    inject_into: body_json
+                    field_name: authorization
             """,
             {
                 "secret_key": "secret_key",
@@ -3140,6 +3284,11 @@ def test_create_jwt_authenticator(config, manifest, expected):
         }
     )
     assert authenticator._get_jwt_payload() == jwt_payload
+
+    if authenticator_manifest.get("request_option"):
+        assert authenticator._request_option.inject_into.value == authenticator_manifest.get(
+            "request_option", {}
+        ).get("inject_into")
 
 
 def test_use_request_options_provider_for_datetime_based_cursor():
@@ -3658,6 +3807,58 @@ def test_create_concurrent_cursor_from_perpartition_cursor_runs_state_migrations
         stream.cursor._partition_router.parent_stream_configs[0].stream.cursor.state["updated_at"]
         == "2024-02-01T00:00:00.000000+0000"
     )
+
+
+def test_incrementing_count_cursor_with_partition_router_raises_error():
+    content = """
+    type: DeclarativeStream
+    primary_key: "id"
+    name: test
+    schema_loader:
+      type: InlineSchemaLoader
+      schema:
+        $schema: "http://json-schema.org/draft-07/schema"
+        type: object
+        properties:
+          id:
+            type: string
+    incremental_sync:
+      type: "IncrementingCountCursor"
+      cursor_field: "mid"
+      start_value: "0"
+    retriever:
+      type: SimpleRetriever
+      name: test
+      requester:
+        type: HttpRequester
+        name: "test"
+        url_base: "https://api.test.com/v3/"
+        http_method: "GET"
+        authenticator:
+          type: NoAuth
+      record_selector:
+        type: RecordSelector
+        extractor:
+          type: DpathExtractor
+          field_path: []
+      partition_router:
+        type: ListPartitionRouter
+        cursor_field: arbitrary
+        values:
+          - item_1
+          - item_2
+      """
+
+    factory = ModelToComponentFactory(
+        emit_connector_builder_messages=True, connector_state_manager=ConnectorStateManager()
+    )
+
+    with pytest.raises(ValueError):
+        factory.create_component(
+            model_type=DeclarativeStreamModel,
+            component_definition=YamlDeclarativeSource._parse(content),
+            config=input_config,
+        )
 
 
 def test_create_concurrent_cursor_uses_min_max_datetime_format_if_defined():
@@ -4314,6 +4515,12 @@ def test_simple_retriever_with_query_properties():
             record_merge_strategy:
               type: GroupByKeyMergeStrategy
               key: ["id"]
+          property_selector:
+            type: JsonSchemaPropertySelector
+            transformations:
+              - type: KeysReplace
+                old: "properties_"
+                new: ""
     analytics_stream:
       type: DeclarativeStream
       incremental_sync:
@@ -4354,6 +4561,13 @@ def test_simple_retriever_with_query_properties():
         "created_at",
     ]
     assert query_properties.always_include_properties == ["id"]
+
+    property_selector = query_properties.property_selector
+    assert isinstance(property_selector, JsonSchemaPropertySelector)
+    assert len(property_selector.properties_transformations) == 1
+    assert property_selector.properties_transformations == [
+        KeysReplaceTransformation(old="properties_", new="", parameters={})
+    ]
 
     property_chunking = retriever.additional_query_properties.property_chunking
     assert isinstance(property_chunking, PropertyChunking)
@@ -4892,7 +5106,7 @@ def test_create_stream_with_multiple_schema_loaders():
 def get_schema_loader(stream: DefaultStream):
     assert isinstance(
         stream._stream_partition_generator._partition_factory._schema_loader,
-        SchemaLoaderCachingDecorator,
+        CachingSchemaLoaderDecorator,
     )
     return stream._stream_partition_generator._partition_factory._schema_loader._decorated
 
