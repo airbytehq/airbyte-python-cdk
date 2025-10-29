@@ -11,7 +11,7 @@ import re
 import time
 from datetime import timedelta
 from threading import RLock
-from typing import TYPE_CHECKING, Any, Mapping, Optional, List
+from typing import TYPE_CHECKING, Any, List, Mapping, Optional
 from urllib import parse
 
 import requests
@@ -676,7 +676,10 @@ class HttpAPIBudget(APIBudget):
 
         if self._path_for_status_code:
             try:
-                if functools.reduce(lambda a, b: a[b], self._path_for_status_code, response.json()) in self._status_codes_for_ratelimit_hit:
+                if (
+                    functools.reduce(lambda a, b: a[b], self._path_for_status_code, response.json())
+                    in self._status_codes_for_ratelimit_hit
+                ):
                     return 0
             except KeyError:
                 # the status is not present in the response so we will assume that we're not being rate limited

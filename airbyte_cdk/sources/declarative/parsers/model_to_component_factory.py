@@ -4153,7 +4153,7 @@ class ModelToComponentFactory:
             ratelimit_reset_header=model.ratelimit_reset_header or "ratelimit-reset",
             ratelimit_remaining_header=model.ratelimit_remaining_header or "ratelimit-remaining",
             status_codes_for_ratelimit_hit=model.status_codes_for_ratelimit_hit or [429],
-            path_for_status_code=model.path_for_status_code
+            path_for_status_code=model.path_for_status_code,
         )
 
     def create_fixed_window_call_rate_policy(
