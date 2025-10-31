@@ -199,7 +199,11 @@ class AirbyteEntrypoint(object):
                     )
                 elif parsed_args.config is None:
                     # Raise a helpful error message if we reach here with no config.
-                    raise ValueError("The '--config' arg is required but was not provided.")
+                    raise ValueError(
+                        "The '--config' argument is required but was not provided. "
+                        "This connector does not support unprivileged discovery. "
+                        "Please provide a valid configuration file using the --config flag."
+                    )
                 else:
                     raw_config = self.source.read_config(parsed_args.config)
                     config = self.source.configure(raw_config, temp_dir)

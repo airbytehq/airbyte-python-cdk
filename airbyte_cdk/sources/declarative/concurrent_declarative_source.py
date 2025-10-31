@@ -242,6 +242,8 @@ class ConcurrentDeclarativeSource(Source):
             message_repository=self._message_repository,
         )
 
+        self.check_config_during_discover = self._uses_dynamic_schema_loader()
+
     def _pre_process_manifest(self, manifest: Dict[str, Any]) -> Dict[str, Any]:
         """
         Preprocesses the provided manifest dictionary by resolving any manifest references.
@@ -651,3 +653,36 @@ class ConcurrentDeclarativeSource(Source):
                     as_airbyte_message(configured_stream.stream, AirbyteStreamStatus.INCOMPLETE)
                 )
         return abstract_streams
+
+    def _uses_dynamic_schema_loader(self) -> bool:
+        """
+        Determines if any stream in the source uses a DynamicSchemaLoader.
+
+        DynamicSchemaLoader makes a separate call to retrieve schema information,
+        which might require authentication. When present, config validation cannot
+        be skipped during discovery.
+
+        Returns:
+            bool: True if any stream uses a DynamicSchemaLoader (config required for discover),
+                  False otherwise (unprivileged discover may be supported).
+        """
+        for stream_config in self._stream_configs(self._source_config):
+            schema_loader = stream_config.get("schema_loader", {})
+            if (
+                isinstance(schema_loader, dict)
+                and schema_loader.get("type") == "DynamicSchemaLoader"
+            ):
+                return True
+
+        dynamic_stream_definitions = self._source_config.get("dynamic_streams", [])
+        if dynamic_stream_definitions:
+            for dynamic_definition in dynamic_stream_definitions:
+                stream_template = dynamic_definition.get("stream_template", {})
+                schema_loader = stream_template.get("schema_loader", {})
+                if (
+                    isinstance(schema_loader, dict)
+                    and schema_loader.get("type") == "DynamicSchemaLoader"
+                ):
+                    return True
+
+        return False

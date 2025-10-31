@@ -624,11 +624,12 @@ class ManifestDeclarativeSource(DeclarativeSource):
         Determines if any stream in the source uses a DynamicSchemaLoader.
 
         DynamicSchemaLoader makes a separate call to retrieve schema information,
-        which might not require authentication, so we can skip config validation
-        during discovery when it's used.
+        which might require authentication. When present, config validation cannot
+        be skipped during discovery.
 
         Returns:
-            bool: True if any stream uses a DynamicSchemaLoader, False otherwise.
+            bool: True if any stream uses a DynamicSchemaLoader (config required for discover),
+                  False otherwise (unprivileged discover may be supported).
         """
         empty_config: Dict[str, Any] = {}
         for stream_config in self._stream_configs(self._source_config, empty_config):
