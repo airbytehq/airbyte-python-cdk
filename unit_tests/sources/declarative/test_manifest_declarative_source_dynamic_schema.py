@@ -9,7 +9,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from airbyte_cdk.models import AirbyteCatalog
-from airbyte_cdk.sources.declarative.manifest_declarative_source import ManifestDeclarativeSource
+from airbyte_cdk.legacy.sources.declarative.manifest_declarative_source import ManifestDeclarativeSource
 from airbyte_cdk.sources.utils.schema_helpers import check_config_against_spec_or_exit
 
 
@@ -74,7 +74,7 @@ def test_check_config_during_discover_without_dynamic_schema_loader():
 
 
 @patch(
-    "airbyte_cdk.sources.declarative.manifest_declarative_source.ManifestDeclarativeSource.streams"
+    "airbyte_cdk.legacy.sources.declarative.manifest_declarative_source.ManifestDeclarativeSource.streams"
 )
 def test_discover_with_dynamic_schema_loader_no_config(mock_streams):
     """Test that discovery works without config when DynamicSchemaLoader is used."""
@@ -128,7 +128,7 @@ def test_discover_with_dynamic_schema_loader_no_config(mock_streams):
 
 
 @patch(
-    "airbyte_cdk.sources.declarative.manifest_declarative_source.ManifestDeclarativeSource.streams"
+    "airbyte_cdk.legacy.sources.declarative.manifest_declarative_source.ManifestDeclarativeSource.streams"
 )
 def test_discover_without_dynamic_schema_loader_no_config(mock_streams):
     """Test that discovery validates config when DynamicSchemaLoader is not used."""
