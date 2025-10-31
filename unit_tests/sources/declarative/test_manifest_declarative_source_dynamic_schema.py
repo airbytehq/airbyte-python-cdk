@@ -12,7 +12,6 @@ from airbyte_cdk.legacy.sources.declarative.manifest_declarative_source import (
     ManifestDeclarativeSource,
 )
 from airbyte_cdk.models import AirbyteCatalog
-from airbyte_cdk.sources.utils.schema_helpers import check_config_against_spec_or_exit
 
 
 def test_check_config_during_discover_with_dynamic_schema_loader():
