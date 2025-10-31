@@ -76,7 +76,7 @@ jobs:
             cdk_extra: file-based
           - connector: destination-motherduck
             # For now, we mark as 'n/a' to always test this connector
-            cdk_extra: n/a  # change to 'sql' to test less often
+            cdk_extra: n/a # change to 'sql' to test less often
           # source-amplitude failing for unrelated issue "date too far back"
           # e.g. https://github.com/airbytehq/airbyte-python-cdk/actions/runs/16053716569/job/45302638848?pr=639
           # - connector: source-amplitude
@@ -141,9 +141,9 @@ jobs:
 
       - name: Set up Poetry
         if: steps.no_changes.outputs.status != 'cancelled'
-        uses: Gr1N/setup-poetry@v9
+        uses: snok/install-poetry@v1
         with:
-          poetry-version: "2.0.1"
+          version: "2.0.1"
 
       - name: Get Connector Language
         if: steps.no_changes.outputs.status != 'cancelled'

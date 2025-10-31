@@ -89,12 +89,6 @@ class SubstreamResumableFullRefreshCursor(Cursor):
         """
         return True
 
-    def is_greater_than_or_equal(self, first: Record, second: Record) -> bool:
-        """
-        RFR record don't have ordering to be compared between one another.
-        """
-        return False
-
     def select_state(self, stream_slice: Optional[StreamSlice] = None) -> Optional[StreamState]:
         if not stream_slice:
             raise ValueError("A partition needs to be provided in order to extract a state")

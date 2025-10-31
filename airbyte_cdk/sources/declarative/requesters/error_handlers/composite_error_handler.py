@@ -66,14 +66,14 @@ class CompositeErrorHandler(ErrorHandler):
             if not isinstance(matched_error_resolution, ErrorResolution):
                 continue
 
-            if matched_error_resolution.response_action == ResponseAction.SUCCESS:
+            if matched_error_resolution.response_action in [
+                ResponseAction.SUCCESS,
+                ResponseAction.RETRY,
+                ResponseAction.IGNORE,
+                ResponseAction.RESET_PAGINATION,
+            ]:
                 return matched_error_resolution
 
-            if (
-                matched_error_resolution.response_action == ResponseAction.RETRY
-                or matched_error_resolution.response_action == ResponseAction.IGNORE
-            ):
-                return matched_error_resolution
         if matched_error_resolution:
             return matched_error_resolution
 

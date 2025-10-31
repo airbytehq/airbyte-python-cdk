@@ -6,14 +6,16 @@ import json
 import logging
 from http import HTTPStatus
 from typing import Any, Callable, Iterable, List, Mapping, MutableMapping, Optional, Tuple, Union
-from unittest.mock import ANY, MagicMock, patch
+from unittest.mock import ANY, MagicMock, Mock, patch
 
 import pytest
 import requests
 from requests.exceptions import InvalidURL
 
 from airbyte_cdk.models import AirbyteLogMessage, AirbyteMessage, Level, SyncMode, Type
+from airbyte_cdk.sources.message.repository import MessageRepository
 from airbyte_cdk.sources.streams import CheckpointMixin
+from airbyte_cdk.sources.streams.call_rate import APIBudget
 from airbyte_cdk.sources.streams.checkpoint import ResumableFullRefreshCursor
 from airbyte_cdk.sources.streams.checkpoint.substream_resumable_full_refresh_cursor import (
     SubstreamResumableFullRefreshCursor,
@@ -26,12 +28,12 @@ from airbyte_cdk.sources.streams.http.error_handlers.response_models import (
     ResponseAction,
 )
 from airbyte_cdk.sources.streams.http.exceptions import (
-    DefaultBackoffException,
     RequestBodyException,
     UserDefinedBackoffException,
 )
-from airbyte_cdk.sources.streams.http.http_client import MessageRepresentationAirbyteTracedErrors
+from airbyte_cdk.sources.streams.http.http_client import HttpClient
 from airbyte_cdk.sources.streams.http.requests_native_auth import TokenAuthenticator
+from airbyte_cdk.utils import AirbyteTracedException
 from airbyte_cdk.utils.airbyte_secrets_utils import update_secrets
 
 
@@ -40,7 +42,22 @@ class StubBasicReadHttpStream(HttpStream):
     primary_key = ""
 
     def __init__(self, deduplicate_query_params: bool = False, **kwargs):
+        disable_retries = False
+        if "disable_retries" in kwargs:
+            disable_retries = kwargs.pop("disable_retries")
         super().__init__(**kwargs)
+        self._http_client = HttpClient(
+            name=self.name,
+            logger=self.logger,
+            error_handler=self.get_error_handler(),
+            api_budget=kwargs.get("api_budget", Mock(spec=APIBudget)),
+            authenticator=kwargs.get("authenticator", None),
+            use_cache=self.use_cache,
+            backoff_strategy=self.get_backoff_strategy(),
+            message_repository=kwargs.get("message_repository", Mock(spec=MessageRepository)),
+            disable_retries=disable_retries,
+        )
+
         self.resp_counter = 1
         self._deduplicate_query_params = deduplicate_query_params
 
@@ -75,7 +92,10 @@ def test_requests_native_token_authenticator():
 
 def test_request_kwargs_used(mocker, requests_mock):
     stream = StubBasicReadHttpStream()
-    request_kwargs = {"cert": None, "proxies": "google.com"}
+    request_kwargs = {
+        "cert": None,
+        "proxies": {"http": "http://example.com", "https": "http://example.com"},
+    }
     mocker.patch.object(stream, "request_kwargs", return_value=request_kwargs)
     send_mock = mocker.patch.object(
         stream._http_client._session, "send", wraps=stream._http_client._session.send
@@ -84,8 +104,16 @@ def test_request_kwargs_used(mocker, requests_mock):
 
     list(stream.read_records(sync_mode=SyncMode.full_refresh))
 
-    stream._http_client._session.send.assert_any_call(ANY, **request_kwargs)
     assert send_mock.call_count == 1
+    call_args = send_mock.call_args_list[0]
+    call_kwargs = call_args.kwargs
+
+    assert call_kwargs.get("cert") is None
+
+    proxies = call_kwargs.get("proxies")
+    assert proxies is not None
+    assert proxies["http"] == "http://example.com"
+    assert proxies["https"] == "http://example.com"
 
 
 def test_stub_basic_read_http_stream_read_records(mocker):
@@ -169,7 +197,7 @@ def test_stub_custom_backoff_http_stream(mocker):
 
     send_mock = mocker.patch.object(requests.Session, "send", return_value=req)
 
-    with pytest.raises(UserDefinedBackoffException):
+    with pytest.raises(AirbyteTracedException):
         list(stream.read_records(SyncMode.full_refresh))
     assert send_mock.call_count == stream.max_retries + 1
 
@@ -193,10 +221,10 @@ def test_stub_custom_backoff_http_stream_retries(mocker, retries):
     req.status_code = HTTPStatus.TOO_MANY_REQUESTS
     send_mock = mocker.patch.object(requests.Session, "send", return_value=req)
 
-    with pytest.raises(UserDefinedBackoffException, match="Too many requests") as excinfo:
+    with pytest.raises(
+        AirbyteTracedException, match="Exception: HTTP Status Code: 429. Error: Too many requests."
+    ):
         list(stream.read_records(SyncMode.full_refresh))
-    assert isinstance(excinfo.value.request, requests.PreparedRequest)
-    assert isinstance(excinfo.value.response, requests.Response)
     if retries <= 0:
         assert send_mock.call_count == 1
     else:
@@ -230,7 +258,7 @@ def test_4xx_error_codes_http_stream(mocker, http_code):
     req.status_code = http_code
     mocker.patch.object(requests.Session, "send", return_value=req)
 
-    with pytest.raises(MessageRepresentationAirbyteTracedErrors):
+    with pytest.raises(AirbyteTracedException):
         list(stream.read_records(SyncMode.full_refresh))
 
 
@@ -262,7 +290,7 @@ def test_error_codes_http_stream_error_resolution_with_response_secrets_filtered
     mocker.patch.object(requests.Session, "send", return_value=res)
 
     # proceed
-    with pytest.raises(MessageRepresentationAirbyteTracedErrors) as err:
+    with pytest.raises(AirbyteTracedException) as err:
         list(stream.read_records(SyncMode.full_refresh))
 
     # we expect the header secrets are obscured
@@ -286,7 +314,10 @@ def test_raise_on_http_errors_off_429(mocker):
     req.status_code = 429
 
     mocker.patch.object(requests.Session, "send", return_value=req)
-    with pytest.raises(DefaultBackoffException, match="Too many requests"):
+    with pytest.raises(
+        AirbyteTracedException,
+        match="Exhausted available request attempts. Please see logs for more details. Exception: HTTP Status Code: 429. Error: Too many requests.",
+    ):
         stream.exit_on_rate_limit = True
         list(stream.read_records(SyncMode.full_refresh))
 
@@ -299,7 +330,7 @@ def test_raise_on_http_errors_off_5xx(mocker, status_code):
     req.status_code = status_code
 
     send_mock = mocker.patch.object(requests.Session, "send", return_value=req)
-    with pytest.raises(DefaultBackoffException):
+    with pytest.raises(AirbyteTracedException):
         list(stream.read_records(SyncMode.full_refresh))
     assert send_mock.call_count == stream.max_retries + 1
 
@@ -330,7 +361,7 @@ def test_raise_on_http_errors(mocker, error):
     stream = AutoFailFalseHttpStream()
     send_mock = mocker.patch.object(requests.Session, "send", side_effect=error())
 
-    with pytest.raises(DefaultBackoffException):
+    with pytest.raises(AirbyteTracedException):
         list(stream.read_records(SyncMode.full_refresh))
     assert send_mock.call_count == stream.max_retries + 1
 
@@ -548,6 +579,9 @@ def test_using_cache(mocker, requests_mock):
 class AutoFailTrueHttpStream(StubBasicReadHttpStream):
     raise_on_http_errors = True
 
+    def __init__(self, **kwargs):
+        super().__init__(disable_retries=True, **kwargs)
+
     def should_retry(self, *args, **kwargs):
         return True
 
@@ -580,14 +614,16 @@ def test_http_stream_adapter_http_status_error_handler_should_retry_false_raise_
 
 @pytest.mark.parametrize("status_code", range(400, 600))
 def test_send_raise_on_http_errors_logs(mocker, status_code):
-    mocker.patch("time.sleep", lambda x: None)
     stream = AutoFailTrueHttpStream()
-    res = requests.Response()
+    res = Mock(spec=requests.Response)
     res.status_code = status_code
+    res.headers = {}
     mocker.patch.object(requests.Session, "send", return_value=res)
     mocker.patch.object(stream._http_client, "_logger")
-    with pytest.raises(requests.exceptions.HTTPError):
-        response = stream._http_client.send_request("GET", "https://g", {}, exit_on_rate_limit=True)
+    with pytest.raises(AirbyteTracedException):
+        _, response = stream._http_client.send_request(
+            "GET", "https://g", {}, exit_on_rate_limit=True
+        )
         stream._http_client.logger.error.assert_called_with(response.text)
         assert response.status_code == status_code
 

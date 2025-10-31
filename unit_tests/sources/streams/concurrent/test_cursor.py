@@ -1,20 +1,17 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
+
 from copy import deepcopy
 from datetime import datetime, timedelta, timezone
-from functools import partial
 from typing import Any, Mapping, Optional
 from unittest import TestCase
 from unittest.mock import Mock
 
 import freezegun
 import pytest
-from isodate import parse_duration
 
 from airbyte_cdk.sources.connector_state_manager import ConnectorStateManager
-from airbyte_cdk.sources.declarative.datetime.min_max_datetime import MinMaxDatetime
-from airbyte_cdk.sources.declarative.incremental.datetime_based_cursor import DatetimeBasedCursor
 from airbyte_cdk.sources.message import MessageRepository
 from airbyte_cdk.sources.streams.concurrent.clamping import (
     ClampingEndProvider,
@@ -35,7 +32,6 @@ from airbyte_cdk.sources.streams.concurrent.state_converters.abstract_stream_sta
 from airbyte_cdk.sources.streams.concurrent.state_converters.datetime_stream_state_converter import (
     CustomFormatConcurrentStreamStateConverter,
     EpochValueConcurrentStreamStateConverter,
-    IsoMillisConcurrentStreamStateConverter,
 )
 from airbyte_cdk.sources.types import Record, StreamSlice
 
@@ -1124,659 +1120,7 @@ class ClampingIntegrationTest(TestCase):
         ]
 
 
-@freezegun.freeze_time(time_to_freeze=datetime(2024, 4, 1, 0, 0, 0, 0, tzinfo=timezone.utc))
-@pytest.mark.parametrize(
-    "start_datetime,end_datetime,step,cursor_field,lookback_window,state,expected_slices",
-    [
-        pytest.param(
-            "{{ config.start_time }}",
-            "{{ config.end_time or now_utc() }}",
-            "P10D",
-            "updated_at",
-            "P5D",
-            {},
-            [
-                {
-                    "start": "2024-01-01T00:00:00.000Z",
-                    "end": "2024-01-10T23:59:59.000Z",
-                },
-                {
-                    "start": "2024-01-11T00:00:00.000Z",
-                    "end": "2024-01-20T23:59:59.000Z",
-                },
-                {
-                    "start": "2024-01-21T00:00:00.000Z",
-                    "end": "2024-01-30T23:59:59.000Z",
-                },
-                {
-                    "start": "2024-01-31T00:00:00.000Z",
-                    "end": "2024-02-09T23:59:59.000Z",
-                },
-                {
-                    "start": "2024-02-10T00:00:00.000Z",
-                    "end": "2024-02-19T23:59:59.000Z",
-                },
-                {
-                    "start": "2024-02-20T00:00:00.000Z",
-                    "end": "2024-03-01T00:00:00.000Z",
-                },
-            ],
-            id="test_datetime_based_cursor_all_fields",
-        ),
-        pytest.param(
-            "{{ config.start_time }}",
-            "{{ config.end_time or '2024-01-01T00:00:00.000000+0000' }}",
-            "P10D",
-            "updated_at",
-            "P5D",
-            {
-                "slices": [
-                    {
-                        "start": "2024-01-01T00:00:00.000000+0000",
-                        "end": "2024-02-10T00:00:00.000000+0000",
-                    }
-                ],
-                "state_type": "date-range",
-            },
-            [
-                {
-                    "start": "2024-02-05T00:00:00.000Z",
-                    "end": "2024-02-14T23:59:59.000Z",
-                },
-                {
-                    "start": "2024-02-15T00:00:00.000Z",
-                    "end": "2024-02-24T23:59:59.000Z",
-                },
-                {
-                    "start": "2024-02-25T00:00:00.000Z",
-                    "end": "2024-03-01T00:00:00.000Z",
-                },
-            ],
-            id="test_datetime_based_cursor_with_state",
-        ),
-        pytest.param(
-            "{{ config.start_time }}",
-            "{{ config.missing or now_utc().strftime('%Y-%m-%dT%H:%M:%S.%fZ') }}",
-            "P20D",
-            "updated_at",
-            "P1D",
-            {
-                "slices": [
-                    {
-                        "start": "2024-01-01T00:00:00.000000+0000",
-                        "end": "2024-01-21T00:00:00.000000+0000",
-                    }
-                ],
-                "state_type": "date-range",
-            },
-            [
-                {
-                    "start": "2024-01-20T00:00:00.000Z",
-                    "end": "2024-02-08T23:59:59.000Z",
-                },
-                {
-                    "start": "2024-02-09T00:00:00.000Z",
-                    "end": "2024-02-28T23:59:59.000Z",
-                },
-                {
-                    "start": "2024-02-29T00:00:00.000Z",
-                    "end": "2024-03-19T23:59:59.000Z",
-                },
-                {
-                    "start": "2024-03-20T00:00:00.000Z",
-                    "end": "2024-04-01T00:00:00.000Z",
-                },
-            ],
-            id="test_datetime_based_cursor_with_state_and_end_date",
-        ),
-        pytest.param(
-            "{{ config.start_time }}",
-            "{{ config.end_time }}",
-            "P1M",
-            "updated_at",
-            "P5D",
-            {},
-            [
-                {
-                    "start": "2024-01-01T00:00:00.000Z",
-                    "end": "2024-01-31T23:59:59.000Z",
-                },
-                {
-                    "start": "2024-02-01T00:00:00.000Z",
-                    "end": "2024-03-01T00:00:00.000Z",
-                },
-            ],
-            id="test_datetime_based_cursor_using_large_step_duration",
-        ),
-    ],
-)
-def test_generate_slices_concurrent_cursor_from_datetime_based_cursor(
-    start_datetime,
-    end_datetime,
-    step,
-    cursor_field,
-    lookback_window,
-    state,
-    expected_slices,
-):
-    message_repository = Mock(spec=MessageRepository)
-    state_manager = Mock(spec=ConnectorStateManager)
-
-    config = {
-        "start_time": "2024-01-01T00:00:00.000000+0000",
-        "end_time": "2024-03-01T00:00:00.000000+0000",
-    }
-
-    datetime_based_cursor = DatetimeBasedCursor(
-        start_datetime=MinMaxDatetime(datetime=start_datetime, parameters={}),
-        end_datetime=MinMaxDatetime(datetime=end_datetime, parameters={}),
-        step=step,
-        cursor_field=cursor_field,
-        partition_field_start="start",
-        partition_field_end="end",
-        datetime_format="%Y-%m-%dT%H:%M:%S.%f%z",
-        cursor_granularity="PT1S",
-        lookback_window=lookback_window,
-        is_compare_strictly=True,
-        config=config,
-        parameters={},
-    )
-
-    # I don't love that we're back to this inching close to interpolation at parse time instead of runtime
-    # We also might need to add a wrapped class that exposes these fields publicly or live with ugly private access
-    interpolated_state_date = datetime_based_cursor._start_datetime
-    start_date = interpolated_state_date.get_datetime(config=config)
-
-    interpolated_end_date = datetime_based_cursor._end_datetime
-    interpolated_end_date_provider = partial(interpolated_end_date.get_datetime, config)
-
-    interpolated_cursor_field = datetime_based_cursor.cursor_field
-    cursor_field = CursorField(cursor_field_key=interpolated_cursor_field.eval(config=config))
-
-    lower_slice_boundary = datetime_based_cursor._partition_field_start.eval(config=config)
-    upper_slice_boundary = datetime_based_cursor._partition_field_end.eval(config=config)
-    slice_boundary_fields = (lower_slice_boundary, upper_slice_boundary)
-
-    # DatetimeBasedCursor returns an isodate.Duration if step uses month or year precision. This still works in our
-    # code, but mypy may complain when we actually implement this in the concurrent low-code source. To fix this, we
-    # may need to convert a Duration to timedelta by multiplying month by 30 (but could lose precision).
-    step_length = datetime_based_cursor._step
-
-    lookback_window = (
-        parse_duration(datetime_based_cursor.lookback_window)
-        if datetime_based_cursor.lookback_window
-        else None
-    )
-
-    cursor_granularity = (
-        parse_duration(datetime_based_cursor.cursor_granularity)
-        if datetime_based_cursor.cursor_granularity
-        else None
-    )
-
-    cursor = ConcurrentCursor(
-        stream_name=_A_STREAM_NAME,
-        stream_namespace=_A_STREAM_NAMESPACE,
-        stream_state=state,
-        message_repository=message_repository,
-        connector_state_manager=state_manager,
-        connector_state_converter=IsoMillisConcurrentStreamStateConverter(is_sequential_state=True),
-        cursor_field=cursor_field,
-        slice_boundary_fields=slice_boundary_fields,
-        start=start_date,
-        end_provider=interpolated_end_date_provider,
-        lookback_window=lookback_window,
-        slice_range=step_length,
-        cursor_granularity=cursor_granularity,
-    )
-
-    actual_slices = list(cursor.stream_slices())
-    assert actual_slices == expected_slices
-
-
-@freezegun.freeze_time(time_to_freeze=datetime(2024, 9, 1, 0, 0, 0, 0, tzinfo=timezone.utc))
-def test_observe_concurrent_cursor_from_datetime_based_cursor():
-    message_repository = Mock(spec=MessageRepository)
-    state_manager = Mock(spec=ConnectorStateManager)
-
-    config = {"start_time": "2024-08-01T00:00:00.000000+0000", "dynamic_cursor_key": "updated_at"}
-
-    datetime_based_cursor = DatetimeBasedCursor(
-        start_datetime=MinMaxDatetime(datetime="{{ config.start_time }}", parameters={}),
-        cursor_field="{{ config.dynamic_cursor_key }}",
-        datetime_format="%Y-%m-%dT%H:%M:%S.%f%z",
-        config=config,
-        parameters={},
-    )
-
-    interpolated_state_date = datetime_based_cursor._start_datetime
-    start_date = interpolated_state_date.get_datetime(config=config)
-
-    interpolated_cursor_field = datetime_based_cursor.cursor_field
-    cursor_field = CursorField(cursor_field_key=interpolated_cursor_field.eval(config=config))
-
-    step_length = datetime_based_cursor._step
-
-    concurrent_cursor = ConcurrentCursor(
-        stream_name="gods",
-        stream_namespace=_A_STREAM_NAMESPACE,
-        stream_state={},
-        message_repository=message_repository,
-        connector_state_manager=state_manager,
-        connector_state_converter=IsoMillisConcurrentStreamStateConverter(is_sequential_state=True),
-        cursor_field=cursor_field,
-        slice_boundary_fields=None,
-        start=start_date,
-        end_provider=IsoMillisConcurrentStreamStateConverter.get_end_provider(),
-        slice_range=step_length,
-    )
-
-    partition = _partition(
-        StreamSlice(
-            partition={
-                _LOWER_SLICE_BOUNDARY_FIELD: "2024-08-01T00:00:00.000000+0000",
-                _UPPER_SLICE_BOUNDARY_FIELD: "2024-09-01T00:00:00.000000+0000",
-            },
-            cursor_slice={},
-        ),
-        _stream_name="gods",
-    )
-
-    record_1 = Record(
-        associated_slice=partition.to_slice(),
-        data={
-            "id": "999",
-            "updated_at": "2024-08-23T00:00:00.000000+0000",
-            "name": "kratos",
-            "mythology": "greek",
-        },
-        stream_name="gods",
-    )
-    record_2 = Record(
-        associated_slice=partition.to_slice(),
-        data={
-            "id": "1000",
-            "updated_at": "2024-08-22T00:00:00.000000+0000",
-            "name": "odin",
-            "mythology": "norse",
-        },
-        stream_name="gods",
-    )
-    record_3 = Record(
-        associated_slice=partition.to_slice(),
-        data={
-            "id": "500",
-            "updated_at": "2024-08-24T00:00:00.000000+0000",
-            "name": "freya",
-            "mythology": "norse",
-        },
-        stream_name="gods",
-    )
-
-    concurrent_cursor.observe(record_1)
-    actual_most_recent_record = concurrent_cursor._most_recent_cursor_value_per_partition[
-        partition.to_slice()
-    ]
-    assert actual_most_recent_record == concurrent_cursor._extract_cursor_value(record_1)
-
-    concurrent_cursor.observe(record_2)
-    actual_most_recent_record = concurrent_cursor._most_recent_cursor_value_per_partition[
-        partition.to_slice()
-    ]
-    assert actual_most_recent_record == concurrent_cursor._extract_cursor_value(record_1)
-
-    concurrent_cursor.observe(record_3)
-    actual_most_recent_record = concurrent_cursor._most_recent_cursor_value_per_partition[
-        partition.to_slice()
-    ]
-    assert actual_most_recent_record == concurrent_cursor._extract_cursor_value(record_3)
-
-
-@freezegun.freeze_time(time_to_freeze=datetime(2024, 9, 1, 0, 0, 0, 0, tzinfo=timezone.utc))
-def test_close_partition_concurrent_cursor_from_datetime_based_cursor():
-    message_repository = Mock(spec=MessageRepository)
-    state_manager = Mock(spec=ConnectorStateManager)
-
-    config = {"start_time": "2024-08-01T00:00:00.000000+0000", "dynamic_cursor_key": "updated_at"}
-
-    datetime_based_cursor = DatetimeBasedCursor(
-        start_datetime=MinMaxDatetime(datetime="{{ config.start_time }}", parameters={}),
-        cursor_field="{{ config.dynamic_cursor_key }}",
-        datetime_format="%Y-%m-%dT%H:%M:%S.%f%z",
-        config=config,
-        parameters={},
-    )
-
-    interpolated_state_date = datetime_based_cursor._start_datetime
-    start_date = interpolated_state_date.get_datetime(config=config)
-
-    interpolated_cursor_field = datetime_based_cursor.cursor_field
-    cursor_field = CursorField(cursor_field_key=interpolated_cursor_field.eval(config=config))
-
-    step_length = datetime_based_cursor._step
-
-    concurrent_cursor = ConcurrentCursor(
-        stream_name="gods",
-        stream_namespace=_A_STREAM_NAMESPACE,
-        stream_state={},
-        message_repository=message_repository,
-        connector_state_manager=state_manager,
-        connector_state_converter=IsoMillisConcurrentStreamStateConverter(
-            is_sequential_state=False
-        ),
-        cursor_field=cursor_field,
-        slice_boundary_fields=None,
-        start=start_date,
-        end_provider=IsoMillisConcurrentStreamStateConverter.get_end_provider(),
-        slice_range=step_length,
-    )
-
-    partition = _partition(
-        StreamSlice(
-            partition={
-                _LOWER_SLICE_BOUNDARY_FIELD: "2024-08-01T00:00:00.000000+0000",
-                _UPPER_SLICE_BOUNDARY_FIELD: "2024-09-01T00:00:00.000000+0000",
-            },
-            cursor_slice={},
-        ),
-        _stream_name="gods",
-    )
-
-    record_1 = Record(
-        associated_slice=partition.to_slice(),
-        data={
-            "id": "999",
-            "updated_at": "2024-08-23T00:00:00.000000+0000",
-            "name": "kratos",
-            "mythology": "greek",
-        },
-        stream_name="gods",
-    )
-    concurrent_cursor.observe(record_1)
-
-    concurrent_cursor.close_partition(partition)
-
-    message_repository.emit_message.assert_called_once_with(
-        state_manager.create_state_message.return_value
-    )
-    state_manager.update_state_for_stream.assert_called_once_with(
-        "gods",
-        _A_STREAM_NAMESPACE,
-        {
-            "slices": [
-                {
-                    "end": "2024-08-23T00:00:00.000Z",
-                    "start": "2024-08-01T00:00:00.000Z",
-                    "most_recent_cursor_value": "2024-08-23T00:00:00.000Z",
-                }
-            ],
-            "state_type": "date-range",
-        },
-    )
-
-
-@freezegun.freeze_time(time_to_freeze=datetime(2024, 9, 1, 0, 0, 0, 0, tzinfo=timezone.utc))
-def test_close_partition_with_slice_range_concurrent_cursor_from_datetime_based_cursor():
-    message_repository = Mock(spec=MessageRepository)
-    state_manager = Mock(spec=ConnectorStateManager)
-
-    config = {"start_time": "2024-07-01T00:00:00.000000+0000", "dynamic_cursor_key": "updated_at"}
-
-    datetime_based_cursor = DatetimeBasedCursor(
-        start_datetime=MinMaxDatetime(datetime="{{ config.start_time }}", parameters={}),
-        cursor_field="{{ config.dynamic_cursor_key }}",
-        datetime_format="%Y-%m-%dT%H:%M:%S.%f%z",
-        step="P15D",
-        cursor_granularity="P1D",
-        config=config,
-        parameters={},
-    )
-
-    interpolated_state_date = datetime_based_cursor._start_datetime
-    start_date = interpolated_state_date.get_datetime(config=config)
-
-    interpolated_cursor_field = datetime_based_cursor.cursor_field
-    cursor_field = CursorField(cursor_field_key=interpolated_cursor_field.eval(config=config))
-
-    lower_slice_boundary = datetime_based_cursor._partition_field_start.eval(config=config)
-    upper_slice_boundary = datetime_based_cursor._partition_field_end.eval(config=config)
-    slice_boundary_fields = (lower_slice_boundary, upper_slice_boundary)
-
-    step_length = datetime_based_cursor._step
-
-    concurrent_cursor = ConcurrentCursor(
-        stream_name="gods",
-        stream_namespace=_A_STREAM_NAMESPACE,
-        stream_state={},
-        message_repository=message_repository,
-        connector_state_manager=state_manager,
-        connector_state_converter=IsoMillisConcurrentStreamStateConverter(
-            is_sequential_state=False, cursor_granularity=None
-        ),
-        cursor_field=cursor_field,
-        slice_boundary_fields=slice_boundary_fields,
-        start=start_date,
-        slice_range=step_length,
-        cursor_granularity=None,
-        end_provider=IsoMillisConcurrentStreamStateConverter.get_end_provider(),
-    )
-
-    partition_0 = _partition(
-        StreamSlice(
-            partition={
-                "start_time": "2024-07-01T00:00:00.000000+0000",
-                "end_time": "2024-07-16T00:00:00.000000+0000",
-            },
-            cursor_slice={},
-        ),
-        _stream_name="gods",
-    )
-    partition_3 = _partition(
-        StreamSlice(
-            partition={
-                "start_time": "2024-08-15T00:00:00.000000+0000",
-                "end_time": "2024-08-30T00:00:00.000000+0000",
-            },
-            cursor_slice={},
-        ),
-        _stream_name="gods",
-    )
-    record_1 = Record(
-        associated_slice=partition_0.to_slice(),
-        data={
-            "id": "1000",
-            "updated_at": "2024-07-05T00:00:00.000000+0000",
-            "name": "loki",
-            "mythology": "norse",
-        },
-        stream_name="gods",
-    )
-    record_2 = Record(
-        associated_slice=partition_3.to_slice(),
-        data={
-            "id": "999",
-            "updated_at": "2024-08-20T00:00:00.000000+0000",
-            "name": "kratos",
-            "mythology": "greek",
-        },
-        stream_name="gods",
-    )
-
-    concurrent_cursor.observe(record_1)
-    concurrent_cursor.close_partition(partition_0)
-    concurrent_cursor.observe(record_2)
-    concurrent_cursor.close_partition(partition_3)
-
-    message_repository.emit_message.assert_called_with(
-        state_manager.create_state_message.return_value
-    )
-    assert message_repository.emit_message.call_count == 2
-    state_manager.update_state_for_stream.assert_called_with(
-        "gods",
-        _A_STREAM_NAMESPACE,
-        {
-            "slices": [
-                {
-                    "start": "2024-07-01T00:00:00.000Z",
-                    "end": "2024-07-16T00:00:00.000Z",
-                    "most_recent_cursor_value": "2024-07-05T00:00:00.000Z",
-                },
-                {
-                    "start": "2024-08-15T00:00:00.000Z",
-                    "end": "2024-08-30T00:00:00.000Z",
-                    "most_recent_cursor_value": "2024-08-20T00:00:00.000Z",
-                },
-            ],
-            "state_type": "date-range",
-        },
-    )
-    assert state_manager.update_state_for_stream.call_count == 2
-
-
-@freezegun.freeze_time(time_to_freeze=datetime(2024, 9, 1, 0, 0, 0, 0, tzinfo=timezone.utc))
-def test_close_partition_with_slice_range_granularity_concurrent_cursor_from_datetime_based_cursor():
-    message_repository = Mock(spec=MessageRepository)
-    state_manager = Mock(spec=ConnectorStateManager)
-
-    config = {"start_time": "2024-07-01T00:00:00.000000+0000", "dynamic_cursor_key": "updated_at"}
-
-    datetime_based_cursor = DatetimeBasedCursor(
-        start_datetime=MinMaxDatetime(datetime="{{ config.start_time }}", parameters={}),
-        cursor_field="{{ config.dynamic_cursor_key }}",
-        datetime_format="%Y-%m-%dT%H:%M:%S.%f%z",
-        step="P15D",
-        cursor_granularity="P1D",
-        config=config,
-        parameters={},
-    )
-
-    interpolated_state_date = datetime_based_cursor._start_datetime
-    start_date = interpolated_state_date.get_datetime(config=config)
-
-    interpolated_cursor_field = datetime_based_cursor.cursor_field
-    cursor_field = CursorField(cursor_field_key=interpolated_cursor_field.eval(config=config))
-
-    lower_slice_boundary = datetime_based_cursor._partition_field_start.eval(config=config)
-    upper_slice_boundary = datetime_based_cursor._partition_field_end.eval(config=config)
-    slice_boundary_fields = (lower_slice_boundary, upper_slice_boundary)
-
-    step_length = datetime_based_cursor._step
-
-    cursor_granularity = (
-        parse_duration(datetime_based_cursor.cursor_granularity)
-        if datetime_based_cursor.cursor_granularity
-        else None
-    )
-
-    concurrent_cursor = ConcurrentCursor(
-        stream_name="gods",
-        stream_namespace=_A_STREAM_NAMESPACE,
-        stream_state={},
-        message_repository=message_repository,
-        connector_state_manager=state_manager,
-        connector_state_converter=IsoMillisConcurrentStreamStateConverter(
-            is_sequential_state=False, cursor_granularity=cursor_granularity
-        ),
-        cursor_field=cursor_field,
-        slice_boundary_fields=slice_boundary_fields,
-        start=start_date,
-        slice_range=step_length,
-        cursor_granularity=cursor_granularity,
-        end_provider=IsoMillisConcurrentStreamStateConverter.get_end_provider(),
-    )
-
-    partition_0 = _partition(
-        StreamSlice(
-            partition={
-                "start_time": "2024-07-01T00:00:00.000000+0000",
-                "end_time": "2024-07-15T00:00:00.000000+0000",
-            },
-            cursor_slice={},
-        ),
-        _stream_name="gods",
-    )
-    partition_1 = _partition(
-        StreamSlice(
-            partition={
-                "start_time": "2024-07-16T00:00:00.000000+0000",
-                "end_time": "2024-07-31T00:00:00.000000+0000",
-            },
-            cursor_slice={},
-        ),
-        _stream_name="gods",
-    )
-    partition_3 = _partition(
-        StreamSlice(
-            partition={
-                "start_time": "2024-08-15T00:00:00.000000+0000",
-                "end_time": "2024-08-29T00:00:00.000000+0000",
-            },
-            cursor_slice={},
-        ),
-        _stream_name="gods",
-    )
-    record_1 = Record(
-        associated_slice=partition_0.to_slice(),
-        data={
-            "id": "1000",
-            "updated_at": "2024-07-05T00:00:00.000000+0000",
-            "name": "loki",
-            "mythology": "norse",
-        },
-        stream_name="gods",
-    )
-    record_2 = Record(
-        associated_slice=partition_1.to_slice(),
-        data={
-            "id": "2000",
-            "updated_at": "2024-07-25T00:00:00.000000+0000",
-            "name": "freya",
-            "mythology": "norse",
-        },
-        stream_name="gods",
-    )
-    record_3 = Record(
-        associated_slice=partition_3.to_slice(),
-        data={
-            "id": "999",
-            "updated_at": "2024-08-20T00:00:00.000000+0000",
-            "name": "kratos",
-            "mythology": "greek",
-        },
-        stream_name="gods",
-    )
-
-    concurrent_cursor.observe(record_1)
-    concurrent_cursor.close_partition(partition_0)
-    concurrent_cursor.observe(record_2)
-    concurrent_cursor.close_partition(partition_1)
-    concurrent_cursor.observe(record_3)
-    concurrent_cursor.close_partition(partition_3)
-
-    message_repository.emit_message.assert_called_with(
-        state_manager.create_state_message.return_value
-    )
-    assert message_repository.emit_message.call_count == 3
-    state_manager.update_state_for_stream.assert_called_with(
-        "gods",
-        _A_STREAM_NAMESPACE,
-        {
-            "slices": [
-                {
-                    "start": "2024-07-01T00:00:00.000Z",
-                    "end": "2024-07-31T00:00:00.000Z",
-                    "most_recent_cursor_value": "2024-07-25T00:00:00.000Z",
-                },
-                {
-                    "start": "2024-08-15T00:00:00.000Z",
-                    "end": "2024-08-29T00:00:00.000Z",
-                    "most_recent_cursor_value": "2024-08-20T00:00:00.000Z",
-                },
-            ],
-            "state_type": "date-range",
-        },
-    )
-    assert state_manager.update_state_for_stream.call_count == 3
+_SHOULD_BE_SYNCED_START = 10
 
 
 @pytest.mark.parametrize(
@@ -1784,54 +1128,42 @@ def test_close_partition_with_slice_range_granularity_concurrent_cursor_from_dat
     [
         [
             Record(
-                data={_A_CURSOR_FIELD_KEY: 10},
+                data={_A_CURSOR_FIELD_KEY: _SHOULD_BE_SYNCED_START},
                 stream_name="test_stream",
-                associated_slice=_partition(
-                    {_LOWER_SLICE_BOUNDARY_FIELD: 0, _UPPER_SLICE_BOUNDARY_FIELD: 10}
-                ).to_slice(),
             ),
             True,
         ],
         [
             Record(
-                data={_A_CURSOR_FIELD_KEY: 9},
+                data={_A_CURSOR_FIELD_KEY: _SHOULD_BE_SYNCED_START - 1},
                 stream_name="test_stream",
-                associated_slice=_partition(
-                    {_LOWER_SLICE_BOUNDARY_FIELD: 0, _UPPER_SLICE_BOUNDARY_FIELD: 10}
-                ).to_slice(),
             ),
             False,
         ],
         [
             Record(
-                data={_A_CURSOR_FIELD_KEY: 21},
+                data={_A_CURSOR_FIELD_KEY: _SHOULD_BE_SYNCED_START + 1},
                 stream_name="test_stream",
-                associated_slice=_partition(
-                    {_LOWER_SLICE_BOUNDARY_FIELD: 0, _UPPER_SLICE_BOUNDARY_FIELD: 10}
-                ).to_slice(),
             ),
-            False,
+            True,
         ],
         [
             Record(
                 data={"not_a_cursor_field": "some_data"},
                 stream_name="test_stream",
-                associated_slice=_partition(
-                    {_LOWER_SLICE_BOUNDARY_FIELD: 0, _UPPER_SLICE_BOUNDARY_FIELD: 10}
-                ).to_slice(),
             ),
             True,
         ],
     ],
     ids=[
         "with_cursor_field_inside_range",
-        "with_cursor_field_lower_than_range",
-        "with_cursor_field_higher_than_range",
+        "with_cursor_field_lower_than_start",
+        "with_cursor_field_higher_than_end",
         "no_cursor",
     ],
 )
 @freezegun.freeze_time(time_to_freeze=datetime.fromtimestamp(20, timezone.utc))
-def test_should_be_synced(record: Record, should_be_synced: bool):
+def test_should_be_synced_non_partitioned_state_no_state(record: Record, should_be_synced: bool):
     cursor = ConcurrentCursor(
         _A_STREAM_NAME,
         _A_STREAM_NAMESPACE,
@@ -1841,8 +1173,217 @@ def test_should_be_synced(record: Record, should_be_synced: bool):
         EpochValueConcurrentStreamStateConverter(True),
         CursorField(_A_CURSOR_FIELD_KEY),
         _SLICE_BOUNDARY_FIELDS,
-        datetime.fromtimestamp(10, timezone.utc),
+        datetime.fromtimestamp(_SHOULD_BE_SYNCED_START, timezone.utc),
         EpochValueConcurrentStreamStateConverter.get_end_provider(),
         _NO_LOOKBACK_WINDOW,
     )
     assert cursor.should_be_synced(record) == should_be_synced
+
+
+def test_given_state_when_should_be_synced_then_use_cursor_value_to_filter():
+    state_value = _SHOULD_BE_SYNCED_START + 5
+    cursor = ConcurrentCursor(
+        _A_STREAM_NAME,
+        _A_STREAM_NAMESPACE,
+        {_A_CURSOR_FIELD_KEY: state_value},
+        Mock(spec=MessageRepository),
+        Mock(spec=ConnectorStateManager),
+        EpochValueConcurrentStreamStateConverter(True),
+        CursorField(_A_CURSOR_FIELD_KEY),
+        _SLICE_BOUNDARY_FIELDS,
+        datetime.fromtimestamp(_SHOULD_BE_SYNCED_START, timezone.utc),
+        EpochValueConcurrentStreamStateConverter.get_end_provider(),
+        _NO_LOOKBACK_WINDOW,
+    )
+
+    assert (
+        cursor.should_be_synced(
+            Record(data={_A_CURSOR_FIELD_KEY: state_value - 1}, stream_name="test_stream")
+        )
+        == False
+    )
+    assert (
+        cursor.should_be_synced(
+            Record(data={_A_CURSOR_FIELD_KEY: state_value}, stream_name="test_stream")
+        )
+        == True
+    )
+
+
+def test_given_partitioned_state_without_slices_nor_start_when_should_be_synced_then_use_zero_value_to_filter():
+    cursor = ConcurrentCursor(
+        _A_STREAM_NAME,
+        _A_STREAM_NAMESPACE,
+        {
+            "slices": [],
+            "state_type": "date-range",
+        },
+        Mock(spec=MessageRepository),
+        Mock(spec=ConnectorStateManager),
+        EpochValueConcurrentStreamStateConverter(True),
+        CursorField(_A_CURSOR_FIELD_KEY),
+        _SLICE_BOUNDARY_FIELDS,
+        None,
+        EpochValueConcurrentStreamStateConverter.get_end_provider(),
+        _NO_LOOKBACK_WINDOW,
+    )
+
+    assert (
+        cursor.should_be_synced(Record(data={_A_CURSOR_FIELD_KEY: -1}, stream_name="test_stream"))
+        == False
+    )
+    assert (
+        cursor.should_be_synced(Record(data={_A_CURSOR_FIELD_KEY: 0}, stream_name="test_stream"))
+        == True
+    )
+
+
+def test_given_partitioned_state_without_slices_but_start_when_should_be_synced_then_use_start_value_to_filter():
+    cursor = ConcurrentCursor(
+        _A_STREAM_NAME,
+        _A_STREAM_NAMESPACE,
+        {
+            "slices": [],
+            "state_type": "date-range",
+        },
+        Mock(spec=MessageRepository),
+        Mock(spec=ConnectorStateManager),
+        EpochValueConcurrentStreamStateConverter(True),
+        CursorField(_A_CURSOR_FIELD_KEY),
+        _SLICE_BOUNDARY_FIELDS,
+        datetime.fromtimestamp(_SHOULD_BE_SYNCED_START, timezone.utc),
+        EpochValueConcurrentStreamStateConverter.get_end_provider(),
+        _NO_LOOKBACK_WINDOW,
+    )
+
+    assert (
+        cursor.should_be_synced(
+            Record(
+                data={_A_CURSOR_FIELD_KEY: _SHOULD_BE_SYNCED_START - 1}, stream_name="test_stream"
+            )
+        )
+        == False
+    )
+    assert (
+        cursor.should_be_synced(
+            Record(data={_A_CURSOR_FIELD_KEY: _SHOULD_BE_SYNCED_START}, stream_name="test_stream")
+        )
+        == True
+    )
+
+
+def test_given_partitioned_state_with_one_slice_and_most_recent_cursor_value_when_should_be_synced_then_use_most_recent_cursor_value_of_slice_to_filter():
+    most_recent_cursor_value = 5
+    cursor = ConcurrentCursor(
+        _A_STREAM_NAME,
+        _A_STREAM_NAMESPACE,
+        {
+            "slices": [
+                {"end": 10, "most_recent_cursor_value": most_recent_cursor_value, "start": 0},
+            ],
+            "state_type": "date-range",
+        },
+        Mock(spec=MessageRepository),
+        Mock(spec=ConnectorStateManager),
+        EpochValueConcurrentStreamStateConverter(True),
+        CursorField(_A_CURSOR_FIELD_KEY),
+        _SLICE_BOUNDARY_FIELDS,
+        datetime.fromtimestamp(_SHOULD_BE_SYNCED_START, timezone.utc),
+        EpochValueConcurrentStreamStateConverter.get_end_provider(),
+        _NO_LOOKBACK_WINDOW,
+    )
+
+    assert (
+        cursor.should_be_synced(
+            Record(
+                data={_A_CURSOR_FIELD_KEY: most_recent_cursor_value - 1}, stream_name="test_stream"
+            )
+        )
+        == False
+    )
+    assert (
+        cursor.should_be_synced(
+            Record(data={_A_CURSOR_FIELD_KEY: most_recent_cursor_value}, stream_name="test_stream")
+        )
+        == True
+    )
+
+
+def test_given_partitioned_state_with_one_slice_without_most_recent_cursor_value_when_should_be_synced_then_use_upper_boundary_of_slice_to_filter():
+    slice_end = 5
+    cursor = ConcurrentCursor(
+        _A_STREAM_NAME,
+        _A_STREAM_NAMESPACE,
+        {
+            "slices": [
+                {"end": slice_end, "start": 0},
+            ],
+            "state_type": "date-range",
+        },
+        Mock(spec=MessageRepository),
+        Mock(spec=ConnectorStateManager),
+        EpochValueConcurrentStreamStateConverter(True),
+        CursorField(_A_CURSOR_FIELD_KEY),
+        _SLICE_BOUNDARY_FIELDS,
+        datetime.fromtimestamp(_SHOULD_BE_SYNCED_START, timezone.utc),
+        EpochValueConcurrentStreamStateConverter.get_end_provider(),
+        _NO_LOOKBACK_WINDOW,
+    )
+
+    assert (
+        cursor.should_be_synced(
+            Record(data={_A_CURSOR_FIELD_KEY: slice_end - 1}, stream_name="test_stream")
+        )
+        == False
+    )
+    assert (
+        cursor.should_be_synced(
+            Record(data={_A_CURSOR_FIELD_KEY: slice_end}, stream_name="test_stream")
+        )
+        == True
+    )
+
+
+def test_given_partitioned_state_with_multiple_slices_when_should_be_synced_then_use_upper_boundary_of_first_slice_to_filter():
+    first_slice_end = 5
+    second_slice_start = first_slice_end + 10
+    cursor = ConcurrentCursor(
+        _A_STREAM_NAME,
+        _A_STREAM_NAMESPACE,
+        {
+            "slices": [
+                {"end": first_slice_end, "start": 0},
+                {"end": first_slice_end + 100, "start": second_slice_start},
+            ],
+            "state_type": "date-range",
+        },
+        Mock(spec=MessageRepository),
+        Mock(spec=ConnectorStateManager),
+        EpochValueConcurrentStreamStateConverter(True),
+        CursorField(_A_CURSOR_FIELD_KEY),
+        _SLICE_BOUNDARY_FIELDS,
+        datetime.fromtimestamp(_SHOULD_BE_SYNCED_START, timezone.utc),
+        EpochValueConcurrentStreamStateConverter.get_end_provider(),
+        _NO_LOOKBACK_WINDOW,
+    )
+
+    assert (
+        cursor.should_be_synced(
+            Record(data={_A_CURSOR_FIELD_KEY: first_slice_end - 1}, stream_name="test_stream")
+        )
+        == False
+    )
+    assert (
+        cursor.should_be_synced(
+            Record(data={_A_CURSOR_FIELD_KEY: first_slice_end}, stream_name="test_stream")
+        )
+        == True
+    )
+    # even if this is within a boundary that has been synced, we don't take any chance and we sync it
+    # anyway in most cases, it shouldn't be pulled because we query for specific slice boundaries to the API
+    assert (
+        cursor.should_be_synced(
+            Record(data={_A_CURSOR_FIELD_KEY: second_slice_start}, stream_name="test_stream")
+        )
+        == True
+    )

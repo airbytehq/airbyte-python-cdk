@@ -3,8 +3,8 @@
 #
 
 
-from dataclasses import asdict, dataclass, field
-from typing import Any, ClassVar, Dict, List, Mapping
+from dataclasses import asdict
+from typing import Any, Dict, List, Mapping, Optional
 
 from airbyte_cdk.connector_builder.test_reader import TestReader
 from airbyte_cdk.models import (
@@ -15,19 +15,13 @@ from airbyte_cdk.models import (
     Type,
 )
 from airbyte_cdk.models import Type as MessageType
-from airbyte_cdk.sources.declarative.declarative_source import DeclarativeSource
-from airbyte_cdk.sources.declarative.manifest_declarative_source import ManifestDeclarativeSource
-from airbyte_cdk.sources.declarative.parsers.model_to_component_factory import (
-    ModelToComponentFactory,
+from airbyte_cdk.sources.declarative.concurrent_declarative_source import (
+    ConcurrentDeclarativeSource,
+    TestLimits,
 )
 from airbyte_cdk.utils.airbyte_secrets_utils import filter_secrets
 from airbyte_cdk.utils.datetime_helpers import ab_datetime_now
 from airbyte_cdk.utils.traced_exception import AirbyteTracedException
-
-DEFAULT_MAXIMUM_NUMBER_OF_PAGES_PER_SLICE = 5
-DEFAULT_MAXIMUM_NUMBER_OF_SLICES = 5
-DEFAULT_MAXIMUM_RECORDS = 100
-DEFAULT_MAXIMUM_STREAMS = 100
 
 MAX_PAGES_PER_SLICE_KEY = "max_pages_per_slice"
 MAX_SLICES_KEY = "max_slices"
@@ -35,25 +29,16 @@ MAX_RECORDS_KEY = "max_records"
 MAX_STREAMS_KEY = "max_streams"
 
 
-@dataclass
-class TestLimits:
-    __test__: ClassVar[bool] = False  # Tell Pytest this is not a Pytest class, despite its name
-
-    max_records: int = field(default=DEFAULT_MAXIMUM_RECORDS)
-    max_pages_per_slice: int = field(default=DEFAULT_MAXIMUM_NUMBER_OF_PAGES_PER_SLICE)
-    max_slices: int = field(default=DEFAULT_MAXIMUM_NUMBER_OF_SLICES)
-    max_streams: int = field(default=DEFAULT_MAXIMUM_STREAMS)
-
-
 def get_limits(config: Mapping[str, Any]) -> TestLimits:
     command_config = config.get("__test_read_config", {})
-    max_pages_per_slice = (
-        command_config.get(MAX_PAGES_PER_SLICE_KEY) or DEFAULT_MAXIMUM_NUMBER_OF_PAGES_PER_SLICE
+    return TestLimits(
+        max_records=command_config.get(MAX_RECORDS_KEY, TestLimits.DEFAULT_MAX_RECORDS),
+        max_pages_per_slice=command_config.get(
+            MAX_PAGES_PER_SLICE_KEY, TestLimits.DEFAULT_MAX_PAGES_PER_SLICE
+        ),
+        max_slices=command_config.get(MAX_SLICES_KEY, TestLimits.DEFAULT_MAX_SLICES),
+        max_streams=command_config.get(MAX_STREAMS_KEY, TestLimits.DEFAULT_MAX_STREAMS),
     )
-    max_slices = command_config.get(MAX_SLICES_KEY) or DEFAULT_MAXIMUM_NUMBER_OF_SLICES
-    max_records = command_config.get(MAX_RECORDS_KEY) or DEFAULT_MAXIMUM_RECORDS
-    max_streams = command_config.get(MAX_STREAMS_KEY) or DEFAULT_MAXIMUM_STREAMS
-    return TestLimits(max_records, max_pages_per_slice, max_slices, max_streams)
 
 
 def should_migrate_manifest(config: Mapping[str, Any]) -> bool:
@@ -75,26 +60,35 @@ def should_normalize_manifest(config: Mapping[str, Any]) -> bool:
     return config.get("__should_normalize", False)
 
 
-def create_source(config: Mapping[str, Any], limits: TestLimits) -> ManifestDeclarativeSource:
+def create_source(
+    config: Mapping[str, Any],
+    limits: TestLimits | None = None,
+    catalog: ConfiguredAirbyteCatalog | None = None,
+    state: List[AirbyteStateMessage] | None = None,
+) -> ConcurrentDeclarativeSource:
     manifest = config["__injected_declarative_manifest"]
-    return ManifestDeclarativeSource(
+
+    # We enforce a concurrency level of 1 so that the stream is processed on a single thread
+    # to retain ordering for the grouping of the builder message responses.
+    if "concurrency_level" in manifest:
+        manifest["concurrency_level"]["default_concurrency"] = 1
+    else:
+        manifest["concurrency_level"] = {"type": "ConcurrencyLevel", "default_concurrency": 1}
+
+    return ConcurrentDeclarativeSource(
+        catalog=catalog,
         config=config,
-        emit_connector_builder_messages=True,
+        state=state,
         source_config=manifest,
+        emit_connector_builder_messages=True,
         migrate_manifest=should_migrate_manifest(config),
         normalize_manifest=should_normalize_manifest(config),
-        component_factory=ModelToComponentFactory(
-            emit_connector_builder_messages=True,
-            limit_pages_fetched_per_slice=limits.max_pages_per_slice,
-            limit_slices_fetched=limits.max_slices,
-            disable_retries=True,
-            disable_cache=True,
-        ),
+        limits=limits,
     )
 
 
 def read_stream(
-    source: DeclarativeSource,
+    source: ConcurrentDeclarativeSource,
     config: Mapping[str, Any],
     configured_catalog: ConfiguredAirbyteCatalog,
     state: List[AirbyteStateMessage],
@@ -108,7 +102,12 @@ def read_stream(
         stream_name = configured_catalog.streams[0].stream.name
 
         stream_read = test_read_handler.run_test_read(
-            source, config, configured_catalog, state, limits.max_records
+            source,
+            config,
+            configured_catalog,
+            stream_name,
+            state,
+            limits.max_records,
         )
 
         return AirbyteMessage(
@@ -127,7 +126,9 @@ def read_stream(
         return error.as_airbyte_message()
 
 
-def resolve_manifest(source: ManifestDeclarativeSource) -> AirbyteMessage:
+def resolve_manifest(
+    source: ConcurrentDeclarativeSource,
+) -> AirbyteMessage:
     try:
         return AirbyteMessage(
             type=Type.RECORD,
@@ -144,7 +145,9 @@ def resolve_manifest(source: ManifestDeclarativeSource) -> AirbyteMessage:
         return error.as_airbyte_message()
 
 
-def full_resolve_manifest(source: ManifestDeclarativeSource, limits: TestLimits) -> AirbyteMessage:
+def full_resolve_manifest(
+    source: ConcurrentDeclarativeSource, limits: TestLimits
+) -> AirbyteMessage:
     try:
         manifest = {**source.resolved_manifest}
         streams = manifest.get("streams", [])

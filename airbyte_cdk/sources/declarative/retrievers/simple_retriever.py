@@ -3,10 +3,10 @@
 #
 
 import json
+import logging
 from collections import defaultdict
 from dataclasses import InitVar, dataclass, field
 from functools import partial
-from itertools import islice
 from typing import (
     Any,
     Callable,
@@ -23,10 +23,10 @@ from typing import (
 import requests
 from typing_extensions import deprecated
 
+from airbyte_cdk.legacy.sources.declarative.incremental import ResumableFullRefreshCursor
+from airbyte_cdk.legacy.sources.declarative.incremental.declarative_cursor import DeclarativeCursor
 from airbyte_cdk.models import AirbyteMessage
 from airbyte_cdk.sources.declarative.extractors.http_selector import HttpSelector
-from airbyte_cdk.sources.declarative.incremental import ResumableFullRefreshCursor
-from airbyte_cdk.sources.declarative.incremental.declarative_cursor import DeclarativeCursor
 from airbyte_cdk.sources.declarative.interpolation import InterpolatedString
 from airbyte_cdk.sources.declarative.partition_routers.single_partition_router import (
     SinglePartitionRouter,
@@ -39,15 +39,20 @@ from airbyte_cdk.sources.declarative.requesters.request_options import (
     RequestOptionsProvider,
 )
 from airbyte_cdk.sources.declarative.requesters.requester import Requester
+from airbyte_cdk.sources.declarative.retrievers.pagination_tracker import PaginationTracker
 from airbyte_cdk.sources.declarative.retrievers.retriever import Retriever
 from airbyte_cdk.sources.declarative.stream_slicers.stream_slicer import StreamSlicer
-from airbyte_cdk.sources.http_logger import format_http_message
 from airbyte_cdk.sources.source import ExperimentalClassWarning
+from airbyte_cdk.sources.streams.concurrent.cursor import Cursor
 from airbyte_cdk.sources.streams.core import StreamData
+from airbyte_cdk.sources.streams.http.pagination_reset_exception import (
+    PaginationResetRequiredException,
+)
 from airbyte_cdk.sources.types import Config, Record, StreamSlice, StreamState
 from airbyte_cdk.utils.mapping_helpers import combine_mappings
 
 FULL_REFRESH_SYNC_COMPLETE_KEY = "__ab_full_refresh_sync_complete"
+LOGGER = logging.getLogger("airbyte")
 
 
 @dataclass
@@ -93,8 +98,14 @@ class SimpleRetriever(Retriever):
     ignore_stream_slicer_parameters_on_paginated_requests: bool = False
     additional_query_properties: Optional[QueryProperties] = None
     log_formatter: Optional[Callable[[requests.Response], Any]] = None
+    pagination_tracker_factory: Callable[[], PaginationTracker] = field(
+        default_factory=lambda: lambda: PaginationTracker()
+    )
 
     def __post_init__(self, parameters: Mapping[str, Any]) -> None:
+        # while changing `ModelToComponentFactory.create_simple_retriever` to accept a cursor, the sources implementing
+        # a CustomRetriever inheriting for SimpleRetriever needed to have the following validation added.
+        self.cursor = None if isinstance(self.cursor, Cursor) else self.cursor
         self._paginator = self.paginator or NoPagination(parameters=parameters)
         self._parameters = parameters
         self._name = (
@@ -363,89 +374,97 @@ class SimpleRetriever(Retriever):
         stream_state: Mapping[str, Any],
         stream_slice: StreamSlice,
     ) -> Iterable[Record]:
-        pagination_complete = False
-        initial_token = self._paginator.get_initial_token()
-        next_page_token: Optional[Mapping[str, Any]] = (
-            {"next_page_token": initial_token} if initial_token is not None else None
-        )
-        while not pagination_complete:
-            property_chunks: List[List[str]] = (
-                list(
-                    self.additional_query_properties.get_request_property_chunks(
-                        stream_slice=stream_slice
-                    )
-                )
-                if self.additional_query_properties
-                else [
-                    []
-                ]  # A single empty property chunk represents the case where property chunking is not configured
-            )
-
+        pagination_tracker = self.pagination_tracker_factory()
+        reset_pagination = False
+        next_page_token = self._get_initial_next_page_token()
+        while True:
             merged_records: MutableMapping[str, Any] = defaultdict(dict)
             last_page_size = 0
             last_record: Optional[Record] = None
-            response: Optional[requests.Response] = None
-            for properties in property_chunks:
-                if len(properties) > 0:
-                    stream_slice = StreamSlice(
-                        partition=stream_slice.partition or {},
-                        cursor_slice=stream_slice.cursor_slice or {},
-                        extra_fields={"query_properties": properties},
-                    )
 
-                response = self._fetch_next_page(stream_state, stream_slice, next_page_token)
-                for current_record in records_generator_fn(response):
-                    if (
-                        current_record
-                        and self.additional_query_properties
-                        and self.additional_query_properties.property_chunking
-                    ):
-                        merge_key = (
-                            self.additional_query_properties.property_chunking.get_merge_key(
-                                current_record
-                            )
+            response = None
+            try:
+                if self.additional_query_properties:
+                    for (
+                        properties
+                    ) in self.additional_query_properties.get_request_property_chunks():
+                        stream_slice = StreamSlice(
+                            partition=stream_slice.partition or {},
+                            cursor_slice=stream_slice.cursor_slice or {},
+                            extra_fields={"query_properties": properties},
                         )
-                        if merge_key:
-                            _deep_merge(merged_records[merge_key], current_record)
-                        else:
-                            # We should still emit records even if the record did not have a merge key
-                            last_page_size += 1
-                            last_record = current_record
-                            yield current_record
-                    else:
+                        response = self._fetch_next_page(
+                            stream_state, stream_slice, next_page_token
+                        )
+
+                        for current_record in records_generator_fn(response):
+                            if self.additional_query_properties.property_chunking:
+                                merge_key = self.additional_query_properties.property_chunking.get_merge_key(
+                                    current_record
+                                )
+                                if merge_key:
+                                    _deep_merge(merged_records[merge_key], current_record)
+                                else:
+                                    # We should still emit records even if the record did not have a merge key
+                                    pagination_tracker.observe(current_record)
+                                    last_page_size += 1
+                                    last_record = current_record
+                                    yield current_record
+                            else:
+                                pagination_tracker.observe(current_record)
+                                last_page_size += 1
+                                last_record = current_record
+                                yield current_record
+
+                    for merged_record in merged_records.values():
+                        record = Record(
+                            data=merged_record, stream_name=self.name, associated_slice=stream_slice
+                        )
+                        pagination_tracker.observe(record)
+                        last_page_size += 1
+                        last_record = record
+                        yield record
+                else:
+                    response = self._fetch_next_page(stream_state, stream_slice, next_page_token)
+                    for current_record in records_generator_fn(response):
+                        pagination_tracker.observe(current_record)
                         last_page_size += 1
                         last_record = current_record
                         yield current_record
+            except PaginationResetRequiredException:
+                reset_pagination = True
+            else:
+                if not response:
+                    break
 
-            if (
-                self.additional_query_properties
-                and self.additional_query_properties.property_chunking
-            ):
-                for merged_record in merged_records.values():
-                    record = Record(
-                        data=merged_record, stream_name=self.name, associated_slice=stream_slice
-                    )
-                    last_page_size += 1
-                    last_record = record
-                    yield record
-
-            if not response:
-                pagination_complete = True
+            if reset_pagination or pagination_tracker.has_reached_limit():
+                next_page_token = self._get_initial_next_page_token()
+                previous_slice = stream_slice
+                stream_slice = pagination_tracker.reduce_slice_range_if_possible(stream_slice)
+                LOGGER.info(
+                    f"Hitting PaginationReset event. StreamSlice used will go from {previous_slice} to {stream_slice}"
+                )
+                reset_pagination = False
             else:
                 last_page_token_value = (
                     next_page_token.get("next_page_token") if next_page_token else None
                 )
                 next_page_token = self._next_page_token(
-                    response=response,
+                    response=response,  # type:ignore # we are breaking from the loop on the try/else if there are no response so this should be fine
                     last_page_size=last_page_size,
                     last_record=last_record,
                     last_page_token_value=last_page_token_value,
                 )
                 if not next_page_token:
-                    pagination_complete = True
+                    break
 
         # Always return an empty generator just in case no records were ever yielded
         yield from []
+
+    def _get_initial_next_page_token(self) -> Optional[Mapping[str, Any]]:
+        initial_token = self._paginator.get_initial_token()
+        next_page_token = {"next_page_token": initial_token} if initial_token is not None else None
+        return next_page_token
 
     def _read_single_page(
         self,
@@ -504,7 +523,6 @@ class SimpleRetriever(Retriever):
         """
         _slice = stream_slice or StreamSlice(partition={}, cursor_slice={})  # None-check
 
-        most_recent_record_from_slice = None
         record_generator = partial(
             self._parse_records,
             stream_slice=stream_slice,
@@ -528,35 +546,13 @@ class SimpleRetriever(Retriever):
                 if self.cursor and current_record:
                     self.cursor.observe(_slice, current_record)
 
-                # Latest record read, not necessarily within slice boundaries.
-                # TODO Remove once all custom components implement `observe` method.
-                # https://github.com/airbytehq/airbyte-internal-issues/issues/6955
-                most_recent_record_from_slice = self._get_most_recent_record(
-                    most_recent_record_from_slice, current_record, _slice
-                )
                 yield stream_data
 
             if self.cursor:
-                self.cursor.close_slice(_slice, most_recent_record_from_slice)
+                self.cursor.close_slice(_slice)
         return
 
-    def _get_most_recent_record(
-        self,
-        current_most_recent: Optional[Record],
-        current_record: Optional[Record],
-        stream_slice: StreamSlice,
-    ) -> Optional[Record]:
-        if self.cursor and current_record:
-            if not current_most_recent:
-                return current_record
-            else:
-                return (
-                    current_most_recent
-                    if self.cursor.is_greater_than_or_equal(current_most_recent, current_record)
-                    else current_record
-                )
-        else:
-            return None
+    # FIXME based on the comment above in SimpleRetriever.read_records, it seems like we can tackle https://github.com/airbytehq/airbyte-internal-issues/issues/6955 and remove this
 
     def _extract_record(
         self, stream_data: StreamData, stream_slice: StreamSlice
@@ -592,6 +588,12 @@ class SimpleRetriever(Retriever):
         """
         return self.stream_slicer.stream_slices()
 
+    # todo: There are a number of things that can be cleaned up when we remove self.cursor and all the related
+    #  SimpleRetriever state management that is handled by the concurrent CDK Framework:
+    #  - ModelToComponentFactory.create_datetime_based_cursor() should be removed since it does need to be instantiated
+    #  - ModelToComponentFactory.create_incrementing_count_cursor() should be removed since it's a placeholder
+    #  - test_simple_retriever.py: Remove all imports and usages of legacy cursor components
+    #  - test_model_to_component_factory.py:test_datetime_based_cursor() test can be removed
     @property
     def state(self) -> Mapping[str, Any]:
         return self.cursor.get_stream_state() if self.cursor else {}

@@ -51,7 +51,6 @@ from airbyte_cdk.sources import Source
 from airbyte_cdk.test.models.scenario import ExpectedOutcome
 
 
-@dataclass
 class AirbyteEntrypointException(Exception):
     """Exception raised for errors in the AirbyteEntrypoint execution.
 
@@ -65,8 +64,10 @@ class AirbyteEntrypointException(Exception):
             raise output.as_exception()
     """
 
-    message: str
+    message: str = ""
 
+    def __post_init__(self) -> None:
+        super().__init__(self.message)
 
 class EntrypointOutput:
     """A class to encapsulate the output of an Airbyte connector's execution.

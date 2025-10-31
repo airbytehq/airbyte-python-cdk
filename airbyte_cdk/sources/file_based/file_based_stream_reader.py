@@ -3,13 +3,15 @@
 #
 
 import logging
+import time
 from abc import ABC, abstractmethod
 from datetime import datetime
 from enum import Enum
 from io import IOBase
 from os import makedirs, path
-from typing import Any, Callable, Iterable, List, MutableMapping, Optional, Set, Tuple
+from typing import Any, Iterable, List, MutableMapping, Optional, Set, Tuple
 
+from airbyte_protocol_dataclasses.models import FailureType
 from wcmatch.glob import GLOBSTAR, globmatch
 
 from airbyte_cdk.models import AirbyteRecordMessageFileReference
@@ -19,8 +21,9 @@ from airbyte_cdk.sources.file_based.config.validate_config_transfer_modes import
     preserve_directory_structure,
     use_file_transfer,
 )
+from airbyte_cdk.sources.file_based.exceptions import FileSizeLimitError
 from airbyte_cdk.sources.file_based.file_record_data import FileRecordData
-from airbyte_cdk.sources.file_based.remote_file import RemoteFile
+from airbyte_cdk.sources.file_based.remote_file import RemoteFile, UploadableRemoteFile
 
 
 class FileReadMode(Enum):
@@ -34,6 +37,7 @@ class AbstractFileBasedStreamReader(ABC):
     FILE_NAME = "file_name"
     LOCAL_FILE_PATH = "local_file_path"
     FILE_FOLDER = "file_folder"
+    FILE_SIZE_LIMIT = 1_500_000_000
 
     def __init__(self) -> None:
         self._config = None
@@ -113,16 +117,6 @@ class AbstractFileBasedStreamReader(ABC):
                     seen.add(file.uri)
                     yield file
 
-    @abstractmethod
-    def file_size(self, file: RemoteFile) -> int:
-        """Utility method to get size of the remote file.
-
-        This is required for connectors that will support writing to
-        files. If the connector does not support writing files, then the
-        subclass can simply `return 0`.
-        """
-        ...
-
     @staticmethod
     def file_matches_globs(file: RemoteFile, globs: List[str]) -> bool:
         # Use the GLOBSTAR flag to enable recursive ** matching
@@ -153,9 +147,8 @@ class AbstractFileBasedStreamReader(ABC):
             return include_identities_stream(self.config)
         return False
 
-    @abstractmethod
     def upload(
-        self, file: RemoteFile, local_directory: str, logger: logging.Logger
+        self, file: UploadableRemoteFile, local_directory: str, logger: logging.Logger
     ) -> Tuple[FileRecordData, AirbyteRecordMessageFileReference]:
         """
         This is required for connectors that will support writing to
@@ -173,7 +166,53 @@ class AbstractFileBasedStreamReader(ABC):
                    - file_size_bytes (int): The size of the referenced file in bytes.
                    - source_file_relative_path (str): The relative path to the referenced file in source.
         """
-        ...
+        if not isinstance(file, UploadableRemoteFile):
+            raise TypeError(f"Expected UploadableRemoteFile, got {type(file)}")
+
+        file_size = file.size
+
+        if file_size > self.FILE_SIZE_LIMIT:
+            message = f"File size exceeds the {self.FILE_SIZE_LIMIT / 1e9} GB limit."
+            raise FileSizeLimitError(
+                message=message, internal_message=message, failure_type=FailureType.config_error
+            )
+
+        file_paths = self._get_file_transfer_paths(
+            source_file_relative_path=file.source_file_relative_path,
+            staging_directory=local_directory,
+        )
+        local_file_path = file_paths[self.LOCAL_FILE_PATH]
+        file_relative_path = file_paths[self.FILE_RELATIVE_PATH]
+        file_name = file_paths[self.FILE_NAME]
+
+        logger.info(
+            f"Starting to download the file {file.file_uri_for_logging} with size: {file_size / (1024 * 1024):,.2f} MB ({file_size / (1024 * 1024 * 1024):.2f} GB)"
+        )
+        start_download_time = time.time()
+
+        file.download_to_local_directory(local_file_path)
+
+        write_duration = time.time() - start_download_time
+        logger.info(
+            f"Finished downloading the file {file.file_uri_for_logging} and saved to {local_file_path} in {write_duration:,.2f} seconds."
+        )
+
+        file_record_data = FileRecordData(
+            folder=file_paths[self.FILE_FOLDER],
+            file_name=file_name,
+            bytes=file_size,
+            id=file.id,
+            mime_type=file.mime_type,
+            created_at=file.created_at,
+            updated_at=file.updated_at,
+            source_uri=file.uri,
+        )
+        file_reference = AirbyteRecordMessageFileReference(
+            staging_file_url=local_file_path,
+            source_file_relative_path=file_relative_path,
+            file_size_bytes=file_size,
+        )
+        return file_record_data, file_reference
 
     def _get_file_transfer_paths(
         self, source_file_relative_path: str, staging_directory: str

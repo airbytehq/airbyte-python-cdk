@@ -5,14 +5,9 @@ import logging
 from typing import Any, Iterable, List, Mapping, Optional, Set, Tuple
 from unittest import TestCase, mock
 
-from airbyte_cdk import (
-    AbstractSource,
-    DeclarativeStream,
-    SinglePartitionRouter,
-    Stream,
-    StreamSlice,
-)
+from airbyte_cdk.legacy.sources.declarative.declarative_stream import DeclarativeStream
 from airbyte_cdk.models import ConnectorSpecification
+from airbyte_cdk.sources import AbstractSource
 from airbyte_cdk.sources.declarative.async_job.job import AsyncJob
 from airbyte_cdk.sources.declarative.async_job.job_orchestrator import AsyncJobOrchestrator
 from airbyte_cdk.sources.declarative.async_job.job_tracker import JobTracker
@@ -20,6 +15,7 @@ from airbyte_cdk.sources.declarative.async_job.repository import AsyncJobReposit
 from airbyte_cdk.sources.declarative.async_job.status import AsyncJobStatus
 from airbyte_cdk.sources.declarative.extractors.record_extractor import RecordExtractor
 from airbyte_cdk.sources.declarative.extractors.record_selector import RecordSelector
+from airbyte_cdk.sources.declarative.partition_routers import SinglePartitionRouter
 from airbyte_cdk.sources.declarative.partition_routers.async_job_partition_router import (
     AsyncJobPartitionRouter,
 )
@@ -27,6 +23,8 @@ from airbyte_cdk.sources.declarative.retrievers.async_retriever import AsyncRetr
 from airbyte_cdk.sources.declarative.schema import InlineSchemaLoader
 from airbyte_cdk.sources.declarative.stream_slicers import StreamSlicer
 from airbyte_cdk.sources.message import NoopMessageRepository
+from airbyte_cdk.sources.streams import Stream
+from airbyte_cdk.sources.types import StreamSlice
 from airbyte_cdk.sources.utils.transform import TransformConfig, TypeTransformer
 from airbyte_cdk.test.catalog_builder import CatalogBuilder, ConfiguredAirbyteStreamBuilder
 from airbyte_cdk.test.entrypoint_wrapper import read

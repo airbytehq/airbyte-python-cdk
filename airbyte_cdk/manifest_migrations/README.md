@@ -20,14 +20,15 @@ This directory contains the logic and registry for manifest migrations in the Ai
 
 3. **Register the Migration:**
    - Open `migrations/registry.yaml`.
-   - Add an entry under the appropriate version, or create a new version section if needed. 
-     - Version can be: "*", "==6.48.3", "~=1.2", ">=1.0.0,<2.0.0", "6.48.3" 
+   - Add an entry under the appropriate version, or create a new version section if needed.
+     - Version can be: "*", "==6.48.3", "~=1.2", ">=1.0.0,<2.0.0", "6.48.3"
    - Each migration entry should include:
      - `name`: The filename (without `.py`)
      - `order`: The order in which this migration should be applied for the version
      - `description`: A short description of the migration
 
    Example:
+
    ```yaml
    manifest_migrations:
      - version: 6.45.2

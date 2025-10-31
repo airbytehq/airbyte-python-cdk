@@ -127,6 +127,12 @@ class SourceTestSuiteBase(ConnectorTestSuiteBase):
         if scenario.expected_outcome.expect_exception() and discover_result.errors:
             # Failed as expected; we're done.
             return
+        streams = discover_result.catalog.catalog.streams  # type: ignore [reportOptionalMemberAccess, union-attr]
+
+        if scenario.empty_streams:
+            # Filter out streams marked as empty in the scenario.
+            empty_stream_names = [stream.name for stream in scenario.empty_streams]
+            streams = [s for s in streams if s.name not in empty_stream_names]
 
         configured_catalog = ConfiguredAirbyteCatalog(
             streams=[
@@ -135,7 +141,7 @@ class SourceTestSuiteBase(ConnectorTestSuiteBase):
                     sync_mode=SyncMode.full_refresh,
                     destination_sync_mode=DestinationSyncMode.append_dedup,
                 )
-                for stream in discover_result.catalog.catalog.streams  # type: ignore [reportOptionalMemberAccess, union-attr]
+                for stream in streams
             ]
         )
         result = run_test_job(

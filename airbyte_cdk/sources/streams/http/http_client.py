@@ -18,6 +18,7 @@ from airbyte_cdk.models import (
     AirbyteStreamStatus,
     AirbyteStreamStatusReason,
     AirbyteStreamStatusReasonType,
+    FailureType,
     Level,
     StreamDescriptor,
 )
@@ -35,10 +36,14 @@ from airbyte_cdk.sources.streams.http.error_handlers import (
     ResponseAction,
 )
 from airbyte_cdk.sources.streams.http.exceptions import (
+    BaseBackoffException,
     DefaultBackoffException,
     RateLimitBackoffException,
     RequestBodyException,
     UserDefinedBackoffException,
+)
+from airbyte_cdk.sources.streams.http.pagination_reset_exception import (
+    PaginationResetRequiredException,
 )
 from airbyte_cdk.sources.streams.http.rate_limiting import (
     http_client_default_backoff_handler,
@@ -54,6 +59,27 @@ from airbyte_cdk.utils.stream_status_utils import (
 from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 
 BODY_REQUEST_METHODS = ("GET", "POST", "PUT", "PATCH")
+
+
+def monkey_patched_get_item(self, key):  # type: ignore # this interface is a copy/paste from the requests_cache lib
+    """
+    con.execute can lead to `sqlite3.InterfaceError: bad parameter or other API misuse`. There was a fix implemented
+    [here](https://github.com/requests-cache/requests-cache/commit/5ca6b9cdcb2797dd2fed485872110ccd72aee55d#diff-f43db4a5edf931647c32dec28ea7557aae4cae8444af4b26c8ecbe88d8c925aaL330-R332)
+    but there is still no official releases of requests_cache that this is part of. Hence, we will monkeypatch it for now.
+    """
+    with self.connection() as con:
+        # Using placeholders here with python 3.12+ and concurrency results in the error:
+        # sqlite3.InterfaceError: bad parameter or other API misuse
+        cur = con.execute(f"SELECT value FROM {self.table_name} WHERE key='{key}'")
+        row = cur.fetchone()
+        cur.close()
+        if not row:
+            raise KeyError(key)
+
+        return self.deserialize(key, row[0])
+
+
+requests_cache.SQLiteDict.__getitem__ = monkey_patched_get_item  # type: ignore # see the method doc for more information
 
 
 class MessageRepresentationAirbyteTracedErrors(AirbyteTracedException):
@@ -153,7 +179,10 @@ class HttpClient:
             # * `If the application running SQLite crashes, the data will be safe, but the database [might become corrupted](https://www.sqlite.org/howtocorrupt.html#cfgerr) if the operating system crashes or the computer loses power before that data has been written to the disk surface.` in [this description](https://www.sqlite.org/pragma.html#pragma_synchronous).
             backend = requests_cache.SQLiteCache(sqlite_path, fast_save=True, wal=True)
             return CachedLimiterSession(
-                sqlite_path, backend=backend, api_budget=self._api_budget, match_headers=True
+                cache_name=sqlite_path,
+                backend=backend,
+                api_budget=self._api_budget,
+                match_headers=True,
             )
         else:
             return LimiterSession(api_budget=self._api_budget)
@@ -266,15 +295,25 @@ class HttpClient:
         backoff_handler = http_client_default_backoff_handler(
             max_tries=max_tries, max_time=max_time
         )
-        # backoff handlers wrap _send, so it will always return a response
-        response = backoff_handler(rate_limit_backoff_handler(user_backoff_handler))(
-            request,
-            request_kwargs,
-            log_formatter=log_formatter,
-            exit_on_rate_limit=exit_on_rate_limit,
-        )  # type: ignore # mypy can't infer that backoff_handler wraps _send
+        # backoff handlers wrap _send, so it will always return a response -- except when all retries are exhausted
+        try:
+            response = backoff_handler(rate_limit_backoff_handler(user_backoff_handler))(
+                request,
+                request_kwargs,
+                log_formatter=log_formatter,
+                exit_on_rate_limit=exit_on_rate_limit,
+            )  # type: ignore # mypy can't infer that backoff_handler wraps _send
 
-        return response
+            return response
+        except BaseBackoffException as e:
+            self._logger.error(f"Retries exhausted with backoff exception.", exc_info=True)
+            raise MessageRepresentationAirbyteTracedErrors(
+                internal_message=f"Exhausted available request attempts. Exception: {e}",
+                message=f"Exhausted available request attempts. Please see logs for more details. Exception: {e}",
+                failure_type=e.failure_type or FailureType.system_error,
+                exception=e,
+                stream_descriptor=StreamDescriptor(name=self._name),
+            )
 
     def _send(
         self,
@@ -392,6 +431,9 @@ class HttpClient:
         if error_resolution.response_action not in self._ACTIONS_TO_RETRY_ON:
             self._evict_key(request)
 
+        if error_resolution.response_action == ResponseAction.RESET_PAGINATION:
+            raise PaginationResetRequiredException()
+
         # Emit stream status RUNNING with the reason RATE_LIMITED to log that the rate limit has been reached
         if error_resolution.response_action == ResponseAction.RATE_LIMITED:
             # TODO: Update to handle with message repository when concurrent message repository is ready
@@ -468,6 +510,7 @@ class HttpClient:
                     request=request,
                     response=(response if response is not None else exc),
                     error_message=error_message,
+                    failure_type=error_resolution.failure_type,
                 )
 
             elif retry_endlessly:
@@ -475,12 +518,14 @@ class HttpClient:
                     request=request,
                     response=(response if response is not None else exc),
                     error_message=error_message,
+                    failure_type=error_resolution.failure_type,
                 )
 
             raise DefaultBackoffException(
                 request=request,
                 response=(response if response is not None else exc),
                 error_message=error_message,
+                failure_type=error_resolution.failure_type,
             )
 
         elif response:
@@ -520,6 +565,15 @@ class HttpClient:
             json=json,
             data=data,
         )
+
+        env_settings = self._session.merge_environment_settings(
+            url=request.url,
+            proxies=request_kwargs.get("proxies", {}),
+            stream=request_kwargs.get("stream"),
+            verify=request_kwargs.get("verify"),
+            cert=request_kwargs.get("cert"),
+        )
+        request_kwargs = {**request_kwargs, **env_settings}
 
         response: requests.Response = self._send_with_retry(
             request=request,

@@ -311,3 +311,6 @@ class FileBasedConcurrentCursor(AbstractConcurrentFileBasedCursor):
 
     def ensure_at_least_one_state_emitted(self) -> None:
         self.emit_state_message()
+
+    def should_be_synced(self, record: Record) -> bool:
+        return True

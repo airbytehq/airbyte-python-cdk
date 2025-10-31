@@ -8,8 +8,7 @@ from typing import Dict, List, Union
 import pytest
 import requests
 
-from airbyte_cdk import Decoder
-from airbyte_cdk.sources.declarative.decoders import CompositeRawDecoder
+from airbyte_cdk.sources.declarative.decoders import CompositeRawDecoder, Decoder
 from airbyte_cdk.sources.declarative.decoders.composite_raw_decoder import JsonLineParser
 from airbyte_cdk.sources.declarative.decoders.json_decoder import (
     IterableDecoder,

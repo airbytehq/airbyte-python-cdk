@@ -23,7 +23,9 @@ from airbyte_cdk.models import (
     ConfiguredAirbyteCatalog,
     TraceType,
 )
-from airbyte_cdk.sources.declarative.declarative_source import DeclarativeSource
+from airbyte_cdk.sources.declarative.concurrent_declarative_source import (
+    ConcurrentDeclarativeSource,
+)
 from airbyte_cdk.utils import AirbyteTracedException
 from airbyte_cdk.utils.datetime_format_inferrer import DatetimeFormatInferrer
 from airbyte_cdk.utils.schema_inferrer import (
@@ -55,7 +57,7 @@ class TestReader:
             that contains slices of data, log messages, auxiliary requests, and any inferred schema or datetime formats.
 
             Parameters:
-                source (DeclarativeSource): The data source to read from.
+                source (ConcurrentDeclarativeSource): The data source to read from.
                 config (Mapping[str, Any]): Configuration parameters for the source.
                 configured_catalog (ConfiguredAirbyteCatalog): Catalog containing stream configuration.
                 state (List[AirbyteStateMessage]): Current state information for the read.
@@ -83,9 +85,10 @@ class TestReader:
 
     def run_test_read(
         self,
-        source: DeclarativeSource,
+        source: ConcurrentDeclarativeSource,
         config: Mapping[str, Any],
         configured_catalog: ConfiguredAirbyteCatalog,
+        stream_name: str,
         state: List[AirbyteStateMessage],
         record_limit: Optional[int] = None,
     ) -> StreamRead:
@@ -93,7 +96,7 @@ class TestReader:
         Run a test read for the connector by reading from a single stream and inferring schema and datetime formats.
 
         Parameters:
-            source (DeclarativeSource): The source instance providing the streams.
+            source (ConcurrentDeclarativeSource): The source instance providing the streams.
             config (Mapping[str, Any]): The configuration settings to use for reading.
             configured_catalog (ConfiguredAirbyteCatalog): The catalog specifying the stream configuration.
             state (List[AirbyteStateMessage]): A list of state messages to resume the read.
@@ -112,14 +115,21 @@ class TestReader:
 
         record_limit = self._check_record_limit(record_limit)
         # The connector builder currently only supports reading from a single stream at a time
-        stream = source.streams(config)[0]
+        streams = source.streams(config)
+        stream = next((stream for stream in streams if stream.name == stream_name), None)
 
         # get any deprecation warnings during the component creation
         deprecation_warnings: List[LogMessage] = source.deprecation_warnings()
 
         schema_inferrer = SchemaInferrer(
-            self._pk_to_nested_and_composite_field(stream.primary_key),
-            self._cursor_field_to_nested_and_composite_field(stream.cursor_field),
+            self._pk_to_nested_and_composite_field(
+                stream.primary_key if hasattr(stream, "primary_key") else stream._primary_key  # type: ignore  # We are accessing the private property here as the primary key is not exposed. We should either expose it or use `as_airbyte_stream` to retrieve it as this is the "official" way where it is exposed in the Airbyte protocol
+            )
+            if stream
+            else None,
+            self._cursor_field_to_nested_and_composite_field(stream.cursor_field)
+            if stream and stream.cursor_field
+            else None,
         )
         datetime_format_inferrer = DatetimeFormatInferrer()
 
@@ -128,6 +138,7 @@ class TestReader:
             schema_inferrer,
             datetime_format_inferrer,
             record_limit,
+            stream_name,
         )
 
         slices, log_messages, auxiliary_requests, latest_config_update = self._categorise_groups(
@@ -372,13 +383,13 @@ class TestReader:
 
     def _read_stream(
         self,
-        source: DeclarativeSource,
+        source: ConcurrentDeclarativeSource,
         config: Mapping[str, Any],
         configured_catalog: ConfiguredAirbyteCatalog,
         state: List[AirbyteStateMessage],
     ) -> Iterator[AirbyteMessage]:
         """
-        Reads messages from the given DeclarativeSource using an AirbyteEntrypoint.
+        Reads messages from the given ConcurrentDeclarativeSource using an AirbyteEntrypoint.
 
         This method attempts to yield messages from the source's read generator. If the generator
         raises an AirbyteTracedException, it checks whether the exception message indicates a non-actionable
@@ -387,7 +398,7 @@ class TestReader:
         wrapped into an AirbyteTracedException, and yielded as an AirbyteMessage.
 
         Parameters:
-            source (DeclarativeSource): The source object that provides data reading logic.
+            source (ConcurrentDeclarativeSource): The source object that provides data reading logic.
             config (Mapping[str, Any]): The configuration dictionary for the source.
             configured_catalog (ConfiguredAirbyteCatalog): The catalog defining the streams and their configurations.
             state (List[AirbyteStateMessage]): A list representing the current state for incremental sync.

@@ -5,9 +5,10 @@
 from abc import abstractmethod
 from typing import Any, Iterable, Mapping, Optional
 
-from airbyte_cdk.sources.declarative.incremental.per_partition_cursor import StreamSlice
+from typing_extensions import deprecated
+
 from airbyte_cdk.sources.streams.core import StreamData
-from airbyte_cdk.sources.types import StreamState
+from airbyte_cdk.sources.types import StreamSlice, StreamState
 
 
 class Retriever:
@@ -30,11 +31,13 @@ class Retriever:
         """
 
     @abstractmethod
+    @deprecated("Stream slicing is being moved to the stream level.")
     def stream_slices(self) -> Iterable[Optional[StreamSlice]]:
         """Returns the stream slices"""
 
     @property
     @abstractmethod
+    @deprecated("State management is being moved to the stream level.")
     def state(self) -> StreamState:
         """State getter, should return state in form that can serialized to a string and send to the output
         as a STATE AirbyteMessage.
@@ -50,5 +53,6 @@ class Retriever:
 
     @state.setter
     @abstractmethod
+    @deprecated("State management is being moved to the stream level.")
     def state(self, value: StreamState) -> None:
         """State setter, accept state serialized by state getter."""

@@ -5,7 +5,7 @@
 # A new version of source-declarative-manifest is built for every new Airbyte CDK release, and their versions are kept in sync.
 #
 
-FROM docker.io/airbyte/python-connector-base:4.0.2@sha256:9fdb1888c4264cf6fee473649ecb593f56f58e5d0096a87ee0b231777e2e3e73
+FROM docker.io/airbyte/python-connector-base:4.1.0@sha256:1d1aa21d34e851df4e8a87b391c27724c06e2597608e7161f4d167be853bd7b6
 
 WORKDIR /airbyte/integration_code
 
@@ -24,8 +24,8 @@ RUN pip install dist/*.whl
 RUN mkdir -p source_declarative_manifest \
     && echo 'from source_declarative_manifest.run import run\n\nif __name__ == "__main__":\n    run()' > main.py \
     && touch source_declarative_manifest/__init__.py \
-    && cp /usr/local/lib/python3.11/site-packages/airbyte_cdk/cli/source_declarative_manifest/_run.py source_declarative_manifest/run.py \
-    && cp /usr/local/lib/python3.11/site-packages/airbyte_cdk/cli/source_declarative_manifest/spec.json source_declarative_manifest/
+    && cp /usr/local/lib/python3.13/site-packages/airbyte_cdk/cli/source_declarative_manifest/_run.py source_declarative_manifest/run.py \
+    && cp /usr/local/lib/python3.13/site-packages/airbyte_cdk/cli/source_declarative_manifest/spec.json source_declarative_manifest/
 
 # Remove unnecessary build files
 RUN rm -rf dist/ pyproject.toml poetry.lock README.md

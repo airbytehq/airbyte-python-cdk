@@ -28,6 +28,7 @@ from .helpers import (
     is_async_auxiliary_request,
     is_config_update_message,
     is_log_message,
+    is_page_http_request_for_different_stream,
     is_record_message,
     is_state_message,
     is_trace_with_error,
@@ -44,6 +45,7 @@ def get_message_groups(
     schema_inferrer: SchemaInferrer,
     datetime_format_inferrer: DatetimeFormatInferrer,
     limit: int,
+    stream_name: str,
 ) -> MESSAGE_GROUPS:
     """
     Processes an iterator of AirbyteMessage objects to group and yield messages based on their type and sequence.
@@ -93,8 +95,11 @@ def get_message_groups(
     latest_state_message: Optional[Dict[str, Any]] = None
     slice_auxiliary_requests: List[AuxiliaryRequest] = []
 
-    while records_count < limit and (message := next(messages, None)):
+    while message := next(messages, None):
         json_message = airbyte_message_to_json(message)
+
+        if is_page_http_request_for_different_stream(json_message, stream_name):
+            continue
 
         if should_close_page(at_least_one_page_in_group, message, json_message):
             current_page_request, current_page_response = handle_current_page(

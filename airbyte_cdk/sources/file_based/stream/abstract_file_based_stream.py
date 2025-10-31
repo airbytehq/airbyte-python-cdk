@@ -179,7 +179,6 @@ class AbstractFileBasedStream(Stream):
             )
 
     @cached_property
-    @deprecated("Deprecated as of CDK version 3.7.0.")
     def availability_strategy(self) -> AbstractFileBasedAvailabilityStrategy:
         return self._availability_strategy
 

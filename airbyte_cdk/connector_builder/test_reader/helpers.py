@@ -5,7 +5,7 @@
 import json
 from copy import deepcopy
 from json import JSONDecodeError
-from typing import Any, Dict, List, Mapping, Optional
+from typing import Any, Dict, List, Mapping, Optional, Union
 
 from airbyte_cdk.connector_builder.models import (
     AuxiliaryRequest,
@@ -17,6 +17,8 @@ from airbyte_cdk.connector_builder.models import (
 from airbyte_cdk.models import (
     AirbyteLogMessage,
     AirbyteMessage,
+    AirbyteStateBlob,
+    AirbyteStateMessage,
     OrchestratorType,
     TraceType,
 )
@@ -269,6 +271,37 @@ def should_close_page_for_slice(at_least_one_page_in_group: bool, message: Airby
     return at_least_one_page_in_group and should_process_slice_descriptor(message)
 
 
+def is_page_http_request_for_different_stream(
+    json_message: Optional[Dict[str, Any]], stream_name: str
+) -> bool:
+    """
+    Determines whether a given JSON message represents a page HTTP request for a different stream.
+
+    This function checks if the provided JSON message is a page HTTP request, and if the stream name in the log is
+    different from the provided stream name.
+
+    This is needed because dynamic streams result in extra page HTTP requests for the dynamic streams that we want to ignore
+    when they do not match the stream that is being read.
+
+    Args:
+        json_message (Optional[Dict[str, Any]]): The JSON message to evaluate.
+        stream_name (str): The name of the stream to compare against.
+
+    Returns:
+        bool: True if the JSON message is a page HTTP request for a different stream, False otherwise.
+    """
+    if not json_message or not is_page_http_request(json_message):
+        return False
+
+    message_stream_name: str | None = (
+        json_message.get("airbyte_cdk", {}).get("stream", {}).get("name", None)
+    )
+    if message_stream_name is None:
+        return False
+
+    return message_stream_name != stream_name
+
+
 def is_page_http_request(json_message: Optional[Dict[str, Any]]) -> bool:
     """
     Determines whether a given JSON message represents a page HTTP request.
@@ -435,7 +468,7 @@ def handle_current_slice(
     return StreamReadSlices(
         pages=current_slice_pages,
         slice_descriptor=current_slice_descriptor,
-        state=[latest_state_message] if latest_state_message else [],
+        state=[convert_state_blob_to_mapping(latest_state_message)] if latest_state_message else [],
         auxiliary_requests=auxiliary_requests if auxiliary_requests else [],
     )
 
@@ -687,3 +720,23 @@ def get_auxiliary_request_type(stream: dict, http: dict) -> str:  # type: ignore
     Determines the type of the auxiliary request based on the stream and HTTP properties.
     """
     return "PARENT_STREAM" if stream.get("is_substream", False) else str(http.get("type", None))
+
+
+def convert_state_blob_to_mapping(
+    state_message: Union[AirbyteStateMessage, Dict[str, Any]],
+) -> Dict[str, Any]:
+    """
+    The AirbyteStreamState stores state as an AirbyteStateBlob which deceivingly is not
+    a dictionary, but rather a list of kwargs fields. This in turn causes it to not be
+    properly turned into a dictionary when translating this back into response output
+    by the connector_builder_handler using asdict()
+    """
+
+    if isinstance(state_message, AirbyteStateMessage) and state_message.stream:
+        state_value = state_message.stream.stream_state
+        if isinstance(state_value, AirbyteStateBlob):
+            state_value_mapping = {k: v for k, v in state_value.__dict__.items()}
+            state_message.stream.stream_state = state_value_mapping  # type: ignore  # we intentionally set this as a Dict so that StreamReadSlices is translated properly in the resulting HTTP response
+        return state_message  # type: ignore  # See above, but when this is an AirbyteStateMessage we must convert AirbyteStateBlob to a Dict
+    else:
+        return state_message  # type: ignore  # This is guaranteed to be a Dict since we check isinstance AirbyteStateMessage above

@@ -16,10 +16,6 @@ from airbyte_cdk.test.models import (
 )
 from airbyte_cdk.test.standard_tests._job_runner import IConnector, run_test_job
 from airbyte_cdk.test.standard_tests.docker_base import DockerConnectorTestSuite
-from airbyte_cdk.utils.connector_paths import (
-    ACCEPTANCE_TEST_CONFIG,
-    find_connector_root,
-)
 
 if TYPE_CHECKING:
     from collections.abc import Callable

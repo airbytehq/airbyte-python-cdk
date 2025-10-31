@@ -14,10 +14,6 @@ from airbyte_cdk.sources.streams.concurrent.cursor import Cursor
 from airbyte_cdk.sources.streams.concurrent.partitions.partition import Partition
 
 
-@deprecated(
-    "This class is experimental. Use at your own risk.",
-    category=ExperimentalClassWarning,
-)
 class AbstractStream(ABC):
     """
     AbstractStream is an experimental interface for streams developed as part of the Concurrent CDK.
@@ -65,12 +61,6 @@ class AbstractStream(ABC):
         """
 
     @abstractmethod
-    def check_availability(self) -> StreamAvailability:
-        """
-        :return: The stream's availability
-        """
-
-    @abstractmethod
     def get_json_schema(self) -> Mapping[str, Any]:
         """
         :return: A dict of the JSON schema representing this stream.
@@ -93,4 +83,10 @@ class AbstractStream(ABC):
     def cursor(self) -> Cursor:
         """
         :return: The cursor associated with this stream.
+        """
+
+    @abstractmethod
+    def check_availability(self) -> StreamAvailability:
+        """
+        :return: If the stream is available and if not, why
         """

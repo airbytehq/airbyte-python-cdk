@@ -6,7 +6,8 @@ import logging
 from enum import Flag, auto
 from typing import Any, Callable, Dict, Generator, Mapping, Optional, cast
 
-from jsonschema import Draft7Validator, RefResolver, ValidationError, Validator, validators
+from jsonschema import Draft7Validator, ValidationError, validators
+from jsonschema.protocols import Validator
 
 MAX_NESTING_DEPTH = 3
 json_to_python_simple = {
@@ -191,30 +192,18 @@ class TypeTransformer:
             validators parameter for detailed description.
             :
             """
-
-            def resolve(subschema: dict[str, Any]) -> dict[str, Any]:
-                if "$ref" in subschema:
-                    _, resolved = cast(
-                        RefResolver,
-                        validator_instance.resolver,
-                    ).resolve(subschema["$ref"])
-                    return cast(dict[str, Any], resolved)
-                return subschema
-
             # Transform object and array values before running json schema type checking for each element.
             # Recursively normalize every value of the "instance" sub-object,
             # if "instance" is an incorrect type - skip recursive normalization of "instance"
             if schema_key == "properties" and isinstance(instance, dict):
                 for k, subschema in property_value.items():
                     if k in instance:
-                        subschema = resolve(subschema)
                         instance[k] = self.__normalize(instance[k], subschema)
             # Recursively normalize every item of the "instance" sub-array,
             # if "instance" is an incorrect type - skip recursive normalization of "instance"
             elif schema_key == "items" and isinstance(instance, list):
-                subschema = resolve(property_value)
                 for index, item in enumerate(instance):
-                    instance[index] = self.__normalize(item, subschema)
+                    instance[index] = self.__normalize(item, property_value)
 
             # Running native jsonschema traverse algorithm after field normalization is done.
             yield from original_validator(

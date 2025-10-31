@@ -14,6 +14,7 @@ from yaml.parser import ParserError
 from yaml.scanner import ScannerError
 
 from airbyte_cdk.sources.declarative.interpolation import InterpolatedString
+from airbyte_cdk.sources.declarative.interpolation.interpolated_boolean import InterpolatedBoolean
 from airbyte_cdk.sources.declarative.resolvers.components_resolver import (
     ComponentMappingDefinition,
     ComponentsResolver,
@@ -70,6 +71,12 @@ class ConfigComponentsResolver(ComponentsResolver):
         """
 
         for component_mapping in self.components_mapping:
+            interpolated_condition = (
+                InterpolatedBoolean(condition=component_mapping.condition, parameters=parameters)
+                if component_mapping.condition
+                else None
+            )
+
             if isinstance(component_mapping.value, (str, InterpolatedString)):
                 interpolated_value = (
                     InterpolatedString.create(component_mapping.value, parameters=parameters)
@@ -89,6 +96,7 @@ class ConfigComponentsResolver(ComponentsResolver):
                         value_type=component_mapping.value_type,
                         create_or_update=component_mapping.create_or_update,
                         parameters=parameters,
+                        condition=interpolated_condition,
                     )
                 )
             else:
@@ -155,6 +163,12 @@ class ConfigComponentsResolver(ComponentsResolver):
             kwargs["components_values"] = components_values  # type: ignore[assignment] # component_values will always be of type Mapping[str, Any]
 
             for resolved_component in self._resolved_components:
+                if (
+                    resolved_component.condition is not None
+                    and not resolved_component.condition.eval(self.config, **kwargs)
+                ):
+                    continue
+
                 valid_types = (
                     (resolved_component.value_type,) if resolved_component.value_type else None
                 )
@@ -163,7 +177,11 @@ class ConfigComponentsResolver(ComponentsResolver):
                 )
 
                 path = [path.eval(self.config, **kwargs) for path in resolved_component.field_path]
-                parsed_value = self._parse_yaml_if_possible(value)
+                # Avoid parsing strings that are meant to be strings
+                if not (isinstance(value, str) and valid_types == (str,)):
+                    parsed_value = self._parse_yaml_if_possible(value)
+                else:
+                    parsed_value = value
                 updated = dpath.set(updated_config, path, parsed_value)
 
                 if parsed_value and not updated and resolved_component.create_or_update:

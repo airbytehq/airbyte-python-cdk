@@ -86,8 +86,6 @@ def resolve_airbyte_repo_root(
 
 def resolve_connector_name_and_directory(
     connector_ref: str | Path | None = None,
-    *,
-    connector_directory: Path | None = None,
 ) -> tuple[str, Path]:
     """Resolve the connector name and directory.
 
@@ -104,6 +102,7 @@ def resolve_connector_name_and_directory(
         FileNotFoundError: If the connector directory does not exist or cannot be found.
     """
     connector_name: str | None = None
+    connector_directory: Path | None = None
 
     # Resolve connector_ref to connector_name or connector_directory (if provided)
     if connector_ref:

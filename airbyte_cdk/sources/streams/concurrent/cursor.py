@@ -4,6 +4,7 @@
 
 import functools
 import logging
+import threading
 from abc import ABC, abstractmethod
 from typing import (
     Any,
@@ -18,7 +19,7 @@ from typing import (
 )
 
 from airbyte_cdk.sources.connector_state_manager import ConnectorStateManager
-from airbyte_cdk.sources.message import MessageRepository
+from airbyte_cdk.sources.message import MessageRepository, NoopMessageRepository
 from airbyte_cdk.sources.streams import NO_CURSOR_STATE_KEY
 from airbyte_cdk.sources.streams.concurrent.clamping import ClampingStrategy, NoClamping
 from airbyte_cdk.sources.streams.concurrent.cursor_types import CursorValueType, GapType
@@ -40,7 +41,7 @@ class CursorField:
     def __init__(self, cursor_field_key: str) -> None:
         self.cursor_field_key = cursor_field_key
 
-    def extract_value(self, record: Record) -> CursorValueType:
+    def extract_value(self, record: Record) -> Any:
         cursor_value = record.data.get(self.cursor_field_key)
         if cursor_value is None:
             raise ValueError(f"Could not find cursor field {self.cursor_field_key} in record")
@@ -73,6 +74,10 @@ class Cursor(StreamSlicer, ABC):
         stream. Hence, if no partitions are generated, this method needs to be called.
         """
         raise NotImplementedError()
+
+    @abstractmethod
+    def should_be_synced(self, record: Record) -> bool:
+        pass
 
     def stream_slices(self) -> Iterable[StreamSlice]:
         """
@@ -123,10 +128,31 @@ class FinalStateCursor(Cursor):
         )
         self._message_repository.emit_message(state_message)
 
+    def should_be_synced(self, record: Record) -> bool:
+        return True
+
 
 class ConcurrentCursor(Cursor):
     _START_BOUNDARY = 0
     _END_BOUNDARY = 1
+
+    def copy_without_state(self) -> "ConcurrentCursor":
+        return self.__class__(
+            stream_name=self._stream_name,
+            stream_namespace=self._stream_namespace,
+            stream_state={},
+            message_repository=NoopMessageRepository(),
+            connector_state_manager=ConnectorStateManager(),
+            connector_state_converter=self._connector_state_converter,
+            cursor_field=self._cursor_field,
+            slice_boundary_fields=self._slice_boundary_fields,
+            start=self._start,
+            end_provider=self._end_provider,
+            lookback_window=self._lookback_window,
+            slice_range=self._slice_range,
+            cursor_granularity=self._cursor_granularity,
+            clamping_strategy=self._clamping_strategy,
+        )
 
     def __init__(
         self,
@@ -166,6 +192,13 @@ class ConcurrentCursor(Cursor):
         # Flag to track if the logger has been triggered (per stream)
         self._should_be_synced_logger_triggered = False
         self._clamping_strategy = clamping_strategy
+        self._is_ascending_order = True
+
+        # A lock is required when closing a partition because updating the cursor's concurrent_state is
+        # not thread safe. When multiple partitions are being closed by the cursor at the same time, it is
+        # possible for one partition to update concurrent_state after a second partition has already read
+        # the previous state. This can lead to the second partition overwriting the previous one's state.
+        self._lock = threading.Lock()
 
     @property
     def state(self) -> MutableMapping[str, Any]:
@@ -192,15 +225,37 @@ class ConcurrentCursor(Cursor):
         self, state: MutableMapping[str, Any]
     ) -> Tuple[CursorValueType, MutableMapping[str, Any]]:
         if self._connector_state_converter.is_state_message_compatible(state):
+            partitioned_state = self._connector_state_converter.deserialize(state)
+            slices_from_partitioned_state = partitioned_state.get("slices", [])
+
+            value_from_partitioned_state = None
+            if slices_from_partitioned_state:
+                # We assume here that the slices have been already merged
+                first_slice = slices_from_partitioned_state[0]
+                value_from_partitioned_state = (
+                    first_slice[self._connector_state_converter.MOST_RECENT_RECORD_KEY]
+                    if self._connector_state_converter.MOST_RECENT_RECORD_KEY in first_slice
+                    else first_slice[self._connector_state_converter.END_KEY]
+                )
             return (
-                self._start or self._connector_state_converter.zero_value,
-                self._connector_state_converter.deserialize(state),
+                value_from_partitioned_state
+                or self._start
+                or self._connector_state_converter.zero_value,
+                partitioned_state,
             )
         return self._connector_state_converter.convert_from_sequential_state(
             self._cursor_field, state, self._start
         )
 
     def observe(self, record: Record) -> None:
+        # Because observe writes to the most_recent_cursor_value_per_partition mapping,
+        # it is not thread-safe. However, this shouldn't lead to concurrency issues because
+        # observe() is only invoked by PartitionReader.process_partition(). Since the map is
+        # broken down according to partition, concurrent threads processing only read/write
+        # from different keys which avoids any conflicts.
+        #
+        # If we were to add thread safety, we should implement a lock per-partition
+        # which is instantiated during stream_slices()
         most_recent_cursor_value = self._most_recent_cursor_value_per_partition.get(
             record.associated_slice
         )
@@ -209,6 +264,8 @@ class ConcurrentCursor(Cursor):
 
             if most_recent_cursor_value is None or most_recent_cursor_value < cursor_value:
                 self._most_recent_cursor_value_per_partition[record.associated_slice] = cursor_value
+            elif most_recent_cursor_value > cursor_value:
+                self._is_ascending_order = False
         except ValueError:
             self._log_for_record_without_cursor_value()
 
@@ -216,13 +273,14 @@ class ConcurrentCursor(Cursor):
         return self._connector_state_converter.parse_value(self._cursor_field.extract_value(record))
 
     def close_partition(self, partition: Partition) -> None:
-        slice_count_before = len(self._concurrent_state.get("slices", []))
-        self._add_slice_to_state(partition)
-        if slice_count_before < len(
-            self._concurrent_state["slices"]
-        ):  # only emit if at least one slice has been processed
-            self._merge_partitions()
-            self._emit_state_message()
+        with self._lock:
+            slice_count_before = len(self._concurrent_state.get("slices", []))
+            self._add_slice_to_state(partition)
+            if slice_count_before < len(
+                self._concurrent_state["slices"]
+            ):  # only emit if at least one slice has been processed
+                self._merge_partitions()
+                self._emit_state_message()
         self._has_closed_at_least_one_slice = True
 
     def _add_slice_to_state(self, partition: Partition) -> None:
@@ -479,3 +537,31 @@ class ConcurrentCursor(Cursor):
                 f"Could not find cursor field `{self.cursor_field.cursor_field_key}` in record for stream {self._stream_name}. The incremental sync will assume it needs to be synced"
             )
             self._should_be_synced_logger_triggered = True
+
+    def reduce_slice_range(self, stream_slice: StreamSlice) -> StreamSlice:
+        # In theory, we might be more flexible here meaning that it doesn't need to be in ascending order but it just
+        # needs to be ordered. For now though, we will only support ascending order.
+        if not self._is_ascending_order:
+            LOGGER.warning(
+                "Attempting to reduce slice while records are not returned in incremental order might lead to missing records"
+            )
+
+        if stream_slice in self._most_recent_cursor_value_per_partition:
+            return StreamSlice(
+                partition=stream_slice.partition,
+                cursor_slice={
+                    self._slice_boundary_fields_wrapper[
+                        self._START_BOUNDARY
+                    ]: self._connector_state_converter.output_format(
+                        self._most_recent_cursor_value_per_partition[stream_slice]
+                    ),
+                    self._slice_boundary_fields_wrapper[
+                        self._END_BOUNDARY
+                    ]: stream_slice.cursor_slice[
+                        self._slice_boundary_fields_wrapper[self._END_BOUNDARY]
+                    ],
+                },
+                extra_fields=stream_slice.extra_fields,
+            )
+        else:
+            return stream_slice

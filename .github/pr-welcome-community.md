@@ -29,4 +29,3 @@ As needed or by request, Airbyte Maintainers can execute the following slash com
 - `/test` - Runs connector tests with the updated CDK
 
 If you have any questions, feel free to ask in the PR comments or join our [Slack community](https://airbytehq.slack.com/).
-

@@ -5,7 +5,7 @@
 from dataclasses import InitVar, dataclass
 from typing import Any, Dict, Mapping, Optional
 
-from airbyte_cdk import InterpolatedString
+from airbyte_cdk.sources.declarative.interpolation import InterpolatedString
 from airbyte_cdk.sources.declarative.transformations import RecordTransformation
 from airbyte_cdk.sources.types import Config, StreamSlice, StreamState
 

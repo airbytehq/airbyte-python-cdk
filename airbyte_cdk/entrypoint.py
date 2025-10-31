@@ -22,7 +22,7 @@ from requests import PreparedRequest, Response, Session
 
 from airbyte_cdk.connector import TConfig
 from airbyte_cdk.exception_handler import init_uncaught_exception_handler
-from airbyte_cdk.logger import PRINT_BUFFER, init_logger
+from airbyte_cdk.logger import PRINT_BUFFER, init_logger, is_platform_debug_log_enabled
 from airbyte_cdk.models import (
     AirbyteConnectionStatus,
     AirbyteMessage,
@@ -158,7 +158,7 @@ class AirbyteEntrypoint(object):
         if not cmd:
             raise Exception("No command passed")
 
-        if hasattr(parsed_args, "debug") and parsed_args.debug:
+        if (hasattr(parsed_args, "debug") and parsed_args.debug) or is_platform_debug_log_enabled():
             self.logger.setLevel(logging.DEBUG)
             logger.setLevel(logging.DEBUG)
             self.logger.debug("Debug logs enabled")

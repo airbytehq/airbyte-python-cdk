@@ -391,6 +391,7 @@ definitions:
           anyOf:
             - "$ref": "#/definitions/CompositeErrorHandler"
             - "$ref": "#/definitions/DefaultErrorHandler"
+            - "$ref": "#/definitions/CustomErrorHandler"
       $parameters:
         type: object
         additionalProperties: true
@@ -590,32 +591,6 @@ definitions:
         type: string
         examples:
           - "source_railz.components.MyCustomErrorHandler"
-      $parameters:
-        type: object
-        additionalProperties: true
-  CustomIncrementalSync:
-    title: Custom Incremental Sync
-    description: Incremental component whose behavior is derived from a custom code implementation of the connector.
-    type: object
-    additionalProperties: true
-    required:
-      - type
-      - class_name
-      - cursor_field
-    properties:
-      type:
-        type: string
-        enum: [CustomIncrementalSync]
-      class_name:
-        title: Class Name
-        description: Fully-qualified name of the class that will be implementing the custom incremental sync. The format is `source_<name>.<package>.<class_name>`.
-        type: string
-        additionalProperties: true
-        examples:
-          - "source_railz.components.MyCustomIncrementalSync"
-      cursor_field:
-        description: The location of the value on a record that will be used as a bookmark during sync.
-        type: string
       $parameters:
         type: object
         additionalProperties: true
@@ -940,14 +915,65 @@ definitions:
           - "{{ config['record_cursor'] }}"
       cursor_datetime_formats:
         title: Cursor Datetime Formats
-        description: The possible formats for the cursor field, in order of preference. The first format that matches the cursor field value will be used to parse it. If not provided, the `datetime_format` will be used.
         type: array
         items:
           type: string
-          examples:
-            - "%Y-%m-%dT%H:%M:%S.%f%z"
-            - "%Y-%m-%d"
-            - "%s"
+        description: |
+          The possible formats for the cursor field, in order of preference. The first format that matches the cursor field value will be used to parse it. If not provided, the Outgoing Datetime Format will be used.
+          Use placeholders starting with "%" to describe the format the API is using. The following placeholders are available:
+            * **%s**: Epoch unix timestamp - `1686218963`
+            * **%s_as_float**: Epoch unix timestamp in seconds as float with microsecond precision - `1686218963.123456`
+            * **%ms**: Epoch unix timestamp - `1686218963123`
+            * **%a**: Weekday (abbreviated) - `Sun`
+            * **%A**: Weekday (full) - `Sunday`
+            * **%w**: Weekday (decimal) - `0` (Sunday), `6` (Saturday)
+            * **%d**: Day of the month (zero-padded) - `01`, `02`, ..., `31`
+            * **%b**: Month (abbreviated) - `Jan`
+            * **%B**: Month (full) - `January`
+            * **%m**: Month (zero-padded) - `01`, `02`, ..., `12`
+            * **%y**: Year (without century, zero-padded) - `00`, `01`, ..., `99`
+            * **%Y**: Year (with century) - `0001`, `0002`, ..., `9999`
+            * **%H**: Hour (24-hour, zero-padded) - `00`, `01`, ..., `23`
+            * **%I**: Hour (12-hour, zero-padded) - `01`, `02`, ..., `12`
+            * **%p**: AM/PM indicator
+            * **%M**: Minute (zero-padded) - `00`, `01`, ..., `59`
+            * **%S**: Second (zero-padded) - `00`, `01`, ..., `59`
+            * **%f**: Microsecond (zero-padded to 6 digits) - `000000`, `000001`, ..., `999999`
+            * **%_ms**: Millisecond (zero-padded to 3 digits) - `000`, `001`, ..., `999`
+            * **%z**: UTC offset - `(empty)`, `+0000`, `-04:00`
+            * **%Z**: Time zone name - `(empty)`, `UTC`, `GMT`
+            * **%j**: Day of the year (zero-padded) - `001`, `002`, ..., `366`
+            * **%U**: Week number of the year (Sunday as first day) - `00`, `01`, ..., `53`
+            * **%W**: Week number of the year (Monday as first day) - `00`, `01`, ..., `53`
+            * **%c**: Date and time representation - `Tue Aug 16 21:30:00 1988`
+            * **%x**: Date representation - `08/16/1988`
+            * **%X**: Time representation - `21:30:00`
+            * **%%**: Literal '%' character
+
+            Some placeholders depend on the locale of the underlying system - in most cases this locale is configured as en/US. For more information see the [Python documentation](https://docs.python.org/3/library/datetime.html#strftime-and-strptime-format-codes).
+        examples:
+          - "%Y-%m-%d"
+          - "%Y-%m-%d %H:%M:%S"
+          - "%Y-%m-%dT%H:%M:%S"
+          - "%Y-%m-%dT%H:%M:%SZ"
+          - "%Y-%m-%dT%H:%M:%S%z"
+          - "%Y-%m-%dT%H:%M:%S.%fZ"
+          - "%Y-%m-%dT%H:%M:%S.%f%z"
+          - "%Y-%m-%d %H:%M:%S.%f+00:00"
+          - "%s"
+          - "%ms"
+        suggestions:
+          - "%Y-%m-%d"
+          - "%Y-%m-%d %H:%M:%S"
+          - "%Y-%m-%dT%H:%M:%S"
+          - "%Y-%m-%dT%H:%M:%SZ"
+          - "%Y-%m-%dT%H:%M:%S%z"
+          - "%Y-%m-%dT%H:%M:%S.%fZ"
+          - "%Y-%m-%dT%H:%M:%S.%f%z"
+          - "%Y-%m-%d %H:%M:%S.%f+00:00"
+          - "%s"
+          - "%ms"
+          - "%s_as_float"
       start_datetime:
         title: Start Datetime
         description: The datetime that determines the earliest record that should be synced.
@@ -1022,35 +1048,66 @@ definitions:
           - "%s"
           - "%ms"
           - "%s_as_float"
+        suggestions:
+          - "%Y-%m-%d"
+          - "%Y-%m-%d %H:%M:%S"
+          - "%Y-%m-%dT%H:%M:%S"
+          - "%Y-%m-%dT%H:%M:%SZ"
+          - "%Y-%m-%dT%H:%M:%S%z"
+          - "%Y-%m-%dT%H:%M:%S.%fZ"
+          - "%Y-%m-%dT%H:%M:%S.%f%z"
+          - "%Y-%m-%d %H:%M:%S.%f+00:00"
+          - "%s"
+          - "%ms"
+          - "%s_as_float"
       cursor_granularity:
         title: Cursor Granularity
-        description:
+        description: |
           Smallest increment the datetime_format has (ISO 8601 duration) that is used to ensure the start of a slice does not overlap with the end of the previous one, e.g. for %Y-%m-%d the granularity should
           be P1D, for %Y-%m-%dT%H:%M:%SZ the granularity should be PT1S. Given this field is provided, `step` needs to be provided as well.
+            * **PT0.000001S**: 1 microsecond
+            * **PT0.001S**: 1 millisecond
+            * **PT1S**: 1 second
+            * **PT1M**: 1 minute
+            * **PT1H**: 1 hour
+            * **P1D**: 1 day
         type: string
         examples:
           - "PT1S"
+        suggestions:
+          - "PT0.000001S"
+          - "PT0.001S"
+          - "PT1S"
+          - "PT1M"
+          - "PT1H"
+          - "P1D"
       is_data_feed:
-        title: Whether the target API is formatted as a data feed
+        title: Data Feed API
         description: A data feed API is an API that does not allow filtering and paginates the content from the most recent to the least recent. Given this, the CDK needs to know when to stop paginating and this field will generate a stop condition for pagination.
         type: boolean
       is_client_side_incremental:
-        title: Whether the target API does not support filtering and returns all data (the cursor filters records in the client instead of the API side)
-        description: If the target API endpoint does not take cursor values to filter records and returns all records anyway, the connector with this cursor will filter out records locally, and only emit new records from the last sync, hence incremental. This means that all records would be read from the API, but only new records will be emitted to the destination.
+        title: Client-side Incremental Filtering
+        description: Set to True if the target API endpoint does not take cursor values to filter records and returns all records anyway. This will cause the connector to filter out records locally, and only emit new records from the last sync, hence incremental. This means that all records would be read from the API, but only new records will be emitted to the destination.
         type: boolean
       is_compare_strictly:
-        title: Whether to skip requests if the start time equals the end time
-        description: Set to True if the target API does not accept queries where the start time equal the end time.
+        title: Strict Start-End Time Comparison
+        description: Set to True if the target API does not accept queries where the start time equal the end time. This will cause those requests to be skipped.
         type: boolean
         default: False
       global_substream_cursor:
-        title: Whether to store cursor as one value instead of per partition
-        description: This setting optimizes performance when the parent stream has thousands of partitions by storing the cursor as a single value rather than per partition. Notably, the substream state is updated only at the end of the sync, which helps prevent data loss in case of a sync failure. See more info in the [docs](https://docs.airbyte.com/connector-development/config-based/understanding-the-yaml-file/incremental-syncs).
+        title: Global Substream Cursor
+        description: Setting to True causes the connector to store the cursor as one value, instead of per-partition. This setting optimizes performance when the parent stream has thousands of partitions. Notably, the substream state is updated only at the end of the sync, which helps prevent data loss in case of a sync failure. See more info in the [docs](https://docs.airbyte.com/connector-development/config-based/understanding-the-yaml-file/incremental-syncs).
         type: boolean
         default: false
       lookback_window:
         title: Lookback Window
-        description: Time interval before the start_datetime to read data for, e.g. P1M for looking back one month.
+        description: |
+          Time interval (ISO8601 duration) before the start_datetime to read data for, e.g. P1M for looking back one month.
+            * **PT1H**: 1 hour
+            * **P1D**: 1 day
+            * **P1W**: 1 week
+            * **P1M**: 1 month
+            * **P1Y**: 1 year
         type: string
         interpolation_context:
           - config
@@ -1071,11 +1128,23 @@ definitions:
           - "starting_time"
       step:
         title: Step
-        description: The size of the time window (ISO8601 duration). Given this field is provided, `cursor_granularity` needs to be provided as well.
+        description: |
+          The size of the time window (ISO8601 duration). Given this field is provided, `cursor_granularity` needs to be provided as well.
+            * **PT1H**: 1 hour
+            * **P1D**: 1 day
+            * **P1W**: 1 week
+            * **P1M**: 1 month
+            * **P1Y**: 1 year
         type: string
         examples:
           - "P1W"
           - "{{ config['step_increment'] }}"
+        suggestions:
+          - "PT1H"
+          - "P1D"
+          - "P1W"
+          - "P1M"
+          - "P1Y"
       $parameters:
         type: object
         additionalProperties: true
@@ -1202,6 +1271,16 @@ definitions:
         title: Additional JWT Payload Properties
         description: Additional properties to be added to the JWT payload.
         additionalProperties: true
+      passphrase:
+        title: Passphrase
+        description: A passphrase/password used to encrypt the private key. Only provide a passphrase if required by the API for JWT authentication. The API will typically provide the passphrase when generating the public/private key pair.
+        type: string
+        examples:
+          - "{{ config['passphrase'] }}"
+      request_option:
+        title: Request Option
+        description: A request option describing where the signed JWT token that is generated should be injected into the outbound API request.
+        "$ref": "#/definitions/RequestOption"
       $parameters:
         type: object
         additionalProperties: true
@@ -1457,7 +1536,6 @@ definitions:
         anyOf:
           - "$ref": "#/definitions/DatetimeBasedCursor"
           - "$ref": "#/definitions/IncrementingCountCursor"
-          - "$ref": "#/definitions/CustomIncrementalSync"
       primary_key:
         title: Primary Key
         "$ref": "#/definitions/PrimaryKey"
@@ -1486,6 +1564,7 @@ definitions:
       transformations:
         title: Transformations
         description: A list of transformations to be applied to each output record.
+        linkable: true
         type: array
         items:
           anyOf:
@@ -1509,6 +1588,7 @@ definitions:
       file_uploader:
         title: File Uploader
         description: (experimental) Describes how to fetch a file
+        linkable: true
         type: object
         required:
           - type
@@ -1779,6 +1859,7 @@ definitions:
         "$ref": "#/definitions/RequestOption"
       page_token_option:
         title: Inject Page Token Into Outgoing HTTP Request
+        description: Inject the page token into the outgoing HTTP requests by inserting it into either the request URL path or a field on the request.
         anyOf:
           - "$ref": "#/definitions/RequestOption"
           - "$ref": "#/definitions/RequestPath"
@@ -1911,7 +1992,13 @@ definitions:
           type: string
       expiration_duration:
         title: Expiration Duration
-        description: The duration in ISO 8601 duration notation after which the session token expires, starting from the time it was obtained. Omitting it will result in the session token being refreshed for every request.
+        description: |
+          The duration in ISO 8601 duration notation after which the session token expires, starting from the time it was obtained. Omitting it will result in the session token being refreshed for every request.
+            * **PT1H**: 1 hour
+            * **P1D**: 1 day
+            * **P1W**: 1 week
+            * **P1M**: 1 month
+            * **P1Y**: 1 year
         type: string
         examples:
           - "PT1H"
@@ -2065,6 +2152,7 @@ definitions:
       request_parameters:
         title: Query Parameters
         description: Specifies the query parameters that should be set on an outgoing HTTP request given the inputs.
+        linkable: true
         anyOf:
           - type: object
             title: Key/Value Pairs
@@ -2087,6 +2175,7 @@ definitions:
       request_headers:
         title: Request Headers
         description: Return any non-auth headers. Authentication headers will overwrite any overlapping headers returned from this method.
+        linkable: true
         anyOf:
           - type: object
             title: Key/Value Pairs
@@ -2146,6 +2235,7 @@ definitions:
       request_body:
         title: Request Body
         description: Specifies how to populate the body of the request with a payload. Can contain nested objects.
+        linkable: true
         anyOf:
           - "$ref": "#/definitions/RequestBodyPlainText"
           - "$ref": "#/definitions/RequestBodyUrlEncodedForm"
@@ -2159,6 +2249,7 @@ definitions:
       error_handler:
         title: Error Handler
         description: Error handler component that defines how to handle errors.
+        linkable: true
         anyOf:
           - "$ref": "#/definitions/DefaultErrorHandler"
           - "$ref": "#/definitions/CompositeErrorHandler"
@@ -2189,12 +2280,14 @@ definitions:
           - FAIL
           - RETRY
           - IGNORE
+          - RESET_PAGINATION
           - RATE_LIMITED
         examples:
           - SUCCESS
           - FAIL
           - RETRY
           - IGNORE
+          - RESET_PAGINATION
           - RATE_LIMITED
       failure_type:
         title: Failure Type
@@ -2427,6 +2520,34 @@ definitions:
       type:
         type: string
         enum: [JsonlDecoder]
+  JsonSchemaPropertySelector:
+    title: Json Schema Property Selector
+    description: When configured, the JSON schema supplied in the catalog containing which columns are selected for the current stream will be used to reduce which query properties will be included in the outbound API request. This can improve the performance of API requests, especially for those requiring multiple requests to get a complete record.
+    type: object
+    required:
+      - type
+    properties:
+      type:
+        type: string
+        enum: [JsonSchemaPropertySelector]
+      transformations:
+        title: Transformations
+        description: A list of transformations to be applied on the customer configured schema that will be used to filter out unselected fields when specifying query properties for API requests.
+        linkable: true
+        type: array
+        items:
+          anyOf:
+            - "$ref": "#/definitions/AddFields"
+            - "$ref": "#/definitions/RemoveFields"
+            - "$ref": "#/definitions/KeysToLower"
+            - "$ref": "#/definitions/KeysToSnakeCase"
+            - "$ref": "#/definitions/FlattenFields"
+            - "$ref": "#/definitions/DpathFlattenFields"
+            - "$ref": "#/definitions/KeysReplace"
+            - "$ref": "#/definitions/CustomTransformation"
+      $parameters:
+        type: object
+        additionalProperties: true
   KeysToLower:
     title: Keys to Lower Case
     description: A transformation that renames all keys to lower case.
@@ -2693,6 +2814,7 @@ definitions:
           - 2021-01-01
           - 2021-01-01T00:00:00Z
           - "{{ config['start_time'] }}"
+          - "{{ now_utc().strftime('%Y-%m-%dT%H:%M:%SZ') }}"
       datetime_format:
         title: Datetime Format
         description: |
@@ -2733,6 +2855,18 @@ definitions:
           - "%Y-%m-%dT%H:%M:%S.%f%z"
           - "%Y-%m-%d"
           - "%s"
+        suggestions:
+          - "%Y-%m-%d"
+          - "%Y-%m-%d %H:%M:%S"
+          - "%Y-%m-%dT%H:%M:%S"
+          - "%Y-%m-%dT%H:%M:%SZ"
+          - "%Y-%m-%dT%H:%M:%S%z"
+          - "%Y-%m-%dT%H:%M:%S.%fZ"
+          - "%Y-%m-%dT%H:%M:%S.%f%z"
+          - "%Y-%m-%d %H:%M:%S.%f+00:00"
+          - "%s"
+          - "%ms"
+          - "%s_as_float"
       max_datetime:
         title: Max Datetime
         description: Ceiling applied on the datetime value. Must be formatted with the datetime_format field.
@@ -3077,7 +3211,7 @@ definitions:
           - 100
           - "{{ config['page_size'] }}"
       inject_on_first_request:
-        title: Inject Offset
+        title: Inject Offset on First Request
         description: Using the `offset` with value `0` during the first request
         type: boolean
         default: false
@@ -3117,7 +3251,7 @@ definitions:
           - 0
           - 1
       inject_on_first_request:
-        title: Inject Page Number
+        title: Inject Page Number on First Request
         description: Using the `page number` with value defined by `start_from_page` during the first request
         type: boolean
         default: false
@@ -3219,7 +3353,7 @@ definitions:
       - ["code", "type"]
   PropertiesFromEndpoint:
     title: Properties from Endpoint
-    description: Defines the behavior for fetching the list of properties from an API that will be loaded into the requests to extract records.
+    description: Defines the behavior for fetching the list of properties from an API that will be loaded into the requests to extract records. Note that stream_slices can't be interpolated from this retriever.
     type: object
     required:
       - type
@@ -3304,6 +3438,10 @@ definitions:
         title: Property Chunking
         description: Defines how query properties will be grouped into smaller sets for APIs with limitations on the number of properties fetched per API request.
         "$ref": "#/definitions/PropertyChunking"
+      property_selector:
+        title: Property Selector
+        description: Defines where to look for and which query properties that should be sent in outbound API requests. For example, you can specify that only the selected columns of a stream should be in the request.
+        "$ref": "#/definitions/JsonSchemaPropertySelector"
       $parameters:
         type: object
         additionalProperties: true
@@ -3416,7 +3554,7 @@ definitions:
           - [["content", "html"], ["content", "plain_text"]]
   RequestPath:
     title: Request Path
-    description: Specifies where in the request path a component's value should be inserted.
+    description: The URL path to be used for the HTTP request.
     type: object
     required:
       - type
@@ -3600,9 +3738,13 @@ definitions:
         "$ref": "#/definitions/RecordSelector"
       paginator:
         description: Paginator component that describes how to navigate through the API's pages.
+        linkable: true
         anyOf:
           - "$ref": "#/definitions/DefaultPaginator"
           - "$ref": "#/definitions/NoPagination"
+      pagination_reset:
+        description: Describes what triggers pagination reset and how to handle it.
+        "$ref": "#/definitions/PaginationReset"
       ignore_stream_slicer_parameters_on_paginated_requests:
         description: If true, the partition router and incremental request options will be ignored when paginating requests. Request options set directly on the requester will not be ignored.
         type: boolean
@@ -3626,6 +3768,36 @@ definitions:
       $parameters:
         type: object
         additionalProperties: true
+  PaginationReset:
+    title: Pagination Reset
+    description: Describes what triggers pagination reset and how to handle it. If SPLIT_USING_CURSOR, the connector developer is accountable for ensuring that the records are returned in ascending order.
+    type: object
+    required:
+      - type
+      - action
+    properties:
+      type:
+        type: string
+        enum: [PaginationReset]
+      action:
+        type: string
+        enum:
+          - SPLIT_USING_CURSOR
+          - RESET
+      limits:
+        "$ref": "#/definitions/PaginationResetLimits"
+  PaginationResetLimits:
+    title: Pagination Reset Limits
+    description: Describes the limits that trigger pagination reset
+    type: object
+    required:
+      - type
+    properties:
+      type:
+        type: string
+        enum: [PaginationResetLimits]
+      number_of_records:
+        type: integer
   GzipDecoder:
     title: gzip
     description: Select 'gzip' for response data that is compressed with gzip. Requires specifying an inner data type/decoder to parse the decompressed data.
@@ -3703,7 +3875,6 @@ definitions:
       - polling_requester
       - download_requester
       - status_extractor
-      - download_target_extractor
     properties:
       type:
         type: string
@@ -4070,11 +4241,9 @@ definitions:
           - stream_slice
           - stream_template_config
         examples:
-          - ["data"]
-          - ["data", "records"]
-          - ["data", 1, "name"]
-          - ["data", "{{ components_values.name }}"]
-          - ["data", "*", "record"]
+          - ["name"]
+          - ["retriever", "requester", "url"]
+          - ["retriever", "requester", "{{ components_values.field }}"]
           - ["*", "**", "name"]
       value:
         title: Value
@@ -4100,6 +4269,18 @@ definitions:
         description: Determines whether to create a new path if it doesn't exist (true) or only update existing paths (false). When set to true, the resolver will create new paths in the stream template if they don't exist. When false (default), it will only update existing paths.
         type: boolean
         default: false
+      condition:
+        title: Condition
+        description: A condition that must be met for the mapping to be applied. This property is only supported for `ConfigComponentsResolver`.
+        type: string
+        interpolation_context:
+          - config
+          - stream_template_config
+          - components_values
+          - stream_slice
+        examples:
+          - "{{ components_values.get('cursor_field', None) }}"
+          - "{{ '_incremental' in components_values.get('stream_name', '') }}"
       $parameters:
         type: object
         additionalProperties: true
@@ -4693,6 +4874,12 @@ interpolation:
     - title: stream_slice
       description: This variable is deprecated. Use stream_interval or stream_partition instead.
       type: object
+    - title: components_values
+      description: The record object produced by the components resolver for which a stream will be generated.
+      type: object
+      examples:
+        - name: "accounts"
+          id: 1234
   macros:
     - title: now_utc
       description: Returns the current date and time in the UTC timezone.

@@ -12,10 +12,12 @@ import pytest
 import requests
 from jsonschema.exceptions import ValidationError
 
+from airbyte_cdk.models import Status
 from airbyte_cdk.sources.declarative.checks.check_stream import CheckStream
 from airbyte_cdk.sources.declarative.concurrent_declarative_source import (
     ConcurrentDeclarativeSource,
 )
+from airbyte_cdk.sources.streams.core import Stream
 from airbyte_cdk.sources.streams.http import HttpStream
 from airbyte_cdk.test.mock_http import HttpMocker, HttpRequest, HttpResponse
 
@@ -45,7 +47,7 @@ record = MagicMock()
 def test_check_stream_with_slices_as_list(
     test_name, record, streams_to_check, stream_slice, expectation, slices_as_list
 ):
-    stream = MagicMock()
+    stream = MagicMock(spec=Stream)
     stream.name = "s1"
     stream.availability_strategy = None
     if slices_as_list:
@@ -77,7 +79,7 @@ def mock_read_records(responses, default_response=None, **kwargs):
 
 
 def test_check_empty_stream():
-    stream = MagicMock()
+    stream = MagicMock(spec=Stream)
     stream.name = "s1"
     stream.read_records.return_value = iter([])
     stream.stream_slices.return_value = iter([None])
@@ -91,7 +93,7 @@ def test_check_empty_stream():
 
 
 def test_check_stream_with_no_stream_slices_aborts():
-    stream = MagicMock()
+    stream = MagicMock(spec=Stream)
     stream.name = "s1"
     stream.stream_slices.return_value = iter([])
 
@@ -367,7 +369,7 @@ _MANIFEST_WITHOUT_CHECK_COMPONENT = {
     [
         pytest.param(
             {"check": {"type": "CheckStream", "stream_names": ["static_stream"]}},
-            True,
+            Status.SUCCEEDED,
             False,
             200,
             [{"id": 1, "name": "static_1"}, {"id": 2, "name": "static_2"}],
@@ -388,7 +390,7 @@ _MANIFEST_WITHOUT_CHECK_COMPONENT = {
                     ],
                 }
             },
-            True,
+            Status.SUCCEEDED,
             False,
             200,
             [],
@@ -409,7 +411,7 @@ _MANIFEST_WITHOUT_CHECK_COMPONENT = {
                     ],
                 }
             },
-            True,
+            Status.SUCCEEDED,
             False,
             200,
             [],
@@ -433,7 +435,7 @@ _MANIFEST_WITHOUT_CHECK_COMPONENT = {
                     ],
                 }
             },
-            True,
+            Status.SUCCEEDED,
             False,
             200,
             [],
@@ -458,7 +460,7 @@ _MANIFEST_WITHOUT_CHECK_COMPONENT = {
                     ],
                 }
             },
-            True,
+            Status.SUCCEEDED,
             False,
             200,
             [],
@@ -478,7 +480,7 @@ _MANIFEST_WITHOUT_CHECK_COMPONENT = {
                     ],
                 }
             },
-            True,
+            Status.SUCCEEDED,
             False,
             200,
             [],
@@ -487,7 +489,7 @@ _MANIFEST_WITHOUT_CHECK_COMPONENT = {
         ),
         pytest.param(
             {"check": {"type": "CheckStream", "stream_names": ["non_existent_stream"]}},
-            False,
+            Status.FAILED,
             True,
             200,
             [],
@@ -507,7 +509,7 @@ _MANIFEST_WITHOUT_CHECK_COMPONENT = {
                     ],
                 }
             },
-            False,
+            Status.FAILED,
             False,
             200,
             [],
@@ -516,7 +518,7 @@ _MANIFEST_WITHOUT_CHECK_COMPONENT = {
         ),
         pytest.param(
             {"check": {"type": "CheckStream", "stream_names": ["static_stream"]}},
-            False,
+            Status.FAILED,
             False,
             404,
             ["Not found. The requested resource was not found on the server."],
@@ -525,7 +527,7 @@ _MANIFEST_WITHOUT_CHECK_COMPONENT = {
         ),
         pytest.param(
             {"check": {"type": "CheckStream", "stream_names": ["static_stream"]}},
-            False,
+            Status.FAILED,
             False,
             403,
             ["Forbidden. You don't have permission to access this resource."],
@@ -534,7 +536,7 @@ _MANIFEST_WITHOUT_CHECK_COMPONENT = {
         ),
         pytest.param(
             {"check": {"type": "CheckStream", "stream_names": ["static_stream"]}},
-            False,
+            Status.FAILED,
             False,
             401,
             ["Unauthorized. Please ensure you are authenticated correctly."],
@@ -558,7 +560,7 @@ _MANIFEST_WITHOUT_CHECK_COMPONENT = {
                     ],
                 }
             },
-            False,
+            Status.FAILED,
             False,
             404,
             ["Not found. The requested resource was not found on the server."],
@@ -582,7 +584,7 @@ _MANIFEST_WITHOUT_CHECK_COMPONENT = {
                     ],
                 }
             },
-            False,
+            Status.FAILED,
             False,
             403,
             ["Forbidden. You don't have permission to access this resource."],
@@ -606,7 +608,7 @@ _MANIFEST_WITHOUT_CHECK_COMPONENT = {
                     ],
                 }
             },
-            False,
+            Status.FAILED,
             False,
             401,
             ["Unauthorized. Please ensure you are authenticated correctly."],
@@ -653,11 +655,11 @@ def test_check_stream1(
         )
         if expectation:
             with pytest.raises(ValueError):
-                source.check_connection(logger, _CONFIG)
+                source.check(logger, _CONFIG)
         else:
-            stream_is_available, reason = source.check_connection(logger, _CONFIG)
+            connection_status = source.check(logger, _CONFIG)
             http_mocker.assert_number_of_calls(item_request_2, request_count)
-            assert stream_is_available == expected_result
+            assert connection_status.status == expected_result
 
 
 def test_check_stream_missing_fields():
@@ -689,4 +691,4 @@ def test_check_stream_only_type_provided():
         state=None,
     )
     with pytest.raises(ValueError):
-        source.check_connection(logger, _CONFIG)
+        source.check(logger, _CONFIG)
