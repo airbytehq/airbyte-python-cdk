@@ -11,6 +11,7 @@ class AsyncJobStatus(Enum):
     COMPLETED = ("COMPLETED", _TERMINAL)
     FAILED = ("FAILED", _TERMINAL)
     TIMED_OUT = ("TIMED_OUT", _TERMINAL)
+    IGNORE = ("IGNORE", _TERMINAL)
 
     def __init__(self, value: str, is_terminal: bool) -> None:
         self._value = value

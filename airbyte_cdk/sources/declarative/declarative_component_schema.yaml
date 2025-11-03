@@ -3863,6 +3863,10 @@ definitions:
         type: array
         items:
           type: string
+      ignore:
+        type: array
+        items:
+          type: string
   AsyncRetriever:
     title: Asynchronous Retriever
     description: "Retrieves records by Asynchronously sending requests to fetch records. The retriever acts as an orchestrator between the requester, the record selector, the paginator, and the partition router."

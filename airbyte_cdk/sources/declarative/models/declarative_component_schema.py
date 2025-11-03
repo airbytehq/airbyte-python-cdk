@@ -1206,6 +1206,7 @@ class AsyncJobStatusMap(BaseModel):
     completed: List[str]
     failed: List[str]
     timeout: List[str]
+    ignore: Optional[List[str]] = None
 
 
 class ValueType(Enum):

@@ -100,6 +100,8 @@ class AsyncPartition:
             return AsyncJobStatus.FAILED
         elif AsyncJobStatus.TIMED_OUT in statuses:
             return AsyncJobStatus.TIMED_OUT
+        elif AsyncJobStatus.IGNORE in statuses:
+            return AsyncJobStatus.IGNORE
         else:
             return AsyncJobStatus.RUNNING
 
@@ -149,6 +151,7 @@ class AsyncJobOrchestrator:
         AsyncJobStatus.FAILED,
         AsyncJobStatus.RUNNING,
         AsyncJobStatus.TIMED_OUT,
+        AsyncJobStatus.IGNORE,
     }
     _RUNNING_ON_API_SIDE_STATUS = {AsyncJobStatus.RUNNING, AsyncJobStatus.TIMED_OUT}
 
@@ -364,6 +367,11 @@ class AsyncJobOrchestrator:
                 case _ if partition.has_reached_max_attempt():
                     self._stop_partition(partition)
                     self._process_partitions_with_errors(partition)
+                case AsyncJobStatus.IGNORE:
+                    self._stop_partition(partition)
+                    LOGGER.warning(
+                        f"Stopping processing partition: {partition.stream_slice} due to received {AsyncJobStatus.IGNORE} status."
+                    )
                 case _:
                     self._stop_timed_out_jobs(partition)
                     # re-allocate FAILED jobs, but TIMEOUT jobs are not re-allocated
