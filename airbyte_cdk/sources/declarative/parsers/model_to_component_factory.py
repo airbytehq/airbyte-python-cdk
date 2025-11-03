@@ -3539,7 +3539,7 @@ class ModelToComponentFactory:
                 # This is an element of the dict because of the typing of the CDK but it is not a CDK status
                 continue
 
-            if api_statuses is None and cdk_status is "ignore":
+            if api_statuses is None and cdk_status == "ignore":
                 # ignore status is not required
                 continue
 
