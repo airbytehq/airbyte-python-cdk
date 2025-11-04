@@ -3888,6 +3888,8 @@ class ModelToComponentFactory:
                 ),
             ),
         )
+        
+        substream_factory._api_budget = self._api_budget
 
         return substream_factory.create_parent_stream_config(
             model=model, config=config, stream_name=stream_name, **kwargs
