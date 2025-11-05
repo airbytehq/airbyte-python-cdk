@@ -34,10 +34,6 @@ from requests import Response
 from airbyte_cdk.connector_builder.models import (
     LogMessage as ConnectorBuilderLogMessage,
 )
-from airbyte_cdk.legacy.sources.declarative.declarative_stream import DeclarativeStream
-from airbyte_cdk.legacy.sources.declarative.incremental import (
-    DatetimeBasedCursor,
-)
 from airbyte_cdk.models import (
     AirbyteStateBlob,
     AirbyteStateMessage,
@@ -735,7 +731,6 @@ class ModelToComponentFactory:
             CustomTransformationModel: self.create_custom_component,
             CustomValidationStrategyModel: self.create_custom_component,
             CustomConfigTransformationModel: self.create_custom_component,
-            DatetimeBasedCursorModel: self.create_datetime_based_cursor,
             DeclarativeStreamModel: self.create_default_stream,
             DefaultErrorHandlerModel: self.create_default_error_handler,
             DefaultPaginatorModel: self.create_default_paginator,
@@ -758,7 +753,6 @@ class ModelToComponentFactory:
             FlattenFieldsModel: self.create_flatten_fields,
             DpathFlattenFieldsModel: self.create_dpath_flatten_fields,
             IterableDecoderModel: self.create_iterable_decoder,
-            IncrementingCountCursorModel: self.create_incrementing_count_cursor,
             XmlDecoderModel: self.create_xml_decoder,
             JsonFileSchemaLoaderModel: self.create_json_file_schema_loader,
             DynamicSchemaLoaderModel: self.create_dynamic_schema_loader,
@@ -1926,64 +1920,6 @@ class ModelToComponentFactory:
     def _is_component(model_value: Any) -> bool:
         return isinstance(model_value, dict) and model_value.get("type") is not None
 
-    def create_datetime_based_cursor(
-        self, model: DatetimeBasedCursorModel, config: Config, **kwargs: Any
-    ) -> DatetimeBasedCursor:
-        start_datetime: Union[str, MinMaxDatetime] = (
-            model.start_datetime
-            if isinstance(model.start_datetime, str)
-            else self.create_min_max_datetime(model.start_datetime, config)
-        )
-        end_datetime: Union[str, MinMaxDatetime, None] = None
-        if model.is_data_feed and model.end_datetime:
-            raise ValueError("Data feed does not support end_datetime")
-        if model.is_data_feed and model.is_client_side_incremental:
-            raise ValueError(
-                "`Client side incremental` cannot be applied with `data feed`. Choose only 1 from them."
-            )
-        if model.end_datetime:
-            end_datetime = (
-                model.end_datetime
-                if isinstance(model.end_datetime, str)
-                else self.create_min_max_datetime(model.end_datetime, config)
-            )
-
-        end_time_option = (
-            self._create_component_from_model(
-                model.end_time_option, config, parameters=model.parameters or {}
-            )
-            if model.end_time_option
-            else None
-        )
-        start_time_option = (
-            self._create_component_from_model(
-                model.start_time_option, config, parameters=model.parameters or {}
-            )
-            if model.start_time_option
-            else None
-        )
-
-        return DatetimeBasedCursor(
-            cursor_field=model.cursor_field,
-            cursor_datetime_formats=model.cursor_datetime_formats
-            if model.cursor_datetime_formats
-            else [],
-            cursor_granularity=model.cursor_granularity,
-            datetime_format=model.datetime_format,
-            end_datetime=end_datetime,
-            start_datetime=start_datetime,
-            step=model.step,
-            end_time_option=end_time_option,
-            lookback_window=model.lookback_window,
-            start_time_option=start_time_option,
-            partition_field_end=model.partition_field_end,
-            partition_field_start=model.partition_field_start,
-            message_repository=self._message_repository,
-            is_compare_strictly=model.is_compare_strictly,
-            config=config,
-            parameters=model.parameters or {},
-        )
-
     def create_default_stream(
         self, model: DeclarativeStreamModel, config: Config, is_parent: bool = False, **kwargs: Any
     ) -> AbstractStream:
@@ -2645,24 +2581,6 @@ class ModelToComponentFactory:
             [({"Content-Encoding", "Content-Type"}, _compressed_response_types, gzip_parser)],
             stream_response=True,
             fallback_parser=gzip_parser.inner_parser,
-        )
-
-    # todo: This method should be removed once we deprecate the SimpleRetriever.cursor field and the various
-    #  state methods
-    @staticmethod
-    def create_incrementing_count_cursor(
-        model: IncrementingCountCursorModel, config: Config, **kwargs: Any
-    ) -> DatetimeBasedCursor:
-        # This should not actually get used anywhere at runtime, but needed to add this to pass checks since
-        # we still parse models into components. The issue is that there's no runtime implementation of a
-        # IncrementingCountCursor.
-        # A known and expected issue with this stub is running a check with the declared IncrementingCountCursor because it is run without ConcurrentCursor.
-        return DatetimeBasedCursor(
-            cursor_field=model.cursor_field,
-            datetime_format="%Y-%m-%d",
-            start_datetime="2024-12-12",
-            config=config,
-            parameters={},
         )
 
     @staticmethod
@@ -3392,7 +3310,6 @@ class ModelToComponentFactory:
                 record_selector=record_selector,
                 stream_slicer=_NO_STREAM_SLICING,
                 request_option_provider=request_options_provider,
-                cursor=None,
                 config=config,
                 ignore_stream_slicer_parameters_on_paginated_requests=ignore_stream_slicer_parameters_on_paginated_requests,
                 parameters=model.parameters or {},
@@ -3413,7 +3330,6 @@ class ModelToComponentFactory:
             record_selector=record_selector,
             stream_slicer=_NO_STREAM_SLICING,
             request_option_provider=request_options_provider,
-            cursor=None,
             config=config,
             ignore_stream_slicer_parameters_on_paginated_requests=ignore_stream_slicer_parameters_on_paginated_requests,
             additional_query_properties=query_properties,
@@ -3506,7 +3422,7 @@ class ModelToComponentFactory:
         config: Config,
         has_parent_state: Optional[bool] = None,
         **kwargs: Any,
-    ) -> DeclarativeStream:
+    ) -> DefaultStream:
         if (
             model.full_refresh_stream.name != model.name
             or model.name != model.incremental_stream.name
