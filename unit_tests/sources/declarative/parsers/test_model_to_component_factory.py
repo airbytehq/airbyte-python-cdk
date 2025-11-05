@@ -8,6 +8,7 @@ from copy import deepcopy
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Iterable, Mapping, Optional, Union
+from unittest.mock import Mock
 
 import freezegun
 import pytest
@@ -170,7 +171,7 @@ from airbyte_cdk.sources.declarative.transformations.keys_replace_transformation
 )
 from airbyte_cdk.sources.declarative.yaml_declarative_source import YamlDeclarativeSource
 from airbyte_cdk.sources.message.repository import StateFilteringMessageRepository
-from airbyte_cdk.sources.streams.call_rate import MovingWindowCallRatePolicy
+from airbyte_cdk.sources.streams.call_rate import APIBudget, MovingWindowCallRatePolicy
 from airbyte_cdk.sources.streams.concurrent.clamping import (
     ClampingEndProvider,
     DayClampingStrategy,
@@ -744,7 +745,26 @@ def test_create_substream_partition_router():
         "", resolved_manifest["partition_router"], {}
     )
 
-    partition_router = factory.create_component(
+    model_to_component_factory = ModelToComponentFactory()
+    model_to_component_factory.set_api_budget(
+        {
+            "type": "HTTPAPIBudget",
+            "policies": [
+                {
+                    "type": "MovingWindowCallRatePolicy",
+                    "rates": [
+                        {
+                            "limit": 1,
+                            "interval": "PT60S",
+                        }
+                    ],
+                    "matchers": [],
+                }
+            ],
+        },
+        input_config,
+    )
+    partition_router = model_to_component_factory.create_component(
         model_type=SubstreamPartitionRouterModel,
         component_definition=partition_router_manifest,
         config=input_config,
@@ -757,7 +777,14 @@ def test_create_substream_partition_router():
     assert isinstance(parent_stream_configs[0].stream, DefaultStream)
     assert isinstance(parent_stream_configs[1].stream, DefaultStream)
 
-    assert partition_router.parent_stream_configs[0].parent_key.eval({}) == "id"
+    # ensure api budget
+    assert get_retriever(
+        parent_stream_configs[0].stream
+    ).requester._http_client._api_budget._policies
+    assert get_retriever(
+        parent_stream_configs[1].stream
+    ).requester._http_client._api_budget._policies
+
     assert partition_router.parent_stream_configs[0].partition_field.eval({}) == "repository_id"
     assert (
         partition_router.parent_stream_configs[0].request_option.inject_into
