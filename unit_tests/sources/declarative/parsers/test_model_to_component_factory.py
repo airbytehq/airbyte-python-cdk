@@ -8,7 +8,6 @@ from copy import deepcopy
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Iterable, Mapping, Optional, Union
-from unittest.mock import Mock
 
 import freezegun
 import pytest
@@ -171,7 +170,7 @@ from airbyte_cdk.sources.declarative.transformations.keys_replace_transformation
 )
 from airbyte_cdk.sources.declarative.yaml_declarative_source import YamlDeclarativeSource
 from airbyte_cdk.sources.message.repository import StateFilteringMessageRepository
-from airbyte_cdk.sources.streams.call_rate import APIBudget, MovingWindowCallRatePolicy
+from airbyte_cdk.sources.streams.call_rate import MovingWindowCallRatePolicy
 from airbyte_cdk.sources.streams.concurrent.clamping import (
     ClampingEndProvider,
     DayClampingStrategy,
