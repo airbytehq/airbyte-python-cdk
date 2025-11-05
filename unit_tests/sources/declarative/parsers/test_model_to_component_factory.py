@@ -784,6 +784,7 @@ def test_create_substream_partition_router():
         parent_stream_configs[1].stream
     ).requester._http_client._api_budget._policies
 
+    assert partition_router.parent_stream_configs[0].parent_key.eval({}) == "id"
     assert partition_router.parent_stream_configs[0].partition_field.eval({}) == "repository_id"
     assert (
         partition_router.parent_stream_configs[0].request_option.inject_into
