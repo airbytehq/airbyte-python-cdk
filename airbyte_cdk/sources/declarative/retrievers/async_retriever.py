@@ -11,7 +11,7 @@ from airbyte_cdk.sources.declarative.partition_routers.async_job_partition_route
 )
 from airbyte_cdk.sources.declarative.retrievers.retriever import Retriever
 from airbyte_cdk.sources.streams.core import StreamData
-from airbyte_cdk.sources.types import Config, StreamSlice, StreamState
+from airbyte_cdk.sources.types import Config, StreamSlice
 from airbyte_cdk.sources.utils.slice_logger import AlwaysLogSliceLogger
 
 
@@ -59,30 +59,6 @@ class AsyncRetriever(Retriever):
         if job_orchestrator is not None:
             job_orchestrator._job_repository.creation_requester.exit_on_rate_limit = value  # type: ignore[attr-defined, assignment]
 
-    @property
-    def state(self) -> StreamState:
-        """
-        As a first iteration for sendgrid, there is no state to be managed
-        """
-        return {}
-
-    @state.setter
-    def state(self, value: StreamState) -> None:
-        """
-        As a first iteration for sendgrid, there is no state to be managed
-        """
-        pass
-
-    def _get_stream_state(self) -> StreamState:
-        """
-        Gets the current state of the stream.
-
-        Returns:
-            StreamState: Mapping[str, Any]
-        """
-
-        return self.state
-
     def _validate_and_get_stream_slice_jobs(
         self, stream_slice: Optional[StreamSlice] = None
     ) -> Iterable[AsyncJob]:
@@ -101,9 +77,6 @@ class AsyncRetriever(Retriever):
         """
         return stream_slice.extra_fields.get("jobs", []) if stream_slice else []
 
-    def stream_slices(self) -> Iterable[Optional[StreamSlice]]:
-        yield from self.stream_slicer.stream_slices()
-
     def read_records(
         self,
         records_schema: Mapping[str, Any],
@@ -112,13 +85,12 @@ class AsyncRetriever(Retriever):
         # emit the slice_descriptor log message, for connector builder TestRead
         yield self.slice_logger.create_slice_log_message(stream_slice.cursor_slice)  # type: ignore
 
-        stream_state: StreamState = self._get_stream_state()
         jobs: Iterable[AsyncJob] = self._validate_and_get_stream_slice_jobs(stream_slice)
         records: Iterable[Mapping[str, Any]] = self.stream_slicer.fetch_records(jobs)
 
         yield from self.record_selector.filter_and_transform(
             all_data=records,
-            stream_state=stream_state,
+            stream_state={},  # stream_state as an interpolation context is deprecated
             records_schema=records_schema,
             stream_slice=stream_slice,
         )

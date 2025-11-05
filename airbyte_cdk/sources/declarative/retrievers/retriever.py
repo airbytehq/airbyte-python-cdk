@@ -33,7 +33,10 @@ class Retriever:
     @abstractmethod
     @deprecated("Stream slicing is being moved to the stream level.")
     def stream_slices(self) -> Iterable[Optional[StreamSlice]]:
-        """Returns the stream slices"""
+        """Does nothing as this method is deprecated, so underlying Retriever implementations
+        do not need to implement this.
+        """
+        yield from []
 
     @property
     @deprecated("State management is being moved to the stream level.")

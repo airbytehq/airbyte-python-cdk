@@ -21,10 +21,6 @@ from airbyte_cdk.sources.declarative.auth.declarative_authenticator import NoAut
 from airbyte_cdk.sources.declarative.decoders import JsonDecoder
 from airbyte_cdk.sources.declarative.extractors import DpathExtractor, HttpSelector, RecordSelector
 from airbyte_cdk.sources.declarative.partition_routers import SinglePartitionRouter
-from airbyte_cdk.sources.declarative.partition_routers.substream_partition_router import (
-    ParentStreamConfig,
-    SubstreamPartitionRouter,
-)
 from airbyte_cdk.sources.declarative.requesters.paginators import DefaultPaginator, Paginator
 from airbyte_cdk.sources.declarative.requesters.paginators.strategies import (
     CursorPaginationStrategy,
@@ -42,7 +38,6 @@ from airbyte_cdk.sources.declarative.requesters.request_option import RequestOpt
 from airbyte_cdk.sources.declarative.requesters.requester import HttpMethod, Requester
 from airbyte_cdk.sources.declarative.retrievers.pagination_tracker import PaginationTracker
 from airbyte_cdk.sources.declarative.retrievers.simple_retriever import SimpleRetriever
-from airbyte_cdk.sources.declarative.stream_slicers import StreamSlicerTestReadDecorator
 from airbyte_cdk.sources.streams.http.pagination_reset_exception import (
     PaginationResetRequiredException,
 )
@@ -423,30 +418,6 @@ def test_path(test_name, requester_path, paginator_path, expected_path):
 
     actual_path = retriever._paginator_path(next_page_token=None)
     assert actual_path == expected_path
-
-
-def test_limit_stream_slices():
-    maximum_number_of_slices = 4
-    stream_slicer = MagicMock()
-    stream_slicer.stream_slices.return_value = _generate_slices(maximum_number_of_slices * 2)
-    stream_slicer_wrapped = StreamSlicerTestReadDecorator(
-        wrapped_slicer=stream_slicer,
-        maximum_number_of_slices=maximum_number_of_slices,
-    )
-    retriever = SimpleRetriever(
-        name="stream_name",
-        primary_key=primary_key,
-        requester=MagicMock(),
-        paginator=MagicMock(),
-        record_selector=MagicMock(),
-        stream_slicer=stream_slicer_wrapped,
-        parameters={},
-        config={},
-    )
-
-    truncated_slices = list(retriever.stream_slices())
-
-    assert truncated_slices == _generate_slices(maximum_number_of_slices)
 
 
 def test_given_stream_data_is_not_record_when_read_records_then_update_slice_with_optional_record():

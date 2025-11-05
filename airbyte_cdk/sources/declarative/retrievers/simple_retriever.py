@@ -456,23 +456,6 @@ class SimpleRetriever(Retriever):
         )
         yield from self._read_pages(record_generator, _slice)
 
-    def stream_slices(self) -> Iterable[Optional[StreamSlice]]:  # type: ignore
-        """
-        Specifies the slices for this stream. See the stream slicing section of the docs for more information.
-
-        :param sync_mode:
-        :param cursor_field:
-        :return:
-        """
-        return self.stream_slicer.stream_slices()
-
-    # todo: There are a number of things that can be cleaned up when we remove self.cursor and all the related
-    #  SimpleRetriever state management that is handled by the concurrent CDK Framework:
-    #  - DONE ModelToComponentFactory.create_datetime_based_cursor() should be removed since it does need to be instantiated
-    #  - DONE ModelToComponentFactory.create_incrementing_count_cursor() should be removed since it's a placeholder
-    #  - DONE test_simple_retriever.py: Remove all imports and usages of legacy cursor components
-    #  - DONE test_model_to_component_factory.py:test_datetime_based_cursor() test can be removed
-
     def _parse_records(
         self,
         response: Optional[requests.Response],
