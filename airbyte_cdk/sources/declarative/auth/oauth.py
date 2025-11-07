@@ -5,7 +5,7 @@
 import logging
 from dataclasses import InitVar, dataclass, field
 from datetime import datetime, timedelta
-from typing import Any, List, Mapping, Optional, Union
+from typing import Any, List, Mapping, Optional, Tuple, Union
 
 from airbyte_cdk.sources.declarative.auth.declarative_authenticator import DeclarativeAuthenticator
 from airbyte_cdk.sources.declarative.interpolation.interpolated_boolean import InterpolatedBoolean
@@ -46,6 +46,9 @@ class DeclarativeOauth2Authenticator(AbstractOauth2Authenticator, DeclarativeAut
         refresh_request_headers (Optional[Mapping[str, Any]]): The request headers to send in the refresh request
         grant_type: The grant_type to request for access_token. If set to refresh_token, the refresh_token parameter has to be provided
         message_repository (MessageRepository): the message repository used to emit logs on HTTP requests
+        refresh_token_error_status_codes (Tuple[int, ...]): Status codes to identify refresh token errors in response
+        refresh_token_error_key (str): Key to identify refresh token error in response
+        refresh_token_error_values (Tuple[str, ...]): List of values to check for exception during token refresh process
     """
 
     config: Mapping[str, Any]
@@ -72,9 +75,18 @@ class DeclarativeOauth2Authenticator(AbstractOauth2Authenticator, DeclarativeAut
     message_repository: MessageRepository = NoopMessageRepository()
     profile_assertion: Optional[DeclarativeAuthenticator] = None
     use_profile_assertion: Optional[Union[InterpolatedBoolean, str, bool]] = False
+    refresh_token_error_status_codes: Tuple[int, ...] = ()
+    refresh_token_error_key: str = ""
+    refresh_token_error_values: Tuple[str, ...] = ()
 
     def __post_init__(self, parameters: Mapping[str, Any]) -> None:
-        super().__init__()
+        # Convert lists to tuples for parent class compatibility
+
+        super().__init__(
+            refresh_token_error_status_codes=self.refresh_token_error_status_codes,
+            refresh_token_error_key=self.refresh_token_error_key,
+            refresh_token_error_values=self.refresh_token_error_values,
+        )
         if self.token_refresh_endpoint is not None:
             self._token_refresh_endpoint: Optional[InterpolatedString] = InterpolatedString.create(
                 self.token_refresh_endpoint, parameters=parameters
