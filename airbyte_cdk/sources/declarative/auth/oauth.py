@@ -80,8 +80,6 @@ class DeclarativeOauth2Authenticator(AbstractOauth2Authenticator, DeclarativeAut
     refresh_token_error_values: Tuple[str, ...] = ()
 
     def __post_init__(self, parameters: Mapping[str, Any]) -> None:
-        # Convert lists to tuples for parent class compatibility
-
         super().__init__(
             refresh_token_error_status_codes=self.refresh_token_error_status_codes,
             refresh_token_error_key=self.refresh_token_error_key,
