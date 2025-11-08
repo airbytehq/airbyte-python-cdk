@@ -301,7 +301,9 @@ def test_inferred_schema_loader_with_nested_objects():
         properties = schema["properties"]
         assert "address" in properties
         address_type = properties["address"]["type"]
-        assert address_type == "object" or (isinstance(address_type, list) and "object" in address_type)
+        assert address_type == "object" or (
+            isinstance(address_type, list) and "object" in address_type
+        )
         assert "properties" in properties["address"]
 
         address_props = properties["address"]["properties"]
