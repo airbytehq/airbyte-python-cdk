@@ -2534,7 +2534,7 @@ class ModelToComponentFactory:
             retriever=retriever,
             config=config,
             record_sample_size=model.record_sample_size or 100,
-            stream_name=model.stream_name or "",
+            stream_name=model.stream_name or name,
             parameters=model.parameters or {},
         )
 

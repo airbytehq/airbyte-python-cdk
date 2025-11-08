@@ -80,6 +80,7 @@ _MANIFEST = {
 def mock_retriever():
     """Create a mock retriever that returns sample records."""
     retriever = MagicMock()
+    retriever.stream_slices.return_value = iter([None])
     retriever.read_records.return_value = iter(
         [
             {"id": 1, "name": "Alice", "age": 30, "active": True},
@@ -126,6 +127,7 @@ def test_inferred_schema_loader_basic(inferred_schema_loader):
 def test_inferred_schema_loader_empty_records():
     """Test that InferredSchemaLoader returns empty schema when no records are available."""
     retriever = MagicMock()
+    retriever.stream_slices.return_value = iter([None])
     retriever.read_records.return_value = iter([])
 
     config = MagicMock()
@@ -147,6 +149,7 @@ def test_inferred_schema_loader_respects_sample_size():
     """Test that InferredSchemaLoader respects the record_sample_size parameter."""
     retriever = MagicMock()
     records = [{"id": i, "name": f"User{i}"} for i in range(10)]
+    retriever.stream_slices.return_value = iter([None])
     retriever.read_records.return_value = iter(records)
 
     config = MagicMock()
@@ -169,6 +172,7 @@ def test_inferred_schema_loader_respects_sample_size():
 def test_inferred_schema_loader_handles_errors():
     """Test that InferredSchemaLoader handles errors gracefully."""
     retriever = MagicMock()
+    retriever.stream_slices.return_value = iter([None])
     retriever.read_records.side_effect = Exception("API Error")
 
     config = MagicMock()
@@ -189,6 +193,7 @@ def test_inferred_schema_loader_handles_errors():
 def test_inferred_schema_loader_with_nested_objects():
     """Test that InferredSchemaLoader handles nested objects correctly."""
     retriever = MagicMock()
+    retriever.stream_slices.return_value = iter([None])
     retriever.read_records.return_value = iter(
         [
             {
@@ -224,6 +229,7 @@ def test_inferred_schema_loader_with_nested_objects():
 def test_inferred_schema_loader_with_arrays():
     """Test that InferredSchemaLoader handles arrays correctly."""
     retriever = MagicMock()
+    retriever.stream_slices.return_value = iter([None])
     retriever.read_records.return_value = iter(
         [
             {"id": 1, "name": "Alice", "tags": ["admin", "user"]},

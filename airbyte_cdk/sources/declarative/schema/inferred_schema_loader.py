@@ -2,6 +2,7 @@
 # Copyright (c) 2025 Airbyte, Inc., all rights reserved.
 #
 
+from collections.abc import Mapping as ABCMapping
 from dataclasses import InitVar, dataclass
 from typing import Any, Mapping, Optional
 
@@ -55,18 +56,27 @@ class InferredSchemaLoader(SchemaLoader):
 
         record_count = 0
         try:
-            for record in self.retriever.read_records({}):  # type: ignore[call-overload]
+            for stream_slice in self.retriever.stream_slices():
+                for record in self.retriever.read_records(
+                    records_schema={}, stream_slice=stream_slice
+                ):
+                    if record_count >= self.record_sample_size:
+                        break
+
+                    if isinstance(record, ABCMapping) and not isinstance(record, dict):
+                        record = dict(record)
+
+                    airbyte_record = AirbyteRecordMessage(
+                        stream=self.stream_name,
+                        data=record,  # type: ignore[arg-type]
+                        emitted_at=0,
+                    )
+
+                    schema_inferrer.accumulate(airbyte_record)
+                    record_count += 1
+
                 if record_count >= self.record_sample_size:
                     break
-
-                airbyte_record = AirbyteRecordMessage(
-                    stream=self.stream_name,
-                    data=record,  # type: ignore[arg-type]
-                    emitted_at=0,  # Not used for schema inference
-                )
-
-                schema_inferrer.accumulate(airbyte_record)
-                record_count += 1
         except Exception:
             return {}
 
