@@ -52,26 +52,26 @@ class InferredSchemaLoader(SchemaLoader):
             A mapping representing the inferred JSON schema for the stream
         """
         schema_inferrer = SchemaInferrer()
-        
+
         record_count = 0
         try:
             for record in self.retriever.read_records({}):  # type: ignore[call-overload]
                 if record_count >= self.record_sample_size:
                     break
-                
+
                 airbyte_record = AirbyteRecordMessage(
                     stream=self.stream_name,
                     data=record,  # type: ignore[arg-type]
                     emitted_at=0,  # Not used for schema inference
                 )
-                
+
                 schema_inferrer.accumulate(airbyte_record)
                 record_count += 1
         except Exception:
             return {}
-        
+
         inferred_schema: Optional[Mapping[str, Any]] = schema_inferrer.get_stream_schema(
             self.stream_name
         )
-        
+
         return inferred_schema if inferred_schema else {}

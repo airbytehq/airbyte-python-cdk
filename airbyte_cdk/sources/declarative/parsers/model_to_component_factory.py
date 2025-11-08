@@ -2529,7 +2529,7 @@ class ModelToComponentFactory:
                 )
             ),
         )
-        
+
         return InferredSchemaLoader(
             retriever=retriever,
             config=config,
