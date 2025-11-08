@@ -3,6 +3,7 @@
 #
 
 from collections.abc import Mapping as ABCMapping
+from collections.abc import Sequence
 from dataclasses import InitVar, dataclass
 from typing import Any, Mapping, Optional
 
@@ -11,6 +12,30 @@ from airbyte_cdk.sources.declarative.retrievers.retriever import Retriever
 from airbyte_cdk.sources.declarative.schema.schema_loader import SchemaLoader
 from airbyte_cdk.sources.types import Config
 from airbyte_cdk.utils.schema_inferrer import SchemaInferrer
+
+
+def _to_builtin_types(value: Any) -> Any:
+    """
+    Recursively convert Mapping-like and Sequence-like objects to plain Python types.
+
+    This is necessary because genson's schema inference doesn't handle custom Mapping
+    or Sequence implementations properly. We need to convert everything to plain dicts,
+    lists, and primitive types.
+
+    Args:
+        value: The value to convert
+
+    Returns:
+        The value converted to plain Python types
+    """
+    if isinstance(value, ABCMapping):
+        return {k: _to_builtin_types(v) for k, v in value.items()}
+    elif isinstance(value, (list, tuple)):
+        return [_to_builtin_types(item) for item in value]
+    elif isinstance(value, Sequence) and not isinstance(value, (str, bytes)):
+        return [_to_builtin_types(item) for item in value]
+    else:
+        return value
 
 
 @dataclass
@@ -63,8 +88,9 @@ class InferredSchemaLoader(SchemaLoader):
                     if record_count >= self.record_sample_size:
                         break
 
-                    if isinstance(record, ABCMapping) and not isinstance(record, dict):
-                        record = dict(record)
+                    # Convert all Mapping-like and Sequence-like objects to plain Python types
+                    # This is necessary because genson doesn't handle custom implementations properly
+                    record = _to_builtin_types(record)
 
                     airbyte_record = AirbyteRecordMessage(
                         stream=self.stream_name,
