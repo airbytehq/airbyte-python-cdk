@@ -302,6 +302,9 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
     IncrementingCountCursor as IncrementingCountCursorModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    InferredSchemaLoader as InferredSchemaLoaderModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     InlineSchemaLoader as InlineSchemaLoaderModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
@@ -549,6 +552,7 @@ from airbyte_cdk.sources.declarative.schema import (
     ComplexFieldType,
     DefaultSchemaLoader,
     DynamicSchemaLoader,
+    InferredSchemaLoader,
     InlineSchemaLoader,
     JsonFileSchemaLoader,
     SchemaLoader,
@@ -748,6 +752,7 @@ class ModelToComponentFactory:
             HttpRequesterModel: self.create_http_requester,
             HttpResponseFilterModel: self.create_http_response_filter,
             InlineSchemaLoaderModel: self.create_inline_schema_loader,
+            InferredSchemaLoaderModel: self.create_inferred_schema_loader,
             JsonDecoderModel: self.create_json_decoder,
             JsonlDecoderModel: self.create_jsonl_decoder,
             JsonSchemaPropertySelectorModel: self.create_json_schema_property_selector,
@@ -2499,6 +2504,39 @@ class ModelToComponentFactory:
         model: InlineSchemaLoaderModel, config: Config, **kwargs: Any
     ) -> InlineSchemaLoader:
         return InlineSchemaLoader(schema=model.schema_ or {}, parameters={})
+
+    def create_inferred_schema_loader(
+        self, model: InferredSchemaLoaderModel, config: Config, **kwargs: Any
+    ) -> InferredSchemaLoader:
+        name = kwargs.get("name", "inferred_schema")
+        retriever = self._create_component_from_model(
+            model=model.retriever,
+            config=config,
+            name=name,
+            primary_key=None,
+            partition_router=self._build_stream_slicer_from_partition_router(
+                model.retriever, config
+            ),
+            transformations=[],
+            use_cache=True,
+            log_formatter=(
+                lambda response: format_http_message(
+                    response,
+                    f"Schema loader '{name}' request",
+                    f"Request performed in order to infer schema.",
+                    name,
+                    is_auxiliary=True,
+                )
+            ),
+        )
+        
+        return InferredSchemaLoader(
+            retriever=retriever,
+            config=config,
+            record_sample_size=model.record_sample_size or 100,
+            stream_name=model.stream_name or "",
+            parameters=model.parameters or {},
+        )
 
     def create_complex_field_type(
         self, model: ComplexFieldTypeModel, config: Config, **kwargs: Any
