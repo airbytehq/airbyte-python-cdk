@@ -1,0 +1,90 @@
+name: On-Demand Prerelease
+
+on:
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: "PR Number"
+        type: string
+        required: false
+      comment-id:
+        description: "Comment ID (Optional)"
+        type: string
+        required: false
+
+jobs:
+  prerelease-on-demand:
+    name: Trigger Prerelease Publish
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Authenticate as GitHub App
+        uses: actions/create-github-app-token@v2
+        id: get-app-token
+        with:
+          owner: "airbytehq"
+          repositories: "airbyte-python-cdk"
+          app-id: ${{ secrets.OCTAVIA_BOT_APP_ID }}
+          private-key: ${{ secrets.OCTAVIA_BOT_PRIVATE_KEY }}
+
+      - name: Create URL to the run output
+        id: vars
+        run: echo "run-url=https://github.com/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" >> $GITHUB_OUTPUT
+
+      - name: Append comment with job run link
+        if: github.event.inputs.comment-id
+        id: first-comment-action
+        uses: peter-evans/create-or-update-comment@v4
+        with:
+          comment-id: ${{ github.event.inputs.comment-id }}
+          issue-number: ${{ github.event.inputs.pr }}
+          body: |
+            > **Prerelease Job Info**
+            >
+            > This job triggers the publish workflow with default arguments to create a prerelease.
+            >
+            > Prerelease job started... [Check job output.][1]
+
+            [1]: ${{ steps.vars.outputs.run-url }}
+
+      - name: Trigger publish workflow
+        run: |
+          gh workflow run publish.yml \
+            --ref ${{ github.ref }} \
+            -f version="" \
+            -f publish_to_pypi=true \
+            -f publish_to_dockerhub=true \
+            -f publish_manifest_server=true \
+            -f update_connector_builder=false
+        env:
+          GH_TOKEN: ${{ steps.get-app-token.outputs.token }}
+
+      - name: Get workflow run URL
+        id: workflow-url
+        run: |
+          # Wait a moment for the workflow to be created
+          sleep 5
+          # Get the most recent workflow run for publish.yml
+          WORKFLOW_RUN_URL=$(gh run list --workflow=publish.yml --limit=1 --json url --jq '.[0].url')
+          echo "workflow-run-url=${WORKFLOW_RUN_URL}" >> $GITHUB_OUTPUT
+        env:
+          GH_TOKEN: ${{ steps.get-app-token.outputs.token }}
+
+      - name: Append success comment
+        if: github.event.inputs.comment-id
+        uses: peter-evans/create-or-update-comment@v4
+        with:
+          comment-id: ${{ steps.first-comment-action.outputs.comment-id }}
+          reactions: hooray
+          body: |
+            > ✅ Prerelease workflow triggered successfully.
+            >
+            > View the publish workflow run: ${{ steps.workflow-url.outputs.workflow-run-url }}
+
+      - name: Append failure comment
+        if: failure() && github.event.inputs.comment-id
+        uses: peter-evans/create-or-update-comment@v4
+        with:
+          comment-id: ${{ steps.first-comment-action.outputs.comment-id }}
+          reactions: confused
+          body: |
+            > ❌ Failed to trigger prerelease workflow.
