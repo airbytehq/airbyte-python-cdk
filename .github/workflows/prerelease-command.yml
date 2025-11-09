@@ -92,7 +92,7 @@ jobs:
               "version": "",
               "publish_to_pypi": "true",
               "publish_to_dockerhub": "true",
-              "publish_manifest_server": "true",
+              "publish_manifest_server": "false",
               "update_connector_builder": "false"
             }
 
