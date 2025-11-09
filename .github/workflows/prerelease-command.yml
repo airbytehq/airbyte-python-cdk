@@ -80,42 +80,21 @@ jobs:
 
       - name: Trigger publish workflow
         id: trigger-publish
-        run: |
-          # Trigger the publish workflow on the PR's head branch
-          # Note: These defaults mirror the defaults in publish.yml and can be extended
-          # to accept optional overrides via slash command arguments if needed in the future.
-          gh workflow run publish.yml \
-            --ref "${{ steps.pr-info.outputs.head-ref }}" \
-            -f version="" \
-            -f publish_to_pypi=true \
-            -f publish_to_dockerhub=true \
-            -f publish_manifest_server=true \
-            -f update_connector_builder=false
-        env:
-          GH_TOKEN: ${{ steps.get-app-token.outputs.token }}
-
-      - name: Get workflow run URL
-        id: workflow-url
-        run: |
-          # Wait a moment for the workflow to be created
-          sleep 5
-          # Query for the most recent publish workflow run on the PR branch
-          # Filter by branch to avoid race conditions with concurrent runs
-          WORKFLOW_RUN_URL=$(gh run list \
-            --workflow=publish.yml \
-            --branch "${{ steps.pr-info.outputs.head-ref }}" \
-            --limit=1 \
-            --json url \
-            --jq '.[0].url')
-          
-          if [ -z "$WORKFLOW_RUN_URL" ] || [ "$WORKFLOW_RUN_URL" = "null" ]; then
-            echo "Warning: Could not find workflow run URL. Using fallback."
-            WORKFLOW_RUN_URL="https://github.com/${{ github.repository }}/actions/workflows/publish.yml"
-          fi
-          
-          echo "workflow-run-url=${WORKFLOW_RUN_URL}" >> $GITHUB_OUTPUT
-        env:
-          GH_TOKEN: ${{ steps.get-app-token.outputs.token }}
+        uses: the-actions-org/workflow-dispatch@v4
+        with:
+          workflow: publish.yml
+          token: ${{ steps.get-app-token.outputs.token }}
+          ref: ${{ steps.pr-info.outputs.head-ref }}
+          wait-for-completion: false
+          display-workflow-run-url: false
+          inputs: >-
+            {
+              "version": "",
+              "publish_to_pypi": "true",
+              "publish_to_dockerhub": "true",
+              "publish_manifest_server": "true",
+              "update_connector_builder": "false"
+            }
 
       - name: Append success comment
         if: github.event.inputs.comment-id
@@ -126,7 +105,7 @@ jobs:
           body: |
             > ✅ Prerelease workflow triggered successfully.
             >
-            > View the publish workflow run: ${{ steps.workflow-url.outputs.workflow-run-url }}
+            > View the publish workflow run: ${{ steps.trigger-publish.outputs.workflow-url }}
 
       - name: Append failure comment
         if: failure() && github.event.inputs.comment-id
