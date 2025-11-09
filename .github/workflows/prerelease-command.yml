@@ -85,7 +85,7 @@ jobs:
           workflow: publish.yml
           token: ${{ steps.get-app-token.outputs.token }}
           ref: ${{ steps.pr-info.outputs.head-ref }}
-          wait-for-completion: false
+          wait-for-completion: true
           display-workflow-run-url: false
           inputs: >-
             {
