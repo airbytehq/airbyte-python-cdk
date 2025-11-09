@@ -89,7 +89,6 @@ jobs:
           display-workflow-run-url: false
           inputs: >-
             {
-              "version": "",
               "publish_to_pypi": "true",
               "publish_to_dockerhub": "true",
               "publish_manifest_server": "false",
