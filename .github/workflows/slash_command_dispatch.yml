@@ -35,6 +35,7 @@ jobs:
             test
             poetry-lock
             poe
+            prerelease
 
           # Notes regarding static-args:
           # - Slash commands can be invoked from both issues and comments.
@@ -63,6 +64,7 @@ jobs:
           - \`/autofix\` - Corrects any linting or formatting issues
           - \`/test\` - Runs the test suite
           - \`/poetry-lock\` - Re-locks dependencies and updates the poetry.lock file
+          - \`/prerelease\` - Triggers a prerelease publish with default arguments
           - \`/help\` - Shows this help message"
 
           if [[ "${{ github.event.comment.body }}" == "/help" ]]; then

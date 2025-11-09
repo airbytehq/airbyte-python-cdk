@@ -26,6 +26,7 @@ Airbyte Maintainers can execute the following slash commands on your PR:
 - `/autofix` - Fixes most formatting and linting issues
 - `/poetry-lock` - Updates poetry.lock file
 - `/test` - Runs connector tests with the updated CDK
+- `/prerelease` - Triggers a prerelease publish with default arguments
 - `/poe build` - Regenerate git-committed build artifacts, such as the pydantic models which are generated from the manifest JSON schema in YAML.
 - `/poe <command>` - Runs any poe command in the CDK environment
 
