@@ -170,7 +170,7 @@ def test_inferred_schema_loader_respects_sample_size():
 
 
 def test_inferred_schema_loader_handles_errors():
-    """Test that InferredSchemaLoader handles errors gracefully."""
+    """Test that InferredSchemaLoader propagates errors from the retriever."""
     retriever = MagicMock()
     retriever.stream_slices.return_value = iter([None])
     retriever.read_records.side_effect = Exception("API Error")
@@ -185,9 +185,8 @@ def test_inferred_schema_loader_handles_errors():
         stream_name="users",
     )
 
-    schema = loader.get_json_schema()
-
-    assert schema == {}
+    with pytest.raises(Exception, match="API Error"):
+        loader.get_json_schema()
 
 
 def test_inferred_schema_loader_with_nested_objects():

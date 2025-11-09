@@ -80,31 +80,28 @@ class InferredSchemaLoader(SchemaLoader):
         schema_inferrer = SchemaInferrer()
 
         record_count = 0
-        try:
-            for stream_slice in self.retriever.stream_slices():
-                for record in self.retriever.read_records(
-                    records_schema={}, stream_slice=stream_slice
-                ):
-                    if record_count >= self.record_sample_size:
-                        break
-
-                    # Convert all Mapping-like and Sequence-like objects to plain Python types
-                    # This is necessary because genson doesn't handle custom implementations properly
-                    record = _to_builtin_types(record)
-
-                    airbyte_record = AirbyteRecordMessage(
-                        stream=self.stream_name,
-                        data=record,  # type: ignore[arg-type]
-                        emitted_at=0,
-                    )
-
-                    schema_inferrer.accumulate(airbyte_record)
-                    record_count += 1
-
+        for stream_slice in self.retriever.stream_slices():
+            for record in self.retriever.read_records(
+                records_schema={}, stream_slice=stream_slice
+            ):
                 if record_count >= self.record_sample_size:
                     break
-        except Exception:
-            return {}
+
+                # Convert all Mapping-like and Sequence-like objects to plain Python types
+                # This is necessary because genson doesn't handle custom implementations properly
+                record = _to_builtin_types(record)
+
+                airbyte_record = AirbyteRecordMessage(
+                    stream=self.stream_name,
+                    data=record,  # type: ignore[arg-type]
+                    emitted_at=0,
+                )
+
+                schema_inferrer.accumulate(airbyte_record)
+                record_count += 1
+
+            if record_count >= self.record_sample_size:
+                break
 
         inferred_schema: Optional[Mapping[str, Any]] = schema_inferrer.get_stream_schema(
             self.stream_name
