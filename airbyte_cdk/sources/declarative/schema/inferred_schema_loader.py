@@ -81,9 +81,7 @@ class InferredSchemaLoader(SchemaLoader):
 
         record_count = 0
         for stream_slice in self.retriever.stream_slices():
-            for record in self.retriever.read_records(
-                records_schema={}, stream_slice=stream_slice
-            ):
+            for record in self.retriever.read_records(records_schema={}, stream_slice=stream_slice):
                 if record_count >= self.record_sample_size:
                     break
 
