@@ -5,7 +5,7 @@
 from collections.abc import Mapping as ABCMapping
 from collections.abc import Sequence
 from dataclasses import InitVar, dataclass
-from typing import Any, Mapping, Optional
+from typing import Any, Mapping
 
 from airbyte_cdk.models import AirbyteRecordMessage
 from airbyte_cdk.sources.declarative.retrievers.retriever import Retriever
@@ -101,7 +101,7 @@ class InferredSchemaLoader(SchemaLoader):
             if record_count >= self.record_sample_size:
                 break
 
-        inferred_schema: Optional[Mapping[str, Any]] = schema_inferrer.get_stream_schema(
+        inferred_schema: Mapping[str, Any] | None = schema_inferrer.get_stream_schema(
             self.stream_name
         )
 

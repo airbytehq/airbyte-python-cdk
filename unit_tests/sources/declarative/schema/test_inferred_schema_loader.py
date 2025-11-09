@@ -2,78 +2,11 @@
 # Copyright (c) 2024 Airbyte, Inc., all rights reserved.
 #
 
-import json
 from unittest.mock import MagicMock
 
 import pytest
 
-from airbyte_cdk.sources.declarative.concurrent_declarative_source import (
-    ConcurrentDeclarativeSource,
-)
 from airbyte_cdk.sources.declarative.schema import InferredSchemaLoader
-from airbyte_cdk.test.mock_http import HttpMocker, HttpRequest, HttpResponse
-
-_CONFIG = {
-    "start_date": "2024-07-01T00:00:00.000Z",
-    "api_key": "test_api_key",
-}
-
-_MANIFEST = {
-    "version": "6.7.0",
-    "definitions": {
-        "users_stream": {
-            "type": "DeclarativeStream",
-            "name": "users",
-            "primary_key": [],
-            "retriever": {
-                "type": "SimpleRetriever",
-                "requester": {
-                    "type": "HttpRequester",
-                    "url_base": "https://api.test.com",
-                    "path": "/users",
-                    "http_method": "GET",
-                    "authenticator": {
-                        "type": "ApiKeyAuthenticator",
-                        "header": "apikey",
-                        "api_token": "{{ config['api_key'] }}",
-                    },
-                },
-                "record_selector": {
-                    "type": "RecordSelector",
-                    "extractor": {"type": "DpathExtractor", "field_path": []},
-                },
-                "paginator": {"type": "NoPagination"},
-            },
-            "schema_loader": {
-                "type": "InferredSchemaLoader",
-                "retriever": {
-                    "type": "SimpleRetriever",
-                    "requester": {
-                        "type": "HttpRequester",
-                        "url_base": "https://api.test.com",
-                        "path": "/users",
-                        "http_method": "GET",
-                        "authenticator": {
-                            "type": "ApiKeyAuthenticator",
-                            "header": "apikey",
-                            "api_token": "{{ config['api_key'] }}",
-                        },
-                    },
-                    "record_selector": {
-                        "type": "RecordSelector",
-                        "extractor": {"type": "DpathExtractor", "field_path": []},
-                    },
-                    "paginator": {"type": "NoPagination"},
-                },
-                "record_sample_size": 3,
-            },
-        },
-    },
-    "streams": [
-        "#/definitions/users_stream",
-    ],
-    "check": {"stream_names": ["users"]},
-}
 
 
 @pytest.fixture
