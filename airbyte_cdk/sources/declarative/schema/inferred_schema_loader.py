@@ -66,7 +66,9 @@ class InferredSchemaLoader(SchemaLoader):
         if not self.stream_name:
             self.stream_name = parameters.get("name", "")
         if not self.stream_name:
-            raise ValueError("stream_name must be provided either directly or via the 'name' parameter")
+            raise ValueError(
+                "stream_name must be provided either directly or via the 'name' parameter"
+            )
 
     def get_json_schema(self) -> Mapping[str, Any]:
         """
