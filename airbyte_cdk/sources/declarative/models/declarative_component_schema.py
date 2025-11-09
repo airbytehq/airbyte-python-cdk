@@ -13,13 +13,6 @@ from airbyte_cdk.sources.declarative.models.base_model_with_deprecations import 
 )
 
 
-class ParametersProp(BaseModel):
-    pass
-
-    class Config:
-        extra = Extra.allow
-
-
 class AuthFlowType(Enum):
     oauth2_0 = "oauth2.0"
     oauth1_0 = "oauth1.0"
@@ -39,7 +32,12 @@ class BasicHttpAuthenticator(BaseModel):
         examples=["{{ config['password'] }}", ""],
         title="Password",
     )
-    parameters: Optional[ParametersProp] = Field(None, alias="$parameters")
+    parameters: Optional[Dict[str, Any]] = Field(
+        None,
+        alias="$parameters",
+        description="Set parameters that are inherited by all child components. Parameters are automatically applied to component fields unless that field already has a value. Parameters propagate recursively to nested components. See https://docs.airbyte.com/platform/connector-development/config-based/advanced-topics/parameters for details.",
+        title="$parameters",
+    )
 
 
 class BearerAuthenticator(BaseModel):
@@ -50,7 +48,12 @@ class BearerAuthenticator(BaseModel):
         examples=["{{ config['api_key'] }}", "{{ config['token'] }}"],
         title="Bearer Token",
     )
-    parameters: Optional[ParametersProp] = Field(None, alias="$parameters")
+    parameters: Optional[Dict[str, Any]] = Field(
+        None,
+        alias="$parameters",
+        description="Set parameters that are inherited by all child components. Parameters are automatically applied to component fields unless that field already has a value. Parameters propagate recursively to nested components. See https://docs.airbyte.com/platform/connector-development/config-based/advanced-topics/parameters for details.",
+        title="$parameters",
+    )
 
 
 class DynamicStreamCheckConfig(BaseModel):
@@ -93,7 +96,12 @@ class ConcurrencyLevel(BaseModel):
         examples=[20, 100],
         title="Max Concurrency",
     )
-    parameters: Optional[ParametersProp] = Field(None, alias="$parameters")
+    parameters: Optional[Dict[str, Any]] = Field(
+        None,
+        alias="$parameters",
+        description="Set parameters that are inherited by all child components. Parameters are automatically applied to component fields unless that field already has a value. Parameters propagate recursively to nested components. See https://docs.airbyte.com/platform/connector-development/config-based/advanced-topics/parameters for details.",
+        title="$parameters",
+    )
 
 
 class ConstantBackoffStrategy(BaseModel):
@@ -104,7 +112,12 @@ class ConstantBackoffStrategy(BaseModel):
         examples=[30, 30.5, "{{ config['backoff_time'] }}"],
         title="Backoff Time",
     )
-    parameters: Optional[ParametersProp] = Field(None, alias="$parameters")
+    parameters: Optional[Dict[str, Any]] = Field(
+        None,
+        alias="$parameters",
+        description="Set parameters that are inherited by all child components. Parameters are automatically applied to component fields unless that field already has a value. Parameters propagate recursively to nested components. See https://docs.airbyte.com/platform/connector-development/config-based/advanced-topics/parameters for details.",
+        title="$parameters",
+    )
 
 
 class CursorPagination(BaseModel):
@@ -134,7 +147,12 @@ class CursorPagination(BaseModel):
         ],
         title="Stop Condition",
     )
-    parameters: Optional[ParametersProp] = Field(None, alias="$parameters")
+    parameters: Optional[Dict[str, Any]] = Field(
+        None,
+        alias="$parameters",
+        description="Set parameters that are inherited by all child components. Parameters are automatically applied to component fields unless that field already has a value. Parameters propagate recursively to nested components. See https://docs.airbyte.com/platform/connector-development/config-based/advanced-topics/parameters for details.",
+        title="$parameters",
+    )
 
 
 class CustomAuthenticator(BaseModel):
@@ -148,7 +166,12 @@ class CustomAuthenticator(BaseModel):
         examples=["source_railz.components.ShortLivedTokenAuthenticator"],
         title="Class Name",
     )
-    parameters: Optional[ParametersProp] = Field(None, alias="$parameters")
+    parameters: Optional[Dict[str, Any]] = Field(
+        None,
+        alias="$parameters",
+        description="Set parameters that are inherited by all child components. Parameters are automatically applied to component fields unless that field already has a value. Parameters propagate recursively to nested components. See https://docs.airbyte.com/platform/connector-development/config-based/advanced-topics/parameters for details.",
+        title="$parameters",
+    )
 
 
 class CustomBackoffStrategy(BaseModel):
@@ -162,7 +185,12 @@ class CustomBackoffStrategy(BaseModel):
         examples=["source_railz.components.MyCustomBackoffStrategy"],
         title="Class Name",
     )
-    parameters: Optional[ParametersProp] = Field(None, alias="$parameters")
+    parameters: Optional[Dict[str, Any]] = Field(
+        None,
+        alias="$parameters",
+        description="Set parameters that are inherited by all child components. Parameters are automatically applied to component fields unless that field already has a value. Parameters propagate recursively to nested components. See https://docs.airbyte.com/platform/connector-development/config-based/advanced-topics/parameters for details.",
+        title="$parameters",
+    )
 
 
 class CustomErrorHandler(BaseModel):
@@ -176,7 +204,12 @@ class CustomErrorHandler(BaseModel):
         examples=["source_railz.components.MyCustomErrorHandler"],
         title="Class Name",
     )
-    parameters: Optional[ParametersProp] = Field(None, alias="$parameters")
+    parameters: Optional[Dict[str, Any]] = Field(
+        None,
+        alias="$parameters",
+        description="Set parameters that are inherited by all child components. Parameters are automatically applied to component fields unless that field already has a value. Parameters propagate recursively to nested components. See https://docs.airbyte.com/platform/connector-development/config-based/advanced-topics/parameters for details.",
+        title="$parameters",
+    )
 
 
 class CustomPaginationStrategy(BaseModel):
@@ -190,7 +223,12 @@ class CustomPaginationStrategy(BaseModel):
         examples=["source_railz.components.MyCustomPaginationStrategy"],
         title="Class Name",
     )
-    parameters: Optional[ParametersProp] = Field(None, alias="$parameters")
+    parameters: Optional[Dict[str, Any]] = Field(
+        None,
+        alias="$parameters",
+        description="Set parameters that are inherited by all child components. Parameters are automatically applied to component fields unless that field already has a value. Parameters propagate recursively to nested components. See https://docs.airbyte.com/platform/connector-development/config-based/advanced-topics/parameters for details.",
+        title="$parameters",
+    )
 
 
 class CustomRecordExtractor(BaseModel):
@@ -204,7 +242,12 @@ class CustomRecordExtractor(BaseModel):
         examples=["source_railz.components.MyCustomRecordExtractor"],
         title="Class Name",
     )
-    parameters: Optional[ParametersProp] = Field(None, alias="$parameters")
+    parameters: Optional[Dict[str, Any]] = Field(
+        None,
+        alias="$parameters",
+        description="Set parameters that are inherited by all child components. Parameters are automatically applied to component fields unless that field already has a value. Parameters propagate recursively to nested components. See https://docs.airbyte.com/platform/connector-development/config-based/advanced-topics/parameters for details.",
+        title="$parameters",
+    )
 
 
 class CustomRecordFilter(BaseModel):
@@ -218,7 +261,12 @@ class CustomRecordFilter(BaseModel):
         examples=["source_railz.components.MyCustomCustomRecordFilter"],
         title="Class Name",
     )
-    parameters: Optional[ParametersProp] = Field(None, alias="$parameters")
+    parameters: Optional[Dict[str, Any]] = Field(
+        None,
+        alias="$parameters",
+        description="Set parameters that are inherited by all child components. Parameters are automatically applied to component fields unless that field already has a value. Parameters propagate recursively to nested components. See https://docs.airbyte.com/platform/connector-development/config-based/advanced-topics/parameters for details.",
+        title="$parameters",
+    )
 
 
 class CustomRequester(BaseModel):
@@ -232,7 +280,12 @@ class CustomRequester(BaseModel):
         examples=["source_railz.components.MyCustomRecordExtractor"],
         title="Class Name",
     )
-    parameters: Optional[ParametersProp] = Field(None, alias="$parameters")
+    parameters: Optional[Dict[str, Any]] = Field(
+        None,
+        alias="$parameters",
+        description="Set parameters that are inherited by all child components. Parameters are automatically applied to component fields unless that field already has a value. Parameters propagate recursively to nested components. See https://docs.airbyte.com/platform/connector-development/config-based/advanced-topics/parameters for details.",
+        title="$parameters",
+    )
 
 
 class CustomRetriever(BaseModel):
@@ -246,7 +299,12 @@ class CustomRetriever(BaseModel):
         examples=["source_railz.components.MyCustomRetriever"],
         title="Class Name",
     )
-    parameters: Optional[ParametersProp] = Field(None, alias="$parameters")
+    parameters: Optional[Dict[str, Any]] = Field(
+        None,
+        alias="$parameters",
+        description="Set parameters that are inherited by all child components. Parameters are automatically applied to component fields unless that field already has a value. Parameters propagate recursively to nested components. See https://docs.airbyte.com/platform/connector-development/config-based/advanced-topics/parameters for details.",
+        title="$parameters",
+    )
 
 
 class CustomPartitionRouter(BaseModel):
@@ -260,7 +318,12 @@ class CustomPartitionRouter(BaseModel):
         examples=["source_railz.components.MyCustomPartitionRouter"],
         title="Class Name",
     )
-    parameters: Optional[ParametersProp] = Field(None, alias="$parameters")
+    parameters: Optional[Dict[str, Any]] = Field(
+        None,
+        alias="$parameters",
+        description="Set parameters that are inherited by all child components. Parameters are automatically applied to component fields unless that field already has a value. Parameters propagate recursively to nested components. See https://docs.airbyte.com/platform/connector-development/config-based/advanced-topics/parameters for details.",
+        title="$parameters",
+    )
 
 
 class CustomSchemaLoader(BaseModel):
@@ -274,7 +337,12 @@ class CustomSchemaLoader(BaseModel):
         examples=["source_railz.components.MyCustomSchemaLoader"],
         title="Class Name",
     )
-    parameters: Optional[ParametersProp] = Field(None, alias="$parameters")
+    parameters: Optional[Dict[str, Any]] = Field(
+        None,
+        alias="$parameters",
+        description="Set parameters that are inherited by all child components. Parameters are automatically applied to component fields unless that field already has a value. Parameters propagate recursively to nested components. See https://docs.airbyte.com/platform/connector-development/config-based/advanced-topics/parameters for details.",
+        title="$parameters",
+    )
 
 
 class CustomSchemaNormalization(BaseModel):
@@ -290,7 +358,12 @@ class CustomSchemaNormalization(BaseModel):
         ],
         title="Class Name",
     )
-    parameters: Optional[ParametersProp] = Field(None, alias="$parameters")
+    parameters: Optional[Dict[str, Any]] = Field(
+        None,
+        alias="$parameters",
+        description="Set parameters that are inherited by all child components. Parameters are automatically applied to component fields unless that field already has a value. Parameters propagate recursively to nested components. See https://docs.airbyte.com/platform/connector-development/config-based/advanced-topics/parameters for details.",
+        title="$parameters",
+    )
 
 
 class CustomStateMigration(BaseModel):
@@ -304,7 +377,12 @@ class CustomStateMigration(BaseModel):
         examples=["source_railz.components.MyCustomStateMigration"],
         title="Class Name",
     )
-    parameters: Optional[ParametersProp] = Field(None, alias="$parameters")
+    parameters: Optional[Dict[str, Any]] = Field(
+        None,
+        alias="$parameters",
+        description="Set parameters that are inherited by all child components. Parameters are automatically applied to component fields unless that field already has a value. Parameters propagate recursively to nested components. See https://docs.airbyte.com/platform/connector-development/config-based/advanced-topics/parameters for details.",
+        title="$parameters",
+    )
 
 
 class CustomTransformation(BaseModel):
@@ -318,7 +396,12 @@ class CustomTransformation(BaseModel):
         examples=["source_railz.components.MyCustomTransformation"],
         title="Class Name",
     )
-    parameters: Optional[ParametersProp] = Field(None, alias="$parameters")
+    parameters: Optional[Dict[str, Any]] = Field(
+        None,
+        alias="$parameters",
+        description="Set parameters that are inherited by all child components. Parameters are automatically applied to component fields unless that field already has a value. Parameters propagate recursively to nested components. See https://docs.airbyte.com/platform/connector-development/config-based/advanced-topics/parameters for details.",
+        title="$parameters",
+    )
 
 
 class LegacyToPerPartitionStateMigration(BaseModel):
@@ -502,12 +585,22 @@ class DpathExtractor(BaseModel):
         ],
         title="Field Path",
     )
-    parameters: Optional[ParametersProp] = Field(None, alias="$parameters")
+    parameters: Optional[Dict[str, Any]] = Field(
+        None,
+        alias="$parameters",
+        description="Set parameters that are inherited by all child components. Parameters are automatically applied to component fields unless that field already has a value. Parameters propagate recursively to nested components. See https://docs.airbyte.com/platform/connector-development/config-based/advanced-topics/parameters for details.",
+        title="$parameters",
+    )
 
 
 class ResponseToFileExtractor(BaseModel):
     type: Literal["ResponseToFileExtractor"]
-    parameters: Optional[ParametersProp] = Field(None, alias="$parameters")
+    parameters: Optional[Dict[str, Any]] = Field(
+        None,
+        alias="$parameters",
+        description="Set parameters that are inherited by all child components. Parameters are automatically applied to component fields unless that field already has a value. Parameters propagate recursively to nested components. See https://docs.airbyte.com/platform/connector-development/config-based/advanced-topics/parameters for details.",
+        title="$parameters",
+    )
 
 
 class ExponentialBackoffStrategy(BaseModel):
@@ -518,7 +611,12 @@ class ExponentialBackoffStrategy(BaseModel):
         examples=[5, 5.5, "10"],
         title="Factor",
     )
-    parameters: Optional[ParametersProp] = Field(None, alias="$parameters")
+    parameters: Optional[Dict[str, Any]] = Field(
+        None,
+        alias="$parameters",
+        description="Set parameters that are inherited by all child components. Parameters are automatically applied to component fields unless that field already has a value. Parameters propagate recursively to nested components. See https://docs.airbyte.com/platform/connector-development/config-based/advanced-topics/parameters for details.",
+        title="$parameters",
+    )
 
 
 class GroupByKeyMergeStrategy(BaseModel):
@@ -529,7 +627,12 @@ class GroupByKeyMergeStrategy(BaseModel):
         examples=["id", ["parent_id", "end_date"]],
         title="Key",
     )
-    parameters: Optional[ParametersProp] = Field(None, alias="$parameters")
+    parameters: Optional[Dict[str, Any]] = Field(
+        None,
+        alias="$parameters",
+        description="Set parameters that are inherited by all child components. Parameters are automatically applied to component fields unless that field already has a value. Parameters propagate recursively to nested components. See https://docs.airbyte.com/platform/connector-development/config-based/advanced-topics/parameters for details.",
+        title="$parameters",
+    )
 
 
 class SessionTokenRequestBearerAuthenticator(BaseModel):
@@ -604,7 +707,12 @@ class HttpResponseFilter(BaseModel):
         ],
         title="Predicate",
     )
-    parameters: Optional[ParametersProp] = Field(None, alias="$parameters")
+    parameters: Optional[Dict[str, Any]] = Field(
+        None,
+        alias="$parameters",
+        description="Set parameters that are inherited by all child components. Parameters are automatically applied to component fields unless that field already has a value. Parameters propagate recursively to nested components. See https://docs.airbyte.com/platform/connector-development/config-based/advanced-topics/parameters for details.",
+        title="$parameters",
+    )
 
 
 class ComplexFieldType(BaseModel):
@@ -636,7 +744,12 @@ class SchemaTypeIdentifier(BaseModel):
         title="Type Path",
     )
     types_mapping: Optional[List[TypesMap]] = None
-    parameters: Optional[ParametersProp] = Field(None, alias="$parameters")
+    parameters: Optional[Dict[str, Any]] = Field(
+        None,
+        alias="$parameters",
+        description="Set parameters that are inherited by all child components. Parameters are automatically applied to component fields unless that field already has a value. Parameters propagate recursively to nested components. See https://docs.airbyte.com/platform/connector-development/config-based/advanced-topics/parameters for details.",
+        title="$parameters",
+    )
 
 
 class InlineSchemaLoader(BaseModel):
@@ -657,7 +770,12 @@ class JsonFileSchemaLoader(BaseModel):
         example=["./schemas/users.json"],
         title="File Path",
     )
-    parameters: Optional[ParametersProp] = Field(None, alias="$parameters")
+    parameters: Optional[Dict[str, Any]] = Field(
+        None,
+        alias="$parameters",
+        description="Set parameters that are inherited by all child components. Parameters are automatically applied to component fields unless that field already has a value. Parameters propagate recursively to nested components. See https://docs.airbyte.com/platform/connector-development/config-based/advanced-topics/parameters for details.",
+        title="$parameters",
+    )
 
 
 class JsonDecoder(BaseModel):
@@ -670,12 +788,22 @@ class JsonlDecoder(BaseModel):
 
 class KeysToLower(BaseModel):
     type: Literal["KeysToLower"]
-    parameters: Optional[ParametersProp] = Field(None, alias="$parameters")
+    parameters: Optional[Dict[str, Any]] = Field(
+        None,
+        alias="$parameters",
+        description="Set parameters that are inherited by all child components. Parameters are automatically applied to component fields unless that field already has a value. Parameters propagate recursively to nested components. See https://docs.airbyte.com/platform/connector-development/config-based/advanced-topics/parameters for details.",
+        title="$parameters",
+    )
 
 
 class KeysToSnakeCase(BaseModel):
     type: Literal["KeysToSnakeCase"]
-    parameters: Optional[ParametersProp] = Field(None, alias="$parameters")
+    parameters: Optional[Dict[str, Any]] = Field(
+        None,
+        alias="$parameters",
+        description="Set parameters that are inherited by all child components. Parameters are automatically applied to component fields unless that field already has a value. Parameters propagate recursively to nested components. See https://docs.airbyte.com/platform/connector-development/config-based/advanced-topics/parameters for details.",
+        title="$parameters",
+    )
 
 
 class FlattenFields(BaseModel):
@@ -685,7 +813,12 @@ class FlattenFields(BaseModel):
         description="Whether to flatten lists or leave it as is. Default is True.",
         title="Flatten Lists",
     )
-    parameters: Optional[ParametersProp] = Field(None, alias="$parameters")
+    parameters: Optional[Dict[str, Any]] = Field(
+        None,
+        alias="$parameters",
+        description="Set parameters that are inherited by all child components. Parameters are automatically applied to component fields unless that field already has a value. Parameters propagate recursively to nested components. See https://docs.airbyte.com/platform/connector-development/config-based/advanced-topics/parameters for details.",
+        title="$parameters",
+    )
 
 
 class KeyTransformation(BaseModel):
@@ -727,7 +860,12 @@ class DpathFlattenFields(BaseModel):
         description="Transformation for object keys. If not provided, original key will be used.",
         title="Key transformation",
     )
-    parameters: Optional[ParametersProp] = Field(None, alias="$parameters")
+    parameters: Optional[Dict[str, Any]] = Field(
+        None,
+        alias="$parameters",
+        description="Set parameters that are inherited by all child components. Parameters are automatically applied to component fields unless that field already has a value. Parameters propagate recursively to nested components. See https://docs.airbyte.com/platform/connector-development/config-based/advanced-topics/parameters for details.",
+        title="$parameters",
+    )
 
 
 class KeysReplace(BaseModel):
@@ -754,7 +892,12 @@ class KeysReplace(BaseModel):
         ],
         title="New value",
     )
-    parameters: Optional[ParametersProp] = Field(None, alias="$parameters")
+    parameters: Optional[Dict[str, Any]] = Field(
+        None,
+        alias="$parameters",
+        description="Set parameters that are inherited by all child components. Parameters are automatically applied to component fields unless that field already has a value. Parameters propagate recursively to nested components. See https://docs.airbyte.com/platform/connector-development/config-based/advanced-topics/parameters for details.",
+        title="$parameters",
+    )
 
 
 class IterableDecoder(BaseModel):
@@ -776,7 +919,12 @@ class CustomDecoder(BaseModel):
         examples=["source_amazon_ads.components.GzipJsonlDecoder"],
         title="Class Name",
     )
-    parameters: Optional[ParametersProp] = Field(None, alias="$parameters")
+    parameters: Optional[Dict[str, Any]] = Field(
+        None,
+        alias="$parameters",
+        description="Set parameters that are inherited by all child components. Parameters are automatically applied to component fields unless that field already has a value. Parameters propagate recursively to nested components. See https://docs.airbyte.com/platform/connector-development/config-based/advanced-topics/parameters for details.",
+        title="$parameters",
+    )
 
 
 class MinMaxDatetime(BaseModel):
@@ -810,12 +958,22 @@ class MinMaxDatetime(BaseModel):
         examples=["2010-01-01T00:00:00Z", "2010-01-01"],
         title="Min Datetime",
     )
-    parameters: Optional[ParametersProp] = Field(None, alias="$parameters")
+    parameters: Optional[Dict[str, Any]] = Field(
+        None,
+        alias="$parameters",
+        description="Set parameters that are inherited by all child components. Parameters are automatically applied to component fields unless that field already has a value. Parameters propagate recursively to nested components. See https://docs.airbyte.com/platform/connector-development/config-based/advanced-topics/parameters for details.",
+        title="$parameters",
+    )
 
 
 class NoAuth(BaseModel):
     type: Literal["NoAuth"]
-    parameters: Optional[ParametersProp] = Field(None, alias="$parameters")
+    parameters: Optional[Dict[str, Any]] = Field(
+        None,
+        alias="$parameters",
+        description="Set parameters that are inherited by all child components. Parameters are automatically applied to component fields unless that field already has a value. Parameters propagate recursively to nested components. See https://docs.airbyte.com/platform/connector-development/config-based/advanced-topics/parameters for details.",
+        title="$parameters",
+    )
 
 
 class NoPagination(BaseModel):
@@ -1003,7 +1161,12 @@ class OffsetIncrement(BaseModel):
         description="Using the `offset` with value `0` during the first request",
         title="Inject Offset on First Request",
     )
-    parameters: Optional[ParametersProp] = Field(None, alias="$parameters")
+    parameters: Optional[Dict[str, Any]] = Field(
+        None,
+        alias="$parameters",
+        description="Set parameters that are inherited by all child components. Parameters are automatically applied to component fields unless that field already has a value. Parameters propagate recursively to nested components. See https://docs.airbyte.com/platform/connector-development/config-based/advanced-topics/parameters for details.",
+        title="$parameters",
+    )
 
 
 class PageIncrement(BaseModel):
@@ -1025,7 +1188,12 @@ class PageIncrement(BaseModel):
         description="Using the `page number` with value defined by `start_from_page` during the first request",
         title="Inject Page Number on First Request",
     )
-    parameters: Optional[ParametersProp] = Field(None, alias="$parameters")
+    parameters: Optional[Dict[str, Any]] = Field(
+        None,
+        alias="$parameters",
+        description="Set parameters that are inherited by all child components. Parameters are automatically applied to component fields unless that field already has a value. Parameters propagate recursively to nested components. See https://docs.airbyte.com/platform/connector-development/config-based/advanced-topics/parameters for details.",
+        title="$parameters",
+    )
 
 
 class PrimaryKey(BaseModel):
@@ -1059,7 +1227,12 @@ class PropertyChunking(BaseModel):
         description="Dictates how to records that require multiple requests to get all properties should be emitted to the destination",
         title="Record Merge Strategy",
     )
-    parameters: Optional[ParametersProp] = Field(None, alias="$parameters")
+    parameters: Optional[Dict[str, Any]] = Field(
+        None,
+        alias="$parameters",
+        description="Set parameters that are inherited by all child components. Parameters are automatically applied to component fields unless that field already has a value. Parameters propagate recursively to nested components. See https://docs.airbyte.com/platform/connector-development/config-based/advanced-topics/parameters for details.",
+        title="$parameters",
+    )
 
 
 class RecordFilter(BaseModel):
@@ -1073,7 +1246,12 @@ class RecordFilter(BaseModel):
         ],
         title="Condition",
     )
-    parameters: Optional[ParametersProp] = Field(None, alias="$parameters")
+    parameters: Optional[Dict[str, Any]] = Field(
+        None,
+        alias="$parameters",
+        description="Set parameters that are inherited by all child components. Parameters are automatically applied to component fields unless that field already has a value. Parameters propagate recursively to nested components. See https://docs.airbyte.com/platform/connector-development/config-based/advanced-topics/parameters for details.",
+        title="$parameters",
+    )
 
 
 class SchemaNormalization(Enum):
@@ -1185,7 +1363,12 @@ class LegacySessionTokenAuthenticator(BaseModel):
         examples=["user/current"],
         title="Validate Session Path",
     )
-    parameters: Optional[ParametersProp] = Field(None, alias="$parameters")
+    parameters: Optional[Dict[str, Any]] = Field(
+        None,
+        alias="$parameters",
+        description="Set parameters that are inherited by all child components. Parameters are automatically applied to component fields unless that field already has a value. Parameters propagate recursively to nested components. See https://docs.airbyte.com/platform/connector-development/config-based/advanced-topics/parameters for details.",
+        title="$parameters",
+    )
 
 
 class Action1(Enum):
@@ -1240,7 +1423,12 @@ class WaitTimeFromHeader(BaseModel):
         examples=[3600],
         title="Max Waiting Time in Seconds",
     )
-    parameters: Optional[ParametersProp] = Field(None, alias="$parameters")
+    parameters: Optional[Dict[str, Any]] = Field(
+        None,
+        alias="$parameters",
+        description="Set parameters that are inherited by all child components. Parameters are automatically applied to component fields unless that field already has a value. Parameters propagate recursively to nested components. See https://docs.airbyte.com/platform/connector-development/config-based/advanced-topics/parameters for details.",
+        title="$parameters",
+    )
 
 
 class WaitUntilTimeFromHeader(BaseModel):
@@ -1263,7 +1451,12 @@ class WaitUntilTimeFromHeader(BaseModel):
         examples=["([-+]?\\d+)"],
         title="Extraction Regex",
     )
-    parameters: Optional[ParametersProp] = Field(None, alias="$parameters")
+    parameters: Optional[Dict[str, Any]] = Field(
+        None,
+        alias="$parameters",
+        description="Set parameters that are inherited by all child components. Parameters are automatically applied to component fields unless that field already has a value. Parameters propagate recursively to nested components. See https://docs.airbyte.com/platform/connector-development/config-based/advanced-topics/parameters for details.",
+        title="$parameters",
+    )
 
 
 class ComponentMappingDefinition(BaseModel):
@@ -1310,7 +1503,12 @@ class ComponentMappingDefinition(BaseModel):
         ],
         title="Condition",
     )
-    parameters: Optional[ParametersProp] = Field(None, alias="$parameters")
+    parameters: Optional[Dict[str, Any]] = Field(
+        None,
+        alias="$parameters",
+        description="Set parameters that are inherited by all child components. Parameters are automatically applied to component fields unless that field already has a value. Parameters propagate recursively to nested components. See https://docs.airbyte.com/platform/connector-development/config-based/advanced-topics/parameters for details.",
+        title="$parameters",
+    )
 
 
 class StreamConfig(BaseModel):
@@ -1326,14 +1524,24 @@ class StreamConfig(BaseModel):
         description="A list of default values, each matching the structure expected from the parsed component value.",
         title="Default Values",
     )
-    parameters: Optional[ParametersProp] = Field(None, alias="$parameters")
+    parameters: Optional[Dict[str, Any]] = Field(
+        None,
+        alias="$parameters",
+        description="Set parameters that are inherited by all child components. Parameters are automatically applied to component fields unless that field already has a value. Parameters propagate recursively to nested components. See https://docs.airbyte.com/platform/connector-development/config-based/advanced-topics/parameters for details.",
+        title="$parameters",
+    )
 
 
 class ConfigComponentsResolver(BaseModel):
     type: Literal["ConfigComponentsResolver"]
     stream_config: Union[List[StreamConfig], StreamConfig]
     components_mapping: List[ComponentMappingDefinition]
-    parameters: Optional[ParametersProp] = Field(None, alias="$parameters")
+    parameters: Optional[Dict[str, Any]] = Field(
+        None,
+        alias="$parameters",
+        description="Set parameters that are inherited by all child components. Parameters are automatically applied to component fields unless that field already has a value. Parameters propagate recursively to nested components. See https://docs.airbyte.com/platform/connector-development/config-based/advanced-topics/parameters for details.",
+        title="$parameters",
+    )
 
 
 class StreamParametersDefinition(BaseModel):
@@ -1358,7 +1566,12 @@ class ParametrizedComponentsResolver(BaseModel):
     type: Literal["ParametrizedComponentsResolver"]
     stream_parameters: StreamParametersDefinition
     components_mapping: List[ComponentMappingDefinition]
-    parameters: Optional[ParametersProp] = Field(None, alias="$parameters")
+    parameters: Optional[Dict[str, Any]] = Field(
+        None,
+        alias="$parameters",
+        description="Set parameters that are inherited by all child components. Parameters are automatically applied to component fields unless that field already has a value. Parameters propagate recursively to nested components. See https://docs.airbyte.com/platform/connector-development/config-based/advanced-topics/parameters for details.",
+        title="$parameters",
+    )
 
 
 class RequestBodyPlainText(BaseModel):
@@ -1504,7 +1717,12 @@ class AddedFieldDefinition(BaseModel):
         description="Type of the value. If not specified, the type will be inferred from the value.",
         title="Value Type",
     )
-    parameters: Optional[ParametersProp] = Field(None, alias="$parameters")
+    parameters: Optional[Dict[str, Any]] = Field(
+        None,
+        alias="$parameters",
+        description="Set parameters that are inherited by all child components. Parameters are automatically applied to component fields unless that field already has a value. Parameters propagate recursively to nested components. See https://docs.airbyte.com/platform/connector-development/config-based/advanced-topics/parameters for details.",
+        title="$parameters",
+    )
 
 
 class AddFields(BaseModel):
@@ -1524,7 +1742,12 @@ class AddFields(BaseModel):
             "{{ property == 'some_string_to_match' }}",
         ],
     )
-    parameters: Optional[ParametersProp] = Field(None, alias="$parameters")
+    parameters: Optional[Dict[str, Any]] = Field(
+        None,
+        alias="$parameters",
+        description="Set parameters that are inherited by all child components. Parameters are automatically applied to component fields unless that field already has a value. Parameters propagate recursively to nested components. See https://docs.airbyte.com/platform/connector-development/config-based/advanced-topics/parameters for details.",
+        title="$parameters",
+    )
 
 
 class ApiKeyAuthenticator(BaseModel):
@@ -1550,7 +1773,12 @@ class ApiKeyAuthenticator(BaseModel):
         ],
         title="Inject API Key Into Outgoing HTTP Request",
     )
-    parameters: Optional[ParametersProp] = Field(None, alias="$parameters")
+    parameters: Optional[Dict[str, Any]] = Field(
+        None,
+        alias="$parameters",
+        description="Set parameters that are inherited by all child components. Parameters are automatically applied to component fields unless that field already has a value. Parameters propagate recursively to nested components. See https://docs.airbyte.com/platform/connector-development/config-based/advanced-topics/parameters for details.",
+        title="$parameters",
+    )
 
 
 class AuthFlow(BaseModel):
@@ -1602,7 +1830,12 @@ class IncrementingCountCursor(BaseModel):
         description="Optionally configures how the start value will be sent in requests to the source API.",
         title="Inject Start Value Into Outgoing HTTP Request",
     )
-    parameters: Optional[ParametersProp] = Field(None, alias="$parameters")
+    parameters: Optional[Dict[str, Any]] = Field(
+        None,
+        alias="$parameters",
+        description="Set parameters that are inherited by all child components. Parameters are automatically applied to component fields unless that field already has a value. Parameters propagate recursively to nested components. See https://docs.airbyte.com/platform/connector-development/config-based/advanced-topics/parameters for details.",
+        title="$parameters",
+    )
 
 
 class DatetimeBasedCursor(BaseModel):
@@ -1713,7 +1946,12 @@ class DatetimeBasedCursor(BaseModel):
         examples=["P1W", "{{ config['step_increment'] }}"],
         title="Step",
     )
-    parameters: Optional[ParametersProp] = Field(None, alias="$parameters")
+    parameters: Optional[Dict[str, Any]] = Field(
+        None,
+        alias="$parameters",
+        description="Set parameters that are inherited by all child components. Parameters are automatically applied to component fields unless that field already has a value. Parameters propagate recursively to nested components. See https://docs.airbyte.com/platform/connector-development/config-based/advanced-topics/parameters for details.",
+        title="$parameters",
+    )
 
 
 class JwtAuthenticator(BaseModel):
@@ -1778,7 +2016,12 @@ class JwtAuthenticator(BaseModel):
         description="A request option describing where the signed JWT token that is generated should be injected into the outbound API request.",
         title="Request Option",
     )
-    parameters: Optional[ParametersProp] = Field(None, alias="$parameters")
+    parameters: Optional[Dict[str, Any]] = Field(
+        None,
+        alias="$parameters",
+        description="Set parameters that are inherited by all child components. Parameters are automatically applied to component fields unless that field already has a value. Parameters propagate recursively to nested components. See https://docs.airbyte.com/platform/connector-development/config-based/advanced-topics/parameters for details.",
+        title="$parameters",
+    )
 
 
 class OAuthAuthenticator(BaseModel):
@@ -1920,7 +2163,12 @@ class OAuthAuthenticator(BaseModel):
         description="Enable using profile assertion as a flow for OAuth authorization.",
         title="Use Profile Assertion",
     )
-    parameters: Optional[ParametersProp] = Field(None, alias="$parameters")
+    parameters: Optional[Dict[str, Any]] = Field(
+        None,
+        alias="$parameters",
+        description="Set parameters that are inherited by all child components. Parameters are automatically applied to component fields unless that field already has a value. Parameters propagate recursively to nested components. See https://docs.airbyte.com/platform/connector-development/config-based/advanced-topics/parameters for details.",
+        title="$parameters",
+    )
 
 
 class FixedWindowCallRatePolicy(BaseModel):
@@ -2020,7 +2268,12 @@ class DefaultPaginator(BaseModel):
         description="Inject the page token into the outgoing HTTP requests by inserting it into either the request URL path or a field on the request.",
         title="Inject Page Token Into Outgoing HTTP Request",
     )
-    parameters: Optional[ParametersProp] = Field(None, alias="$parameters")
+    parameters: Optional[Dict[str, Any]] = Field(
+        None,
+        alias="$parameters",
+        description="Set parameters that are inherited by all child components. Parameters are automatically applied to component fields unless that field already has a value. Parameters propagate recursively to nested components. See https://docs.airbyte.com/platform/connector-development/config-based/advanced-topics/parameters for details.",
+        title="$parameters",
+    )
 
 
 class SessionTokenRequestApiKeyAuthenticator(BaseModel):
@@ -2056,7 +2309,12 @@ class JsonSchemaPropertySelector(BaseModel):
         description="A list of transformations to be applied on the customer configured schema that will be used to filter out unselected fields when specifying query properties for API requests.",
         title="Transformations",
     )
-    parameters: Optional[ParametersProp] = Field(None, alias="$parameters")
+    parameters: Optional[Dict[str, Any]] = Field(
+        None,
+        alias="$parameters",
+        description="Set parameters that are inherited by all child components. Parameters are automatically applied to component fields unless that field already has a value. Parameters propagate recursively to nested components. See https://docs.airbyte.com/platform/connector-development/config-based/advanced-topics/parameters for details.",
+        title="$parameters",
+    )
 
 
 class ListPartitionRouter(BaseModel):
@@ -2078,7 +2336,12 @@ class ListPartitionRouter(BaseModel):
         description="A request option describing where the list value should be injected into and under what field name if applicable.",
         title="Inject Partition Value Into Outgoing HTTP Request",
     )
-    parameters: Optional[ParametersProp] = Field(None, alias="$parameters")
+    parameters: Optional[Dict[str, Any]] = Field(
+        None,
+        alias="$parameters",
+        description="Set parameters that are inherited by all child components. Parameters are automatically applied to component fields unless that field already has a value. Parameters propagate recursively to nested components. See https://docs.airbyte.com/platform/connector-development/config-based/advanced-topics/parameters for details.",
+        title="$parameters",
+    )
 
 
 class RecordSelector(BaseModel):
@@ -2099,7 +2362,12 @@ class RecordSelector(BaseModel):
         description="If true, transformation will be applied before record filtering.",
         title="Transform Before Filtering",
     )
-    parameters: Optional[ParametersProp] = Field(None, alias="$parameters")
+    parameters: Optional[Dict[str, Any]] = Field(
+        None,
+        alias="$parameters",
+        description="Set parameters that are inherited by all child components. Parameters are automatically applied to component fields unless that field already has a value. Parameters propagate recursively to nested components. See https://docs.airbyte.com/platform/connector-development/config-based/advanced-topics/parameters for details.",
+        title="$parameters",
+    )
 
 
 class PaginationReset(BaseModel):
@@ -2186,7 +2454,12 @@ class CompositeErrorHandler(BaseModel):
             title="Error Handlers",
         )
     )
-    parameters: Optional[ParametersProp] = Field(None, alias="$parameters")
+    parameters: Optional[Dict[str, Any]] = Field(
+        None,
+        alias="$parameters",
+        description="Set parameters that are inherited by all child components. Parameters are automatically applied to component fields unless that field already has a value. Parameters propagate recursively to nested components. See https://docs.airbyte.com/platform/connector-development/config-based/advanced-topics/parameters for details.",
+        title="$parameters",
+    )
 
 
 class HTTPAPIBudget(BaseModel):
@@ -2424,7 +2697,12 @@ class SelectiveAuthenticator(BaseModel):
         ],
         title="Authenticators",
     )
-    parameters: Optional[ParametersProp] = Field(None, alias="$parameters")
+    parameters: Optional[Dict[str, Any]] = Field(
+        None,
+        alias="$parameters",
+        description="Set parameters that are inherited by all child components. Parameters are automatically applied to component fields unless that field already has a value. Parameters propagate recursively to nested components. See https://docs.airbyte.com/platform/connector-development/config-based/advanced-topics/parameters for details.",
+        title="$parameters",
+    )
 
 
 class ConditionalStreams(BaseModel):
@@ -2440,7 +2718,12 @@ class ConditionalStreams(BaseModel):
         description="Streams that will be used during an operation based on the condition.",
         title="Streams",
     )
-    parameters: Optional[ParametersProp] = Field(None, alias="$parameters")
+    parameters: Optional[Dict[str, Any]] = Field(
+        None,
+        alias="$parameters",
+        description="Set parameters that are inherited by all child components. Parameters are automatically applied to component fields unless that field already has a value. Parameters propagate recursively to nested components. See https://docs.airbyte.com/platform/connector-development/config-based/advanced-topics/parameters for details.",
+        title="$parameters",
+    )
 
 
 class FileUploader(BaseModel):
@@ -2465,7 +2748,12 @@ class FileUploader(BaseModel):
             "{{ record.id }}_{{ record.file_name }}/",
         ],
     )
-    parameters: Optional[ParametersProp] = Field(None, alias="$parameters")
+    parameters: Optional[Dict[str, Any]] = Field(
+        None,
+        alias="$parameters",
+        description="Set parameters that are inherited by all child components. Parameters are automatically applied to component fields unless that field already has a value. Parameters propagate recursively to nested components. See https://docs.airbyte.com/platform/connector-development/config-based/advanced-topics/parameters for details.",
+        title="$parameters",
+    )
 
 
 class DeclarativeStream(BaseModel):
@@ -2579,7 +2867,12 @@ class SessionTokenAuthenticator(BaseModel):
     decoder: Optional[Union[JsonDecoder, XmlDecoder]] = Field(
         None, description="Component used to decode the response.", title="Decoder"
     )
-    parameters: Optional[ParametersProp] = Field(None, alias="$parameters")
+    parameters: Optional[Dict[str, Any]] = Field(
+        None,
+        alias="$parameters",
+        description="Set parameters that are inherited by all child components. Parameters are automatically applied to component fields unless that field already has a value. Parameters propagate recursively to nested components. See https://docs.airbyte.com/platform/connector-development/config-based/advanced-topics/parameters for details.",
+        title="$parameters",
+    )
 
 
 class HttpRequester(BaseModelWithDeprecations):
@@ -2721,7 +3014,12 @@ class HttpRequester(BaseModelWithDeprecations):
         description="Enables stream requests caching. This field is automatically set by the CDK.",
         title="Use Cache",
     )
-    parameters: Optional[ParametersProp] = Field(None, alias="$parameters")
+    parameters: Optional[Dict[str, Any]] = Field(
+        None,
+        alias="$parameters",
+        description="Set parameters that are inherited by all child components. Parameters are automatically applied to component fields unless that field already has a value. Parameters propagate recursively to nested components. See https://docs.airbyte.com/platform/connector-development/config-based/advanced-topics/parameters for details.",
+        title="$parameters",
+    )
 
 
 class DynamicSchemaLoader(BaseModel):
@@ -2755,7 +3053,12 @@ class DynamicSchemaLoader(BaseModel):
         title="Schema Transformations",
     )
     schema_type_identifier: SchemaTypeIdentifier
-    parameters: Optional[ParametersProp] = Field(None, alias="$parameters")
+    parameters: Optional[Dict[str, Any]] = Field(
+        None,
+        alias="$parameters",
+        description="Set parameters that are inherited by all child components. Parameters are automatically applied to component fields unless that field already has a value. Parameters propagate recursively to nested components. See https://docs.airbyte.com/platform/connector-development/config-based/advanced-topics/parameters for details.",
+        title="$parameters",
+    )
 
 
 class ParentStreamConfig(BaseModel):
@@ -2795,7 +3098,12 @@ class ParentStreamConfig(BaseModel):
         description="Array of field paths to include as additional fields in the stream slice. Each path is an array of strings representing keys to access fields in the respective parent record. Accessible via `stream_slice.extra_fields`. Missing fields are set to `None`.",
         title="Extra Fields",
     )
-    parameters: Optional[ParametersProp] = Field(None, alias="$parameters")
+    parameters: Optional[Dict[str, Any]] = Field(
+        None,
+        alias="$parameters",
+        description="Set parameters that are inherited by all child components. Parameters are automatically applied to component fields unless that field already has a value. Parameters propagate recursively to nested components. See https://docs.airbyte.com/platform/connector-development/config-based/advanced-topics/parameters for details.",
+        title="$parameters",
+    )
 
 
 class PropertiesFromEndpoint(BaseModel):
@@ -2809,7 +3117,12 @@ class PropertiesFromEndpoint(BaseModel):
         ...,
         description="Requester component that describes how to fetch the properties to query from a remote API endpoint.",
     )
-    parameters: Optional[ParametersProp] = Field(None, alias="$parameters")
+    parameters: Optional[Dict[str, Any]] = Field(
+        None,
+        alias="$parameters",
+        description="Set parameters that are inherited by all child components. Parameters are automatically applied to component fields unless that field already has a value. Parameters propagate recursively to nested components. See https://docs.airbyte.com/platform/connector-development/config-based/advanced-topics/parameters for details.",
+        title="$parameters",
+    )
 
 
 class QueryProperties(BaseModel):
@@ -2834,7 +3147,12 @@ class QueryProperties(BaseModel):
         description="Defines where to look for and which query properties that should be sent in outbound API requests. For example, you can specify that only the selected columns of a stream should be in the request.",
         title="Property Selector",
     )
-    parameters: Optional[ParametersProp] = Field(None, alias="$parameters")
+    parameters: Optional[Dict[str, Any]] = Field(
+        None,
+        alias="$parameters",
+        description="Set parameters that are inherited by all child components. Parameters are automatically applied to component fields unless that field already has a value. Parameters propagate recursively to nested components. See https://docs.airbyte.com/platform/connector-development/config-based/advanced-topics/parameters for details.",
+        title="$parameters",
+    )
 
 
 class StateDelegatingStream(BaseModel):
@@ -2850,7 +3168,12 @@ class StateDelegatingStream(BaseModel):
         description="Component used to coordinate how records are extracted across stream slices and request pages when the state provided.",
         title="Incremental Stream",
     )
-    parameters: Optional[ParametersProp] = Field(None, alias="$parameters")
+    parameters: Optional[Dict[str, Any]] = Field(
+        None,
+        alias="$parameters",
+        description="Set parameters that are inherited by all child components. Parameters are automatically applied to component fields unless that field already has a value. Parameters propagate recursively to nested components. See https://docs.airbyte.com/platform/connector-development/config-based/advanced-topics/parameters for details.",
+        title="$parameters",
+    )
 
 
 class SimpleRetriever(BaseModel):
@@ -2911,7 +3234,12 @@ class SimpleRetriever(BaseModel):
         description="Used to iteratively execute requests over a set of values, such as a parent stream's records or a list of constant values.",
         title="Partition Router",
     )
-    parameters: Optional[ParametersProp] = Field(None, alias="$parameters")
+    parameters: Optional[Dict[str, Any]] = Field(
+        None,
+        alias="$parameters",
+        description="Set parameters that are inherited by all child components. Parameters are automatically applied to component fields unless that field already has a value. Parameters propagate recursively to nested components. See https://docs.airbyte.com/platform/connector-development/config-based/advanced-topics/parameters for details.",
+        title="$parameters",
+    )
 
 
 class AsyncRetriever(BaseModel):
@@ -3017,7 +3345,12 @@ class AsyncRetriever(BaseModel):
         description="Component decoding the download response so records can be extracted.",
         title="Download HTTP Response Format",
     )
-    parameters: Optional[ParametersProp] = Field(None, alias="$parameters")
+    parameters: Optional[Dict[str, Any]] = Field(
+        None,
+        alias="$parameters",
+        description="Set parameters that are inherited by all child components. Parameters are automatically applied to component fields unless that field already has a value. Parameters propagate recursively to nested components. See https://docs.airbyte.com/platform/connector-development/config-based/advanced-topics/parameters for details.",
+        title="$parameters",
+    )
 
 
 class SubstreamPartitionRouter(BaseModel):
@@ -3027,7 +3360,12 @@ class SubstreamPartitionRouter(BaseModel):
         description="Specifies which parent streams are being iterated over and how parent records should be used to partition the child stream data set.",
         title="Parent Stream Configs",
     )
-    parameters: Optional[ParametersProp] = Field(None, alias="$parameters")
+    parameters: Optional[Dict[str, Any]] = Field(
+        None,
+        alias="$parameters",
+        description="Set parameters that are inherited by all child components. Parameters are automatically applied to component fields unless that field already has a value. Parameters propagate recursively to nested components. See https://docs.airbyte.com/platform/connector-development/config-based/advanced-topics/parameters for details.",
+        title="$parameters",
+    )
 
 
 class GroupingPartitionRouter(BaseModel):
@@ -3050,7 +3388,12 @@ class GroupingPartitionRouter(BaseModel):
         description="If true, ensures that partitions are unique within each group by removing duplicates based on the partition key.",
         title="Deduplicate Partitions",
     )
-    parameters: Optional[ParametersProp] = Field(None, alias="$parameters")
+    parameters: Optional[Dict[str, Any]] = Field(
+        None,
+        alias="$parameters",
+        description="Set parameters that are inherited by all child components. Parameters are automatically applied to component fields unless that field already has a value. Parameters propagate recursively to nested components. See https://docs.airbyte.com/platform/connector-development/config-based/advanced-topics/parameters for details.",
+        title="$parameters",
+    )
 
 
 class HttpComponentsResolver(BaseModel):
@@ -3061,7 +3404,12 @@ class HttpComponentsResolver(BaseModel):
         title="Retriever",
     )
     components_mapping: List[ComponentMappingDefinition]
-    parameters: Optional[ParametersProp] = Field(None, alias="$parameters")
+    parameters: Optional[Dict[str, Any]] = Field(
+        None,
+        alias="$parameters",
+        description="Set parameters that are inherited by all child components. Parameters are automatically applied to component fields unless that field already has a value. Parameters propagate recursively to nested components. See https://docs.airbyte.com/platform/connector-development/config-based/advanced-topics/parameters for details.",
+        title="$parameters",
+    )
 
 
 class DynamicDeclarativeStream(BaseModel):
