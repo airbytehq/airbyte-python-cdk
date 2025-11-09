@@ -103,6 +103,8 @@ definitions:
         description: Type of the value. If not specified, the type will be inferred from the value.
         "$ref": "#/definitions/ValueType"
       $parameters:
+        title: "$parameters"
+        description: "Set parameters that are inherited by all child components. Parameters are automatically applied to component fields unless that field already has a value. Parameters propagate recursively to nested components. See https://docs.airbyte.com/platform/connector-development/config-based/advanced-topics/parameters for details."
         type: object
         additionalProperties: true
   AddFields:
@@ -136,6 +138,8 @@ definitions:
           - "{{ property|length > 5 }}"
           - "{{ property == 'some_string_to_match' }}"
       $parameters:
+        title: "$parameters"
+        description: "Set parameters that are inherited by all child components. Parameters are automatically applied to component fields unless that field already has a value. Parameters propagate recursively to nested components. See https://docs.airbyte.com/platform/connector-development/config-based/advanced-topics/parameters for details."
         type: object
         additionalProperties: true
   ApiKeyAuthenticator:
@@ -177,6 +181,8 @@ definitions:
           - inject_into: request_parameter
             field_name: authKey
       $parameters:
+        title: "$parameters"
+        description: "Set parameters that are inherited by all child components. Parameters are automatically applied to component fields unless that field already has a value. Parameters propagate recursively to nested components. See https://docs.airbyte.com/platform/connector-development/config-based/advanced-topics/parameters for details."
         type: object
         additionalProperties: true
   AuthFlow:
@@ -241,6 +247,8 @@ definitions:
           - "{{ config['password'] }}"
           - ""
       $parameters:
+        title: "$parameters"
+        description: "Set parameters that are inherited by all child components. Parameters are automatically applied to component fields unless that field already has a value. Parameters propagate recursively to nested components. See https://docs.airbyte.com/platform/connector-development/config-based/advanced-topics/parameters for details."
         type: object
         additionalProperties: true
   BearerAuthenticator:
@@ -264,6 +272,8 @@ definitions:
           - "{{ config['api_key'] }}"
           - "{{ config['token'] }}"
       $parameters:
+        title: "$parameters"
+        description: "Set parameters that are inherited by all child components. Parameters are automatically applied to component fields unless that field already has a value. Parameters propagate recursively to nested components. See https://docs.airbyte.com/platform/connector-development/config-based/advanced-topics/parameters for details."
         type: object
         additionalProperties: true
   SelectiveAuthenticator:
@@ -309,6 +319,8 @@ definitions:
               oauth: "#/definitions/OAuthAuthenticator"
               jwt: "#/definitions/JwtAuthenticator"
       $parameters:
+        title: "$parameters"
+        description: "Set parameters that are inherited by all child components. Parameters are automatically applied to component fields unless that field already has a value. Parameters propagate recursively to nested components. See https://docs.airbyte.com/platform/connector-development/config-based/advanced-topics/parameters for details."
         type: object
         additionalProperties: true
   CheckStream:
@@ -393,6 +405,8 @@ definitions:
             - "$ref": "#/definitions/DefaultErrorHandler"
             - "$ref": "#/definitions/CustomErrorHandler"
       $parameters:
+        title: "$parameters"
+        description: "Set parameters that are inherited by all child components. Parameters are automatically applied to component fields unless that field already has a value. Parameters propagate recursively to nested components. See https://docs.airbyte.com/platform/connector-development/config-based/advanced-topics/parameters for details."
         type: object
         additionalProperties: true
   ConcurrencyLevel:
@@ -424,6 +438,8 @@ definitions:
           - 20
           - 100
       $parameters:
+        title: "$parameters"
+        description: "Set parameters that are inherited by all child components. Parameters are automatically applied to component fields unless that field already has a value. Parameters propagate recursively to nested components. See https://docs.airbyte.com/platform/connector-development/config-based/advanced-topics/parameters for details."
         type: object
         additionalProperties: true
   ConditionalStreams:
@@ -454,6 +470,8 @@ definitions:
         items:
           "$ref": "#/definitions/DeclarativeStream"
       $parameters:
+        title: "$parameters"
+        description: "Set parameters that are inherited by all child components. Parameters are automatically applied to component fields unless that field already has a value. Parameters propagate recursively to nested components. See https://docs.airbyte.com/platform/connector-development/config-based/advanced-topics/parameters for details."
         type: object
         additionalProperties: true
   ConstantBackoffStrategy:
@@ -482,6 +500,8 @@ definitions:
           - 30.5
           - "{{ config['backoff_time'] }}"
       $parameters:
+        title: "$parameters"
+        description: "Set parameters that are inherited by all child components. Parameters are automatically applied to component fields unless that field already has a value. Parameters propagate recursively to nested components. See https://docs.airbyte.com/platform/connector-development/config-based/advanced-topics/parameters for details."
         type: object
         additionalProperties: true
   CursorPagination:
@@ -528,6 +548,8 @@ definitions:
           - "{{ response.data.has_more is false }}"
           - "{{ 'next' not in headers['link'] }}"
       $parameters:
+        title: "$parameters"
+        description: "Set parameters that are inherited by all child components. Parameters are automatically applied to component fields unless that field already has a value. Parameters propagate recursively to nested components. See https://docs.airbyte.com/platform/connector-development/config-based/advanced-topics/parameters for details."
         type: object
         additionalProperties: true
   CustomAuthenticator:
@@ -550,6 +572,8 @@ definitions:
         examples:
           - "source_railz.components.ShortLivedTokenAuthenticator"
       $parameters:
+        title: "$parameters"
+        description: "Set parameters that are inherited by all child components. Parameters are automatically applied to component fields unless that field already has a value. Parameters propagate recursively to nested components. See https://docs.airbyte.com/platform/connector-development/config-based/advanced-topics/parameters for details."
         type: object
         additionalProperties: true
   CustomBackoffStrategy:
@@ -571,6 +595,8 @@ definitions:
         examples:
           - "source_railz.components.MyCustomBackoffStrategy"
       $parameters:
+        title: "$parameters"
+        description: "Set parameters that are inherited by all child components. Parameters are automatically applied to component fields unless that field already has a value. Parameters propagate recursively to nested components. See https://docs.airbyte.com/platform/connector-development/config-based/advanced-topics/parameters for details."
         type: object
         additionalProperties: true
   CustomErrorHandler:
@@ -592,6 +618,8 @@ definitions:
         examples:
           - "source_railz.components.MyCustomErrorHandler"
       $parameters:
+        title: "$parameters"
+        description: "Set parameters that are inherited by all child components. Parameters are automatically applied to component fields unless that field already has a value. Parameters propagate recursively to nested components. See https://docs.airbyte.com/platform/connector-development/config-based/advanced-topics/parameters for details."
         type: object
         additionalProperties: true
   CustomPaginationStrategy:
@@ -613,6 +641,8 @@ definitions:
         examples:
           - "source_railz.components.MyCustomPaginationStrategy"
       $parameters:
+        title: "$parameters"
+        description: "Set parameters that are inherited by all child components. Parameters are automatically applied to component fields unless that field already has a value. Parameters propagate recursively to nested components. See https://docs.airbyte.com/platform/connector-development/config-based/advanced-topics/parameters for details."
         type: object
         additionalProperties: true
   CustomRecordExtractor:
@@ -634,6 +664,8 @@ definitions:
         examples:
           - "source_railz.components.MyCustomRecordExtractor"
       $parameters:
+        title: "$parameters"
+        description: "Set parameters that are inherited by all child components. Parameters are automatically applied to component fields unless that field already has a value. Parameters propagate recursively to nested components. See https://docs.airbyte.com/platform/connector-development/config-based/advanced-topics/parameters for details."
         type: object
         additionalProperties: true
   CustomRecordFilter:
@@ -655,6 +687,8 @@ definitions:
         examples:
           - "source_railz.components.MyCustomCustomRecordFilter"
       $parameters:
+        title: "$parameters"
+        description: "Set parameters that are inherited by all child components. Parameters are automatically applied to component fields unless that field already has a value. Parameters propagate recursively to nested components. See https://docs.airbyte.com/platform/connector-development/config-based/advanced-topics/parameters for details."
         type: object
         additionalProperties: true
   CustomRequester:
@@ -677,6 +711,8 @@ definitions:
         examples:
           - "source_railz.components.MyCustomRecordExtractor"
       $parameters:
+        title: "$parameters"
+        description: "Set parameters that are inherited by all child components. Parameters are automatically applied to component fields unless that field already has a value. Parameters propagate recursively to nested components. See https://docs.airbyte.com/platform/connector-development/config-based/advanced-topics/parameters for details."
         type: object
         additionalProperties: true
   CustomRetriever:
@@ -699,6 +735,8 @@ definitions:
         examples:
           - "source_railz.components.MyCustomRetriever"
       $parameters:
+        title: "$parameters"
+        description: "Set parameters that are inherited by all child components. Parameters are automatically applied to component fields unless that field already has a value. Parameters propagate recursively to nested components. See https://docs.airbyte.com/platform/connector-development/config-based/advanced-topics/parameters for details."
         type: object
         additionalProperties: true
   CustomPartitionRouter:
@@ -720,6 +758,8 @@ definitions:
         examples:
           - "source_railz.components.MyCustomPartitionRouter"
       $parameters:
+        title: "$parameters"
+        description: "Set parameters that are inherited by all child components. Parameters are automatically applied to component fields unless that field already has a value. Parameters propagate recursively to nested components. See https://docs.airbyte.com/platform/connector-development/config-based/advanced-topics/parameters for details."
         type: object
         additionalProperties: true
   CustomSchemaLoader:
@@ -741,6 +781,8 @@ definitions:
         examples:
           - "source_railz.components.MyCustomSchemaLoader"
       $parameters:
+        title: "$parameters"
+        description: "Set parameters that are inherited by all child components. Parameters are automatically applied to component fields unless that field already has a value. Parameters propagate recursively to nested components. See https://docs.airbyte.com/platform/connector-development/config-based/advanced-topics/parameters for details."
         type: object
         additionalProperties: true
   CustomSchemaNormalization:
@@ -763,6 +805,8 @@ definitions:
         examples:
           - "source_amazon_seller_partner.components.LedgerDetailedViewReportsTypeTransformer"
       $parameters:
+        title: "$parameters"
+        description: "Set parameters that are inherited by all child components. Parameters are automatically applied to component fields unless that field already has a value. Parameters propagate recursively to nested components. See https://docs.airbyte.com/platform/connector-development/config-based/advanced-topics/parameters for details."
         type: object
         additionalProperties: true
   CustomStateMigration:
@@ -784,6 +828,8 @@ definitions:
         examples:
           - "source_railz.components.MyCustomStateMigration"
       $parameters:
+        title: "$parameters"
+        description: "Set parameters that are inherited by all child components. Parameters are automatically applied to component fields unless that field already has a value. Parameters propagate recursively to nested components. See https://docs.airbyte.com/platform/connector-development/config-based/advanced-topics/parameters for details."
         type: object
         additionalProperties: true
   CustomTransformation:
@@ -805,6 +851,8 @@ definitions:
         examples:
           - "source_railz.components.MyCustomTransformation"
       $parameters:
+        title: "$parameters"
+        description: "Set parameters that are inherited by all child components. Parameters are automatically applied to component fields unless that field already has a value. Parameters propagate recursively to nested components. See https://docs.airbyte.com/platform/connector-development/config-based/advanced-topics/parameters for details."
         type: object
         additionalProperties: true
   LegacyToPerPartitionStateMigration:
@@ -866,6 +914,8 @@ definitions:
         description: Optionally configures how the start value will be sent in requests to the source API.
         "$ref": "#/definitions/RequestOption"
       $parameters:
+        title: "$parameters"
+        description: "Set parameters that are inherited by all child components. Parameters are automatically applied to component fields unless that field already has a value. Parameters propagate recursively to nested components. See https://docs.airbyte.com/platform/connector-development/config-based/advanced-topics/parameters for details."
         type: object
         additionalProperties: true
   DatetimeBasedCursor:
@@ -1146,6 +1196,8 @@ definitions:
           - "P1M"
           - "P1Y"
       $parameters:
+        title: "$parameters"
+        description: "Set parameters that are inherited by all child components. Parameters are automatically applied to component fields unless that field already has a value. Parameters propagate recursively to nested components. See https://docs.airbyte.com/platform/connector-development/config-based/advanced-topics/parameters for details."
         type: object
         additionalProperties: true
   JwtAuthenticator:
@@ -1282,6 +1334,8 @@ definitions:
         description: A request option describing where the signed JWT token that is generated should be injected into the outbound API request.
         "$ref": "#/definitions/RequestOption"
       $parameters:
+        title: "$parameters"
+        description: "Set parameters that are inherited by all child components. Parameters are automatically applied to component fields unless that field already has a value. Parameters propagate recursively to nested components. See https://docs.airbyte.com/platform/connector-development/config-based/advanced-topics/parameters for details."
         type: object
         additionalProperties: true
   OAuthAuthenticator:
@@ -1502,6 +1556,8 @@ definitions:
         type: boolean
         default: false
       $parameters:
+        title: "$parameters"
+        description: "Set parameters that are inherited by all child components. Parameters are automatically applied to component fields unless that field already has a value. Parameters propagate recursively to nested components. See https://docs.airbyte.com/platform/connector-development/config-based/advanced-topics/parameters for details."
         type: object
         additionalProperties: true
   DeclarativeStream:
@@ -1626,6 +1682,8 @@ definitions:
             type: object
             additionalProperties: true
       $parameters:
+        title: "$parameters"
+        description: "Set parameters that are inherited by all child components. Parameters are automatically applied to component fields unless that field already has a value. Parameters propagate recursively to nested components. See https://docs.airbyte.com/platform/connector-development/config-based/advanced-topics/parameters for details."
         type: object
         additional_properties: true
   HTTPAPIBudget:
@@ -1833,6 +1891,8 @@ definitions:
         items:
           "$ref": "#/definitions/HttpResponseFilter"
       $parameters:
+        title: "$parameters"
+        description: "Set parameters that are inherited by all child components. Parameters are automatically applied to component fields unless that field already has a value. Parameters propagate recursively to nested components. See https://docs.airbyte.com/platform/connector-development/config-based/advanced-topics/parameters for details."
         type: object
         additional_properties: true
   DefaultPaginator:
@@ -1864,6 +1924,8 @@ definitions:
           - "$ref": "#/definitions/RequestOption"
           - "$ref": "#/definitions/RequestPath"
       $parameters:
+        title: "$parameters"
+        description: "Set parameters that are inherited by all child components. Parameters are automatically applied to component fields unless that field already has a value. Parameters propagate recursively to nested components. See https://docs.airbyte.com/platform/connector-development/config-based/advanced-topics/parameters for details."
         type: object
         additionalProperties: true
   DpathExtractor:
@@ -1891,6 +1953,8 @@ definitions:
           - ["data", "{{ parameters.name }}"]
           - ["data", "*", "record"]
       $parameters:
+        title: "$parameters"
+        description: "Set parameters that are inherited by all child components. Parameters are automatically applied to component fields unless that field already has a value. Parameters propagate recursively to nested components. See https://docs.airbyte.com/platform/connector-development/config-based/advanced-topics/parameters for details."
         type: object
         additionalProperties: true
   ResponseToFileExtractor:
@@ -1904,6 +1968,8 @@ definitions:
         type: string
         enum: [ResponseToFileExtractor]
       $parameters:
+        title: "$parameters"
+        description: "Set parameters that are inherited by all child components. Parameters are automatically applied to component fields unless that field already has a value. Parameters propagate recursively to nested components. See https://docs.airbyte.com/platform/connector-development/config-based/advanced-topics/parameters for details."
         type: object
         additionalProperties: true
   ExponentialBackoffStrategy:
@@ -1930,6 +1996,8 @@ definitions:
           - 5.5
           - "10"
       $parameters:
+        title: "$parameters"
+        description: "Set parameters that are inherited by all child components. Parameters are automatically applied to component fields unless that field already has a value. Parameters propagate recursively to nested components. See https://docs.airbyte.com/platform/connector-development/config-based/advanced-topics/parameters for details."
         type: object
         additionalProperties: true
   GroupByKeyMergeStrategy:
@@ -1954,6 +2022,8 @@ definitions:
           - "id"
           - ["parent_id", "end_date"]
       $parameters:
+        title: "$parameters"
+        description: "Set parameters that are inherited by all child components. Parameters are automatically applied to component fields unless that field already has a value. Parameters propagate recursively to nested components. See https://docs.airbyte.com/platform/connector-development/config-based/advanced-topics/parameters for details."
         type: object
         additionalProperties: true
   SessionTokenAuthenticator:
@@ -2016,6 +2086,8 @@ definitions:
           - "$ref": "#/definitions/JsonDecoder"
           - "$ref": "#/definitions/XmlDecoder"
       $parameters:
+        title: "$parameters"
+        description: "Set parameters that are inherited by all child components. Parameters are automatically applied to component fields unless that field already has a value. Parameters propagate recursively to nested components. See https://docs.airbyte.com/platform/connector-development/config-based/advanced-topics/parameters for details."
         type: object
         additionalProperties: true
   SessionTokenRequestApiKeyAuthenticator:
@@ -2260,6 +2332,8 @@ definitions:
         type: boolean
         default: false
       $parameters:
+        title: "$parameters"
+        description: "Set parameters that are inherited by all child components. Parameters are automatically applied to component fields unless that field already has a value. Parameters propagate recursively to nested components. See https://docs.airbyte.com/platform/connector-development/config-based/advanced-topics/parameters for details."
         type: object
         additionalProperties: true
   HttpResponseFilter:
@@ -2336,6 +2410,8 @@ definitions:
           - "{{ 'Too much requests' in response }}"
           - "{{ 'error_code' in response and response['error_code'] == 'ComplexityException' }}"
       $parameters:
+        title: "$parameters"
+        description: "Set parameters that are inherited by all child components. Parameters are automatically applied to component fields unless that field already has a value. Parameters propagate recursively to nested components. See https://docs.airbyte.com/platform/connector-development/config-based/advanced-topics/parameters for details."
         type: object
         additionalProperties: true
   ComplexFieldType:
@@ -2416,6 +2492,8 @@ definitions:
         items:
           "$ref": "#/definitions/TypesMap"
       $parameters:
+        title: "$parameters"
+        description: "Set parameters that are inherited by all child components. Parameters are automatically applied to component fields unless that field already has a value. Parameters propagate recursively to nested components. See https://docs.airbyte.com/platform/connector-development/config-based/advanced-topics/parameters for details."
         type: object
         additionalProperties: true
   DynamicSchemaLoader:
@@ -2460,6 +2538,8 @@ definitions:
       schema_type_identifier:
         "$ref": "#/definitions/SchemaTypeIdentifier"
       $parameters:
+        title: "$parameters"
+        description: "Set parameters that are inherited by all child components. Parameters are automatically applied to component fields unless that field already has a value. Parameters propagate recursively to nested components. See https://docs.airbyte.com/platform/connector-development/config-based/advanced-topics/parameters for details."
         type: object
         additionalProperties: true
   InlineSchemaLoader:
@@ -2498,6 +2578,8 @@ definitions:
         example:
           - "./schemas/users.json"
       $parameters:
+        title: "$parameters"
+        description: "Set parameters that are inherited by all child components. Parameters are automatically applied to component fields unless that field already has a value. Parameters propagate recursively to nested components. See https://docs.airbyte.com/platform/connector-development/config-based/advanced-topics/parameters for details."
         type: object
         additionalProperties: true
   JsonDecoder:
@@ -2546,6 +2628,8 @@ definitions:
             - "$ref": "#/definitions/KeysReplace"
             - "$ref": "#/definitions/CustomTransformation"
       $parameters:
+        title: "$parameters"
+        description: "Set parameters that are inherited by all child components. Parameters are automatically applied to component fields unless that field already has a value. Parameters propagate recursively to nested components. See https://docs.airbyte.com/platform/connector-development/config-based/advanced-topics/parameters for details."
         type: object
         additionalProperties: true
   KeysToLower:
@@ -2559,6 +2643,8 @@ definitions:
         type: string
         enum: [KeysToLower]
       $parameters:
+        title: "$parameters"
+        description: "Set parameters that are inherited by all child components. Parameters are automatically applied to component fields unless that field already has a value. Parameters propagate recursively to nested components. See https://docs.airbyte.com/platform/connector-development/config-based/advanced-topics/parameters for details."
         type: object
         additionalProperties: true
   KeysToSnakeCase:
@@ -2572,6 +2658,8 @@ definitions:
         type: string
         enum: [KeysToSnakeCase]
       $parameters:
+        title: "$parameters"
+        description: "Set parameters that are inherited by all child components. Parameters are automatically applied to component fields unless that field already has a value. Parameters propagate recursively to nested components. See https://docs.airbyte.com/platform/connector-development/config-based/advanced-topics/parameters for details."
         type: object
         additionalProperties: true
   FlattenFields:
@@ -2590,6 +2678,8 @@ definitions:
         type: boolean
         default: true
       $parameters:
+        title: "$parameters"
+        description: "Set parameters that are inherited by all child components. Parameters are automatically applied to component fields unless that field already has a value. Parameters propagate recursively to nested components. See https://docs.airbyte.com/platform/connector-development/config-based/advanced-topics/parameters for details."
         type: object
         additionalProperties: true
   KeyTransformation:
@@ -2647,6 +2737,8 @@ definitions:
         type: object
         "$ref": "#/definitions/KeyTransformation"
       $parameters:
+        title: "$parameters"
+        description: "Set parameters that are inherited by all child components. Parameters are automatically applied to component fields unless that field already has a value. Parameters propagate recursively to nested components. See https://docs.airbyte.com/platform/connector-development/config-based/advanced-topics/parameters for details."
         type: object
         additionalProperties: true
   KeysReplace:
@@ -2688,6 +2780,8 @@ definitions:
           - record
           - stream_slice
       $parameters:
+        title: "$parameters"
+        description: "Set parameters that are inherited by all child components. Parameters are automatically applied to component fields unless that field already has a value. Parameters propagate recursively to nested components. See https://docs.airbyte.com/platform/connector-development/config-based/advanced-topics/parameters for details."
         type: object
         additionalProperties: true
   IterableDecoder:
@@ -2730,6 +2824,8 @@ definitions:
         examples:
           - "source_amazon_ads.components.GzipJsonlDecoder"
       $parameters:
+        title: "$parameters"
+        description: "Set parameters that are inherited by all child components. Parameters are automatically applied to component fields unless that field already has a value. Parameters propagate recursively to nested components. See https://docs.airbyte.com/platform/connector-development/config-based/advanced-topics/parameters for details."
         type: object
         additionalProperties: true
   ZipfileDecoder:
@@ -2791,6 +2887,8 @@ definitions:
         description: A request option describing where the list value should be injected into and under what field name if applicable.
         "$ref": "#/definitions/RequestOption"
       $parameters:
+        title: "$parameters"
+        description: "Set parameters that are inherited by all child components. Parameters are automatically applied to component fields unless that field already has a value. Parameters propagate recursively to nested components. See https://docs.airbyte.com/platform/connector-development/config-based/advanced-topics/parameters for details."
         type: object
         additionalProperties: true
   MinMaxDatetime:
@@ -2886,6 +2984,8 @@ definitions:
           - "2010-01-01T00:00:00Z"
           - "2010-01-01"
       $parameters:
+        title: "$parameters"
+        description: "Set parameters that are inherited by all child components. Parameters are automatically applied to component fields unless that field already has a value. Parameters propagate recursively to nested components. See https://docs.airbyte.com/platform/connector-development/config-based/advanced-topics/parameters for details."
         type: object
         additionalProperties: true
   NoAuth:
@@ -2899,6 +2999,8 @@ definitions:
         type: string
         enum: [NoAuth]
       $parameters:
+        title: "$parameters"
+        description: "Set parameters that are inherited by all child components. Parameters are automatically applied to component fields unless that field already has a value. Parameters propagate recursively to nested components. See https://docs.airbyte.com/platform/connector-development/config-based/advanced-topics/parameters for details."
         type: object
         additionalProperties: true
   NoPagination:
@@ -3216,6 +3318,8 @@ definitions:
         type: boolean
         default: false
       $parameters:
+        title: "$parameters"
+        description: "Set parameters that are inherited by all child components. Parameters are automatically applied to component fields unless that field already has a value. Parameters propagate recursively to nested components. See https://docs.airbyte.com/platform/connector-development/config-based/advanced-topics/parameters for details."
         type: object
         additionalProperties: true
   PageIncrement:
@@ -3256,6 +3360,8 @@ definitions:
         type: boolean
         default: false
       $parameters:
+        title: "$parameters"
+        description: "Set parameters that are inherited by all child components. Parameters are automatically applied to component fields unless that field already has a value. Parameters propagate recursively to nested components. See https://docs.airbyte.com/platform/connector-development/config-based/advanced-topics/parameters for details."
         type: object
         additionalProperties: true
   ParentStreamConfig:
@@ -3324,6 +3430,8 @@ definitions:
             - ["field1"]
             - ["nested", "field2"]
       $parameters:
+        title: "$parameters"
+        description: "Set parameters that are inherited by all child components. Parameters are automatically applied to component fields unless that field already has a value. Parameters propagate recursively to nested components. See https://docs.airbyte.com/platform/connector-development/config-based/advanced-topics/parameters for details."
         type: object
         additionalProperties: true
   PrimaryKey:
@@ -3379,6 +3487,8 @@ definitions:
           - "$ref": "#/definitions/SimpleRetriever"
           - "$ref": "#/definitions/CustomRetriever"
       $parameters:
+        title: "$parameters"
+        description: "Set parameters that are inherited by all child components. Parameters are automatically applied to component fields unless that field already has a value. Parameters propagate recursively to nested components. See https://docs.airbyte.com/platform/connector-development/config-based/advanced-topics/parameters for details."
         type: object
         additionalProperties: true
   PropertyChunking:
@@ -3407,6 +3517,8 @@ definitions:
         description: Dictates how to records that require multiple requests to get all properties should be emitted to the destination
         "$ref": "#/definitions/GroupByKeyMergeStrategy"
       $parameters:
+        title: "$parameters"
+        description: "Set parameters that are inherited by all child components. Parameters are automatically applied to component fields unless that field already has a value. Parameters propagate recursively to nested components. See https://docs.airbyte.com/platform/connector-development/config-based/advanced-topics/parameters for details."
         type: object
         additionalProperties: true
   QueryProperties:
@@ -3443,6 +3555,8 @@ definitions:
         description: Defines where to look for and which query properties that should be sent in outbound API requests. For example, you can specify that only the selected columns of a stream should be in the request.
         "$ref": "#/definitions/JsonSchemaPropertySelector"
       $parameters:
+        title: "$parameters"
+        description: "Set parameters that are inherited by all child components. Parameters are automatically applied to component fields unless that field already has a value. Parameters propagate recursively to nested components. See https://docs.airbyte.com/platform/connector-development/config-based/advanced-topics/parameters for details."
         type: object
         additionalProperties: true
   RecordFilter:
@@ -3471,6 +3585,8 @@ definitions:
           - "{{ record['created_at'] >= stream_interval['start_time'] }}"
           - "{{ record.status in ['active', 'expired'] }}"
       $parameters:
+        title: "$parameters"
+        description: "Set parameters that are inherited by all child components. Parameters are automatically applied to component fields unless that field already has a value. Parameters propagate recursively to nested components. See https://docs.airbyte.com/platform/connector-development/config-based/advanced-topics/parameters for details."
         type: object
         additionalProperties: true
   RecordSelector:
@@ -3505,6 +3621,8 @@ definitions:
         description: If true, transformation will be applied before record filtering.
         type: boolean
       $parameters:
+        title: "$parameters"
+        description: "Set parameters that are inherited by all child components. Parameters are automatically applied to component fields unless that field already has a value. Parameters propagate recursively to nested components. See https://docs.airbyte.com/platform/connector-development/config-based/advanced-topics/parameters for details."
         type: object
         additionalProperties: true
   SchemaNormalization:
@@ -3671,6 +3789,8 @@ definitions:
         examples:
           - "user/current"
       $parameters:
+        title: "$parameters"
+        description: "Set parameters that are inherited by all child components. Parameters are automatically applied to component fields unless that field already has a value. Parameters propagate recursively to nested components. See https://docs.airbyte.com/platform/connector-development/config-based/advanced-topics/parameters for details."
         type: object
         additionalProperties: true
   StateDelegatingStream:
@@ -3702,6 +3822,8 @@ definitions:
         description: Component used to coordinate how records are extracted across stream slices and request pages when the state provided.
         "$ref": "#/definitions/DeclarativeStream"
       $parameters:
+        title: "$parameters"
+        description: "Set parameters that are inherited by all child components. Parameters are automatically applied to component fields unless that field already has a value. Parameters propagate recursively to nested components. See https://docs.airbyte.com/platform/connector-development/config-based/advanced-topics/parameters for details."
         type: object
         additionalProperties: true
   SimpleRetriever:
@@ -3766,6 +3888,8 @@ definitions:
                 - "$ref": "#/definitions/GroupingPartitionRouter"
                 - "$ref": "#/definitions/CustomPartitionRouter"
       $parameters:
+        title: "$parameters"
+        description: "Set parameters that are inherited by all child components. Parameters are automatically applied to component fields unless that field already has a value. Parameters propagate recursively to nested components. See https://docs.airbyte.com/platform/connector-development/config-based/advanced-topics/parameters for details."
         type: object
         additionalProperties: true
   PaginationReset:
@@ -3985,6 +4109,8 @@ definitions:
           - "$ref": "#/definitions/ZipfileDecoder"
           - "$ref": "#/definitions/CustomDecoder"
       $parameters:
+        title: "$parameters"
+        description: "Set parameters that are inherited by all child components. Parameters are automatically applied to component fields unless that field already has a value. Parameters propagate recursively to nested components. See https://docs.airbyte.com/platform/connector-development/config-based/advanced-topics/parameters for details."
         type: object
         additionalProperties: true
   Spec:
@@ -4093,6 +4219,8 @@ definitions:
         items:
           "$ref": "#/definitions/ParentStreamConfig"
       $parameters:
+        title: "$parameters"
+        description: "Set parameters that are inherited by all child components. Parameters are automatically applied to component fields unless that field already has a value. Parameters propagate recursively to nested components. See https://docs.airbyte.com/platform/connector-development/config-based/advanced-topics/parameters for details."
         type: object
         additionalProperties: true
   ValueType:
@@ -4136,6 +4264,8 @@ definitions:
         examples:
           - 3600
       $parameters:
+        title: "$parameters"
+        description: "Set parameters that are inherited by all child components. Parameters are automatically applied to component fields unless that field already has a value. Parameters propagate recursively to nested components. See https://docs.airbyte.com/platform/connector-development/config-based/advanced-topics/parameters for details."
         type: object
         additionalProperties: true
   GroupingPartitionRouter:
@@ -4174,6 +4304,8 @@ definitions:
         type: boolean
         default: true
       $parameters:
+        title: "$parameters"
+        description: "Set parameters that are inherited by all child components. Parameters are automatically applied to component fields unless that field already has a value. Parameters propagate recursively to nested components. See https://docs.airbyte.com/platform/connector-development/config-based/advanced-topics/parameters for details."
         type: object
         additionalProperties: true
   WaitUntilTimeFromHeader:
@@ -4215,6 +4347,8 @@ definitions:
         examples:
           - "([-+]?\\d+)"
       $parameters:
+        title: "$parameters"
+        description: "Set parameters that are inherited by all child components. Parameters are automatically applied to component fields unless that field already has a value. Parameters propagate recursively to nested components. See https://docs.airbyte.com/platform/connector-development/config-based/advanced-topics/parameters for details."
         type: object
         additionalProperties: true
   ComponentMappingDefinition:
@@ -4282,6 +4416,8 @@ definitions:
           - "{{ components_values.get('cursor_field', None) }}"
           - "{{ '_incremental' in components_values.get('stream_name', '') }}"
       $parameters:
+        title: "$parameters"
+        description: "Set parameters that are inherited by all child components. Parameters are automatically applied to component fields unless that field already has a value. Parameters propagate recursively to nested components. See https://docs.airbyte.com/platform/connector-development/config-based/advanced-topics/parameters for details."
         type: object
         additionalProperties: true
   HttpComponentsResolver:
@@ -4304,6 +4440,8 @@ definitions:
         items:
           "$ref": "#/definitions/ComponentMappingDefinition"
       $parameters:
+        title: "$parameters"
+        description: "Set parameters that are inherited by all child components. Parameters are automatically applied to component fields unless that field already has a value. Parameters propagate recursively to nested components. See https://docs.airbyte.com/platform/connector-development/config-based/advanced-topics/parameters for details."
         type: object
         additionalProperties: true
     required:
@@ -4340,6 +4478,8 @@ definitions:
         items:
           type: object
       $parameters:
+        title: "$parameters"
+        description: "Set parameters that are inherited by all child components. Parameters are automatically applied to component fields unless that field already has a value. Parameters propagate recursively to nested components. See https://docs.airbyte.com/platform/connector-development/config-based/advanced-topics/parameters for details."
         type: object
         additionalProperties: true
   ConfigComponentsResolver:
@@ -4361,6 +4501,8 @@ definitions:
         items:
           "$ref": "#/definitions/ComponentMappingDefinition"
       $parameters:
+        title: "$parameters"
+        description: "Set parameters that are inherited by all child components. Parameters are automatically applied to component fields unless that field already has a value. Parameters propagate recursively to nested components. See https://docs.airbyte.com/platform/connector-development/config-based/advanced-topics/parameters for details."
         type: object
         additionalProperties: true
     required:
@@ -4407,6 +4549,8 @@ definitions:
         items:
           "$ref": "#/definitions/ComponentMappingDefinition"
       $parameters:
+        title: "$parameters"
+        description: "Set parameters that are inherited by all child components. Parameters are automatically applied to component fields unless that field already has a value. Parameters propagate recursively to nested components. See https://docs.airbyte.com/platform/connector-development/config-based/advanced-topics/parameters for details."
         type: object
         additionalProperties: true
     required:
@@ -4773,6 +4917,8 @@ definitions:
         examples:
           - "source_declarative_manifest.components.MyCustomConfigTransformation"
       $parameters:
+        title: "$parameters"
+        description: "Set parameters that are inherited by all child components. Parameters are automatically applied to component fields unless that field already has a value. Parameters propagate recursively to nested components. See https://docs.airbyte.com/platform/connector-development/config-based/advanced-topics/parameters for details."
         type: object
         description: Additional parameters to be passed to the custom config transformation.
         additionalProperties: true
