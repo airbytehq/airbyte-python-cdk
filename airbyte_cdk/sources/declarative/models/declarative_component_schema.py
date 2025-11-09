@@ -14,7 +14,6 @@ from airbyte_cdk.sources.declarative.models.base_model_with_deprecations import 
 
 
 class ParametersProp(BaseModel):
-    pass
 
     class Config:
         extra = Extra.allow
