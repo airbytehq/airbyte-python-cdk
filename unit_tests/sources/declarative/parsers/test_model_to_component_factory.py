@@ -744,7 +744,26 @@ def test_create_substream_partition_router():
         "", resolved_manifest["partition_router"], {}
     )
 
-    partition_router = factory.create_component(
+    model_to_component_factory = ModelToComponentFactory()
+    model_to_component_factory.set_api_budget(
+        {
+            "type": "HTTPAPIBudget",
+            "policies": [
+                {
+                    "type": "MovingWindowCallRatePolicy",
+                    "rates": [
+                        {
+                            "limit": 1,
+                            "interval": "PT60S",
+                        }
+                    ],
+                    "matchers": [],
+                }
+            ],
+        },
+        input_config,
+    )
+    partition_router = model_to_component_factory.create_component(
         model_type=SubstreamPartitionRouterModel,
         component_definition=partition_router_manifest,
         config=input_config,
@@ -756,6 +775,14 @@ def test_create_substream_partition_router():
     assert len(parent_stream_configs) == 2
     assert isinstance(parent_stream_configs[0].stream, DefaultStream)
     assert isinstance(parent_stream_configs[1].stream, DefaultStream)
+
+    # ensure api budget
+    assert get_retriever(
+        parent_stream_configs[0].stream
+    ).requester._http_client._api_budget._policies
+    assert get_retriever(
+        parent_stream_configs[1].stream
+    ).requester._http_client._api_budget._policies
 
     assert partition_router.parent_stream_configs[0].parent_key.eval({}) == "id"
     assert partition_router.parent_stream_configs[0].partition_field.eval({}) == "repository_id"

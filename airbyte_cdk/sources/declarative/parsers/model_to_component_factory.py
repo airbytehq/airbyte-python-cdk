@@ -685,6 +685,7 @@ class ModelToComponentFactory:
         connector_state_manager: Optional[ConnectorStateManager] = None,
         max_concurrent_async_job_count: Optional[int] = None,
         configured_catalog: Optional[ConfiguredAirbyteCatalog] = None,
+        api_budget: Optional[APIBudget] = None,
     ):
         self._init_mappings()
         self._limit_pages_fetched_per_slice = limit_pages_fetched_per_slice
@@ -699,7 +700,7 @@ class ModelToComponentFactory:
             configured_catalog
         )
         self._connector_state_manager = connector_state_manager or ConnectorStateManager()
-        self._api_budget: Optional[Union[APIBudget, HttpAPIBudget]] = None
+        self._api_budget: Optional[Union[APIBudget]] = api_budget
         self._job_tracker: JobTracker = JobTracker(max_concurrent_async_job_count or 1)
         # placeholder for deprecation warnings
         self._collected_deprecation_logs: List[ConnectorBuilderLogMessage] = []
@@ -3945,6 +3946,7 @@ class ModelToComponentFactory:
                     self._evaluate_log_level(self._emit_connector_builder_messages),
                 ),
             ),
+            api_budget=self._api_budget,
         )
 
         return substream_factory.create_parent_stream_config(
