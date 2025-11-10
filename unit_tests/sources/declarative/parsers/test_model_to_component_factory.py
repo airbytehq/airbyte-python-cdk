@@ -636,9 +636,9 @@ def test_single_use_oauth_branch():
     # default values
     assert authenticator._access_token_config_path == ["credentials", "access_token"]
     assert authenticator._token_expiry_date_config_path == ["credentials", "token_expiry_date"]
-    assert authenticator._refresh_token_error_status_codes == [400]
+    assert authenticator._refresh_token_error_status_codes == (400,)
     assert authenticator._refresh_token_error_key == "error"
-    assert authenticator._refresh_token_error_values == ["invalid_grant"]
+    assert authenticator._refresh_token_error_values == ("invalid_grant",)
 
 
 def test_list_based_stream_slicer_with_values_refd():

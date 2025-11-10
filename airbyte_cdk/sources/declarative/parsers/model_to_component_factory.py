@@ -18,6 +18,7 @@ from typing import (
     Mapping,
     MutableMapping,
     Optional,
+    Tuple,
     Type,
     Union,
     cast,
@@ -399,6 +400,9 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     RecordSelector as RecordSelectorModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    RefreshTokenUpdater as RefreshTokenUpdaterModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     RemoveFields as RemoveFieldsModel,
@@ -2789,6 +2793,9 @@ class ModelToComponentFactory:
             else None
         )
 
+        refresh_token_error_status_codes, refresh_token_error_key, refresh_token_error_values = (
+            self._get_refresh_token_error_information(model)
+        )
         if model.refresh_token_updater:
             # ignore type error because fixing it would have a lot of dependencies, revisit later
             return DeclarativeSingleUseRefreshTokenOauth2Authenticator(  # type: ignore
@@ -2839,9 +2846,9 @@ class ModelToComponentFactory:
                 token_expiry_date_format=model.token_expiry_date_format,
                 token_expiry_is_time_of_expiration=bool(model.token_expiry_date_format),
                 message_repository=self._message_repository,
-                refresh_token_error_status_codes=model.refresh_token_updater.refresh_token_error_status_codes,
-                refresh_token_error_key=model.refresh_token_updater.refresh_token_error_key,
-                refresh_token_error_values=model.refresh_token_updater.refresh_token_error_values,
+                refresh_token_error_status_codes=refresh_token_error_status_codes,
+                refresh_token_error_key=refresh_token_error_key,
+                refresh_token_error_values=refresh_token_error_values,
             )
         # ignore type error because fixing it would have a lot of dependencies, revisit later
         return DeclarativeOauth2Authenticator(  # type: ignore
@@ -2868,7 +2875,58 @@ class ModelToComponentFactory:
             message_repository=self._message_repository,
             profile_assertion=profile_assertion,
             use_profile_assertion=model.use_profile_assertion,
+            refresh_token_error_status_codes=refresh_token_error_status_codes,
+            refresh_token_error_key=refresh_token_error_key,
+            refresh_token_error_values=refresh_token_error_values,
         )
+
+    @staticmethod
+    def _get_refresh_token_error_information(
+        model: OAuthAuthenticatorModel,
+    ) -> Tuple[Tuple[int, ...], str, Tuple[str, ...]]:
+        """
+        In a previous version of the CDK, the auth error as config_error was only done if a refresh token updater was
+        defined. As a transition, we added those fields on the OAuthAuthenticatorModel. This method ensures that the
+        information is defined only once and return the right fields.
+        """
+        refresh_token_updater = model.refresh_token_updater
+        is_defined_on_refresh_token_updated = refresh_token_updater and (
+            refresh_token_updater.refresh_token_error_status_codes
+            or refresh_token_updater.refresh_token_error_key
+            or refresh_token_updater.refresh_token_error_values
+        )
+        is_defined_on_oauth_authenticator = (
+            model.refresh_token_error_status_codes
+            or model.refresh_token_error_key
+            or model.refresh_token_error_values
+        )
+        if is_defined_on_refresh_token_updated and is_defined_on_oauth_authenticator:
+            raise ValueError(
+                "refresh_token_error should either be defined on the OAuthAuthenticatorModel or the RefreshTokenUpdaterModel, not both"
+            )
+
+        if is_defined_on_refresh_token_updated:
+            not_optional_refresh_token_updater: RefreshTokenUpdaterModel = refresh_token_updater  # type: ignore  # we know from the condition that this is not None
+            return (
+                tuple(not_optional_refresh_token_updater.refresh_token_error_status_codes)
+                if not_optional_refresh_token_updater.refresh_token_error_status_codes
+                else (),
+                not_optional_refresh_token_updater.refresh_token_error_key or "",
+                tuple(not_optional_refresh_token_updater.refresh_token_error_values)
+                if not_optional_refresh_token_updater.refresh_token_error_values
+                else (),
+            )
+        elif is_defined_on_oauth_authenticator:
+            return (
+                tuple(model.refresh_token_error_status_codes)
+                if model.refresh_token_error_status_codes
+                else (),
+                model.refresh_token_error_key or "",
+                tuple(model.refresh_token_error_values) if model.refresh_token_error_values else (),
+            )
+
+        # returning default values we think cover most cases
+        return (400,), "error", ("invalid_grant", "invalid_permissions")
 
     def create_offset_increment(
         self,
