@@ -184,3 +184,33 @@ def test_inferred_schema_loader_with_arrays():
     assert "properties" in schema
     assert "tags" in schema["properties"]
     assert "array" in schema["properties"]["tags"]["type"]
+
+
+def test_inferred_schema_loader_caches_schema():
+    """Test that InferredSchemaLoader caches the schema and doesn't re-read records on subsequent calls."""
+    retriever = MagicMock()
+    retriever.stream_slices.return_value = iter([None])
+    retriever.read_records.return_value = iter(
+        [
+            {"id": 1, "name": "Alice"},
+            {"id": 2, "name": "Bob"},
+        ]
+    )
+
+    config = MagicMock()
+    parameters = {"name": "users"}
+    loader = InferredSchemaLoader(
+        retriever=retriever,
+        config=config,
+        parameters=parameters,
+        record_sample_size=2,
+        stream_name="users",
+    )
+
+    schema1 = loader.get_json_schema()
+    schema2 = loader.get_json_schema()
+    schema3 = loader.get_json_schema()
+
+    assert schema1 == schema2 == schema3
+    assert retriever.stream_slices.call_count == 1
+    assert retriever.read_records.call_count == 1

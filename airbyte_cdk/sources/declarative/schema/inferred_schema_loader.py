@@ -2,6 +2,7 @@
 # Copyright (c) 2025 Airbyte, Inc., all rights reserved.
 #
 
+import threading
 from collections.abc import Mapping as ABCMapping
 from collections.abc import Sequence
 from dataclasses import InitVar, dataclass
@@ -69,44 +70,54 @@ class InferredSchemaLoader(SchemaLoader):
             raise ValueError(
                 "stream_name must be provided either directly or via the 'name' parameter"
             )
+        self._cached_schema: Mapping[str, Any] | None = None
+        self._lock = threading.Lock()
 
     def get_json_schema(self) -> Mapping[str, Any]:
         """
         Infers and returns a JSON schema by reading a sample of records from the stream.
 
         This method reads up to `record_sample_size` records from the stream and uses
-        the SchemaInferrer to generate a JSON schema. If no records are available,
-        it returns an empty schema.
+        the SchemaInferrer to generate a JSON schema. The schema is cached after the first
+        call to avoid re-reading records on subsequent calls (e.g., during partition reads).
 
         Returns:
             A mapping representing the inferred JSON schema for the stream
         """
-        schema_inferrer = SchemaInferrer()
+        if self._cached_schema is not None:
+            return self._cached_schema
 
-        record_count = 0
-        for stream_slice in self.retriever.stream_slices():
-            for record in self.retriever.read_records(records_schema={}, stream_slice=stream_slice):
+        with self._lock:
+            if self._cached_schema is not None:
+                return self._cached_schema
+
+            schema_inferrer = SchemaInferrer()
+
+            record_count = 0
+            for stream_slice in self.retriever.stream_slices():
+                for record in self.retriever.read_records(records_schema={}, stream_slice=stream_slice):
+                    if record_count >= self.record_sample_size:
+                        break
+
+                    # Convert all Mapping-like and Sequence-like objects to plain Python types
+                    # This is necessary because genson doesn't handle custom implementations properly
+                    record = _to_builtin_types(record)
+
+                    airbyte_record = AirbyteRecordMessage(
+                        stream=self.stream_name,
+                        data=record,  # type: ignore[arg-type]
+                        emitted_at=0,
+                    )
+
+                    schema_inferrer.accumulate(airbyte_record)
+                    record_count += 1
+
                 if record_count >= self.record_sample_size:
                     break
 
-                # Convert all Mapping-like and Sequence-like objects to plain Python types
-                # This is necessary because genson doesn't handle custom implementations properly
-                record = _to_builtin_types(record)
+            inferred_schema: Mapping[str, Any] | None = schema_inferrer.get_stream_schema(
+                self.stream_name
+            )
 
-                airbyte_record = AirbyteRecordMessage(
-                    stream=self.stream_name,
-                    data=record,  # type: ignore[arg-type]
-                    emitted_at=0,
-                )
-
-                schema_inferrer.accumulate(airbyte_record)
-                record_count += 1
-
-            if record_count >= self.record_sample_size:
-                break
-
-        inferred_schema: Mapping[str, Any] | None = schema_inferrer.get_stream_schema(
-            self.stream_name
-        )
-
-        return inferred_schema if inferred_schema else {}
+            self._cached_schema = inferred_schema if inferred_schema else {}
+            return self._cached_schema
