@@ -202,7 +202,10 @@ class DeclarativeStream(Stream):
             return self.retriever.cursor
         return None
 
-    def fetch_record(self, pk_value: Any) -> Optional[Mapping[str, Any]]:
+    def fetch_record(
+        self,
+        pk_value: Any | Mapping[str, Any],
+    ) -> Optional[Mapping[str, Any]]:
         """
         Fetch a single record by primary key value.
 
