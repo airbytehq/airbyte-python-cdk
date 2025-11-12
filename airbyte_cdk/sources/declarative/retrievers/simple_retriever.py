@@ -675,11 +675,11 @@ class SimpleRetriever(Retriever):
         )
 
         if isinstance(pk_value, str):
-            fetch_path = f"{base_path}/{pk_value}".replace("//", "/")
+            fetch_path = f"{base_path.rstrip('/')}/{str(pk_value).lstrip('/')}"
         elif isinstance(pk_value, Mapping):
-            sorted_values = [str(pk_value[key]) for key in sorted(pk_value.keys())]
+            sorted_values = [str(pk_value[key]).lstrip("/") for key in sorted(pk_value.keys())]
             pk_path_segment = "/".join(sorted_values)
-            fetch_path = f"{base_path}/{pk_path_segment}".replace("//", "/")
+            fetch_path = f"{base_path.rstrip('/')}/{pk_path_segment}"
         else:
             raise ValueError(f"pk_value must be a string or dict, got {type(pk_value).__name__}")
 
