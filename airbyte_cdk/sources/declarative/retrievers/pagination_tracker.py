@@ -1,6 +1,8 @@
+# Copyright (c) 2025 Airbyte, Inc., all rights reserved.
+
 from typing import Optional
 
-from airbyte_cdk.sources.declarative.models import FailureType
+from airbyte_cdk.models import FailureType
 from airbyte_cdk.sources.declarative.types import Record, StreamSlice
 from airbyte_cdk.sources.streams.concurrent.cursor import ConcurrentCursor
 from airbyte_cdk.utils.traced_exception import AirbyteTracedException
@@ -44,10 +46,21 @@ class PaginationTracker:
     def _reset(self) -> None:
         self._record_count = 0
 
-    def reduce_slice_range_if_possible(self, stream_slice: StreamSlice) -> StreamSlice:
-        new_slice = self._cursor.reduce_slice_range(stream_slice) if self._cursor else stream_slice
+    def reduce_slice_range_if_possible(
+        self, previous_stream_slice: StreamSlice, original_stream_slice: StreamSlice
+    ) -> StreamSlice:
+        """
+        :param previous_stream_slice: Stream slice that was just processed (It can be the same as original_stream_slice or already reduced)
+        :param original_stream_slice: The original stream slice before any reduction
+        :return: Reduced stream slice
+        """
+        new_slice = (
+            self._cursor.reduce_slice_range(original_stream_slice)
+            if self._cursor
+            else previous_stream_slice
+        )
 
-        if new_slice == stream_slice:
+        if new_slice == previous_stream_slice:
             self._number_of_attempt_with_same_slice += 1
             if (
                 self._number_of_attempt_with_same_slice

@@ -48,7 +48,7 @@ class TestPaginationTracker(TestCase):
         tracker = PaginationTracker(max_number_of_records=2)
 
         tracker.observe(_A_RECORD)
-        tracker.reduce_slice_range_if_possible(_A_STREAM_SLICE)
+        tracker.reduce_slice_range_if_possible(_A_STREAM_SLICE, _A_STREAM_SLICE)
         tracker.observe(_A_RECORD)
 
         assert not tracker.has_reached_limit()
@@ -57,7 +57,7 @@ class TestPaginationTracker(TestCase):
         tracker = PaginationTracker()
         original_slice = StreamSlice(partition={}, cursor_slice={})
 
-        result_slice = tracker.reduce_slice_range_if_possible(original_slice)
+        result_slice = tracker.reduce_slice_range_if_possible(original_slice, original_slice)
 
         assert result_slice == original_slice
 
@@ -65,23 +65,32 @@ class TestPaginationTracker(TestCase):
         tracker = PaginationTracker()
         original_slice = StreamSlice(partition={}, cursor_slice={})
 
-        tracker.reduce_slice_range_if_possible(original_slice)
+        tracker.reduce_slice_range_if_possible(original_slice, original_slice)
         with pytest.raises(AirbyteTracedException):
-            tracker.reduce_slice_range_if_possible(original_slice)
+            tracker.reduce_slice_range_if_possible(original_slice, original_slice)
 
     def test_given_cursor_when_reduce_slice_range_then_return_cursor_stream_slice(self):
         tracker = PaginationTracker(cursor=self._cursor)
         self._cursor.reduce_slice_range.return_value = _A_STREAM_SLICE
 
         new_slice = tracker.reduce_slice_range_if_possible(
-            StreamSlice(partition={}, cursor_slice={})
+            StreamSlice(partition={}, cursor_slice={}), StreamSlice(partition={}, cursor_slice={})
         )
 
         assert new_slice == _A_STREAM_SLICE
 
     def test_given_cursor_cant_reduce_slice_when_reduce_slice_range_then_raise(self):
         tracker = PaginationTracker(cursor=self._cursor)
+        original_slice = StreamSlice(partition={}, cursor_slice={})
         self._cursor.reduce_slice_range.return_value = _A_STREAM_SLICE
 
         with pytest.raises(AirbyteTracedException):
-            tracker.reduce_slice_range_if_possible(_A_STREAM_SLICE)
+            tracker.reduce_slice_range_if_possible(_A_STREAM_SLICE, original_slice)
+
+    def test_cursor_called_with_original_slice_when_reduce_slice_range(self):
+        tracker = PaginationTracker(cursor=self._cursor)
+        original_slice = StreamSlice(partition={}, cursor_slice={})
+
+        tracker.reduce_slice_range_if_possible(_A_STREAM_SLICE, original_slice)
+
+        self._cursor.reduce_slice_range.assert_called_once_with(original_slice)
