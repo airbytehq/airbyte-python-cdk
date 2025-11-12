@@ -26,6 +26,7 @@ from typing_extensions import deprecated
 from airbyte_cdk.legacy.sources.declarative.incremental import ResumableFullRefreshCursor
 from airbyte_cdk.legacy.sources.declarative.incremental.declarative_cursor import DeclarativeCursor
 from airbyte_cdk.models import AirbyteMessage
+from airbyte_cdk.sources.declarative.exceptions import RecordNotFoundException
 from airbyte_cdk.sources.declarative.extractors.http_selector import HttpSelector
 from airbyte_cdk.sources.declarative.interpolation import InterpolatedString
 from airbyte_cdk.sources.declarative.partition_routers.single_partition_router import (
@@ -713,14 +714,17 @@ class SimpleRetriever(Retriever):
                 log_formatter=self.log_formatter,
             )
         except Exception as e:
-            # Check if this is a 404 (record not found) - return None
-            if hasattr(e, "response") and hasattr(e.response, "status_code"):
-                if e.response.status_code == 404:
-                    return None
+            # Check if this is a 404 (record not found) - raise RecordNotFoundException
+            if "404" in str(e) or (hasattr(e, "response") and hasattr(e.response, "status_code") and e.response.status_code == 404):
+                raise RecordNotFoundException(
+                    f"Record with primary key {pk_value} not found"
+                ) from e
             raise
 
         if not response:
-            return None
+            raise RecordNotFoundException(
+                f"Record with primary key {pk_value} not found (no response)"
+            )
 
         records = list(
             self._parse_response(
@@ -732,7 +736,7 @@ class SimpleRetriever(Retriever):
             )
         )
 
-        # Return the first record if found, None otherwise
+        # Return the first record if found, raise RecordNotFoundException otherwise
         if records:
             first_record = records[0]
             if isinstance(first_record, Record):
@@ -740,8 +744,12 @@ class SimpleRetriever(Retriever):
             elif isinstance(first_record, Mapping):
                 return dict(first_record)
             else:
-                return None
-        return None
+                raise RecordNotFoundException(
+                    f"Record with primary key {pk_value} not found (invalid record type)"
+                )
+        raise RecordNotFoundException(
+            f"Record with primary key {pk_value} not found (empty response)"
+        )
 
 
 def _deep_merge(

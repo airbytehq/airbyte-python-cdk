@@ -24,6 +24,7 @@ from airbyte_cdk.models import (
 )
 from airbyte_cdk.sources.declarative.auth.declarative_authenticator import NoAuth
 from airbyte_cdk.sources.declarative.decoders import JsonDecoder
+from airbyte_cdk.sources.declarative.exceptions import RecordNotFoundException
 from airbyte_cdk.sources.declarative.extractors import DpathExtractor, HttpSelector, RecordSelector
 from airbyte_cdk.sources.declarative.partition_routers import SinglePartitionRouter
 from airbyte_cdk.sources.declarative.requesters.paginators import DefaultPaginator, Paginator
@@ -1719,7 +1720,7 @@ def test_fetch_one_composite_pk():
 
 
 def test_fetch_one_not_found():
-    """Test fetch_one returns None when record is not found (404)."""
+    """Test fetch_one raises RecordNotFoundException when record is not found (404)."""
     requester = MagicMock()
     requester.get_path.return_value = "posts"
 
@@ -1739,9 +1740,10 @@ def test_fetch_one_not_found():
         config={},
     )
 
-    result = retriever.fetch_one("999", records_schema={})
+    with pytest.raises(RecordNotFoundException) as exc_info:
+        retriever.fetch_one("999", records_schema={})
 
-    assert result is None
+    assert "999" in str(exc_info.value)
 
 
 def test_fetch_one_server_error():
@@ -1794,7 +1796,7 @@ def test_fetch_one_invalid_pk_type():
 
 
 def test_fetch_one_no_response():
-    """Test fetch_one returns None when response is None."""
+    """Test fetch_one raises RecordNotFoundException when response is None."""
     requester = MagicMock()
     requester.get_path.return_value = "posts"
     requester.send_request.return_value = None
@@ -1810,13 +1812,14 @@ def test_fetch_one_no_response():
         config={},
     )
 
-    result = retriever.fetch_one("123", records_schema={})
+    with pytest.raises(RecordNotFoundException) as exc_info:
+        retriever.fetch_one("123", records_schema={})
 
-    assert result is None
+    assert "123" in str(exc_info.value)
 
 
 def test_fetch_one_empty_records():
-    """Test fetch_one returns None when no records are returned."""
+    """Test fetch_one raises RecordNotFoundException when no records are returned."""
     requester = MagicMock()
     requester.get_path.return_value = "posts"
 
@@ -1838,6 +1841,7 @@ def test_fetch_one_empty_records():
         config={},
     )
 
-    result = retriever.fetch_one("123", records_schema={})
+    with pytest.raises(RecordNotFoundException) as exc_info:
+        retriever.fetch_one("123", records_schema={})
 
-    assert result is None
+    assert "123" in str(exc_info.value)
