@@ -74,6 +74,11 @@ class FileBasedStreamConfig(BaseModel):
         default=None,
         gt=0,
     )
+    use_first_found_file_for_schema_discovery: Optional[bool] = Field(
+        title="Use first found file for schema discovery",
+        description="When enable, the source will use the first found file for schema discovery. Helps to avoid long discovery step",
+        default=False,
+    )
 
     @validator("input_schema", pre=True)
     def validate_input_schema(cls, v: Optional[str]) -> Optional[str]:
