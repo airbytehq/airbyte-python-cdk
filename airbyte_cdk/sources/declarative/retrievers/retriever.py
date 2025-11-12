@@ -30,7 +30,6 @@ class Retriever:
         :return: The records read from the API source
         """
 
-    @abstractmethod
     @deprecated("Stream slicing is being moved to the stream level.")
     def stream_slices(self) -> Iterable[Optional[StreamSlice]]:
         """Does nothing as this method is deprecated, so underlying Retriever implementations

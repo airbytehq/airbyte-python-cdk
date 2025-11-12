@@ -530,6 +530,9 @@ class LazySimpleRetriever(SimpleRetriever):
 
             yield from []
         else:
+            # coderabbit detected an interesting bug/gap where if we were to not get a child_response, we
+            # might recurse forever. This might not be the case, but it is worth noting that this code path
+            # isn't comprehensively tested.
             yield from self._read_pages(records_generator_fn, stream_slice)
 
     def _paginate(
