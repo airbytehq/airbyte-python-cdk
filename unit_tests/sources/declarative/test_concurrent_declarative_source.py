@@ -3290,7 +3290,7 @@ def _create_page(response_body):
             )
             * 10,
             [{"ABC": 0}, {"AED": 1}],
-            [call({}, {}, None)],
+            [call({}, None)],
         ),
         (
             "test_read_manifest_with_added_fields",
@@ -3377,7 +3377,7 @@ def _create_page(response_body):
                 {"ABC": 0, "added_field_key": "added_field_value"},
                 {"AED": 1, "added_field_key": "added_field_value"},
             ],
-            [call({}, {}, None)],
+            [call({}, None)],
         ),
         (
             "test_read_manifest_with_flatten_fields",
@@ -3461,7 +3461,7 @@ def _create_page(response_body):
                 {"ABC": 0, "id": 1},
                 {"AED": 1, "id": 2},
             ],
-            [call({}, {}, None)],
+            [call({}, None)],
         ),
         (
             "test_read_with_pagination_no_partitions",
@@ -3548,8 +3548,8 @@ def _create_page(response_body):
             * 10,
             [{"ABC": 0}, {"AED": 1}, {"USD": 2}],
             [
-                call({}, {}, None),
-                call({}, {}, {"next_page_token": "next"}),
+                call({}, None),
+                call({}, {"next_page_token": "next"}),
             ],
         ),
         (
@@ -3635,8 +3635,8 @@ def _create_page(response_body):
             ),
             [{"ABC": 0, "partition": 0}, {"AED": 1, "partition": 0}, {"ABC": 2, "partition": 1}],
             [
-                call({}, {"partition": "0"}, None),
-                call({}, {"partition": "1"}, None),
+                call({"partition": "0"}, None),
+                call({"partition": "1"}, None),
             ],
         ),
         (
@@ -3739,9 +3739,9 @@ def _create_page(response_body):
                 {"ABC": 2, "partition": 1},
             ],
             [
-                call({}, {"partition": "0"}, None),
-                call({}, {"partition": "0"}, {"next_page_token": "next"}),
-                call({}, {"partition": "1"}, None),
+                call({"partition": "0"}, None),
+                call({"partition": "0"}, {"next_page_token": "next"}),
+                call({"partition": "1"}, None),
             ],
         ),
     ],
