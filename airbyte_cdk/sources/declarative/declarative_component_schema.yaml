@@ -1427,6 +1427,28 @@ definitions:
         type: string
         examples:
           - "%Y-%m-%d %H:%M:%S.%f+00:00"
+      refresh_token_error_status_codes:
+        title: Refresh Token Error Status Codes
+        description: Status Codes to Identify refresh token error in response (Refresh Token Error Key and Refresh Token Error Values should be also specified). Responses with one of the error status code and containing an error value will be flagged as a config error
+        type: array
+        items:
+          type: integer
+        examples:
+          - [400, 500]
+      refresh_token_error_key:
+        title: Refresh Token Error Key
+        description: Key to Identify refresh token error in response (Refresh Token Error Status Codes and Refresh Token Error Values should be also specified).
+        type: string
+        examples:
+          - "error"
+      refresh_token_error_values:
+        title: Refresh Token Error Values
+        description: 'List of values to check for exception during token refresh process. Used to check if the error found in the response matches the key from the Refresh Token Error Key field (e.g. response={"error": "invalid_grant"}). Only responses with one of the error status code and containing an error value will be flagged as a config error'
+        type: array
+        items:
+          type: string
+        examples:
+          - ["invalid_grant", "invalid_permissions"]
       refresh_token_updater:
         title: Refresh Token Updater
         description: When the refresh token updater is defined, new refresh tokens, access tokens and the access token expiry date are written back from the authentication response to the config object. This is important if the refresh token can only used once.
@@ -1468,7 +1490,7 @@ definitions:
             examples:
               - ["credentials", "token_expiry_date"]
           refresh_token_error_status_codes:
-            title: Refresh Token Error Status Codes
+            title: (Deprecated - Use the same field on the OAuthAuthenticator level) Refresh Token Error Status Codes
             description: Status Codes to Identify refresh token error in response (Refresh Token Error Key and Refresh Token Error Values should be also specified). Responses with one of the error status code and containing an error value will be flagged as a config error
             type: array
             items:
@@ -1477,14 +1499,14 @@ definitions:
             examples:
               - [400, 500]
           refresh_token_error_key:
-            title: Refresh Token Error Key
+            title: (Deprecated - Use the same field on the OAuthAuthenticator level) Refresh Token Error Key
             description: Key to Identify refresh token error in response (Refresh Token Error Status Codes and Refresh Token Error Values should be also specified).
             type: string
             default: ""
             examples:
               - "error"
           refresh_token_error_values:
-            title: Refresh Token Error Values
+            title: (Deprecated - Use the same field on the OAuthAuthenticator level) Refresh Token Error Values
             description: 'List of values to check for exception during token refresh process. Used to check if the error found in the response matches the key from the Refresh Token Error Key field (e.g. response={"error": "invalid_grant"}). Only responses with one of the error status code and containing an error value will be flagged as a config error'
             type: array
             items:
