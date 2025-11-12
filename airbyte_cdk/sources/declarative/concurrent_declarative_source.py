@@ -507,6 +507,83 @@ class ConcurrentDeclarativeSource(Source):
             return AirbyteConnectionStatus(status=Status.FAILED, message=repr(error))
         return AirbyteConnectionStatus(status=Status.SUCCEEDED)
 
+    def fetch_record(
+        self,
+        stream_name: str,
+        pk_value: Any,
+        config: Optional[Mapping[str, Any]] = None,
+    ) -> Mapping[str, Any]:
+        """
+        Fetch a single record from a stream by primary key.
+
+        Args:
+            stream_name: Name of the stream to fetch from
+            pk_value: Primary key value to fetch. Can be:
+                     - str: For simple single-field primary keys (e.g., "123")
+                     - Mapping[str, Any]: For composite primary keys (e.g., {"company_id": "123", "property": "status"})
+            config: Source configuration (optional, uses instance config if not provided)
+
+        Returns:
+            The fetched record as a dict
+
+        Raises:
+            ValueError: If the stream name is not found in the source
+            NotImplementedError: If the stream doesn't support fetching individual records
+            RecordNotFoundException: If the record is not found (404 response)
+        """
+        from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+            DeclarativeStream as DeclarativeStreamModel,
+        )
+        from airbyte_cdk.sources.declarative.retrievers import SimpleRetriever
+        from airbyte_cdk.sources.declarative.schema import DefaultSchemaLoader
+
+        config = config or self._config
+
+        stream_configs = self._stream_configs(self._source_config) + self.dynamic_streams
+
+        stream_config = None
+        for config_item in stream_configs:
+            if config_item.get("name") == stream_name:
+                stream_config = config_item
+                break
+
+        if not stream_config:
+            available_streams = [c.get("name") for c in stream_configs]
+            raise ValueError(
+                f"Stream '{stream_name}' not found in source. "
+                f"Available streams: {', '.join(available_streams)}"
+            )
+
+        retriever = self._constructor.create_component(
+            DeclarativeStreamModel,
+            stream_config,
+            config,
+            emit_connector_builder_messages=self._emit_connector_builder_messages,
+        ).retriever
+
+        if not isinstance(retriever, SimpleRetriever):
+            raise NotImplementedError(
+                f"Stream '{stream_name}' does not support fetching individual records. "
+                "Only streams with SimpleRetriever currently support this operation."
+            )
+
+        schema_loader_config = stream_config.get("schema_loader")
+        if schema_loader_config:
+            schema_loader = self._constructor.create_component(
+                type(schema_loader_config),
+                schema_loader_config,
+                config,
+            )
+        else:
+            options = stream_config.get("parameters", {})
+            if "name" not in options:
+                options["name"] = stream_name
+            schema_loader = DefaultSchemaLoader(config=config, parameters=options)
+
+        return retriever.fetch_one(
+            pk_value=pk_value, records_schema=schema_loader.get_json_schema()
+        )
+
     @property
     def dynamic_streams(self) -> List[Dict[str, Any]]:
         return self._dynamic_stream_configs(

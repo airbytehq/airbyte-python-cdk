@@ -463,26 +463,6 @@ class Stream(ABC):
         """
         return self.cursor
 
-    def fetch_record(self, pk_value: Any) -> Optional[Mapping[str, Any]]:
-        """
-        Fetch a single record by primary key value.
-
-        Args:
-            pk_value: The primary key value. Can be:
-                     - str: For simple single-field primary keys (e.g., "123")
-                     - Mapping[str, Any]: For composite primary keys (e.g., {"company_id": "123", "property": "status"})
-
-        Returns:
-            The fetched record as a dict, or None if not found
-
-        Raises:
-            NotImplementedError: If the stream doesn't support fetching individual records
-        """
-        raise NotImplementedError(
-            f"Stream {self.name} does not support fetching individual records. "
-            "Only declarative streams with SimpleRetriever currently support this operation."
-        )
-
     def _get_checkpoint_reader(
         self,
         logger: logging.Logger,
