@@ -4,7 +4,7 @@
 
 import concurrent
 import logging
-from queue import Queue
+from queue import Queue, Empty
 from typing import Iterable, Iterator, List, Optional
 
 from airbyte_cdk.models import AirbyteMessage
@@ -143,17 +143,23 @@ class ConcurrentSource:
         queue: Queue[QueueItem],
         concurrent_stream_processor: ConcurrentReadProcessor,
     ) -> Iterable[AirbyteMessage]:
-        while airbyte_message_or_record_or_exception := queue.get():
-            yield from self._handle_item(
-                airbyte_message_or_record_or_exception,
-                concurrent_stream_processor,
-            )
-            # In the event that a partition raises an exception, anything remaining in
-            # the queue will be missed because is_done() can raise an exception and exit
-            # out of this loop before remaining items are consumed
-            if queue.empty() and concurrent_stream_processor.is_done():
-                # all partitions were generated and processed. we're done here
-                break
+        done = False
+        while not done:
+            try:
+                while airbyte_message_or_record_or_exception := queue.get(block=True, timeout=60.0 * 5):
+                    yield from self._handle_item(
+                        airbyte_message_or_record_or_exception,
+                        concurrent_stream_processor,
+                    )
+                    # In the event that a partition raises an exception, anything remaining in
+                    # the queue will be missed because is_done() can raise an exception and exit
+                    # out of this loop before remaining items are consumed
+                    if queue.empty() and concurrent_stream_processor.is_done():
+                        # all partitions were generated and processed. we're done here
+                        done = True
+                        break
+            except Empty:
+                self._logger.info("No result from the queue for the past 5 minutes. Will try again...")
 
     def _handle_item(
         self,

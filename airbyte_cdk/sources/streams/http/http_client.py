@@ -5,6 +5,7 @@
 import logging
 import os
 import urllib
+import uuid
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Mapping, Optional, Tuple, Union
 
@@ -329,9 +330,9 @@ class HttpClient:
             if hasattr(self._session, "auth") and isinstance(self._session.auth, AuthBase):
                 self._session.auth(request)
 
-        self._logger.debug(
-            "Making outbound API request",
-            extra={"headers": request.headers, "url": request.url, "request_body": request.body},
+        request_id = str(uuid.uuid4())
+        self._logger.info(
+            f"[{request_id}] Making outbound API request to {request.url}",
         )
 
         response: Optional[requests.Response] = None
@@ -346,23 +347,9 @@ class HttpClient:
             response if response is not None else exc
         )
 
-        # Evaluation of response.text can be heavy, for example, if streaming a large response
-        # Do it only in debug mode
-        if self._logger.isEnabledFor(logging.DEBUG) and response is not None:
-            if request_kwargs.get("stream"):
-                self._logger.debug(
-                    "Receiving response, but not logging it as the response is streamed",
-                    extra={"headers": response.headers, "status": response.status_code},
-                )
-            else:
-                self._logger.debug(
-                    "Receiving response",
-                    extra={
-                        "headers": response.headers,
-                        "status": response.status_code,
-                        "body": response.text,
-                    },
-                )
+        self._logger.info(
+            f"[{request_id}] Receiving response from {request.url}" + f" with exception {type(exc)}" if exc else ""
+        )
 
         # Request/response logging for declarative cdk
         if (
