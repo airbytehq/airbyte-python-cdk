@@ -26,6 +26,7 @@ from typing_extensions import deprecated
 from airbyte_cdk.legacy.sources.declarative.incremental import ResumableFullRefreshCursor
 from airbyte_cdk.legacy.sources.declarative.incremental.declarative_cursor import DeclarativeCursor
 from airbyte_cdk.models import AirbyteMessage
+from airbyte_cdk.sources.declarative.exceptions import RecordNotFoundException
 from airbyte_cdk.sources.declarative.extractors.http_selector import HttpSelector
 from airbyte_cdk.sources.declarative.interpolation import InterpolatedString
 from airbyte_cdk.sources.declarative.partition_routers.single_partition_router import (
@@ -625,6 +626,134 @@ class SimpleRetriever(Retriever):
     def _to_partition_key(to_serialize: Any) -> str:
         # separators have changed in Python 3.4. To avoid being impacted by further change, we explicitly specify our own value
         return json.dumps(to_serialize, indent=None, separators=(",", ":"), sort_keys=True)
+
+    def fetch_one(
+        self,
+        pk_value: Union[str, Mapping[str, Any]],
+        records_schema: Mapping[str, Any],
+    ) -> Optional[Mapping[str, Any]]:
+        """
+        Fetch a single record by primary key value.
+
+        This method constructs a path by appending the primary key value to the base path
+        and sends a GET request to fetch a single record. It's designed for REST APIs that
+        follow the convention: GET /resource/{id}
+
+        Args:
+            pk_value: The primary key value to fetch. Can be:
+                     - str: For simple single-field primary keys (e.g., "123")
+                     - Mapping[str, Any]: For composite primary keys (e.g., {"company_id": "123", "property": "status"})
+            records_schema: JSON schema describing the record structure
+
+        Returns:
+            The fetched record as a dict, or None if not found (404 response)
+
+        Raises:
+            Exception: For non-404 HTTP errors (propagated from requester's error handling)
+
+        Example:
+            record = retriever.fetch_one("123", schema)
+
+            record = retriever.fetch_one({"company_id": "123", "property": "status"}, schema)
+
+        Note:
+            This implementation uses convention-based path construction (Option B from design). (important-comment)
+            For simple PKs: appends /{pk_value} to base path (important-comment)
+            For composite PKs: appends /{value1}/{value2}/... in key order (important-comment)
+
+            Alternative approaches that could be implemented in the future: (important-comment)
+            - Path template interpolation: Use a configurable template like "{base_path}/{id}" (important-comment)
+              See: https://github.com/airbytehq/airbyte-python-cdk/issues/833#phase-1a (important-comment)
+            - Field path configuration: Allow specifying which response field contains the record (important-comment)
+              for APIs that wrap single records in envelopes like {"data": {...}} (important-comment)
+        """
+        # Get the base path from the requester
+        base_path = self.requester.get_path(
+            stream_state={},
+            stream_slice=StreamSlice(partition={}, cursor_slice={}),
+            next_page_token=None,
+        )
+
+        if isinstance(pk_value, str):
+            fetch_path = f"{base_path.rstrip('/')}/{str(pk_value).lstrip('/')}"
+        elif isinstance(pk_value, Mapping):
+            sorted_values = [str(pk_value[key]).lstrip("/") for key in sorted(pk_value.keys())]
+            pk_path_segment = "/".join(sorted_values)
+            fetch_path = f"{base_path.rstrip('/')}/{pk_path_segment}"
+        else:
+            raise ValueError(f"pk_value must be a string or dict, got {type(pk_value).__name__}")
+
+        stream_slice = StreamSlice(partition={}, cursor_slice={})
+
+        try:
+            response = self.requester.send_request(
+                path=fetch_path,
+                stream_state={},
+                stream_slice=stream_slice,
+                next_page_token=None,
+                request_headers=self._request_headers(
+                    stream_state={},
+                    stream_slice=stream_slice,
+                    next_page_token=None,
+                ),
+                request_params=self._request_params(
+                    stream_state={},
+                    stream_slice=stream_slice,
+                    next_page_token=None,
+                ),
+                request_body_data=self._request_body_data(
+                    stream_state={},
+                    stream_slice=stream_slice,
+                    next_page_token=None,
+                ),
+                request_body_json=self._request_body_json(
+                    stream_state={},
+                    stream_slice=stream_slice,
+                    next_page_token=None,
+                ),
+                log_formatter=self.log_formatter,
+            )
+        except Exception as e:
+            # Check if this is a 404 (record not found) - raise RecordNotFoundException
+            if "404" in str(e) or (
+                hasattr(e, "response")
+                and hasattr(e.response, "status_code")
+                and e.response.status_code == 404
+            ):
+                raise RecordNotFoundException(
+                    f"Record with primary key {pk_value} not found"
+                ) from e
+            raise
+
+        if not response:
+            raise RecordNotFoundException(
+                f"Record with primary key {pk_value} not found (no response)"
+            )
+
+        records = list(
+            self._parse_response(
+                response=response,
+                stream_state={},
+                records_schema=records_schema,
+                stream_slice=stream_slice,
+                next_page_token=None,
+            )
+        )
+
+        # Return the first record if found, raise RecordNotFoundException otherwise
+        if records:
+            first_record = records[0]
+            if isinstance(first_record, Record):
+                return dict(first_record.data)
+            elif isinstance(first_record, Mapping):
+                return dict(first_record)
+            else:
+                raise RecordNotFoundException(
+                    f"Record with primary key {pk_value} not found (invalid record type)"
+                )
+        raise RecordNotFoundException(
+            f"Record with primary key {pk_value} not found (empty response)"
+        )
 
 
 def _deep_merge(
