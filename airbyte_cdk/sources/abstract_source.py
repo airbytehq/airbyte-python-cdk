@@ -324,3 +324,34 @@ class AbstractSource(Source, ABC):
         on the first error seen and emit a single error trace message for that stream.
         """
         return False
+
+    def fetch_record(
+        self, stream_name: str, pk_value: Any, config: Mapping[str, Any]
+    ) -> Optional[Mapping[str, Any]]:
+        """
+        Fetch a single record from a stream by primary key.
+
+        Args:
+            stream_name: Name of the stream to fetch from
+            pk_value: Primary key value to fetch. Can be:
+                     - str: For simple single-field primary keys (e.g., "123")
+                     - Mapping[str, Any]: For composite primary keys (e.g., {"company_id": "123", "property": "status"})
+            config: Source configuration
+
+        Returns:
+            The fetched record as a dict, or None if not found
+
+        Raises:
+            ValueError: If the stream name is not found in the source
+            NotImplementedError: If the stream doesn't support fetching individual records
+        """
+        stream_instances = {s.name: s for s in self.streams(config)}
+        stream = stream_instances.get(stream_name)
+
+        if not stream:
+            raise ValueError(
+                f"Stream '{stream_name}' not found in source. "
+                f"Available streams: {', '.join(stream_instances.keys())}"
+            )
+
+        return stream.fetch_record(pk_value)

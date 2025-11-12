@@ -1644,3 +1644,200 @@ def _mock_paginator():
     paginator.get_request_body_data.__name__ = "get_request_body_data"
     paginator.get_request_body_json.__name__ = "get_request_body_json"
     return paginator
+
+
+def test_fetch_one_simple_pk():
+    """Test fetch_one with a simple string primary key."""
+    requester = MagicMock()
+    requester.get_path.return_value = "posts"
+
+    response = requests.Response()
+    response.status_code = 200
+    response._content = json.dumps({"id": "123", "title": "Test Post"}).encode("utf-8")
+
+    requester.send_request.return_value = response
+
+    record_selector = MagicMock()
+    record_selector.select_records.return_value = [
+        Record(data={"id": "123", "title": "Test Post"}, stream_name="posts", associated_slice=None)
+    ]
+
+    retriever = SimpleRetriever(
+        name="posts",
+        primary_key="id",
+        requester=requester,
+        record_selector=record_selector,
+        parameters={},
+        config={},
+    )
+
+    result = retriever.fetch_one("123", records_schema={})
+
+    assert result == {"id": "123", "title": "Test Post"}
+    requester.send_request.assert_called_once()
+    call_kwargs = requester.send_request.call_args[1]
+    assert call_kwargs["path"] == "posts/123"
+
+
+def test_fetch_one_composite_pk():
+    """Test fetch_one with a composite primary key (dict)."""
+    requester = MagicMock()
+    requester.get_path.return_value = "companies"
+
+    response = requests.Response()
+    response.status_code = 200
+    response._content = json.dumps(
+        {"company_id": "123", "property": "status", "value": "active"}
+    ).encode("utf-8")
+
+    requester.send_request.return_value = response
+
+    record_selector = MagicMock()
+    record_selector.select_records.return_value = [
+        Record(
+            data={"company_id": "123", "property": "status", "value": "active"},
+            stream_name="companies",
+            associated_slice=None,
+        )
+    ]
+
+    retriever = SimpleRetriever(
+        name="companies",
+        primary_key=["company_id", "property"],
+        requester=requester,
+        record_selector=record_selector,
+        parameters={},
+        config={},
+    )
+
+    result = retriever.fetch_one({"company_id": "123", "property": "status"}, records_schema={})
+
+    assert result == {"company_id": "123", "property": "status", "value": "active"}
+    requester.send_request.assert_called_once()
+    call_kwargs = requester.send_request.call_args[1]
+    assert call_kwargs["path"] == "companies/123/status"
+
+
+def test_fetch_one_not_found():
+    """Test fetch_one returns None when record is not found (404)."""
+    requester = MagicMock()
+    requester.get_path.return_value = "posts"
+
+    error = Exception("Not found")
+    error.response = MagicMock()
+    error.response.status_code = 404
+    requester.send_request.side_effect = error
+
+    record_selector = MagicMock()
+
+    retriever = SimpleRetriever(
+        name="posts",
+        primary_key="id",
+        requester=requester,
+        record_selector=record_selector,
+        parameters={},
+        config={},
+    )
+
+    result = retriever.fetch_one("999", records_schema={})
+
+    assert result is None
+
+
+def test_fetch_one_server_error():
+    """Test fetch_one propagates non-404 errors."""
+    requester = MagicMock()
+    requester.get_path.return_value = "posts"
+
+    error = Exception("Server error")
+    error.response = MagicMock()
+    error.response.status_code = 500
+    requester.send_request.side_effect = error
+
+    record_selector = MagicMock()
+
+    retriever = SimpleRetriever(
+        name="posts",
+        primary_key="id",
+        requester=requester,
+        record_selector=record_selector,
+        parameters={},
+        config={},
+    )
+
+    with pytest.raises(Exception) as exc_info:
+        retriever.fetch_one("123", records_schema={})
+
+    assert "Server error" in str(exc_info.value)
+
+
+def test_fetch_one_invalid_pk_type():
+    """Test fetch_one raises ValueError for invalid pk_value type."""
+    requester = MagicMock()
+    requester.get_path.return_value = "posts"
+
+    record_selector = MagicMock()
+
+    retriever = SimpleRetriever(
+        name="posts",
+        primary_key="id",
+        requester=requester,
+        record_selector=record_selector,
+        parameters={},
+        config={},
+    )
+
+    with pytest.raises(ValueError) as exc_info:
+        retriever.fetch_one(123, records_schema={})
+
+    assert "pk_value must be a string or dict" in str(exc_info.value)
+
+
+def test_fetch_one_no_response():
+    """Test fetch_one returns None when response is None."""
+    requester = MagicMock()
+    requester.get_path.return_value = "posts"
+    requester.send_request.return_value = None
+
+    record_selector = MagicMock()
+
+    retriever = SimpleRetriever(
+        name="posts",
+        primary_key="id",
+        requester=requester,
+        record_selector=record_selector,
+        parameters={},
+        config={},
+    )
+
+    result = retriever.fetch_one("123", records_schema={})
+
+    assert result is None
+
+
+def test_fetch_one_empty_records():
+    """Test fetch_one returns None when no records are returned."""
+    requester = MagicMock()
+    requester.get_path.return_value = "posts"
+
+    response = requests.Response()
+    response.status_code = 200
+    response._content = json.dumps({}).encode("utf-8")
+
+    requester.send_request.return_value = response
+
+    record_selector = MagicMock()
+    record_selector.select_records.return_value = []
+
+    retriever = SimpleRetriever(
+        name="posts",
+        primary_key="id",
+        requester=requester,
+        record_selector=record_selector,
+        parameters={},
+        config={},
+    )
+
+    result = retriever.fetch_one("123", records_schema={})
+
+    assert result is None
