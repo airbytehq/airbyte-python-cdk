@@ -348,7 +348,7 @@ class HttpClient:
         )
 
         self._logger.info(
-            f"[{request_id}] Receiving response from {request.url}" + f" with exception {type(exc)}" if exc else ""
+            f"[{request_id}] Receiving response from {request.url}{f' with exception {type(exc)}' if exc else ''}"
         )
 
         # Request/response logging for declarative cdk
