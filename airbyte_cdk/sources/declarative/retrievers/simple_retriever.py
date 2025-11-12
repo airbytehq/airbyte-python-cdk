@@ -715,7 +715,11 @@ class SimpleRetriever(Retriever):
             )
         except Exception as e:
             # Check if this is a 404 (record not found) - raise RecordNotFoundException
-            if "404" in str(e) or (hasattr(e, "response") and hasattr(e.response, "status_code") and e.response.status_code == 404):
+            if "404" in str(e) or (
+                hasattr(e, "response")
+                and hasattr(e.response, "status_code")
+                and e.response.status_code == 404
+            ):
                 raise RecordNotFoundException(
                     f"Record with primary key {pk_value} not found"
                 ) from e

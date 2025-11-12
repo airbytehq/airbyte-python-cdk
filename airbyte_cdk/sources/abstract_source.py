@@ -198,9 +198,9 @@ class AbstractSource(Source, ABC):
                         logger.info(timer.report())
 
         if len(stream_name_to_exception) > 0:
-            error_message = generate_failed_streams_error_message({
-                key: [value] for key, value in stream_name_to_exception.items()
-            })
+            error_message = generate_failed_streams_error_message(
+                {key: [value] for key, value in stream_name_to_exception.items()}
+            )
             logger.info(error_message)
             # We still raise at least one exception when a stream raises an exception because the platform currently relies
             # on a non-zero exit code to determine if a sync attempt has failed. We also raise the exception as a config_error
