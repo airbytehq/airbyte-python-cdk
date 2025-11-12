@@ -74,9 +74,9 @@ class FileBasedStreamConfig(BaseModel):
         default=None,
         gt=0,
     )
-    use_first_found_file_for_schema_discovery: Optional[bool] = Field(
+    use_first_found_file_for_schema_discovery: bool = Field(
         title="Use first found file for schema discovery",
-        description="When enable, the source will use the first found file for schema discovery. Helps to avoid long discovery step",
+        description="When enabled, the source will use the first found file for schema discovery. Helps to avoid long discovery step",
         default=False,
     )
 

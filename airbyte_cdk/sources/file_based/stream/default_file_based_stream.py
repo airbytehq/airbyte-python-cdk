@@ -274,8 +274,10 @@ class DefaultFileBasedStream(AbstractFileBasedStream, IncrementalMixin):
         elif self.config.schemaless:
             return schemaless_schema
         elif self.config.use_first_found_file_for_schema_discovery:
-            self.logger.info(msg=f"Using only first found file for schema discovery.")
-            files = [next(iter(self.get_files()))]
+            self.logger.info(
+                msg=f"Using only first found file for schema discovery for stream {self.name} due to limitation in config."
+            )
+            files = list(itertools.islice(self.get_files(), 1))
             first_n_files = len(files)
         else:
             files = self.list_files()

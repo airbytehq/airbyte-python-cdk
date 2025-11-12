@@ -239,6 +239,8 @@ class DefaultFileBasedStreamTest(unittest.TestCase):
         self._stream_reader.get_matching_files.return_value = files
 
         schema = self._stream.get_json_schema()
+        assert self._parser.infer_schema.call_count == 1
+        assert self._parser.infer_schema.call_args[0][1].uri == "file0"
         assert schema == {
             "properties": {
                 "_ab_source_file_last_modified": {"type": "string"},
