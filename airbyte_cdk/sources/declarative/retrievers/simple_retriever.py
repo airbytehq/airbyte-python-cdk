@@ -648,9 +648,9 @@ class SimpleRetriever(Retriever):
             The fetched record as a dict.
 
         Raises:
-            RecordNotFoundException: If the record is not found (404 response).
+            RecordNotFoundException: If the record is not found (empty response).
             ValueError: If pk_value is not a string or dict.
-            Exception: For non-404 HTTP errors (propagated from requester's error handling).
+            Exception: HTTP errors are propagated from requester's error handling.
 
         Example:
             record = retriever.fetch_one("123", schema)
@@ -686,45 +686,33 @@ class SimpleRetriever(Retriever):
 
         stream_slice = StreamSlice(partition={}, cursor_slice={})
 
-        try:
-            response = self.requester.send_request(
-                path=fetch_path,
+        response = self.requester.send_request(
+            path=fetch_path,
+            stream_state={},
+            stream_slice=stream_slice,
+            next_page_token=None,
+            request_headers=self._request_headers(
                 stream_state={},
                 stream_slice=stream_slice,
                 next_page_token=None,
-                request_headers=self._request_headers(
-                    stream_state={},
-                    stream_slice=stream_slice,
-                    next_page_token=None,
-                ),
-                request_params=self._request_params(
-                    stream_state={},
-                    stream_slice=stream_slice,
-                    next_page_token=None,
-                ),
-                request_body_data=self._request_body_data(
-                    stream_state={},
-                    stream_slice=stream_slice,
-                    next_page_token=None,
-                ),
-                request_body_json=self._request_body_json(
-                    stream_state={},
-                    stream_slice=stream_slice,
-                    next_page_token=None,
-                ),
-                log_formatter=self.log_formatter,
-            )
-        except Exception as e:
-            # Check if this is a 404 (record not found) - raise RecordNotFoundException
-            if "404" in str(e) or (
-                hasattr(e, "response")
-                and hasattr(e.response, "status_code")
-                and e.response.status_code == 404
-            ):
-                raise RecordNotFoundException(
-                    f"Record with primary key {pk_value} not found"
-                ) from e
-            raise
+            ),
+            request_params=self._request_params(
+                stream_state={},
+                stream_slice=stream_slice,
+                next_page_token=None,
+            ),
+            request_body_data=self._request_body_data(
+                stream_state={},
+                stream_slice=stream_slice,
+                next_page_token=None,
+            ),
+            request_body_json=self._request_body_json(
+                stream_state={},
+                stream_slice=stream_slice,
+                next_page_token=None,
+            ),
+            log_formatter=self.log_formatter,
+        )
 
         if not response:
             raise RecordNotFoundException(
