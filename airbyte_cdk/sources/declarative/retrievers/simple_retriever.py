@@ -721,30 +721,21 @@ class SimpleRetriever(Retriever):
                 f"Record with primary key {pk_value} not found (no response)"
             )
 
-        records = list(
-            self._parse_response(
-                response=response,
-                stream_state={},
-                records_schema=records_schema,
-                stream_slice=stream_slice,
-                next_page_token=None,
-            )
+        records_iter: Iterable[Record] = self._parse_response(
+            response=response,
+            stream_state={},
+            records_schema=records_schema,
+            stream_slice=stream_slice,
+            next_page_token=None,
         )
 
-        # Return the first record if found, raise RecordNotFoundException otherwise
-        if records:
-            first_record = records[0]
-            if isinstance(first_record, Record):
-                return dict(first_record.data)
-            elif isinstance(first_record, Mapping):
-                return dict(first_record)
-            else:
-                raise RecordNotFoundException(
-                    f"Record with primary key {pk_value} not found (invalid record type)"
-                )
-        raise RecordNotFoundException(
-            f"Record with primary key {pk_value} not found (empty response)"
-        )
+        first_record: Record | None = next(iter(records_iter), None)
+        if not first_record:
+            raise RecordNotFoundException(
+                f"Record with primary key {pk_value} not found (empty response)"
+            )
+
+        return dict(first_record.data)
 
 
 def _deep_merge(
