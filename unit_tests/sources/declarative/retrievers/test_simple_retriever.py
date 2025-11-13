@@ -1680,7 +1680,7 @@ def testfetch_one_simple_pk():
     assert call_kwargs["path"] == "posts/123"
 
 
-def testfetch_one_not_found():
+def test_fetch_one_not_found():
     """Test fetch_one raises RecordNotFoundException when record is not found (404)."""
     requester = MagicMock()
     requester.get_path.return_value = "posts"
@@ -1705,7 +1705,6 @@ def testfetch_one_not_found():
         retriever.fetch_one("999", records_schema={})
 
     assert "999" in str(exc_info.value)
-
 
 def testfetch_one_server_error():
     """Test fetch_one propagates non-404 errors."""
