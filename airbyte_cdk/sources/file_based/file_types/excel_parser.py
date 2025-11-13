@@ -191,4 +191,4 @@ class ExcelParser(FileTypeParser):
         Returns:
             pd.DataFrame: Parsed data from the Excel file.
         """
-        return pd.ExcelFile(fp, engine="calamine").parse()  # type: ignore [arg-type, call-overload, no-any-return]
+        return pd.ExcelFile(fp, engine="openpyxl").parse()  # type: ignore [arg-type, call-overload, no-any-return]
