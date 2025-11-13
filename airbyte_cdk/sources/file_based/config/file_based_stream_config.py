@@ -5,7 +5,7 @@
 from enum import Enum
 from typing import Any, List, Mapping, Optional, Union
 
-from pydantic.v1 import BaseModel, Field, validator, root_validator
+from pydantic.v1 import BaseModel, Field, root_validator, validator
 
 from airbyte_cdk.sources.file_based.config.avro_format import AvroFormat
 from airbyte_cdk.sources.file_based.config.csv_format import CsvFormat

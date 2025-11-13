@@ -81,11 +81,11 @@ from unit_tests.sources.file_based.scenarios.csv_scenarios import (
     multi_csv_stream_n_file_exceeds_config_limit_for_inference,
     multi_csv_stream_n_file_exceeds_limit_for_inference,
     multi_stream_custom_format,
+    recent_n_files_to_read_for_schema_discovery_with_use_first_found_file_for_schema_discovery_fails_connection_check_multi_stream_scenario,
     schemaless_csv_multi_stream_scenario,
     schemaless_csv_scenario,
-    schemaless_with_user_input_schema_fails_connection_check_multi_stream_scenario,
-    recent_n_files_to_read_for_schema_discovery_with_use_first_found_file_for_schema_discovery_fails_connection_check_multi_stream_scenario,
     schemaless_with_use_first_found_file_for_schema_discovery_fails_connection_check_multi_stream_scenario,
+    schemaless_with_user_input_schema_fails_connection_check_multi_stream_scenario,
     schemaless_with_user_input_schema_fails_connection_check_scenario,
     single_csv_scenario,
 )
