@@ -648,9 +648,9 @@ class SimpleRetriever(Retriever):
             The fetched record as a dict.
 
         Raises:
-            RecordNotFoundException: If the record is not found (empty response).
+            RecordNotFoundException: If the response is empty/ignored or parsing yields no records.
             ValueError: If pk_value is not a string or dict.
-            Exception: HTTP errors are propagated from requester's error handling.
+            Exception: HTTP errors (including 404) are propagated from requester's error handling.
 
         Example:
             record = retriever.fetch_one("123", schema)
@@ -684,9 +684,11 @@ class SimpleRetriever(Retriever):
         else:
             raise ValueError(f"pk_value must be a string or dict, got {type(pk_value).__name__}")
 
+        # Single-record fetch doesn't involve partitioning, so we pass an empty StreamSlice
         stream_slice = StreamSlice(partition={}, cursor_slice={})
 
-        response = self.requester.send_request(
+        # send_request() may return None when the error handler chooses to IGNORE a response
+        response: requests.Response | None = self.requester.send_request(
             path=fetch_path,
             stream_state={},
             stream_slice=stream_slice,
