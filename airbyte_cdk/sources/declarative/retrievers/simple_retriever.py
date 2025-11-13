@@ -631,9 +631,8 @@ class SimpleRetriever(Retriever):
         self,
         pk_value: Union[str, Mapping[str, Any]],
         records_schema: Mapping[str, Any],
-    ) -> Optional[Mapping[str, Any]]:
-        """
-        Fetch a single record by primary key value.
+    ) -> Mapping[str, Any]:
+        """Fetch a single record by primary key value.
 
         This method constructs a path by appending the primary key value to the base path
         and sends a GET request to fetch a single record. It's designed for REST APIs that
@@ -646,10 +645,12 @@ class SimpleRetriever(Retriever):
             records_schema: JSON schema describing the record structure
 
         Returns:
-            The fetched record as a dict, or None if not found (404 response)
+            The fetched record as a dict.
 
         Raises:
-            Exception: For non-404 HTTP errors (propagated from requester's error handling)
+            RecordNotFoundException: If the record is not found (404 response).
+            ValueError: If pk_value is not a string or dict.
+            Exception: For non-404 HTTP errors (propagated from requester's error handling).
 
         Example:
             record = retriever.fetch_one("123", schema)

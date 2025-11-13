@@ -77,6 +77,7 @@ from airbyte_cdk.sources.declarative.parsers.model_to_component_factory import (
     ModelToComponentFactory,
 )
 from airbyte_cdk.sources.declarative.resolvers import COMPONENTS_RESOLVER_TYPE_MAPPING
+from airbyte_cdk.sources.declarative.retrievers import SimpleRetriever
 from airbyte_cdk.sources.declarative.spec.spec import Spec
 from airbyte_cdk.sources.declarative.types import Config, ConnectionDefinition
 from airbyte_cdk.sources.message.concurrent_repository import ConcurrentMessageRepository
@@ -531,12 +532,6 @@ class ConcurrentDeclarativeSource(Source):
             NotImplementedError: If the stream doesn't support fetching individual records
             RecordNotFoundException: If the record is not found (404 response)
         """
-        from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
-            DeclarativeStream as DeclarativeStreamModel,
-        )
-        from airbyte_cdk.sources.declarative.retrievers import SimpleRetriever
-        from airbyte_cdk.sources.declarative.schema import DefaultSchemaLoader
-
         config = config or self._config
 
         stream_configs = self._stream_configs(self._source_config) + self.dynamic_streams
@@ -554,34 +549,21 @@ class ConcurrentDeclarativeSource(Source):
                 f"Available streams: {', '.join(available_streams)}"
             )
 
-        retriever = self._constructor.create_component(
+        declarative_stream = self._constructor.create_component(
             DeclarativeStreamModel,
             stream_config,
             config,
             emit_connector_builder_messages=self._emit_connector_builder_messages,
-        ).retriever
+        )
 
-        if not isinstance(retriever, SimpleRetriever):
+        if not isinstance(declarative_stream.retriever, SimpleRetriever):
             raise NotImplementedError(
                 f"Stream '{stream_name}' does not support fetching individual records. "
                 "Only streams with SimpleRetriever currently support this operation."
             )
 
-        schema_loader_config = stream_config.get("schema_loader")
-        if schema_loader_config:
-            schema_loader = self._constructor.create_component(
-                type(schema_loader_config),
-                schema_loader_config,
-                config,
-            )
-        else:
-            options = stream_config.get("parameters", {})
-            if "name" not in options:
-                options["name"] = stream_name
-            schema_loader = DefaultSchemaLoader(config=config, parameters=options)
-
-        return retriever.fetch_one(
-            pk_value=pk_value, records_schema=schema_loader.get_json_schema()
+        return declarative_stream.retriever.fetch_one(
+            pk_value=pk_value, records_schema=declarative_stream.get_json_schema()
         )
 
     @property
