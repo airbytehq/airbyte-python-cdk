@@ -3,7 +3,7 @@
 #
 
 from enum import Enum
-from typing import Any, List, Mapping, Optional, Union
+from typing import Any, List, Mapping, Optional, Union, Dict
 
 from pydantic.v1 import BaseModel, Field, root_validator, validator
 
@@ -90,7 +90,7 @@ class FileBasedStreamConfig(BaseModel):
         return None
 
     @root_validator
-    def validate_discovery_related_fields(cls, values: dict) -> dict:
+    def validate_discovery_related_fields(cls, values: Dict[str, Any]) -> Dict[str, Any]:
         """
         Please update this validation when new related to schema discovery field is added.
         Validates schema discovery options compatability.
