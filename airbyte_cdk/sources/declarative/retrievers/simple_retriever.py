@@ -627,7 +627,7 @@ class SimpleRetriever(Retriever):
         # separators have changed in Python 3.4. To avoid being impacted by further change, we explicitly specify our own value
         return json.dumps(to_serialize, indent=None, separators=(",", ":"), sort_keys=True)
 
-    def _fetch_one(
+    def fetch_one(
         self,
         pk_value: str,
         records_schema: Mapping[str, Any],
@@ -716,12 +716,19 @@ class SimpleRetriever(Retriever):
         )
 
         first_record: Record | None = next(iter(records_iter), None)
-        if not first_record:
-            raise RecordNotFoundException(
-                f"Record with primary key {pk_value} not found (empty response)"
-            )
+        if first_record:
+            return dict(first_record.data)
 
-        return dict(first_record.data)
+        try:
+            response_body = response.json()
+            if isinstance(response_body, dict) and response_body:
+                return response_body
+        except Exception:
+            pass
+
+        raise RecordNotFoundException(
+            f"Record with primary key {pk_value} not found (empty response)"
+        )
 
 
 def _deep_merge(

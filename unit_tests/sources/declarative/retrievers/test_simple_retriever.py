@@ -1647,7 +1647,7 @@ def _mock_paginator():
     return paginator
 
 
-def test_fetch_one_simple_pk():
+def testfetch_one_simple_pk():
     """Test fetch_one with a simple string primary key."""
     requester = MagicMock()
     requester.get_path.return_value = "posts"
@@ -1672,7 +1672,7 @@ def test_fetch_one_simple_pk():
         config={},
     )
 
-    result = retriever._fetch_one("123", records_schema={})
+    result = retriever.fetch_one("123", records_schema={})
 
     assert result == {"id": "123", "title": "Test Post"}
     requester.send_request.assert_called_once()
@@ -1680,7 +1680,7 @@ def test_fetch_one_simple_pk():
     assert call_kwargs["path"] == "posts/123"
 
 
-def test_fetch_one_not_found():
+def testfetch_one_not_found():
     """Test fetch_one raises RecordNotFoundException when record is not found (404)."""
     requester = MagicMock()
     requester.get_path.return_value = "posts"
@@ -1702,12 +1702,12 @@ def test_fetch_one_not_found():
     )
 
     with pytest.raises(RecordNotFoundException) as exc_info:
-        retriever._fetch_one("999", records_schema={})
+        retriever.fetch_one("999", records_schema={})
 
     assert "999" in str(exc_info.value)
 
 
-def test_fetch_one_server_error():
+def testfetch_one_server_error():
     """Test fetch_one propagates non-404 errors."""
     requester = MagicMock()
     requester.get_path.return_value = "posts"
@@ -1734,7 +1734,7 @@ def test_fetch_one_server_error():
     assert "Server error" in str(exc_info.value)
 
 
-def test_fetch_one_invalid_pk_type():
+def testfetch_one_invalid_pk_type():
     """Test fetch_one with non-string pk_value (should fail type checking but test runtime behavior)."""
     requester = MagicMock()
     requester.get_path.return_value = "posts"
@@ -1751,10 +1751,10 @@ def test_fetch_one_invalid_pk_type():
     )
 
     with pytest.raises(AttributeError):
-        retriever._fetch_one(123, records_schema={})  # type: ignore
+        retriever.fetch_one(123, records_schema={})  # type: ignore
 
 
-def test_fetch_one_no_response():
+def testfetch_one_no_response():
     """Test fetch_one raises RecordNotFoundException when response is None."""
     requester = MagicMock()
     requester.get_path.return_value = "posts"
@@ -1777,8 +1777,8 @@ def test_fetch_one_no_response():
     assert "123" in str(exc_info.value)
 
 
-def test_fetch_one_empty_records():
-    """Test fetch_one raises RecordNotFoundException when no records are returned."""
+def testfetch_one_empty_records():
+    """Test fetch_one raises RecordNotFoundException when response is truly empty."""
     requester = MagicMock()
     requester.get_path.return_value = "posts"
 
@@ -1804,3 +1804,34 @@ def test_fetch_one_empty_records():
         retriever.fetch_one("123", records_schema={})
 
     assert "123" in str(exc_info.value)
+
+
+def testfetch_one_single_object_response():
+    """Test fetch_one handles single object responses (most common pattern for GET /resource/{id})."""
+    requester = MagicMock()
+    requester.get_path.return_value = "posts"
+
+    response = requests.Response()
+    response.status_code = 200
+    response._content = json.dumps({"id": "123", "title": "Test Post"}).encode("utf-8")
+
+    requester.send_request.return_value = response
+
+    record_selector = MagicMock()
+    record_selector.select_records.return_value = []
+
+    retriever = SimpleRetriever(
+        name="posts",
+        primary_key="id",
+        requester=requester,
+        record_selector=record_selector,
+        parameters={},
+        config={},
+    )
+
+    result = retriever.fetch_one("123", records_schema={})
+
+    assert result == {"id": "123", "title": "Test Post"}
+    requester.send_request.assert_called_once()
+    call_kwargs = requester.send_request.call_args[1]
+    assert call_kwargs["path"] == "posts/123"
