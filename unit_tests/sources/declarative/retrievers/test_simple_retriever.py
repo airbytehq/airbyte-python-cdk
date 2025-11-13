@@ -1680,45 +1680,6 @@ def test_fetch_one_simple_pk():
     assert call_kwargs["path"] == "posts/123"
 
 
-def test_fetch_one_composite_pk():
-    """Test fetch_one with a composite primary key (dict)."""
-    requester = MagicMock()
-    requester.get_path.return_value = "companies"
-
-    response = requests.Response()
-    response.status_code = 200
-    response._content = json.dumps(
-        {"company_id": "123", "property": "status", "value": "active"}
-    ).encode("utf-8")
-
-    requester.send_request.return_value = response
-
-    record_selector = MagicMock()
-    record_selector.select_records.return_value = [
-        Record(
-            data={"company_id": "123", "property": "status", "value": "active"},
-            stream_name="companies",
-            associated_slice=None,
-        )
-    ]
-
-    retriever = SimpleRetriever(
-        name="companies",
-        primary_key=["company_id", "property"],
-        requester=requester,
-        record_selector=record_selector,
-        parameters={},
-        config={},
-    )
-
-    result = retriever.fetch_one({"company_id": "123", "property": "status"}, records_schema={})
-
-    assert result == {"company_id": "123", "property": "status", "value": "active"}
-    requester.send_request.assert_called_once()
-    call_kwargs = requester.send_request.call_args[1]
-    assert call_kwargs["path"] == "companies/123/status"
-
-
 def test_fetch_one_not_found():
     """Test fetch_one raises RecordNotFoundException when record is not found (404)."""
     requester = MagicMock()
@@ -1774,7 +1735,7 @@ def test_fetch_one_server_error():
 
 
 def test_fetch_one_invalid_pk_type():
-    """Test fetch_one raises ValueError for invalid pk_value type."""
+    """Test fetch_one with non-string pk_value (should fail type checking but test runtime behavior)."""
     requester = MagicMock()
     requester.get_path.return_value = "posts"
 
@@ -1789,10 +1750,8 @@ def test_fetch_one_invalid_pk_type():
         config={},
     )
 
-    with pytest.raises(ValueError) as exc_info:
-        retriever.fetch_one(123, records_schema={})
-
-    assert "pk_value must be a string or dict" in str(exc_info.value)
+    with pytest.raises(AttributeError):
+        retriever.fetch_one(123, records_schema={})  # type: ignore
 
 
 def test_fetch_one_no_response():

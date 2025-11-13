@@ -511,7 +511,7 @@ class ConcurrentDeclarativeSource(Source):
     def fetch_record(
         self,
         stream_name: str,
-        pk_value: Any,
+        pk_value: str,
         config: Optional[Mapping[str, Any]] = None,
     ) -> Mapping[str, Any]:
         """
@@ -519,9 +519,7 @@ class ConcurrentDeclarativeSource(Source):
 
         Args:
             stream_name: Name of the stream to fetch from
-            pk_value: Primary key value to fetch. Can be:
-                     - str: For simple single-field primary keys (e.g., "123")
-                     - Mapping[str, Any]: For composite primary keys (e.g., {"company_id": "123", "property": "status"})
+            pk_value: Primary key value to fetch as a string (e.g., "123")
             config: Source configuration (optional, uses instance config if not provided)
 
         Returns:
@@ -530,7 +528,7 @@ class ConcurrentDeclarativeSource(Source):
         Raises:
             ValueError: If the stream name is not found in the source
             NotImplementedError: If the stream doesn't support fetching individual records
-            RecordNotFoundException: If the record is not found (404 response)
+            RecordNotFoundException: If the record is not found
         """
         config = config or self._config
 

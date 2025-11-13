@@ -91,21 +91,19 @@ class AbstractStream(ABC):
         :return: If the stream is available and if not, why
         """
 
-    def fetch_record(self, pk_value: Any) -> Mapping[str, Any]:
+    def fetch_record(self, pk_value: str) -> Mapping[str, Any]:
         """
         Fetch a single record by primary key value.
 
         Args:
-            pk_value: The primary key value. Can be:
-                     - str: For simple single-field primary keys (e.g., "123")
-                     - Mapping[str, Any]: For composite primary keys (e.g., {"company_id": "123", "property": "status"})
+            pk_value: The primary key value as a string (e.g., "123")
 
         Returns:
             The fetched record as a dict
 
         Raises:
             NotImplementedError: If the stream doesn't support fetching individual records
-            RecordNotFoundException: If the record is not found (404 response)
+            RecordNotFoundException: If the record is not found
         """
         raise NotImplementedError(
             f"Stream {self.name} does not support fetching individual records. "

@@ -629,7 +629,7 @@ class SimpleRetriever(Retriever):
 
     def fetch_one(
         self,
-        pk_value: Union[str, Mapping[str, Any]],
+        pk_value: str,
         records_schema: Mapping[str, Any],
     ) -> Mapping[str, Any]:
         """Fetch a single record by primary key value.
@@ -639,9 +639,7 @@ class SimpleRetriever(Retriever):
         follow the convention: GET /resource/{id}
 
         Args:
-            pk_value: The primary key value to fetch. Can be:
-                     - str: For simple single-field primary keys (e.g., "123")
-                     - Mapping[str, Any]: For composite primary keys (e.g., {"company_id": "123", "property": "status"})
+            pk_value: The primary key value to fetch as a string (e.g., "123")
             records_schema: JSON schema describing the record structure
 
         Returns:
@@ -649,18 +647,13 @@ class SimpleRetriever(Retriever):
 
         Raises:
             RecordNotFoundException: If the response is empty/ignored or parsing yields no records.
-            ValueError: If pk_value is not a string or dict.
             Exception: HTTP errors (including 404) are propagated from requester's error handling.
 
         Example:
             record = retriever.fetch_one("123", schema)
 
-            record = retriever.fetch_one({"company_id": "123", "property": "status"}, schema)
-
         Note:
-            This implementation uses convention-based path construction (Option B from design). (important-comment)
-            For simple PKs: appends /{pk_value} to base path (important-comment)
-            For composite PKs: appends /{value1}/{value2}/... in key order (important-comment)
+            This implementation uses convention-based path construction, appending /{pk_value} to the base path. (important-comment)
 
             Alternative approaches that could be implemented in the future: (important-comment)
             - Path template interpolation: Use a configurable template like "{base_path}/{id}" (important-comment)
@@ -668,49 +661,42 @@ class SimpleRetriever(Retriever):
             - Field path configuration: Allow specifying which response field contains the record (important-comment)
               for APIs that wrap single records in envelopes like {"data": {...}} (important-comment)
         """
+        # Single-record fetch doesn't involve partitioning, so we pass an empty StreamSlice
+        empty_stream_slice = StreamSlice(partition={}, cursor_slice={})
+
         # Get the base path from the requester
         base_path = self.requester.get_path(
             stream_state={},
-            stream_slice=StreamSlice(partition={}, cursor_slice={}),
+            stream_slice=empty_stream_slice,
             next_page_token=None,
         )
 
-        if isinstance(pk_value, str):
-            fetch_path = f"{base_path.rstrip('/')}/{str(pk_value).lstrip('/')}"
-        elif isinstance(pk_value, Mapping):
-            sorted_values = [str(pk_value[key]).lstrip("/") for key in sorted(pk_value.keys())]
-            pk_path_segment = "/".join(sorted_values)
-            fetch_path = f"{base_path.rstrip('/')}/{pk_path_segment}"
-        else:
-            raise ValueError(f"pk_value must be a string or dict, got {type(pk_value).__name__}")
-
-        # Single-record fetch doesn't involve partitioning, so we pass an empty StreamSlice
-        stream_slice = StreamSlice(partition={}, cursor_slice={})
+        fetch_path = f"{base_path.rstrip('/')}/{pk_value.lstrip('/')}"
 
         # send_request() may return None when the error handler chooses to IGNORE a response
         response: requests.Response | None = self.requester.send_request(
             path=fetch_path,
             stream_state={},
-            stream_slice=stream_slice,
+            stream_slice=empty_stream_slice,
             next_page_token=None,
             request_headers=self._request_headers(
                 stream_state={},
-                stream_slice=stream_slice,
+                stream_slice=empty_stream_slice,
                 next_page_token=None,
             ),
             request_params=self._request_params(
                 stream_state={},
-                stream_slice=stream_slice,
+                stream_slice=empty_stream_slice,
                 next_page_token=None,
             ),
             request_body_data=self._request_body_data(
                 stream_state={},
-                stream_slice=stream_slice,
+                stream_slice=empty_stream_slice,
                 next_page_token=None,
             ),
             request_body_json=self._request_body_json(
                 stream_state={},
-                stream_slice=stream_slice,
+                stream_slice=empty_stream_slice,
                 next_page_token=None,
             ),
             log_formatter=self.log_formatter,
@@ -725,7 +711,7 @@ class SimpleRetriever(Retriever):
             response=response,
             stream_state={},
             records_schema=records_schema,
-            stream_slice=stream_slice,
+            stream_slice=empty_stream_slice,
             next_page_token=None,
         )
 
