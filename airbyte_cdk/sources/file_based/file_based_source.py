@@ -156,11 +156,18 @@ class FileBasedSource(ConcurrentSourceAdapter, ABC):
         """
         try:
             streams = self.streams(config)
-        except Exception as config_exception:
+        except ConfigValidationError as config_exception:
+            raise AirbyteTracedException(
+                internal_message="Please check the logged errors for more information.",
+                message=str(config_exception),
+                exception=AirbyteTracedException(exception=config_exception),
+                failure_type=FailureType.config_error,
+            )
+        except Exception as exp:
             raise AirbyteTracedException(
                 internal_message="Please check the logged errors for more information.",
                 message=FileBasedSourceError.CONFIG_VALIDATION_ERROR.value,
-                exception=AirbyteTracedException(exception=config_exception),
+                exception=AirbyteTracedException(exception=exp),
                 failure_type=FailureType.config_error,
             )
         if len(streams) == 0:
@@ -250,7 +257,6 @@ class FileBasedSource(ConcurrentSourceAdapter, ABC):
                     if (state_manager and catalog_stream)
                     else None
                 )
-                self._validate_input_schema(stream_config)
 
                 sync_mode = self._get_sync_mode_from_catalog(stream_config.name)
 
@@ -457,10 +463,3 @@ class FileBasedSource(ConcurrentSourceAdapter, ABC):
                 model=FileBasedStreamConfig,
             )
         return self.validation_policies[stream_config.validation_policy]
-
-    def _validate_input_schema(self, stream_config: FileBasedStreamConfig) -> None:
-        if stream_config.schemaless and stream_config.input_schema:
-            raise ValidationError(
-                "`input_schema` and `schemaless` options cannot both be set",
-                model=FileBasedStreamConfig,
-            )

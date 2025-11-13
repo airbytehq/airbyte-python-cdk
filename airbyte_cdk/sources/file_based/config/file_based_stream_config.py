@@ -5,7 +5,7 @@
 from enum import Enum
 from typing import Any, List, Mapping, Optional, Union
 
-from pydantic.v1 import BaseModel, Field, validator
+from pydantic.v1 import BaseModel, Field, validator, root_validator
 
 from airbyte_cdk.sources.file_based.config.avro_format import AvroFormat
 from airbyte_cdk.sources.file_based.config.csv_format import CsvFormat
@@ -75,7 +75,7 @@ class FileBasedStreamConfig(BaseModel):
         gt=0,
     )
     use_first_found_file_for_schema_discovery: bool = Field(
-        title="Use first found file for schema discovery",
+        title="Use First Found File For Schema Discover",
         description="When enabled, the source will use the first found file for schema discovery. Helps to avoid long discovery step",
         default=False,
     )
@@ -88,6 +88,35 @@ class FileBasedStreamConfig(BaseModel):
             else:
                 raise ConfigValidationError(FileBasedSourceError.ERROR_PARSING_USER_PROVIDED_SCHEMA)
         return None
+
+    @root_validator
+    def validate_discovery_related_fields(cls, values):
+        """
+        Please update this validation when new related to schema discovery field is added.
+        Validates schema discovery options compatability.
+        Note, that initially the recent_n_files_to_read_for_schema_discovery was added without a validation if schemaless or input_schema were provided.
+        So this method doesn't check it to do not break already created connections.
+        If recent_n_files_to_read_for_schema_discovery and schemaless or recent_n_files_to_read_for_schema_discovery and input_schema were provided,
+        recent_n_files_to_read_for_schema_discovery will be ignored and second option will be used by default.
+        """
+        input_schema = values["input_schema"] is not None
+        schemaless = values["schemaless"]
+        recent_n_files_to_read_for_schema_discovery = (
+            values["recent_n_files_to_read_for_schema_discovery"] is not None
+        )
+        use_first_found_file_for_schema_discovery = values[
+            "use_first_found_file_for_schema_discovery"
+        ]
+
+        if (
+            recent_n_files_to_read_for_schema_discovery
+            and use_first_found_file_for_schema_discovery
+        ) or [schemaless, input_schema, use_first_found_file_for_schema_discovery].count(True) > 1:
+            raise ConfigValidationError(
+                FileBasedSourceError.ERROR_VALIDATION_STREAM_DISCOVERY_OPTIONS
+            )
+
+        return values
 
     def get_input_schema(self) -> Optional[Mapping[str, Any]]:
         """
