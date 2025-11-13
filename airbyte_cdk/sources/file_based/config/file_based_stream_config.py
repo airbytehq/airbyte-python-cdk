@@ -3,7 +3,7 @@
 #
 
 from enum import Enum
-from typing import Any, List, Mapping, Optional, Union, Dict
+from typing import Any, Dict, List, Mapping, Optional, Union
 
 from pydantic.v1 import BaseModel, Field, root_validator, validator
 
