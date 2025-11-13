@@ -1777,7 +1777,7 @@ def testfetch_one_no_response():
     assert "123" in str(exc_info.value)
 
 
-def testfetch_one_empty_records():
+def test_fetch_one_empty_records():
     """Test fetch_one raises RecordNotFoundException when response is truly empty."""
     requester = MagicMock()
     requester.get_path.return_value = "posts"
@@ -1804,7 +1804,6 @@ def testfetch_one_empty_records():
         retriever.fetch_one("123", records_schema={})
 
     assert "123" in str(exc_info.value)
-
 
 def testfetch_one_single_object_response():
     """Test fetch_one handles single object responses (most common pattern for GET /resource/{id})."""
