@@ -345,6 +345,7 @@ class SimpleRetriever(Retriever):
         records_generator_fn: Callable[[Optional[requests.Response]], Iterable[Record]],
         stream_slice: StreamSlice,
     ) -> Iterable[Record]:
+        original_stream_slice = stream_slice
         pagination_tracker = self.pagination_tracker_factory()
         reset_pagination = False
         next_page_token = self._get_initial_next_page_token()
@@ -409,7 +410,9 @@ class SimpleRetriever(Retriever):
             if reset_pagination or pagination_tracker.has_reached_limit():
                 next_page_token = self._get_initial_next_page_token()
                 previous_slice = stream_slice
-                stream_slice = pagination_tracker.reduce_slice_range_if_possible(stream_slice)
+                stream_slice = pagination_tracker.reduce_slice_range_if_possible(
+                    stream_slice, original_stream_slice
+                )
                 LOGGER.info(
                     f"Hitting PaginationReset event. StreamSlice used will go from {previous_slice} to {stream_slice}"
                 )
