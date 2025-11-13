@@ -627,7 +627,7 @@ class SimpleRetriever(Retriever):
         # separators have changed in Python 3.4. To avoid being impacted by further change, we explicitly specify our own value
         return json.dumps(to_serialize, indent=None, separators=(",", ":"), sort_keys=True)
 
-    def fetch_one(
+    def _fetch_one(
         self,
         pk_value: str,
         records_schema: Mapping[str, Any],

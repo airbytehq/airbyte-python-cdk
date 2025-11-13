@@ -560,7 +560,7 @@ class ConcurrentDeclarativeSource(Source):
                 "Only streams with SimpleRetriever currently support this operation."
             )
 
-        return declarative_stream.retriever.fetch_one(
+        return declarative_stream.retriever._fetch_one(
             pk_value=pk_value, records_schema=declarative_stream.get_json_schema()
         )
 

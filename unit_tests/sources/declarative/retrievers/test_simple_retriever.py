@@ -1672,7 +1672,7 @@ def test_fetch_one_simple_pk():
         config={},
     )
 
-    result = retriever.fetch_one("123", records_schema={})
+    result = retriever._fetch_one("123", records_schema={})
 
     assert result == {"id": "123", "title": "Test Post"}
     requester.send_request.assert_called_once()
@@ -1702,7 +1702,7 @@ def test_fetch_one_not_found():
     )
 
     with pytest.raises(RecordNotFoundException) as exc_info:
-        retriever.fetch_one("999", records_schema={})
+        retriever._fetch_one("999", records_schema={})
 
     assert "999" in str(exc_info.value)
 
@@ -1751,7 +1751,7 @@ def test_fetch_one_invalid_pk_type():
     )
 
     with pytest.raises(AttributeError):
-        retriever.fetch_one(123, records_schema={})  # type: ignore
+        retriever._fetch_one(123, records_schema={})  # type: ignore
 
 
 def test_fetch_one_no_response():
