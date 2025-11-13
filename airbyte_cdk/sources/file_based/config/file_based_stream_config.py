@@ -93,7 +93,7 @@ class FileBasedStreamConfig(BaseModel):
     def validate_discovery_related_fields(cls, values: Dict[str, Any]) -> Dict[str, Any]:
         """
         Please update this validation when new related to schema discovery field is added.
-        Validates schema discovery options compatability.
+        Validates schema discovery options compatibility.
         Note, that initially the recent_n_files_to_read_for_schema_discovery was added without a validation if schemaless or input_schema were provided.
         So this method doesn't check it to do not break already created connections.
         If recent_n_files_to_read_for_schema_discovery and schemaless or recent_n_files_to_read_for_schema_discovery and input_schema were provided,
