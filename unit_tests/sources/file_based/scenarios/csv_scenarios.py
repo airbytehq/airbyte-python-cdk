@@ -488,7 +488,7 @@ single_csv_scenario: TestScenario[InMemoryFilesSource] = (
                                 "use_first_found_file_for_schema_discovery": {
                                     "default": False,
                                     "description": "When enabled, the source will use the first found file for schema discovery. Helps to avoid long discovery step",
-                                    "title": "Use first found file for schema discovery",
+                                    "title": "Use First Found File For Schema Discover",
                                     "type": "boolean",
                                 },
                             },

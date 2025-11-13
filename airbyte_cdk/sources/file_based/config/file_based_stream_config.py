@@ -90,7 +90,7 @@ class FileBasedStreamConfig(BaseModel):
         return None
 
     @root_validator
-    def validate_discovery_related_fields(cls, values):
+    def validate_discovery_related_fields(cls, values: dict) -> dict:
         """
         Please update this validation when new related to schema discovery field is added.
         Validates schema discovery options compatability.
