@@ -4,6 +4,7 @@
 
 
 import datetime
+import warnings
 from io import BytesIO
 from unittest.mock import MagicMock, Mock, mock_open, patch
 
@@ -136,3 +137,39 @@ def test_file_read_error(mock_stream_reader, mock_logger, file_config, remote_fi
                 list(
                     parser.parse_records(file_config, remote_file, mock_stream_reader, mock_logger)
                 )
+
+
+class FakePanic(BaseException):
+    """Simulates the PyO3 PanicException which does not inherit from Exception."""
+
+
+def test_open_and_parse_file_falls_back_to_openpyxl(mock_logger):
+    parser = ExcelParser()
+    fp = BytesIO(b"test")
+
+    fallback_df = pd.DataFrame({"a": [1]})
+
+    calamine_ctx = MagicMock()
+    calamine_excel_file = MagicMock()
+    calamine_ctx.__enter__.return_value = calamine_excel_file
+    calamine_excel_file.parse.side_effect = FakePanic("calamine panic")
+
+    openpyxl_ctx = MagicMock()
+    openpyxl_excel_file = MagicMock()
+    openpyxl_ctx.__enter__.return_value = openpyxl_excel_file
+
+    def openpyxl_parse_side_effect():
+        warnings.warn("Cell A146 has invalid date", UserWarning)
+        return fallback_df
+
+    openpyxl_excel_file.parse.side_effect = openpyxl_parse_side_effect
+
+    with patch("airbyte_cdk.sources.file_based.file_types.excel_parser.pd.ExcelFile") as mock_excel:
+        mock_excel.side_effect = [calamine_ctx, openpyxl_ctx]
+
+        result = parser.open_and_parse_file(fp, mock_logger, "file.xlsx")
+
+    pd.testing.assert_frame_equal(result, fallback_df)
+    assert mock_logger.warning.call_count == 2
+    assert "Openpyxl warning" in mock_logger.warning.call_args_list[1].args[0]
+    mock_logger.error.assert_not_called()

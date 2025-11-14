@@ -3,6 +3,7 @@
 #
 
 import logging
+import warnings
 from io import IOBase
 from pathlib import Path
 from typing import Any, Dict, Iterable, Mapping, Optional, Tuple, Union
@@ -64,7 +65,7 @@ class ExcelParser(FileTypeParser):
         fields: Dict[str, str] = {}
 
         with stream_reader.open_file(file, self.file_read_mode, self.ENCODING, logger) as fp:
-            df = self.open_and_parse_file(fp, logger, file.uri)
+            df = self.open_and_parse_file(fp, logger, file)
             for column, df_type in df.dtypes.items():
                 # Choose the broadest data type if the column's data type differs in dataframes
                 prev_frame_column_type = fields.get(column)  # type: ignore [call-overload]
@@ -111,7 +112,7 @@ class ExcelParser(FileTypeParser):
         try:
             # Open and parse the file using the stream reader
             with stream_reader.open_file(file, self.file_read_mode, self.ENCODING, logger) as fp:
-                df = self.open_and_parse_file(fp, logger, file.uri)
+                df = self.open_and_parse_file(fp, logger, file)
                 # Yield records as dictionaries
                 # DataFrame.to_dict() method returns datetime values in pandas.Timestamp values, which are not serializable by orjson
                 # DataFrame.to_json() returns string with datetime values serialized to iso8601 with microseconds to align with pydantic behavior
@@ -184,7 +185,7 @@ class ExcelParser(FileTypeParser):
     def open_and_parse_file(
         fp: Union[IOBase, str, Path],
         logger: Optional[logging.Logger] = None,
-        file_uri: Optional[str] = None,
+        file_info: Optional[Union[str, RemoteFile]] = None,
     ) -> pd.DataFrame:
         """
         Opens and parses the Excel file with Calamine-first and Openpyxl fallback.
@@ -192,19 +193,64 @@ class ExcelParser(FileTypeParser):
         Returns:
             pd.DataFrame: Parsed data from the Excel file.
         """
+        file_label = "file"
+        file_url = None
+        if isinstance(file_info, RemoteFile):
+            file_label = file_info.file_uri_for_logging
+            file_url = getattr(file_info, "url", None)
+        elif isinstance(file_info, str):
+            file_label = file_info
+        calamine_exc: Optional[BaseException] = None
         try:
-            return pd.ExcelFile(fp, engine="calamine").parse()  # type: ignore [arg-type, call-overload, no-any-return]
-        except Exception as calamine_exc:
+            with pd.ExcelFile(fp, engine="calamine") as excel_file:  # type: ignore [arg-type, call-overload]
+                return excel_file.parse()  # type: ignore [no-any-return]
+        except BaseException as exc:  # noqa: BLE001
+            if isinstance(exc, (KeyboardInterrupt, SystemExit)):
+                raise
+            calamine_exc = exc
             if logger:
                 logger.warning(
-                    "Calamine parsing failed for %s, falling back to openpyxl: %s",
-                    file_uri or "file",
-                    str(calamine_exc),
+                    ExcelParser._format_message_with_link(
+                        f"Calamine parsing failed for {file_label}, falling back to openpyxl: {exc}",
+                        file_url,
+                    )
                 )
 
-            try:
-                fp.seek(0)  # type: ignore [union-attr]
-            except (AttributeError, OSError):
-                pass
+        # Fallback to openpyxl
+        try:
+            fp.seek(0)  # type: ignore [union-attr]
+        except (AttributeError, OSError):
+            pass
 
-            return pd.ExcelFile(fp, engine="openpyxl").parse()  # type: ignore [arg-type, call-overload, no-any-return]
+        try:
+            with warnings.catch_warnings(record=True) as warning_records:
+                warnings.simplefilter("always")
+                with pd.ExcelFile(fp, engine="openpyxl") as excel_file:  # type: ignore [arg-type, call-overload]
+                    df = excel_file.parse()  # type: ignore [no-any-return]
+            if logger:
+                for warning in warning_records:
+                    logger.warning(
+                        ExcelParser._format_message_with_link(
+                            f"Openpyxl warning for {file_label}: {warning.message}",
+                            file_url,
+                        )
+                    )
+            return df
+        except BaseException as openpyxl_exc:  # noqa: BLE001
+            if isinstance(openpyxl_exc, (KeyboardInterrupt, SystemExit)):
+                raise
+            # If both engines fail, raise the original calamine exception
+            if logger:
+                logger.error(
+                    ExcelParser._format_message_with_link(
+                        f"Both Calamine and Openpyxl parsing failed for {file_label}. Calamine error: {calamine_exc}, Openpyxl error: {openpyxl_exc}",
+                        file_url,
+                    )
+                )
+            raise calamine_exc if calamine_exc else openpyxl_exc
+
+    @staticmethod
+    def _format_message_with_link(message: str, file_url: Optional[str]) -> str:
+        if file_url:
+            return f"{message} (view: {file_url})"
+        return message
