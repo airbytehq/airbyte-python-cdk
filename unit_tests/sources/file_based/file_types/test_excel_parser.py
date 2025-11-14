@@ -152,10 +152,10 @@ def test_open_and_parse_file_falls_back_to_openpyxl(mock_logger):
     calamine_ctx = MagicMock()
     calamine_excel_file = MagicMock()
     calamine_ctx.__enter__.return_value = calamine_excel_file
-    
+
     def calamine_parse_side_effect(sheet_name=None):
         raise FakePanic("calamine panic")
-    
+
     calamine_excel_file.parse.side_effect = calamine_parse_side_effect
 
     openpyxl_ctx = MagicMock()
