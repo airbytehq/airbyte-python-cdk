@@ -850,6 +850,10 @@ definitions:
         examples:
           - "created_at"
           - "{{ config['record_cursor'] }}"
+      allow_catalog_defined_cursor_field:
+        title: Allow Catalog Defined Cursor Field
+        description: Whether the cursor allows users to override the default cursor_field when configuring their connection. The user defined cursor field will be specified from within the configured catalog.
+        type: boolean
       start_value:
         title: Start Value
         description: The value that determines the earliest record that should be synced.
@@ -913,6 +917,10 @@ definitions:
         examples:
           - "created_at"
           - "{{ config['record_cursor'] }}"
+      allow_catalog_defined_cursor_field:
+        title: Allow Catalog Defined Cursor Field
+        description: Whether the cursor allows users to override the default cursor_field when configuring their connection. The user defined cursor field will be specified from within the configured catalog.
+        type: boolean
       cursor_datetime_formats:
         title: Cursor Datetime Formats
         type: array

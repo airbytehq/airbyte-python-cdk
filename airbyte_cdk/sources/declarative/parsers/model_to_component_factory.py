@@ -1326,11 +1326,23 @@ class ModelToComponentFactory:
             )
 
         model_parameters = datetime_based_cursor_model.parameters or {}
-        interpolated_cursor_field = InterpolatedString.create(
-            datetime_based_cursor_model.cursor_field,
-            parameters=model_parameters,
+
+        cursor_field = self._get_catalog_defined_cursor_field(
+            stream_name=stream_name,
+            allow_catalog_defined_cursor_field=datetime_based_cursor_model.allow_catalog_defined_cursor_field
+            or False,
         )
-        cursor_field = CursorField(interpolated_cursor_field.eval(config=config))
+
+        if not cursor_field:
+            interpolated_cursor_field = InterpolatedString.create(
+                datetime_based_cursor_model.cursor_field,
+                parameters=model_parameters,
+            )
+            cursor_field = CursorField(
+                cursor_field_key=interpolated_cursor_field.eval(config=config),
+                supports_catalog_defined_cursor_field=datetime_based_cursor_model.allow_catalog_defined_cursor_field
+                or False,
+            )
 
         interpolated_partition_field_start = InterpolatedString.create(
             datetime_based_cursor_model.partition_field_start or "start_time",
@@ -1551,11 +1563,22 @@ class ModelToComponentFactory:
             else 0
         )
 
-        interpolated_cursor_field = InterpolatedString.create(
-            incrementing_count_cursor_model.cursor_field,
-            parameters=incrementing_count_cursor_model.parameters or {},
+        cursor_field = self._get_catalog_defined_cursor_field(
+            stream_name=stream_name,
+            allow_catalog_defined_cursor_field=incrementing_count_cursor_model.allow_catalog_defined_cursor_field
+            or False,
         )
-        cursor_field = CursorField(interpolated_cursor_field.eval(config=config))
+
+        if not cursor_field:
+            interpolated_cursor_field = InterpolatedString.create(
+                incrementing_count_cursor_model.cursor_field,
+                parameters=incrementing_count_cursor_model.parameters or {},
+            )
+            cursor_field = CursorField(
+                cursor_field_key=interpolated_cursor_field.eval(config=config),
+                supports_catalog_defined_cursor_field=incrementing_count_cursor_model.allow_catalog_defined_cursor_field
+                or False,
+            )
 
         connector_state_converter = IncrementingCountStreamStateConverter(
             is_sequential_state=True,  # ConcurrentPerPartitionCursor only works with sequential state
@@ -1625,15 +1648,26 @@ class ModelToComponentFactory:
                 f"Expected {model_type.__name__} component, but received {datetime_based_cursor_model.__class__.__name__}"
             )
 
-        interpolated_cursor_field = InterpolatedString.create(
-            datetime_based_cursor_model.cursor_field,
-            # FIXME the interfaces of the concurrent cursor are kind of annoying as they take a `ComponentDefinition` instead of the actual model. This was done because the ConcurrentDeclarativeSource didn't have access to the models [here for example](https://github.com/airbytehq/airbyte-python-cdk/blob/f525803b3fec9329e4cc8478996a92bf884bfde9/airbyte_cdk/sources/declarative/concurrent_declarative_source.py#L354C54-L354C91). So now we have two cases:
-            # * The ComponentDefinition comes from model.__dict__ in which case we have `parameters`
-            # * The ComponentDefinition comes from the manifest as a dict in which case we have `$parameters`
-            # We should change those interfaces to use the model once we clean up the code in CDS at which point the parameter propagation should happen as part of the ModelToComponentFactory.
-            parameters=datetime_based_cursor_model.parameters or {},
+        cursor_field = self._get_catalog_defined_cursor_field(
+            stream_name=stream_name,
+            allow_catalog_defined_cursor_field=datetime_based_cursor_model.allow_catalog_defined_cursor_field
+            or False,
         )
-        cursor_field = CursorField(interpolated_cursor_field.eval(config=config))
+
+        if not cursor_field:
+            interpolated_cursor_field = InterpolatedString.create(
+                datetime_based_cursor_model.cursor_field,
+                # FIXME the interfaces of the concurrent cursor are kind of annoying as they take a `ComponentDefinition` instead of the actual model. This was done because the ConcurrentDeclarativeSource didn't have access to the models [here for example](https://github.com/airbytehq/airbyte-python-cdk/blob/f525803b3fec9329e4cc8478996a92bf884bfde9/airbyte_cdk/sources/declarative/concurrent_declarative_source.py#L354C54-L354C91). So now we have two cases:
+                # * The ComponentDefinition comes from model.__dict__ in which case we have `parameters`
+                # * The ComponentDefinition comes from the manifest as a dict in which case we have `$parameters`
+                # We should change those interfaces to use the model once we clean up the code in CDS at which point the parameter propagation should happen as part of the ModelToComponentFactory.
+                parameters=datetime_based_cursor_model.parameters or {},
+            )
+            cursor_field = CursorField(
+                cursor_field_key=interpolated_cursor_field.eval(config=config),
+                supports_catalog_defined_cursor_field=datetime_based_cursor_model.allow_catalog_defined_cursor_field
+                or False,
+            )
 
         datetime_format = datetime_based_cursor_model.datetime_format
 
@@ -2076,9 +2110,11 @@ class ModelToComponentFactory:
             name=stream_name,
             json_schema=schema_loader.get_json_schema,
             primary_key=get_primary_key_from_stream(primary_key),
-            cursor_field=concurrent_cursor.cursor_field.cursor_field_key
+            cursor_field=concurrent_cursor.cursor_field
             if hasattr(concurrent_cursor, "cursor_field")
-            else "",  # FIXME we should have the cursor field has part of the interface of cursor,
+            else CursorField(
+                cursor_field_key=""
+            ),  # FIXME we should have the cursor field has part of the interface of cursor,
             logger=logging.getLogger(f"airbyte.{stream_name}"),
             cursor=concurrent_cursor,
             supports_file_transfer=hasattr(model, "file_uploader") and bool(model.file_uploader),
@@ -4293,3 +4329,25 @@ class ModelToComponentFactory:
                     request_parameters[request_parameter_key] = QueryPropertiesModel.parse_obj(
                         request_parameter
                     )
+
+    def _get_catalog_defined_cursor_field(
+        self, stream_name: str, allow_catalog_defined_cursor_field: bool
+    ) -> Optional[CursorField]:
+        if not allow_catalog_defined_cursor_field:
+            return None
+
+        configured_stream = self._stream_name_to_configured_stream.get(stream_name)
+
+        # Depending on the operation is being performed, there may not be a configured stream yet. In this
+        # case we return None which will then use the default cursor field defined on the cursor model
+        if not configured_stream or not configured_stream.cursor_field:
+            return None
+        elif len(configured_stream.cursor_field) > 1:
+            raise ValueError(
+                f"The `{stream_name}` stream does not support nested cursor_field. Please specify only a single cursor_field for the stream in the configured catalog."
+            )
+        else:
+            return CursorField(
+                cursor_field_key=configured_stream.cursor_field[0],
+                supports_catalog_defined_cursor_field=allow_catalog_defined_cursor_field,
+            )
