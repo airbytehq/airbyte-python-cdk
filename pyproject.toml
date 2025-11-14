@@ -253,6 +253,7 @@ DEP002 = [
   "cohere",
   "markdown",
   "openai",
+  "openpyxl",
   "pdf2image",
   "pdfminer.six",
   "pytesseract",
