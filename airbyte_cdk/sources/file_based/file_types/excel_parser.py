@@ -200,11 +200,23 @@ class ExcelParser(FileTypeParser):
             file_url = getattr(file_info, "url", None)
         elif isinstance(file_info, str):
             file_label = file_info
-        calamine_exc: Optional[Exception] = None
+        calamine_exc: Optional[BaseException] = None
         try:
             with pd.ExcelFile(fp, engine="calamine") as excel_file:  # type: ignore [arg-type, call-overload]
                 return excel_file.parse(sheet_name=0)  # type: ignore [no-any-return]
         except Exception as exc:
+            calamine_exc = exc
+            if logger:
+                logger.warning(
+                    ExcelParser._format_message_with_link(
+                        f"Calamine parsing failed for {file_label}, falling back to openpyxl: {exc}",
+                        file_url,
+                    )
+                )
+        except BaseException as exc:  # noqa: BLE001
+            # PyO3 PanicException from Calamine inherits from BaseException, not Exception
+            if isinstance(exc, (KeyboardInterrupt, SystemExit)):
+                raise
             calamine_exc = exc
             if logger:
                 logger.warning(
