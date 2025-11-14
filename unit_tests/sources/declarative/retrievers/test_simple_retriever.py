@@ -1706,7 +1706,7 @@ def test_fetch_one_not_found():
 
     assert "999" in str(exc_info.value)
 
-def testfetch_one_server_error():
+def test_fetch_one_server_error():
     """Test fetch_one propagates non-404 errors."""
     requester = MagicMock()
     requester.get_path.return_value = "posts"
@@ -1731,7 +1731,6 @@ def testfetch_one_server_error():
         retriever.fetch_one("123", records_schema={})
 
     assert "Server error" in str(exc_info.value)
-
 
 def testfetch_one_invalid_pk_type():
     """Test fetch_one with non-string pk_value (should fail type checking but test runtime behavior)."""
