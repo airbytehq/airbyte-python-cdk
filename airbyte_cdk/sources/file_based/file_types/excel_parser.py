@@ -64,7 +64,7 @@ class ExcelParser(FileTypeParser):
         fields: Dict[str, str] = {}
 
         with stream_reader.open_file(file, self.file_read_mode, self.ENCODING, logger) as fp:
-            df = self.open_and_parse_file(fp)
+            df = self.open_and_parse_file(fp, logger, file.uri)
             for column, df_type in df.dtypes.items():
                 # Choose the broadest data type if the column's data type differs in dataframes
                 prev_frame_column_type = fields.get(column)  # type: ignore [call-overload]
@@ -92,7 +92,7 @@ class ExcelParser(FileTypeParser):
         discovered_schema: Optional[Mapping[str, SchemaType]] = None,
     ) -> Iterable[Dict[str, Any]]:
         """
-        Parses records from an Excel file based on the provided configuration.
+        Parses records from an Excel file with fallback error handling.
 
         Args:
             config (FileBasedStreamConfig): Configuration for the file-based stream.
@@ -111,7 +111,7 @@ class ExcelParser(FileTypeParser):
         try:
             # Open and parse the file using the stream reader
             with stream_reader.open_file(file, self.file_read_mode, self.ENCODING, logger) as fp:
-                df = self.open_and_parse_file(fp)
+                df = self.open_and_parse_file(fp, logger, file.uri)
                 # Yield records as dictionaries
                 # DataFrame.to_dict() method returns datetime values in pandas.Timestamp values, which are not serializable by orjson
                 # DataFrame.to_json() returns string with datetime values serialized to iso8601 with microseconds to align with pydantic behavior
@@ -181,14 +181,30 @@ class ExcelParser(FileTypeParser):
             raise ConfigValidationError(FileBasedSourceError.CONFIG_VALIDATION_ERROR)
 
     @staticmethod
-    def open_and_parse_file(fp: Union[IOBase, str, Path]) -> pd.DataFrame:
+    def open_and_parse_file(
+        fp: Union[IOBase, str, Path],
+        logger: Optional[logging.Logger] = None,
+        file_uri: Optional[str] = None,
+    ) -> pd.DataFrame:
         """
-        Opens and parses the Excel file.
-
-        Args:
-            fp: File pointer to the Excel file.
+        Opens and parses the Excel file with Calamine-first and Openpyxl fallback.
 
         Returns:
             pd.DataFrame: Parsed data from the Excel file.
         """
-        return pd.ExcelFile(fp, engine="calamine").parse()  # type: ignore [arg-type, call-overload, no-any-return]
+        try:
+            return pd.ExcelFile(fp, engine="calamine").parse()  # type: ignore [arg-type, call-overload, no-any-return]
+        except Exception as calamine_exc:
+            if logger:
+                logger.warning(
+                    "Calamine parsing failed for %s, falling back to openpyxl: %s",
+                    file_uri or "file",
+                    str(calamine_exc),
+                )
+
+            try:
+                fp.seek(0)  # type: ignore [union-attr]
+            except (AttributeError, OSError):
+                pass
+
+            return pd.ExcelFile(fp, engine="openpyxl").parse()  # type: ignore [arg-type, call-overload, no-any-return]
