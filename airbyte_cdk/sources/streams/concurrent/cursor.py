@@ -38,8 +38,11 @@ def _extract_value(mapping: Mapping[str, Any], path: List[str]) -> Any:
 
 
 class CursorField:
-    def __init__(self, cursor_field_key: str) -> None:
+    def __init__(
+        self, cursor_field_key: str, supports_catalog_defined_cursor_field: bool = False
+    ) -> None:
         self.cursor_field_key = cursor_field_key
+        self.supports_catalog_defined_cursor_field = supports_catalog_defined_cursor_field
 
     def extract_value(self, record: Record) -> Any:
         cursor_value = record.data.get(self.cursor_field_key)
