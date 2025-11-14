@@ -200,13 +200,11 @@ class ExcelParser(FileTypeParser):
             file_url = getattr(file_info, "url", None)
         elif isinstance(file_info, str):
             file_label = file_info
-        calamine_exc: Optional[BaseException] = None
+        calamine_exc: Optional[Exception] = None
         try:
             with pd.ExcelFile(fp, engine="calamine") as excel_file:  # type: ignore [arg-type, call-overload]
                 return excel_file.parse()  # type: ignore [no-any-return]
-        except BaseException as exc:  # noqa: BLE001
-            if isinstance(exc, (KeyboardInterrupt, SystemExit)):
-                raise
+        except Exception as exc:
             calamine_exc = exc
             if logger:
                 logger.warning(
@@ -220,6 +218,7 @@ class ExcelParser(FileTypeParser):
         try:
             fp.seek(0)  # type: ignore [union-attr]
         except (AttributeError, OSError):
+            # Some file-like objects may not be seekable; attempt openpyxl parsing anyway
             pass
 
         try:
@@ -236,9 +235,7 @@ class ExcelParser(FileTypeParser):
                         )
                     )
             return df
-        except BaseException as openpyxl_exc:  # noqa: BLE001
-            if isinstance(openpyxl_exc, (KeyboardInterrupt, SystemExit)):
-                raise
+        except Exception as openpyxl_exc:
             # If both engines fail, raise the original calamine exception
             if logger:
                 logger.error(
