@@ -203,7 +203,7 @@ class ExcelParser(FileTypeParser):
         calamine_exc: Optional[Exception] = None
         try:
             with pd.ExcelFile(fp, engine="calamine") as excel_file:  # type: ignore [arg-type, call-overload]
-                return excel_file.parse()  # type: ignore [no-any-return]
+                return excel_file.parse(sheet_name=0)  # type: ignore [no-any-return]
         except Exception as exc:
             calamine_exc = exc
             if logger:
@@ -225,7 +225,7 @@ class ExcelParser(FileTypeParser):
             with warnings.catch_warnings(record=True) as warning_records:
                 warnings.simplefilter("always")
                 with pd.ExcelFile(fp, engine="openpyxl") as excel_file:  # type: ignore [arg-type, call-overload]
-                    df = excel_file.parse()  # type: ignore [no-any-return]
+                    df = excel_file.parse(sheet_name=0)  # type: ignore [no-any-return]
             if logger:
                 for warning in warning_records:
                     logger.warning(
