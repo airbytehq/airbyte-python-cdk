@@ -207,7 +207,7 @@ class AbstractFileBasedStreamReader(ABC):
             mime_type=file.mime_type,
             created_at=file.created_at,
             updated_at=file.updated_at,
-            source_uri=file.uri,
+            source_uri=file.source_uri,
         )
         file_reference = AirbyteRecordMessageFileReference(
             staging_file_url=local_file_path,
