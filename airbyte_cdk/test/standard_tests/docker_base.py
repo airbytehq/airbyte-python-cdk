@@ -1,6 +1,5 @@
 # Copyright (c) 2024 Airbyte, Inc., all rights reserved.
 """Base class for connector test suites."""
-
 from __future__ import annotations
 
 import inspect
@@ -27,8 +26,10 @@ from airbyte_cdk.models import (
 from airbyte_cdk.models.connector_metadata import MetadataFile
 from airbyte_cdk.test.entrypoint_wrapper import EntrypointOutput
 from airbyte_cdk.test.models import ConnectorTestScenario
+from airbyte_cdk.test.models.scenario import LegacyAcceptanceTestScenario
 from airbyte_cdk.utils.connector_paths import (
     ACCEPTANCE_TEST_CONFIG,
+    METADATA_YAML,
     find_connector_root,
 )
 from airbyte_cdk.utils.docker import (
@@ -84,6 +85,17 @@ class DockerConnectorTestSuite:
             )
         return tests_config
 
+    @classproperty
+    def connector_metadata_yaml_path(cls) -> Path:
+        """Get the path to the connector metadata file."""
+        connector_metadata_path = cls.get_connector_root_dir() / METADATA_YAML
+        if not connector_metadata_path.exists():
+            raise FileNotFoundError(
+                f"Connector metadata file not found at: {str(connector_metadata_path)}"
+            )
+
+        return connector_metadata_path
+
     @staticmethod
     def _dedup_scenarios(scenarios: list[ConnectorTestScenario]) -> list[ConnectorTestScenario]:
         """
@@ -99,14 +111,14 @@ class DockerConnectorTestSuite:
 
         for scenario in scenarios:
             for existing_scenario in deduped_scenarios:
-                if scenario.config_path == existing_scenario.config_path:
+                if scenario.config_file == existing_scenario.config_file:
                     # If a scenario with the same config_path already exists, we merge the empty streams.
                     # scenarios are immutable, so we create a new one.
-                    all_empty_streams = (existing_scenario.empty_streams or []) + (
-                        scenario.empty_streams or []
+                    all_skipped_streams = (existing_scenario.exclude_streams or []) + (
+                        scenario.exclude_streams or []
                     )
                     merged_scenario = existing_scenario.model_copy(
-                        update={"empty_streams": list(set(all_empty_streams))}
+                        update={"exclude_streams": list(set(all_skipped_streams))}
                     )
                     deduped_scenarios.remove(existing_scenario)
                     deduped_scenarios.append(merged_scenario)
@@ -125,6 +137,16 @@ class DockerConnectorTestSuite:
         This has to be a separate function because pytest does not allow
         parametrization of fixtures with arguments from the test class itself.
         """
+        connector_metadata_path = cls.connector_metadata_yaml_path
+        result: list[ConnectorTestScenario] | None = ConnectorTestScenario.from_metadata_yaml(
+            connector_metadata_path
+        )
+        if result is not None:
+            # A non-null result indicates that the `smokeTests` key is present in metadata.yaml.
+            # Note: Modern smoke test configs do not need to be deduped.
+            return result
+
+        # Else, look for a legacy `acceptance-test-config.yml` file.
         try:
             all_tests_config = cls.acceptance_test_config
         except FileNotFoundError as e:
@@ -154,9 +176,9 @@ class DockerConnectorTestSuite:
                     # We skip iam_role tests for now, as they are not supported in the test suite.
                     continue
 
-                scenario = ConnectorTestScenario.model_validate(test)
+                legacy_scenario = LegacyAcceptanceTestScenario.model_validate(test)
 
-                test_scenarios.append(scenario)
+                test_scenarios.append(legacy_scenario.as_test_scenario())
 
         deduped_test_scenarios = cls._dedup_scenarios(test_scenarios)
 
@@ -216,7 +238,7 @@ class DockerConnectorTestSuite:
           - In the rare case that image caches need to be cleared, please clear
             the local docker image cache using `docker image prune -a` command.
         """
-        if scenario.expected_outcome.expect_exception():
+        if scenario.expect_failure:
             pytest.skip("Skipping test_docker_image_build_and_check (expected to fail).")
 
         tag = "dev-latest"
@@ -277,7 +299,7 @@ class DockerConnectorTestSuite:
         if self.is_destination_connector():
             pytest.skip("Skipping read test for destination connector.")
 
-        if scenario.expected_outcome.expect_exception():
+        if scenario.expect_failure:
             pytest.skip("Skipping (expected to fail).")
 
         if read_from_streams == "none":
@@ -290,15 +312,15 @@ class DockerConnectorTestSuite:
         if read_scenarios == "all":
             pass
         elif read_scenarios == "default":
-            if scenario.id not in default_scenario_ids:
+            if scenario.name not in default_scenario_ids:
                 pytest.skip(
-                    f"Skipping read test for scenario '{scenario.id}' "
+                    f"Skipping read test for scenario '{scenario.name}' "
                     f"(not in default scenarios list '{default_scenario_ids}')."
                 )
-        elif scenario.id not in read_scenarios:
+        elif scenario.name not in read_scenarios:
             # pytest.skip(
             raise ValueError(
-                f"Skipping read test for scenario '{scenario.id}' "
+                f"Skipping read test for scenario '{scenario.name}' "
                 f"(not in --read-scenarios={read_scenarios})."
             )
 
@@ -363,11 +385,6 @@ class DockerConnectorTestSuite:
                 # If `read_from_streams` is a list, we filter the discovered streams.
                 streams_list = list(set(streams_list) & set(read_from_streams))
 
-            if scenario.empty_streams:
-                # Filter out streams marked as empty in the scenario.
-                empty_stream_names = [stream.name for stream in scenario.empty_streams]
-                streams_list = [s for s in streams_list if s.name not in empty_stream_names]
-
             configured_catalog: ConfiguredAirbyteCatalog = ConfiguredAirbyteCatalog(
                 streams=[
                     ConfiguredAirbyteStream(
@@ -380,7 +397,7 @@ class DockerConnectorTestSuite:
                         destination_sync_mode=DestinationSyncMode.append,
                     )
                     for stream in discovered_catalog.streams
-                    if stream.name in streams_list
+                    if scenario.get_streams_filter()(stream.name)
                 ]
             )
             configured_catalog_path = temp_dir / "catalog.json"

@@ -7,13 +7,11 @@ from typing import TYPE_CHECKING
 import pytest
 
 from airbyte_cdk.models import (
-    AirbyteMessage,
     AirbyteStream,
     ConfiguredAirbyteCatalog,
     ConfiguredAirbyteStream,
     DestinationSyncMode,
     SyncMode,
-    Type,
 )
 from airbyte_cdk.test.models import (
     ConnectorTestScenario,
@@ -61,11 +59,11 @@ class SourceTestSuiteBase(ConnectorTestSuiteBase):
         scenario: ConnectorTestScenario,
     ) -> None:
         """Standard test for `discover`."""
-        if scenario.expected_outcome.expect_exception():
+        if scenario.expect_failure:
             # If the scenario expects an exception, we can't ensure it specifically would fail
             # in discover, because some discover implementations do not need to make a connection.
             # We skip this test in that case.
-            pytest.skip("Skipping discover test for scenario that expects an exception.")
+            pytest.skip("Skipping `discover` test for scenario that expects an exception.")
             return
 
         run_test_job(
@@ -115,18 +113,13 @@ class SourceTestSuiteBase(ConnectorTestSuiteBase):
             self.create_connector(scenario),
             "discover",
             connector_root=self.get_connector_root_dir(),
-            test_scenario=scenario.without_expected_outcome(),
+            test_scenario=scenario,
         )
-        if scenario.expected_outcome.expect_exception() and discover_result.errors:
+        if scenario.expect_failure and discover_result.errors:
             # Failed as expected; we're done.
             return
+
         streams = discover_result.catalog.catalog.streams  # type: ignore [reportOptionalMemberAccess, union-attr]
-
-        if scenario.empty_streams:
-            # Filter out streams marked as empty in the scenario.
-            empty_stream_names = [stream.name for stream in scenario.empty_streams]
-            streams = [s for s in streams if s.name not in empty_stream_names]
-
         configured_catalog = ConfiguredAirbyteCatalog(
             streams=[
                 ConfiguredAirbyteStream(
@@ -135,6 +128,7 @@ class SourceTestSuiteBase(ConnectorTestSuiteBase):
                     destination_sync_mode=DestinationSyncMode.append_dedup,
                 )
                 for stream in streams
+                if scenario.get_streams_filter()(stream.name)
             ]
         )
         result = run_test_job(
@@ -145,7 +139,7 @@ class SourceTestSuiteBase(ConnectorTestSuiteBase):
             catalog=configured_catalog,
         )
 
-        if scenario.expected_outcome.expect_success() and not result.records:
+        if scenario.expect_failure and not result.records:
             raise AssertionError("Expected records but got none.")
 
     def test_fail_read_with_bad_catalog(
