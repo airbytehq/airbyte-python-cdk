@@ -32,6 +32,7 @@ from airbyte_cdk.sources.file_based.types import StreamSlice
 from airbyte_cdk.sources.message import MessageRepository
 from airbyte_cdk.sources.source import ExperimentalClassWarning
 from airbyte_cdk.sources.streams.concurrent.abstract_stream_facade import AbstractStreamFacade
+from airbyte_cdk.sources.streams.concurrent.cursor import CursorField
 from airbyte_cdk.sources.streams.concurrent.default_stream import DefaultStream
 from airbyte_cdk.sources.streams.concurrent.exceptions import ExceptionWithDisplayMessage
 from airbyte_cdk.sources.streams.concurrent.helpers import (
@@ -97,7 +98,7 @@ class FileBasedStreamFacade(AbstractStreamFacade[DefaultStream], AbstractFileBas
                 name=stream.name,
                 json_schema=stream.get_json_schema(),
                 primary_key=pk,
-                cursor_field=cursor_field,
+                cursor_field=CursorField(cursor_field_key=cursor_field) if cursor_field else None,
                 logger=logger,
                 namespace=stream.namespace,
                 cursor=cursor,

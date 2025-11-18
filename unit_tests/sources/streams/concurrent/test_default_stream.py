@@ -8,7 +8,7 @@ import pytest
 
 from airbyte_cdk.models import AirbyteStream, SyncMode
 from airbyte_cdk.sources.message import InMemoryMessageRepository
-from airbyte_cdk.sources.streams.concurrent.cursor import Cursor, FinalStateCursor
+from airbyte_cdk.sources.streams.concurrent.cursor import Cursor, CursorField, FinalStateCursor
 from airbyte_cdk.sources.streams.concurrent.default_stream import DefaultStream
 from airbyte_cdk.sources.streams.concurrent.partitions.partition import Partition
 from airbyte_cdk.sources.streams.concurrent.partitions.partition_generator import PartitionGenerator
@@ -187,7 +187,7 @@ class ThreadBasedConcurrentStreamTest(unittest.TestCase):
             self._name,
             json_schema,
             self._primary_key,
-            "date",
+            CursorField(cursor_field_key="date"),
             self._logger,
             FinalStateCursor(
                 stream_name=self._name,

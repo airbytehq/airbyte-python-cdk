@@ -22,7 +22,7 @@ from airbyte_cdk.sources.streams.concurrent.adapters import (
     StreamPartition,
     StreamPartitionGenerator,
 )
-from airbyte_cdk.sources.streams.concurrent.cursor import Cursor
+from airbyte_cdk.sources.streams.concurrent.cursor import Cursor, CursorField
 from airbyte_cdk.sources.streams.concurrent.exceptions import ExceptionWithDisplayMessage
 from airbyte_cdk.sources.streams.core import Stream
 from airbyte_cdk.sources.types import Record
@@ -328,6 +328,7 @@ class StreamFacadeTest(unittest.TestCase):
 
         assert facade.name == "stream"
         assert facade.cursor_field == "cursor"
+        # assert facade.cursor_field == CursorField(cursor_field_key="cursor")
         assert facade._abstract_stream._primary_key == ["id"]
 
     def test_create_from_stream_stream_with_none_primary_key(self):
