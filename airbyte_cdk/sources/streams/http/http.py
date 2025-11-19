@@ -42,9 +42,7 @@ BODY_REQUEST_METHODS = ("GET", "POST", "PUT", "PATCH")
 
 
 class HttpStream(Stream, CheckpointMixin, ABC):
-    """
-    Base abstract class for an Airbyte Stream using the HTTP protocol. Basic building block for users building an Airbyte source for a HTTP API.
-    """
+    """Base class for streams that fetch data from HTTP APIs with built-in pagination and error handling."""
 
     source_defined_cursor = True  # Most HTTP streams use a source defined cursor (i.e: the user can't configure it like on a SQL table)
     page_size: Optional[int] = (
@@ -108,15 +106,11 @@ class HttpStream(Stream, CheckpointMixin, ABC):
     @property
     @abstractmethod
     def url_base(self) -> str:
-        """
-        :return: URL base for the  API endpoint e.g: if you wanted to hit https://myapi.com/v1/some_entity then this should return "https://myapi.com/v1/"
-        """
+        """Returns the base URL for API requests (e.g., "https://api.example.com/v1/")."""
 
     @property
     def http_method(self) -> str:
-        """
-        Override if needed. See get_request_data/get_request_json if using POST/PUT/PATCH.
-        """
+        """Returns the HTTP method to use for requests (default: "GET")."""
         return "GET"
 
     @property
@@ -165,12 +159,13 @@ class HttpStream(Stream, CheckpointMixin, ABC):
 
     @abstractmethod
     def next_page_token(self, response: requests.Response) -> Optional[Mapping[str, Any]]:
-        """
-        Override this method to define a pagination strategy.
+        """Returns the token for the next page of results, or None if no more pages exist.
 
-        The value returned from this method is passed to most other methods in this class. Use it to form a request e.g: set headers or query params.
+        Args:
+            response: HTTP response from the current page request.
 
-        :return: The token for the next page from the input response object. Returning None means there are no more pages to read in this response.
+        Returns:
+            Mapping containing pagination token, or None if pagination is complete.
         """
 
     @abstractmethod
@@ -181,9 +176,7 @@ class HttpStream(Stream, CheckpointMixin, ABC):
         stream_slice: Optional[Mapping[str, Any]] = None,
         next_page_token: Optional[Mapping[str, Any]] = None,
     ) -> str:
-        """
-        Returns the URL path for the API endpoint e.g: if you wanted to hit https://myapi.com/v1/some_entity then this should return "some_entity"
-        """
+        """Returns the URL path for the API endpoint (e.g., "users" or "v2/customers")."""
 
     def request_params(
         self,
@@ -191,11 +184,7 @@ class HttpStream(Stream, CheckpointMixin, ABC):
         stream_slice: Optional[Mapping[str, Any]] = None,
         next_page_token: Optional[Mapping[str, Any]] = None,
     ) -> MutableMapping[str, Any]:
-        """
-        Override this method to define the query parameters that should be set on an outgoing HTTP request given the inputs.
-
-        E.g: you might want to define query parameters for paging if next_page_token is not None.
-        """
+        """Returns query parameters to include in the HTTP request."""
         return {}
 
     def request_headers(
@@ -204,9 +193,7 @@ class HttpStream(Stream, CheckpointMixin, ABC):
         stream_slice: Optional[Mapping[str, Any]] = None,
         next_page_token: Optional[Mapping[str, Any]] = None,
     ) -> Mapping[str, Any]:
-        """
-        Override to return any non-auth headers. Authentication headers will overwrite any overlapping headers returned from this method.
-        """
+        """Returns non-authentication headers to include in the HTTP request."""
         return {}
 
     def request_body_data(
@@ -261,14 +248,16 @@ class HttpStream(Stream, CheckpointMixin, ABC):
         stream_slice: Optional[Mapping[str, Any]] = None,
         next_page_token: Optional[Mapping[str, Any]] = None,
     ) -> Iterable[Mapping[str, Any]]:
-        """
-        Parses the raw response object into a list of records.
-        By default, this returns an iterable containing the input. Override to parse differently.
-        :param response:
-        :param stream_state:
-        :param stream_slice:
-        :param next_page_token:
-        :return: An iterable containing the parsed response
+        """Parses the HTTP response into an iterable of record dictionaries.
+
+        Args:
+            response: HTTP response object from the API request.
+            stream_state: Current state for incremental syncs.
+            stream_slice: Current partition being processed.
+            next_page_token: Token for the current page of results.
+
+        Returns:
+            Iterable of record dictionaries extracted from the response.
         """
 
     def get_backoff_strategy(self) -> Optional[Union[BackoffStrategy, List[BackoffStrategy]]]:

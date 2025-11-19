@@ -15,7 +15,7 @@ from airbyte_cdk.sources.types import ConnectionDefinition
 
 
 class YamlDeclarativeSource(ConcurrentDeclarativeSource):
-    """Declarative source defined by a yaml file"""
+    """Entry point for declarative YAML-based source connectors that loads and executes manifest files."""
 
     def __init__(
         self,
@@ -26,8 +26,15 @@ class YamlDeclarativeSource(ConcurrentDeclarativeSource):
         state: Optional[List[AirbyteStateMessage]] = None,
         config_path: Optional[str] = None,
     ) -> None:
-        """
-        :param path_to_yaml: Path to the yaml file describing the source
+        """Initializes a declarative source from a YAML manifest file.
+
+        Args:
+            path_to_yaml: Path to the manifest YAML file describing the source.
+            debug: Enable debug logging for manifest parsing and execution.
+            catalog: Configured catalog for the sync operation.
+            config: User-provided configuration for the source.
+            state: Current state for incremental syncs.
+            config_path: Path to the configuration file.
         """
         self._path_to_yaml = path_to_yaml
         source_config = self._read_and_parse_yaml_file(path_to_yaml)
