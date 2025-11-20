@@ -6,7 +6,7 @@ import logging
 import warnings
 from io import IOBase
 from pathlib import Path
-from typing import Any, Dict, Iterable, Mapping, Optional, Tuple, Union
+from typing import Any, Dict, Iterable, Mapping, Optional, Tuple, Type, Union, cast
 
 import orjson
 import pandas as pd
@@ -29,6 +29,17 @@ from airbyte_cdk.sources.file_based.file_based_stream_reader import (
 from airbyte_cdk.sources.file_based.file_types.file_type_parser import FileTypeParser
 from airbyte_cdk.sources.file_based.remote_file import RemoteFile
 from airbyte_cdk.sources.file_based.schema_helpers import SchemaType
+
+try:  # pragma: no cover - evaluated at import time
+    from pyo3_runtime import PanicException as _PyO3PanicException  # type: ignore[import-not-found]
+except ImportError:  # pragma: no cover - optional dependency is not installed
+    _PyO3PanicException = None  # type: ignore[assignment]
+
+CALAMINE_PANIC_EXCEPTIONS: Tuple[Type[BaseException], ...] = (
+    (cast(Type[BaseException], _PyO3PanicException),)
+    if _PyO3PanicException is not None
+    else ()
+)
 
 
 class ExcelParser(FileTypeParser):
@@ -201,12 +212,10 @@ class ExcelParser(FileTypeParser):
         Raises:
             ExcelCalamineParsingError: If Calamine fails to parse the file.
         """
+        handled_exceptions: Tuple[Type[BaseException], ...] = CALAMINE_PANIC_EXCEPTIONS + (Exception,)
         try:
             return pd.ExcelFile(fp, engine="calamine").parse()  # type: ignore [arg-type, call-overload, no-any-return]
-        except BaseException as exc:  # noqa: BLE001
-            # PyO3 PanicException from Calamine inherits from BaseException, not Exception
-            if isinstance(exc, (KeyboardInterrupt, SystemExit)):
-                raise
+        except handled_exceptions as exc:  # type: ignore[misc]
             logger.warning(
                 f"Calamine parsing failed for {file_info.file_uri_for_logging}, falling back to openpyxl: {exc}"
             )
