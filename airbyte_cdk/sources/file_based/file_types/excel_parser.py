@@ -18,6 +18,7 @@ from airbyte_cdk.sources.file_based.config.file_based_stream_config import (
 )
 from airbyte_cdk.sources.file_based.exceptions import (
     ConfigValidationError,
+    ExcelCalamineParsingError,
     FileBasedSourceError,
     RecordParseError,
 )
@@ -182,84 +183,89 @@ class ExcelParser(FileTypeParser):
             raise ConfigValidationError(FileBasedSourceError.CONFIG_VALIDATION_ERROR)
 
     @staticmethod
-    def open_and_parse_file(
+    def _open_and_parse_file_with_calamine(
         fp: Union[IOBase, str, Path],
-        logger: Optional[logging.Logger] = None,
-        file_info: Optional[Union[str, RemoteFile]] = None,
+        logger: logging.Logger,
+        file_info: RemoteFile,
     ) -> pd.DataFrame:
-        """
-        Opens and parses the Excel file with Calamine-first and Openpyxl fallback.
+        """Opens and parses Excel file using Calamine engine.
+
+        Args:
+            fp: File pointer to the Excel file.
+            logger: Logger for logging information and errors.
+            file_info: Remote file information for logging context.
 
         Returns:
             pd.DataFrame: Parsed data from the Excel file.
+
+        Raises:
+            ExcelCalamineParsingError: If Calamine fails to parse the file.
         """
-        file_label = "file"
-        file_url = None
-        if isinstance(file_info, RemoteFile):
-            file_label = file_info.file_uri_for_logging
-            file_url = getattr(file_info, "url", None)
-        elif isinstance(file_info, str):
-            file_label = file_info
-        calamine_exc: Optional[BaseException] = None
         try:
-            with pd.ExcelFile(fp, engine="calamine") as excel_file:  # type: ignore [arg-type, call-overload]
-                return excel_file.parse(sheet_name=0)  # type: ignore [no-any-return]
-        except Exception as exc:
-            calamine_exc = exc
-            if logger:
-                logger.warning(
-                    ExcelParser._format_message_with_link(
-                        f"Calamine parsing failed for {file_label}, falling back to openpyxl: {exc}",
-                        file_url,
-                    )
-                )
+            return pd.ExcelFile(fp, engine="calamine").parse()  # type: ignore [arg-type, call-overload, no-any-return]
         except BaseException as exc:  # noqa: BLE001
             # PyO3 PanicException from Calamine inherits from BaseException, not Exception
             if isinstance(exc, (KeyboardInterrupt, SystemExit)):
                 raise
-            calamine_exc = exc
-            if logger:
-                logger.warning(
-                    ExcelParser._format_message_with_link(
-                        f"Calamine parsing failed for {file_label}, falling back to openpyxl: {exc}",
-                        file_url,
-                    )
-                )
-
-        # Fallback to openpyxl
-        try:
-            fp.seek(0)  # type: ignore [union-attr]
-        except (AttributeError, OSError):
-            # Some file-like objects may not be seekable; attempt openpyxl parsing anyway
-            pass
-
-        try:
-            with warnings.catch_warnings(record=True) as warning_records:
-                warnings.simplefilter("always")
-                with pd.ExcelFile(fp, engine="openpyxl") as excel_file:  # type: ignore [arg-type, call-overload]
-                    df = excel_file.parse(sheet_name=0)  # type: ignore [no-any-return]
-            if logger:
-                for warning in warning_records:
-                    logger.warning(
-                        ExcelParser._format_message_with_link(
-                            f"Openpyxl warning for {file_label}: {warning.message}",
-                            file_url,
-                        )
-                    )
-            return df
-        except Exception as openpyxl_exc:
-            # If both engines fail, raise the original calamine exception
-            if logger:
-                logger.error(
-                    ExcelParser._format_message_with_link(
-                        f"Both Calamine and Openpyxl parsing failed for {file_label}. Calamine error: {calamine_exc}, Openpyxl error: {openpyxl_exc}",
-                        file_url,
-                    )
-                )
-            raise calamine_exc if calamine_exc else openpyxl_exc
+            logger.warning(
+                f"Calamine parsing failed for {file_info.file_uri_for_logging}, falling back to openpyxl: {exc}"
+            )
+            raise ExcelCalamineParsingError(
+                f"Calamine engine failed to parse {file_info.file_uri_for_logging}",
+                filename=file_info.uri,
+            ) from exc
 
     @staticmethod
-    def _format_message_with_link(message: str, file_url: Optional[str]) -> str:
-        if file_url:
-            return f"{message} (view: {file_url})"
-        return message
+    def _open_and_parse_file_with_openpyxl(
+        fp: Union[IOBase, str, Path],
+        logger: logging.Logger,
+        file_info: RemoteFile,
+    ) -> pd.DataFrame:
+        """Opens and parses Excel file using Openpyxl engine.
+
+        Args:
+            fp: File pointer to the Excel file.
+            logger: Logger for logging information and errors.
+            file_info: Remote file information for logging context.
+
+        Returns:
+            pd.DataFrame: Parsed data from the Excel file.
+        """
+        with warnings.catch_warnings(record=True) as warning_records:
+            warnings.simplefilter("always")
+            df = pd.ExcelFile(fp, engine="openpyxl").parse()  # type: ignore [arg-type, call-overload]
+
+        for warning in warning_records:
+            logger.warning(
+                f"Openpyxl warning for {file_info.file_uri_for_logging}: {warning.message}"
+            )
+
+        return df  # type: ignore [no-any-return]
+
+    @staticmethod
+    def open_and_parse_file(
+        fp: Union[IOBase, str, Path],
+        logger: logging.Logger,
+        file_info: RemoteFile,
+    ) -> pd.DataFrame:
+        """Opens and parses the Excel file with Calamine-first and Openpyxl fallback.
+
+        Args:
+            fp: File pointer to the Excel file.
+            logger: Logger for logging information and errors.
+            file_info: Remote file information for logging context.
+
+        Returns:
+            pd.DataFrame: Parsed data from the Excel file.
+        """
+        try:
+            return ExcelParser._open_and_parse_file_with_calamine(fp, logger, file_info)
+        except ExcelCalamineParsingError:
+            # Fallback to openpyxl
+            try:
+                fp.seek(0)  # type: ignore [union-attr]
+            except (AttributeError, OSError):
+                # Some file-like objects may not be seekable; attempt openpyxl parsing anyway
+                pass
+
+            return ExcelParser._open_and_parse_file_with_openpyxl(fp, logger, file_info)
