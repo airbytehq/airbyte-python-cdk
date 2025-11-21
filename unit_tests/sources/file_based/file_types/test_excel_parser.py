@@ -153,7 +153,9 @@ def test_open_and_parse_file_falls_back_to_openpyxl(mock_logger):
     calamine_excel_file = MagicMock()
 
     def calamine_parse_side_effect():
-        raise FakePanic("calamine panic")
+        raise FakePanic(
+            "failed to construct date: PyErr { type: <class 'ValueError'>, value: ValueError('year 20225 is out of range'), traceback: None }"
+        )
 
     calamine_excel_file.parse.side_effect = calamine_parse_side_effect
 
@@ -165,10 +167,9 @@ def test_open_and_parse_file_falls_back_to_openpyxl(mock_logger):
 
     openpyxl_excel_file.parse.side_effect = openpyxl_parse_side_effect
 
-    with patch(
-        "airbyte_cdk.sources.file_based.file_types.excel_parser.CALAMINE_PANIC_EXCEPTIONS",
-        (FakePanic,),
-    ), patch("airbyte_cdk.sources.file_based.file_types.excel_parser.pd.ExcelFile") as mock_excel:
+    with (
+        patch("airbyte_cdk.sources.file_based.file_types.excel_parser.pd.ExcelFile") as mock_excel,
+    ):
         mock_excel.side_effect = [calamine_excel_file, openpyxl_excel_file]
 
         result = parser.open_and_parse_file(fp, mock_logger, remote_file)
@@ -183,9 +184,7 @@ def test_open_and_parse_file_does_not_swallow_keyboard_interrupt(mock_logger):
     fp = BytesIO(b"test")
     remote_file = RemoteFile(uri="s3://mybucket/test.xlsx", last_modified=datetime.datetime.now())
 
-    with patch(
-        "airbyte_cdk.sources.file_based.file_types.excel_parser.pd.ExcelFile"
-    ) as mock_excel:
+    with patch("airbyte_cdk.sources.file_based.file_types.excel_parser.pd.ExcelFile") as mock_excel:
         mock_excel.return_value.parse.side_effect = KeyboardInterrupt()
 
         with pytest.raises(KeyboardInterrupt):

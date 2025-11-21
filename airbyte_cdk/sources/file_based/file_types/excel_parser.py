@@ -30,17 +30,6 @@ from airbyte_cdk.sources.file_based.file_types.file_type_parser import FileTypeP
 from airbyte_cdk.sources.file_based.remote_file import RemoteFile
 from airbyte_cdk.sources.file_based.schema_helpers import SchemaType
 
-try:  # pragma: no cover - evaluated at import time
-    from pyo3_runtime import PanicException as _PyO3PanicException  # type: ignore[import-not-found]
-except ImportError:  # pragma: no cover - optional dependency is not installed
-    _PyO3PanicException = None  # type: ignore[assignment]
-
-CALAMINE_PANIC_EXCEPTIONS: Tuple[Type[BaseException], ...] = (
-    (cast(Type[BaseException], _PyO3PanicException),)
-    if _PyO3PanicException is not None
-    else ()
-)
-
 
 class ExcelParser(FileTypeParser):
     ENCODING = None
@@ -212,17 +201,21 @@ class ExcelParser(FileTypeParser):
         Raises:
             ExcelCalamineParsingError: If Calamine fails to parse the file.
         """
-        handled_exceptions: Tuple[Type[BaseException], ...] = CALAMINE_PANIC_EXCEPTIONS + (Exception,)
         try:
             return pd.ExcelFile(fp, engine="calamine").parse()  # type: ignore [arg-type, call-overload, no-any-return]
-        except handled_exceptions as exc:  # type: ignore[misc]
-            logger.warning(
-                f"Calamine parsing failed for {file_info.file_uri_for_logging}, falling back to openpyxl: {exc}"
-            )
-            raise ExcelCalamineParsingError(
-                f"Calamine engine failed to parse {file_info.file_uri_for_logging}",
-                filename=file_info.uri,
-            ) from exc
+        except BaseException as exc:
+            # Calamine engine raises PanicException(child of BaseException) if Calamine fails to parse the file.
+            # Checking if ValueError in exception arg to know if it was actually an error during parsing due to invalid values in cells.
+            # Otherwise, raise an exception.
+            if "ValueError" in str(exc):
+                logger.warning(
+                    f"Calamine parsing failed for {file_info.file_uri_for_logging}, falling back to openpyxl: {exc}"
+                )
+                raise ExcelCalamineParsingError(
+                    f"Calamine engine failed to parse {file_info.file_uri_for_logging}",
+                    filename=file_info.uri,
+                ) from exc
+            raise exc
 
     @staticmethod
     def _open_and_parse_file_with_openpyxl(
