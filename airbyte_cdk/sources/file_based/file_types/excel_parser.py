@@ -182,8 +182,8 @@ class ExcelParser(FileTypeParser):
             logger.info(f"Expected ExcelFormat, got {excel_format}")
             raise ConfigValidationError(FileBasedSourceError.CONFIG_VALIDATION_ERROR)
 
-    @staticmethod
     def _open_and_parse_file_with_calamine(
+        self,
         fp: Union[IOBase, str, Path],
         logger: logging.Logger,
         file_info: RemoteFile,
@@ -217,8 +217,8 @@ class ExcelParser(FileTypeParser):
                 ) from exc
             raise exc
 
-    @staticmethod
     def _open_and_parse_file_with_openpyxl(
+        self,
         fp: Union[IOBase, str, Path],
         logger: logging.Logger,
         file_info: RemoteFile,
@@ -244,8 +244,8 @@ class ExcelParser(FileTypeParser):
 
         return df  # type: ignore [no-any-return]
 
-    @staticmethod
     def open_and_parse_file(
+        self,
         fp: Union[IOBase, str, Path],
         logger: logging.Logger,
         file_info: RemoteFile,
@@ -261,7 +261,7 @@ class ExcelParser(FileTypeParser):
             pd.DataFrame: Parsed data from the Excel file.
         """
         try:
-            return ExcelParser._open_and_parse_file_with_calamine(fp, logger, file_info)
+            return self._open_and_parse_file_with_calamine(fp, logger, file_info)
         except ExcelCalamineParsingError:
             # Fallback to openpyxl
             try:
@@ -270,4 +270,4 @@ class ExcelParser(FileTypeParser):
                 # Some file-like objects may not be seekable; attempt openpyxl parsing anyway
                 pass
 
-            return ExcelParser._open_and_parse_file_with_openpyxl(fp, logger, file_info)
+            return self._open_and_parse_file_with_openpyxl(fp, logger, file_info)

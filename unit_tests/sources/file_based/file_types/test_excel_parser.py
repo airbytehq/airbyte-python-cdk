@@ -179,13 +179,19 @@ def test_open_and_parse_file_falls_back_to_openpyxl(mock_logger):
     assert "Openpyxl warning" in mock_logger.warning.call_args_list[1].args[0]
 
 
-def test_open_and_parse_file_does_not_swallow_keyboard_interrupt(mock_logger):
+def test_open_and_parse_file_does_not_swallow_system_exit(mock_logger):
+    """Test that SystemExit is not caught by the BaseException handler.
+
+    This test ensures that critical system-level exceptions like SystemExit and KeyboardInterrupt
+    are not accidentally caught and suppressed by our BaseException handler in the Calamine parsing
+    method. These exceptions should always propagate up to allow proper program termination.
+    """
     parser = ExcelParser()
     fp = BytesIO(b"test")
     remote_file = RemoteFile(uri="s3://mybucket/test.xlsx", last_modified=datetime.datetime.now())
 
     with patch("airbyte_cdk.sources.file_based.file_types.excel_parser.pd.ExcelFile") as mock_excel:
-        mock_excel.return_value.parse.side_effect = KeyboardInterrupt()
+        mock_excel.return_value.parse.side_effect = SystemExit()
 
-        with pytest.raises(KeyboardInterrupt):
+        with pytest.raises(SystemExit):
             parser.open_and_parse_file(fp, mock_logger, remote_file)
