@@ -195,3 +195,47 @@ def test_open_and_parse_file_does_not_swallow_system_exit(mock_logger):
 
         with pytest.raises(SystemExit):
             parser.open_and_parse_file(fp, mock_logger, remote_file)
+
+
+@pytest.mark.parametrize(
+    "exc_cls",
+    [
+        pytest.param(AttributeError, id="attribute-error"),
+        pytest.param(OSError, id="os-error"),
+    ],
+)
+def test_openpyxl_logs_info_when_seek_fails(mock_logger, remote_file, exc_cls):
+    """Test that openpyxl logs info when seek fails on non-seekable files.
+
+    This test ensures that when falling back to openpyxl, if the file pointer
+    cannot be rewound (seek fails with AttributeError or OSError), an info-level
+    log is emitted and parsing proceeds from the current position.
+    """
+    parser = ExcelParser()
+    fallback_df = pd.DataFrame({"a": [1]})
+
+    class FakeFP:
+        """Fake file-like object with a seek method that raises an exception."""
+
+        def __init__(self, exc):
+            self._exc = exc
+
+        def seek(self, *args, **kwargs):
+            raise self._exc("not seekable")
+
+    fp = FakeFP(exc_cls)
+
+    openpyxl_excel_file = MagicMock()
+    openpyxl_excel_file.parse.return_value = fallback_df
+
+    with patch("airbyte_cdk.sources.file_based.file_types.excel_parser.pd.ExcelFile") as mock_excel:
+        mock_excel.return_value = openpyxl_excel_file
+
+        result = parser._open_and_parse_file_with_openpyxl(fp, mock_logger, remote_file)
+
+    pd.testing.assert_frame_equal(result, fallback_df)
+    mock_logger.info.assert_called_once()
+    msg = mock_logger.info.call_args[0][0]
+    assert "Could not rewind stream" in msg
+    assert remote_file.file_uri_for_logging in msg
+    mock_excel.assert_called_once_with(fp, engine="openpyxl")
