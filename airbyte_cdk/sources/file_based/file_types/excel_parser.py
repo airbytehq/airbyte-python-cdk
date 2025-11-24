@@ -233,6 +233,16 @@ class ExcelParser(FileTypeParser):
         Returns:
             pd.DataFrame: Parsed data from the Excel file.
         """
+        # Some file-like objects are not seekable.
+        if hasattr(fp, "seek"):
+            try:
+                fp.seek(0)  # type: ignore [union-attr]
+            except (AttributeError, OSError) as exc:
+                logger.info(
+                    f"Could not rewind stream for {file_info.file_uri_for_logging}; "
+                    f"proceeding with openpyxl from current position: {exc}"
+                )
+
         with warnings.catch_warnings(record=True) as warning_records:
             warnings.simplefilter("always")
             df = pd.ExcelFile(fp, engine="openpyxl").parse()  # type: ignore [arg-type, call-overload]
@@ -263,11 +273,4 @@ class ExcelParser(FileTypeParser):
         try:
             return self._open_and_parse_file_with_calamine(fp, logger, file_info)
         except ExcelCalamineParsingError:
-            # Fallback to openpyxl
-            try:
-                fp.seek(0)  # type: ignore [union-attr]
-            except (AttributeError, OSError):
-                # Some file-like objects may not be seekable; attempt openpyxl parsing anyway
-                pass
-
             return self._open_and_parse_file_with_openpyxl(fp, logger, file_info)
