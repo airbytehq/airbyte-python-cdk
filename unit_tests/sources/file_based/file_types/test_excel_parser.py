@@ -200,7 +200,6 @@ def test_open_and_parse_file_does_not_swallow_system_exit(mock_logger):
 @pytest.mark.parametrize(
     "exc_cls",
     [
-        pytest.param(AttributeError, id="attribute-error"),
         pytest.param(OSError, id="os-error"),
     ],
 )
@@ -208,8 +207,8 @@ def test_openpyxl_logs_info_when_seek_fails(mock_logger, remote_file, exc_cls):
     """Test that openpyxl logs info when seek fails on non-seekable files.
 
     This test ensures that when falling back to openpyxl, if the file pointer
-    cannot be rewound (seek fails with AttributeError or OSError), an info-level
-    log is emitted and parsing proceeds from the current position.
+    cannot be rewound (seek fails with OSError), an info-level log is emitted
+    and parsing proceeds from the current position.
     """
     parser = ExcelParser()
     fallback_df = pd.DataFrame({"a": [1]})

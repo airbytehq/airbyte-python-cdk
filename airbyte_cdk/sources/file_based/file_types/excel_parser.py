@@ -237,7 +237,7 @@ class ExcelParser(FileTypeParser):
         if hasattr(fp, "seek"):
             try:
                 fp.seek(0)  # type: ignore [union-attr]
-            except (AttributeError, OSError) as exc:
+            except OSError as exc:
                 logger.info(
                     f"Could not rewind stream for {file_info.file_uri_for_logging}; "
                     f"proceeding with openpyxl from current position: {exc}"
