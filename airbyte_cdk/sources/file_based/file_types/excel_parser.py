@@ -186,14 +186,14 @@ class ExcelParser(FileTypeParser):
         self,
         fp: Union[IOBase, str, Path],
         logger: logging.Logger,
-        file_info: RemoteFile,
+        file: RemoteFile,
     ) -> pd.DataFrame:
         """Opens and parses Excel file using Calamine engine.
 
         Args:
             fp: File pointer to the Excel file.
             logger: Logger for logging information and errors.
-            file_info: Remote file information for logging context.
+            file: Remote file information for logging context.
 
         Returns:
             pd.DataFrame: Parsed data from the Excel file.
@@ -209,11 +209,11 @@ class ExcelParser(FileTypeParser):
             # Otherwise, raise an exception.
             if "ValueError" in str(exc):
                 logger.warning(
-                    f"Calamine parsing failed for {file_info.file_uri_for_logging}, falling back to openpyxl: {exc}"
+                    f"Calamine parsing failed for {file.file_uri_for_logging}, falling back to openpyxl: {exc}"
                 )
                 raise ExcelCalamineParsingError(
-                    f"Calamine engine failed to parse {file_info.file_uri_for_logging}",
-                    filename=file_info.uri,
+                    f"Calamine engine failed to parse {file.file_uri_for_logging}",
+                    filename=file.uri,
                 ) from exc
             raise exc
 
@@ -221,14 +221,14 @@ class ExcelParser(FileTypeParser):
         self,
         fp: Union[IOBase, str, Path],
         logger: logging.Logger,
-        file_info: RemoteFile,
+        file: RemoteFile,
     ) -> pd.DataFrame:
         """Opens and parses Excel file using Openpyxl engine.
 
         Args:
             fp: File pointer to the Excel file.
             logger: Logger for logging information and errors.
-            file_info: Remote file information for logging context.
+            file: Remote file information for logging context.
 
         Returns:
             pd.DataFrame: Parsed data from the Excel file.
@@ -239,7 +239,7 @@ class ExcelParser(FileTypeParser):
                 fp.seek(0)  # type: ignore [union-attr]
             except OSError as exc:
                 logger.info(
-                    f"Could not rewind stream for {file_info.file_uri_for_logging}; "
+                    f"Could not rewind stream for {file.file_uri_for_logging}; "
                     f"proceeding with openpyxl from current position: {exc}"
                 )
 
@@ -248,9 +248,7 @@ class ExcelParser(FileTypeParser):
             df = pd.ExcelFile(fp, engine="openpyxl").parse()  # type: ignore [arg-type, call-overload]
 
         for warning in warning_records:
-            logger.warning(
-                f"Openpyxl warning for {file_info.file_uri_for_logging}: {warning.message}"
-            )
+            logger.warning(f"Openpyxl warning for {file.file_uri_for_logging}: {warning.message}")
 
         return df  # type: ignore [no-any-return]
 
@@ -258,19 +256,19 @@ class ExcelParser(FileTypeParser):
         self,
         fp: Union[IOBase, str, Path],
         logger: logging.Logger,
-        file_info: RemoteFile,
+        file: RemoteFile,
     ) -> pd.DataFrame:
         """Opens and parses the Excel file with Calamine-first and Openpyxl fallback.
 
         Args:
             fp: File pointer to the Excel file.
             logger: Logger for logging information and errors.
-            file_info: Remote file information for logging context.
+            file: Remote file information for logging context.
 
         Returns:
             pd.DataFrame: Parsed data from the Excel file.
         """
         try:
-            return self._open_and_parse_file_with_calamine(fp, logger, file_info)
+            return self._open_and_parse_file_with_calamine(fp, logger, file)
         except ExcelCalamineParsingError:
-            return self._open_and_parse_file_with_openpyxl(fp, logger, file_info)
+            return self._open_and_parse_file_with_openpyxl(fp, logger, file)
