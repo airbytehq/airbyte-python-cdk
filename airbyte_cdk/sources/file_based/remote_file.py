@@ -22,6 +22,11 @@ class RemoteFile(BaseModel):
         """Returns a user-friendly identifier for logging."""
         return self.uri
 
+    @property
+    def source_uri(self) -> str:
+        """Returns the canonical source URI."""
+        return self.uri
+
 
 class UploadableRemoteFile(RemoteFile, ABC):
     """
