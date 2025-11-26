@@ -204,6 +204,10 @@ class ConfigComponentsResolver(ComponentsResolver):
                 return yaml.safe_load(value)
             except ParserError:  # "{{ record[0] in ['cohortActiveUsers'] }}"   # not valid YAML
                 return value
-            except ScannerError:  # "%Y-%m-%d" or strings with tabs - not valid YAML
-                return value
+            except ScannerError as e:  # "%Y-%m-%d" or strings with tabs - not valid YAML
+                if "expected alphabetic or numeric character, but found '%'" in str(e):
+                    return value
+                if "found character '\\t' that cannot start any token" in str(e):
+                    return value
+                raise e
         return value
