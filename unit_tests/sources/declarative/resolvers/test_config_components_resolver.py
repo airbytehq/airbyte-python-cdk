@@ -160,6 +160,20 @@ _MANIFEST_WITH_SCANNER_ERROR["dynamic_streams"][0]["components_resolver"][
     }
 )
 
+# Manifest with component definition with value containing tab characters
+# which would cause YAML ScannerError (tabs cannot start tokens in YAML)
+_MANIFEST_WITH_TAB_SCANNER_ERROR = deepcopy(_MANIFEST)
+_MANIFEST_WITH_TAB_SCANNER_ERROR["dynamic_streams"][0]["components_resolver"][
+    "components_mapping"
+].append(
+    {
+        "type": "ComponentMappingDefinition",
+        "create_or_update": True,
+        "field_path": ["retriever", "requester", "$parameters", "custom_query"],
+        "value": "SELECT\n\tcampaign.name,\n\tcampaign.id\nFROM campaign",  # Contains tab characters
+    }
+)
+
 
 @pytest.mark.parametrize(
     "manifest, config, expected_exception, expected_stream_names",
@@ -173,8 +187,9 @@ _MANIFEST_WITH_SCANNER_ERROR["dynamic_streams"][0]["components_resolver"][
         ),
         (_MANIFEST_WITH_STREAM_CONFIGS_LIST, _CONFIG, None, ["item_1", "item_2", "default_item"]),
         (_MANIFEST_WITH_SCANNER_ERROR, _CONFIG, None, ["item_1", "item_2", "default_item"]),
+        (_MANIFEST_WITH_TAB_SCANNER_ERROR, _CONFIG, None, ["item_1", "item_2", "default_item"]),
     ],
-    ids=["no_duplicates", "duplicates", "stream_configs_list", "scanner_error"],
+    ids=["no_duplicates", "duplicates", "stream_configs_list", "scanner_error", "tab_scanner_error"],
 )
 def test_dynamic_streams_read_with_config_components_resolver(
     manifest, config, expected_exception, expected_stream_names
