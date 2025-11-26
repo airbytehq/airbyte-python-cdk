@@ -189,7 +189,13 @@ _MANIFEST_WITH_TAB_SCANNER_ERROR["dynamic_streams"][0]["components_resolver"][
         (_MANIFEST_WITH_SCANNER_ERROR, _CONFIG, None, ["item_1", "item_2", "default_item"]),
         (_MANIFEST_WITH_TAB_SCANNER_ERROR, _CONFIG, None, ["item_1", "item_2", "default_item"]),
     ],
-    ids=["no_duplicates", "duplicates", "stream_configs_list", "scanner_error", "tab_scanner_error"],
+    ids=[
+        "no_duplicates",
+        "duplicates",
+        "stream_configs_list",
+        "scanner_error",
+        "tab_scanner_error",
+    ],
 )
 def test_dynamic_streams_read_with_config_components_resolver(
     manifest, config, expected_exception, expected_stream_names
