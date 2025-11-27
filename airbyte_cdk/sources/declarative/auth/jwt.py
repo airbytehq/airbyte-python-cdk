@@ -185,7 +185,12 @@ class JwtAuthenticator(DeclarativeAuthenticator):
 
         # Normalize escaped newlines for PEM-style keys
         # This handles cases where keys are stored with literal \n characters instead of actual newlines
-        if isinstance(secret_key, str) and "\\n" in secret_key and "-----BEGIN" in secret_key and "KEY-----" in secret_key:
+        if (
+            isinstance(secret_key, str)
+            and "\\n" in secret_key
+            and "-----BEGIN" in secret_key
+            and "KEY-----" in secret_key
+        ):
             secret_key = secret_key.replace("\\n", "\n")
 
         if self._passphrase:
