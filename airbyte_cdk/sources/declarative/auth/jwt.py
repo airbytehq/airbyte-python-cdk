@@ -183,6 +183,11 @@ class JwtAuthenticator(DeclarativeAuthenticator):
         """
         secret_key: str = self._secret_key.eval(self.config, json_loads=json.loads)
 
+        # Normalize escaped newlines for PEM-style keys
+        # This handles cases where keys are stored with literal \n characters instead of actual newlines
+        if isinstance(secret_key, str) and "\\n" in secret_key and "-----BEGIN" in secret_key and "KEY-----" in secret_key:
+            secret_key = secret_key.replace("\\n", "\n")
+
         if self._passphrase:
             passphrase_value = self._passphrase.eval(self.config, json_loads=json.loads)
             if passphrase_value:
