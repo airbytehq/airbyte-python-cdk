@@ -91,7 +91,7 @@ class DpathExtractor(RecordExtractor):
                 )
 
         if self.expand_records_from_field:
-            self._expand_path = [
+            self._expand_path: Optional[List[InterpolatedString]] = [
                 InterpolatedString.create(path, parameters=parameters)
                 for path in self.expand_records_from_field
             ]
