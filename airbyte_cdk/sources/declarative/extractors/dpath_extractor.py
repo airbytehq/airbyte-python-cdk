@@ -89,36 +89,38 @@ class DpathExtractor(RecordExtractor):
                 self._field_path[path_index] = InterpolatedString.create(
                     self.field_path[path_index], parameters=parameters
                 )
-        
+
         if self.expand_records_from_field:
             self._expand_path = [
-                InterpolatedString.create(path, parameters=parameters) 
+                InterpolatedString.create(path, parameters=parameters)
                 for path in self.expand_records_from_field
             ]
         else:
             self._expand_path = None
 
-    def _expand_record(self, record: MutableMapping[Any, Any]) -> Iterable[MutableMapping[Any, Any]]:
+    def _expand_record(
+        self, record: MutableMapping[Any, Any]
+    ) -> Iterable[MutableMapping[Any, Any]]:
         """Expand a record by extracting items from a nested array field."""
         if not self._expand_path:
             yield record
             return
-        
+
         expand_path = [path.eval(self.config) for path in self._expand_path]
-        
+
         try:
             nested_array = dpath.get(record, expand_path)
         except (KeyError, TypeError):
             yield record
             return
-        
+
         if not isinstance(nested_array, list):
             yield record
             return
-        
+
         if len(nested_array) == 0:
             return
-        
+
         for item in nested_array:
             if isinstance(item, dict):
                 expanded_record = dict(item)
