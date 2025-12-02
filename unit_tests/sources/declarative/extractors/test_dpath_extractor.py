@@ -203,7 +203,12 @@ def test_dpath_extractor(field_path: List, decoder: Decoder, body, expected_reco
             ["data"],
             ["nested", "array"],
             False,
-            {"data": {"id": "parent_1", "nested": {"array": [{"id": "child_1"}, {"id": "child_2"}]}}},
+            {
+                "data": {
+                    "id": "parent_1",
+                    "nested": {"array": [{"id": "child_1"}, {"id": "child_2"}]},
+                }
+            },
             [{"id": "child_1"}, {"id": "child_2"}],
         ),
         (
