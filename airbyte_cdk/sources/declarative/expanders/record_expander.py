@@ -3,7 +3,7 @@
 #
 
 from dataclasses import InitVar, dataclass
-from typing import Any, Iterable, List, Mapping, MutableMapping, Optional, Union
+from typing import Any, Iterable, List, Mapping, MutableMapping, Optional, Union, cast
 
 import dpath
 
@@ -69,7 +69,7 @@ class RecordExpander:
         expand_path = [path.eval(self.config) for path in self._expand_path]
 
         if "*" in expand_path:
-            matches = dpath.values(record, expand_path)
+            matches = cast(Iterable[Any], dpath.values(record, expand_path))
             list_nodes = [m for m in matches if isinstance(m, list)]
             if not list_nodes:
                 return
@@ -87,7 +87,7 @@ class RecordExpander:
                         yield item
         else:
             try:
-                nested_array = dpath.get(record, expand_path)
+                nested_array = cast(Any, dpath.get(record, expand_path))
             except KeyError:
                 return
 
