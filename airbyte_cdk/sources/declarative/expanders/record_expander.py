@@ -3,7 +3,7 @@
 #
 
 from dataclasses import InitVar, dataclass
-from typing import Any, Iterable, List, Mapping, MutableMapping, Optional, Union, cast
+from typing import Any, Iterable, List, Mapping, MutableMapping, Optional, Union
 
 import dpath
 
@@ -66,34 +66,33 @@ class RecordExpander:
             yield record
             return
 
+        parent_record = record
         expand_path = [path.eval(self.config) for path in self._expand_path]
 
-        arrays: List[List[Any]] = []
-
         if "*" in expand_path:
-            matches = cast(Iterable[Any], dpath.values(record, expand_path))
-            arrays = [m for m in matches if isinstance(m, list)]
+            extracted: Any = dpath.values(parent_record, expand_path)
+            for record in extracted:
+                if isinstance(record, list):
+                    for item in record:
+                        if isinstance(item, dict):
+                            expanded_record = dict(item)
+                            if self.remain_original_record:
+                                expanded_record["original_record"] = parent_record
+                            yield expanded_record
+                        else:
+                            yield item
         else:
             try:
-                nested = cast(Any, dpath.get(record, expand_path))
+                extracted = dpath.get(parent_record, expand_path)
             except KeyError:
                 return
-            if isinstance(nested, list):
-                arrays = [nested]
-            else:
+            if not isinstance(extracted, list):
                 return
-
-        if not arrays:
-            return
-
-        for nested_array in arrays:
-            if not nested_array:
-                continue
-            for item in nested_array:
+            for item in extracted:
                 if isinstance(item, dict):
                     expanded_record = dict(item)
                     if self.remain_original_record:
-                        expanded_record["original_record"] = record
+                        expanded_record["original_record"] = parent_record
                     yield expanded_record
                 else:
                     yield item
