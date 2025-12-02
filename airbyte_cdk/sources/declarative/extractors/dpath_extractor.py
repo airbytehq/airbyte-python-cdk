@@ -101,15 +101,13 @@ class DpathExtractor(RecordExtractor):
                 else:
                     extracted = dpath.get(body, path, default=[])  # type: ignore # extracted will be a MutableMapping, given input data structure
             if isinstance(extracted, list):
-                for record in extracted:
-                    if self.record_expander:
+                if not self.record_expander:
+                    yield from extracted
+                else:
+                    for record in extracted:
                         yield from self.record_expander.expand_record(record)
-                    else:
-                        yield record
             elif extracted:
                 if self.record_expander:
                     yield from self.record_expander.expand_record(extracted)
                 else:
                     yield extracted
-            else:
-                yield from []
