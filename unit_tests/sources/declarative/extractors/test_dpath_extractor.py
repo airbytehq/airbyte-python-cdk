@@ -229,6 +229,82 @@ def test_dpath_extractor(field_path: List, decoder: Decoder, body, expected_reco
             ],
             [{"id": "child_1"}, {"id": "child_2"}, {"id": "child_3"}],
         ),
+        (
+            ["data"],
+            ["sections", "*", "items"],
+            False,
+            {
+                "data": {
+                    "sections": [
+                        {"name": "section1", "items": [{"id": "item_1"}, {"id": "item_2"}]},
+                        {"name": "section2", "items": [{"id": "item_3"}]},
+                    ]
+                }
+            },
+            [{"id": "item_1"}, {"id": "item_2"}, {"id": "item_3"}],
+        ),
+        (
+            ["data"],
+            ["sections", "*", "items"],
+            True,
+            {
+                "data": {
+                    "sections": [
+                        {"name": "section1", "items": [{"id": "item_1"}]},
+                    ]
+                }
+            },
+            [
+                {
+                    "id": "item_1",
+                    "original_record": {
+                        "sections": [
+                            {"name": "section1", "items": [{"id": "item_1"}]},
+                        ]
+                    },
+                }
+            ],
+        ),
+        (
+            ["data"],
+            ["sections", "*", "items"],
+            False,
+            {
+                "data": {
+                    "sections": [
+                        {"name": "section1", "items": []},
+                        {"name": "section2", "items": []},
+                    ]
+                }
+            },
+            [],
+        ),
+        (
+            ["data"],
+            ["sections", "*", "items"],
+            False,
+            {
+                "data": {
+                    "sections": [
+                        {"name": "section1"},
+                        {"name": "section2", "items": "not_an_array"},
+                    ]
+                }
+            },
+            [],
+        ),
+        (
+            ["data"],
+            ["*", "items"],
+            False,
+            {
+                "data": {
+                    "group1": {"items": [{"id": "item_1"}]},
+                    "group2": {"items": [{"id": "item_2"}, {"id": "item_3"}]},
+                }
+            },
+            [{"id": "item_1"}, {"id": "item_2"}, {"id": "item_3"}],
+        ),
     ],
     ids=[
         "test_expand_nested_array",
@@ -239,6 +315,11 @@ def test_dpath_extractor(field_path: List, decoder: Decoder, body, expected_reco
         "test_expand_deeply_nested_path",
         "test_expand_mixed_types_in_array",
         "test_expand_multiple_parent_records",
+        "test_expand_wildcard_multiple_lists",
+        "test_expand_wildcard_with_original_record",
+        "test_expand_wildcard_all_empty_arrays",
+        "test_expand_wildcard_no_list_matches",
+        "test_expand_wildcard_dict_values",
     ],
 )
 def test_dpath_extractor_with_expansion(

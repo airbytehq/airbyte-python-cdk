@@ -1934,7 +1934,7 @@ definitions:
         additionalProperties: true
   RecordExpander:
     title: Record Expander
-    description: Expands records by extracting items from a nested array field. When configured, this component extracts items from a specified nested array path within each record and emits each item as a separate record. Optionally, the original parent record can be embedded in each expanded item for context preservation.
+    description: Expands records by extracting items from a nested array field. When configured, this component extracts items from a specified nested array path within each record and emits each item as a separate record. Optionally, the original parent record can be embedded in each expanded item for context preservation. Supports wildcards (*) for matching multiple arrays.
     type: object
     required:
       - type
@@ -1945,7 +1945,7 @@ definitions:
         enum: [RecordExpander]
       expand_records_from_field:
         title: Expand Records From Field
-        description: Path to a nested array field within each record. Items from this array will be extracted and emitted as separate records.
+        description: Path to a nested array field within each record. Items from this array will be extracted and emitted as separate records. Supports wildcards (*) for matching multiple arrays.
         type: array
         items:
           type: string
@@ -1955,6 +1955,7 @@ definitions:
           - ["lines", "data"]
           - ["items"]
           - ["nested", "array"]
+          - ["sections", "*", "items"]
       remain_original_record:
         title: Remain Original Record
         description: If true, each expanded record will include the original parent record in an "original_record" field. Defaults to false.

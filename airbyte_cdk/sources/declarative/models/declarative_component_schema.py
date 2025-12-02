@@ -491,8 +491,13 @@ class RecordExpander(BaseModel):
     type: Literal["RecordExpander"]
     expand_records_from_field: List[str] = Field(
         ...,
-        description="Path to a nested array field within each record. Items from this array will be extracted and emitted as separate records.",
-        examples=[["lines", "data"], ["items"], ["nested", "array"]],
+        description="Path to a nested array field within each record. Items from this array will be extracted and emitted as separate records. Supports wildcards (*) for matching multiple arrays.",
+        examples=[
+            ["lines", "data"],
+            ["items"],
+            ["nested", "array"],
+            ["sections", "*", "items"],
+        ],
         title="Expand Records From Field",
     )
     remain_original_record: Optional[bool] = Field(

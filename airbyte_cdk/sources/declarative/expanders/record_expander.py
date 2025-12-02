@@ -20,6 +20,9 @@ class RecordExpander:
     within each record and emits each item as a separate record. Optionally, the original
     parent record can be embedded in each expanded item for context preservation.
 
+    The expand_records_from_field path supports wildcards (*) for matching multiple arrays.
+    When wildcards are used, items from all matched arrays are extracted and emitted.
+
     Examples of instantiating this component:
     ```
       record_expander:
@@ -30,8 +33,18 @@ class RecordExpander:
         remain_original_record: true
     ```
 
+    ```
+      record_expander:
+        type: RecordExpander
+        expand_records_from_field:
+          - "sections"
+          - "*"
+          - "items"
+        remain_original_record: false
+    ```
+
     Attributes:
-        expand_records_from_field (List[Union[InterpolatedString, str]]): Path to a nested array field within each record. Items from this array will be extracted and emitted as separate records.
+        expand_records_from_field (List[Union[InterpolatedString, str]]): Path to a nested array field within each record. Items from this array will be extracted and emitted as separate records. Supports wildcards (*).
         remain_original_record (bool): If True, each expanded record will include the original parent record in an "original_record" field. Defaults to False.
         config (Config): The user-provided configuration as specified by the source's spec
     """
@@ -55,22 +68,40 @@ class RecordExpander:
 
         expand_path = [path.eval(self.config) for path in self._expand_path]
 
-        try:
-            nested_array = dpath.get(record, expand_path)
-        except (KeyError, TypeError):
-            return
+        if "*" in expand_path:
+            matches = dpath.values(record, expand_path)
+            list_nodes = [m for m in matches if isinstance(m, list)]
+            if not list_nodes:
+                return
 
-        if not isinstance(nested_array, list):
-            return
+            for nested_array in list_nodes:
+                if len(nested_array) == 0:
+                    continue
+                for item in nested_array:
+                    if isinstance(item, dict):
+                        expanded_record = dict(item)
+                        if self.remain_original_record:
+                            expanded_record["original_record"] = record
+                        yield expanded_record
+                    else:
+                        yield item
+        else:
+            try:
+                nested_array = dpath.get(record, expand_path)
+            except KeyError:
+                return
 
-        if len(nested_array) == 0:
-            return
+            if not isinstance(nested_array, list):
+                return
 
-        for item in nested_array:
-            if isinstance(item, dict):
-                expanded_record = dict(item)
-                if self.remain_original_record:
-                    expanded_record["original_record"] = record
-                yield expanded_record
-            else:
-                yield item
+            if len(nested_array) == 0:
+                return
+
+            for item in nested_array:
+                if isinstance(item, dict):
+                    expanded_record = dict(item)
+                    if self.remain_original_record:
+                        expanded_record["original_record"] = record
+                    yield expanded_record
+                else:
+                    yield item
