@@ -5030,6 +5030,190 @@ def test_create_stream_with_multiple_schema_loaders():
     assert isinstance(schema_loader.schema_loaders[1], InlineSchemaLoader)
 
 
+@pytest.mark.parametrize(
+    "allow_catalog_defined_cursor_field,catalog_cursor_field,expected_cursor_field",
+    [
+        pytest.param(
+            True,
+            "custom_cursor_field",
+            "custom_cursor_field",
+            id="test_catalog_defined_cursor_field",
+        ),
+        pytest.param(
+            True,
+            None,
+            "updated_at",
+            id="test_no_catalog_cursor_field_defaults_to_stream_defined_cursor_field",
+        ),
+        pytest.param(
+            False,
+            "custom_cursor_field",
+            "updated_at",
+            id="test_allow_catalog_defined_cursor_field_false_defaults_to_stream_defined_cursor_field",
+        ),
+    ],
+)
+def test_catalog_defined_cursor_field(
+    allow_catalog_defined_cursor_field, catalog_cursor_field, expected_cursor_field
+):
+    content = """
+selector:
+  type: RecordSelector
+  extractor:
+      type: DpathExtractor
+      field_path: ["extractor_path"]
+requester:
+  type: HttpRequester
+  name: "{{ parameters['name'] }}"
+  url_base: "https://api.sendgrid.com/v3/"
+  http_method: "GET"
+list_stream:
+  type: DeclarativeStream
+  incremental_sync:
+    type: DatetimeBasedCursor
+    $parameters:
+      datetime_format: "%Y-%m-%dT%H:%M:%S.%f%z"
+    start_datetime:
+      type: MinMaxDatetime
+      datetime: "{{ config.get('start_date', '1970-01-01T00:00:00.0Z') }}"
+      datetime_format: "%Y-%m-%dT%H:%M:%S.%fZ"
+    cursor_field: "updated_at"
+    allow_catalog_defined_cursor_field: true
+  retriever:
+    type: SimpleRetriever
+    name: "{{ parameters['name'] }}"
+    paginator:
+      type: DefaultPaginator
+      pagination_strategy:
+        type: "CursorPagination"
+        cursor_value: "{{ response._metadata.next }}"
+        page_size: 10
+    requester:
+      $ref: "#/requester"
+      path: "/"
+    record_selector:
+      $ref: "#/selector"
+  $parameters:
+    name: "lists"
+    """
+
+    configured_catalog = ConfiguredAirbyteCatalog(
+        streams=[
+            ConfiguredAirbyteStream(
+                stream=AirbyteStream(
+                    name="lists",
+                    json_schema={"type": "object", "properties": {"id": {"type": "string"}}},
+                    supported_sync_modes=[SyncMode.incremental, SyncMode.full_refresh],
+                ),
+                sync_mode=SyncMode.incremental,
+                destination_sync_mode=DestinationSyncMode.overwrite,
+                cursor_field=[catalog_cursor_field] if catalog_cursor_field else None,
+            )
+        ]
+    )
+
+    model_to_component_factory = ModelToComponentFactory(
+        configured_catalog=configured_catalog,
+    )
+
+    parsed_manifest = YamlDeclarativeSource._parse(content)
+    resolved_manifest = resolver.preprocess_manifest(parsed_manifest)
+    stream_manifest = transformer.propagate_types_and_parameters(
+        "", resolved_manifest["list_stream"], {}
+    )
+
+    stream_manifest["incremental_sync"]["allow_catalog_defined_cursor_field"] = (
+        allow_catalog_defined_cursor_field
+    )
+
+    stream: DefaultStream = model_to_component_factory.create_component(
+        model_type=DeclarativeStreamModel, component_definition=stream_manifest, config=input_config
+    )
+
+    assert stream.cursor_field == expected_cursor_field
+    assert stream._cursor_field.cursor_field_key == expected_cursor_field
+    assert (
+        stream._cursor_field.supports_catalog_defined_cursor_field
+        == allow_catalog_defined_cursor_field
+    )
+
+
+def test_catalog_defined_cursor_field_stream_missing():
+    content = """
+selector:
+  type: RecordSelector
+  extractor:
+      type: DpathExtractor
+      field_path: ["extractor_path"]
+requester:
+  type: HttpRequester
+  name: "{{ parameters['name'] }}"
+  url_base: "https://api.sendgrid.com/v3/"
+  http_method: "GET"
+list_stream:
+  type: DeclarativeStream
+  incremental_sync:
+    type: DatetimeBasedCursor
+    $parameters:
+      datetime_format: "%Y-%m-%dT%H:%M:%S.%f%z"
+    start_datetime:
+      type: MinMaxDatetime
+      datetime: "{{ config.get('start_date', '1970-01-01T00:00:00.0Z') }}"
+      datetime_format: "%Y-%m-%dT%H:%M:%S.%fZ"
+    cursor_field: "updated_at"
+    allow_catalog_defined_cursor_field: true
+  retriever:
+    type: SimpleRetriever
+    name: "{{ parameters['name'] }}"
+    paginator:
+      type: DefaultPaginator
+      pagination_strategy:
+        type: "CursorPagination"
+        cursor_value: "{{ response._metadata.next }}"
+        page_size: 10
+    requester:
+      $ref: "#/requester"
+      path: "/"
+    record_selector:
+      $ref: "#/selector"
+  $parameters:
+    name: "lists"
+    """
+
+    configured_catalog = ConfiguredAirbyteCatalog(
+        streams=[
+            ConfiguredAirbyteStream(
+                stream=AirbyteStream(
+                    name="other_stream",
+                    json_schema={"type": "object", "properties": {"id": {"type": "string"}}},
+                    supported_sync_modes=[SyncMode.incremental, SyncMode.full_refresh],
+                ),
+                sync_mode=SyncMode.incremental,
+                destination_sync_mode=DestinationSyncMode.overwrite,
+                cursor_field=["custom_cursor_field"],
+            )
+        ]
+    )
+
+    model_to_component_factory = ModelToComponentFactory(
+        configured_catalog=configured_catalog,
+    )
+
+    parsed_manifest = YamlDeclarativeSource._parse(content)
+    resolved_manifest = resolver.preprocess_manifest(parsed_manifest)
+    stream_manifest = transformer.propagate_types_and_parameters(
+        "", resolved_manifest["list_stream"], {}
+    )
+
+    stream: DefaultStream = model_to_component_factory.create_component(
+        model_type=DeclarativeStreamModel, component_definition=stream_manifest, config=input_config
+    )
+
+    assert stream.cursor_field == "updated_at"
+    assert stream._cursor_field.cursor_field_key == "updated_at"
+    assert stream._cursor_field.supports_catalog_defined_cursor_field == True
+
+
 def get_schema_loader(stream: DefaultStream):
     assert isinstance(
         stream._stream_partition_generator._partition_factory._schema_loader,
