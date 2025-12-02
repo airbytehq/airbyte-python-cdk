@@ -121,3 +121,137 @@ def test_dpath_extractor(field_path: List, decoder: Decoder, body, expected_reco
     actual_records = list(extractor.extract_records(response))
 
     assert actual_records == expected_records
+
+
+@pytest.mark.parametrize(
+    "field_path, expand_records_from_field, remain_original_record, body, expected_records",
+    [
+        (
+            ["data", "object"],
+            ["lines", "data"],
+            False,
+            {
+                "data": {
+                    "object": {
+                        "id": "in_123",
+                        "created": 1234567890,
+                        "lines": {
+                            "data": [
+                                {"id": "il_1", "amount": 100},
+                                {"id": "il_2", "amount": 200},
+                            ]
+                        },
+                    }
+                }
+            },
+            [
+                {"id": "il_1", "amount": 100},
+                {"id": "il_2", "amount": 200},
+            ],
+        ),
+        (
+            ["data", "object"],
+            ["lines", "data"],
+            True,
+            {
+                "data": {
+                    "object": {
+                        "id": "in_123",
+                        "created": 1234567890,
+                        "lines": {
+                            "data": [
+                                {"id": "il_1", "amount": 100},
+                            ]
+                        },
+                    }
+                }
+            },
+            [
+                {
+                    "id": "il_1",
+                    "amount": 100,
+                    "original_record": {
+                        "id": "in_123",
+                        "created": 1234567890,
+                        "lines": {"data": [{"id": "il_1", "amount": 100}]},
+                    },
+                },
+            ],
+        ),
+        (
+            ["data"],
+            ["items"],
+            False,
+            {"data": {"id": "parent_1", "items": []}},
+            [],
+        ),
+        (
+            ["data"],
+            ["items"],
+            False,
+            {"data": {"id": "parent_1"}},
+            [{"id": "parent_1"}],
+        ),
+        (
+            ["data"],
+            ["items"],
+            False,
+            {"data": {"id": "parent_1", "items": "not_an_array"}},
+            [{"id": "parent_1", "items": "not_an_array"}],
+        ),
+        (
+            ["data"],
+            ["nested", "array"],
+            False,
+            {"data": {"id": "parent_1", "nested": {"array": [{"id": "child_1"}, {"id": "child_2"}]}}},
+            [{"id": "child_1"}, {"id": "child_2"}],
+        ),
+        (
+            ["data"],
+            ["items"],
+            False,
+            {"data": {"id": "parent_1", "items": [1, 2, "string", {"id": "dict_item"}]}},
+            [1, 2, "string", {"id": "dict_item"}],
+        ),
+        (
+            [],
+            ["items"],
+            False,
+            [
+                {"id": "parent_1", "items": [{"id": "child_1"}]},
+                {"id": "parent_2", "items": [{"id": "child_2"}, {"id": "child_3"}]},
+            ],
+            [{"id": "child_1"}, {"id": "child_2"}, {"id": "child_3"}],
+        ),
+    ],
+    ids=[
+        "test_expand_nested_array",
+        "test_expand_with_original_record",
+        "test_expand_empty_array_yields_nothing",
+        "test_expand_missing_path_yields_original",
+        "test_expand_non_array_yields_original",
+        "test_expand_deeply_nested_path",
+        "test_expand_mixed_types_in_array",
+        "test_expand_multiple_parent_records",
+    ],
+)
+def test_dpath_extractor_with_expansion(
+    field_path: List,
+    expand_records_from_field: List,
+    remain_original_record: bool,
+    body,
+    expected_records: List,
+):
+    extractor = DpathExtractor(
+        field_path=field_path,
+        config=config,
+        decoder=decoder_json,
+        parameters=parameters,
+        expand_records_from_field=expand_records_from_field,
+        remain_original_record=remain_original_record,
+    )
+
+    response = create_response(body)
+    actual_records = list(extractor.extract_records(response))
+
+    assert actual_records == expected_records
