@@ -52,6 +52,7 @@ DEFAULT_MODEL_TYPES: Mapping[str, str] = {
     # RecordSelector
     "RecordSelector.extractor": "DpathExtractor",
     "RecordSelector.record_filter": "RecordFilter",
+    "RecordSelector.expanders": "ExtractArrayItems",
     # SimpleRetriever
     "SimpleRetriever.paginator": "NoPagination",
     "SimpleRetriever.record_selector": "RecordSelector",

@@ -7,6 +7,7 @@ from typing import Any, Iterable, List, Mapping, Optional, Union
 
 import requests
 
+from airbyte_cdk.sources.declarative.expanders import RecordExpander
 from airbyte_cdk.sources.declarative.extractors.http_selector import HttpSelector
 from airbyte_cdk.sources.declarative.extractors.record_extractor import RecordExtractor
 from airbyte_cdk.sources.declarative.extractors.record_filter import RecordFilter
@@ -32,6 +33,7 @@ class RecordSelector(HttpSelector):
         schema_normalization (TypeTransformer): The record normalizer responsible for casting record values to stream schema types
         record_filter (RecordFilter): The record filter responsible for filtering extracted records
         transformations (List[RecordTransformation]): The transformations to be done on the records
+        expanders (List[RecordExpander]): The expanders to be applied to records (expand one record into multiple)
     """
 
     extractor: RecordExtractor
@@ -42,6 +44,7 @@ class RecordSelector(HttpSelector):
     _name: Union[InterpolatedString, str] = field(init=False, repr=False, default="")
     record_filter: Optional[RecordFilter] = None
     transformations: List[RecordTransformation] = field(default_factory=lambda: [])
+    expanders: List[RecordExpander] = field(default_factory=lambda: [])
     transform_before_filtering: bool = False
     file_uploader: Optional[DefaultFileUploader] = None
 
@@ -109,12 +112,14 @@ class RecordSelector(HttpSelector):
         """
         if self.transform_before_filtering:
             transformed_data = self._transform(all_data, stream_state, stream_slice)
+            expanded_data = self._expand(transformed_data, stream_state, stream_slice)
             transformed_filtered_data = self._filter(
-                transformed_data, stream_state, stream_slice, next_page_token
+                expanded_data, stream_state, stream_slice, next_page_token
             )
         else:
             filtered_data = self._filter(all_data, stream_state, stream_slice, next_page_token)
-            transformed_filtered_data = self._transform(filtered_data, stream_state, stream_slice)
+            transformed_data = self._transform(filtered_data, stream_state, stream_slice)
+            transformed_filtered_data = self._expand(transformed_data, stream_state, stream_slice)
         normalized_data = self._normalize_by_schema(
             transformed_filtered_data, schema=records_schema
         )
@@ -168,3 +173,31 @@ class RecordSelector(HttpSelector):
                     stream_slice=stream_slice,
                 )
             yield record
+
+    def _expand(
+        self,
+        records: Iterable[Mapping[str, Any]],
+        stream_state: StreamState,
+        stream_slice: Optional[StreamSlice] = None,
+    ) -> Iterable[Mapping[str, Any]]:
+        """Apply expanders to records, expanding one record into multiple if configured."""
+        for record in records:
+            if not self.expanders:
+                yield record
+                continue
+            
+            expanded_records = [dict(record)]  # Start with the original record as a dict
+            for expander in self.expanders:
+                new_expanded = []
+                for rec in expanded_records:
+                    expanded = expander.expand(
+                        rec,
+                        config=self.config,
+                        stream_state=stream_state,
+                        stream_slice=stream_slice,
+                    )
+                    new_expanded.extend(expanded)
+                expanded_records = new_expanded
+            
+            # Yield all expanded records
+            yield from expanded_records
