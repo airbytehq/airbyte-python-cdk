@@ -14,6 +14,7 @@ from airbyte_cdk.sources.declarative.decoders.json_decoder import (
     IterableDecoder,
     JsonDecoder,
 )
+from airbyte_cdk.sources.declarative.expanders.record_expander import RecordExpander
 from airbyte_cdk.sources.declarative.extractors.dpath_extractor import DpathExtractor
 
 config = {"field": "record_array"}
@@ -247,13 +248,18 @@ def test_dpath_extractor_with_expansion(
     body,
     expected_records: List,
 ):
+    record_expander = RecordExpander(
+        expand_records_from_field=expand_records_from_field,
+        config=config,
+        parameters=parameters,
+        remain_original_record=remain_original_record,
+    )
     extractor = DpathExtractor(
         field_path=field_path,
         config=config,
         decoder=decoder_json,
         parameters=parameters,
-        expand_records_from_field=expand_records_from_field,
-        remain_original_record=remain_original_record,
+        record_expander=record_expander,
     )
 
     response = create_response(body)
