@@ -111,3 +111,5 @@ class DpathExtractor(RecordExtractor):
                     yield from self.record_expander.expand_record(extracted)
                 else:
                     yield extracted
+            else:
+                yield from []

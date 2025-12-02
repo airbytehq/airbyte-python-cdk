@@ -58,11 +58,9 @@ class RecordExpander:
         try:
             nested_array = dpath.get(record, expand_path)
         except (KeyError, TypeError):
-            yield record
             return
 
         if not isinstance(nested_array, list):
-            yield record
             return
 
         if len(nested_array) == 0:
