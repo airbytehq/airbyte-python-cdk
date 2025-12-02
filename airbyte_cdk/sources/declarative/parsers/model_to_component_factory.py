@@ -2314,11 +2314,20 @@ class ModelToComponentFactory:
         else:
             decoder_to_use = JsonDecoder(parameters={})
         model_field_path: List[Union[InterpolatedString, str]] = [x for x in model.field_path]
+
+        record_expander = None
+        if hasattr(model, "record_expander") and model.record_expander:
+            record_expander = self._create_component_from_model(
+                model=model.record_expander,
+                config=config,
+            )
+
         return DpathExtractor(
             decoder=decoder_to_use,
             field_path=model_field_path,
             config=config,
             parameters=model.parameters or {},
+            record_expander=record_expander,
         )
 
     @staticmethod

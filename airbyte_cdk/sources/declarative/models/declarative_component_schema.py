@@ -482,24 +482,24 @@ class HttpRequestRegexMatcher(BaseModel):
     )
 
 
-class DpathExtractor(BaseModel):
-    type: Literal["DpathExtractor"]
-    field_path: List[str] = Field(
-        ...,
-        description='List of potentially nested fields describing the full path of the field to extract. Use "*" to extract all values from an array. See more info in the [docs](https://docs.airbyte.com/connector-development/config-based/understanding-the-yaml-file/record-selector).',
-        examples=[
-            ["data"],
-            ["data", "records"],
-            ["data", "{{ parameters.name }}"],
-            ["data", "*", "record"],
-        ],
-        title="Field Path",
-    )
+class ResponseToFileExtractor(BaseModel):
+    type: Literal["ResponseToFileExtractor"]
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
 
-class ResponseToFileExtractor(BaseModel):
-    type: Literal["ResponseToFileExtractor"]
+class RecordExpander(BaseModel):
+    type: Literal["RecordExpander"]
+    expand_records_from_field: List[str] = Field(
+        ...,
+        description="Path to a nested array field within each record. Items from this array will be extracted and emitted as separate records.",
+        examples=[["lines", "data"], ["items"], ["nested", "array"]],
+        title="Expand Records From Field",
+    )
+    remain_original_record: Optional[bool] = Field(
+        False,
+        description='If true, each expanded record will include the original parent record in an "original_record" field. Defaults to false.',
+        title="Remain Original Record",
+    )
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
 
@@ -2030,6 +2030,27 @@ class DefaultPaginator(BaseModel):
         None,
         description="Inject the page token into the outgoing HTTP requests by inserting it into either the request URL path or a field on the request.",
         title="Inject Page Token Into Outgoing HTTP Request",
+    )
+    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
+
+
+class DpathExtractor(BaseModel):
+    type: Literal["DpathExtractor"]
+    field_path: List[str] = Field(
+        ...,
+        description='List of potentially nested fields describing the full path of the field to extract. Use "*" to extract all values from an array. See more info in the [docs](https://docs.airbyte.com/connector-development/config-based/understanding-the-yaml-file/record-selector).',
+        examples=[
+            ["data"],
+            ["data", "records"],
+            ["data", "{{ parameters.name }}"],
+            ["data", "*", "record"],
+        ],
+        title="Field Path",
+    )
+    record_expander: Optional[RecordExpander] = Field(
+        None,
+        description="Optional component to expand records by extracting items from nested array fields.",
+        title="Record Expander",
     )
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
