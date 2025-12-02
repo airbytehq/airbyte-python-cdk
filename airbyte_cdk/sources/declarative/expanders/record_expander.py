@@ -68,35 +68,27 @@ class RecordExpander:
 
         expand_path = [path.eval(self.config) for path in self._expand_path]
 
+        arrays: List[List[Any]] = []
+
         if "*" in expand_path:
             matches = cast(Iterable[Any], dpath.values(record, expand_path))
-            list_nodes = [m for m in matches if isinstance(m, list)]
-            if not list_nodes:
-                return
-
-            for nested_array in list_nodes:
-                if len(nested_array) == 0:
-                    continue
-                for item in nested_array:
-                    if isinstance(item, dict):
-                        expanded_record = dict(item)
-                        if self.remain_original_record:
-                            expanded_record["original_record"] = record
-                        yield expanded_record
-                    else:
-                        yield item
+            arrays = [m for m in matches if isinstance(m, list)]
         else:
             try:
-                nested_array = cast(Any, dpath.get(record, expand_path))
+                nested = cast(Any, dpath.get(record, expand_path))
             except KeyError:
                 return
-
-            if not isinstance(nested_array, list):
+            if isinstance(nested, list):
+                arrays = [nested]
+            else:
                 return
 
-            if len(nested_array) == 0:
-                return
+        if not arrays:
+            return
 
+        for nested_array in arrays:
+            if not nested_array:
+                continue
             for item in nested_array:
                 if isinstance(item, dict):
                     expanded_record = dict(item)
