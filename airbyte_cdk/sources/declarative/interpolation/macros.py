@@ -86,7 +86,7 @@ def timestamp_to_datetime(ts: Union[int, float, str]) -> datetime.datetime:
     except (TypeError, ValueError) as exc:
         raise ValueError(f"Invalid timestamp value: {ts}") from exc
 
-    return datetime.datetime.fromtimestamp(ts_value, tz=pytz.utc)
+    return datetime.datetime.fromtimestamp(ts_value, tz=datetime.timezone.utc)
 
 
 def str_to_datetime(s: str) -> datetime.datetime:
