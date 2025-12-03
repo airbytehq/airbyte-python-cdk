@@ -233,12 +233,14 @@ class ConcurrentCursor(Cursor):
 
             value_from_partitioned_state = None
             if slices_from_partitioned_state:
-                # We assume here that the slices have been already merged
-                first_slice = slices_from_partitioned_state[0]
+                # We assume here that the slices have been already merged.
+                # After merging, slices are sorted in ascending order by (START_KEY, END_KEY),
+                # so the last slice contains the most recent cursor value for client-side filtering.
+                last_slice = slices_from_partitioned_state[-1]
                 value_from_partitioned_state = (
-                    first_slice[self._connector_state_converter.MOST_RECENT_RECORD_KEY]
-                    if self._connector_state_converter.MOST_RECENT_RECORD_KEY in first_slice
-                    else first_slice[self._connector_state_converter.END_KEY]
+                    last_slice[self._connector_state_converter.MOST_RECENT_RECORD_KEY]
+                    if self._connector_state_converter.MOST_RECENT_RECORD_KEY in last_slice
+                    else last_slice[self._connector_state_converter.END_KEY]
                 )
             return (
                 value_from_partitioned_state
