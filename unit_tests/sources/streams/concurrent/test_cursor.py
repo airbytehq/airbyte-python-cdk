@@ -1344,16 +1344,17 @@ def test_given_partitioned_state_with_one_slice_without_most_recent_cursor_value
     )
 
 
-def test_given_partitioned_state_with_multiple_slices_when_should_be_synced_then_use_upper_boundary_of_first_slice_to_filter():
+def test_given_partitioned_state_with_multiple_slices_when_should_be_synced_then_use_upper_boundary_of_last_slice_to_filter():
     first_slice_end = 5
     second_slice_start = first_slice_end + 10
+    second_slice_end = first_slice_end + 100
     cursor = ConcurrentCursor(
         _A_STREAM_NAME,
         _A_STREAM_NAMESPACE,
         {
             "slices": [
                 {"end": first_slice_end, "start": 0},
-                {"end": first_slice_end + 100, "start": second_slice_start},
+                {"end": second_slice_end, "start": second_slice_start},
             ],
             "state_type": "date-range",
         },
@@ -1367,23 +1368,35 @@ def test_given_partitioned_state_with_multiple_slices_when_should_be_synced_then
         _NO_LOOKBACK_WINDOW,
     )
 
+    # Records before the last slice's end should NOT be synced (already processed)
     assert (
         cursor.should_be_synced(
-            Record(data={_A_CURSOR_FIELD_KEY: first_slice_end - 1}, stream_name="test_stream")
+            Record(data={_A_CURSOR_FIELD_KEY: first_slice_end}, stream_name="test_stream")
         )
         == False
     )
     assert (
         cursor.should_be_synced(
-            Record(data={_A_CURSOR_FIELD_KEY: first_slice_end}, stream_name="test_stream")
+            Record(data={_A_CURSOR_FIELD_KEY: second_slice_start}, stream_name="test_stream")
+        )
+        == False
+    )
+    assert (
+        cursor.should_be_synced(
+            Record(data={_A_CURSOR_FIELD_KEY: second_slice_end - 1}, stream_name="test_stream")
+        )
+        == False
+    )
+    # Records at or after the last slice's end should be synced
+    assert (
+        cursor.should_be_synced(
+            Record(data={_A_CURSOR_FIELD_KEY: second_slice_end}, stream_name="test_stream")
         )
         == True
     )
-    # even if this is within a boundary that has been synced, we don't take any chance and we sync it
-    # anyway in most cases, it shouldn't be pulled because we query for specific slice boundaries to the API
     assert (
         cursor.should_be_synced(
-            Record(data={_A_CURSOR_FIELD_KEY: second_slice_start}, stream_name="test_stream")
+            Record(data={_A_CURSOR_FIELD_KEY: second_slice_end + 1}, stream_name="test_stream")
         )
         == True
     )
