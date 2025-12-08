@@ -455,9 +455,7 @@ class ConcurrentDeclarativeSource(Source):
                         parent_config["stream"]["incremental_stream"]["retriever"]["requester"]
                     )
                 else:
-                    _set_cache_if_not_disabled(
-                        parent_config["stream"]["retriever"]["requester"]
-                    )
+                    _set_cache_if_not_disabled(parent_config["stream"]["retriever"]["requester"])
 
         for stream_config in stream_configs:
             if stream_config.get("incremental_sync", {}).get("parent_stream"):
