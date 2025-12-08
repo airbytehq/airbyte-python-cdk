@@ -424,7 +424,23 @@ class ConcurrentDeclarativeSource(Source):
     def _initialize_cache_for_parent_streams(
         stream_configs: List[Dict[str, Any]],
     ) -> List[Dict[str, Any]]:
+        """Enable caching for parent streams unless explicitly disabled.
+
+        Caching is enabled by default for parent streams to optimize performance when the same
+        parent data is needed by multiple child streams. However, explicit `use_cache: false`
+        settings are respected for streams that cannot use caching (e.g., scroll-based pagination
+        APIs where caching causes duplicate records).
+        """
         parent_streams = set()
+
+        def _should_enable_cache(requester: Dict[str, Any]) -> bool:
+            """Return False only if use_cache is explicitly set to False."""
+            return requester.get("use_cache") is not False
+
+        def _set_cache_if_not_disabled(requester: Dict[str, Any]) -> None:
+            """Set use_cache to True only if not explicitly disabled."""
+            if _should_enable_cache(requester):
+                requester["use_cache"] = True
 
         def update_with_cache_parent_configs(
             parent_configs: list[dict[str, Any]],
@@ -432,21 +448,23 @@ class ConcurrentDeclarativeSource(Source):
             for parent_config in parent_configs:
                 parent_streams.add(parent_config["stream"]["name"])
                 if parent_config["stream"]["type"] == "StateDelegatingStream":
-                    parent_config["stream"]["full_refresh_stream"]["retriever"]["requester"][
-                        "use_cache"
-                    ] = True
-                    parent_config["stream"]["incremental_stream"]["retriever"]["requester"][
-                        "use_cache"
-                    ] = True
+                    _set_cache_if_not_disabled(
+                        parent_config["stream"]["full_refresh_stream"]["retriever"]["requester"]
+                    )
+                    _set_cache_if_not_disabled(
+                        parent_config["stream"]["incremental_stream"]["retriever"]["requester"]
+                    )
                 else:
-                    parent_config["stream"]["retriever"]["requester"]["use_cache"] = True
+                    _set_cache_if_not_disabled(
+                        parent_config["stream"]["retriever"]["requester"]
+                    )
 
         for stream_config in stream_configs:
             if stream_config.get("incremental_sync", {}).get("parent_stream"):
                 parent_streams.add(stream_config["incremental_sync"]["parent_stream"]["name"])
-                stream_config["incremental_sync"]["parent_stream"]["retriever"]["requester"][
-                    "use_cache"
-                ] = True
+                _set_cache_if_not_disabled(
+                    stream_config["incremental_sync"]["parent_stream"]["retriever"]["requester"]
+                )
 
             elif stream_config.get("retriever", {}).get("partition_router", {}):
                 partition_router = stream_config["retriever"]["partition_router"]
@@ -463,14 +481,14 @@ class ConcurrentDeclarativeSource(Source):
         for stream_config in stream_configs:
             if stream_config["name"] in parent_streams:
                 if stream_config["type"] == "StateDelegatingStream":
-                    stream_config["full_refresh_stream"]["retriever"]["requester"]["use_cache"] = (
-                        True
+                    _set_cache_if_not_disabled(
+                        stream_config["full_refresh_stream"]["retriever"]["requester"]
                     )
-                    stream_config["incremental_stream"]["retriever"]["requester"]["use_cache"] = (
-                        True
+                    _set_cache_if_not_disabled(
+                        stream_config["incremental_stream"]["retriever"]["requester"]
                     )
                 else:
-                    stream_config["retriever"]["requester"]["use_cache"] = True
+                    _set_cache_if_not_disabled(stream_config["retriever"]["requester"])
         return stream_configs
 
     def spec(self, logger: logging.Logger) -> ConnectorSpecification:
