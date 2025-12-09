@@ -53,3 +53,9 @@ class UploadableRemoteFile(RemoteFile, ABC):
         Returns the relative path of the source file.
         """
         return self.uri
+    @property
+    def source_uri(self) -> str:
+        """
+        Returns the Source URI for the file being logged.
+        """
+        return self.uri
