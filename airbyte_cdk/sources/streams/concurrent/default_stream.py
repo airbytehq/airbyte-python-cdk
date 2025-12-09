@@ -8,7 +8,7 @@ from typing import Any, Callable, Iterable, List, Mapping, Optional, Union
 from airbyte_cdk.models import AirbyteStream, SyncMode
 from airbyte_cdk.sources.streams.concurrent.abstract_stream import AbstractStream
 from airbyte_cdk.sources.streams.concurrent.availability_strategy import StreamAvailability
-from airbyte_cdk.sources.streams.concurrent.cursor import Cursor
+from airbyte_cdk.sources.streams.concurrent.cursor import Cursor, CursorField
 from airbyte_cdk.sources.streams.concurrent.partitions.partition import Partition
 from airbyte_cdk.sources.streams.concurrent.partitions.partition_generator import PartitionGenerator
 from airbyte_cdk.utils.traced_exception import AirbyteTracedException
@@ -21,7 +21,7 @@ class DefaultStream(AbstractStream):
         name: str,
         json_schema: Union[Mapping[str, Any], Callable[[], Mapping[str, Any]]],
         primary_key: List[str],
-        cursor_field: Optional[str],
+        cursor_field: Optional[CursorField],
         logger: Logger,
         cursor: Cursor,
         namespace: Optional[str] = None,
@@ -50,7 +50,7 @@ class DefaultStream(AbstractStream):
 
     @property
     def cursor_field(self) -> Optional[str]:
-        return self._cursor_field
+        return self._cursor_field.cursor_field_key if self._cursor_field else None
 
     def get_json_schema(self) -> Mapping[str, Any]:
         return self._json_schema() if callable(self._json_schema) else self._json_schema
@@ -68,10 +68,12 @@ class DefaultStream(AbstractStream):
             stream.namespace = self._namespace
 
         if self._cursor_field:
-            stream.source_defined_cursor = True
+            stream.source_defined_cursor = (
+                not self._cursor_field.supports_catalog_defined_cursor_field
+            )
             stream.is_resumable = True
             stream.supported_sync_modes.append(SyncMode.incremental)
-            stream.default_cursor_field = [self._cursor_field]
+            stream.default_cursor_field = [self._cursor_field.cursor_field_key]
 
         keys = self._primary_key
         if keys and len(keys) > 0:

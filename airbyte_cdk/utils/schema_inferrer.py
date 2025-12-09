@@ -120,7 +120,7 @@ class SchemaInferrer:
             node[_TYPE] = [node[_TYPE], _NULL_TYPE]
             node.pop(_ANY_OF)
         # populate `type` for `anyOf` if it's not present to pass all other checks
-        elif len(node[_ANY_OF]) == 2 and not self._null_type_in_any_of(node):
+        elif len(node[_ANY_OF]) > 1:
             node[_TYPE] = [_NULL_TYPE]
 
     def _clean_properties(self, node: InferredSchema) -> None:

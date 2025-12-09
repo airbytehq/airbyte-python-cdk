@@ -30,29 +30,27 @@ class Retriever:
         :return: The records read from the API source
         """
 
-    @abstractmethod
     @deprecated("Stream slicing is being moved to the stream level.")
     def stream_slices(self) -> Iterable[Optional[StreamSlice]]:
-        """Returns the stream slices"""
+        """Does nothing as this method is deprecated, so underlying Retriever implementations
+        do not need to implement this.
+        """
+        yield from []
 
     @property
-    @abstractmethod
     @deprecated("State management is being moved to the stream level.")
     def state(self) -> StreamState:
-        """State getter, should return state in form that can serialized to a string and send to the output
-        as a STATE AirbyteMessage.
-
-        A good example of a state is a cursor_value:
-            {
-                self.cursor_field: "cursor_value"
-            }
-
-         State should try to be as small as possible but at the same time descriptive enough to restore
-         syncing process from the point where it stopped.
         """
+        Does nothing as this method is deprecated, so underlying Retriever implementations
+        do not need to implement this.
+        """
+        return {}
 
     @state.setter
-    @abstractmethod
     @deprecated("State management is being moved to the stream level.")
     def state(self, value: StreamState) -> None:
-        """State setter, accept state serialized by state getter."""
+        """
+        Does nothing as this method is deprecated, so underlying Retriever implementations
+        do not need to implement this.
+        """
+        pass

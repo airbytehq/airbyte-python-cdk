@@ -514,19 +514,19 @@ class RefreshTokenUpdater(BaseModel):
         [],
         description="Status Codes to Identify refresh token error in response (Refresh Token Error Key and Refresh Token Error Values should be also specified). Responses with one of the error status code and containing an error value will be flagged as a config error",
         examples=[[400, 500]],
-        title="Refresh Token Error Status Codes",
+        title="(Deprecated - Use the same field on the OAuthAuthenticator level) Refresh Token Error Status Codes",
     )
     refresh_token_error_key: Optional[str] = Field(
         "",
         description="Key to Identify refresh token error in response (Refresh Token Error Status Codes and Refresh Token Error Values should be also specified).",
         examples=["error"],
-        title="Refresh Token Error Key",
+        title="(Deprecated - Use the same field on the OAuthAuthenticator level) Refresh Token Error Key",
     )
     refresh_token_error_values: Optional[List[str]] = Field(
         [],
         description='List of values to check for exception during token refresh process. Used to check if the error found in the response matches the key from the Refresh Token Error Key field (e.g. response={"error": "invalid_grant"}). Only responses with one of the error status code and containing an error value will be flagged as a config error',
         examples=[["invalid_grant", "invalid_permissions"]],
-        title="Refresh Token Error Values",
+        title="(Deprecated - Use the same field on the OAuthAuthenticator level) Refresh Token Error Values",
     )
 
 
@@ -1819,6 +1819,11 @@ class IncrementingCountCursor(BaseModel):
         examples=["created_at", "{{ config['record_cursor'] }}"],
         title="Cursor Field",
     )
+    allow_catalog_defined_cursor_field: Optional[bool] = Field(
+        None,
+        description="Whether the cursor allows users to override the default cursor_field when configuring their connection. The user defined cursor field will be specified from within the configured catalog.",
+        title="Allow Catalog Defined Cursor Field",
+    )
     start_value: Optional[Union[str, int]] = Field(
         None,
         description="The value that determines the earliest record that should be synced.",
@@ -1850,6 +1855,11 @@ class DatetimeBasedCursor(BaseModel):
         description="The location of the value on a record that will be used as a bookmark during sync. To ensure no data loss, the API must return records in ascending order based on the cursor field. Nested fields are not supported, so the field must be at the top level of the record. You can use a combination of Add Field and Remove Field transformations to move the nested field to the top.",
         examples=["created_at", "{{ config['record_cursor'] }}"],
         title="Cursor Field",
+    )
+    allow_catalog_defined_cursor_field: Optional[bool] = Field(
+        None,
+        description="Whether the cursor allows users to override the default cursor_field when configuring their connection. The user defined cursor field will be specified from within the configured catalog.",
+        title="Allow Catalog Defined Cursor Field",
     )
     cursor_datetime_formats: Optional[List[str]] = Field(
         None,
@@ -2147,6 +2157,24 @@ class OAuthAuthenticator(BaseModel):
         description="The format of the time to expiration datetime. Provide it if the time is returned as a date-time string instead of seconds.",
         examples=["%Y-%m-%d %H:%M:%S.%f+00:00"],
         title="Token Expiry Date Format",
+    )
+    refresh_token_error_status_codes: Optional[List[int]] = Field(
+        None,
+        description="Status Codes to Identify refresh token error in response (Refresh Token Error Key and Refresh Token Error Values should be also specified). Responses with one of the error status code and containing an error value will be flagged as a config error",
+        examples=[[400, 500]],
+        title="Refresh Token Error Status Codes",
+    )
+    refresh_token_error_key: Optional[str] = Field(
+        None,
+        description="Key to Identify refresh token error in response (Refresh Token Error Status Codes and Refresh Token Error Values should be also specified).",
+        examples=["error"],
+        title="Refresh Token Error Key",
+    )
+    refresh_token_error_values: Optional[List[str]] = Field(
+        None,
+        description='List of values to check for exception during token refresh process. Used to check if the error found in the response matches the key from the Refresh Token Error Key field (e.g. response={"error": "invalid_grant"}). Only responses with one of the error status code and containing an error value will be flagged as a config error',
+        examples=[["invalid_grant", "invalid_permissions"]],
+        title="Refresh Token Error Values",
     )
     refresh_token_updater: Optional[RefreshTokenUpdater] = Field(
         None,

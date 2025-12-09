@@ -485,6 +485,12 @@ single_csv_scenario: TestScenario[InMemoryFilesSource] = (
                                     "exclusiveMinimum": 0,
                                     "type": "integer",
                                 },
+                                "use_first_found_file_for_schema_discovery": {
+                                    "default": False,
+                                    "description": "When enabled, the source will use the first found file for schema discovery. Helps to avoid long discovery step.",
+                                    "title": "Use First Found File For Schema Discover",
+                                    "type": "boolean",
+                                },
                             },
                             "required": ["name", "format"],
                         },
@@ -2114,12 +2120,14 @@ schemaless_with_user_input_schema_fails_connection_check_scenario: TestScenario[
         }
     )
     .set_expected_check_status("FAILED")
-    .set_expected_check_error(None, FileBasedSourceError.CONFIG_VALIDATION_ERROR.value)
+    .set_expected_check_error(
+        None, FileBasedSourceError.ERROR_VALIDATION_STREAM_DISCOVERY_OPTIONS.value
+    )
     .set_expected_discover_error(
-        ConfigValidationError, FileBasedSourceError.CONFIG_VALIDATION_ERROR.value
+        ConfigValidationError, FileBasedSourceError.ERROR_VALIDATION_STREAM_DISCOVERY_OPTIONS.value
     )
     .set_expected_read_error(
-        ConfigValidationError, FileBasedSourceError.CONFIG_VALIDATION_ERROR.value
+        ConfigValidationError, FileBasedSourceError.ERROR_VALIDATION_STREAM_DISCOVERY_OPTIONS.value
     )
 ).build()
 
@@ -2217,12 +2225,229 @@ schemaless_with_user_input_schema_fails_connection_check_multi_stream_scenario: 
         }
     )
     .set_expected_check_status("FAILED")
-    .set_expected_check_error(None, FileBasedSourceError.CONFIG_VALIDATION_ERROR.value)
+    .set_expected_check_error(
+        None, FileBasedSourceError.ERROR_VALIDATION_STREAM_DISCOVERY_OPTIONS.value
+    )
     .set_expected_discover_error(
-        ConfigValidationError, FileBasedSourceError.CONFIG_VALIDATION_ERROR.value
+        ConfigValidationError, FileBasedSourceError.ERROR_VALIDATION_STREAM_DISCOVERY_OPTIONS.value
     )
     .set_expected_read_error(
-        ConfigValidationError, FileBasedSourceError.CONFIG_VALIDATION_ERROR.value
+        ConfigValidationError, FileBasedSourceError.ERROR_VALIDATION_STREAM_DISCOVERY_OPTIONS.value
+    )
+).build()
+
+recent_n_files_to_read_for_schema_discovery_with_use_first_found_file_for_schema_discovery_fails_connection_check_multi_stream_scenario: TestScenario[
+    InMemoryFilesSource
+] = (
+    TestScenarioBuilder[InMemoryFilesSource]()
+    .set_name(
+        "recent_n_files_to_read_for_schema_discovery_with_use_first_found_file_for_schema_discovery_fails_connection_check_multi_stream_scenario"
+    )
+    .set_config(
+        {
+            "streams": [
+                {
+                    "name": "stream1",
+                    "format": {"filetype": "csv"},
+                    "globs": ["a.csv"],
+                    "validation_policy": "Skip Record",
+                    "recent_n_files_to_read_for_schema_discovery": 5,
+                    "use_first_found_file_for_schema_discovery": True,
+                },
+                {
+                    "name": "stream2",
+                    "format": {"filetype": "csv"},
+                    "globs": ["b.csv"],
+                    "validation_policy": "Skip Record",
+                },
+            ]
+        }
+    )
+    .set_source_builder(
+        FileBasedSourceBuilder()
+        .set_files(
+            {
+                "a.csv": {
+                    "contents": [
+                        ("col1", "col2"),
+                        ("val11a", "val12a"),
+                        ("val21a", "val22a"),
+                    ],
+                    "last_modified": "2023-06-05T03:54:07.000Z",
+                },
+                "b.csv": {
+                    "contents": [
+                        ("col3",),
+                        ("val13b",),
+                        ("val23b",),
+                    ],
+                    "last_modified": "2023-06-05T03:54:07.000Z",
+                },
+            }
+        )
+        .set_file_type("csv")
+    )
+    .set_catalog(
+        CatalogBuilder()
+        .with_stream("stream1", SyncMode.full_refresh)
+        .with_stream("stream2", SyncMode.full_refresh)
+        .build()
+    )
+    .set_expected_catalog(
+        {
+            "streams": [
+                {
+                    "json_schema": {
+                        "type": "object",
+                        "properties": {
+                            "data": {"type": "object"},
+                            "_ab_source_file_last_modified": {"type": "string"},
+                            "_ab_source_file_url": {"type": "string"},
+                        },
+                    },
+                    "name": "stream1",
+                    "supported_sync_modes": ["full_refresh", "incremental"],
+                    "is_resumable": True,
+                    "is_file_based": False,
+                    "source_defined_cursor": True,
+                    "default_cursor_field": ["_ab_source_file_last_modified"],
+                },
+                {
+                    "json_schema": {
+                        "type": "object",
+                        "properties": {
+                            "col3": {"type": ["null", "string"]},
+                            "_ab_source_file_last_modified": {"type": "string"},
+                            "_ab_source_file_url": {"type": "string"},
+                        },
+                    },
+                    "name": "stream2",
+                    "source_defined_cursor": True,
+                    "default_cursor_field": ["_ab_source_file_last_modified"],
+                    "supported_sync_modes": ["full_refresh", "incremental"],
+                    "is_resumable": True,
+                    "is_file_based": False,
+                },
+            ]
+        }
+    )
+    .set_expected_check_status("FAILED")
+    .set_expected_check_error(
+        None, FileBasedSourceError.ERROR_VALIDATION_STREAM_DISCOVERY_OPTIONS.value
+    )
+    .set_expected_discover_error(
+        ConfigValidationError, FileBasedSourceError.ERROR_VALIDATION_STREAM_DISCOVERY_OPTIONS.value
+    )
+    .set_expected_read_error(
+        ConfigValidationError, FileBasedSourceError.ERROR_VALIDATION_STREAM_DISCOVERY_OPTIONS.value
+    )
+).build()
+
+
+schemaless_with_use_first_found_file_for_schema_discovery_fails_connection_check_multi_stream_scenario: TestScenario[
+    InMemoryFilesSource
+] = (
+    TestScenarioBuilder[InMemoryFilesSource]()
+    .set_name(
+        "schemaless_with_use_first_found_file_for_schema_discovery_fails_connection_check_multi_stream_scenario"
+    )
+    .set_config(
+        {
+            "streams": [
+                {
+                    "name": "stream1",
+                    "format": {"filetype": "csv"},
+                    "globs": ["a.csv"],
+                    "validation_policy": "Skip Record",
+                    "schemaless": True,
+                    "use_first_found_file_for_schema_discovery": True,
+                },
+                {
+                    "name": "stream2",
+                    "format": {"filetype": "csv"},
+                    "globs": ["b.csv"],
+                    "validation_policy": "Skip Record",
+                },
+            ]
+        }
+    )
+    .set_source_builder(
+        FileBasedSourceBuilder()
+        .set_files(
+            {
+                "a.csv": {
+                    "contents": [
+                        ("col1", "col2"),
+                        ("val11a", "val12a"),
+                        ("val21a", "val22a"),
+                    ],
+                    "last_modified": "2023-06-05T03:54:07.000Z",
+                },
+                "b.csv": {
+                    "contents": [
+                        ("col3",),
+                        ("val13b",),
+                        ("val23b",),
+                    ],
+                    "last_modified": "2023-06-05T03:54:07.000Z",
+                },
+            }
+        )
+        .set_file_type("csv")
+    )
+    .set_catalog(
+        CatalogBuilder()
+        .with_stream("stream1", SyncMode.full_refresh)
+        .with_stream("stream2", SyncMode.full_refresh)
+        .build()
+    )
+    .set_expected_catalog(
+        {
+            "streams": [
+                {
+                    "json_schema": {
+                        "type": "object",
+                        "properties": {
+                            "data": {"type": "object"},
+                            "_ab_source_file_last_modified": {"type": "string"},
+                            "_ab_source_file_url": {"type": "string"},
+                        },
+                    },
+                    "name": "stream1",
+                    "supported_sync_modes": ["full_refresh", "incremental"],
+                    "is_resumable": True,
+                    "is_file_based": False,
+                    "source_defined_cursor": True,
+                    "default_cursor_field": ["_ab_source_file_last_modified"],
+                },
+                {
+                    "json_schema": {
+                        "type": "object",
+                        "properties": {
+                            "col3": {"type": ["null", "string"]},
+                            "_ab_source_file_last_modified": {"type": "string"},
+                            "_ab_source_file_url": {"type": "string"},
+                        },
+                    },
+                    "name": "stream2",
+                    "source_defined_cursor": True,
+                    "default_cursor_field": ["_ab_source_file_last_modified"],
+                    "supported_sync_modes": ["full_refresh", "incremental"],
+                    "is_resumable": True,
+                    "is_file_based": False,
+                },
+            ]
+        }
+    )
+    .set_expected_check_status("FAILED")
+    .set_expected_check_error(
+        None, FileBasedSourceError.ERROR_VALIDATION_STREAM_DISCOVERY_OPTIONS.value
+    )
+    .set_expected_discover_error(
+        ConfigValidationError, FileBasedSourceError.ERROR_VALIDATION_STREAM_DISCOVERY_OPTIONS.value
+    )
+    .set_expected_read_error(
+        ConfigValidationError, FileBasedSourceError.ERROR_VALIDATION_STREAM_DISCOVERY_OPTIONS.value
     )
 ).build()
 

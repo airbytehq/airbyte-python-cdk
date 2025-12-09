@@ -20,8 +20,10 @@ on:
           Note that this workflow is intended for prereleases. For public-facing stable releases,
           please use the GitHub Releases workflow instead:
           https://github.com/airbytehq/airbyte-python-cdk/blob/main/docs/RELEASES.md.
-          For prereleases, please leave the version blank to use the detected version. Alternatively,
-          you can override the dynamic versioning for special use cases.
+          For prereleases, you can use the /prerelease slash command in a PR comment to trigger
+          this workflow with default arguments. Alternatively, you can manually trigger this workflow
+          and leave the version blank to use the detected version, or override the dynamic versioning
+          for special use cases.
         required: false
       publish_to_pypi:
         description: "Publish to PyPI. If true, the workflow will publish to PyPI."

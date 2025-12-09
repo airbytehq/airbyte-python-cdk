@@ -27,5 +27,6 @@ As needed or by request, Airbyte Maintainers can execute the following slash com
 - `/autofix` - Fixes most formatting and linting issues
 - `/poetry-lock` - Updates poetry.lock file
 - `/test` - Runs connector tests with the updated CDK
+- `/prerelease` - Triggers a prerelease publish with default arguments
 
 If you have any questions, feel free to ask in the PR comments or join our [Slack community](https://airbytehq.slack.com/).

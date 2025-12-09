@@ -172,7 +172,9 @@ class AbstractFileBasedStreamReader(ABC):
         file_size = file.size
 
         if file_size > self.FILE_SIZE_LIMIT:
-            message = f"File size exceeds the {self.FILE_SIZE_LIMIT / 1e9} GB limit."
+            message = (
+                f"File size exceeds the {self.FILE_SIZE_LIMIT / 1e9} GB limit. File URI: {file.uri}"
+            )
             raise FileSizeLimitError(
                 message=message, internal_message=message, failure_type=FailureType.config_error
             )
@@ -205,7 +207,7 @@ class AbstractFileBasedStreamReader(ABC):
             mime_type=file.mime_type,
             created_at=file.created_at,
             updated_at=file.updated_at,
-            source_uri=file.uri,
+            source_uri=file.source_uri,
         )
         file_reference = AirbyteRecordMessageFileReference(
             staging_file_url=local_file_path,
