@@ -433,13 +433,9 @@ class ConcurrentDeclarativeSource(Source):
         """
         parent_streams = set()
 
-        def _should_enable_cache(requester: Dict[str, Any]) -> bool:
-            """Return False only if use_cache is explicitly set to False."""
-            return requester.get("use_cache") is not False
-
         def _set_cache_if_not_disabled(requester: Dict[str, Any]) -> None:
             """Set use_cache to True only if not explicitly disabled."""
-            if _should_enable_cache(requester):
+            if requester.get("use_cache") is not False:
                 requester["use_cache"] = True
 
         def update_with_cache_parent_configs(
