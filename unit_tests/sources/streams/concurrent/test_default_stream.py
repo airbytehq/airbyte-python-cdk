@@ -8,7 +8,7 @@ import pytest
 
 from airbyte_cdk.models import AirbyteStream, SyncMode
 from airbyte_cdk.sources.message import InMemoryMessageRepository
-from airbyte_cdk.sources.streams.concurrent.cursor import Cursor, FinalStateCursor
+from airbyte_cdk.sources.streams.concurrent.cursor import Cursor, CursorField, FinalStateCursor
 from airbyte_cdk.sources.streams.concurrent.default_stream import DefaultStream
 from airbyte_cdk.sources.streams.concurrent.partitions.partition import Partition
 from airbyte_cdk.sources.streams.concurrent.partitions.partition_generator import PartitionGenerator
@@ -187,7 +187,7 @@ class ThreadBasedConcurrentStreamTest(unittest.TestCase):
             self._name,
             json_schema,
             self._primary_key,
-            "date",
+            CursorField(cursor_field_key="date"),
             self._logger,
             FinalStateCursor(
                 stream_name=self._name,
@@ -271,6 +271,43 @@ class ThreadBasedConcurrentStreamTest(unittest.TestCase):
         actual_airbyte_stream = stream.as_airbyte_stream()
 
         assert actual_airbyte_stream == expected_airbyte_stream
+
+    def test_as_airbyte_stream_with_a_catalog_defined_cursor(self):
+        json_schema = {
+            "type": "object",
+            "properties": {
+                "id": {"type": ["null", "string"]},
+                "date": {"type": ["null", "string"]},
+            },
+        }
+        stream = DefaultStream(
+            self._partition_generator,
+            self._name,
+            json_schema,
+            self._primary_key,
+            CursorField(cursor_field_key="date", supports_catalog_defined_cursor_field=True),
+            self._logger,
+            FinalStateCursor(
+                stream_name=self._name,
+                stream_namespace=None,
+                message_repository=self._message_repository,
+            ),
+        )
+
+        expected_airbyte_stream = AirbyteStream(
+            name=self._name,
+            json_schema=json_schema,
+            supported_sync_modes=[SyncMode.full_refresh, SyncMode.incremental],
+            source_defined_cursor=False,
+            default_cursor_field=["date"],
+            source_defined_primary_key=None,
+            namespace=None,
+            is_resumable=True,
+            is_file_based=False,
+        )
+
+        airbyte_stream = stream.as_airbyte_stream()
+        assert airbyte_stream == expected_airbyte_stream
 
     def test_given_no_partitions_when_get_availability_then_unavailable(self) -> None:
         self._partition_generator.generate.return_value = []
