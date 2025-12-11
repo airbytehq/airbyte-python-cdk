@@ -3931,6 +3931,122 @@ def test_only_parent_streams_use_cache():
     )
 
 
+def test_parent_stream_respects_explicit_use_cache_false():
+    """Test that explicit use_cache: false is respected for parent streams.
+
+    This is important for APIs that use scroll-based pagination (like Intercom's /companies/scroll
+    endpoint), where caching must be disabled because the same scroll_param is returned in
+    pagination responses, causing duplicate records and infinite pagination loops.
+    """
+    # Parent stream with explicit use_cache: false
+    companies_stream = {
+        "type": "DeclarativeStream",
+        "$parameters": {
+            "name": "companies",
+            "primary_key": "id",
+            "url_base": "https://api.intercom.io/",
+        },
+        "schema_loader": {
+            "name": "{{ parameters.stream_name }}",
+            "file_path": "./source_intercom/schemas/{{ parameters.name }}.yaml",
+        },
+        "retriever": {
+            "paginator": {
+                "type": "DefaultPaginator",
+                "page_token_option": {"type": "RequestPath"},
+                "pagination_strategy": {
+                    "type": "CursorPagination",
+                    "cursor_value": "{{ response.get('scroll_param') }}",
+                    "page_size": 100,
+                },
+            },
+            "requester": {
+                "path": "companies/scroll",
+                "use_cache": False,  # Explicitly disabled for scroll-based pagination
+                "authenticator": {
+                    "type": "BearerAuthenticator",
+                    "api_token": "{{ config['api_key'] }}",
+                },
+            },
+            "record_selector": {"extractor": {"type": "DpathExtractor", "field_path": ["data"]}},
+        },
+    }
+
+    manifest = {
+        "version": "0.29.3",
+        "definitions": {},
+        "streams": [
+            deepcopy(companies_stream),
+            {
+                "type": "DeclarativeStream",
+                "$parameters": {
+                    "name": "company_segments",
+                    "primary_key": "id",
+                    "url_base": "https://api.intercom.io/",
+                },
+                "schema_loader": {
+                    "name": "{{ parameters.stream_name }}",
+                    "file_path": "./source_intercom/schemas/{{ parameters.name }}.yaml",
+                },
+                "retriever": {
+                    "paginator": {"type": "NoPagination"},
+                    "requester": {
+                        "path": "companies/{{ stream_partition.parent_id }}/segments",
+                        "authenticator": {
+                            "type": "BearerAuthenticator",
+                            "api_token": "{{ config['api_key'] }}",
+                        },
+                    },
+                    "record_selector": {
+                        "extractor": {"type": "DpathExtractor", "field_path": ["data"]}
+                    },
+                    "partition_router": {
+                        "parent_stream_configs": [
+                            {
+                                "parent_key": "id",
+                                "partition_field": "parent_id",
+                                "stream": deepcopy(companies_stream),
+                            }
+                        ],
+                        "type": "SubstreamPartitionRouter",
+                    },
+                },
+            },
+        ],
+        "check": {"type": "CheckStream", "stream_names": ["companies"]},
+    }
+    source = ConcurrentDeclarativeSource(
+        source_config=manifest, config={}, catalog=create_catalog("lists"), state=None
+    )
+
+    streams = source.streams({})
+    assert len(streams) == 2
+
+    # Main stream with explicit use_cache: false should remain false (parent for substream)
+    stream_0 = streams[0]
+    assert stream_0.name == "companies"
+    assert isinstance(stream_0, DefaultStream)
+    # use_cache should remain False because it was explicitly set to False
+    assert (
+        not stream_0._stream_partition_generator._partition_factory._retriever.requester.use_cache
+    )
+
+    # Substream
+    stream_1 = streams[1]
+    assert stream_1.name == "company_segments"
+    assert isinstance(stream_1, DefaultStream)
+
+    # Parent stream created for substream should also respect use_cache: false
+    assert (
+        stream_1._stream_partition_generator._stream_slicer.parent_stream_configs[0].stream.name
+        == "companies"
+    )
+    # The parent stream in the substream config should also have use_cache: false
+    assert not stream_1._stream_partition_generator._stream_slicer.parent_stream_configs[
+        0
+    ].stream._stream_partition_generator._partition_factory._retriever.requester.use_cache
+
+
 def _run_read(manifest: Mapping[str, Any], stream_name: str) -> List[AirbyteMessage]:
     source = ConcurrentDeclarativeSource(
         source_config=manifest, config={}, catalog=create_catalog("lists"), state=None

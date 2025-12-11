@@ -2286,7 +2286,7 @@ definitions:
           - "$ref": "#/definitions/CustomErrorHandler"
       use_cache:
         title: Use Cache
-        description: Enables stream requests caching. This field is automatically set by the CDK.
+        description: Enables stream requests caching. When set to true, repeated requests to the same URL will return cached responses. Parent streams automatically have caching enabled. Only set this to false if you are certain that caching should be disabled, as it may negatively impact performance when the same data is needed multiple times (e.g., for scroll-based pagination APIs where caching causes duplicate records).
         type: boolean
         default: false
       $parameters:
