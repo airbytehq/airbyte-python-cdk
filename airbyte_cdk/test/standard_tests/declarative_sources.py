@@ -73,7 +73,11 @@ class DeclarativeSourceTestSuite(SourceTestSuiteBase):
 
         Subclasses should not need to override this method.
         """
-        scenario = scenario or ConnectorTestScenario()  # Use default (empty) scenario if None
+        scenario = scenario or ConnectorTestScenario(
+            name="default-scenario",
+            config_file=None,
+            config_settings={},
+        )  # Use default (empty) scenario if None
         manifest_dict = yaml.safe_load(cls.manifest_yaml_path.read_text())
         config = {
             "__injected_manifest": manifest_dict,
