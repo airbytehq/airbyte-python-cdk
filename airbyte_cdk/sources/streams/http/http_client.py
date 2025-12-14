@@ -342,7 +342,7 @@ class HttpClient:
         except requests.RequestException as e:
             exc = e
 
-        error_resolution: ErrorResolution = self._error_handler.interpret_response(
+        error_resolution: Optional[ErrorResolution] = self._error_handler.interpret_response(
             response if response is not None else exc
         )
 
@@ -380,7 +380,7 @@ class HttpClient:
             response=response,
             exc=exc,
             request=request,
-            error_resolution=error_resolution,
+            error_resolution=error_resolution if error_resolution else ErrorResolution(ResponseAction.SUCCESS),
             exit_on_rate_limit=exit_on_rate_limit,
         )
 
