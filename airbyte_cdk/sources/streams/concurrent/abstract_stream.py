@@ -90,3 +90,13 @@ class AbstractStream(ABC):
         """
         :return: If the stream is available and if not, why
         """
+
+    @property
+    def use_exclusive_concurrency(self) -> bool:
+        """
+        If True, partitions for this stream will be processed serially (one at a time) instead of concurrently.
+        This is useful for APIs that have strict rate limits or do not support concurrent requests to the same endpoint,
+        such as scroll-based pagination APIs that only allow one active scroll at a time.
+        :return: Whether to disable concurrent partition processing for this stream.
+        """
+        return False

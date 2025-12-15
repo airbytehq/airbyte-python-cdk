@@ -2558,6 +2558,11 @@ class DeclarativeStream(BaseModel):
         description="(experimental) Describes how to fetch a file",
         title="File Uploader",
     )
+    disable_partition_concurrency: Optional[bool] = Field(
+        False,
+        description="If set to true, partitions for this stream will be processed serially (one at a time) instead of concurrently. This is useful for APIs that have strict rate limits or do not support concurrent requests to the same endpoint, such as scroll-based pagination APIs that only allow one active scroll at a time.",
+        title="Disable Partition Concurrency",
+    )
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
 
