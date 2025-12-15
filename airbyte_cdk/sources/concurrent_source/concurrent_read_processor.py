@@ -3,6 +3,7 @@
 #
 import logging
 import os
+import threading
 from collections import deque
 from typing import Deque, Dict, Iterable, List, Optional, Set
 
@@ -75,6 +76,7 @@ class ConcurrentReadProcessor:
         self._exclusive_stream_partition_in_progress: Dict[str, bool] = {
             stream_name: False for stream_name in self._exclusive_streams
         }
+        self._exclusive_partition_lock = threading.Lock()
 
     def on_partition_generation_completed(
         self, sentinel: PartitionGenerationCompletedSentinel
@@ -114,9 +116,10 @@ class ConcurrentReadProcessor:
             )
 
         if stream_name in self._exclusive_streams:
-            self._pending_partitions_per_exclusive_stream[stream_name].append(partition)
-            if not self._exclusive_stream_partition_in_progress[stream_name]:
-                self._submit_next_exclusive_partition(stream_name)
+            with self._exclusive_partition_lock:
+                self._pending_partitions_per_exclusive_stream[stream_name].append(partition)
+                if not self._exclusive_stream_partition_in_progress[stream_name]:
+                    self._submit_next_exclusive_partition(stream_name)
         else:
             self._thread_pool_manager.submit(
                 self._partition_reader.process_partition, partition, cursor
@@ -140,8 +143,9 @@ class ConcurrentReadProcessor:
             partitions_running.remove(partition)
 
             if stream_name in self._exclusive_streams:
-                self._exclusive_stream_partition_in_progress[stream_name] = False
-                self._submit_next_exclusive_partition(stream_name)
+                with self._exclusive_partition_lock:
+                    self._exclusive_stream_partition_in_progress[stream_name] = False
+                    self._submit_next_exclusive_partition(stream_name)
 
             # If all partitions were generated and this was the last one, the stream is done
             if (
@@ -276,12 +280,17 @@ class ConcurrentReadProcessor:
         Submit the next pending partition for an exclusive stream.
         This ensures that only one partition is processed at a time for streams
         that have use_exclusive_concurrency=True.
+
+        Note: This method must be called while holding self._exclusive_partition_lock
+        to ensure thread safety.
         """
         pending_partitions = self._pending_partitions_per_exclusive_stream[stream_name]
         if pending_partitions:
+            # Set the flag BEFORE popping to prevent race conditions where another thread
+            # could see in_progress=False and submit another partition concurrently
+            self._exclusive_stream_partition_in_progress[stream_name] = True
             partition = pending_partitions.popleft()
             cursor = self._stream_name_to_instance[stream_name].cursor
-            self._exclusive_stream_partition_in_progress[stream_name] = True
             self._thread_pool_manager.submit(
                 self._partition_reader.process_partition, partition, cursor
             )
