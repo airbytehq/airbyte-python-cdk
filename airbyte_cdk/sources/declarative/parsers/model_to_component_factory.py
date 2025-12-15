@@ -2118,6 +2118,7 @@ class ModelToComponentFactory:
             logger=logging.getLogger(f"airbyte.{stream_name}"),
             cursor=concurrent_cursor,
             supports_file_transfer=hasattr(model, "file_uploader") and bool(model.file_uploader),
+            concurrency_group=model.concurrency_group,
         )
 
     def _migrate_state(self, model: DeclarativeStreamModel, config: Config) -> None:

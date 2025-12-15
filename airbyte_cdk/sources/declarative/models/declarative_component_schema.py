@@ -2497,6 +2497,12 @@ class DeclarativeStream(BaseModel):
 
     type: Literal["DeclarativeStream"]
     name: Optional[str] = Field("", description="The stream name.", example=["Users"], title="Name")
+    concurrency_group: Optional[str] = Field(
+        None,
+        description="Streams with the same concurrency group will be processed serially with respect to each other. This is useful for APIs that limit concurrent requests to certain endpoints, such as scroll-based pagination APIs that only allow one active scroll at a time. Streams without a concurrency group (or with different groups) will be processed concurrently as normal.",
+        example=["scroll"],
+        title="Concurrency Group",
+    )
     retriever: Union[SimpleRetriever, AsyncRetriever, CustomRetriever] = Field(
         ...,
         description="Component used to coordinate how records are extracted across stream slices and request pages.",

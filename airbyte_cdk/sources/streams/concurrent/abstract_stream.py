@@ -90,3 +90,18 @@ class AbstractStream(ABC):
         """
         :return: If the stream is available and if not, why
         """
+
+    @property
+    def concurrency_group(self) -> Optional[str]:
+        """
+        Returns the concurrency group for this stream.
+
+        Streams with the same non-None concurrency group will be processed serially
+        with respect to each other. This is useful for APIs that limit concurrent
+        requests to certain endpoints (e.g., scroll-based pagination APIs that only
+        allow one active scroll at a time).
+
+        :return: The concurrency group name, or None if the stream can be processed
+                 concurrently with all other streams.
+        """
+        return None

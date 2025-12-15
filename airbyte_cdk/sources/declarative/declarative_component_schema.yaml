@@ -1553,6 +1553,16 @@ definitions:
         default: ""
         example:
           - "Users"
+      concurrency_group:
+        title: Concurrency Group
+        description: >
+          Streams with the same concurrency group will be processed serially with respect to each other.
+          This is useful for APIs that limit concurrent requests to certain endpoints, such as scroll-based
+          pagination APIs that only allow one active scroll at a time. Streams without a concurrency group
+          (or with different groups) will be processed concurrently as normal.
+        type: string
+        example:
+          - "scroll"
       retriever:
         title: Retriever
         description: Component used to coordinate how records are extracted across stream slices and request pages.

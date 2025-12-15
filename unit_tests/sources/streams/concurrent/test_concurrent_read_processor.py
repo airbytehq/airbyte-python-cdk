@@ -792,3 +792,210 @@ class TestConcurrentReadProcessor(unittest.TestCase):
         self._thread_pool_manager.submit.assert_called_with(
             self._partition_enqueuer.generate_partitions, self._stream
         )
+
+    def test_concurrency_group_defers_stream_when_group_is_active(self):
+        """Test that streams with the same concurrency group are deferred when the group is active."""
+        # Create two streams with the same concurrency group
+        stream1 = Mock(spec=AbstractStream)
+        stream1.name = "stream1"
+        stream1.concurrency_group = "scroll"
+        stream1.as_airbyte_stream.return_value = AirbyteStream(
+            name="stream1",
+            json_schema={},
+            supported_sync_modes=[SyncMode.full_refresh],
+        )
+
+        stream2 = Mock(spec=AbstractStream)
+        stream2.name = "stream2"
+        stream2.concurrency_group = "scroll"
+        stream2.as_airbyte_stream.return_value = AirbyteStream(
+            name="stream2",
+            json_schema={},
+            supported_sync_modes=[SyncMode.full_refresh],
+        )
+
+        handler = ConcurrentReadProcessor(
+            [stream1, stream2],
+            self._partition_enqueuer,
+            self._thread_pool_manager,
+            self._logger,
+            self._slice_logger,
+            self._message_repository,
+            self._partition_reader,
+        )
+
+        # Start the first stream - should succeed
+        handler.start_next_partition_generator()
+        assert "stream1" in handler._streams_currently_generating_partitions
+        assert "scroll" in handler._active_concurrency_groups
+
+        # Try to start the second stream - should be deferred
+        result = handler.start_next_partition_generator()
+        assert result is None  # No stream started
+        assert "stream2" not in handler._streams_currently_generating_partitions
+        assert stream2 in handler._deferred_streams
+
+    def test_concurrency_group_allows_streams_without_group_to_run_concurrently(self):
+        """Test that streams without a concurrency group can run concurrently."""
+        stream1 = Mock(spec=AbstractStream)
+        stream1.name = "stream1"
+        stream1.concurrency_group = None
+        stream1.as_airbyte_stream.return_value = AirbyteStream(
+            name="stream1",
+            json_schema={},
+            supported_sync_modes=[SyncMode.full_refresh],
+        )
+
+        stream2 = Mock(spec=AbstractStream)
+        stream2.name = "stream2"
+        stream2.concurrency_group = None
+        stream2.as_airbyte_stream.return_value = AirbyteStream(
+            name="stream2",
+            json_schema={},
+            supported_sync_modes=[SyncMode.full_refresh],
+        )
+
+        handler = ConcurrentReadProcessor(
+            [stream1, stream2],
+            self._partition_enqueuer,
+            self._thread_pool_manager,
+            self._logger,
+            self._slice_logger,
+            self._message_repository,
+            self._partition_reader,
+        )
+
+        # Start both streams - both should succeed
+        handler.start_next_partition_generator()
+        handler.start_next_partition_generator()
+
+        assert "stream1" in handler._streams_currently_generating_partitions
+        assert "stream2" in handler._streams_currently_generating_partitions
+        assert len(handler._deferred_streams) == 0
+
+    def test_concurrency_group_allows_different_groups_to_run_concurrently(self):
+        """Test that streams with different concurrency groups can run concurrently."""
+        stream1 = Mock(spec=AbstractStream)
+        stream1.name = "stream1"
+        stream1.concurrency_group = "group_a"
+        stream1.as_airbyte_stream.return_value = AirbyteStream(
+            name="stream1",
+            json_schema={},
+            supported_sync_modes=[SyncMode.full_refresh],
+        )
+
+        stream2 = Mock(spec=AbstractStream)
+        stream2.name = "stream2"
+        stream2.concurrency_group = "group_b"
+        stream2.as_airbyte_stream.return_value = AirbyteStream(
+            name="stream2",
+            json_schema={},
+            supported_sync_modes=[SyncMode.full_refresh],
+        )
+
+        handler = ConcurrentReadProcessor(
+            [stream1, stream2],
+            self._partition_enqueuer,
+            self._thread_pool_manager,
+            self._logger,
+            self._slice_logger,
+            self._message_repository,
+            self._partition_reader,
+        )
+
+        # Start both streams - both should succeed since they have different groups
+        handler.start_next_partition_generator()
+        handler.start_next_partition_generator()
+
+        assert "stream1" in handler._streams_currently_generating_partitions
+        assert "stream2" in handler._streams_currently_generating_partitions
+        assert "group_a" in handler._active_concurrency_groups
+        assert "group_b" in handler._active_concurrency_groups
+        assert len(handler._deferred_streams) == 0
+
+    @freezegun.freeze_time("2020-01-01T00:00:00")
+    def test_concurrency_group_requeues_deferred_stream_when_group_becomes_inactive(self):
+        """Test that deferred streams are re-queued and started when their concurrency group becomes inactive."""
+        stream1 = Mock(spec=AbstractStream)
+        stream1.name = "stream1"
+        stream1.concurrency_group = "scroll"
+        stream1.as_airbyte_stream.return_value = AirbyteStream(
+            name="stream1",
+            json_schema={},
+            supported_sync_modes=[SyncMode.full_refresh],
+        )
+
+        stream2 = Mock(spec=AbstractStream)
+        stream2.name = "stream2"
+        stream2.concurrency_group = "scroll"
+        stream2.as_airbyte_stream.return_value = AirbyteStream(
+            name="stream2",
+            json_schema={},
+            supported_sync_modes=[SyncMode.full_refresh],
+        )
+
+        self._message_repository.consume_queue.return_value = []
+
+        handler = ConcurrentReadProcessor(
+            [stream1, stream2],
+            self._partition_enqueuer,
+            self._thread_pool_manager,
+            self._logger,
+            self._slice_logger,
+            self._message_repository,
+            self._partition_reader,
+        )
+
+        # Start stream1
+        handler.start_next_partition_generator()
+        assert "stream1" in handler._streams_currently_generating_partitions
+
+        # Try to start stream2 - should be deferred
+        handler.start_next_partition_generator()
+        assert stream2 in handler._deferred_streams
+
+        # Complete stream1's partition generation (stream1 has no partitions, so it's done)
+        sentinel = PartitionGenerationCompletedSentinel(stream1)
+        list(handler.on_partition_generation_completed(sentinel))
+
+        # stream2 should now be started (re-queued and then started by on_partition_generation_completed)
+        assert stream2 not in handler._deferred_streams
+        assert "stream2" in handler._streams_currently_generating_partitions
+
+    def test_is_done_returns_false_when_deferred_streams_exist(self):
+        """Test that is_done returns False when there are deferred streams."""
+        stream1 = Mock(spec=AbstractStream)
+        stream1.name = "stream1"
+        stream1.concurrency_group = "scroll"
+        stream1.as_airbyte_stream.return_value = AirbyteStream(
+            name="stream1",
+            json_schema={},
+            supported_sync_modes=[SyncMode.full_refresh],
+        )
+
+        stream2 = Mock(spec=AbstractStream)
+        stream2.name = "stream2"
+        stream2.concurrency_group = "scroll"
+        stream2.as_airbyte_stream.return_value = AirbyteStream(
+            name="stream2",
+            json_schema={},
+            supported_sync_modes=[SyncMode.full_refresh],
+        )
+
+        handler = ConcurrentReadProcessor(
+            [stream1, stream2],
+            self._partition_enqueuer,
+            self._thread_pool_manager,
+            self._logger,
+            self._slice_logger,
+            self._message_repository,
+            self._partition_reader,
+        )
+
+        # Start stream1 and defer stream2
+        handler.start_next_partition_generator()
+        handler.start_next_partition_generator()
+
+        # Even if stream1 is done, is_done should return False because stream2 is deferred
+        handler._streams_done.add("stream1")
+        assert not handler.is_done()
