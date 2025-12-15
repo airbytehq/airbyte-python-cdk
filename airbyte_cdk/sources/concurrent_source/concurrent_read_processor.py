@@ -3,7 +3,8 @@
 #
 import logging
 import os
-from typing import Dict, Iterable, List, Optional, Set
+from collections import deque
+from typing import Deque, Dict, Iterable, List, Optional, Set
 
 from airbyte_cdk.exception_handler import generate_failed_streams_error_message
 from airbyte_cdk.models import AirbyteMessage, AirbyteStreamStatus, FailureType, StreamDescriptor
@@ -65,6 +66,15 @@ class ConcurrentReadProcessor:
         self._partition_reader = partition_reader
         self._streams_done: Set[str] = set()
         self._exceptions_per_stream_name: dict[str, List[Exception]] = {}
+        self._exclusive_streams: Set[str] = {
+            s.name for s in stream_instances_to_read_from if s.use_exclusive_concurrency
+        }
+        self._pending_partitions_per_exclusive_stream: Dict[str, Deque[Partition]] = {
+            stream_name: deque() for stream_name in self._exclusive_streams
+        }
+        self._exclusive_stream_partition_in_progress: Dict[str, bool] = {
+            stream_name: False for stream_name in self._exclusive_streams
+        }
 
     def on_partition_generation_completed(
         self, sentinel: PartitionGenerationCompletedSentinel
@@ -92,7 +102,8 @@ class ConcurrentReadProcessor:
         This method is called when a partition is generated.
         1. Add the partition to the set of partitions for the stream
         2. Log the slice if necessary
-        3. Submit the partition to the thread pool manager
+        3. For exclusive streams, queue the partition and only submit if no partition is in progress
+        4. For non-exclusive streams, submit the partition to the thread pool manager immediately
         """
         stream_name = partition.stream_name()
         self._streams_to_running_partitions[stream_name].add(partition)
@@ -101,9 +112,15 @@ class ConcurrentReadProcessor:
             self._message_repository.emit_message(
                 self._slice_logger.create_slice_log_message(partition.to_slice())
             )
-        self._thread_pool_manager.submit(
-            self._partition_reader.process_partition, partition, cursor
-        )
+
+        if stream_name in self._exclusive_streams:
+            self._pending_partitions_per_exclusive_stream[stream_name].append(partition)
+            if not self._exclusive_stream_partition_in_progress[stream_name]:
+                self._submit_next_exclusive_partition(stream_name)
+        else:
+            self._thread_pool_manager.submit(
+                self._partition_reader.process_partition, partition, cursor
+            )
 
     def on_partition_complete_sentinel(
         self, sentinel: PartitionCompleteSentinel
@@ -111,20 +128,27 @@ class ConcurrentReadProcessor:
         """
         This method is called when a partition is completed.
         1. Close the partition
-        2. If the stream is done, mark it as such and return a stream status message
-        3. Emit messages that were added to the message repository
+        2. For exclusive streams, submit the next pending partition if any
+        3. If the stream is done, mark it as such and return a stream status message
+        4. Emit messages that were added to the message repository
         """
         partition = sentinel.partition
+        stream_name = partition.stream_name()
 
-        partitions_running = self._streams_to_running_partitions[partition.stream_name()]
+        partitions_running = self._streams_to_running_partitions[stream_name]
         if partition in partitions_running:
             partitions_running.remove(partition)
+
+            if stream_name in self._exclusive_streams:
+                self._exclusive_stream_partition_in_progress[stream_name] = False
+                self._submit_next_exclusive_partition(stream_name)
+
             # If all partitions were generated and this was the last one, the stream is done
             if (
-                partition.stream_name() not in self._streams_currently_generating_partitions
+                stream_name not in self._streams_currently_generating_partitions
                 and len(partitions_running) == 0
             ):
-                yield from self._on_stream_is_done(partition.stream_name())
+                yield from self._on_stream_is_done(stream_name)
         yield from self._message_repository.consume_queue()
 
     def on_record(self, record: Record) -> Iterable[AirbyteMessage]:
@@ -246,3 +270,18 @@ class ConcurrentReadProcessor:
             else AirbyteStreamStatus.COMPLETE
         )
         yield stream_status_as_airbyte_message(stream.as_airbyte_stream(), stream_status)
+
+    def _submit_next_exclusive_partition(self, stream_name: str) -> None:
+        """
+        Submit the next pending partition for an exclusive stream.
+        This ensures that only one partition is processed at a time for streams
+        that have use_exclusive_concurrency=True.
+        """
+        pending_partitions = self._pending_partitions_per_exclusive_stream[stream_name]
+        if pending_partitions:
+            partition = pending_partitions.popleft()
+            cursor = self._stream_name_to_instance[stream_name].cursor
+            self._exclusive_stream_partition_in_progress[stream_name] = True
+            self._thread_pool_manager.submit(
+                self._partition_reader.process_partition, partition, cursor
+            )
