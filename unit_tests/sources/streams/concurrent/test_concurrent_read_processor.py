@@ -792,3 +792,119 @@ class TestConcurrentReadProcessor(unittest.TestCase):
         self._thread_pool_manager.submit.assert_called_with(
             self._partition_enqueuer.generate_partitions, self._stream
         )
+
+    def test_exclusive_stream_partitions_are_queued_and_processed_serially(self):
+        """Test that partitions for exclusive streams are queued and only one is processed at a time."""
+        exclusive_stream = Mock(spec=AbstractStream)
+        exclusive_stream.name = _STREAM_NAME
+        exclusive_stream.use_exclusive_concurrency = True
+        exclusive_stream.as_airbyte_stream.return_value = AirbyteStream(
+            name=_STREAM_NAME,
+            json_schema={},
+            supported_sync_modes=[SyncMode.full_refresh],
+        )
+
+        stream_instances_to_read_from = [exclusive_stream]
+        handler = ConcurrentReadProcessor(
+            stream_instances_to_read_from,
+            self._partition_enqueuer,
+            self._thread_pool_manager,
+            self._logger,
+            self._slice_logger,
+            self._message_repository,
+            self._partition_reader,
+        )
+
+        partition1 = Mock(spec=Partition)
+        partition1.stream_name.return_value = _STREAM_NAME
+        partition1.to_slice.return_value = self._log_message
+
+        partition2 = Mock(spec=Partition)
+        partition2.stream_name.return_value = _STREAM_NAME
+        partition2.to_slice.return_value = self._log_message
+
+        handler.on_partition(partition1)
+        handler.on_partition(partition2)
+
+        assert self._thread_pool_manager.submit.call_count == 1
+        assert len(handler._pending_partitions_per_exclusive_stream[_STREAM_NAME]) == 1
+        assert handler._exclusive_stream_partition_in_progress[_STREAM_NAME] is True
+
+    def test_exclusive_stream_submits_next_partition_on_completion(self):
+        """Test that the next partition is submitted when the current one completes."""
+        exclusive_stream = Mock(spec=AbstractStream)
+        exclusive_stream.name = _STREAM_NAME
+        exclusive_stream.use_exclusive_concurrency = True
+        exclusive_stream.as_airbyte_stream.return_value = AirbyteStream(
+            name=_STREAM_NAME,
+            json_schema={},
+            supported_sync_modes=[SyncMode.full_refresh],
+        )
+
+        stream_instances_to_read_from = [exclusive_stream]
+        handler = ConcurrentReadProcessor(
+            stream_instances_to_read_from,
+            self._partition_enqueuer,
+            self._thread_pool_manager,
+            self._logger,
+            self._slice_logger,
+            self._message_repository,
+            self._partition_reader,
+        )
+        handler.start_next_partition_generator()
+
+        partition1 = Mock(spec=Partition)
+        partition1.stream_name.return_value = _STREAM_NAME
+        partition1.to_slice.return_value = self._log_message
+
+        partition2 = Mock(spec=Partition)
+        partition2.stream_name.return_value = _STREAM_NAME
+        partition2.to_slice.return_value = self._log_message
+
+        handler.on_partition(partition1)
+        handler.on_partition(partition2)
+
+        assert self._thread_pool_manager.submit.call_count == 2
+
+        sentinel = PartitionCompleteSentinel(partition1)
+        list(handler.on_partition_complete_sentinel(sentinel))
+
+        assert self._thread_pool_manager.submit.call_count == 3
+        assert len(handler._pending_partitions_per_exclusive_stream[_STREAM_NAME]) == 0
+        assert handler._exclusive_stream_partition_in_progress[_STREAM_NAME] is True
+
+    def test_non_exclusive_stream_partitions_are_submitted_immediately(self):
+        """Test that partitions for non-exclusive streams are submitted immediately."""
+        non_exclusive_stream = Mock(spec=AbstractStream)
+        non_exclusive_stream.name = _STREAM_NAME
+        non_exclusive_stream.use_exclusive_concurrency = False
+        non_exclusive_stream.as_airbyte_stream.return_value = AirbyteStream(
+            name=_STREAM_NAME,
+            json_schema={},
+            supported_sync_modes=[SyncMode.full_refresh],
+        )
+
+        stream_instances_to_read_from = [non_exclusive_stream]
+        handler = ConcurrentReadProcessor(
+            stream_instances_to_read_from,
+            self._partition_enqueuer,
+            self._thread_pool_manager,
+            self._logger,
+            self._slice_logger,
+            self._message_repository,
+            self._partition_reader,
+        )
+
+        partition1 = Mock(spec=Partition)
+        partition1.stream_name.return_value = _STREAM_NAME
+        partition1.to_slice.return_value = self._log_message
+
+        partition2 = Mock(spec=Partition)
+        partition2.stream_name.return_value = _STREAM_NAME
+        partition2.to_slice.return_value = self._log_message
+
+        handler.on_partition(partition1)
+        handler.on_partition(partition2)
+
+        assert self._thread_pool_manager.submit.call_count == 2
+        assert _STREAM_NAME not in handler._pending_partitions_per_exclusive_stream
