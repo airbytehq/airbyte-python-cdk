@@ -2509,6 +2509,11 @@ class DeclarativeStream(BaseModel):
 
     type: Literal["DeclarativeStream"]
     name: Optional[str] = Field("", description="The stream name.", example=["Users"], title="Name")
+    block_simultaneous_read: Optional[bool] = Field(
+        False,
+        description="When true, prevents simultaneous reading of this stream from multiple contexts (e.g., as both a parent stream and a standalone stream). If the stream OR any of its parent streams are currently active, this stream will be deferred until they finish. This is useful for APIs that don't allow concurrent access to the same endpoint. Default is false for backward compatibility. Only applies to ConcurrentDeclarativeSource.\n",
+        title="Block Simultaneous Read",
+    )
     retriever: Union[SimpleRetriever, AsyncRetriever, CustomRetriever] = Field(
         ...,
         description="Component used to coordinate how records are extracted across stream slices and request pages.",
