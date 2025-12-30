@@ -1553,6 +1553,17 @@ definitions:
         default: ""
         example:
           - "Users"
+      block_simultaneous_read:
+        title: Block Simultaneous Read
+        description: >
+          When true, prevents simultaneous reading of this stream from multiple contexts
+          (e.g., as both a parent stream and a standalone stream). If the stream OR any
+          of its parent streams are currently active, this stream will be deferred until
+          they finish. This is useful for APIs that don't allow concurrent access to the
+          same endpoint. Default is false for backward compatibility.
+          Only applies to ConcurrentDeclarativeSource.
+        type: boolean
+        default: false
       retriever:
         title: Retriever
         description: Component used to coordinate how records are extracted across stream slices and request pages.

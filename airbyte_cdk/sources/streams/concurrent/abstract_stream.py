@@ -85,6 +85,17 @@ class AbstractStream(ABC):
         :return: The cursor associated with this stream.
         """
 
+    @property
+    def block_simultaneous_read(self) -> bool:
+        """
+        Override to return True if this stream should block simultaneous reads.
+        When True, prevents starting partition generation for this stream if it
+        OR any of its parent streams are already active.
+
+        :return: True if simultaneous reads should be blocked, False otherwise
+        """
+        return False  # Default: allow concurrent reading
+
     @abstractmethod
     def check_availability(self) -> StreamAvailability:
         """

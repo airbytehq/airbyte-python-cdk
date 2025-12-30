@@ -26,6 +26,7 @@ class DefaultStream(AbstractStream):
         cursor: Cursor,
         namespace: Optional[str] = None,
         supports_file_transfer: bool = False,
+        block_simultaneous_read: bool = False,
     ) -> None:
         self._stream_partition_generator = partition_generator
         self._name = name
@@ -36,6 +37,7 @@ class DefaultStream(AbstractStream):
         self._cursor = cursor
         self._namespace = namespace
         self._supports_file_transfer = supports_file_transfer
+        self._block_simultaneous_read = block_simultaneous_read
 
     def generate_partitions(self) -> Iterable[Partition]:
         yield from self._stream_partition_generator.generate()
@@ -93,6 +95,11 @@ class DefaultStream(AbstractStream):
     @property
     def cursor(self) -> Cursor:
         return self._cursor
+
+    @property
+    def block_simultaneous_read(self) -> bool:
+        """Returns whether this stream should block simultaneous reads"""
+        return self._block_simultaneous_read
 
     def check_availability(self) -> StreamAvailability:
         """
