@@ -17,6 +17,11 @@ class RemoteFile(BaseModel):
     last_modified: datetime
     mime_type: Optional[str] = None
 
+    @property
+    def file_uri_for_logging(self) -> str:
+        """Returns a user-friendly identifier for logging."""
+        return self.uri
+
 
 class UploadableRemoteFile(RemoteFile, ABC):
     """
@@ -46,13 +51,6 @@ class UploadableRemoteFile(RemoteFile, ABC):
     def source_file_relative_path(self) -> str:
         """
         Returns the relative path of the source file.
-        """
-        return self.uri
-
-    @property
-    def file_uri_for_logging(self) -> str:
-        """
-        Returns the URI for the file being logged.
         """
         return self.uri
 
