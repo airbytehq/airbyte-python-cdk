@@ -42,6 +42,7 @@ DEFAULT_MODEL_TYPES: Mapping[str, str] = {
     "DefaultPaginator.page_size_option": "RequestOption",
     # DpathExtractor
     "DpathExtractor.decoder": "JsonDecoder",
+    "DpathExtractor.record_expander": "RecordExpander",
     # HttpRequester
     "HttpRequester.error_handler": "DefaultErrorHandler",
     # ListPartitionRouter
