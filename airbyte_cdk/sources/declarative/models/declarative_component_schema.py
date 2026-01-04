@@ -2497,6 +2497,11 @@ class DeclarativeStream(BaseModel):
 
     type: Literal["DeclarativeStream"]
     name: Optional[str] = Field("", description="The stream name.", example=["Users"], title="Name")
+    block_simultaneous_read: Optional[bool] = Field(
+        False,
+        description="When true, prevents simultaneous reading of this stream from multiple contexts (e.g., as both a parent stream and a standalone stream). If the stream OR any of its parent streams are currently active, this stream will be deferred until they finish. This is useful for APIs that don't allow concurrent access to the same endpoint. Default is false for backward compatibility. Only applies to ConcurrentDeclarativeSource.\n",
+        title="Block Simultaneous Read",
+    )
     retriever: Union[SimpleRetriever, AsyncRetriever, CustomRetriever] = Field(
         ...,
         description="Component used to coordinate how records are extracted across stream slices and request pages.",
@@ -2741,7 +2746,7 @@ class HttpRequester(BaseModelWithDeprecations):
     )
     use_cache: Optional[bool] = Field(
         False,
-        description="Enables stream requests caching. This field is automatically set by the CDK.",
+        description="Enables stream requests caching. When set to true, repeated requests to the same URL will return cached responses. Parent streams automatically have caching enabled. Only set this to false if you are certain that caching should be disabled, as it may negatively impact performance when the same data is needed multiple times (e.g., for scroll-based pagination APIs where caching causes duplicate records).",
         title="Use Cache",
     )
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
