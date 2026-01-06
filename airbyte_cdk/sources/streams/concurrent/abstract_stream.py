@@ -86,15 +86,19 @@ class AbstractStream(ABC):
         """
 
     @property
-    def block_simultaneous_read(self) -> bool:
+    def block_simultaneous_read(self) -> str:
         """
-        Override to return True if this stream should block simultaneous reads.
-        When True, prevents starting partition generation for this stream if it
-        OR any of its parent streams are already active.
+        Override to return a non-empty group name if this stream should block simultaneous reads.
+        When a non-empty string is returned, prevents starting partition generation for this stream if:
+        - Another stream with the same group name is already active
+        - Any of its parent streams are in an active group
 
-        :return: True if simultaneous reads should be blocked, False otherwise
+        This allows grouping multiple streams that share the same resource (e.g., API endpoint or session)
+        to prevent them from running concurrently, even if they don't have a parent-child relationship.
+
+        :return: Group name for blocking (non-empty string), or "" to allow concurrent reading
         """
-        return False  # Default: allow concurrent reading
+        return ""  # Default: allow concurrent reading
 
     @abstractmethod
     def check_availability(self) -> StreamAvailability:

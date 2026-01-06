@@ -70,16 +70,21 @@ class ConcurrentReadProcessor:
         # A stream is "active" if it's generating partitions or has partitions being read
         self._active_stream_names: Set[str] = set()
 
-        # Store which streams require blocking simultaneous reads
-        self._stream_block_simultaneous_read: Dict[str, bool] = {
+        # Store blocking group names for streams that require blocking simultaneous reads
+        # Maps stream name -> group name (empty string means no blocking)
+        self._stream_block_simultaneous_read: Dict[str, str] = {
             stream.name: stream.block_simultaneous_read for stream in stream_instances_to_read_from
         }
+
+        # Track which groups are currently active
+        # Maps group name -> set of stream names in that group
+        self._active_groups: Dict[str, Set[str]] = {}
 
         for stream in stream_instances_to_read_from:
             if stream.block_simultaneous_read:
                 self._logger.info(
-                    f"Stream '{stream.name}' has block_simultaneous_read=True. "
-                    f"Will defer starting this stream if it or its parents are active."
+                    f"Stream '{stream.name}' is in blocking group '{stream.block_simultaneous_read}'. "
+                    f"Will defer starting this stream if another stream in the same group or its parents are active."
                 )
 
     def on_partition_generation_completed(
@@ -102,9 +107,16 @@ class ConcurrentReadProcessor:
             if parent_stream_name in self._active_stream_names:
                 self._logger.debug(f"Removing '{parent_stream_name}' from active streams")
                 self._active_stream_names.discard(parent_stream_name)
-                if self._stream_block_simultaneous_read.get(parent_stream_name, False):
+
+                # Remove from active groups
+                parent_group = self._stream_block_simultaneous_read.get(parent_stream_name, "")
+                if parent_group:
+                    if parent_group in self._active_groups:
+                        self._active_groups[parent_group].discard(parent_stream_name)
+                        if not self._active_groups[parent_group]:
+                            del self._active_groups[parent_group]
                     self._logger.info(
-                        f"Parent stream '{parent_stream_name}' deactivated after "
+                        f"Parent stream '{parent_stream_name}' (group '{parent_group}') deactivated after "
                         f"partition generation completed for child '{stream_name}'. "
                         f"Blocked streams in the queue will be retried on next start_next_partition_generator call."
                     )
@@ -236,30 +248,50 @@ class ConcurrentReadProcessor:
             # Pop the first stream from the queue
             stream = self._stream_instances_to_start_partition_generation.pop(0)
             stream_name = stream.name
+            stream_group = self._stream_block_simultaneous_read.get(stream_name, "")
 
-            # Check if this stream has block_simultaneous_read and is already active
-            if self._stream_block_simultaneous_read.get(stream_name, False) and stream_name in self._active_stream_names:
+            # Check if this stream has a blocking group and is already active
+            if stream_group and stream_name in self._active_stream_names:
                 # Add back to the END of the queue for retry later
                 self._stream_instances_to_start_partition_generation.append(stream)
                 self._logger.info(
-                    f"Deferring stream '{stream_name}' because it's already active "
-                    f"(block_simultaneous_read=True). Trying next stream."
+                    f"Deferring stream '{stream_name}' (group '{stream_group}') because it's already active. Trying next stream."
                 )
                 continue  # Try the next stream in the queue
 
-            # Check if any parent streams have block_simultaneous_read and are currently active
+            # Check if this stream's group is already active (another stream in the same group is running)
+            if (
+                stream_group
+                and stream_group in self._active_groups
+                and self._active_groups[stream_group]
+            ):
+                # Add back to the END of the queue for retry later
+                self._stream_instances_to_start_partition_generation.append(stream)
+                active_streams_in_group = self._active_groups[stream_group]
+                self._logger.info(
+                    f"Deferring stream '{stream_name}' (group '{stream_group}') because other stream(s) "
+                    f"{active_streams_in_group} in the same group are active. Trying next stream."
+                )
+                continue  # Try the next stream in the queue
+
+            # Check if any parent streams have a blocking group and are currently active
             parent_streams = self._collect_all_parent_stream_names(stream_name)
             blocked_by_parents = [
-                p for p in parent_streams
-                if self._stream_block_simultaneous_read.get(p, False) and p in self._active_stream_names
+                p
+                for p in parent_streams
+                if self._stream_block_simultaneous_read.get(p, "")
+                and p in self._active_stream_names
             ]
 
             if blocked_by_parents:
                 # Add back to the END of the queue for retry later
                 self._stream_instances_to_start_partition_generation.append(stream)
+                parent_groups = {
+                    self._stream_block_simultaneous_read.get(p, "") for p in blocked_by_parents
+                }
                 self._logger.info(
                     f"Deferring stream '{stream_name}' because parent stream(s) "
-                    f"{blocked_by_parents} are active and have block_simultaneous_read=True. Trying next stream."
+                    f"{blocked_by_parents} (groups {parent_groups}) are active. Trying next stream."
                 )
                 continue  # Try the next stream in the queue
 
@@ -268,13 +300,24 @@ class ConcurrentReadProcessor:
             self._active_stream_names.add(stream_name)
             self._streams_currently_generating_partitions.append(stream_name)
 
+            # Track this stream in its group if it has one
+            if stream_group:
+                if stream_group not in self._active_groups:
+                    self._active_groups[stream_group] = set()
+                self._active_groups[stream_group].add(stream_name)
+                self._logger.debug(f"Added '{stream_name}' to active group '{stream_group}'")
+
             # Also mark all parent streams as active (they will be read from during partition generation)
             parent_streams = self._collect_all_parent_stream_names(stream_name)
             for parent_stream_name in parent_streams:
-                if self._stream_block_simultaneous_read.get(parent_stream_name, False):
+                parent_group = self._stream_block_simultaneous_read.get(parent_stream_name, "")
+                if parent_group:
                     self._active_stream_names.add(parent_stream_name)
+                    if parent_group not in self._active_groups:
+                        self._active_groups[parent_group] = set()
+                    self._active_groups[parent_group].add(parent_stream_name)
                     self._logger.info(
-                        f"Marking parent stream '{parent_stream_name}' as active "
+                        f"Marking parent stream '{parent_stream_name}' (group '{parent_group}') as active "
                         f"(will be read during partition generation for '{stream_name}')"
                     )
 
@@ -338,7 +381,11 @@ class ConcurrentReadProcessor:
         partition_router = None
 
         # Try DefaultStream path first (_stream_partition_generator._stream_slicer._partition_router)
-        if hasattr(stream, "_stream_partition_generator") and hasattr(stream._stream_partition_generator, "_stream_slicer") and hasattr(stream._stream_partition_generator._stream_slicer, "_partition_router"):
+        if (
+            hasattr(stream, "_stream_partition_generator")
+            and hasattr(stream._stream_partition_generator, "_stream_slicer")
+            and hasattr(stream._stream_partition_generator._stream_slicer, "_partition_router")
+        ):
             partition_router = stream._stream_partition_generator._stream_slicer._partition_router
         # Fallback to legacy path (retriever.partition_router) for backward compatibility and test mocks
         elif hasattr(stream, "retriever") and hasattr(stream.retriever, "partition_router"):
@@ -376,8 +423,15 @@ class ConcurrentReadProcessor:
         # Remove only this stream from active set (NOT parents)
         if stream_name in self._active_stream_names:
             self._active_stream_names.discard(stream_name)
-            if self._stream_block_simultaneous_read.get(stream_name, False):
+
+            # Remove from active groups
+            stream_group = self._stream_block_simultaneous_read.get(stream_name, "")
+            if stream_group:
+                if stream_group in self._active_groups:
+                    self._active_groups[stream_group].discard(stream_name)
+                    if not self._active_groups[stream_group]:
+                        del self._active_groups[stream_group]
                 self._logger.info(
-                    f"Stream '{stream_name}' is no longer active. "
+                    f"Stream '{stream_name}' (group '{stream_group}') is no longer active. "
                     f"Blocked streams in the queue will be retried on next start_next_partition_generator call."
                 )
