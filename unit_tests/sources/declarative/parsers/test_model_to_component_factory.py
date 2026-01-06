@@ -5221,7 +5221,7 @@ def test_block_simultaneous_read_from_manifest():
       type: DeclarativeStream
       name: "parent"
       primary_key: "id"
-      block_simultaneous_read: true
+      block_simultaneous_read: "issues_endpoint"
       retriever:
         type: SimpleRetriever
         requester:
@@ -5249,7 +5249,7 @@ def test_block_simultaneous_read_from_manifest():
       type: DeclarativeStream
       name: "child"
       primary_key: "id"
-      block_simultaneous_read: true
+      block_simultaneous_read: "issues_endpoint"
       retriever:
         type: SimpleRetriever
         requester:
@@ -5325,9 +5325,9 @@ def test_block_simultaneous_read_from_manifest():
 
     assert isinstance(parent_stream, DefaultStream)
     assert parent_stream.name == "parent"
-    assert parent_stream.block_simultaneous_read is True
+    assert parent_stream.block_simultaneous_read == "issues_endpoint"
 
-    # Test child stream with block_simultaneous_read: true
+    # Test child stream with block_simultaneous_read: "issues_endpoint"
     child_manifest = transformer.propagate_types_and_parameters(
         "", resolved_manifest["child_stream"], {}
     )
@@ -5337,9 +5337,9 @@ def test_block_simultaneous_read_from_manifest():
 
     assert isinstance(child_stream, DefaultStream)
     assert child_stream.name == "child"
-    assert child_stream.block_simultaneous_read is True
+    assert child_stream.block_simultaneous_read == "issues_endpoint"
 
-    # Test stream without block_simultaneous_read (should default to False)
+    # Test stream without block_simultaneous_read (should default to empty string)
     no_block_manifest = transformer.propagate_types_and_parameters(
         "", resolved_manifest["no_block_stream"], {}
     )
@@ -5349,7 +5349,7 @@ def test_block_simultaneous_read_from_manifest():
 
     assert isinstance(no_block_stream, DefaultStream)
     assert no_block_stream.name == "no_block"
-    assert no_block_stream.block_simultaneous_read is False
+    assert no_block_stream.block_simultaneous_read == ""
 
 
 def get_schema_loader(stream: DefaultStream):
