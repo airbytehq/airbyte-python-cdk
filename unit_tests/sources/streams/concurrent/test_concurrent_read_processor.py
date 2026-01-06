@@ -857,7 +857,7 @@ class TestBlockSimultaneousRead(unittest.TestCase):
         self._message_repository.consume_queue.return_value = []
         self._partition_reader = Mock(spec=PartitionReader)
 
-    def _create_mock_stream(self, name: str, block_simultaneous_read: bool = False):
+    def _create_mock_stream(self, name: str, block_simultaneous_read: str = ""):
         """Helper to create a mock stream"""
         stream = Mock(spec=AbstractStream)
         stream.name = name
@@ -871,7 +871,7 @@ class TestBlockSimultaneousRead(unittest.TestCase):
         return stream
 
     def _create_mock_stream_with_parent(
-        self, name: str, parent_stream, block_simultaneous_read: bool = False
+        self, name: str, parent_stream, block_simultaneous_read: str = ""
     ):
         """Helper to create a mock stream with a parent stream"""
         stream = self._create_mock_stream(name, block_simultaneous_read)
@@ -890,7 +890,7 @@ class TestBlockSimultaneousRead(unittest.TestCase):
 
     def test_defer_stream_when_self_active(self):
         """Test that a stream is deferred when it's already active"""
-        stream = self._create_mock_stream("stream1", block_simultaneous_read=True)
+        stream = self._create_mock_stream("stream1", block_simultaneous_read="api_group")
 
         handler = ConcurrentReadProcessor(
             [stream],
@@ -917,15 +917,16 @@ class TestBlockSimultaneousRead(unittest.TestCase):
 
         # Logger should have been called to log deferral
         assert any(
-            "Deferring stream 'stream1' because it's already active" in str(call)
+            "Deferring stream 'stream1' (group 'api_group') because it's already active"
+            in str(call)
             for call in self._logger.info.call_args_list
         )
 
     def test_defer_stream_when_parent_active(self):
         """Test that a stream is deferred when its parent is active"""
-        parent_stream = self._create_mock_stream("parent", block_simultaneous_read=True)
+        parent_stream = self._create_mock_stream("parent", block_simultaneous_read="api_group")
         child_stream = self._create_mock_stream_with_parent(
-            "child", parent_stream, block_simultaneous_read=True
+            "child", parent_stream, block_simultaneous_read="api_group"
         )
 
         handler = ConcurrentReadProcessor(
@@ -962,11 +963,13 @@ class TestBlockSimultaneousRead(unittest.TestCase):
 
     def test_defer_stream_when_grandparent_active(self):
         """Test that a stream is deferred when its grandparent is active"""
-        grandparent = self._create_mock_stream("grandparent", block_simultaneous_read=True)
+        grandparent = self._create_mock_stream("grandparent", block_simultaneous_read="api_group")
         parent = self._create_mock_stream_with_parent(
-            "parent", grandparent, block_simultaneous_read=True
+            "parent", grandparent, block_simultaneous_read="api_group"
         )
-        child = self._create_mock_stream_with_parent("child", parent, block_simultaneous_read=True)
+        child = self._create_mock_stream_with_parent(
+            "child", parent, block_simultaneous_read="api_group"
+        )
 
         handler = ConcurrentReadProcessor(
             [grandparent, parent, child],
@@ -994,9 +997,9 @@ class TestBlockSimultaneousRead(unittest.TestCase):
         assert len(handler._stream_instances_to_start_partition_generation) == 1
 
     def test_retry_blocked_stream_after_blocker_done(self):
-        """Test that blocked stream is retried after blocker finishes"""
-        stream1 = self._create_mock_stream("stream1", block_simultaneous_read=True)
-        stream2 = self._create_mock_stream("stream2", block_simultaneous_read=True)
+        """Test that independent streams with different groups don't block each other"""
+        stream1 = self._create_mock_stream("stream1", block_simultaneous_read="group1")
+        stream2 = self._create_mock_stream("stream2", block_simultaneous_read="group2")
 
         handler = ConcurrentReadProcessor(
             [stream1, stream2],
@@ -1012,26 +1015,21 @@ class TestBlockSimultaneousRead(unittest.TestCase):
         handler.start_next_partition_generator()
         assert "stream1" in handler._active_stream_names
 
-        # Try to start stream2 (should be deferred since stream1 is active and they share block flag)
-        # But wait - they're not parent-child, so stream2 should start successfully
-        # Let me fix the test logic
-
-        # Mark stream1 as active to simulate it's running
-        handler._active_stream_names.add("stream1")
-        handler._stream_instances_to_start_partition_generation = [stream1, stream2]
-
-        # Try to start stream1 again (should be deferred because already active)
+        # Stream2 should start successfully even though stream1 is active
+        # because they're in different groups
         result = handler.start_next_partition_generator()
 
-        # Should start stream2 instead (stream1 was deferred)
+        # Should start stream2 (different group, no blocking)
         assert result is not None
         assert "stream2" in handler._active_stream_names
-        assert len(handler._stream_instances_to_start_partition_generation) == 1
+        assert len(handler._stream_instances_to_start_partition_generation) == 0
 
     def test_retry_blocked_stream_after_partition_generation(self):
         """Test that blocked stream is retried after partition generation completes"""
-        parent = self._create_mock_stream("parent", block_simultaneous_read=True)
-        child = self._create_mock_stream_with_parent("child", parent, block_simultaneous_read=True)
+        parent = self._create_mock_stream("parent", block_simultaneous_read="api_group")
+        child = self._create_mock_stream_with_parent(
+            "child", parent, block_simultaneous_read="api_group"
+        )
 
         handler = ConcurrentReadProcessor(
             [parent, child],
@@ -1068,9 +1066,9 @@ class TestBlockSimultaneousRead(unittest.TestCase):
 
     def test_blocked_stream_added_to_end_of_queue(self):
         """Test that blocked streams are added to the end of the queue"""
-        stream1 = self._create_mock_stream("stream1", block_simultaneous_read=True)
-        stream2 = self._create_mock_stream("stream2", block_simultaneous_read=False)
-        stream3 = self._create_mock_stream("stream3", block_simultaneous_read=False)
+        stream1 = self._create_mock_stream("stream1", block_simultaneous_read="api_group")
+        stream2 = self._create_mock_stream("stream2", block_simultaneous_read="")
+        stream3 = self._create_mock_stream("stream3", block_simultaneous_read="")
 
         handler = ConcurrentReadProcessor(
             [stream1, stream2, stream3],
@@ -1098,8 +1096,8 @@ class TestBlockSimultaneousRead(unittest.TestCase):
         assert handler._stream_instances_to_start_partition_generation[1] == stream1
 
     def test_no_defer_when_flag_false(self):
-        """Test that blocking doesn't occur when block_simultaneous_read=False"""
-        stream = self._create_mock_stream("stream1", block_simultaneous_read=False)
+        """Test that blocking doesn't occur when block_simultaneous_read=""" ""
+        stream = self._create_mock_stream("stream1", block_simultaneous_read="")
 
         handler = ConcurrentReadProcessor(
             [stream],
@@ -1150,8 +1148,10 @@ class TestBlockSimultaneousRead(unittest.TestCase):
 
     def test_deactivate_parents_when_partition_generation_completes(self):
         """Test that parent streams are deactivated when partition generation completes"""
-        parent = self._create_mock_stream("parent", block_simultaneous_read=True)
-        child = self._create_mock_stream_with_parent("child", parent, block_simultaneous_read=True)
+        parent = self._create_mock_stream("parent", block_simultaneous_read="api_group")
+        child = self._create_mock_stream_with_parent(
+            "child", parent, block_simultaneous_read="api_group"
+        )
 
         handler = ConcurrentReadProcessor(
             [parent, child],
@@ -1190,8 +1190,10 @@ class TestBlockSimultaneousRead(unittest.TestCase):
 
     def test_deactivate_only_stream_when_done(self):
         """Test that only the stream itself is deactivated when done, not parents"""
-        parent = self._create_mock_stream("parent", block_simultaneous_read=True)
-        child = self._create_mock_stream_with_parent("child", parent, block_simultaneous_read=True)
+        parent = self._create_mock_stream("parent", block_simultaneous_read="api_group")
+        child = self._create_mock_stream_with_parent(
+            "child", parent, block_simultaneous_read="api_group"
+        )
 
         handler = ConcurrentReadProcessor(
             [parent, child],
@@ -1223,12 +1225,12 @@ class TestBlockSimultaneousRead(unittest.TestCase):
 
     def test_multiple_blocked_streams_retry_in_order(self):
         """Test that multiple blocked streams are retried in order"""
-        parent = self._create_mock_stream("parent", block_simultaneous_read=True)
+        parent = self._create_mock_stream("parent", block_simultaneous_read="api_group")
         child1 = self._create_mock_stream_with_parent(
-            "child1", parent, block_simultaneous_read=True
+            "child1", parent, block_simultaneous_read="api_group"
         )
         child2 = self._create_mock_stream_with_parent(
-            "child2", parent, block_simultaneous_read=True
+            "child2", parent, block_simultaneous_read="api_group"
         )
 
         handler = ConcurrentReadProcessor(
@@ -1257,8 +1259,8 @@ class TestBlockSimultaneousRead(unittest.TestCase):
     def test_child_without_flag_blocked_by_parent_with_flag(self):
         """Test that a child WITHOUT block_simultaneous_read is blocked by parent WITH the flag"""
         # Parent has the flag, child does NOT
-        parent = self._create_mock_stream("parent", block_simultaneous_read=True)
-        child = self._create_mock_stream_with_parent("child", parent, block_simultaneous_read=False)
+        parent = self._create_mock_stream("parent", block_simultaneous_read="api_group")
+        child = self._create_mock_stream_with_parent("child", parent, block_simultaneous_read="")
 
         handler = ConcurrentReadProcessor(
             [parent, child],
@@ -1277,7 +1279,7 @@ class TestBlockSimultaneousRead(unittest.TestCase):
         # Try to start child (should be deferred even though child doesn't have the flag)
         result = handler.start_next_partition_generator()
 
-        # Child should be deferred because parent has block_simultaneous_read=True and is active
+        # Child should be deferred because parent has block_simultaneous_read="api_group" and is active
         assert result is None  # No stream started
         assert "child" not in handler._active_stream_names
         # Child should be moved to end of queue (still 1 stream in queue)
@@ -1287,8 +1289,10 @@ class TestBlockSimultaneousRead(unittest.TestCase):
     def test_child_with_flag_not_blocked_by_parent_without_flag(self):
         """Test that a child WITH block_simultaneous_read is NOT blocked by parent WITHOUT the flag"""
         # Parent does NOT have the flag, child does
-        parent = self._create_mock_stream("parent", block_simultaneous_read=False)
-        child = self._create_mock_stream_with_parent("child", parent, block_simultaneous_read=True)
+        parent = self._create_mock_stream("parent", block_simultaneous_read="")
+        child = self._create_mock_stream_with_parent(
+            "child", parent, block_simultaneous_read="api_group"
+        )
 
         handler = ConcurrentReadProcessor(
             [parent, child],
@@ -1312,3 +1316,42 @@ class TestBlockSimultaneousRead(unittest.TestCase):
         assert "child" in handler._active_stream_names
         # Queue should now be empty (both streams started)
         assert len(handler._stream_instances_to_start_partition_generation) == 0
+
+    def test_unrelated_streams_in_same_group_block_each_other(self):
+        """Test that multiple unrelated streams with the same group name block each other"""
+        # Create three unrelated streams (no parent-child relationship) in the same group
+        stream1 = self._create_mock_stream("stream1", block_simultaneous_read="shared_endpoint")
+        stream2 = self._create_mock_stream("stream2", block_simultaneous_read="shared_endpoint")
+        stream3 = self._create_mock_stream("stream3", block_simultaneous_read="shared_endpoint")
+
+        handler = ConcurrentReadProcessor(
+            [stream1, stream2, stream3],
+            self._partition_enqueuer,
+            self._thread_pool_manager,
+            self._logger,
+            self._slice_logger,
+            self._message_repository,
+            self._partition_reader,
+        )
+
+        # Start stream1
+        result = handler.start_next_partition_generator()
+        assert result is not None
+        assert "stream1" in handler._active_stream_names
+        assert "shared_endpoint" in handler._active_groups
+        assert "stream1" in handler._active_groups["shared_endpoint"]
+
+        # Try to start stream2 (should be deferred because it's in the same group)
+        result = handler.start_next_partition_generator()
+        # stream2 should be deferred, stream3 should also be deferred
+        # All three are in same group, only stream1 is active
+        assert result is None  # No stream started
+
+        # Both stream2 and stream3 should be in the queue
+        assert len(handler._stream_instances_to_start_partition_generation) == 2
+
+        # Verify logger was called with deferral message
+        assert any(
+            "Deferring stream 'stream2'" in str(call) and "shared_endpoint" in str(call)
+            for call in self._logger.info.call_args_list
+        )

@@ -77,7 +77,7 @@ class ConcurrentSource:
         slice_logger: SliceLogger = DebugSliceLogger(),
         queue: Optional[Queue[QueueItem]] = None,
         message_repository: MessageRepository = InMemoryMessageRepository(),
-        initial_number_partitions_to_generate: int = 10,
+        initial_number_partitions_to_generate: int = 1,
         timeout_seconds: int = DEFAULT_TIMEOUT_SECONDS,
     ) -> None:
         """
@@ -92,7 +92,7 @@ class ConcurrentSource:
         self._logger = logger
         self._slice_logger = slice_logger
         self._message_repository = message_repository
-        self._initial_number_partitions_to_generate = 10
+        self._initial_number_partitions_to_generate = initial_number_partitions_to_generate
         self._timeout_seconds = timeout_seconds
 
         # We set a maxsize to for the main thread to process record items when the queue size grows. This assumes that there are less
