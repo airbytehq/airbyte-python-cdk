@@ -2110,11 +2110,11 @@ class ModelToComponentFactory:
             name=stream_name,
             json_schema=schema_loader.get_json_schema,
             primary_key=get_primary_key_from_stream(primary_key),
-            cursor_field=concurrent_cursor.cursor_field
-            if hasattr(concurrent_cursor, "cursor_field")
-            else CursorField(
-                cursor_field_key=""
-            ),  # FIXME we should have the cursor field has part of the interface of cursor,
+            cursor_field=(
+                concurrent_cursor.cursor_field
+                if hasattr(concurrent_cursor, "cursor_field")
+                else None
+            ),
             logger=logging.getLogger(f"airbyte.{stream_name}"),
             cursor=concurrent_cursor,
             supports_file_transfer=hasattr(model, "file_uploader") and bool(model.file_uploader),
