@@ -11,6 +11,10 @@ on:
   # pull_request_target:
   #   types: [opened, reopened, synchronize]
 
+concurrency:
+  group: release-drafter-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   update_release_draft:
     permissions:
@@ -19,7 +23,8 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       # Drafts the next Release notes as Pull Requests are merged into "main"
-      - uses: release-drafter/release-drafter@v6
+      # Pinned to v6.0.0 to avoid v6.1.0 bug: https://github.com/release-drafter/release-drafter/issues/1425
+      - uses: release-drafter/release-drafter@v6.0.0
         with:
           config-name: release-drafter.yml
         env:

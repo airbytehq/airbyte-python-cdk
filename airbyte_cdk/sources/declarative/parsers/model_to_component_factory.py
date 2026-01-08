@@ -4339,8 +4339,14 @@ class ModelToComponentFactory:
         configured_stream = self._stream_name_to_configured_stream.get(stream_name)
 
         # Depending on the operation is being performed, there may not be a configured stream yet. In this
-        # case we return None which will then use the default cursor field defined on the cursor model
-        if not configured_stream or not configured_stream.cursor_field:
+        # case we return None which will then use the default cursor field defined on the cursor model.
+        # We also treat cursor_field: [""] (list with empty string) as no cursor field, since this can
+        # occur when the platform serializes "no cursor configured" streams incorrectly.
+        if (
+            not configured_stream
+            or not configured_stream.cursor_field
+            or not configured_stream.cursor_field[0]
+        ):
             return None
         elif len(configured_stream.cursor_field) > 1:
             raise ValueError(
