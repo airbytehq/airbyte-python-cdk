@@ -4,6 +4,7 @@
 
 
 import datetime
+import warnings
 from io import BytesIO
 from unittest.mock import MagicMock, Mock, mock_open, patch
 
@@ -136,3 +137,104 @@ def test_file_read_error(mock_stream_reader, mock_logger, file_config, remote_fi
                 list(
                     parser.parse_records(file_config, remote_file, mock_stream_reader, mock_logger)
                 )
+
+
+class FakePanic(BaseException):
+    """Simulates the PyO3 PanicException which does not inherit from Exception."""
+
+
+def test_open_and_parse_file_falls_back_to_openpyxl(mock_logger):
+    parser = ExcelParser()
+    fp = BytesIO(b"test")
+    remote_file = RemoteFile(uri="s3://mybucket/test.xlsx", last_modified=datetime.datetime.now())
+
+    fallback_df = pd.DataFrame({"a": [1]})
+
+    calamine_excel_file = MagicMock()
+
+    def calamine_parse_side_effect():
+        raise FakePanic(
+            "failed to construct date: PyErr { type: <class 'ValueError'>, value: ValueError('year 20225 is out of range'), traceback: None }"
+        )
+
+    calamine_excel_file.parse.side_effect = calamine_parse_side_effect
+
+    openpyxl_excel_file = MagicMock()
+
+    def openpyxl_parse_side_effect():
+        warnings.warn("Cell A146 has invalid date", UserWarning)
+        return fallback_df
+
+    openpyxl_excel_file.parse.side_effect = openpyxl_parse_side_effect
+
+    with (
+        patch("airbyte_cdk.sources.file_based.file_types.excel_parser.pd.ExcelFile") as mock_excel,
+    ):
+        mock_excel.side_effect = [calamine_excel_file, openpyxl_excel_file]
+
+        result = parser.open_and_parse_file(fp, mock_logger, remote_file)
+
+    pd.testing.assert_frame_equal(result, fallback_df)
+    assert mock_logger.warning.call_count == 2
+    assert "Openpyxl warning" in mock_logger.warning.call_args_list[1].args[0]
+
+
+def test_open_and_parse_file_does_not_swallow_system_exit(mock_logger):
+    """Test that SystemExit is not caught by the BaseException handler.
+
+    This test ensures that critical system-level exceptions like SystemExit and KeyboardInterrupt
+    are not accidentally caught and suppressed by our BaseException handler in the Calamine parsing
+    method. These exceptions should always propagate up to allow proper program termination.
+    """
+    parser = ExcelParser()
+    fp = BytesIO(b"test")
+    remote_file = RemoteFile(uri="s3://mybucket/test.xlsx", last_modified=datetime.datetime.now())
+
+    with patch("airbyte_cdk.sources.file_based.file_types.excel_parser.pd.ExcelFile") as mock_excel:
+        mock_excel.return_value.parse.side_effect = SystemExit()
+
+        with pytest.raises(SystemExit):
+            parser.open_and_parse_file(fp, mock_logger, remote_file)
+
+
+@pytest.mark.parametrize(
+    "exc_cls",
+    [
+        pytest.param(OSError, id="os-error"),
+    ],
+)
+def test_openpyxl_logs_info_when_seek_fails(mock_logger, remote_file, exc_cls):
+    """Test that openpyxl logs info when seek fails on non-seekable files.
+
+    This test ensures that when falling back to openpyxl, if the file pointer
+    cannot be rewound (seek fails with OSError), an info-level log is emitted
+    and parsing proceeds from the current position.
+    """
+    parser = ExcelParser()
+    fallback_df = pd.DataFrame({"a": [1]})
+
+    class FakeFP:
+        """Fake file-like object with a seek method that raises an exception."""
+
+        def __init__(self, exc):
+            self._exc = exc
+
+        def seek(self, *args, **kwargs):
+            raise self._exc("not seekable")
+
+    fp = FakeFP(exc_cls)
+
+    openpyxl_excel_file = MagicMock()
+    openpyxl_excel_file.parse.return_value = fallback_df
+
+    with patch("airbyte_cdk.sources.file_based.file_types.excel_parser.pd.ExcelFile") as mock_excel:
+        mock_excel.return_value = openpyxl_excel_file
+
+        result = parser._open_and_parse_file_with_openpyxl(fp, mock_logger, remote_file)
+
+    pd.testing.assert_frame_equal(result, fallback_df)
+    mock_logger.info.assert_called_once()
+    msg = mock_logger.info.call_args[0][0]
+    assert "Could not rewind stream" in msg
+    assert remote_file.file_uri_for_logging in msg
+    mock_excel.assert_called_once_with(fp, engine="openpyxl")
