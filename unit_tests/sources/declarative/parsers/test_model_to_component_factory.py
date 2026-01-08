@@ -5051,6 +5051,12 @@ def test_create_stream_with_multiple_schema_loaders():
             "updated_at",
             id="test_allow_catalog_defined_cursor_field_false_defaults_to_stream_defined_cursor_field",
         ),
+        pytest.param(
+            True,
+            "",
+            "updated_at",
+            id="test_empty_string_catalog_cursor_field_defaults_to_stream_defined_cursor_field",
+        ),
     ],
 )
 def test_catalog_defined_cursor_field(
