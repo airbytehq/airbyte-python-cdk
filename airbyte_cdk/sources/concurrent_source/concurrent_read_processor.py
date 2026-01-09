@@ -129,7 +129,9 @@ class ConcurrentReadProcessor:
         ):
             yield from self._on_stream_is_done(stream_name)
         if self._stream_instances_to_start_partition_generation:
-            yield self.start_next_partition_generator()  # type:ignore # None may be yielded
+            status_message = self.start_next_partition_generator()
+            if status_message:
+                yield status_message
 
     def on_partition(self, partition: Partition) -> None:
         """
