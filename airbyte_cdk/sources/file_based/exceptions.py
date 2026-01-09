@@ -92,6 +92,12 @@ class RecordParseError(BaseFileBasedSourceError):
     pass
 
 
+class ExcelCalamineParsingError(BaseFileBasedSourceError):
+    """Raised when Calamine engine fails to parse an Excel file."""
+
+    pass
+
+
 class SchemaInferenceError(BaseFileBasedSourceError):
     pass
 
