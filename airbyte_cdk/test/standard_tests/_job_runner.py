@@ -44,7 +44,11 @@ def run_test_job(
 ) -> entrypoint_wrapper.EntrypointOutput:
     """Run a test scenario from provided CLI args and return the result."""
     # Use default (empty) scenario if not provided:
-    test_scenario = test_scenario or ConnectorTestScenario()
+    test_scenario = test_scenario or ConnectorTestScenario(
+        name="default-scenario",
+        config_file=None,
+        config_settings={},
+    )
 
     if not connector:
         raise ValueError("Connector is required")
@@ -102,9 +106,8 @@ def run_test_job(
     result: entrypoint_wrapper.EntrypointOutput = entrypoint_wrapper._run_command(  # noqa: SLF001  # Non-public API
         source=connector_obj,  # type: ignore [arg-type]
         args=args,
-        expected_outcome=test_scenario.expected_outcome,
     )
-    if result.errors and test_scenario.expected_outcome.expect_success():
+    if result.errors and not test_scenario.expect_failure:
         raise result.as_exception()
 
     if verb == "check":
@@ -117,7 +120,7 @@ def run_test_job(
             + "\n".join([str(msg) for msg in result.connection_status_messages])
             + result.get_formatted_error_message()
         )
-        if test_scenario.expected_outcome.expect_exception():
+        if test_scenario.expect_failure:
             conn_status = result.connection_status_messages[0].connectionStatus
             assert conn_status, (
                 "Expected CONNECTION_STATUS message to be present. Got: \n"
@@ -131,13 +134,7 @@ def run_test_job(
         return result
 
     # For all other verbs, we assert check that an exception is raised (or not).
-    if test_scenario.expected_outcome.expect_exception():
-        if not result.errors:
-            raise AssertionError("Expected exception but got none.")
-
-        return result
-
-    if test_scenario.expected_outcome.expect_success():
+    if not test_scenario.expect_failure:
         assert not result.errors, (
             f"Test job failed with {len(result.errors)} error(s): \n"
             + result.get_formatted_error_message()
