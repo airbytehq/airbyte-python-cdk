@@ -1045,7 +1045,7 @@ class TestBlockSimultaneousRead(unittest.TestCase):
         assert handler._stream_instances_to_start_partition_generation[1] == stream1
 
     def test_no_defer_when_flag_false(self):
-        """Test that blocking doesn't occur when block_simultaneous_read=""" ""
+        """Test that blocking doesn't occur when block_simultaneous_read="" """
         stream = self._create_mock_stream("stream1", block_simultaneous_read="")
 
         handler = ConcurrentReadProcessor(
@@ -1196,14 +1196,55 @@ class TestBlockSimultaneousRead(unittest.TestCase):
         result = handler.start_next_partition_generator()
         assert result is not None
         assert "parent" in handler._active_stream_names
+        assert "api_group" in handler._active_groups
+        assert "parent" in handler._active_groups["api_group"]
 
-        # Try to start child1 (should be deferred)
+        # Try to start next stream (child1) - should be deferred because parent is active
         result = handler.start_next_partition_generator()
-        # child1 is deferred, but child2 might start if it's not blocked
-        # Let me check the queue state
+        assert result is None  # child1 was deferred
 
-        # Both children should be deferred (parent is active)
-        assert len(handler._stream_instances_to_start_partition_generation) >= 1
+        # After first deferral, we should still have 2 streams in queue (child1 moved to end)
+        assert len(handler._stream_instances_to_start_partition_generation) == 2
+        # child1 was moved to the back, so the queue has the other child first
+        queue_streams = handler._stream_instances_to_start_partition_generation
+        assert child1 in queue_streams
+        assert child2 in queue_streams
+
+        # Try to start next stream (child2) - should also be deferred
+        result = handler.start_next_partition_generator()
+        assert result is None  # child2 was deferred
+
+        # Both streams still in queue, but order may have changed
+        assert len(handler._stream_instances_to_start_partition_generation) == 2
+
+        # Verify neither child is active yet (both blocked by parent)
+        assert "child1" not in handler._active_stream_names
+        assert "child2" not in handler._active_stream_names
+
+        # Verify deferral was logged for both children
+        logger_calls = [str(call) for call in self._logger.info.call_args_list]
+        assert any("Deferring stream 'child1'" in call for call in logger_calls)
+        assert any("Deferring stream 'child2'" in call for call in logger_calls)
+
+        # Simulate parent completing partition generation (parent has no partitions, so it's done)
+        handler._streams_currently_generating_partitions.append("parent")
+        handler._streams_to_running_partitions["parent"] = set()
+        sentinel = PartitionGenerationCompletedSentinel(parent)
+        list(handler.on_partition_generation_completed(sentinel))
+
+        # After parent completes, one of the children should start (whichever was first in queue)
+        # We know at least one child started because the queue shrunk
+        assert len(handler._stream_instances_to_start_partition_generation) == 1
+
+        # Verify that exactly one child is now active
+        children_active = [
+            name for name in ["child1", "child2"]
+            if name in handler._active_stream_names
+        ]
+        assert len(children_active) == 1, f"Expected exactly one child active, got: {children_active}"
+
+        # Parent should be re-activated because the active child needs to read from it
+        assert "parent" in handler._active_stream_names
 
     def test_child_without_flag_blocked_by_parent_with_flag(self):
         """Test that a child WITHOUT block_simultaneous_read is blocked by parent WITH the flag"""
