@@ -1238,10 +1238,11 @@ class TestBlockSimultaneousRead(unittest.TestCase):
 
         # Verify that exactly one child is now active
         children_active = [
-            name for name in ["child1", "child2"]
-            if name in handler._active_stream_names
+            name for name in ["child1", "child2"] if name in handler._active_stream_names
         ]
-        assert len(children_active) == 1, f"Expected exactly one child active, got: {children_active}"
+        assert len(children_active) == 1, (
+            f"Expected exactly one child active, got: {children_active}"
+        )
 
         # Parent should be re-activated because the active child needs to read from it
         assert "parent" in handler._active_stream_names
