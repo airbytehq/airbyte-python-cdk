@@ -159,6 +159,7 @@ class ConcurrentReadProcessor:
         1. Close the partition
         2. If the stream is done, mark it as such and return a stream status message
         3. Emit messages that were added to the message repository
+        4. If there are more streams to read from, start the next partition generator
         """
         partition = sentinel.partition
 
@@ -171,6 +172,11 @@ class ConcurrentReadProcessor:
                 and len(partitions_running) == 0
             ):
                 yield from self._on_stream_is_done(partition.stream_name())
+                # Try to start the next stream in the queue (may be a deferred stream)
+                if self._stream_instances_to_start_partition_generation:
+                    status_message = self.start_next_partition_generator()
+                    if status_message:
+                        yield status_message
         yield from self._message_repository.consume_queue()
 
     def on_record(self, record: Record) -> Iterable[AirbyteMessage]:
