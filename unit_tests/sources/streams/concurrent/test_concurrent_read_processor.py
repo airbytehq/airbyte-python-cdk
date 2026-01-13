@@ -994,10 +994,6 @@ class TestBlockSimultaneousRead(unittest.TestCase):
         handler.start_next_partition_generator()
         assert "parent" in handler._active_stream_names
 
-        # Mark parent as generating partitions and having no partitions
-        handler._streams_currently_generating_partitions.append("parent")
-        handler._streams_to_running_partitions["parent"] = set()
-
         # Complete partition generation for parent (parent has no partitions, so it's done)
         sentinel = PartitionGenerationCompletedSentinel(parent)
         messages = list(handler.on_partition_generation_completed(sentinel))
@@ -1227,8 +1223,6 @@ class TestBlockSimultaneousRead(unittest.TestCase):
         assert any("Deferring stream 'child2'" in call for call in logger_calls)
 
         # Simulate parent completing partition generation (parent has no partitions, so it's done)
-        handler._streams_currently_generating_partitions.append("parent")
-        handler._streams_to_running_partitions["parent"] = set()
         sentinel = PartitionGenerationCompletedSentinel(parent)
         list(handler.on_partition_generation_completed(sentinel))
 
