@@ -945,7 +945,7 @@ class TestBlockSimultaneousRead(unittest.TestCase):
         # Child should be back in the queue
         assert len(handler._stream_instances_to_start_partition_generation) == 1
 
-    def test_retry_blocked_stream_after_blocker_done(self):
+    def test_different_groups_do_not_block_each_other(self):
         """Test that independent streams with different groups don't block each other"""
         stream1 = self._create_mock_stream("stream1", block_simultaneous_read="group1")
         stream2 = self._create_mock_stream("stream2", block_simultaneous_read="group2")
@@ -1346,62 +1346,6 @@ class TestBlockSimultaneousRead(unittest.TestCase):
             "Deferring stream 'stream2'" in str(call) and "shared_endpoint" in str(call)
             for call in self._logger.info.call_args_list
         )
-
-    def test_child_starts_after_parent_completes_via_partition_complete_sentinel(self):
-        """Test that child stream starts after parent completes via on_partition_complete_sentinel"""
-        parent = self._create_mock_stream("parent", block_simultaneous_read="api_group")
-        child = self._create_mock_stream_with_parent(
-            "child", parent, block_simultaneous_read="api_group"
-        )
-
-        handler = ConcurrentReadProcessor(
-            [parent, child],
-            self._partition_enqueuer,
-            self._thread_pool_manager,
-            self._logger,
-            self._slice_logger,
-            self._message_repository,
-            self._partition_reader,
-        )
-
-        # Start parent
-        handler.start_next_partition_generator()
-        assert "parent" in handler._active_stream_names
-
-        # Try to start child (should be deferred)
-        result = handler.start_next_partition_generator()
-        assert result is None
-        assert "child" not in handler._active_stream_names
-        assert len(handler._stream_instances_to_start_partition_generation) == 1
-
-        # Create a partition for parent and add it to running partitions
-        # (parent is already in _streams_currently_generating_partitions from start_next_partition_generator)
-        mock_partition = Mock(spec=Partition)
-        mock_partition.stream_name.return_value = "parent"
-        handler._streams_to_running_partitions["parent"].add(mock_partition)
-
-        # Complete partition generation for parent
-        sentinel_gen = PartitionGenerationCompletedSentinel(parent)
-        list(handler.on_partition_generation_completed(sentinel_gen))
-
-        # Now complete the partition (this triggers stream done)
-        sentinel_complete = PartitionCompleteSentinel(mock_partition)
-        messages = list(handler.on_partition_complete_sentinel(sentinel_complete))
-
-        # Child should have been started automatically
-        assert "child" in handler._active_stream_names
-        assert len(handler._stream_instances_to_start_partition_generation) == 0
-
-        # Verify a STARTED message was emitted for child
-        started_messages = [
-            msg
-            for msg in messages
-            if msg.type == MessageType.TRACE
-            and msg.trace.stream_status
-            and msg.trace.stream_status.status == AirbyteStreamStatus.STARTED
-        ]
-        assert len(started_messages) == 1
-        assert started_messages[0].trace.stream_status.stream_descriptor.name == "child"
 
     def test_child_starts_after_parent_completes_via_partition_complete_sentinel(self):
         """Test that child stream starts after parent completes via on_partition_complete_sentinel"""
