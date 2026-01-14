@@ -119,9 +119,16 @@ def test_last_record_is_node_if_no_records():
     [
         pytest.param(100, {}, 100, id="static_integer"),
         pytest.param("100", {}, 100, id="static_string"),
-        pytest.param("{{ config['page_size'] }}", {"page_size": 50}, 50, id="interpolated_from_config"),
+        pytest.param(
+            "{{ config['page_size'] }}", {"page_size": 50}, 50, id="interpolated_from_config"
+        ),
         pytest.param("{{ config.get('page_size', 100) }}", {}, 100, id="interpolated_with_default"),
-        pytest.param("{{ config.get('page_size', 100) }}", {"page_size": 200}, 200, id="interpolated_override_default"),
+        pytest.param(
+            "{{ config.get('page_size', 100) }}",
+            {"page_size": 200},
+            200,
+            id="interpolated_override_default",
+        ),
         pytest.param(None, {}, None, id="none_page_size"),
     ],
 )
