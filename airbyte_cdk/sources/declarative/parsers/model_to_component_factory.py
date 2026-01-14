@@ -1597,7 +1597,7 @@ class ModelToComponentFactory:
             connector_state_converter=connector_state_converter,
             cursor_field=cursor_field,
             slice_boundary_fields=None,
-            start=evaluated_start_value,
+            start=evaluated_start_value,  # type: ignore  # Having issues w/ inspection for GapType and CursorValueType as shown in existing tests. Confirmed functionality is working in practice
             end_provider=connector_state_converter.get_end_provider(),  # type: ignore  # Having issues w/ inspection for GapType and CursorValueType as shown in existing tests. Confirmed functionality is working in practice
         )
 
