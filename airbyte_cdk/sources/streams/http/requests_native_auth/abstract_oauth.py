@@ -100,16 +100,29 @@ class AbstractOauth2Authenticator(AuthBase):
 
     def build_refresh_request_body(self) -> Mapping[str, Any]:
         """
-        Returns the request body to set on the refresh request
+        Returns the request body to set on the refresh request.
 
-        Override to define additional parameters
+        Override to define additional parameters.
+
+        If refresh_request_headers contains an Authorization header (e.g., Basic auth),
+        client credentials are excluded from the body to avoid sending them in both places.
+        Some OAuth providers (like Gong) require credentials ONLY in the header and reject
+        requests that include them in both the header and body.
         """
+        # Check if credentials are being sent via Authorization header
+        headers = self.get_refresh_request_headers()
+        credentials_in_header = headers and "Authorization" in headers
+
         payload: MutableMapping[str, Any] = {
             self.get_grant_type_name(): self.get_grant_type(),
-            self.get_client_id_name(): self.get_client_id(),
-            self.get_client_secret_name(): self.get_client_secret(),
-            self.get_refresh_token_name(): self.get_refresh_token(),
         }
+
+        # Only include client credentials in body if not already in header
+        if not credentials_in_header:
+            payload[self.get_client_id_name()] = self.get_client_id()
+            payload[self.get_client_secret_name()] = self.get_client_secret()
+
+        payload[self.get_refresh_token_name()] = self.get_refresh_token()
 
         if self.get_scopes():
             payload["scopes"] = self.get_scopes()
