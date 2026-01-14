@@ -1749,10 +1749,16 @@ class ModelToComponentFactory:
                 self._UNSUPPORTED_DECODER_ERROR.format(decoder_type=type(inner_decoder))
             )
 
+        # Pydantic v1 Union type coercion can convert int to string depending on Union order.
+        # If page_size is a string that represents an integer (not an interpolation), convert it back.
+        page_size = model.page_size
+        if isinstance(page_size, str) and page_size.isdigit():
+            page_size = int(page_size)
+
         return CursorPaginationStrategy(
             cursor_value=model.cursor_value,
             decoder=decoder_to_use,
-            page_size=model.page_size,
+            page_size=page_size,
             stop_condition=model.stop_condition,
             config=config,
             parameters=model.parameters or {},
