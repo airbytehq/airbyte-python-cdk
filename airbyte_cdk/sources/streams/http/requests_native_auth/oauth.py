@@ -383,27 +383,24 @@ class SingleUseRefreshTokenOauth2Authenticator(Oauth2Authenticator):
         """
         Emits a control message based on the connector configuration.
 
-        This method checks if the message repository is not a NoopMessageRepository.
-        If it is not, it emits a message using the message repository. Otherwise,
-        it falls back to emitting the configuration as an Airbyte control message
-        directly to the console for backward compatibility.
+        Control messages for config updates (like refreshed tokens) must be printed directly
+        to stdout so the platform can process them immediately. The message repository is
+        also used to queue the message for any additional processing.
 
         Note:
-            The function `emit_configuration_as_airbyte_control_message` has been deprecated
-            in favor of the package `airbyte_cdk.sources.message`.
-
-        Raises:
-            TypeError: If the argument types are incorrect.
+            The function `emit_configuration_as_airbyte_control_message` prints directly to
+            stdout, which is required for the platform to detect and persist config changes.
         """
-        # FIXME emit_configuration_as_airbyte_control_message as been deprecated in favor of package airbyte_cdk.sources.message
-        # Usually, a class shouldn't care about the implementation details but to keep backward compatibility where we print the
-        # message directly in the console, this is needed
+        # Always emit to stdout so the platform can process the config update immediately.
+        # This is critical for single-use refresh tokens where the new token must be persisted
+        # before subsequent operations try to use the old (now invalid) token.
+        emit_configuration_as_airbyte_control_message(self._connector_config)  # type: ignore[arg-type]
+
+        # Also emit to the message repository for any additional processing (e.g., logging)
         if not isinstance(self._message_repository, NoopMessageRepository):
             self._message_repository.emit_message(
                 create_connector_config_control_message(self._connector_config)  # type: ignore[arg-type]
             )
-        else:
-            emit_configuration_as_airbyte_control_message(self._connector_config)  # type: ignore[arg-type]
 
     @property
     def _message_repository(self) -> MessageRepository:
