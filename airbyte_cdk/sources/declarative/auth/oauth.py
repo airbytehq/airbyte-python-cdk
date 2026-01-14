@@ -78,6 +78,7 @@ class DeclarativeOauth2Authenticator(AbstractOauth2Authenticator, DeclarativeAut
     refresh_token_error_status_codes: Tuple[int, ...] = ()
     refresh_token_error_key: str = ""
     refresh_token_error_values: Tuple[str, ...] = ()
+    _use_client_credentials_in_refresh: bool = True
 
     def __post_init__(self, parameters: Mapping[str, Any]) -> None:
         super().__init__(
@@ -246,6 +247,9 @@ class DeclarativeOauth2Authenticator(AbstractOauth2Authenticator, DeclarativeAut
 
     def get_refresh_request_headers(self) -> Mapping[str, Any]:
         return self._refresh_request_headers.eval(self.config)
+
+    def use_client_credentials_in_refresh(self) -> bool:
+        return self._use_client_credentials_in_refresh
 
     def get_token_expiry_date(self) -> AirbyteDateTime:
         if not self._has_access_token_been_initialized():

@@ -2833,6 +2833,9 @@ class ModelToComponentFactory:
             refresh_token_error_status_codes=refresh_token_error_status_codes,
             refresh_token_error_key=refresh_token_error_key,
             refresh_token_error_values=refresh_token_error_values,
+            _use_client_credentials_in_refresh=model.use_client_credentials_in_refresh
+            if model.use_client_credentials_in_refresh is not None
+            else True,
         )
 
     @staticmethod

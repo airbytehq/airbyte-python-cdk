@@ -169,6 +169,63 @@ class TestOauth2Authenticator:
         }
         assert body == expected
 
+    def test_refresh_request_body_excludes_credentials_when_use_client_credentials_in_refresh_is_false(
+        self,
+    ):
+        """
+        When use_client_credentials_in_refresh is set to False, client_id and client_secret
+        should be excluded from the request body entirely.
+
+        This is required by OAuth providers like Gong that don't require client credentials
+        in the refresh token request at all - only the refresh_token is needed.
+        """
+        oauth = DeclarativeOauth2Authenticator(
+            token_refresh_endpoint="{{ config['refresh_endpoint'] }}",
+            client_id="{{ config['client_id'] }}",
+            client_secret="{{ config['client_secret'] }}",
+            refresh_token="{{ parameters['refresh_token'] }}",
+            config=config,
+            token_expiry_date="{{ config['token_expiry_date'] }}",
+            parameters=parameters,
+            grant_type="{{ config['grant_type'] }}",
+            _use_client_credentials_in_refresh=False,
+        )
+        body = oauth.build_refresh_request_body()
+        expected = {
+            "grant_type": "some_grant_type",
+            "refresh_token": "some_refresh_token",
+        }
+        assert body == expected
+        assert "client_id" not in body
+        assert "client_secret" not in body
+
+    def test_refresh_request_body_includes_credentials_when_use_client_credentials_in_refresh_is_true(
+        self,
+    ):
+        """
+        When use_client_credentials_in_refresh is True (default), client_id and client_secret
+        should be included in the request body.
+        """
+        oauth = DeclarativeOauth2Authenticator(
+            token_refresh_endpoint="{{ config['refresh_endpoint'] }}",
+            client_id="{{ config['client_id'] }}",
+            client_secret="{{ config['client_secret'] }}",
+            refresh_token="{{ parameters['refresh_token'] }}",
+            config=config,
+            token_expiry_date="{{ config['token_expiry_date'] }}",
+            parameters=parameters,
+            grant_type="{{ config['grant_type'] }}",
+            _use_client_credentials_in_refresh=True,
+        )
+        body = oauth.build_refresh_request_body()
+        expected = {
+            "grant_type": "some_grant_type",
+            "client_id": "some_client_id",
+            "client_secret": "some_client_secret",
+            "refresh_token": "some_refresh_token",
+        }
+        assert body == expected
+
     def test_refresh_with_encode_config_params(self):
         oauth = DeclarativeOauth2Authenticator(
             token_refresh_endpoint="{{ config['refresh_endpoint'] }}",

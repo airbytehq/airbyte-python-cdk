@@ -104,21 +104,26 @@ class AbstractOauth2Authenticator(AuthBase):
 
         Override to define additional parameters.
 
-        If refresh_request_headers contains an Authorization header (e.g., Basic auth),
-        client credentials are excluded from the body to avoid sending them in both places.
-        Some OAuth providers (like Gong) require credentials ONLY in the header and reject
-        requests that include them in both the header and body.
+        Client credentials (client_id and client_secret) are excluded from the body when:
+        1. refresh_request_headers contains an Authorization header (e.g., Basic auth), OR
+        2. use_client_credentials_in_refresh() returns False (for APIs like Gong that don't
+           require client credentials in the refresh request at all)
         """
         # Check if credentials are being sent via Authorization header
         headers = self.get_refresh_request_headers()
         credentials_in_header = headers and "Authorization" in headers
 
+        # Check if client credentials should be included in refresh request
+        include_client_credentials = (
+            self.use_client_credentials_in_refresh() and not credentials_in_header
+        )
+
         payload: MutableMapping[str, Any] = {
             self.get_grant_type_name(): self.get_grant_type(),
         }
 
-        # Only include client credentials in body if not already in header
-        if not credentials_in_header:
+        # Only include client credentials in body if configured to do so and not in header
+        if include_client_credentials:
             payload[self.get_client_id_name()] = self.get_client_id()
             payload[self.get_client_secret_name()] = self.get_client_secret()
 
@@ -512,6 +517,14 @@ class AbstractOauth2Authenticator(AuthBase):
     @abstractmethod
     def get_grant_type_name(self) -> str:
         """Returns grant_type specified name for requesting access_token"""
+
+    def use_client_credentials_in_refresh(self) -> bool:
+        """Returns whether to include client credentials in the refresh token request body.
+
+        Override to return False for OAuth implementations (like Gong) that don't require
+        client_id and client_secret in the refresh request.
+        """
+        return True
 
     @property
     @abstractmethod
