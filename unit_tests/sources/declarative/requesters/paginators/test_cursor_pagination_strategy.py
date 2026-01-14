@@ -112,3 +112,25 @@ def test_last_record_is_node_if_no_records():
     response = requests.Response()
     next_page_token = strategy.next_page_token(response, 0, None)
     assert next_page_token is None
+
+
+@pytest.mark.parametrize(
+    "page_size_input, config, expected_page_size",
+    [
+        pytest.param(100, {}, 100, id="static_integer"),
+        pytest.param("100", {}, 100, id="static_string"),
+        pytest.param("{{ config['page_size'] }}", {"page_size": 50}, 50, id="interpolated_from_config"),
+        pytest.param("{{ config.get('page_size', 100) }}", {}, 100, id="interpolated_with_default"),
+        pytest.param("{{ config.get('page_size', 100) }}", {"page_size": 200}, 200, id="interpolated_override_default"),
+        pytest.param(None, {}, None, id="none_page_size"),
+    ],
+)
+def test_interpolated_page_size(page_size_input, config, expected_page_size):
+    """Test that page_size supports interpolation from config."""
+    strategy = CursorPaginationStrategy(
+        page_size=page_size_input,
+        cursor_value="token",
+        config=config,
+        parameters={},
+    )
+    assert strategy.get_page_size() == expected_page_size

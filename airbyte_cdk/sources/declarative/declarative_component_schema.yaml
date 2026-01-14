@@ -512,9 +512,16 @@ definitions:
       page_size:
         title: Page Size
         description: The number of records to include in each pages.
-        type: integer
+        anyOf:
+          - type: integer
+            title: Number of Records
+          - type: string
+            title: Interpolated Value
+        interpolation_context:
+          - config
         examples:
           - 100
+          - "{{ config['page_size'] }}"
       stop_condition:
         title: Stop Condition
         description: Template string evaluating when to stop paginating.
