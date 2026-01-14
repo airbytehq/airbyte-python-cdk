@@ -104,19 +104,17 @@ class AbstractOauth2Authenticator(AuthBase):
 
         Override to define additional parameters.
 
-        Client credentials (client_id and client_secret) are excluded from the body when:
-        1. refresh_request_headers contains an Authorization header (e.g., Basic auth), OR
-        2. use_client_credentials_in_refresh() returns False (for APIs like Gong that don't
-           require client credentials in the refresh request at all)
+        Client credentials (client_id and client_secret) are excluded from the body when
+        refresh_request_headers contains an Authorization header (e.g., Basic auth).
+        This is required by OAuth providers like Gong that expect credentials ONLY in the
+        Authorization header and reject requests that include them in both places.
         """
         # Check if credentials are being sent via Authorization header
         headers = self.get_refresh_request_headers()
         credentials_in_header = headers and "Authorization" in headers
 
-        # Check if client credentials should be included in refresh request
-        include_client_credentials = (
-            self.use_client_credentials_in_refresh() and not credentials_in_header
-        )
+        # Only include client credentials in body if not already in header
+        include_client_credentials = not credentials_in_header
 
         payload: MutableMapping[str, Any] = {
             self.get_grant_type_name(): self.get_grant_type(),
@@ -517,14 +515,6 @@ class AbstractOauth2Authenticator(AuthBase):
     @abstractmethod
     def get_grant_type_name(self) -> str:
         """Returns grant_type specified name for requesting access_token"""
-
-    def use_client_credentials_in_refresh(self) -> bool:
-        """Returns whether to include client credentials in the refresh token request body.
-
-        Override to return False for OAuth implementations (like Gong) that don't require
-        client_id and client_secret in the refresh request.
-        """
-        return True
 
     @property
     @abstractmethod

@@ -1531,11 +1531,6 @@ definitions:
         description: Enable using profile assertion as a flow for OAuth authorization.
         type: boolean
         default: false
-      use_client_credentials_in_refresh:
-        title: Use Client Credentials In Refresh
-        description: When enabled (default), client_id and client_secret are included in the refresh token request body. Set to false for OAuth implementations like Gong that require only the refresh_token in the request body without client credentials.
-        type: boolean
-        default: true
       $parameters:
         type: object
         additionalProperties: true

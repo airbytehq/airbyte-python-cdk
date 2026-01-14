@@ -1941,11 +1941,6 @@ class OAuthAuthenticator(BaseModel):
         description="Enable using profile assertion as a flow for OAuth authorization.",
         title="Use Profile Assertion",
     )
-    use_client_credentials_in_refresh: Optional[bool] = Field(
-        True,
-        description="When enabled (default), client_id and client_secret are included in the refresh token request body. Set to false for OAuth implementations like Gong that require only the refresh_token in the request body without client credentials.",
-        title="Use Client Credentials In Refresh",
-    )
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
 
