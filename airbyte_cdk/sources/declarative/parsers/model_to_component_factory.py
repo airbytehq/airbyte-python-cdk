@@ -2927,8 +2927,14 @@ class ModelToComponentFactory:
             else None
         )
 
+        # Pydantic v1 Union type coercion can convert int to string depending on Union order.
+        # If page_size is a string that represents an integer (not an interpolation), convert it back.
+        page_size = model.page_size
+        if isinstance(page_size, str) and page_size.isdigit():
+            page_size = int(page_size)
+
         return OffsetIncrement(
-            page_size=model.page_size,
+            page_size=page_size,
             config=config,
             decoder=decoder_to_use,
             extractor=extractor,
@@ -2940,8 +2946,14 @@ class ModelToComponentFactory:
     def create_page_increment(
         model: PageIncrementModel, config: Config, **kwargs: Any
     ) -> PageIncrement:
+        # Pydantic v1 Union type coercion can convert int to string depending on Union order.
+        # If page_size is a string that represents an integer (not an interpolation), convert it back.
+        page_size = model.page_size
+        if isinstance(page_size, str) and page_size.isdigit():
+            page_size = int(page_size)
+
         return PageIncrement(
-            page_size=model.page_size,
+            page_size=page_size,
             config=config,
             start_from_page=model.start_from_page or 0,
             inject_on_first_request=model.inject_on_first_request or False,
