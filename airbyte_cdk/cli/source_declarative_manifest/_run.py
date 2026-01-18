@@ -243,8 +243,8 @@ def _parse_inputs_into_config_catalog_state(
 ]:
     config = (
         ConcurrentDeclarativeSource.read_config(parsed_args.config)
-        if hasattr(parsed_args, "config")
-        else None
+        if hasattr(parsed_args, "config") and parsed_args.config
+        else {}
     )
     catalog = (
         ConcurrentDeclarativeSource.read_catalog(parsed_args.catalog)
