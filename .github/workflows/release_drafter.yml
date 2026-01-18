@@ -1,6 +1,7 @@
 name: Release Drafter
 
 on:
+  workflow_dispatch: {}
   push:
     branches:
       - main
@@ -10,12 +11,42 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  update_release_draft:
+  draft_release:
+    name: Draft Release
     permissions:
       contents: write
       pull-requests: write
     runs-on: ubuntu-latest
     steps:
-      - uses: aaronsteers/semantic-pr-release-drafter@v0.3.0
+      - name: Create or update draft release
+        uses: aaronsteers/semantic-pr-release-drafter@v0.4.0
+        id: release-drafter
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          version: "latest"
+
+      - name: Checkout Repo
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Build package
+        env:
+          TAG_NAME: ${{ steps.release-drafter.outputs.tag_name }}
+        run: |
+          echo "Building with version from tag: ${TAG_NAME}"
+          # Strip 'v' prefix for uv-dynamic-versioning
+          UV_DYNAMIC_VERSIONING_BYPASS="${TAG_NAME#v}" uv build
+
+      - name: Attach assets to draft release
+        uses: aaronsteers/semantic-pr-release-drafter@v0.4.0
+        with:
+          attach-files: |
+            dist/*.whl
+            dist/*.tar.gz
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
