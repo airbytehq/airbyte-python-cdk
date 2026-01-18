@@ -1,7 +1,12 @@
-# This workflow builds the python package.
-
-# When from from a release tags or a workflow dispatch, it also publishes to PyPI and DockerHub along
-# with bumping the Connector Builder pinned version.
+# This workflow publishes the python package to PyPI and DockerHub.
+#
+# Triggers:
+# - release: published - When user clicks "Publish" on a draft release (downloads pre-built assets)
+# - workflow_dispatch - Manual trigger for prereleases (builds fresh)
+#
+# Authentication: This workflow expects GitHub OIDC for passwordless PyPI publishing.
+# For more info: https://docs.pypi.org/trusted-publishers/
+#
 # Note: We may want to rename this file at some point. However, if we rename the workflow file name,
 # we have to also update the Trusted Publisher settings on PyPI.
 
@@ -10,9 +15,8 @@ permissions:
   contents: read
 
 on:
-  push:
-    tags:
-      - "v*"
+  release:
+    types: [published]
   workflow_dispatch:
     inputs:
       version:
@@ -47,9 +51,54 @@ on:
         default: false
 
 jobs:
+  # Download pre-built assets from the release (only on release: published)
+  download_release_assets:
+    name: Download Release Assets
+    runs-on: ubuntu-latest
+    if: github.event_name == 'release'
+    permissions:
+      contents: read
+    steps:
+      - name: Download wheel and sdist from release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p dist
+          gh release download "${{ github.event.release.tag_name }}" \
+            --repo "${{ github.repository }}" \
+            --pattern "*.whl" \
+            --pattern "*.tar.gz" \
+            --dir dist
+          echo "Downloaded assets:"
+          ls -la dist/
+
+      - name: Verify assets were downloaded
+        run: |
+          if [ ! -f dist/*.whl ]; then
+            echo "Error: No wheel file found in release assets"
+            exit 1
+          fi
+          if [ ! -f dist/*.tar.gz ]; then
+            echo "Error: No sdist file found in release assets"
+            exit 1
+          fi
+          echo "Assets verified successfully"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Packages-${{ github.run_id }}
+          path: |
+            dist/*.whl
+            dist/*.tar.gz
+
+    outputs:
+      VERSION: ${{ github.event.release.tag_name }}
+
+  # Build fresh package (only on workflow_dispatch, NOT on release)
   build:
     name: Build Python Package
     runs-on: ubuntu-24.04
+    if: github.event_name != 'release'
     steps:
       - name: Checkout CDK Repo
         uses: actions/checkout@v4
@@ -130,62 +179,65 @@ jobs:
   publish_cdk:
     name: Publish CDK version to PyPI
     runs-on: ubuntu-24.04
-    needs: [build]
+    # Depend on whichever job ran (build for dispatch, download for release)
+    needs: [build, download_release_assets]
+    # Always run if at least one of the needed jobs succeeded
+    if: |
+      always() &&
+      (needs.build.result == 'success' || needs.download_release_assets.result == 'success') &&
+      (
+        github.event_name == 'release' ||
+        (github.event_name == 'workflow_dispatch' &&
+         (github.event.inputs.publish_to_pypi == 'true' ||
+          github.event.inputs.update_connector_builder == 'true'
+        ))
+      )
     permissions:
       id-token: write
       contents: write
     environment:
       name: PyPi
       url: https://pypi.org/p/airbyte-cdk/
-    if: >
-      (github.event_name == 'push' &&
-       startsWith(github.ref, 'refs/tags/v')) ||
-      (github.event_name == 'workflow_dispatch' &&
-       (github.event.inputs.publish_to_pypi == 'true' ||
-        github.event.inputs.update_connector_builder == 'true'
-      ))
     env:
-      VERSION: ${{ needs.build.outputs.VERSION }}
-      IS_PRERELEASE: ${{ needs.build.outputs.IS_PRERELEASE }}
+      VERSION: ${{ needs.build.outputs.VERSION || needs.download_release_assets.outputs.VERSION }}
+      IS_PRERELEASE: ${{ needs.build.outputs.IS_PRERELEASE || 'false' }}
     steps:
       - uses: actions/download-artifact@v4
         with:
           name: Packages-${{ github.run_id }}
           path: dist
 
-      - name: Upload wheel to release
-        if: startsWith(github.ref, 'refs/tags/v')
-        uses: svenstaro/upload-release-action@v2
-        with:
-          repo_token: ${{ secrets.GITHUB_TOKEN }}
-          file: dist/*.whl
-          tag: ${{ github.ref }}
-          overwrite: true
-          file_glob: true
+      # Note: Wheel upload to GitHub release is handled by release-drafter.yml
+      # during the draft stage (before publish). This avoids the "immutable release"
+      # error that occurs when trying to upload assets after a release is published.
 
       - name: Publish to PyPI
         if: >
-          (github.event_name == 'push' &&
-           startsWith(github.ref, 'refs/tags/v')
-          ) || github.event.inputs.publish_to_pypi == 'true'
+          github.event_name == 'release' ||
+          github.event.inputs.publish_to_pypi == 'true'
         uses: pypa/gh-action-pypi-publish@v1.12.4
 
   publish_sdm:
     name: Publish SDM to DockerHub
-    if: >
-      (github.event_name == 'push' &&
-       startsWith(github.ref, 'refs/tags/v')) ||
-      (github.event_name == 'workflow_dispatch' &&
-       github.event.inputs.publish_to_dockerhub == 'true'
-      )
     runs-on: ubuntu-24.04
-    needs: [build]
+    # Depend on whichever job ran (build for dispatch, download for release)
+    needs: [build, download_release_assets]
+    # Always run if at least one of the needed jobs succeeded
+    if: |
+      always() &&
+      (needs.build.result == 'success' || needs.download_release_assets.result == 'success') &&
+      (
+        github.event_name == 'release' ||
+        (github.event_name == 'workflow_dispatch' &&
+         github.event.inputs.publish_to_dockerhub == 'true'
+        )
+      )
     environment:
       name: DockerHub
       url: https://hub.docker.com/r/airbyte/source-declarative-manifest/tags
     env:
-      VERSION: ${{ needs.build.outputs.VERSION }}
-      IS_PRERELEASE: ${{ needs.build.outputs.IS_PRERELEASE }}
+      VERSION: ${{ needs.build.outputs.VERSION || needs.download_release_assets.outputs.VERSION }}
+      IS_PRERELEASE: ${{ needs.build.outputs.IS_PRERELEASE || 'false' }}
 
     steps:
       - uses: actions/checkout@v4
@@ -253,20 +305,25 @@ jobs:
 
   publish_manifest_server:
     name: Publish Manifest Server to DockerHub
-    if: >
-      (github.event_name == 'push' &&
-       startsWith(github.ref, 'refs/tags/v')) ||
-      (github.event_name == 'workflow_dispatch' &&
-       github.event.inputs.publish_manifest_server == 'true'
-      )
     runs-on: ubuntu-24.04
-    needs: [build]
+    # Depend on whichever job ran (build for dispatch, download for release)
+    needs: [build, download_release_assets]
+    # Always run if at least one of the needed jobs succeeded
+    if: |
+      always() &&
+      (needs.build.result == 'success' || needs.download_release_assets.result == 'success') &&
+      (
+        github.event_name == 'release' ||
+        (github.event_name == 'workflow_dispatch' &&
+         github.event.inputs.publish_manifest_server == 'true'
+        )
+      )
     environment:
       name: DockerHub
       url: https://hub.docker.com/r/airbyte/manifest-server/tags
     env:
-      VERSION: ${{ needs.build.outputs.VERSION }}
-      IS_PRERELEASE: ${{ needs.build.outputs.IS_PRERELEASE }}
+      VERSION: ${{ needs.build.outputs.VERSION || needs.download_release_assets.outputs.VERSION }}
+      IS_PRERELEASE: ${{ needs.build.outputs.IS_PRERELEASE || 'false' }}
 
     steps:
       - uses: actions/checkout@v4
@@ -344,16 +401,24 @@ jobs:
       url: https://github.com/airbytehq/airbyte-platform-internal/pulls?q=is%3Apr+automatic-cdk-release+
     needs:
       - build
+      - download_release_assets
       - publish_manifest_server
-    if: >
-      (github.event_name == 'push' &&
-       needs.build.outputs.IS_PRERELEASE == 'false' &&
-       startsWith(github.ref, 'refs/tags/v')) ||
-      (github.event_name == 'workflow_dispatch' &&
-       github.event.inputs.update_connector_builder == 'true')
+    # Run on release (non-prerelease) or workflow_dispatch with update_connector_builder=true
+    if: |
+      always() &&
+      (needs.build.result == 'success' || needs.download_release_assets.result == 'success') &&
+      needs.publish_manifest_server.result == 'success' &&
+      (
+        (github.event_name == 'release' &&
+         (needs.build.outputs.IS_PRERELEASE == 'false' || needs.download_release_assets.result == 'success')
+        ) ||
+        (github.event_name == 'workflow_dispatch' &&
+         github.event.inputs.update_connector_builder == 'true'
+        )
+      )
     env:
-      VERSION: ${{ needs.build.outputs.VERSION }}
-      IS_PRERELEASE: ${{ needs.build.outputs.IS_PRERELEASE }}
+      VERSION: ${{ needs.build.outputs.VERSION || needs.download_release_assets.outputs.VERSION }}
+      IS_PRERELEASE: ${{ needs.build.outputs.IS_PRERELEASE || 'false' }}
     runs-on: ubuntu-24.04
     steps:
       - name: Authenticate as GitHub App
