@@ -30,18 +30,11 @@ jobs:
     env:
       VERSION: ${{ github.event.release.tag_name }}
     steps:
-      - name: Download wheel from release
+      - name: Download release assets
         uses: robinraju/release-downloader@v1.12
         with:
           tag: ${{ github.event.release.tag_name }}
-          fileName: "*.whl"
-          out-file-path: dist
-
-      - name: Download sdist from release
-        uses: robinraju/release-downloader@v1.12
-        with:
-          tag: ${{ github.event.release.tag_name }}
-          fileName: "*.tar.gz"
+          fileName: "*"
           out-file-path: dist
 
       - name: Publish to PyPI
@@ -61,11 +54,11 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Download wheel from release
+      - name: Download release assets
         uses: robinraju/release-downloader@v1.12
         with:
           tag: ${{ github.event.release.tag_name }}
-          fileName: "*.whl"
+          fileName: "*"
           out-file-path: dist
 
       - name: Set up QEMU for multi-platform builds
@@ -118,11 +111,11 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Download wheel from release
+      - name: Download release assets
         uses: robinraju/release-downloader@v1.12
         with:
           tag: ${{ github.event.release.tag_name }}
-          fileName: "*.whl"
+          fileName: "*"
           out-file-path: dist
 
       - name: Set up QEMU for multi-platform builds
