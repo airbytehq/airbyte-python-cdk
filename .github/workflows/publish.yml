@@ -37,6 +37,7 @@ jobs:
           fileName: "*"
           out-file-path: dist
 
+      # Uses GitHub OIDC for passwordless authentication (see header comment)
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@v1.12.4
 
