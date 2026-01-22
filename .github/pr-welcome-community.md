@@ -2,8 +2,6 @@
 
 Thank you for your contribution from **{{ .repo_name }}**! We're excited to have you in the Airbyte community.
 
-If you have any questions, feel free to ask in the PR comments or join our [Slack community](https://airbytehq.slack.com/).
-
 <details>
 <summary><b>💡 Show Tips and Tricks</b></summary>
 
@@ -38,6 +36,8 @@ As needed or by request, Airbyte Maintainers can execute the following slash com
 
 - [Contributing Guidelines](https://docs.airbyte.com/contributing-to-airbyte/)
 - [CDK API Reference](https://airbytehq.github.io/airbyte-python-cdk/)
+
+If you have any questions, feel free to ask in the PR comments or join our [Slack community](https://airbytehq.slack.com/).
 
 [📝 _Edit this welcome message._](https://github.com/airbytehq/airbyte-python-cdk/blob/main/.github/pr-welcome-community.md)
 
