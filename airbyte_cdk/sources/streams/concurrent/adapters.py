@@ -214,6 +214,10 @@ class StreamFacade(AbstractStreamFacade[DefaultStream], Stream):
     def get_underlying_stream(self) -> DefaultStream:
         return self._abstract_stream
 
+    @property
+    def use_exclusive_concurrency(self) -> bool:
+        return self._abstract_stream.use_exclusive_concurrency
+
 
 class SliceEncoder(json.JSONEncoder):
     def default(self, obj: Any) -> Any:
