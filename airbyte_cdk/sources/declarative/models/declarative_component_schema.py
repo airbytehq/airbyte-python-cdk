@@ -114,10 +114,10 @@ class CursorPagination(BaseModel):
         ],
         title="Cursor Value",
     )
-    page_size: Optional[int] = Field(
+    page_size: Optional[Union[int, str]] = Field(
         None,
         description="The number of records to include in each pages.",
-        examples=[100],
+        examples=[100, "{{ config['page_size'] }}"],
         title="Page Size",
     )
     stop_condition: Optional[str] = Field(
@@ -2741,7 +2741,7 @@ class HttpRequester(BaseModelWithDeprecations):
     )
     use_cache: Optional[bool] = Field(
         False,
-        description="Enables stream requests caching. This field is automatically set by the CDK.",
+        description="Enables stream requests caching. When set to true, repeated requests to the same URL will return cached responses. Parent streams automatically have caching enabled. Only set this to false if you are certain that caching should be disabled, as it may negatively impact performance when the same data is needed multiple times (e.g., for scroll-based pagination APIs where caching causes duplicate records).",
         title="Use Cache",
     )
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")

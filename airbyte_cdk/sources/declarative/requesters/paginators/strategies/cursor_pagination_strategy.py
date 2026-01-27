@@ -23,10 +23,10 @@ from airbyte_cdk.sources.types import Config, Record
 @dataclass
 class CursorPaginationStrategy(PaginationStrategy):
     """
-    Pagination strategy that evaluates an interpolated string to define the next page token
+    Pagination strategy that evaluates an interpolated string to define the next page token.
 
     Attributes:
-        page_size (Optional[int]): the number of records to request
+        page_size (Optional[Union[str, int]]): the number of records to request
         cursor_value (Union[InterpolatedString, str]): template string evaluating to the cursor value
         config (Config): connection config
         stop_condition (Optional[InterpolatedBoolean]): template string evaluating when to stop paginating
@@ -36,7 +36,7 @@ class CursorPaginationStrategy(PaginationStrategy):
     cursor_value: Union[InterpolatedString, str]
     config: Config
     parameters: InitVar[Mapping[str, Any]]
-    page_size: Optional[int] = None
+    page_size: Optional[Union[str, int]] = None
     stop_condition: Optional[Union[InterpolatedBoolean, str]] = None
     decoder: Decoder = field(
         default_factory=lambda: PaginationDecoderDecorator(decoder=JsonDecoder(parameters={}))
@@ -53,6 +53,14 @@ class CursorPaginationStrategy(PaginationStrategy):
             )
         else:
             self._stop_condition = self.stop_condition
+
+        if isinstance(self.page_size, int) or (self.page_size is None):
+            self._page_size = self.page_size
+        else:
+            page_size = InterpolatedString(self.page_size, parameters=parameters).eval(self.config)
+            if not isinstance(page_size, int):
+                raise Exception(f"{page_size} is of type {type(page_size)}. Expected {int}")
+            self._page_size = page_size
 
     @property
     def initial_token(self) -> Optional[Any]:
@@ -95,4 +103,4 @@ class CursorPaginationStrategy(PaginationStrategy):
         return token if token else None
 
     def get_page_size(self) -> Optional[int]:
-        return self.page_size
+        return self._page_size
