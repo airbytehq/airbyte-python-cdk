@@ -3,6 +3,7 @@
 #
 
 import logging
+import threading
 from abc import abstractmethod
 from datetime import timedelta
 from json import JSONDecodeError
@@ -40,6 +41,13 @@ class AbstractOauth2Authenticator(AuthBase):
     """
 
     _NO_STREAM_NAME = None
+
+    # Class-level lock to prevent concurrent token refresh across multiple authenticator instances.
+    # This is necessary because multiple streams may share the same OAuth credentials (refresh token)
+    # through the connector config. Without this lock, concurrent refresh attempts can cause race
+    # conditions where one stream successfully refreshes the token while others fail because the
+    # refresh token has been invalidated (especially for single-use refresh tokens).
+    _token_refresh_lock: threading.Lock = threading.Lock()
 
     def __init__(
         self,
@@ -86,11 +94,21 @@ class AbstractOauth2Authenticator(AuthBase):
         return {"Authorization": f"Bearer {token}"}
 
     def get_access_token(self) -> str:
-        """Returns the access token"""
+        """
+        Returns the access token.
+
+        This method uses double-checked locking to ensure thread-safe token refresh.
+        When multiple threads (streams) detect an expired token simultaneously, only one
+        will perform the refresh while others wait. After acquiring the lock, the token
+        expiry is re-checked to avoid redundant refresh attempts.
+        """
         if self.token_has_expired():
-            token, expires_in = self.refresh_access_token()
-            self.access_token = token
-            self.set_token_expiry_date(expires_in)
+            with self._token_refresh_lock:
+                # Double-check after acquiring lock - another thread may have already refreshed
+                if self.token_has_expired():
+                    token, expires_in = self.refresh_access_token()
+                    self.access_token = token
+                    self.set_token_expiry_date(expires_in)
 
         return self.access_token
 
