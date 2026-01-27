@@ -42,7 +42,10 @@ from airbyte_cdk.sources.declarative.auth.token import (
     BearerAuthenticator,
     LegacySessionTokenAuthenticator,
 )
-from airbyte_cdk.sources.declarative.auth.token_provider import SessionTokenProvider
+from airbyte_cdk.sources.declarative.auth.token_provider import (
+    PrefixedTokenProvider,
+    SessionTokenProvider,
+)
 from airbyte_cdk.sources.declarative.checks import CheckStream
 from airbyte_cdk.sources.declarative.concurrency_level import ConcurrencyLevel
 from airbyte_cdk.sources.declarative.datetime.min_max_datetime import MinMaxDatetime
@@ -1853,6 +1856,59 @@ requester:
         "username": "lists",
         "password": "verysecrettoken",
     }
+
+
+def test_create_request_with_session_authenticator_with_token_prefix():
+    """Test that token_prefix wraps the token provider with PrefixedTokenProvider."""
+    content = """
+requester:
+  type: HttpRequester
+  path: "/v3/marketing/lists"
+  $parameters:
+    name: 'lists'
+  url_base: "https://api.sendgrid.com"
+  authenticator:
+    type: SessionTokenAuthenticator
+    decoder:
+      type: JsonDecoder
+    expiration_duration: P10D
+    login_requester:
+      path: /session
+      type: HttpRequester
+      url_base: 'https://api.sendgrid.com'
+      http_method: POST
+      request_body_json:
+        password: '{{ config.apikey }}'
+        username: '{{ parameters.name }}'
+    session_token_path:
+      - id
+    request_authentication:
+      type: ApiKey
+      inject_into:
+        type: RequestOption
+        field_name: Authorization
+        inject_into: header
+      token_prefix: "Token "
+    """
+    name = "name"
+    parsed_manifest = YamlDeclarativeSource._parse(content)
+    resolved_manifest = resolver.preprocess_manifest(parsed_manifest)
+    requester_manifest = transformer.propagate_types_and_parameters(
+        "", resolved_manifest["requester"], {}
+    )
+
+    selector = factory.create_component(
+        model_type=HttpRequesterModel,
+        component_definition=requester_manifest,
+        config=input_config,
+        name=name,
+        decoder=None,
+    )
+
+    assert isinstance(selector.authenticator, ApiKeyAuthenticator)
+    assert isinstance(selector.authenticator.token_provider, PrefixedTokenProvider)
+    assert selector.authenticator.token_provider.prefix == "Token "
+    assert isinstance(selector.authenticator.token_provider.token_provider, SessionTokenProvider)
 
 
 def test_given_composite_error_handler_does_not_match_response_then_fallback_on_default_error_handler(
