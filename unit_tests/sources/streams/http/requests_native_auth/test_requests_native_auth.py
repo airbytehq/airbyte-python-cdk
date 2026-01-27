@@ -4,6 +4,8 @@
 
 import json
 import logging
+import threading
+import time
 from datetime import timedelta
 from typing import Optional, Union
 from unittest.mock import Mock
@@ -802,9 +804,6 @@ class TestConcurrentTokenRefresh:
         only one thread should actually perform the refresh. Others should wait and
         use the newly refreshed token.
         """
-        import threading
-        import time
-
         refresh_call_count = 0
         refresh_call_lock = threading.Lock()
 
@@ -856,9 +855,6 @@ class TestConcurrentTokenRefresh:
         should also only result in one actual refresh to prevent invalidating
         the single-use refresh token.
         """
-        import threading
-        import time
-
         refresh_call_count = 0
         refresh_call_lock = threading.Lock()
 
