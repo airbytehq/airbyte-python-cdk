@@ -43,7 +43,7 @@ from airbyte_cdk.sources.declarative.auth.token import (
     LegacySessionTokenAuthenticator,
 )
 from airbyte_cdk.sources.declarative.auth.token_provider import (
-    PrefixedTokenProvider,
+    InterpolatedSessionTokenProvider,
     SessionTokenProvider,
 )
 from airbyte_cdk.sources.declarative.checks import CheckStream
@@ -1844,22 +1844,25 @@ requester:
     )
 
     assert isinstance(selector.authenticator, ApiKeyAuthenticator)
-    assert isinstance(selector.authenticator.token_provider, SessionTokenProvider)
-    assert selector.authenticator.token_provider.session_token_path == ["id"]
-    assert isinstance(selector.authenticator.token_provider.login_requester, HttpRequester)
-    assert selector.authenticator.token_provider.session_token_path == ["id"]
+    # Default behavior wraps with InterpolatedSessionTokenProvider using "{{ session_token }}"
+    assert isinstance(selector.authenticator.token_provider, InterpolatedSessionTokenProvider)
+    assert selector.authenticator.token_provider.api_token == "{{ session_token }}"
+    session_token_provider = selector.authenticator.token_provider.session_token_provider
+    assert isinstance(session_token_provider, SessionTokenProvider)
+    assert session_token_provider.session_token_path == ["id"]
+    assert isinstance(session_token_provider.login_requester, HttpRequester)
     assert (
-        selector.authenticator.token_provider.login_requester._url_base.eval(input_config)
+        session_token_provider.login_requester._url_base.eval(input_config)
         == "https://api.sendgrid.com"
     )
-    assert selector.authenticator.token_provider.login_requester.get_request_body_json() == {
+    assert session_token_provider.login_requester.get_request_body_json() == {
         "username": "lists",
         "password": "verysecrettoken",
     }
 
 
-def test_create_request_with_session_authenticator_with_token_prefix():
-    """Test that token_prefix wraps the token provider with PrefixedTokenProvider."""
+def test_create_request_with_session_authenticator_with_api_token_template():
+    """Test that api_token wraps the token provider with InterpolatedSessionTokenProvider."""
     content = """
 requester:
   type: HttpRequester
@@ -1888,7 +1891,7 @@ requester:
         type: RequestOption
         field_name: Authorization
         inject_into: header
-      token_prefix: "Token "
+      api_token: "Token {{ session_token }}"
     """
     name = "name"
     parsed_manifest = YamlDeclarativeSource._parse(content)
@@ -1906,9 +1909,11 @@ requester:
     )
 
     assert isinstance(selector.authenticator, ApiKeyAuthenticator)
-    assert isinstance(selector.authenticator.token_provider, PrefixedTokenProvider)
-    assert selector.authenticator.token_provider.prefix == "Token "
-    assert isinstance(selector.authenticator.token_provider.token_provider, SessionTokenProvider)
+    assert isinstance(selector.authenticator.token_provider, InterpolatedSessionTokenProvider)
+    assert selector.authenticator.token_provider.api_token == "Token {{ session_token }}"
+    assert isinstance(
+        selector.authenticator.token_provider.session_token_provider, SessionTokenProvider
+    )
 
 
 def test_given_composite_error_handler_does_not_match_response_then_fallback_on_default_error_handler(

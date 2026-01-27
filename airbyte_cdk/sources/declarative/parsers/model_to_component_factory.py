@@ -67,8 +67,8 @@ from airbyte_cdk.sources.declarative.auth.token import (
     LegacySessionTokenAuthenticator,
 )
 from airbyte_cdk.sources.declarative.auth.token_provider import (
+    InterpolatedSessionTokenProvider,
     InterpolatedStringTokenProvider,
-    PrefixedTokenProvider,
     SessionTokenProvider,
     TokenProvider,
 )
@@ -1170,14 +1170,16 @@ class ModelToComponentFactory:
                 token_provider=token_provider,
             )
         else:
-            # Get the token_prefix if specified, wrap the token provider if needed
-            token_prefix = getattr(model.request_authentication, "token_prefix", None) or ""
-            final_token_provider: TokenProvider = token_provider
-            if token_prefix:
-                final_token_provider = PrefixedTokenProvider(
-                    token_provider=token_provider,
-                    prefix=token_prefix,
-                )
+            # Get the api_token template if specified, default to just the session token
+            api_token_template = (
+                getattr(model.request_authentication, "api_token", None) or "{{ session_token }}"
+            )
+            final_token_provider: TokenProvider = InterpolatedSessionTokenProvider(
+                config=config,
+                api_token=api_token_template,
+                session_token_provider=token_provider,
+                parameters=model.parameters or {},
+            )
             return self.create_api_key_authenticator(
                 ApiKeyAuthenticatorModel(
                     type="ApiKeyAuthenticator",

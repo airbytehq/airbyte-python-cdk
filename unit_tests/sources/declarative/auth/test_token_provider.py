@@ -9,8 +9,8 @@ import pytest
 from isodate import parse_duration
 
 from airbyte_cdk.sources.declarative.auth.token_provider import (
+    InterpolatedSessionTokenProvider,
     InterpolatedStringTokenProvider,
-    PrefixedTokenProvider,
     SessionTokenProvider,
 )
 from airbyte_cdk.sources.declarative.exceptions import ReadException
@@ -83,19 +83,26 @@ def test_session_token_provider_ignored_response():
 
 
 @pytest.mark.parametrize(
-    "prefix,expected_token",
+    "api_token_template,expected_token",
     [
-        pytest.param("Token ", "Token my_token", id="token_prefix"),
-        pytest.param("Bearer ", "Bearer my_token", id="bearer_prefix"),
-        pytest.param("", "my_token", id="empty_prefix"),
-        pytest.param("Custom-", "Custom-my_token", id="custom_prefix"),
+        pytest.param("Token {{ session_token }}", "Token my_token", id="token_prefix"),
+        pytest.param("Bearer {{ session_token }}", "Bearer my_token", id="bearer_prefix"),
+        pytest.param("{{ session_token }}", "my_token", id="just_session_token"),
+        pytest.param("Custom-{{ session_token }}", "Custom-my_token", id="custom_prefix"),
+        pytest.param(
+            "realm=xyz, token={{ session_token }}",
+            "realm=xyz, token=my_token",
+            id="complex_format",
+        ),
     ],
 )
-def test_prefixed_token_provider(prefix, expected_token):
-    """Test that PrefixedTokenProvider correctly prepends prefix to token."""
+def test_interpolated_session_token_provider(api_token_template, expected_token):
+    """Test that InterpolatedSessionTokenProvider correctly interpolates session token."""
     underlying_provider = create_session_token_provider()
-    prefixed_provider = PrefixedTokenProvider(
-        token_provider=underlying_provider,
-        prefix=prefix,
+    interpolated_provider = InterpolatedSessionTokenProvider(
+        config={"some_config": "value"},
+        api_token=api_token_template,
+        session_token_provider=underlying_provider,
+        parameters={},
     )
-    assert prefixed_provider.get_token() == expected_token
+    assert interpolated_provider.get_token() == expected_token

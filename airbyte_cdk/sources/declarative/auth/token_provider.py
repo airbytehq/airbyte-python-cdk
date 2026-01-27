@@ -85,15 +85,21 @@ class InterpolatedStringTokenProvider(TokenProvider):
 
 
 @dataclass
-class PrefixedTokenProvider(TokenProvider):
-    """Wraps a TokenProvider and prepends a prefix to the token value.
+class InterpolatedSessionTokenProvider(TokenProvider):
+    """Provides a token by interpolating a template with the session token.
 
-    This is useful for APIs that require a specific prefix before the token,
-    such as Django REST Framework APIs that expect "Token <value>" format.
+    This allows flexible token formatting, such as "Token {{ session_token }}"
+    for Django REST Framework APIs that expect "Authorization: Token <value>".
     """
 
-    token_provider: TokenProvider
-    prefix: str
+    config: Config
+    api_token: Union[InterpolatedString, str]
+    session_token_provider: TokenProvider
+    parameters: Mapping[str, Any]
+
+    def __post_init__(self) -> None:
+        self._token_template = InterpolatedString.create(self.api_token, parameters=self.parameters)
 
     def get_token(self) -> str:
-        return f"{self.prefix}{self.token_provider.get_token()}"
+        session_token = self.session_token_provider.get_token()
+        return str(self._token_template.eval(self.config, session_token=session_token))
