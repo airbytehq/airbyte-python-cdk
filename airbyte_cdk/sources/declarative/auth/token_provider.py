@@ -71,6 +71,8 @@ class SessionTokenProvider(TokenProvider):
 
 @dataclass
 class InterpolatedStringTokenProvider(TokenProvider):
+    """Provides a token by interpolating a string with config values."""
+
     config: Config
     api_token: Union[InterpolatedString, str]
     parameters: Mapping[str, Any]
@@ -80,3 +82,18 @@ class InterpolatedStringTokenProvider(TokenProvider):
 
     def get_token(self) -> str:
         return str(self._token.eval(self.config))
+
+
+@dataclass
+class PrefixedTokenProvider(TokenProvider):
+    """Wraps a TokenProvider and prepends a prefix to the token value.
+
+    This is useful for APIs that require a specific prefix before the token,
+    such as Django REST Framework APIs that expect "Token <value>" format.
+    """
+
+    token_provider: TokenProvider
+    prefix: str
+
+    def get_token(self) -> str:
+        return f"{self.prefix}{self.token_provider.get_token()}"

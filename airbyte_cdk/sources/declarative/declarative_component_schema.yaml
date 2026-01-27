@@ -2067,6 +2067,14 @@ definitions:
             field_name: Authorization
           - inject_into: request_parameter
             field_name: authKey
+      token_prefix:
+        title: Token Prefix
+        description: 'A prefix to prepend to the session token when injecting it into requests. For example, use "Token " (with trailing space) for APIs that expect "Authorization: Token <token>".'
+        type: string
+        default: ""
+        examples:
+          - "Token "
+          - "Bearer "
   SessionTokenRequestBearerAuthenticator:
     title: Bearer Authenticator
     description: Authenticator for requests using the session token as a standard bearer token.

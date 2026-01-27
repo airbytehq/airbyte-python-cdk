@@ -68,6 +68,7 @@ from airbyte_cdk.sources.declarative.auth.token import (
 )
 from airbyte_cdk.sources.declarative.auth.token_provider import (
     InterpolatedStringTokenProvider,
+    PrefixedTokenProvider,
     SessionTokenProvider,
     TokenProvider,
 )
@@ -1169,6 +1170,14 @@ class ModelToComponentFactory:
                 token_provider=token_provider,
             )
         else:
+            # Get the token_prefix if specified, wrap the token provider if needed
+            token_prefix = getattr(model.request_authentication, "token_prefix", None) or ""
+            final_token_provider: TokenProvider = token_provider
+            if token_prefix:
+                final_token_provider = PrefixedTokenProvider(
+                    token_provider=token_provider,
+                    prefix=token_prefix,
+                )
             return self.create_api_key_authenticator(
                 ApiKeyAuthenticatorModel(
                     type="ApiKeyAuthenticator",
@@ -1176,7 +1185,7 @@ class ModelToComponentFactory:
                     inject_into=model.request_authentication.inject_into,
                 ),  # type: ignore # $parameters and headers default to None
                 config=config,
-                token_provider=token_provider,
+                token_provider=final_token_provider,
             )
 
     @staticmethod

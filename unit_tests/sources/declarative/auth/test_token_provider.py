@@ -10,6 +10,7 @@ from isodate import parse_duration
 
 from airbyte_cdk.sources.declarative.auth.token_provider import (
     InterpolatedStringTokenProvider,
+    PrefixedTokenProvider,
     SessionTokenProvider,
 )
 from airbyte_cdk.sources.declarative.exceptions import ReadException
@@ -79,3 +80,22 @@ def test_session_token_provider_ignored_response():
     provider.login_requester.send_request.return_value = None
     with pytest.raises(ReadException):
         provider.get_token()
+
+
+@pytest.mark.parametrize(
+    "prefix,expected_token",
+    [
+        pytest.param("Token ", "Token my_token", id="token_prefix"),
+        pytest.param("Bearer ", "Bearer my_token", id="bearer_prefix"),
+        pytest.param("", "my_token", id="empty_prefix"),
+        pytest.param("Custom-", "Custom-my_token", id="custom_prefix"),
+    ],
+)
+def test_prefixed_token_provider(prefix, expected_token):
+    """Test that PrefixedTokenProvider correctly prepends prefix to token."""
+    underlying_provider = create_session_token_provider()
+    prefixed_provider = PrefixedTokenProvider(
+        token_provider=underlying_provider,
+        prefix=prefix,
+    )
+    assert prefixed_provider.get_token() == expected_token
