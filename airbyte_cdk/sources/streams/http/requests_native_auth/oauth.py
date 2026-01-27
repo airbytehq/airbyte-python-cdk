@@ -317,19 +317,30 @@ class SingleUseRefreshTokenOauth2Authenticator(Oauth2Authenticator):
         return ab_datetime_now() > self.get_token_expiry_date()
 
     def get_access_token(self) -> str:
-        """Retrieve new access and refresh token if the access token has expired.
-        The new refresh token is persisted with the set_refresh_token function
+        """
+        Retrieve new access and refresh token if the access token has expired.
+
+        This method uses double-checked locking to ensure thread-safe token refresh.
+        This is especially critical for single-use refresh tokens where concurrent
+        refresh attempts would cause failures as the refresh token is invalidated
+        after first use.
+
+        The new refresh token is persisted with the set_refresh_token function.
+
         Returns:
             str: The current access_token, updated if it was previously expired.
         """
         if self.token_has_expired():
-            new_access_token, access_token_expires_in, new_refresh_token = (
-                self.refresh_access_token()
-            )
-            self.access_token = new_access_token
-            self.set_refresh_token(new_refresh_token)
-            self.set_token_expiry_date(access_token_expires_in)
-            self._emit_control_message()
+            with self._token_refresh_lock:
+                # Double-check after acquiring lock - another thread may have already refreshed
+                if self.token_has_expired():
+                    new_access_token, access_token_expires_in, new_refresh_token = (
+                        self.refresh_access_token()
+                    )
+                    self.access_token = new_access_token
+                    self.set_refresh_token(new_refresh_token)
+                    self.set_token_expiry_date(access_token_expires_in)
+                    self._emit_control_message()
         return self.access_token
 
     def refresh_access_token(self) -> Tuple[str, AirbyteDateTime, str]:  # type: ignore[override]
