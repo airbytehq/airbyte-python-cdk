@@ -144,12 +144,11 @@ def test_interpolated_page_size(page_size_input, config, expected_page_size):
 
 
 def test_interpolated_page_size_raises_on_non_integer():
-    """Test that get_page_size raises an exception when interpolation resolves to a non-integer."""
-    strategy = CursorPaginationStrategy(
-        page_size="{{ config['page_size'] }}",
-        cursor_value="token",
-        config={"page_size": "invalid"},
-        parameters={},
-    )
+    """Test that initialization raises an exception when interpolation resolves to a non-integer."""
     with pytest.raises(Exception, match="is of type .* Expected"):
-        strategy.get_page_size()
+        CursorPaginationStrategy(
+            page_size="{{ config['page_size'] }}",
+            cursor_value="token",
+            config={"page_size": "invalid"},
+            parameters={},
+        )
