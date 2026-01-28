@@ -2057,6 +2057,16 @@ class SessionTokenRequestApiKeyAuthenticator(BaseModel):
         ],
         title="Inject API Key Into Outgoing HTTP Request",
     )
+    api_token: Optional[str] = Field(
+        "{{ session_token }}",
+        description='A template for the token value to inject. Use {{ session_token }} to reference the session token. For example, use "Token {{ session_token }}" for APIs that expect "Authorization: Token <token>".',
+        examples=[
+            "{{ session_token }}",
+            "Token {{ session_token }}",
+            "Bearer {{ session_token }}",
+        ],
+        title="API Token Template",
+    )
 
 
 class JsonSchemaPropertySelector(BaseModel):
