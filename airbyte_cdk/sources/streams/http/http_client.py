@@ -467,7 +467,9 @@ class HttpClient:
                 and hasattr(self._session.auth, "refresh_access_token")
             ):
                 try:
-                    token, expires_in = self._session.auth.refresh_access_token()  # type: ignore[union-attr]
+                    # Use extended unpacking to handle both 2-tuple (AbstractOauth2Authenticator)
+                    # and 3-tuple (Oauth2Authenticator which also returns refresh_token) returns
+                    token, expires_in, *_ = self._session.auth.refresh_access_token()  # type: ignore[union-attr]
                     self._session.auth.access_token = token  # type: ignore[union-attr]
                     self._session.auth.set_token_expiry_date(expires_in)  # type: ignore[union-attr]
                     self._logger.info(
