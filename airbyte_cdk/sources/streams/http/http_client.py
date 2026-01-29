@@ -478,7 +478,7 @@ class HttpClient:
                         f"Failed to refresh OAuth token: {refresh_error}. Proceeding with retry using existing token."
                     )
             else:
-                self._logger.debug(
+                self._logger.warning(
                     "REFRESH_TOKEN_THEN_RETRY action received but authenticator does not support token refresh. "
                     "Proceeding with normal retry."
                 )
