@@ -837,3 +837,188 @@ def test_send_with_retry_raises_airbyte_traced_exception_with_failure_type(
     with pytest.raises(AirbyteTracedException) as e:
         http_client.send_request(http_method="get", url="https://airbyte.io/", request_kwargs={})
     assert e.value.failure_type == expected_failure_type
+
+
+class MockOAuthAuthenticator:
+    def __init__(self):
+        self.access_token = "old_token"
+        self._token_expiry_date = None
+        self.refresh_called = False
+
+    def refresh_access_token(self):
+        self.refresh_called = True
+        return ("new_refreshed_token", "2099-01-01T00:00:00Z")
+
+    def set_token_expiry_date(self, value):
+        self._token_expiry_date = value
+
+    def __call__(self, request):
+        request.headers["Authorization"] = f"Bearer {self.access_token}"
+        return request
+
+
+def test_refresh_token_then_retry_action_refreshes_oauth_token(mocker):
+    mock_authenticator = MockOAuthAuthenticator()
+    mocked_session = MagicMock(spec=requests.Session)
+    mocked_session.auth = mock_authenticator
+
+    http_client = HttpClient(
+        name="test",
+        logger=MagicMock(),
+        error_handler=HttpStatusErrorHandler(
+            logger=MagicMock(),
+            error_mapping={
+                401: ErrorResolution(
+                    ResponseAction.REFRESH_TOKEN_THEN_RETRY,
+                    FailureType.transient_error,
+                    "Token expired, refreshing",
+                )
+            },
+        ),
+        session=mocked_session,
+    )
+
+    prepared_request = requests.PreparedRequest()
+    mocked_response = MagicMock(spec=requests.Response)
+    mocked_response.status_code = 401
+    mocked_response.headers = {}
+    mocked_response.ok = False
+    mocked_session.send.return_value = mocked_response
+
+    with pytest.raises(DefaultBackoffException):
+        http_client._send(prepared_request, {})
+
+    assert mock_authenticator.refresh_called
+    assert mock_authenticator.access_token == "new_refreshed_token"
+    assert mock_authenticator._token_expiry_date == "2099-01-01T00:00:00Z"
+
+
+def test_refresh_token_then_retry_action_without_oauth_authenticator_proceeds_with_retry(mocker):
+    mocked_session = MagicMock(spec=requests.Session)
+    mocked_session.auth = None
+
+    mocked_logger = MagicMock()
+    http_client = HttpClient(
+        name="test",
+        logger=mocked_logger,
+        error_handler=HttpStatusErrorHandler(
+            logger=MagicMock(),
+            error_mapping={
+                401: ErrorResolution(
+                    ResponseAction.REFRESH_TOKEN_THEN_RETRY,
+                    FailureType.transient_error,
+                    "Token expired, refreshing",
+                )
+            },
+        ),
+        session=mocked_session,
+    )
+
+    prepared_request = requests.PreparedRequest()
+    mocked_response = MagicMock(spec=requests.Response)
+    mocked_response.status_code = 401
+    mocked_response.headers = {}
+    mocked_response.ok = False
+    mocked_session.send.return_value = mocked_response
+
+    with pytest.raises(DefaultBackoffException):
+        http_client._send(prepared_request, {})
+
+    mocked_logger.debug.assert_called()
+
+
+def test_refresh_token_then_retry_action_handles_refresh_failure_gracefully(mocker):
+    class FailingOAuthAuthenticator:
+        def __init__(self):
+            self.access_token = "old_token"
+
+        def refresh_access_token(self):
+            raise Exception("Token refresh failed")
+
+        def __call__(self, request):
+            return request
+
+    mock_authenticator = FailingOAuthAuthenticator()
+    mocked_session = MagicMock(spec=requests.Session)
+    mocked_session.auth = mock_authenticator
+
+    mocked_logger = MagicMock()
+    http_client = HttpClient(
+        name="test",
+        logger=mocked_logger,
+        error_handler=HttpStatusErrorHandler(
+            logger=MagicMock(),
+            error_mapping={
+                401: ErrorResolution(
+                    ResponseAction.REFRESH_TOKEN_THEN_RETRY,
+                    FailureType.transient_error,
+                    "Token expired, refreshing",
+                )
+            },
+        ),
+        session=mocked_session,
+    )
+
+    prepared_request = requests.PreparedRequest()
+    mocked_response = MagicMock(spec=requests.Response)
+    mocked_response.status_code = 401
+    mocked_response.headers = {}
+    mocked_response.ok = False
+    mocked_session.send.return_value = mocked_response
+
+    with pytest.raises(DefaultBackoffException):
+        http_client._send(prepared_request, {})
+
+    mocked_logger.warning.assert_called()
+
+
+@pytest.mark.usefixtures("mock_sleep")
+def test_refresh_token_then_retry_action_retries_and_succeeds_after_token_refresh():
+    mock_authenticator = MockOAuthAuthenticator()
+    mocked_session = MagicMock(spec=requests.Session)
+    mocked_session.auth = mock_authenticator
+
+    valid_response = MagicMock(spec=requests.Response)
+    valid_response.status_code = 200
+    valid_response.ok = True
+    valid_response.headers = {}
+
+    call_count = 0
+
+    def update_response(*args, **kwargs):
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            retry_response = MagicMock(spec=requests.Response)
+            retry_response.ok = False
+            retry_response.status_code = 401
+            retry_response.headers = {}
+            return retry_response
+        else:
+            return valid_response
+
+    mocked_session.send.side_effect = update_response
+
+    http_client = HttpClient(
+        name="test",
+        logger=MagicMock(),
+        error_handler=HttpStatusErrorHandler(
+            logger=MagicMock(),
+            error_mapping={
+                401: ErrorResolution(
+                    ResponseAction.REFRESH_TOKEN_THEN_RETRY,
+                    FailureType.transient_error,
+                    "Token expired, refreshing",
+                )
+            },
+        ),
+        session=mocked_session,
+    )
+
+    prepared_request = requests.PreparedRequest()
+    returned_response = http_client._send_with_retry(prepared_request, request_kwargs={})
+
+    assert mock_authenticator.refresh_called
+    assert mock_authenticator.access_token == "new_refreshed_token"
+    assert returned_response == valid_response
+    assert call_count == 2
