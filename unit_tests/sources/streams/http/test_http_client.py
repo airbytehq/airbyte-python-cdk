@@ -972,6 +972,53 @@ def test_refresh_token_then_retry_action_handles_refresh_failure_gracefully(mock
     mocked_logger.warning.assert_called()
 
 
+def test_refresh_token_then_retry_action_with_single_use_refresh_token_authenticator(mocker):
+    from airbyte_cdk.sources.streams.http.requests_native_auth import (
+        SingleUseRefreshTokenOauth2Authenticator,
+    )
+
+    mock_authenticator = MagicMock(spec=SingleUseRefreshTokenOauth2Authenticator)
+    mock_authenticator.refresh_access_token.return_value = (
+        "new_access_token",
+        "2099-01-01T00:00:00Z",
+        "new_refresh_token",
+    )
+
+    mocked_session = MagicMock(spec=requests.Session)
+    mocked_session.auth = mock_authenticator
+
+    http_client = HttpClient(
+        name="test",
+        logger=MagicMock(),
+        error_handler=HttpStatusErrorHandler(
+            logger=MagicMock(),
+            error_mapping={
+                401: ErrorResolution(
+                    ResponseAction.REFRESH_TOKEN_THEN_RETRY,
+                    FailureType.transient_error,
+                    "Token expired, refreshing",
+                )
+            },
+        ),
+        session=mocked_session,
+    )
+
+    prepared_request = requests.PreparedRequest()
+    mocked_response = MagicMock(spec=requests.Response)
+    mocked_response.status_code = 401
+    mocked_response.headers = {}
+    mocked_response.ok = False
+    mocked_session.send.return_value = mocked_response
+
+    with pytest.raises(DefaultBackoffException):
+        http_client._send(prepared_request, {})
+
+    mock_authenticator.refresh_access_token.assert_called_once()
+    mock_authenticator.set_refresh_token.assert_called_once_with("new_refresh_token")
+    mock_authenticator.set_token_expiry_date.assert_called_once_with("2099-01-01T00:00:00Z")
+    mock_authenticator._emit_control_message.assert_called_once()
+
+
 @pytest.mark.usefixtures("mock_sleep")
 def test_refresh_token_then_retry_action_retries_and_succeeds_after_token_refresh():
     mock_authenticator = MockOAuthAuthenticator()

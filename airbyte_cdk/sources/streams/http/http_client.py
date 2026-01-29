@@ -50,6 +50,9 @@ from airbyte_cdk.sources.streams.http.rate_limiting import (
     rate_limit_default_backoff_handler,
     user_defined_backoff_handler,
 )
+from airbyte_cdk.sources.streams.http.requests_native_auth import (
+    SingleUseRefreshTokenOauth2Authenticator,
+)
 from airbyte_cdk.sources.utils.types import JsonType
 from airbyte_cdk.utils.airbyte_secrets_utils import filter_secrets
 from airbyte_cdk.utils.constants import ENV_REQUEST_CACHE_PATH
@@ -467,11 +470,20 @@ class HttpClient:
                 and hasattr(self._session.auth, "refresh_access_token")
             ):
                 try:
-                    # Use extended unpacking to handle both 2-tuple (AbstractOauth2Authenticator)
-                    # and 3-tuple (Oauth2Authenticator which also returns refresh_token) returns
-                    token, expires_in, *_ = self._session.auth.refresh_access_token()  # type: ignore[union-attr]
-                    self._session.auth.access_token = token  # type: ignore[union-attr]
-                    self._session.auth.set_token_expiry_date(expires_in)  # type: ignore[union-attr]
+                    if isinstance(self._session.auth, SingleUseRefreshTokenOauth2Authenticator):
+                        # For single-use refresh tokens, we must persist the new refresh token
+                        # and emit a control message to update the connector config
+                        token, expires_in, new_refresh_token = self._session.auth.refresh_access_token()
+                        self._session.auth.access_token = token
+                        self._session.auth.set_refresh_token(new_refresh_token)
+                        self._session.auth.set_token_expiry_date(expires_in)
+                        self._session.auth._emit_control_message()
+                    else:
+                        # Use extended unpacking to handle both 2-tuple (AbstractOauth2Authenticator)
+                        # and 3-tuple (Oauth2Authenticator which also returns refresh_token) returns
+                        token, expires_in, *_ = self._session.auth.refresh_access_token()  # type: ignore[union-attr]
+                        self._session.auth.access_token = token  # type: ignore[union-attr]
+                        self._session.auth.set_token_expiry_date(expires_in)  # type: ignore[union-attr]
                     self._logger.info(
                         "Refreshed OAuth token due to REFRESH_TOKEN_THEN_RETRY response action"
                     )
