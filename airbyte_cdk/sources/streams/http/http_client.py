@@ -473,7 +473,9 @@ class HttpClient:
                     if isinstance(self._session.auth, SingleUseRefreshTokenOauth2Authenticator):
                         # For single-use refresh tokens, we must persist the new refresh token
                         # and emit a control message to update the connector config
-                        token, expires_in, new_refresh_token = self._session.auth.refresh_access_token()
+                        token, expires_in, new_refresh_token = (
+                            self._session.auth.refresh_access_token()
+                        )
                         self._session.auth.access_token = token
                         self._session.auth.set_refresh_token(new_refresh_token)
                         self._session.auth.set_token_expiry_date(expires_in)
