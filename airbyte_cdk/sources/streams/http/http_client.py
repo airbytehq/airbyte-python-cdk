@@ -102,7 +102,11 @@ class MessageRepresentationAirbyteTracedErrors(AirbyteTracedException):
 class HttpClient:
     _DEFAULT_MAX_RETRY: int = 5
     _DEFAULT_MAX_TIME: int = 60 * 10
-    _ACTIONS_TO_RETRY_ON = {ResponseAction.RETRY, ResponseAction.RATE_LIMITED, ResponseAction.REFRESH_TOKEN_THEN_RETRY}
+    _ACTIONS_TO_RETRY_ON = {
+        ResponseAction.RETRY,
+        ResponseAction.RATE_LIMITED,
+        ResponseAction.REFRESH_TOKEN_THEN_RETRY,
+    }
 
     def __init__(
         self,
@@ -466,7 +470,9 @@ class HttpClient:
                     token, expires_in = self._session.auth.refresh_access_token()  # type: ignore[union-attr]
                     self._session.auth.access_token = token  # type: ignore[union-attr]
                     self._session.auth.set_token_expiry_date(expires_in)  # type: ignore[union-attr]
-                    self._logger.info("Refreshed OAuth token due to REFRESH_TOKEN_THEN_RETRY response action")
+                    self._logger.info(
+                        "Refreshed OAuth token due to REFRESH_TOKEN_THEN_RETRY response action"
+                    )
                 except Exception as refresh_error:
                     self._logger.warning(
                         f"Failed to refresh OAuth token: {refresh_error}. Proceeding with retry using existing token."
