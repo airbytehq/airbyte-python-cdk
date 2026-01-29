@@ -845,12 +845,10 @@ class MockOAuthAuthenticator:
         self._token_expiry_date = None
         self.refresh_called = False
 
-    def refresh_access_token(self):
+    def refresh_and_set_access_token(self):
         self.refresh_called = True
-        return ("new_refreshed_token", "2099-01-01T00:00:00Z")
-
-    def set_token_expiry_date(self, value):
-        self._token_expiry_date = value
+        self.access_token = "new_refreshed_token"
+        self._token_expiry_date = "2099-01-01T00:00:00Z"
 
     def __call__(self, request):
         request.headers["Authorization"] = f"Bearer {self.access_token}"
@@ -932,7 +930,7 @@ def test_refresh_token_then_retry_action_handles_refresh_failure_gracefully(mock
         def __init__(self):
             self.access_token = "old_token"
 
-        def refresh_access_token(self):
+        def refresh_and_set_access_token(self):
             raise Exception("Token refresh failed")
 
         def __call__(self, request):
@@ -978,11 +976,6 @@ def test_refresh_token_then_retry_action_with_single_use_refresh_token_authentic
     )
 
     mock_authenticator = MagicMock(spec=SingleUseRefreshTokenOauth2Authenticator)
-    mock_authenticator.refresh_access_token.return_value = (
-        "new_access_token",
-        "2099-01-01T00:00:00Z",
-        "new_refresh_token",
-    )
 
     mocked_session = MagicMock(spec=requests.Session)
     mocked_session.auth = mock_authenticator
@@ -1013,10 +1006,7 @@ def test_refresh_token_then_retry_action_with_single_use_refresh_token_authentic
     with pytest.raises(DefaultBackoffException):
         http_client._send(prepared_request, {})
 
-    mock_authenticator.refresh_access_token.assert_called_once()
-    mock_authenticator.set_refresh_token.assert_called_once_with("new_refresh_token")
-    mock_authenticator.set_token_expiry_date.assert_called_once_with("2099-01-01T00:00:00Z")
-    mock_authenticator._emit_control_message.assert_called_once()
+    mock_authenticator.refresh_and_set_access_token.assert_called_once()
 
 
 @pytest.mark.usefixtures("mock_sleep")
