@@ -924,7 +924,7 @@ def test_refresh_token_then_retry_action_without_oauth_authenticator_proceeds_wi
     with pytest.raises(DefaultBackoffException):
         http_client._send(prepared_request, {})
 
-    mocked_logger.debug.assert_called()
+    mocked_logger.warning.assert_called()
 
 
 def test_refresh_token_then_retry_action_handles_refresh_failure_gracefully(mocker):
