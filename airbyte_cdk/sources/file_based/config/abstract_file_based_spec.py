@@ -60,7 +60,10 @@ class AbstractFileBasedSpec(BaseModel):
     )
 
     @validator("start_date", pre=True)
-    def validate_start_date(cls, v: Optional[str]) -> Optional[str]:
+    def validate_start_date(
+        cls,  # noqa: N805  # Pydantic validators use cls, not self
+        v: Optional[str],
+    ) -> Optional[str]:
         """Validate that start_date is a parseable datetime string.
 
         Uses ab_datetime_try_parse which accepts any common ISO8601/RFC3339 format,
