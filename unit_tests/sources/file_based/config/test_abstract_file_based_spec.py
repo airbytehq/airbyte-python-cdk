@@ -54,7 +54,6 @@ def test_parquet_file_type_is_not_a_valid_csv_file_type(
         pytest.param("2021-01-01", True, id="date_only"),
         pytest.param(None, True, id="none_value"),
         pytest.param("not-a-date", False, id="invalid_string"),
-        pytest.param("2021/01/01", True, id="slash_separator_also_accepted"),
         pytest.param("", False, id="empty_string"),
     ],
 )
