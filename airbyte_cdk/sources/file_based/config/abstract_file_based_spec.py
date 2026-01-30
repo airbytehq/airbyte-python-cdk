@@ -54,8 +54,15 @@ class AbstractFileBasedSpec(BaseModel):
     start_date: Optional[str] = Field(
         title="Start Date",
         description="UTC date and time in the format 2017-01-25T00:00:00.000000Z. Any file modified before this date will not be replicated.",
-        examples=["2021-01-01T00:00:00.000000Z"],
+        examples=[
+            "2021-01-01T00:00:00.000000Z",
+            "2021-01-01T00:00:00Z",
+            "2021-01-01T00:00:00.000Z",
+            "2021-01-01",
+        ],
         format="date-time",
+        pattern=r"^[0-9]{4}-[0-9]{2}-[0-9]{2}(T[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]+)?(Z|[+-][0-9]{2}:[0-9]{2})?)?$",
+        pattern_descriptor="YYYY-MM-DD, YYYY-MM-DDTHH:mm:ssZ, or YYYY-MM-DDTHH:mm:ss.SSSSSSZ",
         order=1,
     )
 
