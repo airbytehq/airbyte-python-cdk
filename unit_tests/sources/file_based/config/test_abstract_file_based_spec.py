@@ -7,7 +7,6 @@ from typing import Type
 import pytest
 from jsonschema import ValidationError, validate
 from pydantic.v1 import BaseModel
-from pydantic.v1 import ValidationError as PydanticValidationError
 
 from airbyte_cdk.sources.file_based.config.abstract_file_based_spec import AbstractFileBasedSpec
 from airbyte_cdk.sources.file_based.config.file_based_stream_config import (
