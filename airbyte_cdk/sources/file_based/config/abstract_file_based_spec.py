@@ -7,12 +7,13 @@ from abc import abstractmethod
 from typing import Any, Dict, List, Literal, Optional, Union
 
 import dpath
-from pydantic.v1 import AnyUrl, BaseModel, Field
+from pydantic.v1 import AnyUrl, BaseModel, Field, validator
 
 from airbyte_cdk import OneOfOptionConfig
 from airbyte_cdk.sources.file_based.config.file_based_stream_config import FileBasedStreamConfig
 from airbyte_cdk.sources.specs.transfer_modes import DeliverPermissions
 from airbyte_cdk.sources.utils import schema_helpers
+from airbyte_cdk.utils.datetime_helpers import ab_datetime_try_parse
 
 
 class DeliverRecords(BaseModel):
@@ -53,12 +54,38 @@ class AbstractFileBasedSpec(BaseModel):
     start_date: Optional[str] = Field(
         title="Start Date",
         description="UTC date and time in the format 2017-01-25T00:00:00.000000Z. Any file modified before this date will not be replicated.",
-        examples=["2021-01-01T00:00:00.000000Z"],
+        examples=[
+            "2021-01-01",
+            "2021-01-01T00:00:00Z",
+            "2021-01-01T00:00:00.000Z",
+            "2021-01-01T00:00:00.000000Z",
+        ],
         format="date-time",
-        pattern="^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}.[0-9]{6}Z$",
-        pattern_descriptor="YYYY-MM-DDTHH:mm:ss.SSSSSSZ",
+        pattern=r"^[0-9]{4}-[0-9]{2}-[0-9]{2}(T[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]+)?(Z|[+-][0-9]{2}:[0-9]{2})?)?$",
+        pattern_descriptor="YYYY-MM-DD, YYYY-MM-DDTHH:mm:ssZ, or YYYY-MM-DDTHH:mm:ss.SSSSSSZ",
         order=1,
     )
+
+    @validator("start_date", pre=True)
+    def validate_start_date(
+        cls,  # noqa: N805  # Pydantic validators use cls, not self
+        v: Optional[str],
+    ) -> Optional[str]:
+        """Validate that start_date is a parseable datetime string.
+
+        Uses ab_datetime_try_parse which accepts any common ISO8601/RFC3339 format,
+        including formats with or without microseconds (e.g., both
+        '2021-01-01T00:00:00Z' and '2021-01-01T00:00:00.000000Z' are valid).
+        """
+        if v is None:
+            return v
+        parsed = ab_datetime_try_parse(v)
+        if parsed is None:
+            raise ValueError(
+                f"'{v}' is not a valid datetime string. "
+                "Please use a format like '2021-01-01T00:00:00Z' or '2021-01-01T00:00:00.000000Z'."
+            )
+        return v
 
     streams: List[FileBasedStreamConfig] = Field(
         title="The list of streams to sync",
