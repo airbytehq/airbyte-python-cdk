@@ -1560,6 +1560,26 @@ definitions:
         default: ""
         example:
           - "Users"
+      block_simultaneous_read:
+        title: Block Simultaneous Read
+        description: >
+          Optional group name for blocking simultaneous reads. Streams with the same
+          block_simultaneous_read value will not be read concurrently. This prevents
+          duplicate API calls when a stream is used as both a standalone stream and a
+          parent stream, or when multiple streams share the same endpoint/session.
+
+          If set to a non-empty string, the stream will be deferred if:
+          1. Another stream in the same group is currently active
+          2. Any parent stream is in an active group
+
+          Examples:
+          - "issues_endpoint" - All streams with this value block each other
+          - "" or null - No blocking (default)
+
+          This is useful for APIs that don't allow concurrent access to the same
+          endpoint or session. Only applies to ConcurrentDeclarativeSource.
+        type: string
+        default: ""
       retriever:
         title: Retriever
         description: Component used to coordinate how records are extracted across stream slices and request pages.
