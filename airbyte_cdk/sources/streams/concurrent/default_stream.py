@@ -26,6 +26,7 @@ class DefaultStream(AbstractStream):
         cursor: Cursor,
         namespace: Optional[str] = None,
         supports_file_transfer: bool = False,
+        use_exclusive_concurrency: bool = False,
     ) -> None:
         self._stream_partition_generator = partition_generator
         self._name = name
@@ -36,6 +37,7 @@ class DefaultStream(AbstractStream):
         self._cursor = cursor
         self._namespace = namespace
         self._supports_file_transfer = supports_file_transfer
+        self._use_exclusive_concurrency = use_exclusive_concurrency
 
     def generate_partitions(self) -> Iterable[Partition]:
         yield from self._stream_partition_generator.generate()
@@ -93,6 +95,10 @@ class DefaultStream(AbstractStream):
     @property
     def cursor(self) -> Cursor:
         return self._cursor
+
+    @property
+    def use_exclusive_concurrency(self) -> bool:
+        return self._use_exclusive_concurrency
 
     def check_availability(self) -> StreamAvailability:
         """
