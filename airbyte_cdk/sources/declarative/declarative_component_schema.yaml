@@ -2331,6 +2331,7 @@ definitions:
           - IGNORE
           - RESET_PAGINATION
           - RATE_LIMITED
+          - REFRESH_TOKEN_THEN_RETRY
         examples:
           - SUCCESS
           - FAIL
@@ -2338,6 +2339,7 @@ definitions:
           - IGNORE
           - RESET_PAGINATION
           - RATE_LIMITED
+          - REFRESH_TOKEN_THEN_RETRY
       failure_type:
         title: Failure Type
         description: Failure type of traced exception if a response matches the filter.
