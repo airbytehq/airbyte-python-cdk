@@ -3752,6 +3752,22 @@ definitions:
         title: Incremental Stream
         description: Component used to coordinate how records are extracted across stream slices and request pages when the state provided.
         "$ref": "#/definitions/DeclarativeStream"
+      api_retention_period:
+        title: API Retention Period
+        description: |
+          The data retention period of the incremental API (ISO8601 duration). If the cursor value is older than this retention period, the connector will automatically fall back to a full refresh to avoid data loss.
+          This is useful for APIs like Stripe Events API which only retain data for 30 days.
+            * **PT1H**: 1 hour
+            * **P1D**: 1 day
+            * **P1W**: 1 week
+            * **P1M**: 1 month
+            * **P1Y**: 1 year
+            * **P30D**: 30 days
+        type: string
+        examples:
+          - "P30D"
+          - "P90D"
+          - "P1Y"
       $parameters:
         type: object
         additionalProperties: true

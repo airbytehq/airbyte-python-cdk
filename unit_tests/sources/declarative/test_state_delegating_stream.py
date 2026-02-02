@@ -2,10 +2,13 @@
 # Copyright (c) 2025 Airbyte, Inc., all rights reserved.
 #
 
+import copy
+import datetime
 import json
 from unittest.mock import MagicMock
 
 import freezegun
+import pytest
 
 from airbyte_cdk.models import (
     AirbyteStateBlob,
@@ -253,3 +256,119 @@ def test_incremental_retriever():
             {"id": 4, "name": "item_4", "updated_at": "2024-02-01"},
         ]
         assert expected_incremental == incremental_records
+
+
+def _create_manifest_with_retention_period(api_retention_period: str) -> dict:
+    """Create a manifest with api_retention_period set on the StateDelegatingStream."""
+    manifest = copy.deepcopy(_MANIFEST)
+    manifest["definitions"]["TestStream"]["api_retention_period"] = api_retention_period
+    return manifest
+
+
+@freezegun.freeze_time("2024-07-15")
+def test_cursor_age_validation_falls_back_to_full_refresh_when_cursor_too_old():
+    """Test that when cursor is older than retention period, full refresh is used."""
+    manifest = _create_manifest_with_retention_period("P7D")
+
+    with HttpMocker() as http_mocker:
+        http_mocker.get(
+            HttpRequest(url="https://api.test.com/items"),
+            HttpResponse(
+                body=json.dumps(
+                    [
+                        {"id": 1, "name": "item_1", "updated_at": "2024-07-13"},
+                        {"id": 2, "name": "item_2", "updated_at": "2024-07-14"},
+                    ]
+                )
+            ),
+        )
+
+        state = [
+            AirbyteStateMessage(
+                type=AirbyteStateType.STREAM,
+                stream=AirbyteStreamState(
+                    stream_descriptor=StreamDescriptor(name="TestStream", namespace=None),
+                    stream_state=AirbyteStateBlob(updated_at="2024-07-01"),
+                ),
+            )
+        ]
+        source = ConcurrentDeclarativeSource(
+            source_config=manifest, config=_CONFIG, catalog=None, state=state
+        )
+        configured_catalog = create_configured_catalog(source, _CONFIG)
+
+        records = get_records(source, _CONFIG, configured_catalog, state)
+        expected = [
+            {"id": 1, "name": "item_1", "updated_at": "2024-07-13"},
+            {"id": 2, "name": "item_2", "updated_at": "2024-07-14"},
+        ]
+        assert expected == records
+
+
+@freezegun.freeze_time("2024-07-15")
+def test_cursor_age_validation_uses_incremental_when_cursor_within_retention():
+    """Test that when cursor is within retention period, incremental sync is used."""
+    manifest = _create_manifest_with_retention_period("P30D")
+
+    with HttpMocker() as http_mocker:
+        http_mocker.get(
+            HttpRequest(
+                url="https://api.test.com/items_with_filtration?start=2024-07-13&end=2024-07-15"
+            ),
+            HttpResponse(
+                body=json.dumps(
+                    [
+                        {"id": 3, "name": "item_3", "updated_at": "2024-07-14"},
+                    ]
+                )
+            ),
+        )
+
+        state = [
+            AirbyteStateMessage(
+                type=AirbyteStateType.STREAM,
+                stream=AirbyteStreamState(
+                    stream_descriptor=StreamDescriptor(name="TestStream", namespace=None),
+                    stream_state=AirbyteStateBlob(updated_at="2024-07-13"),
+                ),
+            )
+        ]
+        source = ConcurrentDeclarativeSource(
+            source_config=manifest, config=_CONFIG, catalog=None, state=state
+        )
+        configured_catalog = create_configured_catalog(source, _CONFIG)
+
+        records = get_records(source, _CONFIG, configured_catalog, state)
+        expected = [
+            {"id": 3, "name": "item_3", "updated_at": "2024-07-14"},
+        ]
+        assert expected == records
+
+
+@freezegun.freeze_time("2024-07-15")
+def test_cursor_age_validation_with_1_day_retention_falls_back():
+    """Test cursor age validation with P1D retention period falls back to full refresh."""
+    manifest = _create_manifest_with_retention_period("P1D")
+
+    with HttpMocker() as http_mocker:
+        http_mocker.get(
+            HttpRequest(url="https://api.test.com/items"),
+            HttpResponse(body=json.dumps([{"id": 1, "updated_at": "2024-07-14"}])),
+        )
+
+        state = [
+            AirbyteStateMessage(
+                type=AirbyteStateType.STREAM,
+                stream=AirbyteStreamState(
+                    stream_descriptor=StreamDescriptor(name="TestStream", namespace=None),
+                    stream_state=AirbyteStateBlob(updated_at="2024-07-13"),
+                ),
+            )
+        ]
+        source = ConcurrentDeclarativeSource(
+            source_config=manifest, config=_CONFIG, catalog=None, state=state
+        )
+        configured_catalog = create_configured_catalog(source, _CONFIG)
+
+        records = get_records(source, _CONFIG, configured_catalog, state)
+        assert len(records) == 1
