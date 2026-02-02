@@ -68,6 +68,7 @@ class DeclarativeOauth2Authenticator(AbstractOauth2Authenticator, DeclarativeAut
     client_secret_name: Union[InterpolatedString, str] = "client_secret"
     expires_in_name: Union[InterpolatedString, str] = "expires_in"
     refresh_token_name: Union[InterpolatedString, str] = "refresh_token"
+    scopes_name: Union[InterpolatedString, str] = "scope"
     refresh_request_body: Optional[Mapping[str, Any]] = None
     refresh_request_headers: Optional[Mapping[str, Any]] = None
     grant_type_name: Union[InterpolatedString, str] = "grant_type"
@@ -108,6 +109,7 @@ class DeclarativeOauth2Authenticator(AbstractOauth2Authenticator, DeclarativeAut
         self._refresh_token_name = InterpolatedString.create(
             self.refresh_token_name, parameters=parameters
         )
+        self._scopes_name = InterpolatedString.create(self.scopes_name, parameters=parameters)
         if self.refresh_token is not None:
             self._refresh_token: Optional[InterpolatedString] = InterpolatedString.create(
                 self.refresh_token, parameters=parameters
@@ -228,6 +230,9 @@ class DeclarativeOauth2Authenticator(AbstractOauth2Authenticator, DeclarativeAut
 
     def get_scopes(self) -> List[str]:
         return self.scopes or []
+
+    def get_scopes_name(self) -> str:
+        return self._scopes_name.eval(self.config)  # type: ignore # eval returns a string in this context
 
     def get_access_token_name(self) -> str:
         return self.access_token_name.eval(self.config)  # type: ignore # eval returns a string in this context

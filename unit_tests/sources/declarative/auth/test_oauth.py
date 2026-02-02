@@ -58,7 +58,7 @@ class TestOauth2Authenticator:
             refresh_request_body={
                 "custom_field": "{{ config['custom_field'] }}",
                 "another_field": "{{ config['another_field'] }}",
-                "scopes": ["no_override"],
+                "scope": ["no_override"],
             },
             parameters=parameters,
             grant_type="{{ config['grant_type'] }}",
@@ -69,7 +69,7 @@ class TestOauth2Authenticator:
             "client_id": "some_client_id",
             "client_secret": "some_client_secret",
             "refresh_token": "some_refresh_token",
-            "scopes": scopes,
+            "scope": scopes,
             "custom_field": "in_outbound_request",
             "another_field": "exists_in_body",
         }

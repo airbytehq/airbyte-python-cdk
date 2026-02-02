@@ -128,7 +128,7 @@ class AbstractOauth2Authenticator(AuthBase):
         payload[self.get_refresh_token_name()] = self.get_refresh_token()
 
         if self.get_scopes():
-            payload["scopes"] = self.get_scopes()
+            payload[self.get_scopes_name()] = self.get_scopes()
 
         if self.get_refresh_request_body():
             for key, val in self.get_refresh_request_body().items():
@@ -483,6 +483,10 @@ class AbstractOauth2Authenticator(AuthBase):
     @abstractmethod
     def get_scopes(self) -> List[str]:
         """List of requested scopes"""
+
+    @abstractmethod
+    def get_scopes_name(self) -> str:
+        """The name of the property to use for scopes in the token request"""
 
     @abstractmethod
     def get_token_expiry_date(self) -> AirbyteDateTime:
