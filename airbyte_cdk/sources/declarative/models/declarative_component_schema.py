@@ -543,6 +543,7 @@ class Action(Enum):
     IGNORE = "IGNORE"
     RESET_PAGINATION = "RESET_PAGINATION"
     RATE_LIMITED = "RATE_LIMITED"
+    REFRESH_TOKEN_THEN_RETRY = "REFRESH_TOKEN_THEN_RETRY"
 
 
 class FailureType(Enum):
@@ -563,6 +564,7 @@ class HttpResponseFilter(BaseModel):
             "IGNORE",
             "RESET_PAGINATION",
             "RATE_LIMITED",
+            "REFRESH_TOKEN_THEN_RETRY",
         ],
         title="Action",
     )

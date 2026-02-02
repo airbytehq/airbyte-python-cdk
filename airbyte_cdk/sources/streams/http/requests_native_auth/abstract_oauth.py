@@ -88,11 +88,20 @@ class AbstractOauth2Authenticator(AuthBase):
     def get_access_token(self) -> str:
         """Returns the access token"""
         if self.token_has_expired():
-            token, expires_in = self.refresh_access_token()
-            self.access_token = token
-            self.set_token_expiry_date(expires_in)
+            self.refresh_and_set_access_token()
 
         return self.access_token
+
+    def refresh_and_set_access_token(self) -> None:
+        """Force refresh the access token and update internal state.
+
+        This method refreshes the access token regardless of whether it has expired,
+        and updates the internal token and expiry date. Subclasses may override this
+        to handle additional state updates (e.g., persisting new refresh tokens).
+        """
+        token, expires_in = self.refresh_access_token()
+        self.access_token = token
+        self.set_token_expiry_date(expires_in)
 
     def token_has_expired(self) -> bool:
         """Returns True if the token is expired"""
