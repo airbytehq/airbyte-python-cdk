@@ -4,9 +4,11 @@
 
 import copy
 import json
+import logging
 from unittest.mock import MagicMock
 
 import freezegun
+import pytest
 
 from airbyte_cdk.models import (
     AirbyteStateBlob,
@@ -370,3 +372,37 @@ def test_cursor_age_validation_with_1_day_retention_falls_back():
 
         records = get_records(source, _CONFIG, configured_catalog, state)
         assert len(records) == 1
+
+
+@freezegun.freeze_time("2024-07-15")
+def test_cursor_age_validation_emits_warning_when_falling_back(caplog):
+    """Test that a warning is emitted when cursor is older than retention period."""
+    manifest = _create_manifest_with_retention_period("P7D")
+
+    with HttpMocker() as http_mocker:
+        http_mocker.get(
+            HttpRequest(url="https://api.test.com/items"),
+            HttpResponse(body=json.dumps([{"id": 1, "updated_at": "2024-07-14"}])),
+        )
+
+        state = [
+            AirbyteStateMessage(
+                type=AirbyteStateType.STREAM,
+                stream=AirbyteStreamState(
+                    stream_descriptor=StreamDescriptor(name="TestStream", namespace=None),
+                    stream_state=AirbyteStateBlob(updated_at="2024-07-01"),
+                ),
+            )
+        ]
+
+        with caplog.at_level(logging.WARNING):
+            source = ConcurrentDeclarativeSource(
+                source_config=manifest, config=_CONFIG, catalog=None, state=state
+            )
+            configured_catalog = create_configured_catalog(source, _CONFIG)
+            get_records(source, _CONFIG, configured_catalog, state)
+
+        warning_messages = [r.message for r in caplog.records if r.levelno == logging.WARNING]
+        assert any("TestStream" in msg and "older than" in msg and "P7D" in msg for msg in warning_messages), (
+            f"Expected warning about stale cursor not found. Warnings: {warning_messages}"
+        )

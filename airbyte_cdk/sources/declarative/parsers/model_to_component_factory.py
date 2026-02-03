@@ -3609,6 +3609,9 @@ class ModelToComponentFactory:
         if not cursor_value:
             return False
 
+        if not isinstance(cursor_value, (str, int)):
+            return False
+
         retention_duration = parse_duration(api_retention_period)
         retention_cutoff = datetime.datetime.now(datetime.timezone.utc) - retention_duration
 
