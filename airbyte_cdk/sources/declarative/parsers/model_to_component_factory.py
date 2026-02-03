@@ -3595,19 +3595,20 @@ class ModelToComponentFactory:
         If the cursor is too old, the incremental API may not have data going back that far,
         so we should fall back to a full refresh to avoid data loss.
 
-        Returns True if the cursor is older than the retention period (should use full refresh).
+        Returns True if the cursor is older than the retention period or if the cursor is
+        invalid/unparseable (should use full refresh).
         Returns False if the cursor is within the retention period (safe to use incremental).
         """
         cursor_field = getattr(incremental_sync, "cursor_field", None)
         if not cursor_field:
-            return False
+            return True
 
         cursor_value = stream_state.get(cursor_field)
         if not cursor_value:
-            return False
+            return True
 
         if not isinstance(cursor_value, (str, int)):
-            return False
+            return True
 
         cursor_value_str = str(cursor_value)
 
@@ -3618,7 +3619,7 @@ class ModelToComponentFactory:
             cursor_value_str, incremental_sync, stream_name
         )
         if cursor_datetime is None:
-            return False
+            return True
 
         if cursor_datetime < retention_cutoff:
             self._emit_warning_for_stale_cursor(
