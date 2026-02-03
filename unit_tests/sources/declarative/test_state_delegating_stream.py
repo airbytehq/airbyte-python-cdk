@@ -403,6 +403,6 @@ def test_cursor_age_validation_emits_warning_when_falling_back(caplog):
             get_records(source, _CONFIG, configured_catalog, state)
 
         warning_messages = [r.message for r in caplog.records if r.levelno == logging.WARNING]
-        assert any("TestStream" in msg and "older than" in msg and "P7D" in msg for msg in warning_messages), (
-            f"Expected warning about stale cursor not found. Warnings: {warning_messages}"
-        )
+        assert any(
+            "TestStream" in msg and "older than" in msg and "P7D" in msg for msg in warning_messages
+        ), f"Expected warning about stale cursor not found. Warnings: {warning_messages}"
