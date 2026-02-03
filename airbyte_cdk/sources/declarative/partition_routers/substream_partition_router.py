@@ -208,7 +208,7 @@ class SubstreamPartitionRouter(PartitionRouter):
                     parent_stream.generate_partitions()
                 ):
                     if partition is None:
-                        return
+                        break
                     for parent_record, is_last_record_in_slice in iterate_with_last_flag(
                         partition.read()
                     ):
