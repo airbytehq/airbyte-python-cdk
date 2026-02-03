@@ -7,7 +7,6 @@ import json
 from unittest.mock import MagicMock
 
 import freezegun
-import pytest
 
 from airbyte_cdk.models import (
     AirbyteStateBlob,
