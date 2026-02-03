@@ -1961,6 +1961,54 @@ definitions:
         description: If true, each expanded record will include the original parent record in an "original_record" field. Defaults to false.
         type: boolean
         default: false
+      on_no_records:
+        title: On No Records
+        description: Behavior when the expansion path is missing, not a list, or an empty list. "skip" (default) emits nothing. "emit_parent" emits the original parent record unchanged.
+        type: string
+        enum:
+          - skip
+          - emit_parent
+        default: skip
+      parent_fields_to_copy:
+        title: Parent Fields To Copy
+        description: List of parent field mappings to copy onto each expanded child record. Each mapping specifies a source path in the parent record and a target field name in the child record.
+        type: array
+        items:
+          "$ref": "#/definitions/ParentFieldMapping"
+      $parameters:
+        type: object
+        additionalProperties: true
+  ParentFieldMapping:
+    title: Parent Field Mapping
+    description: Defines a mapping from a parent record field to a child record field.
+    type: object
+    required:
+      - type
+      - source_field_path
+      - target_field
+    properties:
+      type:
+        type: string
+        enum: [ParentFieldMapping]
+      source_field_path:
+        title: Source Field Path
+        description: Path to the field in the parent record to copy.
+        type: array
+        items:
+          type: string
+        interpolation_context:
+          - config
+        examples:
+          - ["id"]
+          - ["created"]
+          - ["metadata", "timestamp"]
+      target_field:
+        title: Target Field
+        description: Name of the field in the child record where the value will be copied.
+        type: string
+        examples:
+          - "parent_id"
+          - "subscription_updated"
       $parameters:
         type: object
         additionalProperties: true

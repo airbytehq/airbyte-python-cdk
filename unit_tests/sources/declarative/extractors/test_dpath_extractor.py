@@ -14,7 +14,10 @@ from airbyte_cdk.sources.declarative.decoders.json_decoder import (
     IterableDecoder,
     JsonDecoder,
 )
-from airbyte_cdk.sources.declarative.expanders.record_expander import RecordExpander
+from airbyte_cdk.sources.declarative.expanders.record_expander import (
+    ParentFieldMapping,
+    RecordExpander,
+)
 from airbyte_cdk.sources.declarative.extractors.dpath_extractor import DpathExtractor
 
 config = {"field": "record_array"}
@@ -334,6 +337,264 @@ def test_dpath_extractor_with_expansion(
         config=config,
         parameters=parameters,
         remain_original_record=remain_original_record,
+    )
+    extractor = DpathExtractor(
+        field_path=field_path,
+        config=config,
+        decoder=decoder_json,
+        parameters=parameters,
+        record_expander=record_expander,
+    )
+
+    response = create_response(body)
+    actual_records = list(extractor.extract_records(response))
+
+    assert actual_records == expected_records
+
+
+@pytest.mark.parametrize(
+    "field_path, expand_records_from_field, on_no_records, body, expected_records",
+    [
+        pytest.param(
+            ["data"],
+            ["items"],
+            "skip",
+            {"data": {"id": "parent_1"}},
+            [],
+            id="on_no_records_skip_missing_path",
+        ),
+        pytest.param(
+            ["data"],
+            ["items"],
+            "skip",
+            {"data": {"id": "parent_1", "items": []}},
+            [],
+            id="on_no_records_skip_empty_array",
+        ),
+        pytest.param(
+            ["data"],
+            ["items"],
+            "emit_parent",
+            {"data": {"id": "parent_1"}},
+            [{"id": "parent_1"}],
+            id="on_no_records_emit_parent_missing_path",
+        ),
+        pytest.param(
+            ["data"],
+            ["items"],
+            "emit_parent",
+            {"data": {"id": "parent_1", "items": []}},
+            [{"id": "parent_1", "items": []}],
+            id="on_no_records_emit_parent_empty_array",
+        ),
+        pytest.param(
+            ["data"],
+            ["items"],
+            "emit_parent",
+            {"data": {"id": "parent_1", "items": "not_an_array"}},
+            [{"id": "parent_1", "items": "not_an_array"}],
+            id="on_no_records_emit_parent_non_array",
+        ),
+        pytest.param(
+            ["data"],
+            ["items"],
+            "emit_parent",
+            {"data": {"id": "parent_1", "items": [{"id": "child_1"}]}},
+            [{"id": "child_1"}],
+            id="on_no_records_emit_parent_has_items_extracts_normally",
+        ),
+    ],
+)
+def test_dpath_extractor_on_no_records(
+    field_path: List,
+    expand_records_from_field: List,
+    on_no_records: str,
+    body,
+    expected_records: List,
+):
+    record_expander = RecordExpander(
+        expand_records_from_field=expand_records_from_field,
+        config=config,
+        parameters=parameters,
+        on_no_records=on_no_records,
+    )
+    extractor = DpathExtractor(
+        field_path=field_path,
+        config=config,
+        decoder=decoder_json,
+        parameters=parameters,
+        record_expander=record_expander,
+    )
+
+    response = create_response(body)
+    actual_records = list(extractor.extract_records(response))
+
+    assert actual_records == expected_records
+
+
+@pytest.mark.parametrize(
+    "field_path, expand_records_from_field, parent_fields_to_copy, body, expected_records",
+    [
+        pytest.param(
+            ["data"],
+            ["items", "data"],
+            [
+                ParentFieldMapping(
+                    source_field_path=["id"],
+                    target_field="parent_id",
+                    config=config,
+                    parameters=parameters,
+                ),
+            ],
+            {
+                "data": {
+                    "id": "sub_123",
+                    "created": 1234567890,
+                    "items": {"data": [{"id": "si_1"}, {"id": "si_2"}]},
+                }
+            },
+            [
+                {"id": "si_1", "parent_id": "sub_123"},
+                {"id": "si_2", "parent_id": "sub_123"},
+            ],
+            id="copy_single_parent_field",
+        ),
+        pytest.param(
+            ["data"],
+            ["items", "data"],
+            [
+                ParentFieldMapping(
+                    source_field_path=["id"],
+                    target_field="subscription_id",
+                    config=config,
+                    parameters=parameters,
+                ),
+                ParentFieldMapping(
+                    source_field_path=["created"],
+                    target_field="subscription_updated",
+                    config=config,
+                    parameters=parameters,
+                ),
+            ],
+            {
+                "data": {
+                    "id": "sub_123",
+                    "created": 1234567890,
+                    "items": {"data": [{"id": "si_1"}]},
+                }
+            },
+            [{"id": "si_1", "subscription_id": "sub_123", "subscription_updated": 1234567890}],
+            id="copy_multiple_parent_fields",
+        ),
+        pytest.param(
+            ["data"],
+            ["items", "data"],
+            [
+                ParentFieldMapping(
+                    source_field_path=["metadata", "timestamp"],
+                    target_field="parent_timestamp",
+                    config=config,
+                    parameters=parameters,
+                ),
+            ],
+            {
+                "data": {
+                    "id": "parent_1",
+                    "metadata": {"timestamp": 9999},
+                    "items": {"data": [{"id": "child_1"}]},
+                }
+            },
+            [{"id": "child_1", "parent_timestamp": 9999}],
+            id="copy_nested_parent_field",
+        ),
+        pytest.param(
+            ["data"],
+            ["items", "data"],
+            [
+                ParentFieldMapping(
+                    source_field_path=["missing_field"],
+                    target_field="should_not_exist",
+                    config=config,
+                    parameters=parameters,
+                ),
+            ],
+            {"data": {"id": "parent_1", "items": {"data": [{"id": "child_1"}]}}},
+            [{"id": "child_1"}],
+            id="copy_missing_parent_field_ignored",
+        ),
+    ],
+)
+def test_dpath_extractor_parent_fields_to_copy(
+    field_path: List,
+    expand_records_from_field: List,
+    parent_fields_to_copy: List[ParentFieldMapping],
+    body,
+    expected_records: List,
+):
+    record_expander = RecordExpander(
+        expand_records_from_field=expand_records_from_field,
+        config=config,
+        parameters=parameters,
+        parent_fields_to_copy=parent_fields_to_copy,
+    )
+    extractor = DpathExtractor(
+        field_path=field_path,
+        config=config,
+        decoder=decoder_json,
+        parameters=parameters,
+        record_expander=record_expander,
+    )
+
+    response = create_response(body)
+    actual_records = list(extractor.extract_records(response))
+
+    assert actual_records == expected_records
+
+
+@pytest.mark.parametrize(
+    "field_path, expand_records_from_field, remain_original_record, parent_fields_to_copy, body, expected_records",
+    [
+        pytest.param(
+            ["data"],
+            ["items", "data"],
+            True,
+            [
+                ParentFieldMapping(
+                    source_field_path=["id"],
+                    target_field="parent_id",
+                    config=config,
+                    parameters=parameters,
+                ),
+            ],
+            {"data": {"id": "parent_1", "items": {"data": [{"id": "child_1"}]}}},
+            [
+                {
+                    "id": "child_1",
+                    "parent_id": "parent_1",
+                    "original_record": {
+                        "id": "parent_1",
+                        "items": {"data": [{"id": "child_1"}]},
+                    },
+                }
+            ],
+            id="combine_remain_original_record_and_parent_fields_to_copy",
+        ),
+    ],
+)
+def test_dpath_extractor_combined_features(
+    field_path: List,
+    expand_records_from_field: List,
+    remain_original_record: bool,
+    parent_fields_to_copy: List[ParentFieldMapping],
+    body,
+    expected_records: List,
+):
+    record_expander = RecordExpander(
+        expand_records_from_field=expand_records_from_field,
+        config=config,
+        parameters=parameters,
+        remain_original_record=remain_original_record,
+        parent_fields_to_copy=parent_fields_to_copy,
     )
     extractor = DpathExtractor(
         field_path=field_path,
