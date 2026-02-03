@@ -319,13 +319,21 @@ class SingleUseRefreshTokenOauth2Authenticator(Oauth2Authenticator):
     def get_access_token(self) -> str:
         """Retrieve new access and refresh token if the access token has expired.
 
+        This method uses double-checked locking to ensure thread-safe token refresh.
+        This is especially critical for single-use refresh tokens where concurrent
+        refresh attempts would cause failures as the refresh token is invalidated
+        after first use.
+
         The new refresh token is persisted with the set_refresh_token function.
 
         Returns:
             str: The current access_token, updated if it was previously expired.
         """
         if self.token_has_expired():
-            self.refresh_and_set_access_token()
+            with self._token_refresh_lock:
+                # Double-check after acquiring lock - another thread may have already refreshed
+                if self.token_has_expired():
+                    self.refresh_and_set_access_token()
         return self.access_token
 
     def refresh_and_set_access_token(self) -> None:

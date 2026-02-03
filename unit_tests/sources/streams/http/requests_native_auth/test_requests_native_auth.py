@@ -4,6 +4,8 @@
 
 import json
 import logging
+import threading
+import time
 from datetime import timedelta
 from typing import Optional, Union
 from unittest.mock import Mock
@@ -785,3 +787,132 @@ def mock_request(method, url, data, headers):
     raise Exception(
         f"Error while refreshing access token with request: {method}, {url}, {data}, {headers}"
     )
+
+
+class TestConcurrentTokenRefresh:
+    """
+    Test class for verifying thread-safe token refresh behavior.
+
+    These tests ensure that when multiple threads (streams) attempt to refresh
+    an expired token simultaneously, only one refresh actually occurs and
+    others wait and use the refreshed token.
+    """
+
+    def test_concurrent_token_refresh_only_refreshes_once(self, mocker):
+        """
+        When multiple threads detect an expired token and try to refresh simultaneously,
+        only one thread should actually perform the refresh. Others should wait and
+        use the newly refreshed token.
+        """
+        refresh_call_count = 0
+        refresh_call_lock = threading.Lock()
+
+        def mock_refresh_access_token(self):
+            nonlocal refresh_call_count
+            with refresh_call_lock:
+                refresh_call_count += 1
+            time.sleep(0.1)
+            return ("new_access_token", ab_datetime_now() + timedelta(hours=1))
+
+        mocker.patch.object(
+            Oauth2Authenticator,
+            "refresh_access_token",
+            mock_refresh_access_token,
+        )
+
+        oauth = Oauth2Authenticator(
+            token_refresh_endpoint="https://refresh_endpoint.com",
+            client_id="client_id",
+            client_secret="client_secret",
+            refresh_token="refresh_token",
+            token_expiry_date=ab_datetime_now() - timedelta(hours=1),
+        )
+
+        results = []
+        errors = []
+
+        def get_token():
+            try:
+                token = oauth.get_access_token()
+                results.append(token)
+            except Exception as e:
+                errors.append(e)
+
+        threads = [threading.Thread(target=get_token) for _ in range(5)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        assert len(errors) == 0, f"Unexpected errors: {errors}"
+        assert len(results) == 5
+        assert all(token == "new_access_token" for token in results)
+        assert refresh_call_count == 1, f"Expected 1 refresh call, got {refresh_call_count}"
+
+    def test_single_use_refresh_token_concurrent_refresh_only_refreshes_once(self, mocker):
+        """
+        For SingleUseRefreshTokenOauth2Authenticator, concurrent refresh attempts
+        should also only result in one actual refresh to prevent invalidating
+        the single-use refresh token.
+        """
+        refresh_call_count = 0
+        refresh_call_lock = threading.Lock()
+
+        connector_config = {
+            "credentials": {
+                "client_id": "client_id",
+                "client_secret": "client_secret",
+                "refresh_token": "refresh_token",
+                "access_token": "old_access_token",
+                "token_expiry_date": str(ab_datetime_now() - timedelta(hours=1)),
+            }
+        }
+
+        def mock_refresh_access_token(self):
+            nonlocal refresh_call_count
+            with refresh_call_lock:
+                refresh_call_count += 1
+            time.sleep(0.1)
+            return (
+                "new_access_token",
+                ab_datetime_now() + timedelta(hours=1),
+                "new_refresh_token",
+            )
+
+        mocker.patch.object(
+            SingleUseRefreshTokenOauth2Authenticator,
+            "refresh_access_token",
+            mock_refresh_access_token,
+        )
+
+        mocker.patch.object(
+            SingleUseRefreshTokenOauth2Authenticator,
+            "_emit_control_message",
+            lambda self: None,
+        )
+
+        oauth = SingleUseRefreshTokenOauth2Authenticator(
+            connector_config=connector_config,
+            token_refresh_endpoint="https://refresh_endpoint.com",
+        )
+
+        results = []
+        errors = []
+
+        def get_token():
+            try:
+                token = oauth.get_access_token()
+                results.append(token)
+            except Exception as e:
+                errors.append(e)
+
+        threads = [threading.Thread(target=get_token) for _ in range(5)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        assert len(errors) == 0, f"Unexpected errors: {errors}"
+        assert len(results) == 5
+        assert all(token == "new_access_token" for token in results)
+        assert refresh_call_count == 1, f"Expected 1 refresh call, got {refresh_call_count}"
