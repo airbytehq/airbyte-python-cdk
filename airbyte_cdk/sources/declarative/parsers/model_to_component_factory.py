@@ -67,6 +67,7 @@ from airbyte_cdk.sources.declarative.auth.token import (
     LegacySessionTokenAuthenticator,
 )
 from airbyte_cdk.sources.declarative.auth.token_provider import (
+    InterpolatedSessionTokenProvider,
     InterpolatedStringTokenProvider,
     SessionTokenProvider,
     TokenProvider,
@@ -1169,6 +1170,16 @@ class ModelToComponentFactory:
                 token_provider=token_provider,
             )
         else:
+            # Get the api_token template if specified, default to just the session token
+            api_token_template = (
+                getattr(model.request_authentication, "api_token", None) or "{{ session_token }}"
+            )
+            final_token_provider: TokenProvider = InterpolatedSessionTokenProvider(
+                config=config,
+                api_token=api_token_template,
+                session_token_provider=token_provider,
+                parameters=model.parameters or {},
+            )
             return self.create_api_key_authenticator(
                 ApiKeyAuthenticatorModel(
                     type="ApiKeyAuthenticator",
@@ -1176,7 +1187,7 @@ class ModelToComponentFactory:
                     inject_into=model.request_authentication.inject_into,
                 ),  # type: ignore # $parameters and headers default to None
                 config=config,
-                token_provider=token_provider,
+                token_provider=final_token_provider,
             )
 
     @staticmethod
@@ -1554,14 +1565,18 @@ class ModelToComponentFactory:
                 f"Expected {model_type.__name__} component, but received {incrementing_count_cursor_model.__class__.__name__}"
             )
 
-        interpolated_start_value = (
-            InterpolatedString.create(
-                incrementing_count_cursor_model.start_value,  # type: ignore
+        start_value: Union[int, str, None] = incrementing_count_cursor_model.start_value
+        # Pydantic Union type coercion can convert int 0 to string '0' depending on Union order.
+        # We need to handle both int and str representations of numeric values.
+        # Evaluate the InterpolatedString and convert to int for the ConcurrentCursor.
+        if start_value is not None:
+            interpolated_start_value = InterpolatedString.create(
+                str(start_value),  # Ensure we pass a string to InterpolatedString.create
                 parameters=incrementing_count_cursor_model.parameters or {},
             )
-            if incrementing_count_cursor_model.start_value
-            else 0
-        )
+            evaluated_start_value: int = int(interpolated_start_value.eval(config=config))
+        else:
+            evaluated_start_value = 0
 
         cursor_field = self._get_catalog_defined_cursor_field(
             stream_name=stream_name,
@@ -1593,7 +1608,7 @@ class ModelToComponentFactory:
             connector_state_converter=connector_state_converter,
             cursor_field=cursor_field,
             slice_boundary_fields=None,
-            start=interpolated_start_value,  # type: ignore  # Having issues w/ inspection for GapType and CursorValueType as shown in existing tests. Confirmed functionality is working in practice
+            start=evaluated_start_value,  # type: ignore  # Having issues w/ inspection for GapType and CursorValueType as shown in existing tests. Confirmed functionality is working in practice
             end_provider=connector_state_converter.get_end_provider(),  # type: ignore  # Having issues w/ inspection for GapType and CursorValueType as shown in existing tests. Confirmed functionality is working in practice
         )
 
@@ -1745,10 +1760,16 @@ class ModelToComponentFactory:
                 self._UNSUPPORTED_DECODER_ERROR.format(decoder_type=type(inner_decoder))
             )
 
+        # Pydantic v1 Union type coercion can convert int to string depending on Union order.
+        # If page_size is a string that represents an integer (not an interpolation), convert it back.
+        page_size = model.page_size
+        if isinstance(page_size, str) and page_size.isdigit():
+            page_size = int(page_size)
+
         return CursorPaginationStrategy(
             cursor_value=model.cursor_value,
             decoder=decoder_to_use,
-            page_size=model.page_size,
+            page_size=page_size,
             stop_condition=model.stop_condition,
             config=config,
             parameters=model.parameters or {},
@@ -2917,8 +2938,14 @@ class ModelToComponentFactory:
             else None
         )
 
+        # Pydantic v1 Union type coercion can convert int to string depending on Union order.
+        # If page_size is a string that represents an integer (not an interpolation), convert it back.
+        page_size = model.page_size
+        if isinstance(page_size, str) and page_size.isdigit():
+            page_size = int(page_size)
+
         return OffsetIncrement(
-            page_size=model.page_size,
+            page_size=page_size,
             config=config,
             decoder=decoder_to_use,
             extractor=extractor,
@@ -2930,8 +2957,14 @@ class ModelToComponentFactory:
     def create_page_increment(
         model: PageIncrementModel, config: Config, **kwargs: Any
     ) -> PageIncrement:
+        # Pydantic v1 Union type coercion can convert int to string depending on Union order.
+        # If page_size is a string that represents an integer (not an interpolation), convert it back.
+        page_size = model.page_size
+        if isinstance(page_size, str) and page_size.isdigit():
+            page_size = int(page_size)
+
         return PageIncrement(
-            page_size=model.page_size,
+            page_size=page_size,
             config=config,
             start_from_page=model.start_from_page or 0,
             inject_on_first_request=model.inject_on_first_request or False,

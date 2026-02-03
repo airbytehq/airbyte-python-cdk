@@ -512,9 +512,16 @@ definitions:
       page_size:
         title: Page Size
         description: The number of records to include in each pages.
-        type: integer
+        anyOf:
+          - type: integer
+            title: Number of Records
+          - type: string
+            title: Interpolated Value
+        interpolation_context:
+          - config
         examples:
           - 100
+          - "{{ config['page_size'] }}"
       stop_condition:
         title: Stop Condition
         description: Template string evaluating when to stop paginating.
@@ -2067,6 +2074,18 @@ definitions:
             field_name: Authorization
           - inject_into: request_parameter
             field_name: authKey
+      api_token:
+        title: API Token Template
+        description: 'A template for the token value to inject. Use {{ session_token }} to reference the session token. For example, use "Token {{ session_token }}" for APIs that expect "Authorization: Token <token>".'
+        type: string
+        default: "{{ session_token }}"
+        interpolation_context:
+          - config
+          - session_token
+        examples:
+          - "{{ session_token }}"
+          - "Token {{ session_token }}"
+          - "Bearer {{ session_token }}"
   SessionTokenRequestBearerAuthenticator:
     title: Bearer Authenticator
     description: Authenticator for requests using the session token as a standard bearer token.
@@ -2312,6 +2331,7 @@ definitions:
           - IGNORE
           - RESET_PAGINATION
           - RATE_LIMITED
+          - REFRESH_TOKEN_THEN_RETRY
         examples:
           - SUCCESS
           - FAIL
@@ -2319,6 +2339,7 @@ definitions:
           - IGNORE
           - RESET_PAGINATION
           - RATE_LIMITED
+          - REFRESH_TOKEN_THEN_RETRY
       failure_type:
         title: Failure Type
         description: Failure type of traced exception if a response matches the filter.

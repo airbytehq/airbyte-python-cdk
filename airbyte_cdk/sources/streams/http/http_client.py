@@ -102,7 +102,11 @@ class MessageRepresentationAirbyteTracedErrors(AirbyteTracedException):
 class HttpClient:
     _DEFAULT_MAX_RETRY: int = 5
     _DEFAULT_MAX_TIME: int = 60 * 10
-    _ACTIONS_TO_RETRY_ON = {ResponseAction.RETRY, ResponseAction.RATE_LIMITED}
+    _ACTIONS_TO_RETRY_ON = {
+        ResponseAction.RETRY,
+        ResponseAction.RATE_LIMITED,
+        ResponseAction.REFRESH_TOKEN_THEN_RETRY,
+    }
 
     def __init__(
         self,
@@ -452,6 +456,31 @@ class HttpClient:
             # backoff retry loop. Adding `\n` to the message and ignore 'end' ensure that few messages are printed at the same time.
             print(f"{message}\n", end="", flush=True)
 
+        # Handle REFRESH_TOKEN_THEN_RETRY: Force refresh the OAuth token before retry
+        # This is useful when the API returns 401 but the stored token expiry hasn't been reached yet
+        # Only OAuth authenticators have refresh_and_set_access_token method
+        # Non-OAuth auth types (e.g., BearerAuthenticator) will fall through to normal retry
+        if error_resolution.response_action == ResponseAction.REFRESH_TOKEN_THEN_RETRY:
+            if (
+                hasattr(self._session, "auth")
+                and self._session.auth is not None
+                and hasattr(self._session.auth, "refresh_and_set_access_token")
+            ):
+                try:
+                    self._session.auth.refresh_and_set_access_token()  # type: ignore[union-attr]
+                    self._logger.info(
+                        "Refreshed OAuth token due to REFRESH_TOKEN_THEN_RETRY response action"
+                    )
+                except Exception as refresh_error:
+                    self._logger.warning(
+                        f"Failed to refresh OAuth token: {refresh_error}. Proceeding with retry using existing token."
+                    )
+            else:
+                self._logger.warning(
+                    "REFRESH_TOKEN_THEN_RETRY action received but authenticator does not support token refresh. "
+                    "Proceeding with normal retry."
+                )
+
         if error_resolution.response_action == ResponseAction.FAIL:
             if response is not None:
                 filtered_response_message = filter_secrets(
@@ -481,9 +510,10 @@ class HttpClient:
             self._logger.info(error_resolution.error_message or log_message)
 
         # TODO: Consider dynamic retry count depending on subsequent error codes
-        elif (
-            error_resolution.response_action == ResponseAction.RETRY
-            or error_resolution.response_action == ResponseAction.RATE_LIMITED
+        elif error_resolution.response_action in (
+            ResponseAction.RETRY,
+            ResponseAction.RATE_LIMITED,
+            ResponseAction.REFRESH_TOKEN_THEN_RETRY,
         ):
             user_defined_backoff_time = None
             for backoff_strategy in self._backoff_strategies:

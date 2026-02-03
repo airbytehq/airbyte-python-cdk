@@ -317,8 +317,7 @@ class SingleUseRefreshTokenOauth2Authenticator(Oauth2Authenticator):
         return ab_datetime_now() > self.get_token_expiry_date()
 
     def get_access_token(self) -> str:
-        """
-        Retrieve new access and refresh token if the access token has expired.
+        """Retrieve new access and refresh token if the access token has expired.
 
         This method uses double-checked locking to ensure thread-safe token refresh.
         This is especially critical for single-use refresh tokens where concurrent
@@ -334,14 +333,20 @@ class SingleUseRefreshTokenOauth2Authenticator(Oauth2Authenticator):
             with self._token_refresh_lock:
                 # Double-check after acquiring lock - another thread may have already refreshed
                 if self.token_has_expired():
-                    new_access_token, access_token_expires_in, new_refresh_token = (
-                        self.refresh_access_token()
-                    )
-                    self.access_token = new_access_token
-                    self.set_refresh_token(new_refresh_token)
-                    self.set_token_expiry_date(access_token_expires_in)
-                    self._emit_control_message()
+                    self.refresh_and_set_access_token()
         return self.access_token
+
+    def refresh_and_set_access_token(self) -> None:
+        """Force refresh the access token and update internal state.
+
+        For single-use refresh tokens, this also persists the new refresh token
+        and emits a control message to update the connector config.
+        """
+        new_access_token, access_token_expires_in, new_refresh_token = self.refresh_access_token()
+        self.access_token = new_access_token
+        self.set_refresh_token(new_refresh_token)
+        self.set_token_expiry_date(access_token_expires_in)
+        self._emit_control_message()
 
     def refresh_access_token(self) -> Tuple[str, AirbyteDateTime, str]:  # type: ignore[override]
         """
