@@ -3612,9 +3612,7 @@ class ModelToComponentFactory:
         retention_duration = parse_duration(api_retention_period)
         retention_cutoff = datetime.datetime.now(datetime.timezone.utc) - retention_duration
 
-        cursor_datetime = self._parse_cursor_datetime(
-            cursor_value, incremental_sync, stream_name
-        )
+        cursor_datetime = self._parse_cursor_datetime(cursor_value, incremental_sync, stream_name)
         if cursor_datetime is None:
             return False
 
