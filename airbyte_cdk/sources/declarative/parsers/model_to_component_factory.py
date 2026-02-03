@@ -3575,9 +3575,13 @@ class ModelToComponentFactory:
             return model.full_refresh_stream
 
         if model.api_retention_period and stream_state:
-            incremental_sync = model.incremental_stream.incremental_sync
-            if incremental_sync and self._is_cursor_older_than_retention_period(
-                stream_state, incremental_sync, model.api_retention_period, model.name
+            incremental_sync_sources = [
+                model.full_refresh_stream.incremental_sync,
+                model.incremental_stream.incremental_sync,
+            ]
+            incremental_sync_sources = [s for s in incremental_sync_sources if s is not None]
+            if incremental_sync_sources and self._is_cursor_older_than_retention_period(
+                stream_state, incremental_sync_sources, model.api_retention_period, model.name
             ):
                 return model.full_refresh_stream
 
@@ -3586,7 +3590,7 @@ class ModelToComponentFactory:
     def _is_cursor_older_than_retention_period(
         self,
         stream_state: Mapping[str, Any],
-        incremental_sync: Any,
+        incremental_sync_sources: list[Any],
         api_retention_period: str,
         stream_name: str,
     ) -> bool:
@@ -3595,11 +3599,19 @@ class ModelToComponentFactory:
         If the cursor is too old, the incremental API may not have data going back that far,
         so we should fall back to a full refresh to avoid data loss.
 
+        The state could have been produced by either full_refresh_stream (first sync) or
+        incremental_stream (subsequent syncs), so we try parsing with formats from both.
+
         Returns True if the cursor is older than the retention period or if the cursor is
         invalid/unparseable (should use full refresh).
         Returns False if the cursor is within the retention period (safe to use incremental).
         """
-        cursor_field = getattr(incremental_sync, "cursor_field", None)
+        cursor_field = None
+        for incremental_sync in incremental_sync_sources:
+            cursor_field = getattr(incremental_sync, "cursor_field", None)
+            if cursor_field:
+                break
+
         if not cursor_field:
             return True
 
@@ -3616,7 +3628,7 @@ class ModelToComponentFactory:
         retention_cutoff = datetime.datetime.now(datetime.timezone.utc) - retention_duration
 
         cursor_datetime = self._parse_cursor_datetime(
-            cursor_value_str, incremental_sync, stream_name
+            cursor_value_str, incremental_sync_sources, stream_name
         )
         if cursor_datetime is None:
             return True
@@ -3632,16 +3644,25 @@ class ModelToComponentFactory:
     def _parse_cursor_datetime(
         self,
         cursor_value: str,
-        incremental_sync: Any,
+        incremental_sync_sources: list[Any],
         stream_name: str,
-    ) -> Optional[datetime.datetime]:
-        """Parse the cursor value into a datetime object using the cursor's datetime formats."""
+    ) -> datetime.datetime | None:
+        """Parse the cursor value into a datetime object using datetime formats from all sources.
+
+        The state could have been produced by either full_refresh_stream (first sync) or
+        incremental_stream (subsequent syncs), so we try parsing with formats from both.
+        """
         parser = DatetimeParser()
 
-        datetime_format = getattr(incremental_sync, "datetime_format", None)
-        cursor_datetime_formats = getattr(incremental_sync, "cursor_datetime_formats", None) or []
-
-        formats_to_try = cursor_datetime_formats + ([datetime_format] if datetime_format else [])
+        formats_to_try: list[str] = []
+        for incremental_sync in incremental_sync_sources:
+            datetime_format = getattr(incremental_sync, "datetime_format", None)
+            cursor_datetime_formats = (
+                getattr(incremental_sync, "cursor_datetime_formats", None) or []
+            )
+            formats_to_try.extend(cursor_datetime_formats)
+            if datetime_format:
+                formats_to_try.append(datetime_format)
 
         for fmt in formats_to_try:
             try:
@@ -3651,7 +3672,7 @@ class ModelToComponentFactory:
 
         logging.warning(
             f"Could not parse cursor value '{cursor_value}' for stream '{stream_name}' "
-            f"using formats {formats_to_try}. Skipping cursor age validation."
+            f"using formats {formats_to_try}. Falling back to full refresh."
         )
         return None
 
