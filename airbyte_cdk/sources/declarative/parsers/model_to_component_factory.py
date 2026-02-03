@@ -3575,8 +3575,9 @@ class ModelToComponentFactory:
             return model.full_refresh_stream
 
         if model.api_retention_period and stream_state:
-            if self._is_cursor_older_than_retention_period(
-                stream_state, model.incremental_stream, model.api_retention_period, model.name
+            incremental_sync = model.incremental_stream.incremental_sync
+            if incremental_sync and self._is_cursor_older_than_retention_period(
+                stream_state, incremental_sync, model.api_retention_period, model.name
             ):
                 return model.full_refresh_stream
 
@@ -3585,7 +3586,7 @@ class ModelToComponentFactory:
     def _is_cursor_older_than_retention_period(
         self,
         stream_state: Mapping[str, Any],
-        incremental_stream: DeclarativeStreamModel,
+        incremental_sync: Any,
         api_retention_period: str,
         stream_name: str,
     ) -> bool:
@@ -3597,10 +3598,6 @@ class ModelToComponentFactory:
         Returns True if the cursor is older than the retention period (should use full refresh).
         Returns False if the cursor is within the retention period (safe to use incremental).
         """
-        incremental_sync = incremental_stream.incremental_sync
-        if not incremental_sync:
-            return False
-
         cursor_field = getattr(incremental_sync, "cursor_field", None)
         if not cursor_field:
             return False
