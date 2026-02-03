@@ -3612,16 +3612,18 @@ class ModelToComponentFactory:
         if not isinstance(cursor_value, (str, int)):
             return False
 
+        cursor_value_str = str(cursor_value)
+
         retention_duration = parse_duration(api_retention_period)
         retention_cutoff = datetime.datetime.now(datetime.timezone.utc) - retention_duration
 
-        cursor_datetime = self._parse_cursor_datetime(cursor_value, incremental_sync, stream_name)
+        cursor_datetime = self._parse_cursor_datetime(cursor_value_str, incremental_sync, stream_name)
         if cursor_datetime is None:
             return False
 
         if cursor_datetime < retention_cutoff:
             self._emit_warning_for_stale_cursor(
-                stream_name, cursor_value, api_retention_period, retention_cutoff
+                stream_name, cursor_value_str, api_retention_period, retention_cutoff
             )
             return True
 
