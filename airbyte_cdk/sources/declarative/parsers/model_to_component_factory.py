@@ -3599,13 +3599,22 @@ class ModelToComponentFactory:
         If the cursor is too old, the incremental API may not have data going back that far,
         so we should fall back to a full refresh to avoid data loss.
 
-        The state could have been produced by either full_refresh_stream (first sync) or
-        incremental_stream (subsequent syncs), so we try parsing with formats from both.
+        This method handles different state structures:
+        - Simple cursor state: {"cursor_field": "value"}
+        - Per-partition state: {"state": {"cursor_field": "value"}, "states": [...]}
 
         Returns True if the cursor is older than the retention period or if the cursor is
         invalid/unparseable (should use full refresh).
         Returns False if the cursor is within the retention period (safe to use incremental).
         """
+        for incremental_sync in incremental_sync_sources:
+            if isinstance(incremental_sync, IncrementingCountCursorModel):
+                raise ValueError(
+                    f"Stream '{stream_name}' uses IncrementingCountCursor which is not supported "
+                    f"with api_retention_period. IncrementingCountCursor does not use datetime-based "
+                    f"cursors, so cursor age validation cannot be performed."
+                )
+
         cursor_field = None
         for incremental_sync in incremental_sync_sources:
             cursor_field = getattr(incremental_sync, "cursor_field", None)
@@ -3615,7 +3624,7 @@ class ModelToComponentFactory:
         if not cursor_field:
             return True
 
-        cursor_value = stream_state.get(cursor_field)
+        cursor_value = self._extract_cursor_value_from_state(stream_state, cursor_field)
         if not cursor_value:
             return True
 
@@ -3640,6 +3649,29 @@ class ModelToComponentFactory:
             return True
 
         return False
+
+    def _extract_cursor_value_from_state(
+        self,
+        stream_state: Mapping[str, Any],
+        cursor_field: str,
+    ) -> Any:
+        """Extract cursor value from state, handling different state structures.
+
+        Supports:
+        - Simple cursor state: {"cursor_field": "value"} -> returns "value"
+        - Per-partition state: {"state": {"cursor_field": "value"}, ...} -> returns "value"
+          (uses global cursor from "state" key)
+
+        Returns None if cursor value cannot be extracted.
+        """
+        if cursor_field in stream_state:
+            return stream_state.get(cursor_field)
+
+        global_state = stream_state.get("state")
+        if isinstance(global_state, dict) and cursor_field in global_state:
+            return global_state.get(cursor_field)
+
+        return None
 
     def _parse_cursor_datetime(
         self,
