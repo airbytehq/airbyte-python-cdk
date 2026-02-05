@@ -2,6 +2,7 @@
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
 
+import datetime
 import logging
 from collections import OrderedDict
 from typing import Any, Callable, Iterable, Mapping, Optional, Union
@@ -210,6 +211,23 @@ class PerPartitionCursor(DeclarativeCursor):
             return None
 
         return self._get_state_for_partition(stream_slice.partition)
+
+    def get_cursor_datetime_from_state(
+        self, stream_state: Mapping[str, Any]
+    ) -> Optional[datetime.datetime]:
+        """Extract and parse the cursor datetime from the global cursor in per-partition state.
+
+        For per-partition cursors, the global cursor is stored under the "state" key.
+        This method delegates to the underlying cursor factory to parse the datetime.
+
+        Returns None if the global cursor is not present or cannot be parsed.
+        """
+        global_state = stream_state.get("state")
+        if not global_state or not isinstance(global_state, dict):
+            return None
+
+        cursor = self._cursor_factory.create()
+        return cursor.get_cursor_datetime_from_state(global_state)
 
     def _create_cursor(self, cursor_state: Any) -> DeclarativeCursor:
         cursor = self._cursor_factory.create()

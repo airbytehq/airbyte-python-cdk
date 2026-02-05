@@ -212,6 +212,26 @@ class DatetimeBasedCursor(DeclarativeCursor):
         # through each slice and does not belong to a specific slice. We just return stream state as it is.
         return self.get_stream_state()
 
+    def get_cursor_datetime_from_state(
+        self, stream_state: Mapping[str, Any]
+    ) -> Optional[datetime.datetime]:
+        """Extract and parse the cursor datetime from the given stream state.
+
+        Returns the cursor datetime if present and parseable, otherwise returns None.
+        """
+        cursor_field_key = self.cursor_field.eval(self.config)  # type: ignore  # cursor_field is converted to an InterpolatedString in __post_init__
+        if cursor_field_key not in stream_state:
+            return None
+
+        cursor_value = stream_state.get(cursor_field_key)
+        if not cursor_value:
+            return None
+
+        try:
+            return self.parse_date(str(cursor_value))
+        except ValueError:
+            return None
+
     def _calculate_earliest_possible_value(
         self, end_datetime: datetime.datetime
     ) -> datetime.datetime:
