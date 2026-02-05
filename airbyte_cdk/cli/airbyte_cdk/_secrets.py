@@ -235,7 +235,10 @@ def list_(
     """
     click.echo("Scanning secrets...", err=True)
 
-    connector_name, _ = resolve_connector_name_and_directory(connector)
+    if connector and isinstance(connector, str) and "/" not in connector and "\\" not in connector:
+        connector_name = connector
+    else:
+        connector_name, _ = resolve_connector_name_and_directory(connector)
     secrets: list[Secret] = _fetch_secret_handles(  # type: ignore
         connector_name=connector_name,
         gcp_project_id=gcp_project_id,
