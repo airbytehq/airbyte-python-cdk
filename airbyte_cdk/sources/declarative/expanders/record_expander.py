@@ -35,7 +35,7 @@ class ParentFieldMapping:
             value = dpath.get(dict(parent_record), source_path)
             child_record[self.target_field] = value
         except KeyError:
-            pass
+            pass  # Missing source fields in parent record are expected and intentionally skipped
 
 
 @dataclass
