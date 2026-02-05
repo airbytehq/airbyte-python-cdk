@@ -47,9 +47,7 @@ class ClientSideIncrementalRetrieverDecorator(Retriever):
                 if self._cursor.should_be_synced(record):
                     yield record
             elif isinstance(record, Mapping):
-                record_obj = Record(
-                    data=record, associated_slice=stream_slice, stream_name=""
-                )
+                record_obj = Record(data=record, associated_slice=stream_slice, stream_name="")
                 if self._cursor.should_be_synced(record_obj):
                     yield record
             else:
