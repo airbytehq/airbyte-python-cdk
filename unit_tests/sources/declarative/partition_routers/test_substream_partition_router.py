@@ -1172,3 +1172,70 @@ def test_substream_partition_router_handles_empty_parent_partitions():
 
     slices = list(partition_router.stream_slices())
     assert slices == []
+
+
+def test_substream_partition_router_closes_all_partitions_even_when_no_records():
+    """
+    Test that cursor.close_partition() is called for all parent stream partitions,
+    even when a partition produces no parent records.
+    This validates that partition lifecycle is properly managed regardless of record count.
+    """
+    mock_slices = [
+        StreamSlice(partition={"slice": "first"}, cursor_slice={}),
+        StreamSlice(partition={"slice": "second"}, cursor_slice={}),
+        StreamSlice(partition={"slice": "third"}, cursor_slice={}),
+    ]
+
+    partition_1 = InMemoryPartition(
+        "partition_1",
+        "first_stream",
+        mock_slices[0],
+        _build_records_for_slice([{"id": "record_1"}], mock_slices[0]),
+    )
+    partition_2 = InMemoryPartition(
+        "partition_2",
+        "first_stream",
+        mock_slices[1],
+        [],
+    )
+    partition_3 = InMemoryPartition(
+        "partition_3",
+        "first_stream",
+        mock_slices[2],
+        _build_records_for_slice([{"id": "record_3"}], mock_slices[2]),
+    )
+
+    mock_cursor = Mock()
+    mock_cursor.stream_slices.return_value = []
+
+    partition_router = SubstreamPartitionRouter(
+        parent_stream_configs=[
+            ParentStreamConfig(
+                stream=MockStream(
+                    [partition_1, partition_2, partition_3],
+                    "first_stream",
+                    cursor=mock_cursor,
+                ),
+                parent_key="id",
+                partition_field="partition_field",
+                parameters={},
+                config={},
+            )
+        ],
+        parameters={},
+        config={},
+    )
+
+    slices = list(partition_router.stream_slices())
+
+    assert slices == [
+        {"partition_field": "record_1", "parent_slice": {"slice": "first"}},
+        {"partition_field": "record_3", "parent_slice": {"slice": "third"}},
+    ]
+
+    assert mock_cursor.close_partition.call_count == 3
+
+    close_partition_calls = mock_cursor.close_partition.call_args_list
+    assert close_partition_calls[0][0][0] == partition_1
+    assert close_partition_calls[1][0][0] == partition_2
+    assert close_partition_calls[2][0][0] == partition_3
