@@ -95,6 +95,10 @@ from airbyte_cdk.sources.declarative.decoders.composite_raw_decoder import (
     JsonParser,
     Parser,
 )
+from airbyte_cdk.sources.declarative.expanders.record_expander import (
+    ParentFieldMapping,
+    RecordExpander,
+)
 from airbyte_cdk.sources.declarative.extractors import (
     DpathExtractor,
     RecordFilter,
@@ -2400,10 +2404,8 @@ class ModelToComponentFactory:
         model: RecordExpanderModel,
         config: Config,
         **kwargs: Any,
-    ) -> "RecordExpander":
-        from airbyte_cdk.sources.declarative.expanders.record_expander import RecordExpander
-
-        parent_fields_to_copy = []
+    ) -> RecordExpander:
+        parent_fields_to_copy: list[ParentFieldMapping] = []
         if model.parent_fields_to_copy:
             for field_mapping_model in model.parent_fields_to_copy:
                 parent_fields_to_copy.append(
@@ -2427,9 +2429,7 @@ class ModelToComponentFactory:
         model: ParentFieldMappingModel,
         config: Config,
         **kwargs: Any,
-    ) -> "ParentFieldMapping":
-        from airbyte_cdk.sources.declarative.expanders.record_expander import ParentFieldMapping
-
+    ) -> ParentFieldMapping:
         return ParentFieldMapping(
             source_field_path=list(model.source_field_path),
             target_field=model.target_field,
