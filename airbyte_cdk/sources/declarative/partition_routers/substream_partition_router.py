@@ -39,7 +39,7 @@ if TYPE_CHECKING:
 T = TypeVar("T")
 
 
-def iterate_with_last_flag(generator: Iterable[T]) -> Iterable[tuple[T, bool]]:
+def iterate_with_last_flag(generator: Iterable[T]) -> Iterable[tuple[T | None, bool]]:
     iterator = iter(generator)
 
     try:
