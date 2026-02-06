@@ -61,10 +61,12 @@ GLOBAL_MASK_KEYS_URL = "https://connectors.airbyte.com/files/registries/v0/specs
 logger = logging.getLogger("airbyte-cdk.cli.secrets")
 
 try:
+    import google.auth.exceptions
     from google.cloud import secretmanager_v1 as secretmanager
     from google.cloud.secretmanager_v1 import Secret
 except ImportError:
     # If the package is not installed, we will raise an error in the CLI command.
+    google = None  # type: ignore
     secretmanager = None  # type: ignore
     Secret = None  # type: ignore
 
@@ -414,7 +416,14 @@ def _get_secret_filepath(
 
 
 def _get_gsm_secrets_client() -> "secretmanager.SecretManagerServiceClient":  # type: ignore
-    """Get the Google Secret Manager client."""
+    """Get the Google Secret Manager client.
+
+    If the `GCP_GSM_CREDENTIALS` environment variable is set, the client will be
+    created using service account credentials from that JSON string. Otherwise, the
+    client will fall back to Application Default Credentials (ADC), which supports
+    user credentials from `gcloud auth application-default login`, GCE metadata
+    server credentials, and other standard GCP authentication methods.
+    """
     if not secretmanager:
         raise ImportError(
             "google-cloud-secret-manager package is required for Secret Manager integration. "
@@ -423,18 +432,28 @@ def _get_gsm_secrets_client() -> "secretmanager.SecretManagerServiceClient":  # 
         )
 
     credentials_json = os.environ.get("GCP_GSM_CREDENTIALS")
-    if not credentials_json:
-        raise ValueError(
-            "No Google Cloud credentials found. "
-            "Please set the `GCP_GSM_CREDENTIALS` environment variable."
+    if credentials_json:
+        click.echo(
+            "Using GCP service account credentials from GCP_GSM_CREDENTIALS env var.", err=True
+        )
+        return cast(
+            "secretmanager.SecretManagerServiceClient",
+            secretmanager.SecretManagerServiceClient.from_service_account_info(
+                json.loads(credentials_json)
+            ),
         )
 
-    return cast(
-        "secretmanager.SecretManagerServiceClient",
-        secretmanager.SecretManagerServiceClient.from_service_account_info(
-            json.loads(credentials_json)
-        ),
+    click.echo(
+        "GCP_GSM_CREDENTIALS not set. Using Application Default Credentials (ADC).", err=True
     )
+    try:
+        return secretmanager.SecretManagerServiceClient()
+    except google.auth.exceptions.DefaultCredentialsError:
+        raise ValueError(
+            "No Google Cloud credentials found. "
+            "Either set the `GCP_GSM_CREDENTIALS` environment variable with service account JSON, "
+            "or run `gcloud auth application-default login` to authenticate with your user account."
+        ) from None
 
 
 def _print_ci_secrets_masks(
