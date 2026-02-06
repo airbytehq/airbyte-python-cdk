@@ -65,7 +65,9 @@ class WaitTimeFromHeaderBackoffStrategy(BackoffStrategy):
                     "Rate limit header '%s' detected with value: %s (status code: %s)",
                     header,
                     header_value,
-                    response_or_exception.status_code if hasattr(response_or_exception, "status_code") else "N/A",
+                    response_or_exception.status_code
+                    if hasattr(response_or_exception, "status_code")
+                    else "N/A",
                 )
             if (
                 self.max_waiting_time_in_seconds
