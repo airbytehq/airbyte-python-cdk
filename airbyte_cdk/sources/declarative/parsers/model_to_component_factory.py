@@ -100,6 +100,10 @@ from airbyte_cdk.sources.declarative.extractors import (
     RecordSelector,
     ResponseToFileExtractor,
 )
+from airbyte_cdk.sources.declarative.expanders.record_expander import (
+    ParentFieldMapping,
+    RecordExpander,
+)
 from airbyte_cdk.sources.declarative.extractors.record_extractor import RecordExtractor
 from airbyte_cdk.sources.declarative.extractors.record_filter import (
     ClientSideIncrementalRecordFilterDecorator,
@@ -371,6 +375,9 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
     ParametrizedComponentsResolver as ParametrizedComponentsResolverModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    ParentFieldMapping as ParentFieldMappingModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     ParentStreamConfig as ParentStreamConfigModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
@@ -390,6 +397,9 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     Rate as RateModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    RecordExpander as RecordExpanderModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     RecordFilter as RecordFilterModel,
@@ -778,6 +788,7 @@ class ModelToComponentFactory:
             PropertiesFromEndpointModel: self.create_properties_from_endpoint,
             PropertyChunkingModel: self.create_property_chunking,
             QueryPropertiesModel: self.create_query_properties,
+            RecordExpanderModel: self.create_record_expander,
             RecordFilterModel: self.create_record_filter,
             RecordSelectorModel: self.create_record_selector,
             RemoveFieldsModel: self.create_remove_fields,
@@ -2328,6 +2339,33 @@ class ModelToComponentFactory:
             config=config,
             parameters=model.parameters or {},
             record_expander=record_expander,
+        )
+
+    def create_record_expander(
+        self,
+        model: RecordExpanderModel,
+        config: Config,
+        **kwargs: Any,
+    ) -> RecordExpander:
+        parent_field_mappings: list[ParentFieldMapping] = []
+        if model.parent_fields_to_copy:
+            for mapping_model in model.parent_fields_to_copy:
+                parent_field_mappings.append(
+                    ParentFieldMapping(
+                        source_field_path=mapping_model.source_field_path,
+                        target_field=mapping_model.target_field,
+                        config=config,
+                        parameters=mapping_model.parameters or {},
+                    )
+                )
+
+        return RecordExpander(
+            expand_records_from_field=model.expand_records_from_field,
+            config=config,
+            parameters=model.parameters or {},
+            remain_original_record=model.remain_original_record or False,
+            on_no_records=model.on_no_records.value if model.on_no_records else "skip",
+            parent_fields_to_copy=parent_field_mappings,
         )
 
     @staticmethod
