@@ -438,10 +438,7 @@ def _get_gsm_secrets_client() -> "secretmanager.SecretManagerServiceClient":  # 
             ),
         )
 
-    return cast(
-        "secretmanager.SecretManagerServiceClient",
-        secretmanager.SecretManagerServiceClient(),
-    )
+    return secretmanager.SecretManagerServiceClient()
 
 
 def _print_ci_secrets_masks(
