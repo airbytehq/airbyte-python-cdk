@@ -36,6 +36,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any, cast
 
+import google.auth.exceptions
 import requests
 import rich_click as click
 import yaml
@@ -438,7 +439,14 @@ def _get_gsm_secrets_client() -> "secretmanager.SecretManagerServiceClient":  # 
             ),
         )
 
-    return secretmanager.SecretManagerServiceClient()
+    try:
+        return secretmanager.SecretManagerServiceClient()
+    except google.auth.exceptions.DefaultCredentialsError:
+        raise ValueError(
+            "No Google Cloud credentials found. "
+            "Either set the `GCP_GSM_CREDENTIALS` environment variable with service account JSON, "
+            "or run `gcloud auth application-default login` to authenticate with your user account."
+        ) from None
 
 
 def _print_ci_secrets_masks(
