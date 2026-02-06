@@ -45,8 +45,6 @@ from types import ModuleType
 
 import rich_click as click
 
-from airbyte_cdk.test.standard_tests.util import create_connector_test_suite
-
 # from airbyte_cdk.test.standard_tests import pytest_hooks
 from airbyte_cdk.utils.connector_paths import (
     find_connector_root_from_name,
@@ -173,6 +171,9 @@ def run_connector_tests(
         raise ImportError(
             "pytest is not installed. Please install pytest to run the connector tests."
         )
+
+    # Lazy import: this module requires pytest, which is only available via the [dev] extra.
+    from airbyte_cdk.test.standard_tests.util import create_connector_test_suite
 
     connector_test_suite = create_connector_test_suite(
         connector_name=connector_name if not connector_directory else None,
