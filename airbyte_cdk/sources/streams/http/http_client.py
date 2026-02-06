@@ -441,10 +441,16 @@ class HttpClient:
         # Emit stream status RUNNING with the reason RATE_LIMITED to log that the rate limit has been reached
         if error_resolution.response_action == ResponseAction.RATE_LIMITED:
             self._logger.info(
-                "Rate limited: emitting RATE_LIMITED stream status for stream '%s' (status code: %s, url: %s)",
+                "Rate limited: emitting RATE_LIMITED stream status for stream '%s' (status code: %s, url: %s, error: %s)",
                 self._name,
                 response.status_code if response is not None else "N/A",
                 request.url,
+                error_resolution.error_message
+                or (
+                    self._error_message_parser.parse_response_error_message(response)
+                    if response is not None
+                    else str(exc)
+                ),
             )
             # TODO: Update to handle with message repository when concurrent message repository is ready
             reasons = [AirbyteStreamStatusReason(type=AirbyteStreamStatusReasonType.RATE_LIMITED)]
@@ -532,12 +538,18 @@ class HttpClient:
                     break
             if user_defined_backoff_time is not None:
                 self._logger.info(
-                    "Rate limit backoff: waiting %.2f seconds before retry (attempt %d, status code: %s, action: %s, url: %s)",
+                    "Retrying with backoff: waiting %.2f seconds (attempt %d, status code: %s, action: %s, url: %s, error: %s)",
                     user_defined_backoff_time,
                     self._request_attempt_count[request],
                     response.status_code if response is not None else "N/A",
                     error_resolution.response_action.value,
                     request.url,
+                    error_resolution.error_message
+                    or (
+                        self._error_message_parser.parse_response_error_message(response)
+                        if response is not None
+                        else str(exc)
+                    ),
                 )
             error_message = (
                 error_resolution.error_message
