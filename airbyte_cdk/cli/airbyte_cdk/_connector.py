@@ -172,7 +172,7 @@ def run_connector_tests(
             "pytest is not installed. Please install pytest to run the connector tests."
         )
 
-    from airbyte_cdk.test.standard_tests.util import create_connector_test_suite
+    from airbyte_cdk.test.standard_tests.util import create_connector_test_suite  # Lazy import: requires pytest, which is only available via the [dev] extra
 
     connector_test_suite = create_connector_test_suite(
         connector_name=connector_name if not connector_directory else None,
