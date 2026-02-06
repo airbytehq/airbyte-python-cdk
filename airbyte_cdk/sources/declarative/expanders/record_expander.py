@@ -3,7 +3,7 @@
 #
 
 from dataclasses import InitVar, dataclass, field
-from typing import Any, Iterable, Mapping, MutableMapping
+from typing import Any, Iterable, Mapping, MutableMapping, Sequence
 
 import dpath
 
@@ -15,7 +15,7 @@ from airbyte_cdk.sources.types import Config
 class ParentFieldMapping:
     """Defines a mapping from a parent record field to a child record field."""
 
-    source_field_path: list[str | InterpolatedString]
+    source_field_path: Sequence[str | InterpolatedString]
     target_field: str
     config: Config
     parameters: InitVar[Mapping[str, Any]]
@@ -86,7 +86,7 @@ class RecordExpander:
         config: The user-provided configuration as specified by the source's spec.
     """
 
-    expand_records_from_field: list[str | InterpolatedString]
+    expand_records_from_field: Sequence[str | InterpolatedString]
     config: Config
     parameters: InitVar[Mapping[str, Any]]
     remain_original_record: bool = False
