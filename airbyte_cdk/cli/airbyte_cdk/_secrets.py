@@ -36,7 +36,6 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any, cast
 
-import google.auth.exceptions
 import requests
 import rich_click as click
 import yaml
@@ -62,10 +61,12 @@ GLOBAL_MASK_KEYS_URL = "https://connectors.airbyte.com/files/registries/v0/specs
 logger = logging.getLogger("airbyte-cdk.cli.secrets")
 
 try:
+    import google.auth.exceptions
     from google.cloud import secretmanager_v1 as secretmanager
     from google.cloud.secretmanager_v1 import Secret
 except ImportError:
     # If the package is not installed, we will raise an error in the CLI command.
+    google = None  # type: ignore
     secretmanager = None  # type: ignore
     Secret = None  # type: ignore
 
