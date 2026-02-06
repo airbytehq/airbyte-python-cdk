@@ -94,15 +94,15 @@ from airbyte_cdk.sources.declarative.decoders.composite_raw_decoder import (
     JsonParser,
     Parser,
 )
+from airbyte_cdk.sources.declarative.expanders.record_expander import (
+    ParentFieldMapping,
+    RecordExpander,
+)
 from airbyte_cdk.sources.declarative.extractors import (
     DpathExtractor,
     RecordFilter,
     RecordSelector,
     ResponseToFileExtractor,
-)
-from airbyte_cdk.sources.declarative.expanders.record_expander import (
-    ParentFieldMapping,
-    RecordExpander,
 )
 from airbyte_cdk.sources.declarative.extractors.record_extractor import RecordExtractor
 from airbyte_cdk.sources.declarative.extractors.record_filter import (
