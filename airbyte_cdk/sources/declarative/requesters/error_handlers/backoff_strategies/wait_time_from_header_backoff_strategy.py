@@ -62,10 +62,10 @@ class WaitTimeFromHeaderBackoffStrategy(BackoffStrategy):
             header_value = get_numeric_value_from_header(response_or_exception, header, regex)
             if header_value is not None:
                 logger.info(
-                    "Rate limit header '%s' detected with value: %s (status code: %d)",
+                    "Rate limit header '%s' detected with value: %s (status code: %s)",
                     header,
                     header_value,
-                    response_or_exception.status_code,
+                    response_or_exception.status_code if hasattr(response_or_exception, "status_code") else "N/A",
                 )
             if (
                 self.max_waiting_time_in_seconds
