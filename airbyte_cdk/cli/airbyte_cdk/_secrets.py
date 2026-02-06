@@ -414,7 +414,14 @@ def _get_secret_filepath(
 
 
 def _get_gsm_secrets_client() -> "secretmanager.SecretManagerServiceClient":  # type: ignore
-    """Get the Google Secret Manager client."""
+    """Get the Google Secret Manager client.
+
+    If the `GCP_GSM_CREDENTIALS` environment variable is set, the client will be
+    created using service account credentials from that JSON string. Otherwise, the
+    client will fall back to Application Default Credentials (ADC), which supports
+    user credentials from `gcloud auth application-default login`, GCE metadata
+    server credentials, and other standard GCP authentication methods.
+    """
     if not secretmanager:
         raise ImportError(
             "google-cloud-secret-manager package is required for Secret Manager integration. "
@@ -423,17 +430,17 @@ def _get_gsm_secrets_client() -> "secretmanager.SecretManagerServiceClient":  # 
         )
 
     credentials_json = os.environ.get("GCP_GSM_CREDENTIALS")
-    if not credentials_json:
-        raise ValueError(
-            "No Google Cloud credentials found. "
-            "Please set the `GCP_GSM_CREDENTIALS` environment variable."
+    if credentials_json:
+        return cast(
+            "secretmanager.SecretManagerServiceClient",
+            secretmanager.SecretManagerServiceClient.from_service_account_info(
+                json.loads(credentials_json)
+            ),
         )
 
     return cast(
         "secretmanager.SecretManagerServiceClient",
-        secretmanager.SecretManagerServiceClient.from_service_account_info(
-            json.loads(credentials_json)
-        ),
+        secretmanager.SecretManagerServiceClient(),
     )
 
 
