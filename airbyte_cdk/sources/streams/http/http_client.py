@@ -440,6 +440,12 @@ class HttpClient:
 
         # Emit stream status RUNNING with the reason RATE_LIMITED to log that the rate limit has been reached
         if error_resolution.response_action == ResponseAction.RATE_LIMITED:
+            self._logger.info(
+                "Rate limited: emitting RATE_LIMITED stream status for stream '%s' (status code: %s, url: %s)",
+                self._name,
+                response.status_code if response is not None else "N/A",
+                request.url,
+            )
             # TODO: Update to handle with message repository when concurrent message repository is ready
             reasons = [AirbyteStreamStatusReason(type=AirbyteStreamStatusReasonType.RATE_LIMITED)]
             message = orjson.dumps(
@@ -524,6 +530,15 @@ class HttpClient:
                 if backoff_time:
                     user_defined_backoff_time = backoff_time
                     break
+            if user_defined_backoff_time is not None:
+                self._logger.info(
+                    "Rate limit backoff: waiting %.2f seconds before retry (attempt %d, status code: %s, action: %s, url: %s)",
+                    user_defined_backoff_time,
+                    self._request_attempt_count[request],
+                    response.status_code if response is not None else "N/A",
+                    error_resolution.response_action.value,
+                    request.url,
+                )
             error_message = (
                 error_resolution.error_message
                 or f"Request to {request.url} failed with failure type {error_resolution.failure_type}, response action {error_resolution.response_action}."

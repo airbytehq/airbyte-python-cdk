@@ -2,6 +2,7 @@
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
 
+import logging
 import re
 from dataclasses import InitVar, dataclass
 from typing import Any, Mapping, Optional, Union
@@ -18,6 +19,8 @@ from airbyte_cdk.sources.declarative.requesters.error_handlers.backoff_strategy 
 )
 from airbyte_cdk.sources.types import Config
 from airbyte_cdk.utils import AirbyteTracedException
+
+logger = logging.getLogger("airbyte")
 
 
 @dataclass
@@ -57,6 +60,13 @@ class WaitTimeFromHeaderBackoffStrategy(BackoffStrategy):
         header_value = None
         if isinstance(response_or_exception, requests.Response):
             header_value = get_numeric_value_from_header(response_or_exception, header, regex)
+            if header_value is not None:
+                logger.info(
+                    "Rate limit header '%s' detected with value: %s (status code: %d)",
+                    header,
+                    header_value,
+                    response_or_exception.status_code,
+                )
             if (
                 self.max_waiting_time_in_seconds
                 and header_value
