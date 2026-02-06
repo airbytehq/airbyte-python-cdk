@@ -433,6 +433,9 @@ def _get_gsm_secrets_client() -> "secretmanager.SecretManagerServiceClient":  # 
 
     credentials_json = os.environ.get("GCP_GSM_CREDENTIALS")
     if credentials_json:
+        click.echo(
+            "Using GCP service account credentials from GCP_GSM_CREDENTIALS env var.", err=True
+        )
         return cast(
             "secretmanager.SecretManagerServiceClient",
             secretmanager.SecretManagerServiceClient.from_service_account_info(
@@ -440,6 +443,9 @@ def _get_gsm_secrets_client() -> "secretmanager.SecretManagerServiceClient":  # 
             ),
         )
 
+    click.echo(
+        "GCP_GSM_CREDENTIALS not set. Using Application Default Credentials (ADC).", err=True
+    )
     try:
         return secretmanager.SecretManagerServiceClient()
     except google.auth.exceptions.DefaultCredentialsError:
