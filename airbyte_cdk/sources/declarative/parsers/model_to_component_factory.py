@@ -535,6 +535,7 @@ from airbyte_cdk.sources.declarative.resolvers import (
 )
 from airbyte_cdk.sources.declarative.retrievers import (
     AsyncRetriever,
+    ClientSideIncrementalRetrieverDecorator,
     LazySimpleRetriever,
     SimpleRetriever,
 )
@@ -2077,6 +2078,7 @@ class ModelToComponentFactory:
             else concurrent_cursor
         )
 
+        is_client_side_incremental = self._is_client_side_filtering_enabled(model)
         retriever = self._create_component_from_model(
             model=model.retriever,
             config=config,
@@ -2086,7 +2088,7 @@ class ModelToComponentFactory:
             stream_slicer=stream_slicer,
             partition_router=partition_router,
             has_stop_condition_cursor=self._is_stop_condition_on_cursor(model),
-            is_client_side_incremental_sync=self._is_client_side_filtering_enabled(model),
+            is_client_side_incremental_sync=is_client_side_incremental,
             cursor=concurrent_cursor,
             transformations=transformations,
             file_uploader=file_uploader,
@@ -2094,6 +2096,15 @@ class ModelToComponentFactory:
         )
         if isinstance(retriever, AsyncRetriever):
             stream_slicer = retriever.stream_slicer
+        elif (
+            is_client_side_incremental
+            and not isinstance(retriever, SimpleRetriever)
+            and not isinstance(concurrent_cursor, FinalStateCursor)
+        ):
+            retriever = ClientSideIncrementalRetrieverDecorator(
+                retriever=retriever,
+                cursor=concurrent_cursor,
+            )
 
         schema_loader: SchemaLoader
         if model.schema_loader and isinstance(model.schema_loader, list):
