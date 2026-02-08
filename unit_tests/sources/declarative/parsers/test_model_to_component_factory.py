@@ -5281,6 +5281,144 @@ list_stream:
     assert stream._cursor_field.supports_catalog_defined_cursor_field == True
 
 
+def test_block_simultaneous_read_from_manifest():
+    """Test that block_simultaneous_read flows through from manifest to DefaultStream"""
+    content = """
+    parent_stream:
+      type: DeclarativeStream
+      name: "parent"
+      primary_key: "id"
+      block_simultaneous_read: "issues_endpoint"
+      retriever:
+        type: SimpleRetriever
+        requester:
+          type: HttpRequester
+          url_base: "https://api.example.com"
+          path: "/parent"
+          http_method: "GET"
+          authenticator:
+            type: BearerAuthenticator
+            api_token: "{{ config['api_key'] }}"
+        record_selector:
+          type: RecordSelector
+          extractor:
+            type: DpathExtractor
+            field_path: []
+      schema_loader:
+        type: InlineSchemaLoader
+        schema:
+          type: object
+          properties:
+            id:
+              type: string
+
+    child_stream:
+      type: DeclarativeStream
+      name: "child"
+      primary_key: "id"
+      block_simultaneous_read: "issues_endpoint"
+      retriever:
+        type: SimpleRetriever
+        requester:
+          type: HttpRequester
+          url_base: "https://api.example.com"
+          path: "/child"
+          http_method: "GET"
+          authenticator:
+            type: BearerAuthenticator
+            api_token: "{{ config['api_key'] }}"
+        record_selector:
+          type: RecordSelector
+          extractor:
+            type: DpathExtractor
+            field_path: []
+        partition_router:
+          type: SubstreamPartitionRouter
+          parent_stream_configs:
+            - type: ParentStreamConfig
+              stream: "#/parent_stream"
+              parent_key: "id"
+              partition_field: "parent_id"
+      schema_loader:
+        type: InlineSchemaLoader
+        schema:
+          type: object
+          properties:
+            id:
+              type: string
+            parent_id:
+              type: string
+
+    no_block_stream:
+      type: DeclarativeStream
+      name: "no_block"
+      primary_key: "id"
+      retriever:
+        type: SimpleRetriever
+        requester:
+          type: HttpRequester
+          url_base: "https://api.example.com"
+          path: "/no_block"
+          http_method: "GET"
+          authenticator:
+            type: BearerAuthenticator
+            api_token: "{{ config['api_key'] }}"
+        record_selector:
+          type: RecordSelector
+          extractor:
+            type: DpathExtractor
+            field_path: []
+      schema_loader:
+        type: InlineSchemaLoader
+        schema:
+          type: object
+          properties:
+            id:
+              type: string
+    """
+
+    config = {"api_key": "test_key"}
+
+    parsed_manifest = YamlDeclarativeSource._parse(content)
+    resolved_manifest = resolver.preprocess_manifest(parsed_manifest)
+
+    # Test parent stream with block_simultaneous_read: true
+    parent_manifest = transformer.propagate_types_and_parameters(
+        "", resolved_manifest["parent_stream"], {}
+    )
+    parent_stream: DefaultStream = factory.create_component(
+        model_type=DeclarativeStreamModel, component_definition=parent_manifest, config=config
+    )
+
+    assert isinstance(parent_stream, DefaultStream)
+    assert parent_stream.name == "parent"
+    assert parent_stream.block_simultaneous_read == "issues_endpoint"
+
+    # Test child stream with block_simultaneous_read: "issues_endpoint"
+    child_manifest = transformer.propagate_types_and_parameters(
+        "", resolved_manifest["child_stream"], {}
+    )
+    child_stream: DefaultStream = factory.create_component(
+        model_type=DeclarativeStreamModel, component_definition=child_manifest, config=config
+    )
+
+    assert isinstance(child_stream, DefaultStream)
+    assert child_stream.name == "child"
+    assert child_stream.block_simultaneous_read == "issues_endpoint"
+
+    # Test stream without block_simultaneous_read (should default to empty string)
+    no_block_manifest = transformer.propagate_types_and_parameters(
+        "", resolved_manifest["no_block_stream"], {}
+    )
+    no_block_stream: DefaultStream = factory.create_component(
+        model_type=DeclarativeStreamModel, component_definition=no_block_manifest, config=config
+    )
+
+    assert isinstance(no_block_stream, DefaultStream)
+    assert no_block_stream.name == "no_block"
+    assert no_block_stream.block_simultaneous_read == ""
+
+
 def get_schema_loader(stream: DefaultStream):
     assert isinstance(
         stream._stream_partition_generator._partition_factory._schema_loader,
