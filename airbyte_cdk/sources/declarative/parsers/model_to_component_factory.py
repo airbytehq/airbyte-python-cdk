@@ -2297,9 +2297,6 @@ class ModelToComponentFactory:
                 response_filters.append(
                     self._create_component_from_model(model=response_filter_model, config=config)
                 )
-        response_filters.append(
-            HttpResponseFilter(config=config, parameters=model.parameters or {})
-        )
 
         return DefaultErrorHandler(
             backoff_strategies=backoff_strategies,
