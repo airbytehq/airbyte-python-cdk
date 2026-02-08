@@ -2642,7 +2642,7 @@ class ModelToComponentFactory:
         return CompositeRawDecoder.by_headers(
             [({"Content-Encoding", "Content-Type"}, _compressed_response_types, gzip_parser)],
             stream_response=True,
-            fallback_parser=gzip_parser.inner_parser,
+            fallback_parser=gzip_parser,
         )
 
     @staticmethod
