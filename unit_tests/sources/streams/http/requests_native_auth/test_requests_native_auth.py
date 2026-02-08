@@ -158,7 +158,7 @@ class TestOauth2Authenticator:
             refresh_request_body={
                 "custom_field": "in_outbound_request",
                 "another_field": "exists_in_body",
-                "scopes": ["no_override"],
+                "scope": ["no_override"],
             },
         )
         body = oauth.build_refresh_request_body()
@@ -167,7 +167,7 @@ class TestOauth2Authenticator:
             "client_id": "some_client_id",
             "client_secret": "some_client_secret",
             "refresh_token": "some_refresh_token",
-            "scopes": scopes,
+            "scope": scopes,
             "custom_field": "in_outbound_request",
             "another_field": "exists_in_body",
         }
@@ -218,6 +218,7 @@ class TestOauth2Authenticator:
             client_secret="some_client_secret",
             refresh_token_name="custom_refresh_token_key",
             refresh_token="some_refresh_token",
+            scopes_name="custom_scopes_key",
             scopes=["scope1", "scope2"],
             token_expiry_date=ab_datetime_now() + timedelta(days=3),
             grant_type_name="custom_grant_type",
@@ -225,7 +226,7 @@ class TestOauth2Authenticator:
             refresh_request_body={
                 "custom_field": "in_outbound_request",
                 "another_field": "exists_in_body",
-                "scopes": ["no_override"],
+                "custom_scopes_key": ["no_override"],
             },
         )
         body = oauth.build_refresh_request_body()
@@ -234,7 +235,7 @@ class TestOauth2Authenticator:
             "custom_client_id_key": "some_client_id",
             "custom_client_secret_key": "some_client_secret",
             "custom_refresh_token_key": "some_refresh_token",
-            "scopes": scopes,
+            "custom_scopes_key": scopes,
             "custom_field": "in_outbound_request",
             "another_field": "exists_in_body",
         }
