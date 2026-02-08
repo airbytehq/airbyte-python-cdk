@@ -2629,6 +2629,7 @@ class ModelToComponentFactory:
             "application/gzip",
             "application/x-gzip",
             "application/x-zip-compressed",
+            "application/a-gzip",
         }
 
         gzip_parser: GzipParser = ModelToComponentFactory._get_parser(model, config)  # type: ignore  # based on the model, we know this will be a GzipParser
