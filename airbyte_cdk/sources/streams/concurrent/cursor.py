@@ -2,6 +2,7 @@
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
 
+import datetime
 import functools
 import logging
 import threading
@@ -88,6 +89,27 @@ class Cursor(StreamSlicer, ABC):
         Subclasses can override this method to provide actual behavior.
         """
         yield StreamSlice(partition={}, cursor_slice={})
+
+    def get_cursor_datetime_from_state(
+        self, stream_state: Mapping[str, Any]
+    ) -> datetime.datetime | None:
+        """Extract and parse the cursor datetime from the given stream state.
+
+        This method is used by StateDelegatingStream to validate cursor age against
+        an API's data retention period. Subclasses should implement this method to
+        extract the cursor value from their specific state structure and parse it
+        into a datetime object.
+
+        Returns None if the cursor cannot be extracted or parsed, which will cause
+        StateDelegatingStream to fall back to full refresh (safe default).
+
+        Raises NotImplementedError by default - subclasses must implement this method
+        if they want to support cursor age validation with api_retention_period.
+        """
+        raise NotImplementedError(
+            f"{self.__class__.__name__} does not implement get_cursor_datetime_from_state. "
+            f"Cursor age validation with api_retention_period is not supported for this cursor type."
+        )
 
 
 class FinalStateCursor(Cursor):
@@ -568,3 +590,40 @@ class ConcurrentCursor(Cursor):
             )
         else:
             return stream_slice
+
+    def get_cursor_datetime_from_state(
+        self, stream_state: Mapping[str, Any]
+    ) -> datetime.datetime | None:
+        """Extract and parse the cursor datetime from the given stream state.
+
+        For concurrent cursors, the state can be in two formats:
+        1. Sequential/legacy format: {cursor_field: cursor_value}
+        2. Concurrent format: {state_type: "date-range", slices: [...]}
+
+        Returns the cursor datetime if present and parseable, otherwise returns None.
+        """
+        # Check if state is in concurrent format
+        if self._connector_state_converter.is_state_message_compatible(stream_state):
+            slices = stream_state.get("slices", [])
+            if not slices:
+                return None
+            # Get the most recent cursor value from the first slice (after merging)
+            first_slice = slices[0]
+            cursor_value = first_slice.get(
+                self._connector_state_converter.MOST_RECENT_RECORD_KEY
+            ) or first_slice.get(self._connector_state_converter.END_KEY)
+            if not cursor_value:
+                return None
+            try:
+                return self._connector_state_converter.parse_value(cursor_value)
+            except (ValueError, TypeError):
+                return None
+
+        # Sequential/legacy format: {cursor_field: cursor_value}
+        cursor_value = stream_state.get(self._cursor_field.cursor_field_key)
+        if not cursor_value:
+            return None
+        try:
+            return self._connector_state_converter.parse_value(cursor_value)
+        except (ValueError, TypeError):
+            return None
