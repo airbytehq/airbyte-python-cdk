@@ -602,8 +602,9 @@ class ConcurrentCursor(Cursor):
 
         Returns the cursor datetime if present and parseable, otherwise returns None.
         """
-        # Check if state is in concurrent format
-        if self._connector_state_converter.is_state_message_compatible(stream_state):
+        # Check if state is in concurrent format (need to convert to dict for type compatibility)
+        mutable_state: MutableMapping[str, Any] = dict(stream_state)
+        if self._connector_state_converter.is_state_message_compatible(mutable_state):
             slices = stream_state.get("slices", [])
             if not slices:
                 return None
@@ -615,7 +616,10 @@ class ConcurrentCursor(Cursor):
             if not cursor_value:
                 return None
             try:
-                return self._connector_state_converter.parse_value(cursor_value)
+                parsed_value = self._connector_state_converter.parse_value(cursor_value)
+                if isinstance(parsed_value, datetime.datetime):
+                    return parsed_value
+                return None
             except (ValueError, TypeError):
                 return None
 
@@ -624,6 +628,9 @@ class ConcurrentCursor(Cursor):
         if not cursor_value:
             return None
         try:
-            return self._connector_state_converter.parse_value(cursor_value)
+            parsed_value = self._connector_state_converter.parse_value(cursor_value)
+            if isinstance(parsed_value, datetime.datetime):
+                return parsed_value
+            return None
         except (ValueError, TypeError):
             return None
