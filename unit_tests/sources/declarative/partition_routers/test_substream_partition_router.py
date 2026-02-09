@@ -612,7 +612,8 @@ def test_request_option(
             ),
             {
                 "first_stream": {
-                    "lookback_window": 0,
+                    "lookback_window": 1,
+                    "state": {"cursor": "2022-01-01"},
                     "states": [
                         {"cursor": {"cursor": "2021-01-02"}, "partition": {"slice": "first"}},
                         {"cursor": {"cursor": "2022-01-01"}, "partition": {"slice": "second"}},
