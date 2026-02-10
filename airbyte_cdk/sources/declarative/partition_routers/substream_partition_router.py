@@ -212,7 +212,7 @@ class SubstreamPartitionRouter(PartitionRouter):
                     for parent_record, is_last_record_in_slice in iterate_with_last_flag(
                         partition.read()
                     ):
-                        skip_slice = True
+                        emit_slice = False
                         if parent_record is not None:
                             # In the previous CDK implementation, state management was done internally by the stream.
                             # However, this could cause issues when doing availability check for example as the availability
@@ -234,12 +234,12 @@ class SubstreamPartitionRouter(PartitionRouter):
                                     record_data,  # type: ignore [arg-type]
                                     parent_field,
                                 )
+                                emit_slice = True
                             except KeyError:
                                 # FIXME a log here would go a long way for debugging
                                 pass
-                            else:
-                                skip_slice = False
 
+                            if emit_slice:
                                 # Add extra fields
                                 extracted_extra_fields = self._extract_extra_fields(
                                     record_data, extra_fields
@@ -259,7 +259,7 @@ class SubstreamPartitionRouter(PartitionRouter):
                             if is_last_slice:
                                 parent_stream.cursor.ensure_at_least_one_state_emitted()
 
-                        if not skip_slice:
+                        if emit_slice:
                             yield StreamSlice(
                                 partition={
                                     partition_field: partition_value,
