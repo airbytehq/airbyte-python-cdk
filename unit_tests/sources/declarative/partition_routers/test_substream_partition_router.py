@@ -1240,3 +1240,66 @@ def test_substream_partition_router_closes_all_partitions_even_when_no_records()
     assert close_partition_calls[0][0][0] == partition_1
     assert close_partition_calls[1][0][0] == partition_2
     assert close_partition_calls[2][0][0] == partition_3
+
+
+def test_substream_partition_router_closes_partition_even_when_parent_key_missing():
+    """
+    Test that cursor.close_partition() is called even when the parent_key extraction
+    fails with a KeyError. This ensures partition lifecycle is properly managed
+    regardless of whether the slice can be emitted.
+    """
+    mock_slices = [
+        StreamSlice(partition={"slice": "first"}, cursor_slice={}),
+        StreamSlice(partition={"slice": "second"}, cursor_slice={}),
+    ]
+
+    # First partition has a record with the expected "id" key
+    partition_1 = InMemoryPartition(
+        "partition_1",
+        "first_stream",
+        mock_slices[0],
+        _build_records_for_slice([{"id": "record_1"}], mock_slices[0]),
+    )
+    # Second partition has a record missing the "id" key (will cause KeyError)
+    partition_2 = InMemoryPartition(
+        "partition_2",
+        "first_stream",
+        mock_slices[1],
+        _build_records_for_slice([{"other_field": "value"}], mock_slices[1]),
+    )
+
+    mock_cursor = Mock()
+    mock_cursor.stream_slices.return_value = []
+
+    partition_router = SubstreamPartitionRouter(
+        parent_stream_configs=[
+            ParentStreamConfig(
+                stream=MockStream(
+                    [partition_1, partition_2],
+                    "first_stream",
+                    cursor=mock_cursor,
+                ),
+                parent_key="id",
+                partition_field="partition_field",
+                parameters={},
+                config={},
+            )
+        ],
+        parameters={},
+        config={},
+    )
+
+    slices = list(partition_router.stream_slices())
+
+    # Only the first partition's record should produce a slice
+    # The second partition's record is missing the "id" key, so no slice is emitted
+    assert slices == [
+        {"partition_field": "record_1", "parent_slice": {"slice": "first"}},
+    ]
+
+    # Both partitions should be closed, even though the second one had a KeyError
+    assert mock_cursor.close_partition.call_count == 2
+
+    close_partition_calls = mock_cursor.close_partition.call_args_list
+    assert close_partition_calls[0][0][0] == partition_1
+    assert close_partition_calls[1][0][0] == partition_2

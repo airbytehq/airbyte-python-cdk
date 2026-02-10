@@ -212,6 +212,7 @@ class SubstreamPartitionRouter(PartitionRouter):
                     for parent_record, is_last_record_in_slice in iterate_with_last_flag(
                         partition.read()
                     ):
+                        skip_slice = True
                         if parent_record is not None:
                             # In the previous CDK implementation, state management was done internally by the stream.
                             # However, this could cause issues when doing availability check for example as the availability
@@ -235,28 +236,30 @@ class SubstreamPartitionRouter(PartitionRouter):
                                 )
                             except KeyError:
                                 # FIXME a log here would go a long way for debugging
-                                continue
+                                pass
+                            else:
+                                skip_slice = False
 
-                            # Add extra fields
-                            extracted_extra_fields = self._extract_extra_fields(
-                                record_data, extra_fields
-                            )
+                                # Add extra fields
+                                extracted_extra_fields = self._extract_extra_fields(
+                                    record_data, extra_fields
+                                )
 
-                            if parent_stream_config.lazy_read_pointer:
-                                extracted_extra_fields = {
-                                    "child_response": self._extract_child_response(
-                                        record_data,
-                                        parent_stream_config.lazy_read_pointer,  # type: ignore[arg-type]  # lazy_read_pointer type handeled in __post_init__ of parent_stream_config
-                                    ),
-                                    **extracted_extra_fields,
-                                }
+                                if parent_stream_config.lazy_read_pointer:
+                                    extracted_extra_fields = {
+                                        "child_response": self._extract_child_response(
+                                            record_data,
+                                            parent_stream_config.lazy_read_pointer,  # type: ignore[arg-type]  # lazy_read_pointer type handeled in __post_init__ of parent_stream_config
+                                        ),
+                                        **extracted_extra_fields,
+                                    }
 
                         if is_last_record_in_slice:
                             parent_stream.cursor.close_partition(partition)
                             if is_last_slice:
                                 parent_stream.cursor.ensure_at_least_one_state_emitted()
 
-                        if parent_record is not None:
+                        if not skip_slice:
                             yield StreamSlice(
                                 partition={
                                     partition_field: partition_value,
