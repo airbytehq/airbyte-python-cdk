@@ -155,10 +155,7 @@ class FileBasedStreamFacade(AbstractStreamFacade[DefaultStream], AbstractFileBas
 
     @property
     def primary_key(self) -> PrimaryKeyType:
-        return (
-            self._legacy_stream.config.primary_key
-            or self.get_parser().get_parser_defined_primary_key(self._legacy_stream.config)
-        )
+        return self._legacy_stream.primary_key
 
     def get_parser(self) -> FileTypeParser:
         return self._legacy_stream.get_parser()
