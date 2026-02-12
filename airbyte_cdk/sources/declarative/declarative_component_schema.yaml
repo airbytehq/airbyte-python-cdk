@@ -5043,7 +5043,7 @@ interpolation:
       examples:
         - '{{ "goodbye, cruel world" | regex_search("goodbye,\s(.*)$") }} -> "cruel world"'
     - title: regex_replace
-      description: Remove all occurrences in the string that match the provided regex pattern, replacing them with the specified replacement string.
+      description: Replace all occurrences in the string that match the provided regex pattern with the specified replacement string.
       arguments:
         regex: The regular expression pattern to match against.
         replacement: The string to replace matched occurrences with.
