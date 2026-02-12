@@ -138,6 +138,56 @@ def test_regex_replace(expression: str, expected: str) -> None:
     assert val == expected
 
 
+@pytest.mark.parametrize(
+    "expression, expected",
+    [
+        pytest.param(
+            "{{ regex_replace('hello world', 'world', 'there') }}",
+            "hello there",
+            id="basic_replacement",
+        ),
+        pytest.param(
+            "{{ regex_replace('abc123def456', '[0-9]+', '') }}",
+            "abcdef",
+            id="regex_pattern_strip_digits",
+        ),
+        pytest.param(
+            "{{ regex_replace('hello world', 'xyz', 'replaced') }}",
+            "hello world",
+            id="no_match_returns_original",
+        ),
+        pytest.param(
+            "{{ regex_replace('aaa bbb aaa', 'aaa', 'ccc') }}",
+            "ccc bbb ccc",
+            id="multiple_occurrences",
+        ),
+    ],
+)
+def test_regex_replace_as_macro(expression: str, expected: str) -> None:
+    val = interpolation.eval(expression, {})
+    assert val == expected
+
+
+@pytest.mark.parametrize(
+    "expression, expected",
+    [
+        pytest.param(
+            "{{ regex_search('<https://example.com/?page=2>; rel=\"next\"', '<(.*)>; rel=.*') }}",
+            "https://example.com/?page=2",
+            id="valid_match",
+        ),
+        pytest.param(
+            "{{ regex_search('no match here', 'WATWATWAT') }}",
+            None,
+            id="no_match",
+        ),
+    ],
+)
+def test_regex_search_as_macro(expression: str, expected: str) -> None:
+    val = interpolation.eval(expression, {})
+    assert val == expected
+
+
 def test_hmac_sha256_default() -> None:
     message = "test_message"
     secret_key = "test_secret_key"

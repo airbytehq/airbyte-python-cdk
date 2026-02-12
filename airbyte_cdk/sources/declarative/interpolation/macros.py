@@ -16,6 +16,7 @@ from dateutil import parser
 from isodate import parse_duration
 
 from airbyte_cdk.sources.declarative.datetime.datetime_parser import DatetimeParser
+from airbyte_cdk.sources.declarative.interpolation.filters import regex_replace, regex_search
 
 """
 This file contains macros that can be evaluated by a `JinjaInterpolation` object
@@ -232,5 +233,7 @@ _macros_list = [
     sanitize_url,
     camel_case_to_snake_case,
     generate_uuid,
+    regex_replace,
+    regex_search,
 ]
 macros = {f.__name__: f for f in _macros_list}
