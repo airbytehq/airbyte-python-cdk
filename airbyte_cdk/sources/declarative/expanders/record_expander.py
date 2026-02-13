@@ -111,9 +111,9 @@ class RecordExpander:
 
         if "*" in expand_path:
             extracted: Any = dpath.values(parent_record, expand_path)
-            for record in extracted:
-                if isinstance(record, list):
-                    for item in record:
+            for extracted_value in extracted:
+                if isinstance(extracted_value, list):
+                    for item in extracted_value:
                         if isinstance(item, dict):
                             expanded_record = dict(item)
                             self._apply_parent_context(parent_record, expanded_record)
