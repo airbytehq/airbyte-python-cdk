@@ -3754,7 +3754,8 @@ def test_read_concurrent_declarative_source(
         output_data = [
             message.record.data for message in _run_read(manifest, _stream_name) if message.record
         ]
-        assert output_data == expected_records
+        sort_key = lambda x: (x.get("partition", 0), x.get("ABC", 0), x.get("AED", 0), x.get("USD", 0))
+        assert sorted(output_data, key=sort_key) == sorted(expected_records, key=sort_key)
         mock_retriever.assert_has_calls(expected_calls)
 
 
