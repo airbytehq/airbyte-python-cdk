@@ -17,7 +17,7 @@ COPY dist/*.whl ./dist/
 RUN poetry config virtualenvs.create false \
     && poetry install --only main --no-interaction --no-ansi || true
 
-# Build and install the package
+# Install source-declarative-manifest CLI and its dependencies
 RUN pip install dist/*.whl
 
 # Recreate the original structure
@@ -33,7 +33,7 @@ RUN rm -rf dist/ pyproject.toml poetry.lock README.md
 # Set ownership of /airbyte to the non-root airbyte user and group (1000:1000)
 RUN chown -R 1000:1000 /airbyte
 
-# Set the entrypoint
-ENV AIRBYTE_ENTRYPOINT="python /airbyte/integration_code/main.py"
-ENTRYPOINT ["python", "/airbyte/integration_code/main.py"]
+# Set the entrypoint to use the source-declarative-manifest CLI
+ENV AIRBYTE_ENTRYPOINT="source-declarative-manifest"
+ENTRYPOINT ["source-declarative-manifest"]
 USER airbyte
