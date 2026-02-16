@@ -39,12 +39,13 @@ if TYPE_CHECKING:
 T = TypeVar("T")
 
 
-def iterate_with_last_flag(generator: Iterable[T]) -> Iterable[tuple[T, bool]]:
+def iterate_with_last_flag(generator: Iterable[T]) -> Iterable[tuple[T | None, bool]]:
     iterator = iter(generator)
 
     try:
         current = next(iterator)
     except StopIteration:
+        yield None, True
         return  # Return an empty iterator
 
     for next_item in iterator:
@@ -206,60 +207,66 @@ class SubstreamPartitionRouter(PartitionRouter):
                 for partition, is_last_slice in iterate_with_last_flag(
                     parent_stream.generate_partitions()
                 ):
+                    if partition is None:
+                        break
                     for parent_record, is_last_record_in_slice in iterate_with_last_flag(
                         partition.read()
                     ):
-                        # In the previous CDK implementation, state management was done internally by the stream.
-                        # However, this could cause issues when doing availability check for example as the availability
-                        # check would progress the state so state management was moved outside of the read method.
-                        # Hence, we need to call the cursor here.
-                        # Note that we call observe and close_partition before emitting the associated record as the
-                        # ConcurrentPerPartitionCursor will associate a record with the state of the stream after the
-                        # record was consumed.
-                        parent_stream.cursor.observe(parent_record)
-                        parent_partition = (
-                            parent_record.associated_slice.partition
-                            if parent_record.associated_slice
-                            else {}
-                        )
-                        record_data = parent_record.data
-
-                        try:
-                            partition_value = dpath.get(
-                                record_data,  # type: ignore [arg-type]
-                                parent_field,
+                        emit_slice = parent_record is not None
+                        if parent_record is not None:
+                            # In the previous CDK implementation, state management was done internally by the stream.
+                            # However, this could cause issues when doing availability check for example as the availability
+                            # check would progress the state so state management was moved outside of the read method.
+                            # Hence, we need to call the cursor here.
+                            # Note that we call observe and close_partition before emitting the associated record as the
+                            # ConcurrentPerPartitionCursor will associate a record with the state of the stream after the
+                            # record was consumed.
+                            parent_stream.cursor.observe(parent_record)
+                            parent_partition = (
+                                parent_record.associated_slice.partition
+                                if parent_record.associated_slice
+                                else {}
                             )
-                        except KeyError:
-                            # FIXME a log here would go a long way for debugging
-                            continue
+                            record_data = parent_record.data
 
-                        # Add extra fields
-                        extracted_extra_fields = self._extract_extra_fields(
-                            record_data, extra_fields
-                        )
+                            try:
+                                partition_value = dpath.get(
+                                    record_data,  # type: ignore [arg-type]
+                                    parent_field,
+                                )
+                            except KeyError:
+                                # FIXME a log here would go a long way for debugging
+                                emit_slice = False
 
-                        if parent_stream_config.lazy_read_pointer:
-                            extracted_extra_fields = {
-                                "child_response": self._extract_child_response(
-                                    record_data,
-                                    parent_stream_config.lazy_read_pointer,  # type: ignore[arg-type]  # lazy_read_pointer type handeled in __post_init__ of parent_stream_config
-                                ),
-                                **extracted_extra_fields,
-                            }
+                            if emit_slice:
+                                # Add extra fields
+                                extracted_extra_fields = self._extract_extra_fields(
+                                    record_data, extra_fields
+                                )
+
+                                if parent_stream_config.lazy_read_pointer:
+                                    extracted_extra_fields = {
+                                        "child_response": self._extract_child_response(
+                                            record_data,
+                                            parent_stream_config.lazy_read_pointer,  # type: ignore[arg-type]  # lazy_read_pointer type handeled in __post_init__ of parent_stream_config
+                                        ),
+                                        **extracted_extra_fields,
+                                    }
 
                         if is_last_record_in_slice:
                             parent_stream.cursor.close_partition(partition)
                             if is_last_slice:
                                 parent_stream.cursor.ensure_at_least_one_state_emitted()
 
-                        yield StreamSlice(
-                            partition={
-                                partition_field: partition_value,
-                                "parent_slice": parent_partition or {},
-                            },
-                            cursor_slice={},
-                            extra_fields=extracted_extra_fields,
-                        )
+                        if emit_slice:
+                            yield StreamSlice(
+                                partition={
+                                    partition_field: partition_value,
+                                    "parent_slice": parent_partition or {},
+                                },
+                                cursor_slice={},
+                                extra_fields=extracted_extra_fields,
+                            )
 
                 yield from []
 
