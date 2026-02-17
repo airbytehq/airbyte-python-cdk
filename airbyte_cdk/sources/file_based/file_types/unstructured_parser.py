@@ -79,13 +79,17 @@ def _import_unstructured() -> None:
     global unstructured_partition_docx
     global unstructured_partition_pptx
     from unstructured.partition.docx import partition_docx
-    from unstructured.partition.pdf import partition_pdf
     from unstructured.partition.pptx import partition_pptx
 
-    # separate global variables to properly propagate typing
-    unstructured_partition_pdf = partition_pdf
     unstructured_partition_docx = partition_docx
     unstructured_partition_pptx = partition_pptx
+
+    try:
+        from unstructured.partition.pdf import partition_pdf
+
+        unstructured_partition_pdf = partition_pdf
+    except (ImportError, ModuleNotFoundError):
+        pass
 
 
 def user_error(e: Exception) -> bool:
@@ -201,13 +205,6 @@ class UnstructuredParser(FileTypeParser):
         logger: logging.Logger,
     ) -> str:
         _import_unstructured()
-        if (
-            (not unstructured_partition_pdf)
-            or (not unstructured_partition_docx)
-            or (not unstructured_partition_pptx)
-        ):
-            # check whether unstructured library is actually available for better error message and to ensure proper typing (can't be None after this point)
-            raise Exception("unstructured library is not available")
 
         filetype: FileType | None = self._get_filetype(file_handle, remote_file)
 
@@ -350,13 +347,6 @@ class UnstructuredParser(FileTypeParser):
         self, file_handle: IOBase, filetype: FileType, strategy: str, remote_file: RemoteFile
     ) -> str:
         _import_unstructured()
-        if (
-            (not unstructured_partition_pdf)
-            or (not unstructured_partition_docx)
-            or (not unstructured_partition_pptx)
-        ):
-            # check whether unstructured library is actually available for better error message and to ensure proper typing (can't be None after this point)
-            raise Exception("unstructured library is not available")
 
         file: Any = file_handle
 
@@ -367,15 +357,25 @@ class UnstructuredParser(FileTypeParser):
 
         try:
             if filetype == FileType.PDF:
-                # for PDF, read the file into a BytesIO object because some code paths in pdf parsing are doing an instance check on the file object and don't work with file-like objects
+                if not unstructured_partition_pdf:
+                    raise self._create_parse_error(
+                        remote_file,
+                        "PDF parsing requires the 'unstructured_inference' package. Install it with: pip install unstructured-inference",
+                    )
                 file_handle.seek(0)
                 with BytesIO(file_handle.read()) as file:
                     file_handle.seek(0)
                     elements = unstructured_partition_pdf(file=file, strategy=strategy)
             elif filetype == FileType.DOCX:
+                if not unstructured_partition_docx:
+                    raise self._create_parse_error(remote_file, "DOCX partition function is not available")
                 elements = unstructured_partition_docx(file=file)
             elif filetype == FileType.PPTX:
+                if not unstructured_partition_pptx:
+                    raise self._create_parse_error(remote_file, "PPTX partition function is not available")
                 elements = unstructured_partition_pptx(file=file)
+        except RecordParseError:
+            raise
         except Exception as e:
             raise self._create_parse_error(remote_file, str(e))
 
