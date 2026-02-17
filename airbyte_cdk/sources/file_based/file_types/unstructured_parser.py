@@ -6,7 +6,7 @@ import os
 import traceback
 from datetime import datetime
 from io import BytesIO, IOBase
-from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple, Union
+from typing import IO, Any, Dict, Iterable, List, Mapping, Optional, Tuple, Union, cast
 
 import backoff
 import dpath
@@ -424,7 +424,7 @@ class UnstructuredParser(FileTypeParser):
         if file_type and file_type != FileType.UNK:
             return file_type
 
-        type_based_on_content = detect_filetype(file=file)
+        type_based_on_content = detect_filetype(file=cast(IO[bytes], file))
         file.seek(0)  # detect_filetype is reading to read the file content, so we need to reset
 
         if type_based_on_content and type_based_on_content != FileType.UNK:
