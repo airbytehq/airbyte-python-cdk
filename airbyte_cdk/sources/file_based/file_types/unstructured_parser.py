@@ -368,11 +368,15 @@ class UnstructuredParser(FileTypeParser):
                     elements = unstructured_partition_pdf(file=file, strategy=strategy)
             elif filetype == FileType.DOCX:
                 if not unstructured_partition_docx:
-                    raise self._create_parse_error(remote_file, "DOCX partition function is not available")
+                    raise self._create_parse_error(
+                        remote_file, "DOCX partition function is not available"
+                    )
                 elements = unstructured_partition_docx(file=file)
             elif filetype == FileType.PPTX:
                 if not unstructured_partition_pptx:
-                    raise self._create_parse_error(remote_file, "PPTX partition function is not available")
+                    raise self._create_parse_error(
+                        remote_file, "PPTX partition function is not available"
+                    )
                 elements = unstructured_partition_pptx(file=file)
         except RecordParseError:
             raise
