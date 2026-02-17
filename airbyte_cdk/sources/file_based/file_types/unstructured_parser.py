@@ -89,7 +89,12 @@ def _import_unstructured() -> None:
 
         unstructured_partition_pdf = partition_pdf
     except (ImportError, ModuleNotFoundError):
-        pass
+        # partition_pdf requires the heavy unstructured_inference package;
+        # PDF support is disabled when it is not installed.
+        logger = logging.getLogger(__name__)
+        logger.info(
+            "Could not import unstructured.partition.pdf (requires unstructured_inference). PDF parsing will be unavailable."
+        )
 
 
 def user_error(e: Exception) -> bool:
