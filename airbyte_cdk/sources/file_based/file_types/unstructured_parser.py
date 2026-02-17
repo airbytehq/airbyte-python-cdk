@@ -12,13 +12,7 @@ import backoff
 import dpath
 import nltk
 import requests
-from unstructured.file_utils.filetype import (
-    EXT_TO_FILETYPE,
-    FILETYPE_TO_MIMETYPE,
-    STR_TO_FILETYPE,
-    FileType,
-    detect_filetype,
-)
+from unstructured.file_utils.filetype import FileType, detect_filetype
 
 from airbyte_cdk.models import FailureType
 from airbyte_cdk.sources.file_based.config.file_based_stream_config import FileBasedStreamConfig
@@ -335,7 +329,7 @@ class UnstructuredParser(FileTypeParser):
 
         data = self._params_to_dict(format.parameters, strategy)
 
-        file_data = {"files": ("filename", file_handle, FILETYPE_TO_MIMETYPE[filetype])}
+        file_data = {"files": ("filename", file_handle, filetype.mime_type)}
 
         response = requests.post(
             f"{format.api_url}/general/v0/general", headers=headers, data=data, files=file_data
@@ -405,8 +399,11 @@ class UnstructuredParser(FileTypeParser):
         2. Use the file name if available
         3. Use the file content
         """
-        if remote_file.mime_type and remote_file.mime_type in STR_TO_FILETYPE:
-            return STR_TO_FILETYPE[remote_file.mime_type]
+        if remote_file.mime_type:
+            try:
+                return FileType.from_mime_type(remote_file.mime_type)
+            except ValueError:
+                pass
 
         # set name to none, otherwise unstructured will try to get the modified date from the local file system
         if hasattr(file, "name"):
@@ -418,7 +415,7 @@ class UnstructuredParser(FileTypeParser):
         file_type: FileType | None = None
         try:
             file_type = detect_filetype(
-                filename=remote_file.uri,
+                file_path=remote_file.uri,
             )
         except Exception:
             # Path doesn't exist locally. Try something else...
@@ -434,8 +431,10 @@ class UnstructuredParser(FileTypeParser):
             return type_based_on_content
 
         extension = "." + remote_file.uri.split(".")[-1].lower()
-        if extension in EXT_TO_FILETYPE:
-            return EXT_TO_FILETYPE[extension]
+        try:
+            return FileType.from_extension(extension)
+        except ValueError:
+            pass
 
         return None
 
