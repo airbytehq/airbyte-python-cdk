@@ -434,10 +434,9 @@ class UnstructuredParser(FileTypeParser):
             return file_type
 
         extension = "." + remote_file.uri.split(".")[-1].lower()
-        try:
-            return FileType.from_extension(extension)
-        except ValueError:
-            pass
+        ext_type = FileType.from_extension(extension)
+        if ext_type is not None:
+            return ext_type
 
         type_based_on_content = detect_filetype(file=cast(IO[bytes], file))
         file.seek(0)  # detect_filetype is reading to read the file content, so we need to reset
