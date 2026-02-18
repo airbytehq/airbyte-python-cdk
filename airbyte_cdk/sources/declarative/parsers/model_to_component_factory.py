@@ -78,7 +78,6 @@ from airbyte_cdk.sources.declarative.checks import (
     DynamicStreamCheckConfig,
 )
 from airbyte_cdk.sources.declarative.concurrency_level import ConcurrencyLevel
-from airbyte_cdk.sources.declarative.datetime.datetime_parser import DatetimeParser
 from airbyte_cdk.sources.declarative.datetime.min_max_datetime import MinMaxDatetime
 from airbyte_cdk.sources.declarative.decoders import (
     Decoder,
@@ -3561,13 +3560,13 @@ class ModelToComponentFactory:
             )
 
         stream_model = self._get_state_delegating_stream_model(
-            False if has_parent_state is None else has_parent_state, model
+            False if has_parent_state is None else has_parent_state, model, config
         )
 
         return self._create_component_from_model(stream_model, config=config, **kwargs)  # type: ignore[no-any-return]  # DeclarativeStream will be created as stream_model is alwyas DeclarativeStreamModel
 
     def _get_state_delegating_stream_model(
-        self, has_parent_state: bool, model: StateDelegatingStreamModel
+        self, has_parent_state: bool, model: StateDelegatingStreamModel, config: Config
     ) -> DeclarativeStreamModel:
         stream_state = self._connector_state_manager.get_stream_state(model.name, None)
 
@@ -3581,7 +3580,7 @@ class ModelToComponentFactory:
             ]
             incremental_sync_sources = [s for s in incremental_sync_sources if s is not None]
             if incremental_sync_sources and self._is_cursor_older_than_retention_period(
-                stream_state, incremental_sync_sources, model.api_retention_period, model.name
+                stream_state, incremental_sync_sources, model.api_retention_period, model.name, config
             ):
                 return model.full_refresh_stream
 
@@ -3593,20 +3592,21 @@ class ModelToComponentFactory:
         incremental_sync_sources: list[Any],
         api_retention_period: str,
         stream_name: str,
+        config: Config,
     ) -> bool:
         """Check if the cursor value in the state is older than the API's retention period.
 
-        If the cursor is too old, the incremental API may not have data going back that far,
-        so we should fall back to a full refresh to avoid data loss.
-
-        This method handles different state structures:
-        - Simple cursor state: {"cursor_field": "value"}
-        - Per-partition state: {"state": {"cursor_field": "value"}, "states": [...]}
+        Delegates cursor datetime extraction to cursor class instances via
+        get_cursor_datetime_from_state, which handles format-specific parsing.
 
         Returns True if the cursor is older than the retention period or if the cursor is
         invalid/unparseable (should use full refresh).
         Returns False if the cursor is within the retention period (safe to use incremental).
         """
+        from airbyte_cdk.legacy.sources.declarative.incremental.datetime_based_cursor import (
+            DatetimeBasedCursor,
+        )
+
         for incremental_sync in incremental_sync_sources:
             if isinstance(incremental_sync, IncrementingCountCursorModel):
                 raise ValueError(
@@ -3615,114 +3615,54 @@ class ModelToComponentFactory:
                     f"cursors, so cursor age validation cannot be performed."
                 )
 
-        cursor_field = None
+        cursor_datetime: datetime.datetime | None = None
         for incremental_sync in incremental_sync_sources:
-            cursor_field = getattr(incremental_sync, "cursor_field", None)
-            if cursor_field:
+            if not isinstance(incremental_sync, DatetimeBasedCursorModel):
+                continue
+            cursor = self._create_cursor_for_age_check(incremental_sync, config)
+            cursor_datetime = cursor.get_cursor_datetime_from_state(stream_state)
+            if cursor_datetime is not None:
                 break
+            global_state = stream_state.get("state")
+            if isinstance(global_state, dict):
+                cursor_datetime = cursor.get_cursor_datetime_from_state(global_state)
+                if cursor_datetime is not None:
+                    break
 
-        if not cursor_field:
+        if cursor_datetime is None:
             return True
-
-        cursor_value = self._extract_cursor_value_from_state(stream_state, cursor_field)
-        if not cursor_value:
-            return True
-
-        if not isinstance(cursor_value, (str, int)):
-            return True
-
-        cursor_value_str = str(cursor_value)
 
         retention_duration = parse_duration(api_retention_period)
         retention_cutoff = datetime.datetime.now(datetime.timezone.utc) - retention_duration
 
-        cursor_datetime = self._parse_cursor_datetime(
-            cursor_value_str, incremental_sync_sources, stream_name
-        )
-        if cursor_datetime is None:
-            return True
-
         if cursor_datetime < retention_cutoff:
-            self._emit_warning_for_stale_cursor(
-                stream_name, cursor_value_str, api_retention_period, retention_cutoff
+            logging.warning(
+                f"Stream '{stream_name}' has a cursor value older than "
+                f"the API's retention period of {api_retention_period} "
+                f"(cutoff: {retention_cutoff.isoformat()}). "
+                f"Falling back to full refresh to avoid data loss."
             )
             return True
 
         return False
 
-    def _extract_cursor_value_from_state(
-        self,
-        stream_state: Mapping[str, Any],
-        cursor_field: str,
-    ) -> Any:
-        """Extract cursor value from state, handling different state structures.
-
-        Supports:
-        - Simple cursor state: {"cursor_field": "value"} -> returns "value"
-        - Per-partition state: {"state": {"cursor_field": "value"}, ...} -> returns "value"
-          (uses global cursor from "state" key)
-
-        Returns None if cursor value cannot be extracted.
-        """
-        if cursor_field in stream_state:
-            return stream_state.get(cursor_field)
-
-        global_state = stream_state.get("state")
-        if isinstance(global_state, dict) and cursor_field in global_state:
-            return global_state.get(cursor_field)
-
-        return None
-
-    def _parse_cursor_datetime(
-        self,
-        cursor_value: str,
-        incremental_sync_sources: list[Any],
-        stream_name: str,
-    ) -> datetime.datetime | None:
-        """Parse the cursor value into a datetime object using datetime formats from all sources.
-
-        The state could have been produced by either full_refresh_stream (first sync) or
-        incremental_stream (subsequent syncs), so we try parsing with formats from both.
-        """
-        parser = DatetimeParser()
-
-        formats_to_try: list[str] = []
-        for incremental_sync in incremental_sync_sources:
-            datetime_format = getattr(incremental_sync, "datetime_format", None)
-            cursor_datetime_formats = (
-                getattr(incremental_sync, "cursor_datetime_formats", None) or []
-            )
-            formats_to_try.extend(cursor_datetime_formats)
-            if datetime_format:
-                formats_to_try.append(datetime_format)
-
-        for fmt in formats_to_try:
-            try:
-                return parser.parse(cursor_value, fmt)
-            except (ValueError, TypeError):
-                continue
-
-        logging.warning(
-            f"Could not parse cursor value '{cursor_value}' for stream '{stream_name}' "
-            f"using formats {formats_to_try}. Falling back to full refresh."
+    @staticmethod
+    def _create_cursor_for_age_check(
+        model: DatetimeBasedCursorModel, config: Config
+    ) -> "DatetimeBasedCursor":
+        """Create a lightweight DatetimeBasedCursor for cursor age validation."""
+        from airbyte_cdk.legacy.sources.declarative.incremental.datetime_based_cursor import (
+            DatetimeBasedCursor,
         )
-        return None
 
-    def _emit_warning_for_stale_cursor(
-        self,
-        stream_name: str,
-        cursor_value: str,
-        api_retention_period: str,
-        retention_cutoff: datetime.datetime,
-    ) -> None:
-        """Emit a warning message when the cursor is older than the API's retention period."""
-        warning_message = (
-            f"Stream '{stream_name}' has a cursor value '{cursor_value}' that is older than "
-            f"the API's retention period of {api_retention_period} (cutoff: {retention_cutoff.isoformat()}). "
-            f"Falling back to full refresh to avoid data loss. "
-            f"This may happen if a previous sync failed mid-way and the state was checkpointed."
+        return DatetimeBasedCursor(
+            start_datetime="2000-01-01T00:00:00Z",
+            cursor_field=model.cursor_field,
+            datetime_format=model.datetime_format,
+            config=config,
+            parameters=model.parameters or {},
+            cursor_datetime_formats=model.cursor_datetime_formats or [],
         )
-        logging.warning(warning_message)
 
     def _create_async_job_status_mapping(
         self, model: AsyncJobStatusMapModel, config: Config, **kwargs: Any
