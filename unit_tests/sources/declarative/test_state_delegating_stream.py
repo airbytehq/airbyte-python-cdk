@@ -566,3 +566,48 @@ def test_cursor_age_validation_raises_error_for_unparseable_cursor():
 
     with pytest.raises(ValueError, match="not-a-date"):
         source.discover(logger=MagicMock(), config=_CONFIG)
+
+
+def _create_manifest_with_no_full_refresh_cursor(api_retention_period: str) -> dict:
+    """Create a manifest where full_refresh_stream has no incremental_sync (gets FinalStateCursor)."""
+    manifest = copy.deepcopy(_MANIFEST)
+    manifest["definitions"]["TestStream"]["api_retention_period"] = api_retention_period
+    del manifest["definitions"]["TestStream"]["full_refresh_stream"]["incremental_sync"]
+    return manifest
+
+
+@freezegun.freeze_time("2024-07-15")
+def test_final_state_cursor_skips_retention_check_and_uses_incremental():
+    """When state is a final state from FinalStateCursor, skip retention check and use incremental."""
+    manifest = _create_manifest_with_retention_period("P7D")
+
+    with HttpMocker() as http_mocker:
+        http_mocker.get(
+            HttpRequest(
+                url="https://api.test.com/items_with_filtration?start=2024-07-01&end=2024-07-15"
+            ),
+            HttpResponse(
+                body=json.dumps(
+                    [
+                        {"id": 1, "name": "item_1", "updated_at": "2024-07-14"},
+                    ]
+                )
+            ),
+        )
+
+        state = [
+            AirbyteStateMessage(
+                type=AirbyteStateType.STREAM,
+                stream=AirbyteStreamState(
+                    stream_descriptor=StreamDescriptor(name="TestStream", namespace=None),
+                    stream_state=AirbyteStateBlob(__ab_no_cursor_state_message=True),
+                ),
+            )
+        ]
+        source = ConcurrentDeclarativeSource(
+            source_config=manifest, config=_CONFIG, catalog=None, state=state
+        )
+        configured_catalog = create_configured_catalog(source, _CONFIG)
+
+        records = get_records(source, _CONFIG, configured_catalog, state)
+        assert len(records) == 1

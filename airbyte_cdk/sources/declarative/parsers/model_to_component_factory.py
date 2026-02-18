@@ -637,6 +637,7 @@ from airbyte_cdk.sources.streams.concurrent.clamping import (
     WeekClampingStrategy,
     Weekday,
 )
+from airbyte_cdk.sources.streams import NO_CURSOR_STATE_KEY
 from airbyte_cdk.sources.streams.concurrent.cursor import (
     ConcurrentCursor,
     Cursor,
@@ -3580,6 +3581,9 @@ class ModelToComponentFactory:
         if not stream_state and not has_parent:
             return self._create_component_from_model(model.full_refresh_stream, config=config, **kwargs)  # type: ignore[no-any-return]
 
+        if stream_state and stream_state.get(NO_CURSOR_STATE_KEY):
+            return self._create_component_from_model(model.incremental_stream, config=config, **kwargs)  # type: ignore[no-any-return]
+
         incremental_stream: DefaultStream = self._create_component_from_model(
             model.incremental_stream, config=config, **kwargs
         )  # type: ignore[assignment]
@@ -3615,20 +3619,12 @@ class ModelToComponentFactory:
 
         for cursor in cursors:
             if not hasattr(cursor, "get_cursor_datetime_from_state"):
-                raise SystemError(
-                    f"Stream '{stream_name}' cursor type '{type(cursor).__name__}' does not have "
-                    f"get_cursor_datetime_from_state method. Cursor age validation with "
-                    f"api_retention_period is not supported for this cursor type."
-                )
+                continue
 
             try:
                 cursor_datetime = cursor.get_cursor_datetime_from_state(stream_state)
             except NotImplementedError:
-                raise SystemError(
-                    f"Stream '{stream_name}' cursor type '{type(cursor).__name__}' does not implement "
-                    f"get_cursor_datetime_from_state. Cursor age validation with "
-                    f"api_retention_period is not supported for this cursor type."
-                )
+                continue
 
             if cursor_datetime is not None:
                 break
