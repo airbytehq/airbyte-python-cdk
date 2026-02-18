@@ -3621,14 +3621,6 @@ class ModelToComponentFactory:
         if "state_type" in stream_state or "slices" in stream_state:
             return False
 
-        for incremental_sync in incremental_sync_sources:
-            if isinstance(incremental_sync, IncrementingCountCursorModel):
-                raise ValueError(
-                    f"Stream '{stream_name}' uses IncrementingCountCursor which is not supported "
-                    f"with api_retention_period. IncrementingCountCursor does not use datetime-based "
-                    f"cursors, so cursor age validation cannot be performed."
-                )
-
         cursor_datetime: datetime.datetime | None = None
         for incremental_sync in incremental_sync_sources:
             if not isinstance(incremental_sync, DatetimeBasedCursorModel):
