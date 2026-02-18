@@ -406,10 +406,9 @@ class UnstructuredParser(FileTypeParser):
         3. Use the file content
         """
         if remote_file.mime_type:
-            try:
-                return FileType.from_mime_type(remote_file.mime_type)
-            except ValueError:
-                pass
+            ft = FileType.from_mime_type(remote_file.mime_type)
+            if ft is not None:
+                return ft
 
         # set name to none, otherwise unstructured will try to get the modified date from the local file system
         if hasattr(file, "name"):
