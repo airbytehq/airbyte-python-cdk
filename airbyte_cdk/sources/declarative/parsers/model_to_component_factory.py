@@ -3583,49 +3583,57 @@ class ModelToComponentFactory:
         incremental_stream: DefaultStream = self._create_component_from_model(model.incremental_stream, config=config, **kwargs)  # type: ignore[assignment]
 
         if model.api_retention_period and stream_state:
-            cursor = incremental_stream.cursor
+            full_refresh_stream: DefaultStream = self._create_component_from_model(model.full_refresh_stream, config=config, **kwargs)  # type: ignore[assignment]
+            cursors = [full_refresh_stream.cursor, incremental_stream.cursor]
             if self._is_cursor_older_than_retention_period(
-                stream_state, cursor, model.api_retention_period, model.name
+                stream_state, cursors, model.api_retention_period, model.name
             ):
-                return self._create_component_from_model(model.full_refresh_stream, config=config, **kwargs)  # type: ignore[no-any-return]
+                return full_refresh_stream
 
         return incremental_stream
 
     @staticmethod
     def _is_cursor_older_than_retention_period(
         stream_state: Mapping[str, Any],
-        cursor: Any,
+        cursors: list[Any],
         api_retention_period: str,
         stream_name: str,
     ) -> bool:
         """Check if the cursor value in the state is older than the API's retention period.
 
-        Delegates cursor datetime extraction to the cursor instance via
-        get_cursor_datetime_from_state.
+        Tries each cursor's get_cursor_datetime_from_state to extract the cursor datetime,
+        since the state format may match either the full refresh or incremental cursor.
 
         Returns True if the cursor is older than the retention period (should use full refresh).
         Returns False if the cursor is within the retention period (safe to use incremental).
         """
-        if not hasattr(cursor, "get_cursor_datetime_from_state"):
-            raise SystemError(
-                f"Stream '{stream_name}' cursor type '{type(cursor).__name__}' does not have "
-                f"get_cursor_datetime_from_state method. Cursor age validation with "
-                f"api_retention_period is not supported for this cursor type."
-            )
+        cursor_datetime: datetime.datetime | None = None
 
-        try:
-            cursor_datetime = cursor.get_cursor_datetime_from_state(stream_state)
-        except NotImplementedError:
-            raise SystemError(
-                f"Stream '{stream_name}' cursor type '{type(cursor).__name__}' does not implement "
-                f"get_cursor_datetime_from_state. Cursor age validation with "
-                f"api_retention_period is not supported for this cursor type."
-            )
+        for cursor in cursors:
+            if not hasattr(cursor, "get_cursor_datetime_from_state"):
+                raise SystemError(
+                    f"Stream '{stream_name}' cursor type '{type(cursor).__name__}' does not have "
+                    f"get_cursor_datetime_from_state method. Cursor age validation with "
+                    f"api_retention_period is not supported for this cursor type."
+                )
 
-        if cursor_datetime is None:
+            try:
+                cursor_datetime = cursor.get_cursor_datetime_from_state(stream_state)
+            except NotImplementedError:
+                raise SystemError(
+                    f"Stream '{stream_name}' cursor type '{type(cursor).__name__}' does not implement "
+                    f"get_cursor_datetime_from_state. Cursor age validation with "
+                    f"api_retention_period is not supported for this cursor type."
+                )
+
+            if cursor_datetime is not None:
+                break
+
             global_state = stream_state.get("state")
             if isinstance(global_state, dict):
                 cursor_datetime = cursor.get_cursor_datetime_from_state(global_state)
+                if cursor_datetime is not None:
+                    break
 
         if cursor_datetime is None:
             return True
