@@ -568,14 +568,6 @@ def test_cursor_age_validation_raises_error_for_unparseable_cursor():
         source.discover(logger=MagicMock(), config=_CONFIG)
 
 
-def _create_manifest_with_no_full_refresh_cursor(api_retention_period: str) -> dict:
-    """Create a manifest where full_refresh_stream has no incremental_sync (gets FinalStateCursor)."""
-    manifest = copy.deepcopy(_MANIFEST)
-    manifest["definitions"]["TestStream"]["api_retention_period"] = api_retention_period
-    del manifest["definitions"]["TestStream"]["full_refresh_stream"]["incremental_sync"]
-    return manifest
-
-
 @freezegun.freeze_time("2024-07-15")
 def test_final_state_cursor_skips_retention_check_and_uses_incremental():
     """When state is a final state from FinalStateCursor, skip retention check and use incremental."""
