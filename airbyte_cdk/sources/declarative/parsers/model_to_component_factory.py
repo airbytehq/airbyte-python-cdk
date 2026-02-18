@@ -3578,9 +3578,7 @@ class ModelToComponentFactory:
         has_parent = False if has_parent_state is None else has_parent_state
 
         if not stream_state and not has_parent:
-            return self._create_component_from_model(
-                model.full_refresh_stream, config=config, **kwargs
-            )  # type: ignore[no-any-return]
+            return self._create_component_from_model(model.full_refresh_stream, config=config, **kwargs)  # type: ignore[no-any-return]
 
         incremental_stream: DefaultStream = self._create_component_from_model(
             model.incremental_stream, config=config, **kwargs
@@ -3651,6 +3649,16 @@ class ModelToComponentFactory:
             return True
 
         return False
+
+    def _get_state_delegating_stream_model(
+        self, has_parent_state: bool, model: StateDelegatingStreamModel
+    ) -> DeclarativeStreamModel:
+        """Return the appropriate underlying stream model based on state."""
+        return (
+            model.incremental_stream
+            if self._connector_state_manager.get_stream_state(model.name, None) or has_parent_state
+            else model.full_refresh_stream
+        )
 
     def _create_async_job_status_mapping(
         self, model: AsyncJobStatusMapModel, config: Config, **kwargs: Any
@@ -4055,7 +4063,7 @@ class ModelToComponentFactory:
                             model.stream.incremental_sync  # type: ignore  # if we are there, it is because there is incremental_dependency and therefore there is an incremental_sync on the parent stream
                             if isinstance(model.stream, DeclarativeStreamModel)
                             else self._get_state_delegating_stream_model(
-                                has_parent_state, model.stream, config
+                                has_parent_state, model.stream
                             ).incremental_sync
                         )
                         cursor_field = InterpolatedString.create(
