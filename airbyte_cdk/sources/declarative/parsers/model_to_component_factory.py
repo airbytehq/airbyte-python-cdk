@@ -3578,12 +3578,18 @@ class ModelToComponentFactory:
         has_parent = False if has_parent_state is None else has_parent_state
 
         if not stream_state and not has_parent:
-            return self._create_component_from_model(model.full_refresh_stream, config=config, **kwargs)  # type: ignore[no-any-return]
+            return self._create_component_from_model(
+                model.full_refresh_stream, config=config, **kwargs
+            )  # type: ignore[no-any-return]
 
-        incremental_stream: DefaultStream = self._create_component_from_model(model.incremental_stream, config=config, **kwargs)  # type: ignore[assignment]
+        incremental_stream: DefaultStream = self._create_component_from_model(
+            model.incremental_stream, config=config, **kwargs
+        )  # type: ignore[assignment]
 
         if model.api_retention_period and stream_state:
-            full_refresh_stream: DefaultStream = self._create_component_from_model(model.full_refresh_stream, config=config, **kwargs)  # type: ignore[assignment]
+            full_refresh_stream: DefaultStream = self._create_component_from_model(
+                model.full_refresh_stream, config=config, **kwargs
+            )  # type: ignore[assignment]
             cursors = [full_refresh_stream.cursor, incremental_stream.cursor]
             if self._is_cursor_older_than_retention_period(
                 stream_state, cursors, model.api_retention_period, model.name
@@ -3645,6 +3651,15 @@ class ModelToComponentFactory:
             return True
 
         return False
+
+    def _get_state_delegating_stream_model(
+        self, has_parent_state: bool, model: StateDelegatingStreamModel, config: Config
+    ) -> DeclarativeStreamModel:
+        return (
+            model.incremental_stream
+            if self._connector_state_manager.get_stream_state(model.name, None) or has_parent_state
+            else model.full_refresh_stream
+        )
 
     def _create_async_job_status_mapping(
         self, model: AsyncJobStatusMapModel, config: Config, **kwargs: Any
