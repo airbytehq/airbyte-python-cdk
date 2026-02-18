@@ -3613,6 +3613,14 @@ class ModelToComponentFactory:
         invalid/unparseable (should use full refresh).
         Returns False if the cursor is within the retention period (safe to use incremental).
         """
+        # Skip retention check for concurrent state format (e.g. {"state_type": "date-range", "slices": [...]}).
+        # The DatetimeBasedCursor used for the age check only handles sequential state format.
+        # Today, is_sequential_state=True is hardcoded for all declarative cursors, so concurrent
+        # format state should never appear in practice. If that changes in the future, this guard
+        # prevents spurious full-refresh fallbacks until proper concurrent cursor delegation is added.
+        if "state_type" in stream_state or "slices" in stream_state:
+            return False
+
         for incremental_sync in incremental_sync_sources:
             if isinstance(incremental_sync, IncrementingCountCursorModel):
                 raise ValueError(
