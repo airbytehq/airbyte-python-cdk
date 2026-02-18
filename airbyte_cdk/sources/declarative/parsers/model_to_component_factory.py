@@ -3621,10 +3621,14 @@ class ModelToComponentFactory:
         if "state_type" in stream_state or "slices" in stream_state:
             return False
 
+        datetime_cursor_sources = [
+            s for s in incremental_sync_sources if isinstance(s, DatetimeBasedCursorModel)
+        ]
+        if not datetime_cursor_sources:
+            return False
+
         cursor_datetime: datetime.datetime | None = None
-        for incremental_sync in incremental_sync_sources:
-            if not isinstance(incremental_sync, DatetimeBasedCursorModel):
-                continue
+        for incremental_sync in datetime_cursor_sources:
             cursor = self._create_cursor_for_age_check(incremental_sync, config)
             cursor_datetime = cursor.get_cursor_datetime_from_state(stream_state)
             if cursor_datetime is not None:

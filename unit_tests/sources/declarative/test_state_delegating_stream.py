@@ -533,7 +533,7 @@ def test_cursor_age_validation_skips_incrementing_count_cursor():
 
     with HttpMocker() as http_mocker:
         http_mocker.get(
-            HttpRequest(url="https://api.test.com/items"),
+            HttpRequest(url="https://api.test.com/items_with_filtration"),
             HttpResponse(body=json.dumps([{"id": 101, "updated_at": "2024-07-14"}])),
         )
 
