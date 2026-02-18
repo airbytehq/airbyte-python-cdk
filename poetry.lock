@@ -4026,65 +4026,6 @@ MarkupSafe = ">=1.1.1"
 pygments = ">=2.12.0"
 
 [[package]]
-name = "pi-heif"
-version = "1.2.1"
-description = "Python interface for libheif library"
-optional = true
-python-versions = ">=3.9"
-groups = ["main"]
-markers = "(python_version <= \"3.11\" or python_version >= \"3.12.0\") and extra == \"file-based\""
-files = [
-    {file = "pi_heif-1.2.1-cp310-cp310-macosx_10_15_x86_64.whl", hash = "sha256:ae60ba8bd0904c70ddd66f5b2ac416fa54f7db88e02f0d8a56cdda9c600329e7"},
-    {file = "pi_heif-1.2.1-cp310-cp310-macosx_11_0_arm64.whl", hash = "sha256:cfd42065bb03b7c9405833a64cf3e354fe00285675f8df9383c1f57f3b04913a"},
-    {file = "pi_heif-1.2.1-cp310-cp310-manylinux_2_26_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:9cdaa388e2637f7500fb77b9ffe8b49e90277cd12ea3ce8f4c40854eb3860ac0"},
-    {file = "pi_heif-1.2.1-cp310-cp310-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:843de92f26cfccd1acfe74165b41e63d29586ca66faa83f59fbee3bebeda8788"},
-    {file = "pi_heif-1.2.1-cp310-cp310-musllinux_1_2_aarch64.whl", hash = "sha256:609bf44651c61d5ba89be12d63dbe58d5c59de4a65baa770320a371ffcc280c8"},
-    {file = "pi_heif-1.2.1-cp310-cp310-musllinux_1_2_x86_64.whl", hash = "sha256:3ebba3c13808a32e26b3746e08e55db8306b8a47e448d03f004cb7d351072bc0"},
-    {file = "pi_heif-1.2.1-cp310-cp310-win_amd64.whl", hash = "sha256:0f5eca27e14bc56f6f45d73172d93efbb7c202ebd9f1070781b03ed54bc1f63e"},
-    {file = "pi_heif-1.2.1-cp311-cp311-macosx_10_15_x86_64.whl", hash = "sha256:ab0db01fb98c0ea4c03f423968404abd0d1e0bddf0d42a1d08ccf43835f63c3c"},
-    {file = "pi_heif-1.2.1-cp311-cp311-macosx_11_0_arm64.whl", hash = "sha256:314ac18efea35926e2ee3d98c5729376ff60a9330faeae88c4e335f7edc26925"},
-    {file = "pi_heif-1.2.1-cp311-cp311-manylinux_2_26_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:1f17cdfefe929b2e174836dc30a10285b2de753d1444661c4fb399167473f8d7"},
-    {file = "pi_heif-1.2.1-cp311-cp311-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:1eccabd3e33d95484b4e519c9ef018c7af1b9c6187aa83dea94aea3c880cfdaa"},
-    {file = "pi_heif-1.2.1-cp311-cp311-musllinux_1_2_aarch64.whl", hash = "sha256:a08f5b665a6b089982a7c9b5e5233a7e92e8a1911c68077aa65dbc93d830c9a4"},
-    {file = "pi_heif-1.2.1-cp311-cp311-musllinux_1_2_x86_64.whl", hash = "sha256:ea7174bffcccf373d3c13858f864d2f106a5c339d8729dc67ddcabd3adc61941"},
-    {file = "pi_heif-1.2.1-cp311-cp311-win_amd64.whl", hash = "sha256:ee80a3e9fba56c56196e9e5acb9e6667961d4d3316facd490cda32348370cd53"},
-    {file = "pi_heif-1.2.1-cp312-cp312-macosx_10_15_x86_64.whl", hash = "sha256:5d63ce7f2e1ab27d21b81b149c18d362bfadf2f5a19c613433ddeacaa7c321aa"},
-    {file = "pi_heif-1.2.1-cp312-cp312-macosx_11_0_arm64.whl", hash = "sha256:23a223fd9d061ad3ddeca81c782381b56aa7bc349845587318637c6194f25f80"},
-    {file = "pi_heif-1.2.1-cp312-cp312-manylinux_2_26_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:6847f0b4153118aa87e1c41195dc7aaa1215e56eccbe9c53ee14bb33af6c00b1"},
-    {file = "pi_heif-1.2.1-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:0869b4b1d2094539fc991533e20af5612ead2e60cdeca19a169584d68d79bd19"},
-    {file = "pi_heif-1.2.1-cp312-cp312-musllinux_1_2_aarch64.whl", hash = "sha256:1cf305582ce3a5a62c0ee937d07b8b03b13e064cf2214173df0f215ed6f5665f"},
-    {file = "pi_heif-1.2.1-cp312-cp312-musllinux_1_2_x86_64.whl", hash = "sha256:e224d88482710304e991b39daa935d6370bcb2c11ea6b53f4bd6d29e6bc977f7"},
-    {file = "pi_heif-1.2.1-cp312-cp312-win_amd64.whl", hash = "sha256:ee287a354c707a46c15b01ae8d906f68276ad6deb86407fec4e06051983bddcc"},
-    {file = "pi_heif-1.2.1-cp313-cp313-macosx_10_15_x86_64.whl", hash = "sha256:c0d0107d0b98496d7b67c7134fa43142e402282ebb2b63cb80de9ae73f7fafc4"},
-    {file = "pi_heif-1.2.1-cp313-cp313-macosx_11_0_arm64.whl", hash = "sha256:ec6544650400b0748761a69996d364db580f2ce2a3499b6caa3efe688fbe95a1"},
-    {file = "pi_heif-1.2.1-cp313-cp313-manylinux_2_26_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:67bf2c9d57481285f95a6bab412ac3a1d5d92cb4ff551e40dd4066b10bfe8f5a"},
-    {file = "pi_heif-1.2.1-cp313-cp313-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:af86b98e599866ef18333ac18f3086fde00573c3e9a62c15f01157b0e209e841"},
-    {file = "pi_heif-1.2.1-cp313-cp313-musllinux_1_2_aarch64.whl", hash = "sha256:641066aeee2cf866fb885ae64fd0589ca019b4d419072cec3f4d2a51fa2ee4ab"},
-    {file = "pi_heif-1.2.1-cp313-cp313-musllinux_1_2_x86_64.whl", hash = "sha256:83d0ec074d7738fcf838d1472b342936add38233b8c0b6675005af97a11a2e27"},
-    {file = "pi_heif-1.2.1-cp313-cp313-win_amd64.whl", hash = "sha256:31ccfc4acc4804775dd035fefffd5d78c6030f01e9facc13bb14e27d8575983b"},
-    {file = "pi_heif-1.2.1-cp314-cp314-macosx_10_15_x86_64.whl", hash = "sha256:9fa93b453c612ec14973b690f6a24cf4a0e406d7f9fc7fd8cde5554258794596"},
-    {file = "pi_heif-1.2.1-cp314-cp314-macosx_11_0_arm64.whl", hash = "sha256:1b486eb0c6affe65df90bc1e2d34998f11f3ca6a0e7fd40f0360781f98ae1fa9"},
-    {file = "pi_heif-1.2.1-cp314-cp314-manylinux_2_26_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:115495664b22140c7137506a5cee4447c1e42f004867a3bf1a302feb8dc72187"},
-    {file = "pi_heif-1.2.1-cp314-cp314-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:3ddc145307274ff7d84f5fa6930ba0c6f42e80012c4423bc61f39b8ea282ce0a"},
-    {file = "pi_heif-1.2.1-cp314-cp314-musllinux_1_2_aarch64.whl", hash = "sha256:22137bad2aa0a745deb8851a24b0d1acb89cd0feb149be2147a5f0b371521990"},
-    {file = "pi_heif-1.2.1-cp314-cp314-musllinux_1_2_x86_64.whl", hash = "sha256:a1e2d14df2064812beef97cd37931c6431e9387aa363c0aea6bb9f45a9595f14"},
-    {file = "pi_heif-1.2.1-cp314-cp314-win_amd64.whl", hash = "sha256:a06ba19fea5b868c0d55ee79adda8d04b4d0985594c51705b8e0cb3087401407"},
-    {file = "pi_heif-1.2.1-pp311-pypy311_pp73-macosx_10_15_x86_64.whl", hash = "sha256:cc9c470bf64cde82de45354e80eb643e1d26daf40e8669e79639f498b0f2395a"},
-    {file = "pi_heif-1.2.1-pp311-pypy311_pp73-macosx_11_0_arm64.whl", hash = "sha256:ea23057fed02f7f2723f8b284d667ecf5b7ba7a46fce3ddfe670297cd49c8bbc"},
-    {file = "pi_heif-1.2.1-pp311-pypy311_pp73-manylinux_2_26_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:85c14434c1b34c70b2100b79b2b7dfe162e21fa0d46132c22d178d15270b25b7"},
-    {file = "pi_heif-1.2.1-pp311-pypy311_pp73-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:8b4bcc0a76597528b50d9d50dc7f9e6a33b7c130653e857381728b93ee568ab5"},
-    {file = "pi_heif-1.2.1-pp311-pypy311_pp73-win_amd64.whl", hash = "sha256:fc4161300b570d36690f3cfc76eb60a5df13319fbeca34353f02ca3da826b5f3"},
-    {file = "pi_heif-1.2.1.tar.gz", hash = "sha256:a5c5fd4d92b4f0541d8629eaadd95403ccdfd1b7f2ddced52844fa610713685d"},
-]
-
-[package.dependencies]
-pillow = ">=11.1.0"
-
-[package.extras]
-tests = ["defusedxml", "numpy", "packaging", "pympler", "pytest"]
-tests-min = ["defusedxml", "packaging", "pytest"]
-
-[[package]]
 name = "pillow"
 version = "11.1.0"
 description = "Python Imaging Library (Fork)"
@@ -7313,7 +7254,7 @@ cffi = ["cffi (>=1.17,<2.0)", "cffi (>=2.0.0b)"]
 
 [extras]
 dev = ["pytest"]
-file-based = ["avro", "fastavro", "markdown", "openpyxl", "pdf2image", "pdfminer.six", "pi-heif", "pyarrow", "pytesseract", "python-calamine", "python-snappy", "unstructured", "unstructured.pytesseract"]
+file-based = ["avro", "fastavro", "markdown", "openpyxl", "pdf2image", "pdfminer.six", "pyarrow", "pytesseract", "python-calamine", "python-snappy", "unstructured", "unstructured.pytesseract"]
 manifest-server = ["ddtrace", "fastapi", "uvicorn"]
 sql = ["sqlalchemy"]
 vector-db-based = ["cohere", "langchain_community", "langchain_core", "langchain_text_splitters", "openai", "tiktoken"]
@@ -7321,4 +7262,4 @@ vector-db-based = ["cohere", "langchain_community", "langchain_core", "langchain
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.10,<3.14"
-content-hash = "a0992639f32e94cbabd42c1abcc80c4b986462a1eac64d890728b5fe943c573a"
+content-hash = "b1490bed9f204a54b19a679a040f714fdeec9078880e6fc7ab0e6bde5da43098"

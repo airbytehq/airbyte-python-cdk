@@ -78,7 +78,6 @@ python-snappy = { version = "0.7.3", optional = true }  # TODO: remove if unused
 tiktoken = { version = "0.8.0", optional = true }
 nltk = { version = "3.9.1", optional = true }
 unstructured = { version = "0.18.32", extras = ["docx", "pptx"], optional = true }
-pi-heif = { version = ">=0.16.0", optional = true }
 "unstructured.pytesseract" = { version = ">=0.3.12", optional = true }
 pyjwt = "^2.8.0"
 cryptography = ">=44.0.0,<45.0.0"  # Constrained as transitive dependency due to a bug in newer versions
@@ -122,7 +121,7 @@ deptry = "^0.23.0"
 dagger-io = "0.19.0"
 
 [tool.poetry.extras]
-file-based = ["avro", "fastavro", "pyarrow", "unstructured", "pi-heif", "pdf2image", "pdfminer.six", "unstructured.pytesseract", "pytesseract", "markdown", "python-calamine", "openpyxl", "python-snappy"]
+file-based = ["avro", "fastavro", "pyarrow", "unstructured", "pdf2image", "pdfminer.six", "unstructured.pytesseract", "pytesseract", "markdown", "python-calamine", "openpyxl", "python-snappy"]
 vector-db-based = ["langchain_community", "langchain_core", "langchain_text_splitters", "openai", "cohere", "tiktoken"]
 sql = ["sqlalchemy"]
 dev = ["pytest"]
@@ -262,7 +261,6 @@ DEP002 = [
   "python-snappy",
   "tiktoken",
   "unstructured.pytesseract",
-  "pi-heif",
 ]
 
 # DEP003: Project should not use transitive dependencies.
