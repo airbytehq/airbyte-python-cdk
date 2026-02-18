@@ -3987,15 +3987,15 @@ pillow = "*"
 
 [[package]]
 name = "pdfminer-six"
-version = "20221105"
+version = "20260107"
 description = "PDF parser and analyzer"
 optional = true
-python-versions = ">=3.6"
+python-versions = ">=3.10"
 groups = ["main"]
 markers = "(python_version <= \"3.11\" or python_version >= \"3.12.0\") and extra == \"file-based\""
 files = [
-    {file = "pdfminer.six-20221105-py3-none-any.whl", hash = "sha256:1eaddd712d5b2732f8ac8486824533514f8ba12a0787b3d5fe1e686cd826532d"},
-    {file = "pdfminer.six-20221105.tar.gz", hash = "sha256:8448ab7b939d18b64820478ecac5394f482d7a79f5f7eaa7703c6c959c175e1d"},
+    {file = "pdfminer_six-20260107-py3-none-any.whl", hash = "sha256:366585ba97e80dffa8f00cebe303d2f381884d8637af4ce422f1df3ef38111a9"},
+    {file = "pdfminer_six-20260107.tar.gz", hash = "sha256:96bfd431e3577a55a0efd25676968ca4ce8fd5b53f14565f85716ff363889602"},
 ]
 
 [package.dependencies]
@@ -4003,8 +4003,6 @@ charset-normalizer = ">=2.0.0"
 cryptography = ">=36.0.0"
 
 [package.extras]
-dev = ["black", "mypy (==0.931)", "nox", "pytest"]
-docs = ["sphinx", "sphinx-argparse"]
 image = ["Pillow"]
 
 [[package]]
@@ -7262,4 +7260,4 @@ vector-db-based = ["cohere", "langchain_community", "langchain_core", "langchain
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.10,<3.14"
-content-hash = "b1490bed9f204a54b19a679a040f714fdeec9078880e6fc7ab0e6bde5da43098"
+content-hash = "35b6f772102c0696b04ed4e25da343e75d9b4c7617ba4de2b33b4398878e49ab"
