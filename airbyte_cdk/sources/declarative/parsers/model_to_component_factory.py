@@ -618,6 +618,7 @@ from airbyte_cdk.sources.message import (
     NoopMessageRepository,
 )
 from airbyte_cdk.sources.message.repository import StateFilteringMessageRepository
+from airbyte_cdk.sources.streams import NO_CURSOR_STATE_KEY
 from airbyte_cdk.sources.streams.call_rate import (
     APIBudget,
     FixedWindowCallRatePolicy,
@@ -637,7 +638,6 @@ from airbyte_cdk.sources.streams.concurrent.clamping import (
     WeekClampingStrategy,
     Weekday,
 )
-from airbyte_cdk.sources.streams import NO_CURSOR_STATE_KEY
 from airbyte_cdk.sources.streams.concurrent.cursor import (
     ConcurrentCursor,
     Cursor,
