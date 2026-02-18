@@ -11,6 +11,7 @@ import logging
 import re
 from functools import partial
 from typing import (
+    TYPE_CHECKING,
     Any,
     Callable,
     Dict,
@@ -26,6 +27,11 @@ from typing import (
     get_origin,
     get_type_hints,
 )
+
+if TYPE_CHECKING:
+    from airbyte_cdk.legacy.sources.declarative.incremental.datetime_based_cursor import (
+        DatetimeBasedCursor,
+    )
 
 from airbyte_protocol_dataclasses.models import ConfiguredAirbyteStream
 from isodate import parse_duration
@@ -3580,7 +3586,11 @@ class ModelToComponentFactory:
             ]
             incremental_sync_sources = [s for s in incremental_sync_sources if s is not None]
             if incremental_sync_sources and self._is_cursor_older_than_retention_period(
-                stream_state, incremental_sync_sources, model.api_retention_period, model.name, config
+                stream_state,
+                incremental_sync_sources,
+                model.api_retention_period,
+                model.name,
+                config,
             ):
                 return model.full_refresh_stream
 
@@ -3603,10 +3613,6 @@ class ModelToComponentFactory:
         invalid/unparseable (should use full refresh).
         Returns False if the cursor is within the retention period (safe to use incremental).
         """
-        from airbyte_cdk.legacy.sources.declarative.incremental.datetime_based_cursor import (
-            DatetimeBasedCursor,
-        )
-
         for incremental_sync in incremental_sync_sources:
             if isinstance(incremental_sync, IncrementingCountCursorModel):
                 raise ValueError(
@@ -3652,10 +3658,10 @@ class ModelToComponentFactory:
     ) -> "DatetimeBasedCursor":
         """Create a lightweight DatetimeBasedCursor for cursor age validation."""
         from airbyte_cdk.legacy.sources.declarative.incremental.datetime_based_cursor import (
-            DatetimeBasedCursor,
+            DatetimeBasedCursor as _DatetimeBasedCursor,
         )
 
-        return DatetimeBasedCursor(
+        return _DatetimeBasedCursor(
             start_datetime="2000-01-01T00:00:00Z",
             cursor_field=model.cursor_field,
             datetime_format=model.datetime_format,
@@ -4067,7 +4073,7 @@ class ModelToComponentFactory:
                             model.stream.incremental_sync  # type: ignore  # if we are there, it is because there is incremental_dependency and therefore there is an incremental_sync on the parent stream
                             if isinstance(model.stream, DeclarativeStreamModel)
                             else self._get_state_delegating_stream_model(
-                                has_parent_state, model.stream
+                                has_parent_state, model.stream, config
                             ).incremental_sync
                         )
                         cursor_field = InterpolatedString.create(
