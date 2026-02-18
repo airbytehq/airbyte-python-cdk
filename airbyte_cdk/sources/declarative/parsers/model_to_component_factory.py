@@ -3565,86 +3565,70 @@ class ModelToComponentFactory:
                 f"state_delegating_stream, full_refresh_stream name and incremental_stream must have equal names. Instead has {model.name}, {model.full_refresh_stream.name} and {model.incremental_stream.name}."
             )
 
-        stream_model = self._get_state_delegating_stream_model(
-            False if has_parent_state is None else has_parent_state, model, config
-        )
+        if model.api_retention_period:
+            for stream_model in (model.full_refresh_stream, model.incremental_stream):
+                if isinstance(stream_model.incremental_sync, IncrementingCountCursorModel):
+                    raise ValueError(
+                        f"Stream '{model.name}' uses IncrementingCountCursor which is not supported "
+                        f"with api_retention_period. IncrementingCountCursor does not use datetime-based "
+                        f"cursors, so cursor age validation cannot be performed."
+                    )
 
-        return self._create_component_from_model(stream_model, config=config, **kwargs)  # type: ignore[no-any-return]  # DeclarativeStream will be created as stream_model is alwyas DeclarativeStreamModel
-
-    def _get_state_delegating_stream_model(
-        self, has_parent_state: bool, model: StateDelegatingStreamModel, config: Config
-    ) -> DeclarativeStreamModel:
         stream_state = self._connector_state_manager.get_stream_state(model.name, None)
+        has_parent = False if has_parent_state is None else has_parent_state
 
-        if not stream_state and not has_parent_state:
-            return model.full_refresh_stream
+        if not stream_state and not has_parent:
+            return self._create_component_from_model(model.full_refresh_stream, config=config, **kwargs)  # type: ignore[no-any-return]
+
+        incremental_stream: DefaultStream = self._create_component_from_model(model.incremental_stream, config=config, **kwargs)  # type: ignore[assignment]
 
         if model.api_retention_period and stream_state:
-            incremental_sync_sources = [
-                model.full_refresh_stream.incremental_sync,
-                model.incremental_stream.incremental_sync,
-            ]
-            incremental_sync_sources = [s for s in incremental_sync_sources if s is not None]
-            if incremental_sync_sources and self._is_cursor_older_than_retention_period(
-                stream_state,
-                incremental_sync_sources,
-                model.api_retention_period,
-                model.name,
-                config,
+            cursor = incremental_stream.cursor
+            if self._is_cursor_older_than_retention_period(
+                stream_state, cursor, model.api_retention_period, model.name
             ):
-                return model.full_refresh_stream
+                return self._create_component_from_model(model.full_refresh_stream, config=config, **kwargs)  # type: ignore[no-any-return]
 
-        return model.incremental_stream
+        return incremental_stream
 
+    @staticmethod
     def _is_cursor_older_than_retention_period(
-        self,
         stream_state: Mapping[str, Any],
-        incremental_sync_sources: list[Any],
+        cursor: Any,
         api_retention_period: str,
         stream_name: str,
-        config: Config,
     ) -> bool:
         """Check if the cursor value in the state is older than the API's retention period.
 
-        Delegates cursor datetime extraction to cursor class instances via
-        get_cursor_datetime_from_state, which handles format-specific parsing.
+        Delegates cursor datetime extraction to the cursor instance via
+        get_cursor_datetime_from_state.
 
         Returns True if the cursor is older than the retention period (should use full refresh).
         Returns False if the cursor is within the retention period (safe to use incremental).
-        Raises ValueError if the cursor datetime could not be parsed from state.
         """
-        # Skip retention check for concurrent state format (e.g. {"state_type": "date-range", "slices": [...]}).
-        # The DatetimeBasedCursor used for the age check only handles sequential state format.
-        # Today, is_sequential_state=True is hardcoded for all declarative cursors, so concurrent
-        # format state should never appear in practice. If that changes in the future, this guard
-        # prevents spurious full-refresh fallbacks until proper concurrent cursor delegation is added.
-        if "state_type" in stream_state or "slices" in stream_state:
-            return False
+        if not hasattr(cursor, "get_cursor_datetime_from_state"):
+            raise SystemError(
+                f"Stream '{stream_name}' cursor type '{type(cursor).__name__}' does not have "
+                f"get_cursor_datetime_from_state method. Cursor age validation with "
+                f"api_retention_period is not supported for this cursor type."
+            )
 
-        datetime_cursor_sources = [
-            s for s in incremental_sync_sources if isinstance(s, DatetimeBasedCursorModel)
-        ]
-        if not datetime_cursor_sources:
-            return False
-
-        cursor_datetime: datetime.datetime | None = None
-        for incremental_sync in datetime_cursor_sources:
-            cursor = self._create_cursor_for_age_check(incremental_sync, config)
+        try:
             cursor_datetime = cursor.get_cursor_datetime_from_state(stream_state)
-            if cursor_datetime is not None:
-                break
+        except NotImplementedError:
+            raise SystemError(
+                f"Stream '{stream_name}' cursor type '{type(cursor).__name__}' does not implement "
+                f"get_cursor_datetime_from_state. Cursor age validation with "
+                f"api_retention_period is not supported for this cursor type."
+            )
+
+        if cursor_datetime is None:
             global_state = stream_state.get("state")
             if isinstance(global_state, dict):
                 cursor_datetime = cursor.get_cursor_datetime_from_state(global_state)
-                if cursor_datetime is not None:
-                    break
 
         if cursor_datetime is None:
-            raise ValueError(
-                f"Stream '{stream_name}' has api_retention_period set to '{api_retention_period}' "
-                f"but the cursor datetime could not be parsed from state. Check that cursor_field "
-                f"and datetime_format match the state format."
-            )
+            return True
 
         retention_duration = parse_duration(api_retention_period)
         retention_cutoff = datetime.datetime.now(datetime.timezone.utc) - retention_duration
@@ -3659,24 +3643,6 @@ class ModelToComponentFactory:
             return True
 
         return False
-
-    @staticmethod
-    def _create_cursor_for_age_check(
-        model: DatetimeBasedCursorModel, config: Config
-    ) -> "DatetimeBasedCursor":
-        """Create a lightweight DatetimeBasedCursor for cursor age validation."""
-        from airbyte_cdk.legacy.sources.declarative.incremental.datetime_based_cursor import (
-            DatetimeBasedCursor as _DatetimeBasedCursor,
-        )
-
-        return _DatetimeBasedCursor(
-            start_datetime="2000-01-01T00:00:00Z",
-            cursor_field=model.cursor_field,
-            datetime_format=model.datetime_format,
-            config=config,
-            parameters=model.parameters or {},
-            cursor_datetime_formats=model.cursor_datetime_formats or [],
-        )
 
     def _create_async_job_status_mapping(
         self, model: AsyncJobStatusMapModel, config: Config, **kwargs: Any

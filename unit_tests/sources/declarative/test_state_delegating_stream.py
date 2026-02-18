@@ -527,33 +527,26 @@ def _create_manifest_with_incrementing_count_cursor(api_retention_period: str) -
     return manifest
 
 
-def test_cursor_age_validation_skips_incrementing_count_cursor():
-    """Test that IncrementingCountCursor with api_retention_period is silently skipped (no error, uses incremental)."""
+def test_cursor_age_validation_raises_error_for_incrementing_count_cursor():
+    """Test that IncrementingCountCursor with api_retention_period raises ValueError."""
     manifest = _create_manifest_with_incrementing_count_cursor("P7D")
 
-    with HttpMocker() as http_mocker:
-        http_mocker.get(
-            HttpRequest(url="https://api.test.com/items_with_filtration"),
-            HttpResponse(body=json.dumps([{"id": 101, "updated_at": "2024-07-14"}])),
+    state = [
+        AirbyteStateMessage(
+            type=AirbyteStateType.STREAM,
+            stream=AirbyteStreamState(
+                stream_descriptor=StreamDescriptor(name="TestStream", namespace=None),
+                stream_state=AirbyteStateBlob(id=100),
+            ),
         )
+    ]
 
-        state = [
-            AirbyteStateMessage(
-                type=AirbyteStateType.STREAM,
-                stream=AirbyteStreamState(
-                    stream_descriptor=StreamDescriptor(name="TestStream", namespace=None),
-                    stream_state=AirbyteStateBlob(id=100),
-                ),
-            )
-        ]
+    source = ConcurrentDeclarativeSource(
+        source_config=manifest, config=_CONFIG, catalog=None, state=state
+    )
 
-        source = ConcurrentDeclarativeSource(
-            source_config=manifest, config=_CONFIG, catalog=None, state=state
-        )
-        configured_catalog = create_configured_catalog(source, _CONFIG)
-
-        records = get_records(source, _CONFIG, configured_catalog, state)
-        assert len(records) >= 0
+    with pytest.raises(ValueError, match="IncrementingCountCursor"):
+        source.discover(logger=MagicMock(), config=_CONFIG)
 
 
 def test_cursor_age_validation_raises_error_for_unparseable_cursor():
@@ -574,5 +567,5 @@ def test_cursor_age_validation_raises_error_for_unparseable_cursor():
         source_config=manifest, config=_CONFIG, catalog=None, state=state
     )
 
-    with pytest.raises(ValueError, match="could not be parsed from state"):
+    with pytest.raises(ValueError, match="not-a-date"):
         source.discover(logger=MagicMock(), config=_CONFIG)
