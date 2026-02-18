@@ -457,21 +457,18 @@ def test_cursor_age_validation_with_per_partition_state_uses_global_cursor():
 
 
 @freezegun.freeze_time("2024-07-15")
-def test_cursor_age_validation_with_per_partition_state_within_retention():
-    """Test per-partition state with global cursor within retention uses incremental.
+def test_cursor_age_validation_with_per_partition_state_falls_back_to_full_refresh():
+    """Test that per-partition state falls back to full refresh.
 
-    This test verifies that when the global cursor in a per-partition state structure
-    is within the retention period, the incremental stream is selected (not full refresh).
-    We verify this by checking that the incremental endpoint is called, not the full refresh one.
+    When per-partition state is provided but the stream uses a ConcurrentCursor (not
+    ConcurrentPerPartitionCursor), the cursor cannot extract a datetime from the
+    per-partition format and returns None, causing a full refresh fallback.
     """
     manifest = _create_manifest_with_retention_period("P30D")
 
     with HttpMocker() as http_mocker:
         http_mocker.get(
-            HttpRequest(
-                url="https://api.test.com/items_with_filtration",
-                query_params={"start": "2024-07-01", "end": "2024-07-15"},
-            ),
+            HttpRequest(url="https://api.test.com/items"),
             HttpResponse(
                 body=json.dumps(
                     [

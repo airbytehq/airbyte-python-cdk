@@ -3629,12 +3629,6 @@ class ModelToComponentFactory:
             if cursor_datetime is not None:
                 break
 
-            global_state = stream_state.get("state")
-            if isinstance(global_state, dict):
-                cursor_datetime = cursor.get_cursor_datetime_from_state(global_state)
-                if cursor_datetime is not None:
-                    break
-
         if cursor_datetime is None:
             return True
 
