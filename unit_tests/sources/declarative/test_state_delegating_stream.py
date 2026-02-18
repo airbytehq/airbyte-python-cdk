@@ -8,6 +8,7 @@ import logging
 from unittest.mock import MagicMock
 
 import freezegun
+import pytest
 
 from airbyte_cdk.models import (
     AirbyteStateBlob,
@@ -553,3 +554,25 @@ def test_cursor_age_validation_skips_incrementing_count_cursor():
 
         records = get_records(source, _CONFIG, configured_catalog, state)
         assert len(records) >= 0
+
+
+def test_cursor_age_validation_raises_error_for_unparseable_cursor():
+    """Test that unparseable cursor datetime raises ValueError when api_retention_period is set."""
+    manifest = _create_manifest_with_retention_period("P7D")
+
+    state = [
+        AirbyteStateMessage(
+            type=AirbyteStateType.STREAM,
+            stream=AirbyteStreamState(
+                stream_descriptor=StreamDescriptor(name="TestStream", namespace=None),
+                stream_state=AirbyteStateBlob(updated_at="not-a-date"),
+            ),
+        )
+    ]
+
+    source = ConcurrentDeclarativeSource(
+        source_config=manifest, config=_CONFIG, catalog=None, state=state
+    )
+
+    with pytest.raises(ValueError, match="could not be parsed from state"):
+        source.discover(logger=MagicMock(), config=_CONFIG)

@@ -3609,9 +3609,9 @@ class ModelToComponentFactory:
         Delegates cursor datetime extraction to cursor class instances via
         get_cursor_datetime_from_state, which handles format-specific parsing.
 
-        Returns True if the cursor is older than the retention period or if the cursor is
-        invalid/unparseable (should use full refresh).
+        Returns True if the cursor is older than the retention period (should use full refresh).
         Returns False if the cursor is within the retention period (safe to use incremental).
+        Raises ValueError if the cursor datetime could not be parsed from state.
         """
         # Skip retention check for concurrent state format (e.g. {"state_type": "date-range", "slices": [...]}).
         # The DatetimeBasedCursor used for the age check only handles sequential state format.
@@ -3640,7 +3640,11 @@ class ModelToComponentFactory:
                     break
 
         if cursor_datetime is None:
-            return True
+            raise ValueError(
+                f"Stream '{stream_name}' has api_retention_period set to '{api_retention_period}' "
+                f"but the cursor datetime could not be parsed from state. Check that cursor_field "
+                f"and datetime_format match the state format."
+            )
 
         retention_duration = parse_duration(api_retention_period)
         retention_cutoff = datetime.datetime.now(datetime.timezone.utc) - retention_duration
