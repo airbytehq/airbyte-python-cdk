@@ -35,10 +35,30 @@ Create a GitHub pull request for the current feature branch with an auto-generat
    git diff main...HEAD
    ```
 
-6. **Generate a PR title:**
-   - Keep it under 70 characters
-   - Use imperative mood (e.g., "Add", "Fix", "Update")
-   - Summarize the core change
+6. **Generate a PR title** using the [Conventional Commits](https://www.conventionalcommits.org/) / semantic PR title format:
+   - Format: `<type>: <short description>`
+   - Allowed types:
+     - `feat` — a new feature
+     - `fix` — a bug fix
+     - `docs` — documentation-only changes
+     - `style` — formatting, missing semicolons, etc. (no code change)
+     - `refactor` — code change that neither fixes a bug nor adds a feature
+     - `perf` — performance improvement
+     - `test` — adding or updating tests
+     - `build` — changes to build system or dependencies
+     - `ci` — CI/CD configuration changes
+     - `chore` — other changes that don't modify src or test files
+     - `revert` — reverts a previous commit
+   - Optional scope: `<type>(<scope>): <short description>` (e.g., `feat(auth): add OAuth2 support`)
+   - Use `!` after the type/scope for breaking changes: `feat!: remove deprecated API`
+   - Keep the description under 70 characters total
+   - Use lowercase for the type and description
+   - Do not end the description with a period
+   - Examples:
+     - `feat: add support for custom extractors`
+     - `fix(pagination): handle empty cursor response`
+     - `docs: update contributing guide`
+     - `refactor!: restructure stream slicer interface`
 
 7. **Generate the PR description** using this template:
 
