@@ -156,6 +156,12 @@ class FinalStateCursor(Cursor):
     def should_be_synced(self, record: Record) -> bool:
         return True
 
+    def get_cursor_datetime_from_state(
+        self, stream_state: Mapping[str, Any]
+    ) -> datetime.datetime | None:
+        """FinalStateCursor indicates a completed full refresh; cursor is always current."""
+        return datetime.datetime.now(datetime.timezone.utc)
+
 
 class ConcurrentCursor(Cursor):
     _START_BOUNDARY = 0
@@ -602,6 +608,9 @@ class ConcurrentCursor(Cursor):
 
         Returns the cursor datetime if present and parseable, otherwise returns None.
         """
+        if stream_state.get(NO_CURSOR_STATE_KEY):
+            return datetime.datetime.now(datetime.timezone.utc)
+
         # Check if state is in concurrent format (need to convert to dict for type compatibility)
         mutable_state: MutableMapping[str, Any] = dict(stream_state)
         if self._connector_state_converter.is_state_message_compatible(mutable_state):

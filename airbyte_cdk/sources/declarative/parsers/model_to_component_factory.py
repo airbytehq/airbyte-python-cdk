@@ -618,7 +618,6 @@ from airbyte_cdk.sources.message import (
     NoopMessageRepository,
 )
 from airbyte_cdk.sources.message.repository import StateFilteringMessageRepository
-from airbyte_cdk.sources.streams import NO_CURSOR_STATE_KEY
 from airbyte_cdk.sources.streams.call_rate import (
     APIBudget,
     FixedWindowCallRatePolicy,
@@ -3555,7 +3554,6 @@ class ModelToComponentFactory:
         self,
         model: StateDelegatingStreamModel,
         config: Config,
-        has_parent_state: Optional[bool] = None,
         **kwargs: Any,
     ) -> DefaultStream:
         if (
@@ -3576,23 +3574,17 @@ class ModelToComponentFactory:
                     )
 
         stream_state = self._connector_state_manager.get_stream_state(model.name, None)
-        has_parent = False if has_parent_state is None else has_parent_state
 
-        if not stream_state and not has_parent:
+        if not stream_state:
             return self._create_component_from_model(  # type: ignore[no-any-return]
                 model.full_refresh_stream, config=config, **kwargs
-            )
-
-        if stream_state and stream_state.get(NO_CURSOR_STATE_KEY):
-            return self._create_component_from_model(  # type: ignore[no-any-return]
-                model.incremental_stream, config=config, **kwargs
             )
 
         incremental_stream: DefaultStream = self._create_component_from_model(
             model.incremental_stream, config=config, **kwargs
         )  # type: ignore[assignment]
 
-        if model.api_retention_period and stream_state:
+        if model.api_retention_period:
             full_refresh_stream: DefaultStream = self._create_component_from_model(
                 model.full_refresh_stream, config=config, **kwargs
             )  # type: ignore[assignment]
@@ -3651,12 +3643,15 @@ class ModelToComponentFactory:
         return False
 
     def _get_state_delegating_stream_model(
-        self, has_parent_state: bool, model: StateDelegatingStreamModel
+        self,
+        model: StateDelegatingStreamModel,
+        parent_state: Optional[Mapping[str, Any]] = None,
     ) -> DeclarativeStreamModel:
         """Return the appropriate underlying stream model based on state."""
         return (
             model.incremental_stream
-            if self._connector_state_manager.get_stream_state(model.name, None) or has_parent_state
+            if self._connector_state_manager.get_stream_state(model.name, None)
+            or parent_state
             else model.full_refresh_stream
         )
 
@@ -3987,17 +3982,13 @@ class ModelToComponentFactory:
     def create_parent_stream_config_with_substream_wrapper(
         self, model: ParentStreamConfigModel, config: Config, *, stream_name: str, **kwargs: Any
     ) -> Any:
-        # getting the parent state
         child_state = self._connector_state_manager.get_stream_state(stream_name, None)
 
-        # This flag will be used exclusively for StateDelegatingStream when a parent stream is created
-        has_parent_state = bool(
-            self._connector_state_manager.get_stream_state(stream_name, None)
-            if model.incremental_dependency
-            else False
+        parent_state: Optional[Mapping[str, Any]] = (
+            child_state if model.incremental_dependency and child_state else None
         )
         connector_state_manager = self._instantiate_parent_stream_state_manager(
-            child_state, config, model, has_parent_state
+            child_state, config, model, parent_state
         )
 
         substream_factory = ModelToComponentFactory(
@@ -4029,7 +4020,7 @@ class ModelToComponentFactory:
         child_state: MutableMapping[str, Any],
         config: Config,
         model: ParentStreamConfigModel,
-        has_parent_state: bool,
+        parent_state: Optional[Mapping[str, Any]] = None,
     ) -> ConnectorStateManager:
         """
         With DefaultStream, the state needs to be provided during __init__ of the cursor as opposed to the
@@ -4041,21 +4032,18 @@ class ModelToComponentFactory:
         """
         if model.incremental_dependency and child_state:
             parent_stream_name = model.stream.name or ""
-            parent_state = ConcurrentPerPartitionCursor.get_parent_state(
+            extracted_parent_state = ConcurrentPerPartitionCursor.get_parent_state(
                 child_state, parent_stream_name
             )
 
-            if not parent_state:
-                # there are two migration cases: state value from child stream or from global state
-                parent_state = ConcurrentPerPartitionCursor.get_global_state(
+            if not extracted_parent_state:
+                extracted_parent_state = ConcurrentPerPartitionCursor.get_global_state(
                     child_state, parent_stream_name
                 )
 
-                if not parent_state and not isinstance(parent_state, dict):
+                if not extracted_parent_state and not isinstance(extracted_parent_state, dict):
                     cursor_values = child_state.values()
                     if cursor_values and len(cursor_values) == 1:
-                        # We assume the child state is a pair `{<cursor_field>: <cursor_value>}` and we will use the
-                        # cursor value as a parent state.
                         incremental_sync_model: Union[
                             DatetimeBasedCursorModel,
                             IncrementingCountCursorModel,
@@ -4063,14 +4051,14 @@ class ModelToComponentFactory:
                             model.stream.incremental_sync  # type: ignore  # if we are there, it is because there is incremental_dependency and therefore there is an incremental_sync on the parent stream
                             if isinstance(model.stream, DeclarativeStreamModel)
                             else self._get_state_delegating_stream_model(
-                                has_parent_state, model.stream
+                                model.stream, parent_state=parent_state
                             ).incremental_sync
                         )
                         cursor_field = InterpolatedString.create(
                             incremental_sync_model.cursor_field,
                             parameters=incremental_sync_model.parameters or {},
                         ).eval(config)
-                        parent_state = AirbyteStateMessage(
+                        extracted_parent_state = AirbyteStateMessage(
                             type=AirbyteStateType.STREAM,
                             stream=AirbyteStreamState(
                                 stream_descriptor=StreamDescriptor(
@@ -4081,7 +4069,7 @@ class ModelToComponentFactory:
                                 ),
                             ),
                         )
-            return ConnectorStateManager([parent_state] if parent_state else [])
+            return ConnectorStateManager([extracted_parent_state] if extracted_parent_state else [])
 
         return ConnectorStateManager([])
 
