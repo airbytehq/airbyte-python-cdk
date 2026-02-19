@@ -3601,7 +3601,7 @@ class ModelToComponentFactory:
     @staticmethod
     def _is_cursor_older_than_retention_period(
         stream_state: Mapping[str, Any],
-        cursor: Any,
+        cursor: Cursor,
         api_retention_period: str,
         stream_name: str,
     ) -> bool:
