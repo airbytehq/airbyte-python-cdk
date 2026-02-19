@@ -75,7 +75,7 @@ If on `main`, ask what they'd like to understand instead.
 
 2. **Use sub-agents to trace the flow:**
    ```
-   Task(subagent_type="codebase-analyzer", prompt="Trace the data flow for [component/concept] in the Airbyte Python CDK.
+   Task(subagent_type="cdk-code-researcher", prompt="Trace the data flow for [component/concept] in the Airbyte Python CDK.
    Identify: entry points, class hierarchies, method call chains, data transformations, and exit points.
    Focus on the runtime behavior — how data actually flows through the code.
    Document with file:line references.")
@@ -108,7 +108,7 @@ If on `main`, ask what they'd like to understand instead.
 
 4. **Use sub-agents to understand impacted flows:**
    ```
-   Task(subagent_type="codebase-analyzer", prompt="Trace the data flow for [changed component].
+   Task(subagent_type="cdk-code-researcher", prompt="Trace the data flow for [changed component].
    Identify: entry points, data transformations, method call chains, and exit points.
    Document with file:line references.")
    ```
