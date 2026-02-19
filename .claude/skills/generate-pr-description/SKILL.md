@@ -37,7 +37,7 @@ Generate a pull request description by analyzing the current feature branch.
 - <bullet point list of key changes>
 
 ## Recommended Review Order
-<ordered list of recommended review order. only include files with significant changes. avoid including tests, changelogs, documentation, and other files with trivial cahnges>
+<ordered list of recommended review order. only include files with significant changes. avoid including tests, changelogs, documentation, and other files with trivial changes>
 ```
 
 ## Guidelines
