@@ -159,8 +159,14 @@ class FinalStateCursor(Cursor):
     def get_cursor_datetime_from_state(
         self, stream_state: Mapping[str, Any]
     ) -> datetime.datetime | None:
-        """FinalStateCursor indicates a completed full refresh; cursor is always current."""
-        return datetime.datetime.now(datetime.timezone.utc)
+        """FinalStateCursor has no cursor datetime.
+
+        Full refresh streams don't track a cursor position - they always read all data.
+        The FinalStateCursor state format ({NO_CURSOR_STATE_KEY: True}) is handled
+        separately in _is_cursor_older_than_retention_period before this method is called.
+        Returns None to indicate this cursor cannot parse datetime-based state.
+        """
+        return None
 
 
 class ConcurrentCursor(Cursor):

@@ -1391,8 +1391,12 @@ def test_given_partitioned_state_with_multiple_slices_when_should_be_synced_then
     )
 
 
-@freezegun.freeze_time("2024-07-15")
-def test_final_state_cursor_get_cursor_datetime_from_state_returns_current_datetime():
+def test_final_state_cursor_get_cursor_datetime_from_state_returns_none():
+    """FinalStateCursor returns None because full refresh doesn't track a cursor datetime.
+
+    The NO_CURSOR_STATE_KEY state format is handled separately in
+    _is_cursor_older_than_retention_period before get_cursor_datetime_from_state is called.
+    """
     cursor = FinalStateCursor("test_stream", None, Mock(spec=MessageRepository))
     result = cursor.get_cursor_datetime_from_state({NO_CURSOR_STATE_KEY: True})
-    assert result == datetime(2024, 7, 15, tzinfo=timezone.utc)
+    assert result is None
