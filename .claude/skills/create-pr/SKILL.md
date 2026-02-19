@@ -86,6 +86,7 @@ Create a GitHub pull request for the current feature branch with an auto-generat
    EOF
    )"
    ```
+   Note: The `EOF` terminator must start at column 0 (no leading whitespace) when generating the actual command.
 
 9. **Return the PR URL** to the user.
 
