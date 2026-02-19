@@ -3579,14 +3579,14 @@ class ModelToComponentFactory:
         has_parent = False if has_parent_state is None else has_parent_state
 
         if not stream_state and not has_parent:
-            return self._create_component_from_model(
+            return self._create_component_from_model(  # type: ignore[no-any-return]
                 model.full_refresh_stream, config=config, **kwargs
-            )  # type: ignore[no-any-return]
+            )
 
         if stream_state and stream_state.get(NO_CURSOR_STATE_KEY):
-            return self._create_component_from_model(
+            return self._create_component_from_model(  # type: ignore[no-any-return]
                 model.incremental_stream, config=config, **kwargs
-            )  # type: ignore[no-any-return]
+            )
 
         incremental_stream: DefaultStream = self._create_component_from_model(
             model.incremental_stream, config=config, **kwargs
