@@ -3654,8 +3654,7 @@ class ModelToComponentFactory:
         """Return the appropriate underlying stream model based on state."""
         return (
             model.incremental_stream
-            if self._connector_state_manager.get_stream_state(model.name, None)
-            or parent_state
+            if self._connector_state_manager.get_stream_state(model.name, None) or parent_state
             else model.full_refresh_stream
         )
 

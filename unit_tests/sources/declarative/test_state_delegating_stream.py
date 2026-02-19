@@ -778,17 +778,13 @@ def test_parent_state_delegating_stream_retention_falls_back_to_full_refresh():
         http_mocker.get(
             HttpRequest(url="https://api.test.com/parents"),
             HttpResponse(
-                body=json.dumps(
-                    [{"id": 1, "name": "parent_1", "updated_at": "2024-07-14"}]
-                )
+                body=json.dumps([{"id": 1, "name": "parent_1", "updated_at": "2024-07-14"}])
             ),
         )
         http_mocker.get(
             HttpRequest(url="https://api.test.com/children/1"),
             HttpResponse(
-                body=json.dumps(
-                    [{"id": 10, "name": "child_1", "updated_at": "2024-07-14"}]
-                )
+                body=json.dumps([{"id": 10, "name": "child_1", "updated_at": "2024-07-14"}])
             ),
         )
 
@@ -796,9 +792,7 @@ def test_parent_state_delegating_stream_retention_falls_back_to_full_refresh():
             AirbyteStateMessage(
                 type=AirbyteStateType.STREAM,
                 stream=AirbyteStreamState(
-                    stream_descriptor=StreamDescriptor(
-                        name="ChildStream", namespace=None
-                    ),
+                    stream_descriptor=StreamDescriptor(name="ChildStream", namespace=None),
                     stream_state=AirbyteStateBlob(
                         use_global_cursor=False,
                         state={"updated_at": "2024-07-14"},
