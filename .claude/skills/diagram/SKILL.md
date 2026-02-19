@@ -136,7 +136,7 @@ Include a sequence diagram when explaining:
 
 Generate the documentation using this template:
 
-```markdown
+````markdown
 ## Diagrams
 ### Flowchart
 
@@ -153,7 +153,6 @@ flowchart TB
 
     style node1 fill:#90EE90
 ```
-```
 
 ### Sequence Diagram
 
@@ -169,6 +168,7 @@ sequenceDiagram
 
     Note over A,B: Important note
 ```
+````
 
 ## Diagram Guidelines
 
