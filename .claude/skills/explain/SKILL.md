@@ -146,7 +146,7 @@ Bulleted list of the most relevant files:
 
 ## Configuration Example
 (When applicable) Show how the component is configured in a manifest YAML or Python connector.
-```
+Example manifest or connector configuration snippet goes here.
 
 ### Report guidelines
 
