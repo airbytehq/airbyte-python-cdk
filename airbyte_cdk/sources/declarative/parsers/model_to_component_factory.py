@@ -3619,12 +3619,20 @@ class ModelToComponentFactory:
 
         for cursor in cursors:
             if not hasattr(cursor, "get_cursor_datetime_from_state"):
-                continue
+                raise ValueError(
+                    f"Stream '{stream_name}' uses a cursor type ({type(cursor).__name__}) that does not "
+                    f"support cursor age validation. The cursor must implement get_cursor_datetime_from_state "
+                    f"to use api_retention_period."
+                )
 
             try:
                 cursor_datetime = cursor.get_cursor_datetime_from_state(stream_state)
             except NotImplementedError:
-                continue
+                raise ValueError(
+                    f"Stream '{stream_name}' uses a cursor type ({type(cursor).__name__}) that does not "
+                    f"implement cursor age validation. The cursor's get_cursor_datetime_from_state method "
+                    f"raised NotImplementedError. Remove api_retention_period or use a compatible cursor type."
+                )
 
             if cursor_datetime is not None:
                 break
