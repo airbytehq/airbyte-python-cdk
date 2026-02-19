@@ -608,9 +608,6 @@ class ConcurrentCursor(Cursor):
 
         Returns the cursor datetime if present and parseable, otherwise returns None.
         """
-        if stream_state.get(NO_CURSOR_STATE_KEY):
-            return datetime.datetime.now(datetime.timezone.utc)
-
         # Check if state is in concurrent format (need to convert to dict for type compatibility)
         mutable_state: MutableMapping[str, Any] = dict(stream_state)
         if self._connector_state_converter.is_state_message_compatible(mutable_state):

@@ -13,6 +13,7 @@ import pytest
 
 from airbyte_cdk.sources.connector_state_manager import ConnectorStateManager
 from airbyte_cdk.sources.message import MessageRepository
+from airbyte_cdk.sources.streams import NO_CURSOR_STATE_KEY
 from airbyte_cdk.sources.streams.concurrent.clamping import (
     ClampingEndProvider,
     ClampingStrategy,
@@ -24,6 +25,7 @@ from airbyte_cdk.sources.streams.concurrent.cursor import (
     ConcurrentCursor,
     CursorField,
     CursorValueType,
+    FinalStateCursor,
 )
 from airbyte_cdk.sources.streams.concurrent.partitions.partition import Partition
 from airbyte_cdk.sources.streams.concurrent.state_converters.abstract_stream_state_converter import (
@@ -1387,3 +1389,10 @@ def test_given_partitioned_state_with_multiple_slices_when_should_be_synced_then
         )
         == True
     )
+
+
+@freezegun.freeze_time("2024-07-15")
+def test_final_state_cursor_get_cursor_datetime_from_state_returns_current_datetime():
+    cursor = FinalStateCursor("test_stream", None, Mock(spec=MessageRepository))
+    result = cursor.get_cursor_datetime_from_state({NO_CURSOR_STATE_KEY: True})
+    assert result == datetime(2024, 7, 15, tzinfo=timezone.utc)

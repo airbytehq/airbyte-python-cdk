@@ -618,6 +618,7 @@ from airbyte_cdk.sources.message import (
     NoopMessageRepository,
 )
 from airbyte_cdk.sources.message.repository import StateFilteringMessageRepository
+from airbyte_cdk.sources.streams import NO_CURSOR_STATE_KEY
 from airbyte_cdk.sources.streams.call_rate import (
     APIBudget,
     FixedWindowCallRatePolicy,
@@ -3611,6 +3612,9 @@ class ModelToComponentFactory:
         Returns True if the cursor is older than the retention period (should use full refresh).
         Returns False if the cursor is within the retention period (safe to use incremental).
         """
+        if stream_state.get(NO_CURSOR_STATE_KEY):
+            return False
+
         cursor_datetime: datetime.datetime | None = None
 
         for cursor in cursors:

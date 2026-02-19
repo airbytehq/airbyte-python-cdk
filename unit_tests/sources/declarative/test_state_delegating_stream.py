@@ -603,3 +603,215 @@ def test_final_state_cursor_skips_retention_check_and_uses_incremental():
 
         records = get_records(source, _CONFIG, configured_catalog, state)
         assert len(records) == 1
+
+
+_PARENT_CHILD_MANIFEST: dict = {
+    "version": "6.0.0",
+    "type": "DeclarativeSource",
+    "check": {"type": "CheckStream", "stream_names": ["ChildStream"]},
+    "definitions": {
+        "ParentStream": {
+            "type": "StateDelegatingStream",
+            "name": "ParentStream",
+            "full_refresh_stream": {
+                "type": "DeclarativeStream",
+                "name": "ParentStream",
+                "primary_key": [],
+                "schema_loader": {
+                    "type": "InlineSchemaLoader",
+                    "schema": {
+                        "$schema": "http://json-schema.org/schema#",
+                        "properties": {},
+                        "type": "object",
+                    },
+                },
+                "retriever": {
+                    "type": "SimpleRetriever",
+                    "requester": {
+                        "type": "HttpRequester",
+                        "url_base": "https://api.test.com",
+                        "path": "/parents",
+                        "http_method": "GET",
+                    },
+                    "record_selector": {
+                        "type": "RecordSelector",
+                        "extractor": {"type": "DpathExtractor", "field_path": []},
+                    },
+                },
+                "incremental_sync": {
+                    "type": "DatetimeBasedCursor",
+                    "start_datetime": {
+                        "datetime": "{{ format_datetime(config['start_date'], '%Y-%m-%d') }}"
+                    },
+                    "end_datetime": {"datetime": "{{ now_utc().strftime('%Y-%m-%d') }}"},
+                    "datetime_format": "%Y-%m-%d",
+                    "cursor_datetime_formats": ["%Y-%m-%d", "%Y-%m-%dT%H:%M:%S"],
+                    "cursor_field": "updated_at",
+                },
+            },
+            "incremental_stream": {
+                "type": "DeclarativeStream",
+                "name": "ParentStream",
+                "primary_key": [],
+                "schema_loader": {
+                    "type": "InlineSchemaLoader",
+                    "schema": {
+                        "$schema": "http://json-schema.org/schema#",
+                        "properties": {},
+                        "type": "object",
+                    },
+                },
+                "retriever": {
+                    "type": "SimpleRetriever",
+                    "requester": {
+                        "type": "HttpRequester",
+                        "url_base": "https://api.test.com",
+                        "path": "/parents_incremental",
+                        "http_method": "GET",
+                    },
+                    "record_selector": {
+                        "type": "RecordSelector",
+                        "extractor": {"type": "DpathExtractor", "field_path": []},
+                    },
+                },
+                "incremental_sync": {
+                    "type": "DatetimeBasedCursor",
+                    "start_datetime": {
+                        "datetime": "{{ format_datetime(config['start_date'], '%Y-%m-%d') }}"
+                    },
+                    "end_datetime": {"datetime": "{{ now_utc().strftime('%Y-%m-%d') }}"},
+                    "datetime_format": "%Y-%m-%d",
+                    "cursor_datetime_formats": ["%Y-%m-%d", "%Y-%m-%dT%H:%M:%S"],
+                    "cursor_granularity": "P1D",
+                    "step": "P15D",
+                    "cursor_field": "updated_at",
+                    "start_time_option": {
+                        "type": "RequestOption",
+                        "field_name": "start",
+                        "inject_into": "request_parameter",
+                    },
+                    "end_time_option": {
+                        "type": "RequestOption",
+                        "field_name": "end",
+                        "inject_into": "request_parameter",
+                    },
+                },
+            },
+        },
+        "ChildStream": {
+            "type": "DeclarativeStream",
+            "name": "ChildStream",
+            "primary_key": [],
+            "schema_loader": {
+                "type": "InlineSchemaLoader",
+                "schema": {
+                    "$schema": "http://json-schema.org/schema#",
+                    "properties": {},
+                    "type": "object",
+                },
+            },
+            "retriever": {
+                "type": "SimpleRetriever",
+                "requester": {
+                    "type": "HttpRequester",
+                    "url_base": "https://api.test.com",
+                    "path": "/children/{{ stream_slice.parent_id }}",
+                    "http_method": "GET",
+                },
+                "record_selector": {
+                    "type": "RecordSelector",
+                    "extractor": {"type": "DpathExtractor", "field_path": []},
+                },
+                "partition_router": {
+                    "type": "SubstreamPartitionRouter",
+                    "parent_stream_configs": [
+                        {
+                            "stream": "#/definitions/ParentStream",
+                            "parent_key": "id",
+                            "partition_field": "parent_id",
+                            "incremental_dependency": True,
+                        }
+                    ],
+                },
+            },
+            "incremental_sync": {
+                "type": "DatetimeBasedCursor",
+                "start_datetime": {
+                    "datetime": "{{ format_datetime(config['start_date'], '%Y-%m-%d') }}"
+                },
+                "end_datetime": {"datetime": "{{ now_utc().strftime('%Y-%m-%d') }}"},
+                "datetime_format": "%Y-%m-%d",
+                "cursor_datetime_formats": ["%Y-%m-%d"],
+                "cursor_field": "updated_at",
+            },
+        },
+    },
+    "streams": [{"$ref": "#/definitions/ChildStream"}],
+    "spec": {
+        "connection_specification": {
+            "$schema": "http://json-schema.org/draft-07/schema#",
+            "type": "object",
+            "required": [],
+            "properties": {},
+            "additionalProperties": True,
+        },
+        "documentation_url": "https://example.org",
+        "type": "Spec",
+    },
+}
+
+
+def _create_parent_child_manifest_with_retention_period(
+    api_retention_period: str,
+) -> dict:
+    manifest = copy.deepcopy(_PARENT_CHILD_MANIFEST)
+    manifest["definitions"]["ParentStream"]["api_retention_period"] = api_retention_period
+    return manifest
+
+
+@freezegun.freeze_time("2024-07-15")
+def test_parent_state_delegating_stream_retention_falls_back_to_full_refresh():
+    """When parent StateDelegatingStream has old cursor in child state, retention triggers full refresh for parent."""
+    manifest = _create_parent_child_manifest_with_retention_period("P7D")
+
+    with HttpMocker() as http_mocker:
+        http_mocker.get(
+            HttpRequest(url="https://api.test.com/parents"),
+            HttpResponse(
+                body=json.dumps(
+                    [{"id": 1, "name": "parent_1", "updated_at": "2024-07-14"}]
+                )
+            ),
+        )
+        http_mocker.get(
+            HttpRequest(url="https://api.test.com/children/1"),
+            HttpResponse(
+                body=json.dumps(
+                    [{"id": 10, "name": "child_1", "updated_at": "2024-07-14"}]
+                )
+            ),
+        )
+
+        state = [
+            AirbyteStateMessage(
+                type=AirbyteStateType.STREAM,
+                stream=AirbyteStreamState(
+                    stream_descriptor=StreamDescriptor(
+                        name="ChildStream", namespace=None
+                    ),
+                    stream_state=AirbyteStateBlob(
+                        use_global_cursor=False,
+                        state={"updated_at": "2024-07-14"},
+                        states=[],
+                        parent_state={"ParentStream": {"updated_at": "2024-06-01"}},
+                        lookback_window=0,
+                    ),
+                ),
+            )
+        ]
+        source = ConcurrentDeclarativeSource(
+            source_config=manifest, config=_CONFIG, catalog=None, state=state
+        )
+        configured_catalog = create_configured_catalog(source, _CONFIG)
+        records = get_records(source, _CONFIG, configured_catalog, state)
+        assert len(records) == 1
