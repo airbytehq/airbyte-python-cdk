@@ -46,5 +46,5 @@ Generate a pull request description by analyzing the current feature branch.
 - Group related changes together in the bullet list
 - Use clear, descriptive language
 - If there are breaking changes, mention them prominently
-- In "Recommend Review Order" section, only list file path, do not include changes to that file.
+- In "Recommended Review Order" section, only list file path, do not include changes to that file.
 - Return the markdown PR description wrapped in a codeblock.
