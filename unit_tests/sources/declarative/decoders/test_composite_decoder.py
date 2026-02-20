@@ -332,6 +332,83 @@ def test_composite_raw_decoder_csv_parser_without_mocked_response():
         thread.join(timeout=5)  # ensure thread is cleaned up
 
 
+@pytest.mark.parametrize(
+    "content,inner_parser,stream,use_by_headers,expected_count",
+    [
+        pytest.param(
+            generate_csv(encoding="utf-8", delimiter="\t", should_compress=True),
+            CsvParser(encoding="utf-8", delimiter="\\t"),
+            True,
+            False,
+            3,
+            id="gzip_csv_no_header_streamed",
+        ),
+        pytest.param(
+            generate_csv(encoding="iso-8859-1", delimiter="\t", should_compress=True),
+            CsvParser(encoding="iso-8859-1", delimiter="\\t"),
+            True,
+            False,
+            3,
+            id="gzip_csv_no_header_iso_encoding",
+        ),
+        pytest.param(
+            generate_compressed_jsonlines(),
+            JsonLineParser(),
+            True,
+            True,
+            3,
+            id="gzip_jsonl_no_header_by_headers_fallback",
+        ),
+        pytest.param(
+            "".join(generate_jsonlines()).encode("utf-8"),
+            JsonLineParser(),
+            True,
+            False,
+            3,
+            id="non_gzip_passthrough",
+        ),
+        pytest.param(
+            generate_compressed_jsonlines(),
+            JsonLineParser(),
+            False,
+            False,
+            3,
+            id="gzip_no_header_non_streamed",
+        ),
+        pytest.param(
+            b"",
+            JsonLineParser(),
+            True,
+            False,
+            0,
+            id="empty_data",
+        ),
+    ],
+)
+def test_gzip_parser_auto_detection(
+    requests_mock, content, inner_parser, stream, use_by_headers, expected_count
+):
+    requests_mock.register_uri(
+        "GET",
+        "https://airbyte.io/",
+        content=content,
+    )
+    response = requests.get("https://airbyte.io/", stream=stream)
+
+    parser = GzipParser(inner_parser=inner_parser)
+    if use_by_headers:
+        composite_raw_decoder = CompositeRawDecoder.by_headers(
+            [({"Content-Encoding"}, {"gzip"}, parser)],
+            stream_response=stream,
+            fallback_parser=parser,
+        )
+    else:
+        composite_raw_decoder = CompositeRawDecoder(parser=parser, stream_response=stream)
+
+    parsed_records = list(composite_raw_decoder.decode(response))
+    assert len(parsed_records) == expected_count
+
+
 def test_given_response_already_consumed_when_decode_then_no_data_is_returned(requests_mock):
     requests_mock.register_uri(
         "GET", "https://airbyte.io/", content=json.dumps({"test": "test"}).encode()
