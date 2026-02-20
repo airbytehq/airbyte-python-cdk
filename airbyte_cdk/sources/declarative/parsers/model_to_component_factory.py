@@ -3481,7 +3481,9 @@ class ModelToComponentFactory:
         if model is None:
             return lambda: PaginationTracker(
                 checkpoint_cursor=checkpoint_cursor,
-                pages_per_checkpoint_interval=DEFAULT_PAGES_PER_CHECKPOINT_INTERVAL if checkpoint_cursor else None,
+                pages_per_checkpoint_interval=DEFAULT_PAGES_PER_CHECKPOINT_INTERVAL
+                if checkpoint_cursor
+                else None,
             )
 
         # Until we figure out a way to use any cursor for PaginationTracker, we will have to have this cursor selector logic
@@ -3508,7 +3510,9 @@ class ModelToComponentFactory:
             cursor_factory(),
             limit,
             checkpoint_cursor=checkpoint_cursor,
-            pages_per_checkpoint_interval=DEFAULT_PAGES_PER_CHECKPOINT_INTERVAL if checkpoint_cursor else None,
+            pages_per_checkpoint_interval=DEFAULT_PAGES_PER_CHECKPOINT_INTERVAL
+            if checkpoint_cursor
+            else None,
         )
 
     def _get_log_formatter(
