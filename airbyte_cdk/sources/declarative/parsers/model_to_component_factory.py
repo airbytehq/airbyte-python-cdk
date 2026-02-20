@@ -11,6 +11,7 @@ import logging
 import re
 from functools import partial
 from typing import (
+    TYPE_CHECKING,
     Any,
     Callable,
     Dict,
@@ -26,6 +27,11 @@ from typing import (
     get_origin,
     get_type_hints,
 )
+
+if TYPE_CHECKING:
+    from airbyte_cdk.legacy.sources.declarative.incremental.datetime_based_cursor import (
+        DatetimeBasedCursor,
+    )
 
 from airbyte_protocol_dataclasses.models import ConfiguredAirbyteStream
 from isodate import parse_duration
@@ -612,6 +618,7 @@ from airbyte_cdk.sources.message import (
     NoopMessageRepository,
 )
 from airbyte_cdk.sources.message.repository import StateFilteringMessageRepository
+from airbyte_cdk.sources.streams import NO_CURSOR_STATE_KEY
 from airbyte_cdk.sources.streams.call_rate import (
     APIBudget,
     FixedWindowCallRatePolicy,
@@ -3548,7 +3555,6 @@ class ModelToComponentFactory:
         self,
         model: StateDelegatingStreamModel,
         config: Config,
-        has_parent_state: Optional[bool] = None,
         **kwargs: Any,
     ) -> DefaultStream:
         if (
@@ -3559,18 +3565,87 @@ class ModelToComponentFactory:
                 f"state_delegating_stream, full_refresh_stream name and incremental_stream must have equal names. Instead has {model.name}, {model.full_refresh_stream.name} and {model.incremental_stream.name}."
             )
 
-        stream_model = self._get_state_delegating_stream_model(
-            False if has_parent_state is None else has_parent_state, model
-        )
+        if model.api_retention_period:
+            for stream_model in (model.full_refresh_stream, model.incremental_stream):
+                if isinstance(stream_model.incremental_sync, IncrementingCountCursorModel):
+                    raise ValueError(
+                        f"Stream '{model.name}' uses IncrementingCountCursor which is not supported "
+                        f"with api_retention_period. IncrementingCountCursor does not use datetime-based "
+                        f"cursors, so cursor age validation cannot be performed."
+                    )
 
-        return self._create_component_from_model(stream_model, config=config, **kwargs)  # type: ignore[no-any-return]  # DeclarativeStream will be created as stream_model is alwyas DeclarativeStreamModel
+        stream_state = self._connector_state_manager.get_stream_state(model.name, None)
+
+        if not stream_state:
+            return self._create_component_from_model(  # type: ignore[no-any-return]
+                model.full_refresh_stream, config=config, **kwargs
+            )
+
+        incremental_stream: DefaultStream = self._create_component_from_model(
+            model.incremental_stream, config=config, **kwargs
+        )  # type: ignore[assignment]
+
+        if model.api_retention_period:
+            if self._is_cursor_older_than_retention_period(
+                stream_state,
+                incremental_stream.cursor,
+                model.api_retention_period,
+                model.name,
+            ):
+                self._connector_state_manager.update_state_for_stream(model.name, None, {})
+                state_message = self._connector_state_manager.create_state_message(model.name, None)
+                self._message_repository.emit_message(state_message)
+                return self._create_component_from_model(  # type: ignore[no-any-return]
+                    model.full_refresh_stream, config=config, **kwargs
+                )
+
+        return incremental_stream
+
+    @staticmethod
+    def _is_cursor_older_than_retention_period(
+        stream_state: Mapping[str, Any],
+        cursor: Cursor,
+        api_retention_period: str,
+        stream_name: str,
+    ) -> bool:
+        """Check if the cursor value in the state is older than the API's retention period.
+
+        Returns True if the cursor is older than the retention period (should use full refresh).
+        Returns False if the cursor is within the retention period (safe to use incremental).
+        """
+        # FinalStateCursor state format - previous sync was a completed full refresh
+        if stream_state.get(NO_CURSOR_STATE_KEY):
+            return False
+
+        cursor_datetime = cursor.get_cursor_datetime_from_state(stream_state)
+
+        if cursor_datetime is None:
+            # Cursor couldn't parse the state - fall back to full refresh to be safe
+            return True
+
+        retention_duration = parse_duration(api_retention_period)
+        retention_cutoff = datetime.datetime.now(datetime.timezone.utc) - retention_duration
+
+        if cursor_datetime < retention_cutoff:
+            logging.warning(
+                f"Stream '{stream_name}' has a cursor value older than "
+                f"the API's retention period of {api_retention_period} "
+                f"(cutoff: {retention_cutoff.isoformat()}). "
+                f"Falling back to full refresh to avoid data loss."
+            )
+            return True
+
+        return False
 
     def _get_state_delegating_stream_model(
-        self, has_parent_state: bool, model: StateDelegatingStreamModel
+        self,
+        model: StateDelegatingStreamModel,
+        parent_state: Optional[Mapping[str, Any]] = None,
     ) -> DeclarativeStreamModel:
+        """Return the appropriate underlying stream model based on state."""
         return (
             model.incremental_stream
-            if self._connector_state_manager.get_stream_state(model.name, None) or has_parent_state
+            if self._connector_state_manager.get_stream_state(model.name, None) or parent_state
             else model.full_refresh_stream
         )
 
@@ -3901,17 +3976,13 @@ class ModelToComponentFactory:
     def create_parent_stream_config_with_substream_wrapper(
         self, model: ParentStreamConfigModel, config: Config, *, stream_name: str, **kwargs: Any
     ) -> Any:
-        # getting the parent state
         child_state = self._connector_state_manager.get_stream_state(stream_name, None)
 
-        # This flag will be used exclusively for StateDelegatingStream when a parent stream is created
-        has_parent_state = bool(
-            self._connector_state_manager.get_stream_state(stream_name, None)
-            if model.incremental_dependency
-            else False
+        parent_state: Optional[Mapping[str, Any]] = (
+            child_state if model.incremental_dependency and child_state else None
         )
         connector_state_manager = self._instantiate_parent_stream_state_manager(
-            child_state, config, model, has_parent_state
+            child_state, config, model, parent_state
         )
 
         substream_factory = ModelToComponentFactory(
@@ -3943,7 +4014,7 @@ class ModelToComponentFactory:
         child_state: MutableMapping[str, Any],
         config: Config,
         model: ParentStreamConfigModel,
-        has_parent_state: bool,
+        parent_state: Optional[Mapping[str, Any]] = None,
     ) -> ConnectorStateManager:
         """
         With DefaultStream, the state needs to be provided during __init__ of the cursor as opposed to the
@@ -3955,21 +4026,18 @@ class ModelToComponentFactory:
         """
         if model.incremental_dependency and child_state:
             parent_stream_name = model.stream.name or ""
-            parent_state = ConcurrentPerPartitionCursor.get_parent_state(
+            extracted_parent_state = ConcurrentPerPartitionCursor.get_parent_state(
                 child_state, parent_stream_name
             )
 
-            if not parent_state:
-                # there are two migration cases: state value from child stream or from global state
-                parent_state = ConcurrentPerPartitionCursor.get_global_state(
+            if not extracted_parent_state:
+                extracted_parent_state = ConcurrentPerPartitionCursor.get_global_state(
                     child_state, parent_stream_name
                 )
 
-                if not parent_state and not isinstance(parent_state, dict):
+                if not extracted_parent_state and not isinstance(extracted_parent_state, dict):
                     cursor_values = child_state.values()
                     if cursor_values and len(cursor_values) == 1:
-                        # We assume the child state is a pair `{<cursor_field>: <cursor_value>}` and we will use the
-                        # cursor value as a parent state.
                         incremental_sync_model: Union[
                             DatetimeBasedCursorModel,
                             IncrementingCountCursorModel,
@@ -3977,14 +4045,14 @@ class ModelToComponentFactory:
                             model.stream.incremental_sync  # type: ignore  # if we are there, it is because there is incremental_dependency and therefore there is an incremental_sync on the parent stream
                             if isinstance(model.stream, DeclarativeStreamModel)
                             else self._get_state_delegating_stream_model(
-                                has_parent_state, model.stream
+                                model.stream, parent_state=parent_state
                             ).incremental_sync
                         )
                         cursor_field = InterpolatedString.create(
                             incremental_sync_model.cursor_field,
                             parameters=incremental_sync_model.parameters or {},
                         ).eval(config)
-                        parent_state = AirbyteStateMessage(
+                        extracted_parent_state = AirbyteStateMessage(
                             type=AirbyteStateType.STREAM,
                             stream=AirbyteStreamState(
                                 stream_descriptor=StreamDescriptor(
@@ -3995,7 +4063,7 @@ class ModelToComponentFactory:
                                 ),
                             ),
                         )
-            return ConnectorStateManager([parent_state] if parent_state else [])
+            return ConnectorStateManager([extracted_parent_state] if extracted_parent_state else [])
 
         return ConnectorStateManager([])
 

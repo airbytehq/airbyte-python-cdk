@@ -2,10 +2,13 @@
 # Copyright (c) 2025 Airbyte, Inc., all rights reserved.
 #
 
+import copy
 import json
+import logging
 from unittest.mock import MagicMock
 
 import freezegun
+import pytest
 
 from airbyte_cdk.models import (
     AirbyteStateBlob,
@@ -253,3 +256,600 @@ def test_incremental_retriever():
             {"id": 4, "name": "item_4", "updated_at": "2024-02-01"},
         ]
         assert expected_incremental == incremental_records
+
+
+def _create_manifest_with_retention_period(api_retention_period: str) -> dict:
+    """Create a manifest with api_retention_period set on the StateDelegatingStream."""
+    manifest = copy.deepcopy(_MANIFEST)
+    manifest["definitions"]["TestStream"]["api_retention_period"] = api_retention_period
+    return manifest
+
+
+@freezegun.freeze_time("2024-07-15")
+def test_cursor_age_validation_falls_back_to_full_refresh_when_cursor_too_old():
+    """Test that when cursor is older than retention period, full refresh is used."""
+    manifest = _create_manifest_with_retention_period("P7D")
+
+    with HttpMocker() as http_mocker:
+        http_mocker.get(
+            HttpRequest(url="https://api.test.com/items"),
+            HttpResponse(
+                body=json.dumps(
+                    [
+                        {"id": 1, "name": "item_1", "updated_at": "2024-07-13"},
+                        {"id": 2, "name": "item_2", "updated_at": "2024-07-14"},
+                    ]
+                )
+            ),
+        )
+
+        state = [
+            AirbyteStateMessage(
+                type=AirbyteStateType.STREAM,
+                stream=AirbyteStreamState(
+                    stream_descriptor=StreamDescriptor(name="TestStream", namespace=None),
+                    stream_state=AirbyteStateBlob(updated_at="2024-07-01"),
+                ),
+            )
+        ]
+        source = ConcurrentDeclarativeSource(
+            source_config=manifest, config=_CONFIG, catalog=None, state=state
+        )
+        configured_catalog = create_configured_catalog(source, _CONFIG)
+
+        records = get_records(source, _CONFIG, configured_catalog, state)
+        expected = [
+            {"id": 1, "name": "item_1", "updated_at": "2024-07-13"},
+            {"id": 2, "name": "item_2", "updated_at": "2024-07-14"},
+        ]
+        assert expected == records
+
+
+@freezegun.freeze_time("2024-07-15")
+def test_cursor_age_validation_clears_state_when_falling_back_to_full_refresh():
+    """Test that state is cleared when cursor is older than retention period."""
+    manifest = _create_manifest_with_retention_period("P7D")
+
+    with HttpMocker() as http_mocker:
+        http_mocker.get(
+            HttpRequest(url="https://api.test.com/items"),
+            HttpResponse(
+                body=json.dumps(
+                    [
+                        {"id": 1, "name": "item_1", "updated_at": "2024-07-13"},
+                        {"id": 2, "name": "item_2", "updated_at": "2024-07-14"},
+                    ]
+                )
+            ),
+        )
+
+        state = [
+            AirbyteStateMessage(
+                type=AirbyteStateType.STREAM,
+                stream=AirbyteStreamState(
+                    stream_descriptor=StreamDescriptor(name="TestStream", namespace=None),
+                    stream_state=AirbyteStateBlob(updated_at="2024-07-01"),
+                ),
+            )
+        ]
+        source = ConcurrentDeclarativeSource(
+            source_config=manifest, config=_CONFIG, catalog=None, state=state
+        )
+        configured_catalog = create_configured_catalog(source, _CONFIG)
+
+        all_messages = list(
+            source.read(logger=MagicMock(), config=_CONFIG, catalog=configured_catalog, state=state)
+        )
+
+        state_messages = [msg for msg in all_messages if msg.type == Type.STATE]
+        assert len(state_messages) > 0, "Expected at least one state message"
+        first_state = state_messages[0].state.stream.stream_state
+        assert first_state == AirbyteStateBlob(), (
+            f"Expected first state message to be empty (clearing stale state), got: {first_state}"
+        )
+
+
+@freezegun.freeze_time("2024-07-15")
+def test_cursor_age_validation_uses_incremental_when_cursor_within_retention():
+    """Test that when cursor is within retention period, incremental sync is used."""
+    manifest = _create_manifest_with_retention_period("P30D")
+
+    with HttpMocker() as http_mocker:
+        http_mocker.get(
+            HttpRequest(
+                url="https://api.test.com/items_with_filtration?start=2024-07-13&end=2024-07-15"
+            ),
+            HttpResponse(
+                body=json.dumps(
+                    [
+                        {"id": 3, "name": "item_3", "updated_at": "2024-07-14"},
+                    ]
+                )
+            ),
+        )
+
+        state = [
+            AirbyteStateMessage(
+                type=AirbyteStateType.STREAM,
+                stream=AirbyteStreamState(
+                    stream_descriptor=StreamDescriptor(name="TestStream", namespace=None),
+                    stream_state=AirbyteStateBlob(updated_at="2024-07-13"),
+                ),
+            )
+        ]
+        source = ConcurrentDeclarativeSource(
+            source_config=manifest, config=_CONFIG, catalog=None, state=state
+        )
+        configured_catalog = create_configured_catalog(source, _CONFIG)
+
+        records = get_records(source, _CONFIG, configured_catalog, state)
+        expected = [
+            {"id": 3, "name": "item_3", "updated_at": "2024-07-14"},
+        ]
+        assert expected == records
+
+
+@freezegun.freeze_time("2024-07-15")
+def test_cursor_age_validation_with_1_day_retention_falls_back():
+    """Test cursor age validation with P1D retention period falls back to full refresh."""
+    manifest = _create_manifest_with_retention_period("P1D")
+
+    with HttpMocker() as http_mocker:
+        http_mocker.get(
+            HttpRequest(url="https://api.test.com/items"),
+            HttpResponse(body=json.dumps([{"id": 1, "updated_at": "2024-07-14"}])),
+        )
+
+        state = [
+            AirbyteStateMessage(
+                type=AirbyteStateType.STREAM,
+                stream=AirbyteStreamState(
+                    stream_descriptor=StreamDescriptor(name="TestStream", namespace=None),
+                    stream_state=AirbyteStateBlob(updated_at="2024-07-13"),
+                ),
+            )
+        ]
+        source = ConcurrentDeclarativeSource(
+            source_config=manifest, config=_CONFIG, catalog=None, state=state
+        )
+        configured_catalog = create_configured_catalog(source, _CONFIG)
+
+        records = get_records(source, _CONFIG, configured_catalog, state)
+        assert len(records) == 1
+
+
+@freezegun.freeze_time("2024-07-15")
+def test_cursor_age_validation_emits_warning_when_falling_back(caplog):
+    """Test that a warning is emitted when cursor is older than retention period."""
+    manifest = _create_manifest_with_retention_period("P7D")
+
+    with HttpMocker() as http_mocker:
+        http_mocker.get(
+            HttpRequest(url="https://api.test.com/items"),
+            HttpResponse(body=json.dumps([{"id": 1, "updated_at": "2024-07-14"}])),
+        )
+
+        state = [
+            AirbyteStateMessage(
+                type=AirbyteStateType.STREAM,
+                stream=AirbyteStreamState(
+                    stream_descriptor=StreamDescriptor(name="TestStream", namespace=None),
+                    stream_state=AirbyteStateBlob(updated_at="2024-07-01"),
+                ),
+            )
+        ]
+
+        with caplog.at_level(logging.WARNING):
+            source = ConcurrentDeclarativeSource(
+                source_config=manifest, config=_CONFIG, catalog=None, state=state
+            )
+            configured_catalog = create_configured_catalog(source, _CONFIG)
+            get_records(source, _CONFIG, configured_catalog, state)
+
+        warning_messages = [r.message for r in caplog.records if r.levelno == logging.WARNING]
+        assert any(
+            "TestStream" in msg and "older than" in msg and "P7D" in msg for msg in warning_messages
+        ), f"Expected warning about stale cursor not found. Warnings: {warning_messages}"
+
+
+@freezegun.freeze_time("2024-07-15")
+def test_cursor_age_validation_with_per_partition_state_uses_global_cursor():
+    """Test that per-partition state structure uses global cursor for age validation."""
+    manifest = _create_manifest_with_retention_period("P7D")
+
+    with HttpMocker() as http_mocker:
+        http_mocker.get(
+            HttpRequest(url="https://api.test.com/items"),
+            HttpResponse(
+                body=json.dumps(
+                    [
+                        {"id": 1, "name": "item_1", "updated_at": "2024-07-13"},
+                    ]
+                )
+            ),
+        )
+
+        state = [
+            AirbyteStateMessage(
+                type=AirbyteStateType.STREAM,
+                stream=AirbyteStreamState(
+                    stream_descriptor=StreamDescriptor(name="TestStream", namespace=None),
+                    stream_state=AirbyteStateBlob(
+                        state={"updated_at": "2024-07-01"},
+                        states=[
+                            {
+                                "partition": {"parent_id": "1"},
+                                "cursor": {"updated_at": "2024-07-10"},
+                            },
+                            {
+                                "partition": {"parent_id": "2"},
+                                "cursor": {"updated_at": "2024-07-05"},
+                            },
+                        ],
+                        use_global_cursor=False,
+                    ),
+                ),
+            )
+        ]
+        source = ConcurrentDeclarativeSource(
+            source_config=manifest, config=_CONFIG, catalog=None, state=state
+        )
+        configured_catalog = create_configured_catalog(source, _CONFIG)
+
+        records = get_records(source, _CONFIG, configured_catalog, state)
+        assert len(records) == 1
+
+
+@freezegun.freeze_time("2024-07-15")
+def test_cursor_age_validation_with_per_partition_state_falls_back_to_full_refresh():
+    """Test that per-partition state falls back to full refresh.
+
+    When per-partition state is provided but the stream uses a ConcurrentCursor (not
+    ConcurrentPerPartitionCursor), the cursor cannot extract a datetime from the
+    per-partition format and returns None, causing a full refresh fallback.
+    """
+    manifest = _create_manifest_with_retention_period("P30D")
+
+    with HttpMocker() as http_mocker:
+        http_mocker.get(
+            HttpRequest(url="https://api.test.com/items"),
+            HttpResponse(
+                body=json.dumps(
+                    [
+                        {"id": 3, "name": "item_3", "updated_at": "2024-07-14"},
+                    ]
+                )
+            ),
+        )
+
+        state = [
+            AirbyteStateMessage(
+                type=AirbyteStateType.STREAM,
+                stream=AirbyteStreamState(
+                    stream_descriptor=StreamDescriptor(name="TestStream", namespace=None),
+                    stream_state=AirbyteStateBlob(
+                        state={"updated_at": "2024-07-10"},
+                        states=[
+                            {
+                                "partition": {"parent_id": "1"},
+                                "cursor": {"updated_at": "2024-07-10"},
+                            },
+                        ],
+                        use_global_cursor=False,
+                    ),
+                ),
+            )
+        ]
+        source = ConcurrentDeclarativeSource(
+            source_config=manifest, config=_CONFIG, catalog=None, state=state
+        )
+        configured_catalog = create_configured_catalog(source, _CONFIG)
+
+        records = get_records(source, _CONFIG, configured_catalog, state)
+        assert len(records) == 1
+
+
+def _create_manifest_with_incrementing_count_cursor(api_retention_period: str) -> dict:
+    """Create a manifest with IncrementingCountCursor and api_retention_period."""
+    manifest = copy.deepcopy(_MANIFEST)
+    manifest["definitions"]["TestStream"]["api_retention_period"] = api_retention_period
+
+    incrementing_cursor = {
+        "type": "IncrementingCountCursor",
+        "cursor_field": "id",
+        "start_value": 0,
+    }
+    manifest["definitions"]["TestStream"]["full_refresh_stream"]["incremental_sync"] = (
+        incrementing_cursor
+    )
+    manifest["definitions"]["TestStream"]["incremental_stream"]["incremental_sync"] = (
+        incrementing_cursor
+    )
+    return manifest
+
+
+def test_cursor_age_validation_raises_error_for_incrementing_count_cursor():
+    """Test that IncrementingCountCursor with api_retention_period raises ValueError."""
+    manifest = _create_manifest_with_incrementing_count_cursor("P7D")
+
+    state = [
+        AirbyteStateMessage(
+            type=AirbyteStateType.STREAM,
+            stream=AirbyteStreamState(
+                stream_descriptor=StreamDescriptor(name="TestStream", namespace=None),
+                stream_state=AirbyteStateBlob(id=100),
+            ),
+        )
+    ]
+
+    source = ConcurrentDeclarativeSource(
+        source_config=manifest, config=_CONFIG, catalog=None, state=state
+    )
+
+    with pytest.raises(ValueError, match="IncrementingCountCursor"):
+        source.discover(logger=MagicMock(), config=_CONFIG)
+
+
+def test_cursor_age_validation_raises_error_for_unparseable_cursor():
+    """Test that unparseable cursor datetime raises ValueError when api_retention_period is set."""
+    manifest = _create_manifest_with_retention_period("P7D")
+
+    state = [
+        AirbyteStateMessage(
+            type=AirbyteStateType.STREAM,
+            stream=AirbyteStreamState(
+                stream_descriptor=StreamDescriptor(name="TestStream", namespace=None),
+                stream_state=AirbyteStateBlob(updated_at="not-a-date"),
+            ),
+        )
+    ]
+
+    source = ConcurrentDeclarativeSource(
+        source_config=manifest, config=_CONFIG, catalog=None, state=state
+    )
+
+    with pytest.raises(ValueError, match="not-a-date"):
+        source.discover(logger=MagicMock(), config=_CONFIG)
+
+
+@freezegun.freeze_time("2024-07-15")
+def test_final_state_cursor_skips_retention_check_and_uses_incremental():
+    """When state is a final state from FinalStateCursor, skip retention check and use incremental."""
+    manifest = _create_manifest_with_retention_period("P7D")
+
+    with HttpMocker() as http_mocker:
+        http_mocker.get(
+            HttpRequest(
+                url="https://api.test.com/items_with_filtration?start=2024-07-01&end=2024-07-15"
+            ),
+            HttpResponse(
+                body=json.dumps(
+                    [
+                        {"id": 1, "name": "item_1", "updated_at": "2024-07-14"},
+                    ]
+                )
+            ),
+        )
+
+        state = [
+            AirbyteStateMessage(
+                type=AirbyteStateType.STREAM,
+                stream=AirbyteStreamState(
+                    stream_descriptor=StreamDescriptor(name="TestStream", namespace=None),
+                    stream_state=AirbyteStateBlob(__ab_no_cursor_state_message=True),
+                ),
+            )
+        ]
+        source = ConcurrentDeclarativeSource(
+            source_config=manifest, config=_CONFIG, catalog=None, state=state
+        )
+        configured_catalog = create_configured_catalog(source, _CONFIG)
+
+        records = get_records(source, _CONFIG, configured_catalog, state)
+        assert len(records) == 1
+
+
+_PARENT_CHILD_MANIFEST: dict = {
+    "version": "6.0.0",
+    "type": "DeclarativeSource",
+    "check": {"type": "CheckStream", "stream_names": ["ChildStream"]},
+    "definitions": {
+        "ParentStream": {
+            "type": "StateDelegatingStream",
+            "name": "ParentStream",
+            "full_refresh_stream": {
+                "type": "DeclarativeStream",
+                "name": "ParentStream",
+                "primary_key": [],
+                "schema_loader": {
+                    "type": "InlineSchemaLoader",
+                    "schema": {
+                        "$schema": "http://json-schema.org/schema#",
+                        "properties": {},
+                        "type": "object",
+                    },
+                },
+                "retriever": {
+                    "type": "SimpleRetriever",
+                    "requester": {
+                        "type": "HttpRequester",
+                        "url_base": "https://api.test.com",
+                        "path": "/parents",
+                        "http_method": "GET",
+                    },
+                    "record_selector": {
+                        "type": "RecordSelector",
+                        "extractor": {"type": "DpathExtractor", "field_path": []},
+                    },
+                },
+                "incremental_sync": {
+                    "type": "DatetimeBasedCursor",
+                    "start_datetime": {
+                        "datetime": "{{ format_datetime(config['start_date'], '%Y-%m-%d') }}"
+                    },
+                    "end_datetime": {"datetime": "{{ now_utc().strftime('%Y-%m-%d') }}"},
+                    "datetime_format": "%Y-%m-%d",
+                    "cursor_datetime_formats": ["%Y-%m-%d", "%Y-%m-%dT%H:%M:%S"],
+                    "cursor_field": "updated_at",
+                },
+            },
+            "incremental_stream": {
+                "type": "DeclarativeStream",
+                "name": "ParentStream",
+                "primary_key": [],
+                "schema_loader": {
+                    "type": "InlineSchemaLoader",
+                    "schema": {
+                        "$schema": "http://json-schema.org/schema#",
+                        "properties": {},
+                        "type": "object",
+                    },
+                },
+                "retriever": {
+                    "type": "SimpleRetriever",
+                    "requester": {
+                        "type": "HttpRequester",
+                        "url_base": "https://api.test.com",
+                        "path": "/parents_incremental",
+                        "http_method": "GET",
+                    },
+                    "record_selector": {
+                        "type": "RecordSelector",
+                        "extractor": {"type": "DpathExtractor", "field_path": []},
+                    },
+                },
+                "incremental_sync": {
+                    "type": "DatetimeBasedCursor",
+                    "start_datetime": {
+                        "datetime": "{{ format_datetime(config['start_date'], '%Y-%m-%d') }}"
+                    },
+                    "end_datetime": {"datetime": "{{ now_utc().strftime('%Y-%m-%d') }}"},
+                    "datetime_format": "%Y-%m-%d",
+                    "cursor_datetime_formats": ["%Y-%m-%d", "%Y-%m-%dT%H:%M:%S"],
+                    "cursor_granularity": "P1D",
+                    "step": "P15D",
+                    "cursor_field": "updated_at",
+                    "start_time_option": {
+                        "type": "RequestOption",
+                        "field_name": "start",
+                        "inject_into": "request_parameter",
+                    },
+                    "end_time_option": {
+                        "type": "RequestOption",
+                        "field_name": "end",
+                        "inject_into": "request_parameter",
+                    },
+                },
+            },
+        },
+        "ChildStream": {
+            "type": "DeclarativeStream",
+            "name": "ChildStream",
+            "primary_key": [],
+            "schema_loader": {
+                "type": "InlineSchemaLoader",
+                "schema": {
+                    "$schema": "http://json-schema.org/schema#",
+                    "properties": {},
+                    "type": "object",
+                },
+            },
+            "retriever": {
+                "type": "SimpleRetriever",
+                "requester": {
+                    "type": "HttpRequester",
+                    "url_base": "https://api.test.com",
+                    "path": "/children/{{ stream_slice.parent_id }}",
+                    "http_method": "GET",
+                },
+                "record_selector": {
+                    "type": "RecordSelector",
+                    "extractor": {"type": "DpathExtractor", "field_path": []},
+                },
+                "partition_router": {
+                    "type": "SubstreamPartitionRouter",
+                    "parent_stream_configs": [
+                        {
+                            "stream": "#/definitions/ParentStream",
+                            "parent_key": "id",
+                            "partition_field": "parent_id",
+                            "incremental_dependency": True,
+                        }
+                    ],
+                },
+            },
+            "incremental_sync": {
+                "type": "DatetimeBasedCursor",
+                "start_datetime": {
+                    "datetime": "{{ format_datetime(config['start_date'], '%Y-%m-%d') }}"
+                },
+                "end_datetime": {"datetime": "{{ now_utc().strftime('%Y-%m-%d') }}"},
+                "datetime_format": "%Y-%m-%d",
+                "cursor_datetime_formats": ["%Y-%m-%d"],
+                "cursor_field": "updated_at",
+            },
+        },
+    },
+    "streams": [{"$ref": "#/definitions/ChildStream"}],
+    "spec": {
+        "connection_specification": {
+            "$schema": "http://json-schema.org/draft-07/schema#",
+            "type": "object",
+            "required": [],
+            "properties": {},
+            "additionalProperties": True,
+        },
+        "documentation_url": "https://example.org",
+        "type": "Spec",
+    },
+}
+
+
+def _create_parent_child_manifest_with_retention_period(
+    api_retention_period: str,
+) -> dict:
+    manifest = copy.deepcopy(_PARENT_CHILD_MANIFEST)
+    manifest["definitions"]["ParentStream"]["api_retention_period"] = api_retention_period
+    return manifest
+
+
+@freezegun.freeze_time("2024-07-15")
+def test_parent_state_delegating_stream_retention_falls_back_to_full_refresh():
+    """When parent StateDelegatingStream has old cursor in child state, retention triggers full refresh for parent."""
+    manifest = _create_parent_child_manifest_with_retention_period("P7D")
+
+    with HttpMocker() as http_mocker:
+        http_mocker.get(
+            HttpRequest(url="https://api.test.com/parents"),
+            HttpResponse(
+                body=json.dumps([{"id": 1, "name": "parent_1", "updated_at": "2024-07-14"}])
+            ),
+        )
+        http_mocker.get(
+            HttpRequest(url="https://api.test.com/children/1"),
+            HttpResponse(
+                body=json.dumps([{"id": 10, "name": "child_1", "updated_at": "2024-07-14"}])
+            ),
+        )
+
+        state = [
+            AirbyteStateMessage(
+                type=AirbyteStateType.STREAM,
+                stream=AirbyteStreamState(
+                    stream_descriptor=StreamDescriptor(name="ChildStream", namespace=None),
+                    stream_state=AirbyteStateBlob(
+                        use_global_cursor=False,
+                        state={"updated_at": "2024-07-14"},
+                        states=[],
+                        parent_state={"ParentStream": {"updated_at": "2024-06-01"}},
+                        lookback_window=0,
+                    ),
+                ),
+            )
+        ]
+        source = ConcurrentDeclarativeSource(
+            source_config=manifest, config=_CONFIG, catalog=None, state=state
+        )
+        configured_catalog = create_configured_catalog(source, _CONFIG)
+        records = get_records(source, _CONFIG, configured_catalog, state)
+        assert len(records) == 1
