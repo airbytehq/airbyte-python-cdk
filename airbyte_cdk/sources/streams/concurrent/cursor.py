@@ -286,6 +286,42 @@ class ConcurrentCursor(Cursor):
                 self._emit_state_message()
         self._has_closed_at_least_one_slice = True
 
+    def emit_intermediate_state(self, stream_slice: StreamSlice) -> None:
+        if not self._is_ascending_order:
+            return
+
+        with self._lock:
+            most_recent_cursor_value = self._most_recent_cursor_value_per_partition.get(
+                stream_slice
+            )
+            if most_recent_cursor_value is None:
+                return
+
+            if self._slice_boundary_fields:
+                if "slices" not in self._concurrent_state:
+                    return
+                start_value = self._connector_state_converter.parse_value(
+                    stream_slice[self._slice_boundary_fields[self._START_BOUNDARY]]
+                )
+                self._concurrent_state["slices"].append(
+                    {
+                        self._connector_state_converter.START_KEY: start_value,
+                        self._connector_state_converter.END_KEY: most_recent_cursor_value,
+                        self._connector_state_converter.MOST_RECENT_RECORD_KEY: most_recent_cursor_value,
+                    }
+                )
+            else:
+                self._concurrent_state["slices"].append(
+                    {
+                        self._connector_state_converter.START_KEY: self.start,
+                        self._connector_state_converter.END_KEY: most_recent_cursor_value,
+                        self._connector_state_converter.MOST_RECENT_RECORD_KEY: most_recent_cursor_value,
+                    }
+                )
+
+            self._merge_partitions()
+            self._emit_state_message()
+
     def _add_slice_to_state(self, partition: Partition) -> None:
         most_recent_cursor_value = self._most_recent_cursor_value_per_partition.get(
             partition.to_slice()
