@@ -11,6 +11,8 @@ from dataclasses import dataclass
 from io import BufferedIOBase, TextIOWrapper
 from typing import Any, List, Optional
 
+GZIP_MAGIC_BYTES = b"\x1f\x8b"
+
 import orjson
 import requests
 
@@ -35,15 +37,22 @@ class GzipParser(Parser):
         """
         Decompress gzipped bytes and pass decompressed data to the inner parser.
 
-        IMPORTANT:
-            - If the data is not gzipped, reset the pointer and pass the data to the inner parser as is.
-
-        Note:
-            - The data is not decoded by default.
+        Auto-detects gzip content by checking for magic bytes (1f 8b) at the start of the data.
+        If the data is not gzip-compressed, it is passed directly to the inner parser as-is.
+        This handles APIs that return gzip-compressed bodies without setting the Content-Encoding header.
         """
+        header = data.read(2)
+        if not header:
+            return
 
-        with gzip.GzipFile(fileobj=data, mode="rb") as gzipobj:
-            yield from self.inner_parser.parse(gzipobj)
+        remaining = data.read()
+        full_data = io.BytesIO(header + remaining)
+
+        if header == GZIP_MAGIC_BYTES:
+            with gzip.GzipFile(fileobj=full_data, mode="rb") as gzipobj:
+                yield from self.inner_parser.parse(gzipobj)
+        else:
+            yield from self.inner_parser.parse(full_data)
 
 
 @dataclass
