@@ -95,7 +95,9 @@ The `docs-generate` Poe task is mapped to the `run()` function of `docs/generate
 
 ## Release Management
 
-Please see the [Release Management](./RELEASES.md) guide for information on how to perform releases and pre-releases.
+This project uses [`semantic-pr-release-drafter`](https://github.com/aaronsteers/semantic-pr-release-drafter) for automated release management. For more information, see the [Releasing Guide](https://github.com/aaronsteers/semantic-pr-release-drafter/blob/main/docs/releasing.md).
+
+Please also see the [Release Management](./RELEASES.md) guide for repo-specific information on how to perform releases and pre-releases.
 
 ## FAQ
 
