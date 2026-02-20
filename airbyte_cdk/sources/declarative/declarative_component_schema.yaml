@@ -876,6 +876,10 @@ definitions:
         title: Inject Start Value Into Outgoing HTTP Request
         description: Optionally configures how the start value will be sent in requests to the source API.
         "$ref": "#/definitions/RequestOption"
+      pages_per_checkpoint_interval:
+        title: Pages Per Checkpoint Interval
+        description: The number of pages to fetch before emitting an intermediate state checkpoint during pagination. This enables resuming long-running syncs closer to where they failed rather than from the beginning of the current slice. Only effective when records are returned in ascending cursor order. Defaults to disabled.
+        type: integer
       $parameters:
         type: object
         additionalProperties: true
@@ -1160,6 +1164,10 @@ definitions:
           - "P1W"
           - "P1M"
           - "P1Y"
+      pages_per_checkpoint_interval:
+        title: Pages Per Checkpoint Interval
+        description: The number of pages to fetch before emitting an intermediate state checkpoint during pagination. This enables resuming long-running syncs closer to where they failed rather than from the beginning of the current slice. Only effective when records are returned in ascending cursor order. Defaults to disabled.
+        type: integer
       $parameters:
         type: object
         additionalProperties: true
