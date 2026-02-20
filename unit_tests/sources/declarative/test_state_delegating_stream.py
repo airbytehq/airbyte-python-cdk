@@ -338,9 +338,7 @@ def test_cursor_age_validation_clears_state_when_falling_back_to_full_refresh():
         configured_catalog = create_configured_catalog(source, _CONFIG)
 
         all_messages = list(
-            source.read(
-                logger=MagicMock(), config=_CONFIG, catalog=configured_catalog, state=state
-            )
+            source.read(logger=MagicMock(), config=_CONFIG, catalog=configured_catalog, state=state)
         )
 
         state_messages = [msg for msg in all_messages if msg.type == Type.STATE]
