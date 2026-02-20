@@ -3592,6 +3592,13 @@ class ModelToComponentFactory:
                 model.api_retention_period,
                 model.name,
             ):
+                self._connector_state_manager.update_state_for_stream(
+                    model.name, None, {}
+                )
+                state_message = self._connector_state_manager.create_state_message(
+                    model.name, None
+                )
+                self._message_repository.emit_message(state_message)
                 return self._create_component_from_model(  # type: ignore[no-any-return]
                     model.full_refresh_stream, config=config, **kwargs
                 )

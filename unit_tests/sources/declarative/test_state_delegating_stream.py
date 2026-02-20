@@ -306,6 +306,52 @@ def test_cursor_age_validation_falls_back_to_full_refresh_when_cursor_too_old():
 
 
 @freezegun.freeze_time("2024-07-15")
+def test_cursor_age_validation_clears_state_when_falling_back_to_full_refresh():
+    """Test that state is cleared when cursor is older than retention period."""
+    manifest = _create_manifest_with_retention_period("P7D")
+
+    with HttpMocker() as http_mocker:
+        http_mocker.get(
+            HttpRequest(url="https://api.test.com/items"),
+            HttpResponse(
+                body=json.dumps(
+                    [
+                        {"id": 1, "name": "item_1", "updated_at": "2024-07-13"},
+                        {"id": 2, "name": "item_2", "updated_at": "2024-07-14"},
+                    ]
+                )
+            ),
+        )
+
+        state = [
+            AirbyteStateMessage(
+                type=AirbyteStateType.STREAM,
+                stream=AirbyteStreamState(
+                    stream_descriptor=StreamDescriptor(name="TestStream", namespace=None),
+                    stream_state=AirbyteStateBlob(updated_at="2024-07-01"),
+                ),
+            )
+        ]
+        source = ConcurrentDeclarativeSource(
+            source_config=manifest, config=_CONFIG, catalog=None, state=state
+        )
+        configured_catalog = create_configured_catalog(source, _CONFIG)
+
+        all_messages = list(
+            source.read(
+                logger=MagicMock(), config=_CONFIG, catalog=configured_catalog, state=state
+            )
+        )
+
+        state_messages = [msg for msg in all_messages if msg.type == Type.STATE]
+        assert len(state_messages) > 0, "Expected at least one state message"
+        first_state = state_messages[0].state.stream.stream_state
+        assert first_state == AirbyteStateBlob(), (
+            f"Expected first state message to be empty (clearing stale state), got: {first_state}"
+        )
+
+
+@freezegun.freeze_time("2024-07-15")
 def test_cursor_age_validation_uses_incremental_when_cursor_within_retention():
     """Test that when cursor is within retention period, incremental sync is used."""
     manifest = _create_manifest_with_retention_period("P30D")
