@@ -332,6 +332,26 @@ def test_composite_raw_decoder_csv_parser_without_mocked_response():
         thread.join(timeout=5)  # ensure thread is cleaned up
 
 
+def test_gzip_decoder_by_headers_fallback_decompresses_when_no_gzip_header(requests_mock):
+    requests_mock.register_uri(
+        "GET",
+        "https://airbyte.io/",
+        content=generate_csv(should_compress=True),
+        headers={"Content-Type": "binary/octet-stream"},
+    )
+    response = requests.get("https://airbyte.io/", stream=True)
+
+    gzip_parser = GzipParser(inner_parser=CsvParser())
+    composite_raw_decoder = CompositeRawDecoder.by_headers(
+        [({"Content-Encoding", "Content-Type"}, {"gzip", "application/gzip"}, gzip_parser)],
+        stream_response=True,
+        fallback_parser=gzip_parser,
+    )
+    parsed_records = list(composite_raw_decoder.decode(response))
+    assert len(parsed_records) == 3
+    assert parsed_records[0] == {"id": "1", "name": "John", "age": "28"}
+
+
 def test_given_response_already_consumed_when_decode_then_no_data_is_returned(requests_mock):
     requests_mock.register_uri(
         "GET", "https://airbyte.io/", content=json.dumps({"test": "test"}).encode()
