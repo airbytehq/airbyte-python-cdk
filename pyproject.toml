@@ -69,7 +69,7 @@ langchain_text_splitters = { version = "^1.0.0", optional = true }
 markdown = { version = "*", optional = true }  # TODO: Remove if unused
 openai = { version = "0.27.9", extras = ["embeddings"], optional = true }  # Used indirectly by langchain library
 pdf2image = { version = "1.16.3", optional = true }
-"pdfminer.six" = { version = "20221105", optional = true }  # Used indirectly by unstructured library
+"pdfminer.six" = { version = ">=20231228", optional = true }  # Used indirectly by unstructured library
 pyarrow = { version = "^19.0.0", optional = true }
 pytesseract = { version = "0.3.10", optional = true }  # Used indirectly by unstructured library
 python-calamine = { version = "0.2.3", optional = true }  # TODO: Remove if unused
@@ -77,7 +77,7 @@ openpyxl = { version = "^3.1.0", optional = true }
 python-snappy = { version = "0.7.3", optional = true }  # TODO: remove if unused
 tiktoken = { version = "0.8.0", optional = true }
 nltk = { version = "3.9.1", optional = true }
-unstructured = { version = "0.10.27", extras = ["docx", "pptx"], optional = true }
+unstructured = { version = "0.18.32", extras = ["docx", "pptx"], optional = true }
 "unstructured.pytesseract" = { version = ">=0.3.12", optional = true }
 pyjwt = "^2.8.0"
 cryptography = ">=44.0.0,<45.0.0"  # Constrained as transitive dependency due to a bug in newer versions

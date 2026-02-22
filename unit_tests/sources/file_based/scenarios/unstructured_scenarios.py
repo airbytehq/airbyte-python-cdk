@@ -434,7 +434,7 @@ simple_unstructured_scenario = (
             {
                 "data": {
                     "document_key": "sample.pdf",
-                    "content": "# Hello World",
+                    "_ab_source_file_parse_error": "Error parsing record. This could be due to a mismatch between the config's file type and the actual file type, or because the file or record is not parseable. Contact Support if you need assistance.\nfilename=sample.pdf message=PDF parsing requires the 'unstructured_inference' package. Install it with: pip install unstructured-inference",
                     "_ab_source_file_last_modified": "2023-06-05T03:54:07.000000Z",
                     "_ab_source_file_url": "sample.pdf",
                 },
@@ -443,7 +443,7 @@ simple_unstructured_scenario = (
             {
                 "data": {
                     "document_key": "sample.docx",
-                    "content": "# Content",
+                    "content": "Content",
                     "_ab_source_file_last_modified": "2023-06-06T03:54:07.000000Z",
                     "_ab_source_file_url": "sample.docx",
                 },
@@ -510,7 +510,7 @@ corrupted_file_scenario = (
             {
                 "data": {
                     "document_key": "sample.pdf",
-                    "_ab_source_file_parse_error": "Error parsing record. This could be due to a mismatch between the config's file type and the actual file type, or because the file or record is not parseable. Contact Support if you need assistance.\nfilename=sample.pdf message=No /Root object! - Is this really a PDF?",
+                    "_ab_source_file_parse_error": "Error parsing record. This could be due to a mismatch between the config's file type and the actual file type, or because the file or record is not parseable. Contact Support if you need assistance.\nfilename=sample.pdf message=PDF parsing requires the 'unstructured_inference' package. Install it with: pip install unstructured-inference",
                     "_ab_source_file_last_modified": "2023-06-05T03:54:07.000000Z",
                     "_ab_source_file_url": "sample.pdf",
                 },
@@ -578,7 +578,7 @@ no_file_extension_unstructured_scenario = (
             {
                 "data": {
                     "document_key": "pdf_without_extension",
-                    "content": "# Hello World",
+                    "_ab_source_file_parse_error": "Error parsing record. This could be due to a mismatch between the config's file type and the actual file type, or because the file or record is not parseable. Contact Support if you need assistance.\nfilename=pdf_without_extension message=PDF parsing requires the 'unstructured_inference' package. Install it with: pip install unstructured-inference",
                     "_ab_source_file_last_modified": "2023-06-05T03:54:07.000000Z",
                     "_ab_source_file_url": "pdf_without_extension",
                 },
@@ -587,7 +587,7 @@ no_file_extension_unstructured_scenario = (
             {
                 "data": {
                     "document_key": "docx_without_extension",
-                    "content": "# Content",
+                    "content": "Content",
                     "_ab_source_file_last_modified": "2023-06-06T03:54:07.000000Z",
                     "_ab_source_file_url": "docx_without_extension",
                 },
