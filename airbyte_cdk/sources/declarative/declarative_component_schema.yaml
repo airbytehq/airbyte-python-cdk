@@ -4946,6 +4946,14 @@ interpolation:
       examples:
         - "'{{ today_utc() }}' -> '2021-09-01'"
         - "'{{ today_utc().strftime('%Y/%m/%d')}}' -> '2021/09/01'"
+    - title: today_with_timezone
+      description: Returns the current date in the specified timezone. The output is a date object.
+      arguments:
+        timezone: timezone expressed as IANA keys format.
+      return_type: Date
+      examples:
+        - "'{{ today_with_timezone('Australia/Sydney') }}' -> '2021-09-01'"
+        - "'{{ today_with_timezone('Europe/Lisbon') }}' -> '2021-08-01'"
     - title: timestamp
       description: Converts a number or a string representing a datetime (formatted as ISO8601) to a timestamp. If the input is a number, it is converted to an int. If no timezone is specified, the string is interpreted as UTC.
       arguments:
@@ -4957,6 +4965,13 @@ interpolation:
         - "'{{ timestamp('2022-02-28T00:00:00Z') }}' -> 1646006400"
         - "'{{ timestamp('2022-02-28 00:00:00Z') }}' -> 1646006400"
         - "'{{ timestamp('2022-02-28T00:00:00-08:00') }}' -> 1646035200"
+    - title: min
+      description: Returns the smallest object of a iterable, or or two or more arguments.
+      arguments:
+        args: iterable or a sequence of two or more arguments
+      examples:
+        - "'{{ min(2, 3) }}' -> 2"
+        - "'{{ min([2, 3]) }}' -> 2"
     - title: max
       description: Returns the largest object of a iterable, or or two or more arguments.
       arguments:
