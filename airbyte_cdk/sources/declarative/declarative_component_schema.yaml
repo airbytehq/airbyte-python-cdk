@@ -1662,6 +1662,14 @@ definitions:
           $parameters:
             type: object
             additionalProperties: true
+      disable_partition_concurrency:
+        title: Disable Partition Concurrency
+        description: >
+          If set to true, partitions for this stream will be processed serially (one at a time) instead of concurrently.
+          This is useful for APIs that have strict rate limits or do not support concurrent requests to the same endpoint,
+          such as scroll-based pagination APIs that only allow one active scroll at a time.
+        type: boolean
+        default: false
       $parameters:
         type: object
         additional_properties: true
