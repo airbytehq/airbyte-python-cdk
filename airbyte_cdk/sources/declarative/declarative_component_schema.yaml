@@ -4,6 +4,11 @@ title: DeclarativeSource
 type: object
 description: An API source that extracts data according to its declarative components.
 version: 1.0.0
+x-parameters-definition: &parameters-definition
+  title: "$parameters"
+  description: "Set parameters that are inherited by all child components. Parameters are automatically applied to component fields unless that field already has a value. Parameters propagate recursively to nested components. See https://docs.airbyte.com/platform/connector-development/config-based/advanced-topics/parameters for details."
+  type: object
+  additionalProperties: true
 required:
   - type
   - check
@@ -102,9 +107,7 @@ definitions:
         title: Value Type
         description: Type of the value. If not specified, the type will be inferred from the value.
         "$ref": "#/definitions/ValueType"
-      $parameters:
-        type: object
-        additionalProperties: true
+      $parameters: { <<: *parameters-definition }
   AddFields:
     title: Add Fields
     description: Transformation which adds field to an output record. The path of the added field can be nested.
@@ -135,9 +138,7 @@ definitions:
           - "{{ property is integer }}"
           - "{{ property|length > 5 }}"
           - "{{ property == 'some_string_to_match' }}"
-      $parameters:
-        type: object
-        additionalProperties: true
+      $parameters: { <<: *parameters-definition }
   ApiKeyAuthenticator:
     title: API Key Authenticator
     description: Authenticator for requests authenticated with an API token injected as an HTTP request header.
@@ -176,9 +177,7 @@ definitions:
             field_name: Authorization
           - inject_into: request_parameter
             field_name: authKey
-      $parameters:
-        type: object
-        additionalProperties: true
+      $parameters: { <<: *parameters-definition }
   AuthFlow:
     title: "Auth flow"
     description: |-
@@ -240,9 +239,7 @@ definitions:
         examples:
           - "{{ config['password'] }}"
           - ""
-      $parameters:
-        type: object
-        additionalProperties: true
+      $parameters: { <<: *parameters-definition }
   BearerAuthenticator:
     title: Bearer Token Authenticator
     description: "Authenticator for requests authenticated with a bearer token injected as a request header of the form `Authorization: Bearer <token>`."
@@ -263,9 +260,7 @@ definitions:
         examples:
           - "{{ config['api_key'] }}"
           - "{{ config['token'] }}"
-      $parameters:
-        type: object
-        additionalProperties: true
+      $parameters: { <<: *parameters-definition }
   SelectiveAuthenticator:
     title: Selective Authenticator
     description: Authenticator that selects concrete authenticator based on config property.
@@ -308,9 +303,7 @@ definitions:
               token: "#/definitions/ApiKeyAuthenticator"
               oauth: "#/definitions/OAuthAuthenticator"
               jwt: "#/definitions/JwtAuthenticator"
-      $parameters:
-        type: object
-        additionalProperties: true
+      $parameters: { <<: *parameters-definition }
   CheckStream:
     title: Streams to Check
     description: Defines the streams to try reading when running a check operation.
@@ -392,9 +385,7 @@ definitions:
             - "$ref": "#/definitions/CompositeErrorHandler"
             - "$ref": "#/definitions/DefaultErrorHandler"
             - "$ref": "#/definitions/CustomErrorHandler"
-      $parameters:
-        type: object
-        additionalProperties: true
+      $parameters: { <<: *parameters-definition }
   ConcurrencyLevel:
     title: Concurrency Level
     description: Defines the amount of parallelization for the streams that are being synced. The factor of parallelization is how many partitions or streams are synced at the same time. For example, with a concurrency_level of 10, ten streams or partitions of data will processed at the same time. Note that a value of 1 could create deadlock if a stream has a very high number of partitions.
@@ -423,9 +414,7 @@ definitions:
         examples:
           - 20
           - 100
-      $parameters:
-        type: object
-        additionalProperties: true
+      $parameters: { <<: *parameters-definition }
   ConditionalStreams:
     title: Conditional Streams
     description: Streams that are only available while performing a connector operation when the condition is met.
@@ -453,9 +442,7 @@ definitions:
         type: array
         items:
           "$ref": "#/definitions/DeclarativeStream"
-      $parameters:
-        type: object
-        additionalProperties: true
+      $parameters: { <<: *parameters-definition }
   ConstantBackoffStrategy:
     title: Constant Backoff
     description: Backoff strategy with a constant backoff interval.
@@ -481,9 +468,7 @@ definitions:
           - 30
           - 30.5
           - "{{ config['backoff_time'] }}"
-      $parameters:
-        type: object
-        additionalProperties: true
+      $parameters: { <<: *parameters-definition }
   CursorPagination:
     title: Cursor Pagination
     description: Pagination strategy that evaluates an interpolated string to define the next page to fetch.
@@ -534,9 +519,7 @@ definitions:
         examples:
           - "{{ response.data.has_more is false }}"
           - "{{ 'next' not in headers['link'] }}"
-      $parameters:
-        type: object
-        additionalProperties: true
+      $parameters: { <<: *parameters-definition }
   CustomAuthenticator:
     title: Custom Authenticator
     description: Authenticator component whose behavior is derived from a custom code implementation of the connector.
@@ -556,9 +539,7 @@ definitions:
         additionalProperties: true
         examples:
           - "source_railz.components.ShortLivedTokenAuthenticator"
-      $parameters:
-        type: object
-        additionalProperties: true
+      $parameters: { <<: *parameters-definition }
   CustomBackoffStrategy:
     title: Custom Backoff Strategy
     description: Backoff strategy component whose behavior is derived from a custom code implementation of the connector.
@@ -577,9 +558,7 @@ definitions:
         type: string
         examples:
           - "source_railz.components.MyCustomBackoffStrategy"
-      $parameters:
-        type: object
-        additionalProperties: true
+      $parameters: { <<: *parameters-definition }
   CustomErrorHandler:
     title: Custom Error Handler
     description: Error handler component whose behavior is derived from a custom code implementation of the connector.
@@ -598,9 +577,7 @@ definitions:
         type: string
         examples:
           - "source_railz.components.MyCustomErrorHandler"
-      $parameters:
-        type: object
-        additionalProperties: true
+      $parameters: { <<: *parameters-definition }
   CustomPaginationStrategy:
     title: Custom Pagination Strategy
     description: Pagination strategy component whose behavior is derived from a custom code implementation of the connector.
@@ -619,9 +596,7 @@ definitions:
         type: string
         examples:
           - "source_railz.components.MyCustomPaginationStrategy"
-      $parameters:
-        type: object
-        additionalProperties: true
+      $parameters: { <<: *parameters-definition }
   CustomRecordExtractor:
     title: Custom Record Extractor
     description: Record extractor component whose behavior is derived from a custom code implementation of the connector.
@@ -640,9 +615,7 @@ definitions:
         type: string
         examples:
           - "source_railz.components.MyCustomRecordExtractor"
-      $parameters:
-        type: object
-        additionalProperties: true
+      $parameters: { <<: *parameters-definition }
   CustomRecordFilter:
     title: Custom Record Filter
     description: Record filter component whose behavior is derived from a custom code implementation of the connector.
@@ -661,9 +634,7 @@ definitions:
         type: string
         examples:
           - "source_railz.components.MyCustomCustomRecordFilter"
-      $parameters:
-        type: object
-        additionalProperties: true
+      $parameters: { <<: *parameters-definition }
   CustomRequester:
     title: Custom Requester
     description: Requester component whose behavior is derived from a custom code implementation of the connector.
@@ -683,9 +654,7 @@ definitions:
         additionalProperties: true
         examples:
           - "source_railz.components.MyCustomRecordExtractor"
-      $parameters:
-        type: object
-        additionalProperties: true
+      $parameters: { <<: *parameters-definition }
   CustomRetriever:
     title: Custom Retriever
     description: Retriever component whose behavior is derived from a custom code implementation of the connector.
@@ -705,9 +674,7 @@ definitions:
         additionalProperties: true
         examples:
           - "source_railz.components.MyCustomRetriever"
-      $parameters:
-        type: object
-        additionalProperties: true
+      $parameters: { <<: *parameters-definition }
   CustomPartitionRouter:
     title: Custom Partition Router
     description: Partition router component whose behavior is derived from a custom code implementation of the connector.
@@ -726,9 +693,7 @@ definitions:
         type: string
         examples:
           - "source_railz.components.MyCustomPartitionRouter"
-      $parameters:
-        type: object
-        additionalProperties: true
+      $parameters: { <<: *parameters-definition }
   CustomSchemaLoader:
     title: Custom Schema Loader
     description: Schema Loader component whose behavior is derived from a custom code implementation of the connector.
@@ -747,9 +712,7 @@ definitions:
         type: string
         examples:
           - "source_railz.components.MyCustomSchemaLoader"
-      $parameters:
-        type: object
-        additionalProperties: true
+      $parameters: { <<: *parameters-definition }
   CustomSchemaNormalization:
     title: Custom Schema Normalization
     description: Schema normalization component whose behavior is derived from a custom code implementation of the connector.
@@ -769,9 +732,7 @@ definitions:
         additionalProperties: true
         examples:
           - "source_amazon_seller_partner.components.LedgerDetailedViewReportsTypeTransformer"
-      $parameters:
-        type: object
-        additionalProperties: true
+      $parameters: { <<: *parameters-definition }
   CustomStateMigration:
     title: Custom State Migration
     description: Apply a custom transformation on the input state.
@@ -790,9 +751,7 @@ definitions:
         type: string
         examples:
           - "source_railz.components.MyCustomStateMigration"
-      $parameters:
-        type: object
-        additionalProperties: true
+      $parameters: { <<: *parameters-definition }
   CustomTransformation:
     title: Custom Transformation
     description: Transformation component whose behavior is derived from a custom code implementation of the connector.
@@ -811,9 +770,7 @@ definitions:
         type: string
         examples:
           - "source_railz.components.MyCustomTransformation"
-      $parameters:
-        type: object
-        additionalProperties: true
+      $parameters: { <<: *parameters-definition }
   LegacyToPerPartitionStateMigration:
     title: Legacy To Per-partition-state Migration
     description:
@@ -876,9 +833,7 @@ definitions:
         title: Inject Start Value Into Outgoing HTTP Request
         description: Optionally configures how the start value will be sent in requests to the source API.
         "$ref": "#/definitions/RequestOption"
-      $parameters:
-        type: object
-        additionalProperties: true
+      $parameters: { <<: *parameters-definition }
   DatetimeBasedCursor:
     title: Datetime Based Cursor
     description: Cursor to provide incremental capabilities over datetime.
@@ -1160,9 +1115,7 @@ definitions:
           - "P1W"
           - "P1M"
           - "P1Y"
-      $parameters:
-        type: object
-        additionalProperties: true
+      $parameters: { <<: *parameters-definition }
   JwtAuthenticator:
     title: JWT Authenticator
     description: Authenticator for requests using JWT authentication flow.
@@ -1296,9 +1249,7 @@ definitions:
         title: Request Option
         description: A request option describing where the signed JWT token that is generated should be injected into the outbound API request.
         "$ref": "#/definitions/RequestOption"
-      $parameters:
-        type: object
-        additionalProperties: true
+      $parameters: { <<: *parameters-definition }
   OAuthAuthenticator:
     title: OAuth2
     description: Authenticator for requests using OAuth 2.0 authorization flow.
@@ -1538,9 +1489,7 @@ definitions:
         description: Enable using profile assertion as a flow for OAuth authorization.
         type: boolean
         default: false
-      $parameters:
-        type: object
-        additionalProperties: true
+      $parameters: { <<: *parameters-definition }
   DeclarativeStream:
     title: Declarative Stream
     description: A stream whose behavior is described by a set of declarative low code components.
@@ -1659,9 +1608,7 @@ definitions:
             examples:
               - "{{ record.id }}/{{ record.file_name }}/"
               - "{{ record.id }}_{{ record.file_name }}/"
-          $parameters:
-            type: object
-            additionalProperties: true
+          $parameters: { <<: *parameters-definition }
       $parameters:
         type: object
         additional_properties: true
@@ -1900,9 +1847,7 @@ definitions:
         anyOf:
           - "$ref": "#/definitions/RequestOption"
           - "$ref": "#/definitions/RequestPath"
-      $parameters:
-        type: object
-        additionalProperties: true
+      $parameters: { <<: *parameters-definition }
   DpathExtractor:
     title: Dpath Extractor
     description: Record extractor that searches a decoded response over a path defined as an array of fields.
@@ -1927,9 +1872,7 @@ definitions:
           - ["data", "records"]
           - ["data", "{{ parameters.name }}"]
           - ["data", "*", "record"]
-      $parameters:
-        type: object
-        additionalProperties: true
+      $parameters: { <<: *parameters-definition }
   ResponseToFileExtractor:
     title: CSV To File Extractor
     description: A record extractor designed for handling large responses that may exceed memory limits (to prevent OOM issues). It downloads a CSV file to disk, reads the data from disk, and deletes the file once it has been fully processed.
@@ -1940,9 +1883,7 @@ definitions:
       type:
         type: string
         enum: [ResponseToFileExtractor]
-      $parameters:
-        type: object
-        additionalProperties: true
+      $parameters: { <<: *parameters-definition }
   ExponentialBackoffStrategy:
     title: Exponential Backoff
     description: Backoff strategy with an exponential backoff interval. The interval is defined as factor * 2^attempt_count.
@@ -1966,9 +1907,7 @@ definitions:
           - 5
           - 5.5
           - "10"
-      $parameters:
-        type: object
-        additionalProperties: true
+      $parameters: { <<: *parameters-definition }
   GroupByKeyMergeStrategy:
     title: Group by Key
     description: Record merge strategy that combines records according to fields on the record.
@@ -1990,9 +1929,7 @@ definitions:
         examples:
           - "id"
           - ["parent_id", "end_date"]
-      $parameters:
-        type: object
-        additionalProperties: true
+      $parameters: { <<: *parameters-definition }
   SessionTokenAuthenticator:
     title: Session Token Authenticator
     description: Authenticator for requests using the session token as an API key that's injected into the request.
@@ -2052,9 +1989,7 @@ definitions:
         anyOf:
           - "$ref": "#/definitions/JsonDecoder"
           - "$ref": "#/definitions/XmlDecoder"
-      $parameters:
-        type: object
-        additionalProperties: true
+      $parameters: { <<: *parameters-definition }
   SessionTokenRequestApiKeyAuthenticator:
     type: object
     title: API Key Authenticator
@@ -2308,9 +2243,7 @@ definitions:
         description: Enables stream requests caching. When set to true, repeated requests to the same URL will return cached responses. Parent streams automatically have caching enabled. Only set this to false if you are certain that caching should be disabled, as it may negatively impact performance when the same data is needed multiple times (e.g., for scroll-based pagination APIs where caching causes duplicate records).
         type: boolean
         default: false
-      $parameters:
-        type: object
-        additionalProperties: true
+      $parameters: { <<: *parameters-definition }
   HttpResponseFilter:
     description: A filter that is used to select on properties of the HTTP response received. When used with additional filters, a response will be selected if it matches any of the filter's criteria.
     type: object
@@ -2386,9 +2319,7 @@ definitions:
         examples:
           - "{{ 'Too much requests' in response }}"
           - "{{ 'error_code' in response and response['error_code'] == 'ComplexityException' }}"
-      $parameters:
-        type: object
-        additionalProperties: true
+      $parameters: { <<: *parameters-definition }
   ComplexFieldType:
     title: Schema Field Type
     description: (This component is experimental. Use at your own risk.) Represents a complex field type.
@@ -2466,9 +2397,7 @@ definitions:
         type: array
         items:
           "$ref": "#/definitions/TypesMap"
-      $parameters:
-        type: object
-        additionalProperties: true
+      $parameters: { <<: *parameters-definition }
   DynamicSchemaLoader:
     title: Dynamic Schema Loader
     description: (This component is experimental. Use at your own risk.) Loads a schema by extracting data from retrieved records.
@@ -2510,9 +2439,7 @@ definitions:
             - "$ref": "#/definitions/CustomTransformation"
       schema_type_identifier:
         "$ref": "#/definitions/SchemaTypeIdentifier"
-      $parameters:
-        type: object
-        additionalProperties: true
+      $parameters: { <<: *parameters-definition }
   InlineSchemaLoader:
     title: Inline Schema Loader
     description: Loads a schema that is defined directly in the manifest file.
@@ -2548,9 +2475,7 @@ definitions:
           - config
         example:
           - "./schemas/users.json"
-      $parameters:
-        type: object
-        additionalProperties: true
+      $parameters: { <<: *parameters-definition }
   JsonDecoder:
     title: JSON
     description: Select 'JSON' if the response is formatted as a JSON object.
@@ -2596,9 +2521,7 @@ definitions:
             - "$ref": "#/definitions/DpathFlattenFields"
             - "$ref": "#/definitions/KeysReplace"
             - "$ref": "#/definitions/CustomTransformation"
-      $parameters:
-        type: object
-        additionalProperties: true
+      $parameters: { <<: *parameters-definition }
   KeysToLower:
     title: Keys to Lower Case
     description: A transformation that renames all keys to lower case.
@@ -2609,9 +2532,7 @@ definitions:
       type:
         type: string
         enum: [KeysToLower]
-      $parameters:
-        type: object
-        additionalProperties: true
+      $parameters: { <<: *parameters-definition }
   KeysToSnakeCase:
     title: Key to Snake Case
     description: A transformation that renames all keys to snake case.
@@ -2622,9 +2543,7 @@ definitions:
       type:
         type: string
         enum: [KeysToSnakeCase]
-      $parameters:
-        type: object
-        additionalProperties: true
+      $parameters: { <<: *parameters-definition }
   FlattenFields:
     title: Flatten Fields
     description: A transformation that flatten record to single level format.
@@ -2640,9 +2559,7 @@ definitions:
         description: Whether to flatten lists or leave it as is. Default is True.
         type: boolean
         default: true
-      $parameters:
-        type: object
-        additionalProperties: true
+      $parameters: { <<: *parameters-definition }
   KeyTransformation:
     title: Transformation to apply for extracted object keys by Dpath Flatten Fields
     type: object
@@ -2697,9 +2614,7 @@ definitions:
         description: Transformation for object keys. If not provided, original key will be used.
         type: object
         "$ref": "#/definitions/KeyTransformation"
-      $parameters:
-        type: object
-        additionalProperties: true
+      $parameters: { <<: *parameters-definition }
   KeysReplace:
     title: Keys Replace
     description: A transformation that replaces symbols in keys.
@@ -2738,9 +2653,7 @@ definitions:
           - config
           - record
           - stream_slice
-      $parameters:
-        type: object
-        additionalProperties: true
+      $parameters: { <<: *parameters-definition }
   IterableDecoder:
     title: Iterable
     description: Select 'Iterable' if the response consists of strings separated by new lines (`\n`). The string will then be wrapped into a JSON object with the `record` key.
@@ -2780,9 +2693,7 @@ definitions:
         additionalProperties: true
         examples:
           - "source_amazon_ads.components.GzipJsonlDecoder"
-      $parameters:
-        type: object
-        additionalProperties: true
+      $parameters: { <<: *parameters-definition }
   ZipfileDecoder:
     title: ZIP File
     description: Select 'ZIP file' for response data that is returned as a zipfile. Requires specifying an inner data type/decoder to parse the unzipped data.
@@ -2841,9 +2752,7 @@ definitions:
         title: Inject Partition Value Into Outgoing HTTP Request
         description: A request option describing where the list value should be injected into and under what field name if applicable.
         "$ref": "#/definitions/RequestOption"
-      $parameters:
-        type: object
-        additionalProperties: true
+      $parameters: { <<: *parameters-definition }
   MinMaxDatetime:
     title: Min-Max Datetime
     description: Compares the provided date against optional minimum or maximum times. The max_datetime serves as the ceiling and will be returned when datetime exceeds it. The min_datetime serves as the floor.
@@ -2936,9 +2845,7 @@ definitions:
         examples:
           - "2010-01-01T00:00:00Z"
           - "2010-01-01"
-      $parameters:
-        type: object
-        additionalProperties: true
+      $parameters: { <<: *parameters-definition }
   NoAuth:
     title: No Authentication
     description: Authenticator for requests requiring no authentication.
@@ -2949,9 +2856,7 @@ definitions:
       type:
         type: string
         enum: [NoAuth]
-      $parameters:
-        type: object
-        additionalProperties: true
+      $parameters: { <<: *parameters-definition }
   NoPagination:
     title: No Pagination
     description: Pagination implementation that never returns a next page.
@@ -3266,9 +3171,7 @@ definitions:
         description: Using the `offset` with value `0` during the first request
         type: boolean
         default: false
-      $parameters:
-        type: object
-        additionalProperties: true
+      $parameters: { <<: *parameters-definition }
   PageIncrement:
     title: Page Increment
     description: Pagination strategy that returns the number of pages reads so far and returns it as the next page token.
@@ -3306,9 +3209,7 @@ definitions:
         description: Using the `page number` with value defined by `start_from_page` during the first request
         type: boolean
         default: false
-      $parameters:
-        type: object
-        additionalProperties: true
+      $parameters: { <<: *parameters-definition }
   ParentStreamConfig:
     title: Parent Stream Config
     description: Describes how to construct partitions from the records retrieved from the parent stream..
@@ -3374,9 +3275,7 @@ definitions:
           examples:
             - ["field1"]
             - ["nested", "field2"]
-      $parameters:
-        type: object
-        additionalProperties: true
+      $parameters: { <<: *parameters-definition }
   PrimaryKey:
     title: Primary Key
     description: The stream field to be used to distinguish unique records. Can either be a single field, an array of fields representing a composite key, or an array of arrays representing a composite key where the fields are nested fields.
@@ -3429,9 +3328,7 @@ definitions:
         anyOf:
           - "$ref": "#/definitions/SimpleRetriever"
           - "$ref": "#/definitions/CustomRetriever"
-      $parameters:
-        type: object
-        additionalProperties: true
+      $parameters: { <<: *parameters-definition }
   PropertyChunking:
     title: Property Chunking
     description: For APIs with restrictions on the amount of properties that can be requester per request, property chunking can be applied to make multiple requests with a subset of the properties.
@@ -3457,9 +3354,7 @@ definitions:
         title: Record Merge Strategy
         description: Dictates how to records that require multiple requests to get all properties should be emitted to the destination
         "$ref": "#/definitions/GroupByKeyMergeStrategy"
-      $parameters:
-        type: object
-        additionalProperties: true
+      $parameters: { <<: *parameters-definition }
   QueryProperties:
     title: Query Properties
     description: For APIs that require explicit specification of the properties to query for, this component specifies which property fields and how they are supplied to outbound requests.
@@ -3493,9 +3388,7 @@ definitions:
         title: Property Selector
         description: Defines where to look for and which query properties that should be sent in outbound API requests. For example, you can specify that only the selected columns of a stream should be in the request.
         "$ref": "#/definitions/JsonSchemaPropertySelector"
-      $parameters:
-        type: object
-        additionalProperties: true
+      $parameters: { <<: *parameters-definition }
   RecordFilter:
     title: Record Filter
     description: Filter applied on a list of records.
@@ -3521,9 +3414,7 @@ definitions:
         examples:
           - "{{ record['created_at'] >= stream_interval['start_time'] }}"
           - "{{ record.status in ['active', 'expired'] }}"
-      $parameters:
-        type: object
-        additionalProperties: true
+      $parameters: { <<: *parameters-definition }
   RecordSelector:
     title: Record Selector
     description: Responsible for translating an HTTP response into a list of records by extracting records from the response and optionally filtering records based on a heuristic.
@@ -3555,9 +3446,7 @@ definitions:
         title: Transform Before Filtering
         description: If true, transformation will be applied before record filtering.
         type: boolean
-      $parameters:
-        type: object
-        additionalProperties: true
+      $parameters: { <<: *parameters-definition }
   SchemaNormalization:
     title: Schema Normalization
     description: Responsible for normalization according to the schema.
@@ -3721,9 +3610,7 @@ definitions:
         type: string
         examples:
           - "user/current"
-      $parameters:
-        type: object
-        additionalProperties: true
+      $parameters: { <<: *parameters-definition }
   StateDelegatingStream:
     title: State Delegating Stream
     description: (This component is experimental. Use at your own risk.) Orchestrate the retriever's usage based on the state value.
@@ -3752,9 +3639,7 @@ definitions:
         title: Incremental Stream
         description: Component used to coordinate how records are extracted across stream slices and request pages when the state provided.
         "$ref": "#/definitions/DeclarativeStream"
-      $parameters:
-        type: object
-        additionalProperties: true
+      $parameters: { <<: *parameters-definition }
   SimpleRetriever:
     title: Synchronous Retriever
     description: Retrieves records by synchronously sending requests to fetch records. The retriever acts as an orchestrator between the requester, the record selector, the paginator, and the partition router.
@@ -3816,9 +3701,7 @@ definitions:
                 - "$ref": "#/definitions/ListPartitionRouter"
                 - "$ref": "#/definitions/GroupingPartitionRouter"
                 - "$ref": "#/definitions/CustomPartitionRouter"
-      $parameters:
-        type: object
-        additionalProperties: true
+      $parameters: { <<: *parameters-definition }
   PaginationReset:
     title: Pagination Reset
     description: Describes what triggers pagination reset and how to handle it. If SPLIT_USING_CURSOR, the connector developer is accountable for ensuring that the records are returned in ascending order.
@@ -4035,9 +3918,7 @@ definitions:
           - "$ref": "#/definitions/XmlDecoder"
           - "$ref": "#/definitions/ZipfileDecoder"
           - "$ref": "#/definitions/CustomDecoder"
-      $parameters:
-        type: object
-        additionalProperties: true
+      $parameters: { <<: *parameters-definition }
   Spec:
     title: Spec
     description: A source specification made up of connector metadata and how it can be configured.
@@ -4143,9 +4024,7 @@ definitions:
         type: array
         items:
           "$ref": "#/definitions/ParentStreamConfig"
-      $parameters:
-        type: object
-        additionalProperties: true
+      $parameters: { <<: *parameters-definition }
   ValueType:
     title: Value Type
     description: A schema type.
@@ -4186,9 +4065,7 @@ definitions:
         type: number
         examples:
           - 3600
-      $parameters:
-        type: object
-        additionalProperties: true
+      $parameters: { <<: *parameters-definition }
   GroupingPartitionRouter:
     title: Grouping Partition Router
     description: >
@@ -4224,9 +4101,7 @@ definitions:
         description: If true, ensures that partitions are unique within each group by removing duplicates based on the partition key.
         type: boolean
         default: true
-      $parameters:
-        type: object
-        additionalProperties: true
+      $parameters: { <<: *parameters-definition }
   WaitUntilTimeFromHeader:
     title: Wait Until Time Defined In Response Header
     description: Extract time at which we can retry the request from response header and wait for the difference between now and that time.
@@ -4265,9 +4140,7 @@ definitions:
           - config
         examples:
           - "([-+]?\\d+)"
-      $parameters:
-        type: object
-        additionalProperties: true
+      $parameters: { <<: *parameters-definition }
   ComponentMappingDefinition:
     title: Component Mapping Definition
     description: (This component is experimental. Use at your own risk.) Specifies a mapping definition to update or add fields in a record or configuration. This allows dynamic mapping of data by interpolating values into the template based on provided contexts.
@@ -4332,9 +4205,7 @@ definitions:
         examples:
           - "{{ components_values.get('cursor_field', None) }}"
           - "{{ '_incremental' in components_values.get('stream_name', '') }}"
-      $parameters:
-        type: object
-        additionalProperties: true
+      $parameters: { <<: *parameters-definition }
   HttpComponentsResolver:
     type: object
     title: Http Components Resolver
@@ -4354,9 +4225,7 @@ definitions:
         type: array
         items:
           "$ref": "#/definitions/ComponentMappingDefinition"
-      $parameters:
-        type: object
-        additionalProperties: true
+      $parameters: { <<: *parameters-definition }
     required:
       - type
       - retriever
@@ -4390,9 +4259,7 @@ definitions:
         type: array
         items:
           type: object
-      $parameters:
-        type: object
-        additionalProperties: true
+      $parameters: { <<: *parameters-definition }
   ConfigComponentsResolver:
     type: object
     title: Config Components Resolver
@@ -4411,9 +4278,7 @@ definitions:
         type: array
         items:
           "$ref": "#/definitions/ComponentMappingDefinition"
-      $parameters:
-        type: object
-        additionalProperties: true
+      $parameters: { <<: *parameters-definition }
     required:
       - type
       - stream_config
@@ -4457,9 +4322,7 @@ definitions:
         type: array
         items:
           "$ref": "#/definitions/ComponentMappingDefinition"
-      $parameters:
-        type: object
-        additionalProperties: true
+      $parameters: { <<: *parameters-definition }
     required:
       - type
       - stream_parameters
