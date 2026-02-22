@@ -658,6 +658,20 @@ class CsvReaderTest(unittest.TestCase):
         assert "encoding" in ate.value.message
         assert self._csv_reader._get_headers.called
 
+    def test_read_data_strips_leading_and_trailing_whitespace_in_header(self) -> None:
+        self._stream_reader.open_file.return_value = (
+            CsvFileBuilder()
+            .with_data(
+                [
+                    "header1 ,\theader2",
+                    "1,2",
+                ]
+            )
+            .build()
+        )
+        data_generator = self._read_data()
+        assert list(data_generator) == [{"header1": "1", "header2": "2"}]
+
     def _read_data(self) -> Generator[Dict[str, str], None, None]:
         data_generator = self._csv_reader.read_data(
             self._config,

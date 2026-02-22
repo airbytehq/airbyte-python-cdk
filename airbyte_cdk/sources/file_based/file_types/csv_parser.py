@@ -132,7 +132,7 @@ class _CsvReader:
             # Then read the header
             self._skip_rows(fp, config_format.skip_rows_before_header)
             reader = csv.reader(fp, dialect=dialect_name)  # type: ignore
-            headers = list(next(reader))
+            headers = [header.strip() for header in next(reader)]
 
         fp.seek(0)
         return headers
@@ -213,7 +213,7 @@ class CsvParser(FileTypeParser):
                 failure_type=FailureType.config_error,
             )
         schema = {
-            header.strip(): {"type": type_inferred.infer()}
+            header: {"type": type_inferred.infer()}
             for header, type_inferred in type_inferrer_by_field.items()
         }
         data_generator.close()
