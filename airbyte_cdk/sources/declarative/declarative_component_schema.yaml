@@ -1429,6 +1429,14 @@ definitions:
               "crm.objects.contacts.read",
               "crm.schema.contacts.read",
             ]
+      scopes_name:
+        title: Scopes Property Name
+        description: The name of the property to use for scopes in the token refresh request body. Per RFC 6749, the default is "scope" (singular).
+        type: string
+        default: "scope"
+        examples:
+          - scope
+          - scopes
       token_expiry_date:
         title: Token Expiry Date
         description: The access token expiry date.
