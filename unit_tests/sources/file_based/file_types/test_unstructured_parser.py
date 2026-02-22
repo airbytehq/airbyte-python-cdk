@@ -89,8 +89,9 @@ def test_infer_schema(mock_detect_filetype, filetype, format_config, raises):
                 UnstructuredParser().infer_schema(config, fake_file, stream_reader, logger)
             )
     else:
+        fake_file.mime_type = None
         schema = loop.run_until_complete(
-            UnstructuredParser().infer_schema(config, MagicMock(), MagicMock(), MagicMock())
+            UnstructuredParser().infer_schema(config, fake_file, stream_reader, logger)
         )
         assert schema == {
             "content": {
@@ -227,15 +228,26 @@ def test_infer_schema(mock_detect_filetype, filetype, format_config, raises):
         ),
     ],
 )
-@patch("unstructured.partition.pdf.partition_pdf")
-@patch("unstructured.partition.pptx.partition_pptx")
-@patch("unstructured.partition.docx.partition_docx")
+@patch("airbyte_cdk.sources.file_based.file_types.unstructured_parser._import_unstructured")
+@patch(
+    "airbyte_cdk.sources.file_based.file_types.unstructured_parser.unstructured_partition_pdf",
+    new_callable=MagicMock,
+)
+@patch(
+    "airbyte_cdk.sources.file_based.file_types.unstructured_parser.unstructured_partition_pptx",
+    new_callable=MagicMock,
+)
+@patch(
+    "airbyte_cdk.sources.file_based.file_types.unstructured_parser.unstructured_partition_docx",
+    new_callable=MagicMock,
+)
 @patch("airbyte_cdk.sources.file_based.file_types.unstructured_parser.detect_filetype")
 def test_parse_records(
     mock_detect_filetype,
     mock_partition_docx,
     mock_partition_pptx,
     mock_partition_pdf,
+    mock_import_unstructured,
     filetype,
     format_config,
     parse_result,
@@ -618,6 +630,19 @@ def test_check_config(
         ),
     ],
 )
+@patch("airbyte_cdk.sources.file_based.file_types.unstructured_parser._import_unstructured")
+@patch(
+    "airbyte_cdk.sources.file_based.file_types.unstructured_parser.unstructured_partition_pdf",
+    new_callable=MagicMock,
+)
+@patch(
+    "airbyte_cdk.sources.file_based.file_types.unstructured_parser.unstructured_partition_pptx",
+    new_callable=MagicMock,
+)
+@patch(
+    "airbyte_cdk.sources.file_based.file_types.unstructured_parser.unstructured_partition_docx",
+    new_callable=MagicMock,
+)
 @patch("airbyte_cdk.sources.file_based.file_types.unstructured_parser.requests")
 @patch("airbyte_cdk.sources.file_based.file_types.unstructured_parser.detect_filetype")
 @patch("time.sleep", side_effect=lambda _: None)
@@ -625,6 +650,10 @@ def test_parse_records_remotely(
     time_mock,
     mock_detect_filetype,
     requests_mock,
+    mock_partition_docx,
+    mock_partition_pptx,
+    mock_partition_pdf,
+    mock_import_unstructured,
     filetype,
     format_config,
     raises_for_status,
