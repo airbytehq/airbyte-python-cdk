@@ -99,9 +99,11 @@ class InterpolatedRequestOptionsProvider(RequestOptionsProvider):
         if self.request_body is not None and self.request_body.type is not None:
             if self.request_body.type == "RequestBodyUrlEncodedForm":
                 self.request_body_data = self.request_body.value
+            elif self.request_body.type == "RequestBodyPlainText":
+                self.request_body_data = self.request_body.value
             elif self.request_body.type == "RequestBodyGraphQL":
                 self.request_body_json = self.request_body.value.dict(exclude_none=True)
-            elif self.request_body.type in ("RequestBodyJsonObject", "RequestBodyPlainText"):
+            elif self.request_body.type == "RequestBodyJsonObject":
                 self.request_body_json = self.request_body.value
             else:
                 raise ValueError(f"Unsupported request body type: {self.request_body.type}")
