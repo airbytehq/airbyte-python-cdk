@@ -21,7 +21,10 @@ exclude: |
     ^.*?/build/.*$|
     ^.*?/dist/.*$|
     ^.*?/\.coverage$|
-    ^.*?/coverage\.xml$
+    ^.*?/coverage\.xml$|
+
+    ^airbyte_cdk/sources/declarative/models/declarative_component_schema\.py$|
+    ^airbyte_cdk/test/models/connector_metadata/generated/models\.py$
   )
 
 repos:
