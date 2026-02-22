@@ -122,8 +122,8 @@ class DefaultErrorHandler(ErrorHandler):
             if response_or_exception.ok:
                 return SUCCESS_RESOLUTION
 
-        default_reponse_filter = DefaultHttpResponseFilter(parameters={}, config=self.config)
-        default_response_filter_resolution = default_reponse_filter.matches(response_or_exception)
+        default_response_filter = DefaultHttpResponseFilter(parameters={}, config=self.config)
+        default_response_filter_resolution = default_response_filter.matches(response_or_exception)
 
         return (
             default_response_filter_resolution
