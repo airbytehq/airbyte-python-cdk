@@ -159,13 +159,17 @@ class FinalStateCursor(Cursor):
     def get_cursor_datetime_from_state(
         self, stream_state: Mapping[str, Any]
     ) -> datetime.datetime | None:
-        """FinalStateCursor has no cursor datetime.
+        """Return now() if state indicates a completed full refresh, else None.
 
-        Full refresh streams don't track a cursor position - they always read all data.
-        The FinalStateCursor state format ({NO_CURSOR_STATE_KEY: True}) is handled
-        separately in _is_cursor_older_than_retention_period before this method is called.
-        Returns None to indicate this cursor cannot parse datetime-based state.
+        When the state has NO_CURSOR_STATE_KEY: True, it means the previous sync was a
+        completed full refresh. Returning now() indicates the cursor is "current" and
+        within any retention period, so we should use incremental sync.
+
+        For any other state format, return None to indicate this cursor cannot parse it,
+        allowing the incremental cursor to handle the state instead.
         """
+        if stream_state.get(NO_CURSOR_STATE_KEY):
+            return datetime.datetime.now(datetime.timezone.utc)
         return None
 
 
