@@ -1404,7 +1404,9 @@ def test_final_state_cursor_get_cursor_datetime_from_state_returns_now_for_no_cu
     result_with_no_cursor_key = cursor.get_cursor_datetime_from_state({NO_CURSOR_STATE_KEY: True})
     assert result_with_no_cursor_key == datetime(2024, 7, 15, tzinfo=timezone.utc)
 
-    result_without_no_cursor_key = cursor.get_cursor_datetime_from_state({"some_other_key": "value"})
+    result_without_no_cursor_key = cursor.get_cursor_datetime_from_state(
+        {"some_other_key": "value"}
+    )
     assert result_without_no_cursor_key is None
 
     result_with_empty_state = cursor.get_cursor_datetime_from_state({})
