@@ -3614,16 +3614,13 @@ class ModelToComponentFactory:
         """Check if the cursor value in the state is older than the API's retention period.
 
         Checks cursors in sequence: full refresh cursor first, then incremental cursor.
-        If state has NO_CURSOR_STATE_KEY, it means the previous sync was a completed full
-        refresh, so the cursor is "current" and we should use incremental.
+        FinalStateCursor returns now() for completed full refresh state (NO_CURSOR_STATE_KEY),
+        which is always within retention, so we use incremental. For other states, it returns
+        None and we fall back to checking the incremental cursor.
 
         Returns True if the cursor is older than the retention period (should use full refresh).
         Returns False if the cursor is within the retention period (safe to use incremental).
         """
-        # NO_CURSOR_STATE_KEY indicates a completed full refresh - cursor is "current"
-        if stream_state.get(NO_CURSOR_STATE_KEY):
-            return False
-
         retention_duration = parse_duration(api_retention_period)
         retention_cutoff = datetime.datetime.now(datetime.timezone.utc) - retention_duration
 
