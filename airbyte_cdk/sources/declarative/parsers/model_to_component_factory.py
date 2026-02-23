@@ -618,7 +618,6 @@ from airbyte_cdk.sources.message import (
     NoopMessageRepository,
 )
 from airbyte_cdk.sources.message.repository import StateFilteringMessageRepository
-from airbyte_cdk.sources.streams import NO_CURSOR_STATE_KEY
 from airbyte_cdk.sources.streams.call_rate import (
     APIBudget,
     FixedWindowCallRatePolicy,
