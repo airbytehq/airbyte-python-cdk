@@ -613,15 +613,14 @@ def test_cursor_age_validation_raises_error_for_unparseable_cursor():
 
 
 @freezegun.freeze_time("2024-07-15")
-def test_final_state_cursor_skips_retention_check_and_uses_incremental():
-    """When state is a final state from FinalStateCursor, skip retention check and use incremental."""
+def test_final_state_cursor_falls_back_to_full_refresh_when_state_unparseable():
+    """When state is a final state (NO_CURSOR_STATE_KEY), ConcurrentCursor cannot parse it,
+    so both cursors return None and the implementation falls back to full refresh as the safe default."""
     manifest = _create_manifest_with_retention_period("P7D")
 
     with HttpMocker() as http_mocker:
         http_mocker.get(
-            HttpRequest(
-                url="https://api.test.com/items_with_filtration?start=2024-07-01&end=2024-07-15"
-            ),
+            HttpRequest(url="https://api.test.com/items"),
             HttpResponse(
                 body=json.dumps(
                     [
