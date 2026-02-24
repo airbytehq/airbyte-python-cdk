@@ -49,8 +49,8 @@ class MockHttpStream(HttpStream):
             {"error": "Something went wrong"},
             False,
             [
-                "Forbidden. You don't have permission to access this resource.",
-                "Forbidden. You don't have permission to access this resource.",
+                "Source's API denied access. Configured credentials have insufficient permissions.",
+                "Source's API denied access. Configured credentials have insufficient permissions.",
             ],
         ),
         (200, {}, True, []),
@@ -59,8 +59,8 @@ class MockHttpStream(HttpStream):
 @pytest.mark.parametrize(
     ("include_source", "expected_docs_url_messages"),
     [
-        (True, ["Forbidden. You don't have permission to access this resource."]),
-        (False, ["Forbidden. You don't have permission to access this resource."]),
+        (True, ["Source's API denied access. Configured credentials have insufficient permissions."]),
+        (False, ["Source's API denied access. Configured credentials have insufficient permissions."]),
     ],
 )
 @pytest.mark.parametrize("records_as_list", [True, False])
@@ -105,10 +105,9 @@ def test_http_availability_raises_unhandled_error(mocker):
     req.status_code = 404
     mocker.patch.object(requests.Session, "send", return_value=req)
 
-    assert (
-        False,
-        "HTTP Status Code: 404. Error: Not found. The requested resource was not found on the server.",
-    ) == HttpAvailabilityStrategy().check_availability(http_stream, logger)
+    is_available, reason = HttpAvailabilityStrategy().check_availability(http_stream, logger)
+    assert is_available is False
+    assert "Requested resource not found on source's API." in reason
 
 
 def test_send_handles_retries_when_checking_availability(mocker, caplog):

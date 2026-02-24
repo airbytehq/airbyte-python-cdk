@@ -31,56 +31,56 @@ DEFAULT_ERROR_MAPPING: Mapping[Union[int, str, Type[Exception]], ErrorResolution
     400: ErrorResolution(
         response_action=ResponseAction.FAIL,
         failure_type=FailureType.system_error,
-        error_message="HTTP Status Code: 400. Error: Bad request. Please check your request parameters.",
+        error_message="Bad request response from source's API.",
     ),
     401: ErrorResolution(
         response_action=ResponseAction.FAIL,
         failure_type=FailureType.config_error,
-        error_message="HTTP Status Code: 401. Error: Unauthorized. Please ensure you are authenticated correctly.",
+        error_message="Authentication failed on source's API. Credentials may be invalid, expired, or lack required access.",
     ),
     403: ErrorResolution(
         response_action=ResponseAction.FAIL,
         failure_type=FailureType.config_error,
-        error_message="HTTP Status Code: 403. Error: Forbidden. You don't have permission to access this resource.",
+        error_message="Source's API denied access. Configured credentials have insufficient permissions.",
     ),
     404: ErrorResolution(
         response_action=ResponseAction.FAIL,
         failure_type=FailureType.system_error,
-        error_message="HTTP Status Code: 404. Error: Not found. The requested resource was not found on the server.",
+        error_message="Requested resource not found on source's API.",
     ),
     405: ErrorResolution(
         response_action=ResponseAction.FAIL,
         failure_type=FailureType.system_error,
-        error_message="HTTP Status Code: 405. Error: Method not allowed. Please check your request method.",
+        error_message="Method not allowed by source's API.",
     ),
     408: ErrorResolution(
         response_action=ResponseAction.RETRY,
         failure_type=FailureType.transient_error,
-        error_message="HTTP Status Code: 408. Error: Request timeout.",
+        error_message="Request to source's API timed out.",
     ),
     429: ErrorResolution(
         response_action=ResponseAction.RATE_LIMITED,
         failure_type=FailureType.transient_error,
-        error_message="HTTP Status Code: 429. Error: Too many requests.",
+        error_message="Rate limit exceeded on source's API.",
     ),
     500: ErrorResolution(
         response_action=ResponseAction.RETRY,
         failure_type=FailureType.transient_error,
-        error_message="HTTP Status Code: 500. Error: Internal server error.",
+        error_message="Internal server error from source's API.",
     ),
     502: ErrorResolution(
         response_action=ResponseAction.RETRY,
         failure_type=FailureType.transient_error,
-        error_message="HTTP Status Code: 502. Error: Bad gateway.",
+        error_message="Bad gateway response from source's API.",
     ),
     503: ErrorResolution(
         response_action=ResponseAction.RETRY,
         failure_type=FailureType.transient_error,
-        error_message="HTTP Status Code: 503. Error: Service unavailable.",
+        error_message="Source's API is temporarily unavailable.",
     ),
     504: ErrorResolution(
         response_action=ResponseAction.RETRY,
         failure_type=FailureType.transient_error,
-        error_message="HTTP Status Code: 504. Error: Gateway timeout.",
+        error_message="Gateway timeout from source's API.",
     ),
 }

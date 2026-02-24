@@ -313,7 +313,7 @@ class HttpClient:
             self._logger.error(f"Retries exhausted with backoff exception.", exc_info=True)
             raise MessageRepresentationAirbyteTracedErrors(
                 internal_message=f"Exhausted available request attempts. Exception: {e}",
-                message=f"Exhausted available request attempts. Please see logs for more details. Exception: {e}",
+                message=f"Request retry limit exhausted. See logs for details.",
                 failure_type=e.failure_type or FailureType.system_error,
                 exception=e,
                 stream_descriptor=StreamDescriptor(name=self._name),
@@ -424,6 +424,13 @@ class HttpClient:
         if prepared_request in self._request_attempt_count:
             del self._request_attempt_count[prepared_request]
 
+    def _format_error_message(self, error_resolution: ErrorResolution, response: Optional[requests.Response]) -> Optional[str]:
+        """Prepend stream name and HTTP status code to the error resolution message for user-facing context."""
+        if not error_resolution.error_message:
+            return None
+        status_prefix = f"HTTP {response.status_code}. " if response is not None else ""
+        return f"Stream '{self._name}': {status_prefix}{error_resolution.error_message}"
+
     def _handle_error_resolution(
         self,
         response: Optional[requests.Response],
@@ -497,7 +504,7 @@ class HttpClient:
 
             raise MessageRepresentationAirbyteTracedErrors(
                 internal_message=error_message,
-                message=error_resolution.error_message or error_message,
+                message=self._format_error_message(error_resolution, response) or error_message,
                 failure_type=error_resolution.failure_type,
             )
 
@@ -507,7 +514,7 @@ class HttpClient:
             else:
                 log_message = f"Ignoring response for '{request.method}' request to '{request.url}' with error '{exc}'"
 
-            self._logger.info(error_resolution.error_message or log_message)
+            self._logger.info(self._format_error_message(error_resolution, response) or log_message)
 
         # TODO: Consider dynamic retry count depending on subsequent error codes
         elif error_resolution.response_action in (
@@ -525,7 +532,7 @@ class HttpClient:
                     user_defined_backoff_time = backoff_time
                     break
             error_message = (
-                error_resolution.error_message
+                self._format_error_message(error_resolution, response)
                 or f"Request to {request.url} failed with failure type {error_resolution.failure_type}, response action {error_resolution.response_action}."
             )
 

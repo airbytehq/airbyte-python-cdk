@@ -34,13 +34,13 @@ def test_given_ok_response_http_status_error_handler_returns_success_action(mock
             403,
             ResponseAction.FAIL,
             FailureType.config_error,
-            "HTTP Status Code: 403. Error: Forbidden. You don't have permission to access this resource.",
+            "Source's API denied access. Configured credentials have insufficient permissions.",
         ),
         (
             404,
             ResponseAction.FAIL,
             FailureType.system_error,
-            "HTTP Status Code: 404. Error: Not found. The requested resource was not found on the server.",
+            "Requested resource not found on source's API.",
         ),
     ],
 )

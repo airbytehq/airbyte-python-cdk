@@ -68,7 +68,7 @@ class AirbyteTracedException(Exception):
             emitted_at=now_millis,
             error=AirbyteErrorTraceMessage(
                 message=self.message
-                or "Something went wrong in the connector. See the logs for more details.",
+                or "Unhandled connector error. See logs for details.",
                 internal_message=self.internal_message,
                 failure_type=self.failure_type,
                 stack_trace=stack_trace_str,

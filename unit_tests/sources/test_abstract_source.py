@@ -1765,7 +1765,7 @@ class TestResumableFullRefreshRead:
         ),
         pytest.param(
             Exception("Generic connector error message"),
-            "Something went wrong in the connector. See the logs for more details.",
+            "Unhandled connector error. See logs for details.",
             "Generic connector error message",
             id="test_raises_generic_exception",
         ),
