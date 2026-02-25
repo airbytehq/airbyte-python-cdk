@@ -405,13 +405,11 @@ class ConcurrentDeclarativeSource(Source):
         if api_budget_model:
             self._constructor.set_api_budget(api_budget_model, self._config)
 
-        stream_name_to_group = self._build_stream_name_to_group(self._source_config)
+        self._constructor.set_stream_name_to_group(
+            self._build_stream_name_to_group(self._source_config)
+        )
 
         prepared_configs = self._initialize_cache_for_parent_streams(deepcopy(stream_configs))
-        for stream_config in prepared_configs:
-            stream_name = stream_config.get("name", "")
-            if stream_name in stream_name_to_group:
-                stream_config["block_simultaneous_read"] = stream_name_to_group[stream_name]
 
         source_streams = [
             self._constructor.create_component(

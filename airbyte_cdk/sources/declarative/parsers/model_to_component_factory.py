@@ -682,6 +682,7 @@ class ModelToComponentFactory:
         max_concurrent_async_job_count: Optional[int] = None,
         configured_catalog: Optional[ConfiguredAirbyteCatalog] = None,
         api_budget: Optional[APIBudget] = None,
+        stream_name_to_group: Optional[Dict[str, str]] = None,
     ):
         self._init_mappings()
         self._limit_pages_fetched_per_slice = limit_pages_fetched_per_slice
@@ -698,8 +699,13 @@ class ModelToComponentFactory:
         self._connector_state_manager = connector_state_manager or ConnectorStateManager()
         self._api_budget: Optional[Union[APIBudget]] = api_budget
         self._job_tracker: JobTracker = JobTracker(max_concurrent_async_job_count or 1)
+        self._stream_name_to_group: Dict[str, str] = stream_name_to_group or {}
         # placeholder for deprecation warnings
         self._collected_deprecation_logs: List[ConnectorBuilderLogMessage] = []
+
+    def set_stream_name_to_group(self, stream_name_to_group: Dict[str, str]) -> None:
+        """Set the mapping from stream name to group name for block_simultaneous_read."""
+        self._stream_name_to_group = stream_name_to_group
 
     def _init_mappings(self) -> None:
         self.PYDANTIC_MODEL_TO_CONSTRUCTOR: Mapping[Type[BaseModel], Callable[..., Any]] = {
@@ -2118,7 +2124,7 @@ class ModelToComponentFactory:
             logger=logging.getLogger(f"airbyte.{stream_name}"),
             cursor=concurrent_cursor,
             supports_file_transfer=hasattr(model, "file_uploader") and bool(model.file_uploader),
-            block_simultaneous_read=getattr(model, "block_simultaneous_read", "") or "",
+            block_simultaneous_read=self._stream_name_to_group.get(stream_name, ""),
         )
 
     def _migrate_state(self, model: DeclarativeStreamModel, config: Config) -> None:
