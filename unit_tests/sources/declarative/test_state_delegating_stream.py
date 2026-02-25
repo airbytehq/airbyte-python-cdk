@@ -852,3 +852,71 @@ def test_parent_state_delegating_stream_retention_falls_back_to_full_refresh():
         configured_catalog = create_configured_catalog(source, _CONFIG)
         records = get_records(source, _CONFIG, configured_catalog, state)
         assert len(records) == 1
+
+
+@freezegun.freeze_time("2024-07-15")
+def test_unconfigured_parent_stream_does_not_emit_state_on_retention_fallback():
+    """When a parent StateDelegatingStream has stale cursor state but is NOT in the
+    configured catalog (only the child is selected), no state message should be emitted
+    for the parent.  Previously this would emit a state message for the parent stream,
+    causing the destination to crash with 'Stream not found'."""
+    manifest = _create_parent_child_manifest_with_retention_period("P7D")
+
+    with HttpMocker() as http_mocker:
+        http_mocker.get(
+            HttpRequest(url="https://api.test.com/parents"),
+            HttpResponse(
+                body=json.dumps([{"id": 1, "name": "parent_1", "updated_at": "2024-07-14"}])
+            ),
+        )
+        http_mocker.get(
+            HttpRequest(url="https://api.test.com/children/1"),
+            HttpResponse(
+                body=json.dumps([{"id": 10, "name": "child_1", "updated_at": "2024-07-14"}])
+            ),
+        )
+
+        # ParentStream has stale state (older than 7 days) but ParentStream is NOT
+        # in the configured catalog — only ChildStream is selected.
+        state = [
+            AirbyteStateMessage(
+                type=AirbyteStateType.STREAM,
+                stream=AirbyteStreamState(
+                    stream_descriptor=StreamDescriptor(name="ParentStream", namespace=None),
+                    stream_state=AirbyteStateBlob(updated_at="2024-06-01"),
+                ),
+            ),
+            AirbyteStateMessage(
+                type=AirbyteStateType.STREAM,
+                stream=AirbyteStreamState(
+                    stream_descriptor=StreamDescriptor(name="ChildStream", namespace=None),
+                    stream_state=AirbyteStateBlob(
+                        use_global_cursor=False,
+                        state={"updated_at": "2024-07-14"},
+                        states=[],
+                        parent_state={"ParentStream": {"updated_at": "2024-06-01"}},
+                        lookback_window=0,
+                    ),
+                ),
+            ),
+        ]
+        source = ConcurrentDeclarativeSource(
+            source_config=manifest, config=_CONFIG, catalog=None, state=state
+        )
+        configured_catalog = create_configured_catalog(source, _CONFIG)
+
+        all_messages = list(
+            source.read(logger=MagicMock(), config=_CONFIG, catalog=configured_catalog, state=state)
+        )
+
+        # No state message should reference ParentStream since it's not in the catalog
+        state_messages = [msg for msg in all_messages if msg.type == Type.STATE]
+        parent_state_messages = [
+            msg
+            for msg in state_messages
+            if msg.state.stream.stream_descriptor.name == "ParentStream"
+        ]
+        assert len(parent_state_messages) == 0, (
+            f"Expected no state messages for unconfigured ParentStream, "
+            f"but got {len(parent_state_messages)}: {parent_state_messages}"
+        )

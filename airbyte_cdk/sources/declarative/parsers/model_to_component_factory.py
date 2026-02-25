@@ -3596,8 +3596,21 @@ class ModelToComponentFactory:
                 model.name,
             ):
                 self._connector_state_manager.update_state_for_stream(model.name, None, {})
-                state_message = self._connector_state_manager.create_state_message(model.name, None)
-                self._message_repository.emit_message(state_message)
+                # Only emit the state-clearing message if this stream is in the
+                # configured catalog (or if no catalog was provided, e.g. during
+                # discover / connector builder).  Streams that are NOT selected by the
+                # user but are instantiated as parent-stream dependencies must not emit
+                # state messages because the destination does not know about them and
+                # will crash with "Stream not found".
+                stream_is_in_catalog = (
+                    not self._stream_name_to_configured_stream  # no catalog → emit by default
+                    or model.name in self._stream_name_to_configured_stream
+                )
+                if stream_is_in_catalog:
+                    state_message = self._connector_state_manager.create_state_message(
+                        model.name, None
+                    )
+                    self._message_repository.emit_message(state_message)
                 return full_refresh_stream
 
         return incremental_stream
