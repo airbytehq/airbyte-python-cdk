@@ -3605,9 +3605,7 @@ class ModelToComponentFactory:
                 model.name,
             ):
                 self._connector_state_manager.update_state_for_stream(model.name, None, {})
-                state_message = self._connector_state_manager.create_state_message(
-                    model.name, None
-                )
+                state_message = self._connector_state_manager.create_state_message(model.name, None)
                 self._message_repository.emit_message(state_message)
                 return full_refresh_stream
 
