@@ -45,6 +45,9 @@ from airbyte_cdk.sources.declarative.auth.token import (
 from airbyte_cdk.sources.declarative.auth.token_provider import SessionTokenProvider
 from airbyte_cdk.sources.declarative.checks import CheckStream
 from airbyte_cdk.sources.declarative.concurrency_level import ConcurrencyLevel
+from airbyte_cdk.sources.declarative.concurrent_declarative_source import (
+    ConcurrentDeclarativeSource,
+)
 from airbyte_cdk.sources.declarative.datetime.min_max_datetime import MinMaxDatetime
 from airbyte_cdk.sources.declarative.decoders import JsonDecoder, PaginationDecoderDecorator
 from airbyte_cdk.sources.declarative.extractors import DpathExtractor, RecordFilter, RecordSelector
@@ -5215,117 +5218,119 @@ list_stream:
 
 
 def test_block_simultaneous_read_from_stream_groups():
-    """Test that block_simultaneous_read flows through from stream_name_to_group to DefaultStream.
-
-    The stream_groups config is parsed by ConcurrentDeclarativeSource into a stream_name_to_group
-    mapping, which is then set on the ModelToComponentFactory. The factory uses this mapping to
-    look up the group for each stream it creates.
-    """
+    """Test that stream_groups in the manifest flow through to DefaultStream.block_simultaneous_read."""
     content = """
-    parent_stream:
-      type: DeclarativeStream
-      name: "parent"
-      primary_key: "id"
-      retriever:
-        type: SimpleRetriever
-        requester:
-          type: HttpRequester
-          url_base: "https://api.example.com"
-          path: "/parent"
-          http_method: "GET"
-          authenticator:
-            type: BearerAuthenticator
-            api_token: "{{ config['api_key'] }}"
-        record_selector:
-          type: RecordSelector
-          extractor:
-            type: DpathExtractor
-            field_path: []
-      schema_loader:
-        type: InlineSchemaLoader
-        schema:
-          type: object
-          properties:
-            id:
-              type: string
+    definitions:
+      parent_stream:
+        type: DeclarativeStream
+        name: "parent"
+        primary_key: "id"
+        retriever:
+          type: SimpleRetriever
+          requester:
+            type: HttpRequester
+            url_base: "https://api.example.com"
+            path: "/parent"
+            http_method: "GET"
+            authenticator:
+              type: BearerAuthenticator
+              api_token: "{{ config['api_key'] }}"
+          record_selector:
+            type: RecordSelector
+            extractor:
+              type: DpathExtractor
+              field_path: []
+        schema_loader:
+          type: InlineSchemaLoader
+          schema:
+            type: object
+            properties:
+              id:
+                type: string
 
-    child_stream:
-      type: DeclarativeStream
-      name: "child"
-      primary_key: "id"
-      retriever:
-        type: SimpleRetriever
-        requester:
-          type: HttpRequester
-          url_base: "https://api.example.com"
-          path: "/child"
-          http_method: "GET"
-          authenticator:
-            type: BearerAuthenticator
-            api_token: "{{ config['api_key'] }}"
-        record_selector:
-          type: RecordSelector
-          extractor:
-            type: DpathExtractor
-            field_path: []
-        partition_router:
-          type: SubstreamPartitionRouter
-          parent_stream_configs:
-            - type: ParentStreamConfig
-              stream: "#/parent_stream"
-              parent_key: "id"
-              partition_field: "parent_id"
-      schema_loader:
-        type: InlineSchemaLoader
-        schema:
-          type: object
-          properties:
-            id:
-              type: string
-            parent_id:
-              type: string
+      child_stream:
+        type: DeclarativeStream
+        name: "child"
+        primary_key: "id"
+        retriever:
+          type: SimpleRetriever
+          requester:
+            type: HttpRequester
+            url_base: "https://api.example.com"
+            path: "/child"
+            http_method: "GET"
+            authenticator:
+              type: BearerAuthenticator
+              api_token: "{{ config['api_key'] }}"
+          record_selector:
+            type: RecordSelector
+            extractor:
+              type: DpathExtractor
+              field_path: []
+          partition_router:
+            type: SubstreamPartitionRouter
+            parent_stream_configs:
+              - type: ParentStreamConfig
+                stream: "#/definitions/parent_stream"
+                parent_key: "id"
+                partition_field: "parent_id"
+        schema_loader:
+          type: InlineSchemaLoader
+          schema:
+            type: object
+            properties:
+              id:
+                type: string
+              parent_id:
+                type: string
 
-    no_block_stream:
-      type: DeclarativeStream
-      name: "no_block"
-      primary_key: "id"
-      retriever:
-        type: SimpleRetriever
-        requester:
-          type: HttpRequester
-          url_base: "https://api.example.com"
-          path: "/no_block"
-          http_method: "GET"
-          authenticator:
-            type: BearerAuthenticator
-            api_token: "{{ config['api_key'] }}"
-        record_selector:
-          type: RecordSelector
-          extractor:
-            type: DpathExtractor
-            field_path: []
-      schema_loader:
-        type: InlineSchemaLoader
-        schema:
-          type: object
-          properties:
-            id:
-              type: string
+      no_block_stream:
+        type: DeclarativeStream
+        name: "no_block"
+        primary_key: "id"
+        retriever:
+          type: SimpleRetriever
+          requester:
+            type: HttpRequester
+            url_base: "https://api.example.com"
+            path: "/no_block"
+            http_method: "GET"
+            authenticator:
+              type: BearerAuthenticator
+              api_token: "{{ config['api_key'] }}"
+          record_selector:
+            type: RecordSelector
+            extractor:
+              type: DpathExtractor
+              field_path: []
+        schema_loader:
+          type: InlineSchemaLoader
+          schema:
+            type: object
+            properties:
+              id:
+                type: string
+
+    stream_groups:
+      issues_endpoint:
+        streams:
+          - "#/definitions/parent_stream"
+          - "#/definitions/child_stream"
+        action: BlockSimultaneousSyncsAction
     """
 
     config = {"api_key": "test_key"}
 
-    # Create a factory with stream_name_to_group mapping (as ConcurrentDeclarativeSource would do)
-    factory_with_groups = ModelToComponentFactory(
-        stream_name_to_group={"parent": "issues_endpoint", "child": "issues_endpoint"}
-    )
-
     parsed_manifest = YamlDeclarativeSource._parse(content)
     resolved_manifest = resolver.preprocess_manifest(parsed_manifest)
 
-    # Test parent stream gets block_simultaneous_read from the factory's stream_name_to_group
+    # Build stream_name_to_group from the manifest's stream_groups (as ConcurrentDeclarativeSource does)
+    stream_name_to_group = ConcurrentDeclarativeSource._build_stream_name_to_group(resolved_manifest)
+    factory_with_groups = ModelToComponentFactory(stream_name_to_group=stream_name_to_group)
+
+    # Test parent stream gets block_simultaneous_read from stream_groups
     parent_manifest = transformer.propagate_types_and_parameters(
-        "", resolved_manifest["parent_stream"], {}
+        "", resolved_manifest["definitions"]["parent_stream"], {}
     )
     parent_stream: DefaultStream = factory_with_groups.create_component(
         model_type=DeclarativeStreamModel, component_definition=parent_manifest, config=config
@@ -5335,9 +5340,9 @@ def test_block_simultaneous_read_from_stream_groups():
     assert parent_stream.name == "parent"
     assert parent_stream.block_simultaneous_read == "issues_endpoint"
 
-    # Test child stream gets block_simultaneous_read from the factory's stream_name_to_group
+    # Test child stream gets block_simultaneous_read from stream_groups
     child_manifest = transformer.propagate_types_and_parameters(
-        "", resolved_manifest["child_stream"], {}
+        "", resolved_manifest["definitions"]["child_stream"], {}
     )
     child_stream: DefaultStream = factory_with_groups.create_component(
         model_type=DeclarativeStreamModel, component_definition=child_manifest, config=config
@@ -5347,9 +5352,9 @@ def test_block_simultaneous_read_from_stream_groups():
     assert child_stream.name == "child"
     assert child_stream.block_simultaneous_read == "issues_endpoint"
 
-    # Test stream without block_simultaneous_read (should default to empty string)
+    # Test stream not in any group defaults to empty string
     no_block_manifest = transformer.propagate_types_and_parameters(
-        "", resolved_manifest["no_block_stream"], {}
+        "", resolved_manifest["definitions"]["no_block_stream"], {}
     )
     no_block_stream: DefaultStream = factory_with_groups.create_component(
         model_type=DeclarativeStreamModel, component_definition=no_block_manifest, config=config
@@ -5358,62 +5363,6 @@ def test_block_simultaneous_read_from_stream_groups():
     assert isinstance(no_block_stream, DefaultStream)
     assert no_block_stream.name == "no_block"
     assert no_block_stream.block_simultaneous_read == ""
-
-
-def test_set_stream_name_to_group():
-    """Test that set_stream_name_to_group updates the factory's stream_name_to_group mapping."""
-    content = """
-    test_stream:
-      type: DeclarativeStream
-      name: "test"
-      primary_key: "id"
-      retriever:
-        type: SimpleRetriever
-        requester:
-          type: HttpRequester
-          url_base: "https://api.example.com"
-          path: "/test"
-          http_method: "GET"
-          authenticator:
-            type: BearerAuthenticator
-            api_token: "{{ config['api_key'] }}"
-        record_selector:
-          type: RecordSelector
-          extractor:
-            type: DpathExtractor
-            field_path: []
-      schema_loader:
-        type: InlineSchemaLoader
-        schema:
-          type: object
-          properties:
-            id:
-              type: string
-    """
-
-    config = {"api_key": "test_key"}
-
-    # Create factory without stream_name_to_group
-    test_factory = ModelToComponentFactory()
-
-    parsed_manifest = YamlDeclarativeSource._parse(content)
-    resolved_manifest = resolver.preprocess_manifest(parsed_manifest)
-    stream_manifest = transformer.propagate_types_and_parameters(
-        "", resolved_manifest["test_stream"], {}
-    )
-
-    # Without stream_name_to_group, block_simultaneous_read should be empty
-    stream: DefaultStream = test_factory.create_component(
-        model_type=DeclarativeStreamModel, component_definition=stream_manifest, config=config
-    )
-    assert stream.block_simultaneous_read == ""
-
-    # After setting stream_name_to_group, block_simultaneous_read should be populated
-    test_factory.set_stream_name_to_group({"test": "my_group"})
-    stream = test_factory.create_component(
-        model_type=DeclarativeStreamModel, component_definition=stream_manifest, config=config
-    )
-    assert stream.block_simultaneous_read == "my_group"
 
 
 def get_schema_loader(stream: DefaultStream):
