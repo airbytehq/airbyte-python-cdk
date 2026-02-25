@@ -3584,7 +3584,16 @@ class ModelToComponentFactory:
             model.incremental_stream, config=config, **kwargs
         )  # type: ignore[assignment]
 
-        if model.api_retention_period:
+        # Only run cursor age validation for streams that are in the configured
+        # catalog (or when no catalog was provided, e.g. during discover / connector
+        # builder).  Streams not selected by the user but instantiated as parent-stream
+        # dependencies must not go through this path because it emits state messages
+        # that the destination does not know about, causing "Stream not found" crashes.
+        stream_is_in_catalog = (
+            not self._stream_name_to_configured_stream  # no catalog → validate by default
+            or model.name in self._stream_name_to_configured_stream
+        )
+        if model.api_retention_period and stream_is_in_catalog:
             full_refresh_stream: DefaultStream = self._create_component_from_model(
                 model.full_refresh_stream, config=config, **kwargs
             )  # type: ignore[assignment]
@@ -3596,21 +3605,10 @@ class ModelToComponentFactory:
                 model.name,
             ):
                 self._connector_state_manager.update_state_for_stream(model.name, None, {})
-                # Only emit the state-clearing message if this stream is in the
-                # configured catalog (or if no catalog was provided, e.g. during
-                # discover / connector builder).  Streams that are NOT selected by the
-                # user but are instantiated as parent-stream dependencies must not emit
-                # state messages because the destination does not know about them and
-                # will crash with "Stream not found".
-                stream_is_in_catalog = (
-                    not self._stream_name_to_configured_stream  # no catalog → emit by default
-                    or model.name in self._stream_name_to_configured_stream
+                state_message = self._connector_state_manager.create_state_message(
+                    model.name, None
                 )
-                if stream_is_in_catalog:
-                    state_message = self._connector_state_manager.create_state_message(
-                        model.name, None
-                    )
-                    self._message_repository.emit_message(state_message)
+                self._message_repository.emit_message(state_message)
                 return full_refresh_stream
 
         return incremental_stream
