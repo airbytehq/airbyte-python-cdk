@@ -5150,3 +5150,74 @@ def test_given_record_selector_is_filtering_when_read_then_raise_error():
 
     with pytest.raises(ValueError):
         list(source.read(logger=source.logger, config=input_config, catalog=catalog, state=[]))
+
+
+@pytest.mark.parametrize(
+    "manifest,expected",
+    [
+        pytest.param(
+            {},
+            {},
+            id="no_stream_groups",
+        ),
+        pytest.param(
+            {"stream_groups": {}},
+            {},
+            id="empty_stream_groups",
+        ),
+        pytest.param(
+            {
+                "stream_groups": {
+                    "crm_objects": {
+                        "streams": [
+                            {"name": "deals", "type": "DeclarativeStream"},
+                            {"name": "companies", "type": "DeclarativeStream"},
+                        ],
+                        "action": {"type": "BlockSimultaneousSyncsAction"},
+                    }
+                }
+            },
+            {"deals": "crm_objects", "companies": "crm_objects"},
+            id="resolved_stream_refs",
+        ),
+        pytest.param(
+            {
+                "stream_groups": {
+                    "group_a": {
+                        "streams": [
+                            {"name": "stream1", "type": "DeclarativeStream"},
+                        ],
+                        "action": {"type": "BlockSimultaneousSyncsAction"},
+                    },
+                    "group_b": {
+                        "streams": [
+                            {"name": "stream2", "type": "DeclarativeStream"},
+                            {"name": "stream3", "type": "DeclarativeStream"},
+                        ],
+                        "action": {"type": "BlockSimultaneousSyncsAction"},
+                    },
+                }
+            },
+            {"stream1": "group_a", "stream2": "group_b", "stream3": "group_b"},
+            id="multiple_groups",
+        ),
+        pytest.param(
+            {
+                "stream_groups": {
+                    "fallback_group": {
+                        "streams": [
+                            "#/definitions/my_stream",
+                        ],
+                        "action": {"type": "BlockSimultaneousSyncsAction"},
+                    }
+                }
+            },
+            {"my_stream": "fallback_group"},
+            id="unresolved_string_refs_fallback",
+        ),
+    ],
+)
+def test_build_stream_name_to_group(manifest, expected):
+    """Test _build_stream_name_to_group correctly maps stream names to group names."""
+    result = ConcurrentDeclarativeSource._build_stream_name_to_group(manifest)
+    assert result == expected
