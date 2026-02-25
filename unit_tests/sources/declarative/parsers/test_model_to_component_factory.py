@@ -5282,19 +5282,17 @@ list_stream:
 
 
 def test_block_simultaneous_read_from_stream_groups():
-    """Test that block_simultaneous_read flows through from stream_groups to DefaultStream.
+    """Test that block_simultaneous_read flows through from stream_name_to_group to DefaultStream.
 
-    The stream_groups config is processed by ConcurrentDeclarativeSource which injects
-    block_simultaneous_read into individual stream configs before passing them to the factory.
-    This test verifies that the factory correctly reads block_simultaneous_read from the
-    extra fields on the stream config dict.
+    The stream_groups config is parsed by ConcurrentDeclarativeSource into a stream_name_to_group
+    mapping, which is then set on the ModelToComponentFactory. The factory uses this mapping to
+    look up the group for each stream it creates.
     """
     content = """
     parent_stream:
       type: DeclarativeStream
       name: "parent"
       primary_key: "id"
-      block_simultaneous_read: "issues_endpoint"
       retriever:
         type: SimpleRetriever
         requester:
@@ -5322,7 +5320,6 @@ def test_block_simultaneous_read_from_stream_groups():
       type: DeclarativeStream
       name: "child"
       primary_key: "id"
-      block_simultaneous_read: "issues_endpoint"
       retriever:
         type: SimpleRetriever
         requester:
@@ -5385,14 +5382,19 @@ def test_block_simultaneous_read_from_stream_groups():
 
     config = {"api_key": "test_key"}
 
+    # Create a factory with stream_name_to_group mapping (as ConcurrentDeclarativeSource would do)
+    factory_with_groups = ModelToComponentFactory(
+        stream_name_to_group={"parent": "issues_endpoint", "child": "issues_endpoint"}
+    )
+
     parsed_manifest = YamlDeclarativeSource._parse(content)
     resolved_manifest = resolver.preprocess_manifest(parsed_manifest)
 
-    # Test parent stream with block_simultaneous_read injected (as ConcurrentDeclarativeSource would do)
+    # Test parent stream gets block_simultaneous_read from the factory's stream_name_to_group
     parent_manifest = transformer.propagate_types_and_parameters(
         "", resolved_manifest["parent_stream"], {}
     )
-    parent_stream: DefaultStream = factory.create_component(
+    parent_stream: DefaultStream = factory_with_groups.create_component(
         model_type=DeclarativeStreamModel, component_definition=parent_manifest, config=config
     )
 
@@ -5400,11 +5402,11 @@ def test_block_simultaneous_read_from_stream_groups():
     assert parent_stream.name == "parent"
     assert parent_stream.block_simultaneous_read == "issues_endpoint"
 
-    # Test child stream with block_simultaneous_read injected
+    # Test child stream gets block_simultaneous_read from the factory's stream_name_to_group
     child_manifest = transformer.propagate_types_and_parameters(
         "", resolved_manifest["child_stream"], {}
     )
-    child_stream: DefaultStream = factory.create_component(
+    child_stream: DefaultStream = factory_with_groups.create_component(
         model_type=DeclarativeStreamModel, component_definition=child_manifest, config=config
     )
 
@@ -5416,13 +5418,69 @@ def test_block_simultaneous_read_from_stream_groups():
     no_block_manifest = transformer.propagate_types_and_parameters(
         "", resolved_manifest["no_block_stream"], {}
     )
-    no_block_stream: DefaultStream = factory.create_component(
+    no_block_stream: DefaultStream = factory_with_groups.create_component(
         model_type=DeclarativeStreamModel, component_definition=no_block_manifest, config=config
     )
 
     assert isinstance(no_block_stream, DefaultStream)
     assert no_block_stream.name == "no_block"
     assert no_block_stream.block_simultaneous_read == ""
+
+
+def test_set_stream_name_to_group():
+    """Test that set_stream_name_to_group updates the factory's stream_name_to_group mapping."""
+    content = """
+    test_stream:
+      type: DeclarativeStream
+      name: "test"
+      primary_key: "id"
+      retriever:
+        type: SimpleRetriever
+        requester:
+          type: HttpRequester
+          url_base: "https://api.example.com"
+          path: "/test"
+          http_method: "GET"
+          authenticator:
+            type: BearerAuthenticator
+            api_token: "{{ config['api_key'] }}"
+        record_selector:
+          type: RecordSelector
+          extractor:
+            type: DpathExtractor
+            field_path: []
+      schema_loader:
+        type: InlineSchemaLoader
+        schema:
+          type: object
+          properties:
+            id:
+              type: string
+    """
+
+    config = {"api_key": "test_key"}
+
+    # Create factory without stream_name_to_group
+    test_factory = ModelToComponentFactory()
+
+    parsed_manifest = YamlDeclarativeSource._parse(content)
+    resolved_manifest = resolver.preprocess_manifest(parsed_manifest)
+    stream_manifest = transformer.propagate_types_and_parameters(
+        "", resolved_manifest["test_stream"], {}
+    )
+
+    # Without stream_name_to_group, block_simultaneous_read should be empty
+    stream: DefaultStream = test_factory.create_component(
+        model_type=DeclarativeStreamModel, component_definition=stream_manifest, config=config
+    )
+    assert stream.block_simultaneous_read == ""
+
+    # After setting stream_name_to_group, block_simultaneous_read should be populated
+    test_factory.set_stream_name_to_group({"test": "my_group"})
+    stream = test_factory.create_component(
+        model_type=DeclarativeStreamModel, component_definition=stream_manifest, config=config
+    )
+    assert stream.block_simultaneous_read == "my_group"
 
 
 def get_schema_loader(stream: DefaultStream):
