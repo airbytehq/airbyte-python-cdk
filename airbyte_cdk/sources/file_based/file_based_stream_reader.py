@@ -5,7 +5,7 @@
 import logging
 import time
 from abc import ABC, abstractmethod
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from io import IOBase
 from os import makedirs, path
@@ -24,6 +24,7 @@ from airbyte_cdk.sources.file_based.config.validate_config_transfer_modes import
 from airbyte_cdk.sources.file_based.exceptions import FileSizeLimitError
 from airbyte_cdk.sources.file_based.file_record_data import FileRecordData
 from airbyte_cdk.sources.file_based.remote_file import RemoteFile, UploadableRemoteFile
+from airbyte_cdk.utils.datetime_helpers import ab_datetime_parse
 
 
 class FileReadMode(Enum):
@@ -105,7 +106,7 @@ class AbstractFileBasedStreamReader(ABC):
         Utility method for filtering files based on globs.
         """
         start_date = (
-            datetime.strptime(self.config.start_date, self.DATE_TIME_FORMAT)
+            ab_datetime_parse(self.config.start_date)
             if self.config and self.config.start_date
             else None
         )
@@ -113,7 +114,12 @@ class AbstractFileBasedStreamReader(ABC):
 
         for file in files:
             if self.file_matches_globs(file, globs):
-                if file.uri not in seen and (not start_date or file.last_modified >= start_date):
+                last_modified = (
+                    file.last_modified
+                    if file.last_modified.tzinfo is not None
+                    else file.last_modified.replace(tzinfo=timezone.utc)
+                )
+                if file.uri not in seen and (not start_date or last_modified >= start_date):
                     seen.add(file.uri)
                     yield file
 
