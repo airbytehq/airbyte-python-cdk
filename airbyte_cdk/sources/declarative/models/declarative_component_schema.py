@@ -2354,6 +2354,23 @@ class ConfigNormalizationRules(BaseModel):
     )
 
 
+class BlockSimultaneousSyncsAction(BaseModel):
+    type: Literal["BlockSimultaneousSyncsAction"]
+
+
+class StreamGroup(BaseModel):
+    streams: List[str] = Field(
+        ...,
+        description='List of references to streams that belong to this group. Use JSON references to stream definitions (e.g., "#/definitions/my_stream").',
+        title="Streams",
+    )
+    action: BlockSimultaneousSyncsAction = Field(
+        ...,
+        description="The action to apply to streams in this group.",
+        title="Action",
+    )
+
+
 class Spec(BaseModel):
     type: Literal["Spec"]
     connection_specification: Dict[str, Any] = Field(
@@ -2394,6 +2411,11 @@ class DeclarativeSource1(BaseModel):
     spec: Optional[Spec] = None
     concurrency_level: Optional[ConcurrencyLevel] = None
     api_budget: Optional[HTTPAPIBudget] = None
+    stream_groups: Optional[Dict[str, StreamGroup]] = Field(
+        None,
+        description="Groups of streams that share a common resource and should not be read simultaneously. Each group defines a set of stream references and an action that controls how concurrent reads are managed. Only applies to ConcurrentDeclarativeSource.",
+        title="Stream Groups",
+    )
     max_concurrent_async_job_count: Optional[Union[int, str]] = Field(
         None,
         description="Maximum number of concurrent asynchronous jobs to run. This property is only relevant for sources/streams that support asynchronous job execution through the AsyncRetriever (e.g. a report-based stream that initiates a job, polls the job status, and then fetches the job results). This is often set by the API's maximum number of concurrent jobs on the account level. Refer to the API's documentation for this information.",
@@ -2429,6 +2451,11 @@ class DeclarativeSource2(BaseModel):
     spec: Optional[Spec] = None
     concurrency_level: Optional[ConcurrencyLevel] = None
     api_budget: Optional[HTTPAPIBudget] = None
+    stream_groups: Optional[Dict[str, StreamGroup]] = Field(
+        None,
+        description="Groups of streams that share a common resource and should not be read simultaneously. Each group defines a set of stream references and an action that controls how concurrent reads are managed. Only applies to ConcurrentDeclarativeSource.",
+        title="Stream Groups",
+    )
     max_concurrent_async_job_count: Optional[Union[int, str]] = Field(
         None,
         description="Maximum number of concurrent asynchronous jobs to run. This property is only relevant for sources/streams that support asynchronous job execution through the AsyncRetriever (e.g. a report-based stream that initiates a job, polls the job status, and then fetches the job results). This is often set by the API's maximum number of concurrent jobs on the account level. Refer to the API's documentation for this information.",
@@ -2544,11 +2571,6 @@ class DeclarativeStream(BaseModel):
 
     type: Literal["DeclarativeStream"]
     name: Optional[str] = Field("", description="The stream name.", example=["Users"], title="Name")
-    block_simultaneous_read: Optional[str] = Field(
-        "",
-        description='Optional group name for blocking simultaneous reads. Streams with the same block_simultaneous_read value will not be read concurrently. This prevents duplicate API calls when a stream is used as both a standalone stream and a parent stream, or when multiple streams share the same endpoint/session.\nIf set to a non-empty string, the stream will be deferred if: 1. Another stream in the same group is currently active 2. Any parent stream is in an active group\nExamples: - "issues_endpoint" - All streams with this value block each other - "" or null - No blocking (default)\nThis is useful for APIs that don\'t allow concurrent access to the same endpoint or session. Only applies to ConcurrentDeclarativeSource.\n',
-        title="Block Simultaneous Read",
-    )
     retriever: Union[SimpleRetriever, AsyncRetriever, CustomRetriever] = Field(
         ...,
         description="Component used to coordinate how records are extracted across stream slices and request pages.",

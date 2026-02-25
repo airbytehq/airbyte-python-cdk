@@ -5281,8 +5281,14 @@ list_stream:
     assert stream._cursor_field.supports_catalog_defined_cursor_field == True
 
 
-def test_block_simultaneous_read_from_manifest():
-    """Test that block_simultaneous_read flows through from manifest to DefaultStream"""
+def test_block_simultaneous_read_from_stream_groups():
+    """Test that block_simultaneous_read flows through from stream_groups to DefaultStream.
+
+    The stream_groups config is processed by ConcurrentDeclarativeSource which injects
+    block_simultaneous_read into individual stream configs before passing them to the factory.
+    This test verifies that the factory correctly reads block_simultaneous_read from the
+    extra fields on the stream config dict.
+    """
     content = """
     parent_stream:
       type: DeclarativeStream
@@ -5382,7 +5388,7 @@ def test_block_simultaneous_read_from_manifest():
     parsed_manifest = YamlDeclarativeSource._parse(content)
     resolved_manifest = resolver.preprocess_manifest(parsed_manifest)
 
-    # Test parent stream with block_simultaneous_read: true
+    # Test parent stream with block_simultaneous_read injected (as ConcurrentDeclarativeSource would do)
     parent_manifest = transformer.propagate_types_and_parameters(
         "", resolved_manifest["parent_stream"], {}
     )
@@ -5394,7 +5400,7 @@ def test_block_simultaneous_read_from_manifest():
     assert parent_stream.name == "parent"
     assert parent_stream.block_simultaneous_read == "issues_endpoint"
 
-    # Test child stream with block_simultaneous_read: "issues_endpoint"
+    # Test child stream with block_simultaneous_read injected
     child_manifest = transformer.propagate_types_and_parameters(
         "", resolved_manifest["child_stream"], {}
     )
