@@ -431,6 +431,13 @@ class TestSpec(AbstractFileBasedSpec):
         ),
         pytest.param(
             ["**/*.csv"],
+            {"start_date": "2023-06-05T08:54:07+05:00", "streams": []},
+            {"a.csv", "a/b.csv", "a/c.csv", "a/b/c.csv", "a/c/c.csv", "a/b/c/d.csv"},
+            set(),
+            id="start_date_with_non_zero_offset",
+        ),
+        pytest.param(
+            ["**/*.csv"],
             {"start_date": "2023-06-01", "streams": []},
             {"a.csv", "a/b.csv", "a/c.csv", "a/b/c.csv", "a/c/c.csv", "a/b/c/d.csv"},
             set(),
