@@ -5,7 +5,7 @@
 import logging
 import time
 from abc import ABC, abstractmethod
-from datetime import datetime, timezone
+from datetime import timezone
 from enum import Enum
 from io import IOBase
 from os import makedirs, path
