@@ -5382,7 +5382,6 @@ def test_block_simultaneous_read_from_stream_groups():
       issues_endpoint:
         streams:
           - "#/definitions/parent_stream"
-          - "#/definitions/child_stream"
         action: BlockSimultaneousSyncsAction
     """
 
@@ -5407,7 +5406,7 @@ def test_block_simultaneous_read_from_stream_groups():
     assert parent_stream.name == "parent"
     assert parent_stream.block_simultaneous_read == "issues_endpoint"
 
-    # Test child stream gets block_simultaneous_read from stream_groups
+    # Test child stream is NOT in the group (to avoid deadlock with parent)
     child_manifest = transformer.propagate_types_and_parameters(
         "", resolved_manifest["definitions"]["child_stream"], {}
     )
@@ -5417,7 +5416,7 @@ def test_block_simultaneous_read_from_stream_groups():
 
     assert isinstance(child_stream, DefaultStream)
     assert child_stream.name == "child"
-    assert child_stream.block_simultaneous_read == "issues_endpoint"
+    assert child_stream.block_simultaneous_read == ""
 
     # Test stream not in any group defaults to empty string
     no_block_manifest = transformer.propagate_types_and_parameters(
