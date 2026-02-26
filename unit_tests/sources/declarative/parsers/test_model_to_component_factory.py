@@ -5324,7 +5324,9 @@ def test_block_simultaneous_read_from_stream_groups():
     resolved_manifest = resolver.preprocess_manifest(parsed_manifest)
 
     # Build stream_name_to_group from the manifest's stream_groups (as ConcurrentDeclarativeSource does)
-    stream_name_to_group = ConcurrentDeclarativeSource._build_stream_name_to_group(resolved_manifest)
+    stream_name_to_group = ConcurrentDeclarativeSource._build_stream_name_to_group(
+        resolved_manifest
+    )
     factory_with_groups = ModelToComponentFactory(stream_name_to_group=stream_name_to_group)
 
     # Test parent stream gets block_simultaneous_read from stream_groups
