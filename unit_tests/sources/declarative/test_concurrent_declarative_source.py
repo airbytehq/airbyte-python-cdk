@@ -56,6 +56,9 @@ from airbyte_cdk.sources.declarative.concurrent_declarative_source import (
 from airbyte_cdk.sources.declarative.extractors.record_filter import (
     ClientSideIncrementalRecordFilterDecorator,
 )
+from airbyte_cdk.sources.declarative.parsers.model_to_component_factory import (
+    ModelToComponentFactory,
+)
 from airbyte_cdk.sources.declarative.partition_routers import AsyncJobPartitionRouter
 from airbyte_cdk.sources.declarative.retrievers.simple_retriever import SimpleRetriever
 from airbyte_cdk.sources.declarative.stream_slicers.declarative_partition_generator import (
@@ -5219,5 +5222,5 @@ def test_given_record_selector_is_filtering_when_read_then_raise_error():
 )
 def test_build_stream_name_to_group(manifest, expected):
     """Test _build_stream_name_to_group correctly maps stream names to group names."""
-    result = ConcurrentDeclarativeSource._build_stream_name_to_group(manifest)
+    result = ModelToComponentFactory._build_stream_name_to_group(manifest)
     assert result == expected
