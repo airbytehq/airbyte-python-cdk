@@ -233,6 +233,13 @@ class ConcurrentDeclarativeSource(Source):
             concurrency_level = self._LOWEST_SAFE_CONCURRENCY_LEVEL
             initial_number_of_partitions_to_generate = self._LOWEST_SAFE_CONCURRENCY_LEVEL // 2
 
+        self.logger.info(
+            "Concurrency configuration: concurrency_level=%d, initial_number_of_partitions_to_generate=%d, concurrency_level_from_manifest=%s",
+            concurrency_level,
+            initial_number_of_partitions_to_generate,
+            "defined" if concurrency_level_from_manifest else "not_defined",
+        )
+
         self._concurrent_source = ConcurrentSource.create(
             num_workers=concurrency_level,
             initial_number_of_partitions_to_generate=initial_number_of_partitions_to_generate,
