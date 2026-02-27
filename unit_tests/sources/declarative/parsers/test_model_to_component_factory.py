@@ -48,9 +48,6 @@ from airbyte_cdk.sources.declarative.auth.token_provider import (
 )
 from airbyte_cdk.sources.declarative.checks import CheckStream
 from airbyte_cdk.sources.declarative.concurrency_level import ConcurrencyLevel
-from airbyte_cdk.sources.declarative.concurrent_declarative_source import (
-    ConcurrentDeclarativeSource,
-)
 from airbyte_cdk.sources.declarative.datetime.min_max_datetime import MinMaxDatetime
 from airbyte_cdk.sources.declarative.decoders import JsonDecoder, PaginationDecoderDecorator
 from airbyte_cdk.sources.declarative.extractors import DpathExtractor, RecordFilter, RecordSelector
@@ -5390,11 +5387,9 @@ def test_block_simultaneous_read_from_stream_groups():
     parsed_manifest = YamlDeclarativeSource._parse(content)
     resolved_manifest = resolver.preprocess_manifest(parsed_manifest)
 
-    # Build stream_name_to_group from the manifest's stream_groups (as ConcurrentDeclarativeSource does)
-    stream_name_to_group = ConcurrentDeclarativeSource._build_stream_name_to_group(
-        resolved_manifest
-    )
-    factory_with_groups = ModelToComponentFactory(stream_name_to_group=stream_name_to_group)
+    # Use the factory's set_stream_groups to resolve stream_groups from the manifest
+    factory_with_groups = ModelToComponentFactory()
+    factory_with_groups.set_stream_groups(resolved_manifest)
 
     # Test parent stream gets block_simultaneous_read from stream_groups
     parent_manifest = transformer.propagate_types_and_parameters(
