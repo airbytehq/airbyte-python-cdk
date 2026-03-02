@@ -49,6 +49,15 @@ class AirbyteTracedException(Exception):
         self._stream_descriptor = stream_descriptor
         super().__init__(internal_message)
 
+    def __str__(self) -> str:
+        """Return the user-facing message, falling back to internal_message."""
+
+        if self.message:
+            return self.message
+        elif self.internal_message:
+            return self.internal_message
+        return ""
+
     def as_airbyte_message(
         self, stream_descriptor: Optional[StreamDescriptor] = None
     ) -> AirbyteMessage:
