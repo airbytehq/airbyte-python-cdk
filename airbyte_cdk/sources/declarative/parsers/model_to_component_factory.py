@@ -618,7 +618,6 @@ from airbyte_cdk.sources.message import (
     NoopMessageRepository,
 )
 from airbyte_cdk.sources.message.repository import StateFilteringMessageRepository
-from airbyte_cdk.sources.streams import NO_CURSOR_STATE_KEY
 from airbyte_cdk.sources.streams.call_rate import (
     APIBudget,
     FixedWindowCallRatePolicy,
@@ -3595,50 +3594,53 @@ class ModelToComponentFactory:
             or model.name in self._stream_name_to_configured_stream
         )
         if model.api_retention_period and stream_is_in_catalog:
+            full_refresh_stream: DefaultStream = self._create_component_from_model(
+                model.full_refresh_stream, config=config, **kwargs
+            )  # type: ignore[assignment]
             if self._is_cursor_older_than_retention_period(
                 stream_state,
+                full_refresh_stream.cursor,
                 incremental_stream.cursor,
                 model.api_retention_period,
                 model.name,
             ):
-                # Clear state BEFORE constructing the full_refresh_stream so that
-                # its cursor starts from start_date instead of the stale cursor.
                 self._connector_state_manager.update_state_for_stream(model.name, None, {})
                 state_message = self._connector_state_manager.create_state_message(model.name, None)
                 self._message_repository.emit_message(state_message)
-                return self._create_component_from_model(  # type: ignore[no-any-return]
-                    model.full_refresh_stream, config=config, **kwargs
-                )
+                return full_refresh_stream
 
         return incremental_stream
 
     @staticmethod
     def _is_cursor_older_than_retention_period(
         stream_state: Mapping[str, Any],
+        full_refresh_cursor: Cursor,
         incremental_cursor: Cursor,
         api_retention_period: str,
         stream_name: str,
     ) -> bool:
         """Check if the cursor value in the state is older than the API's retention period.
 
-        If the state contains NO_CURSOR_STATE_KEY, the previous sync was a completed
-        full refresh and the cursor is considered current — returns False.
-
-        Otherwise, uses the incremental cursor to parse the datetime from state.
+        Checks cursors in sequence: full refresh cursor first, then incremental cursor.
+        FinalStateCursor returns now() for completed full refresh state (NO_CURSOR_STATE_KEY),
+        which is always within retention, so we use incremental. For other states, it returns
+        None and we fall back to checking the incremental cursor.
 
         Returns True if the cursor is older than the retention period (should use full refresh).
         Returns False if the cursor is within the retention period (safe to use incremental).
         """
-        if stream_state.get(NO_CURSOR_STATE_KEY):
-            return False
-
         retention_duration = parse_duration(api_retention_period)
         retention_cutoff = datetime.datetime.now(datetime.timezone.utc) - retention_duration
 
-        cursor_datetime = incremental_cursor.get_cursor_datetime_from_state(stream_state)
+        # Check full refresh cursor first
+        cursor_datetime = full_refresh_cursor.get_cursor_datetime_from_state(stream_state)
+
+        # If full refresh cursor returns None, check incremental cursor
+        if cursor_datetime is None:
+            cursor_datetime = incremental_cursor.get_cursor_datetime_from_state(stream_state)
 
         if cursor_datetime is None:
-            # Cursor could not parse the state - fall back to full refresh to be safe
+            # Neither cursor could parse the state - fall back to full refresh to be safe
             return True
 
         if cursor_datetime < retention_cutoff:

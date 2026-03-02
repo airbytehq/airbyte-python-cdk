@@ -613,20 +613,14 @@ def test_cursor_age_validation_raises_error_for_unparseable_cursor():
 
 
 @freezegun.freeze_time("2024-07-15")
-def test_no_cursor_state_key_uses_incremental_not_full_refresh():
-    """When state has NO_CURSOR_STATE_KEY, the previous sync was a completed full refresh.
-
-    The cursor is considered current so the stream should use incremental sync,
-    not fall back to full refresh again.
-    """
+def test_final_state_cursor_falls_back_to_full_refresh_when_state_unparseable():
+    """When state is a final state (NO_CURSOR_STATE_KEY), ConcurrentCursor cannot parse it,
+    so both cursors return None and the implementation falls back to full refresh as the safe default."""
     manifest = _create_manifest_with_retention_period("P7D")
 
     with HttpMocker() as http_mocker:
-        # Mock the incremental endpoint with query params (start_date=2024-07-01, step=P15D, frozen at 2024-07-15)
         http_mocker.get(
-            HttpRequest(
-                url="https://api.test.com/items_with_filtration?start=2024-07-01&end=2024-07-15"
-            ),
+            HttpRequest(url="https://api.test.com/items"),
             HttpResponse(
                 body=json.dumps(
                     [
