@@ -82,6 +82,7 @@ from airbyte_cdk.sources.declarative.types import Config, ConnectionDefinition
 from airbyte_cdk.sources.message.concurrent_repository import ConcurrentMessageRepository
 from airbyte_cdk.sources.message.repository import InMemoryMessageRepository
 from airbyte_cdk.sources.streams.concurrent.abstract_stream import AbstractStream
+from airbyte_cdk.sources.streams.concurrent.default_stream import DefaultStream
 from airbyte_cdk.sources.streams.concurrent.partitions.types import QueueItem
 from airbyte_cdk.sources.utils.slice_logger import (
     AlwaysLogSliceLogger,
@@ -405,8 +406,6 @@ class ConcurrentDeclarativeSource(Source):
         if api_budget_model:
             self._constructor.set_api_budget(api_budget_model, self._config)
 
-        self._constructor.set_stream_groups(self._source_config)
-
         prepared_configs = self._initialize_cache_for_parent_streams(deepcopy(stream_configs))
 
         source_streams = [
@@ -422,7 +421,34 @@ class ConcurrentDeclarativeSource(Source):
             )
             for stream_config in prepared_configs
         ]
+
+        self._apply_stream_groups(source_streams)
+
         return source_streams
+
+    def _apply_stream_groups(self, streams: List[AbstractStream]) -> None:
+        """Set block_simultaneous_read on streams based on the manifest's stream_groups config.
+
+        Iterates over the resolved manifest's stream_groups and matches group membership
+        against actual created stream instances by name.
+        """
+        stream_groups = self._source_config.get("stream_groups", {})
+        if not stream_groups:
+            return
+
+        # Build stream_name -> group_name mapping from the resolved manifest
+        stream_name_to_group: Dict[str, str] = {}
+        for group_name, group_config in stream_groups.items():
+            for stream_ref in group_config.get("streams", []):
+                if isinstance(stream_ref, dict):
+                    stream_name = stream_ref.get("name", "")
+                    if stream_name:
+                        stream_name_to_group[stream_name] = group_name
+
+        # Apply group to matching stream instances
+        for stream in streams:
+            if isinstance(stream, DefaultStream) and stream.name in stream_name_to_group:
+                stream.block_simultaneous_read = stream_name_to_group[stream.name]
 
     @staticmethod
     def _initialize_cache_for_parent_streams(

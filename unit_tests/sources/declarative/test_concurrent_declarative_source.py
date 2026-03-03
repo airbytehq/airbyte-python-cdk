@@ -56,14 +56,12 @@ from airbyte_cdk.sources.declarative.concurrent_declarative_source import (
 from airbyte_cdk.sources.declarative.extractors.record_filter import (
     ClientSideIncrementalRecordFilterDecorator,
 )
-from airbyte_cdk.sources.declarative.parsers.model_to_component_factory import (
-    ModelToComponentFactory,
-)
 from airbyte_cdk.sources.declarative.partition_routers import AsyncJobPartitionRouter
 from airbyte_cdk.sources.declarative.retrievers.simple_retriever import SimpleRetriever
 from airbyte_cdk.sources.declarative.stream_slicers.declarative_partition_generator import (
     StreamSlicerPartitionGenerator,
 )
+from airbyte_cdk.sources.message.repository import InMemoryMessageRepository
 from airbyte_cdk.sources.streams import Stream
 from airbyte_cdk.sources.streams.checkpoint import Cursor
 from airbyte_cdk.sources.streams.concurrent.cursor import ConcurrentCursor
@@ -5155,17 +5153,37 @@ def test_given_record_selector_is_filtering_when_read_then_raise_error():
         list(source.read(logger=source.logger, config=input_config, catalog=catalog, state=[]))
 
 
+def _make_default_stream(name: str) -> DefaultStream:
+    """Create a minimal DefaultStream instance for testing."""
+    from airbyte_cdk.sources.streams.concurrent.cursor import FinalStateCursor
+
+    cursor = FinalStateCursor(
+        stream_name=name, stream_namespace=None, message_repository=InMemoryMessageRepository()
+    )
+    return DefaultStream(
+        partition_generator=Mock(),
+        name=name,
+        json_schema={},
+        primary_key=[],
+        cursor_field=None,
+        logger=logging.getLogger(f"test.{name}"),
+        cursor=cursor,
+    )
+
+
 @pytest.mark.parametrize(
-    "manifest,expected",
+    "source_config,stream_names,expected_groups",
     [
         pytest.param(
             {},
-            {},
+            ["my_stream"],
+            {"my_stream": ""},
             id="no_stream_groups",
         ),
         pytest.param(
             {"stream_groups": {}},
-            {},
+            ["my_stream"],
+            {"my_stream": ""},
             id="empty_stream_groups",
         ),
         pytest.param(
@@ -5180,16 +5198,15 @@ def test_given_record_selector_is_filtering_when_read_then_raise_error():
                     }
                 }
             },
-            {"deals": "crm_objects", "companies": "crm_objects"},
-            id="resolved_stream_refs",
+            ["deals", "companies", "no_group"],
+            {"deals": "crm_objects", "companies": "crm_objects", "no_group": ""},
+            id="single_group_with_unmatched_stream",
         ),
         pytest.param(
             {
                 "stream_groups": {
                     "group_a": {
-                        "streams": [
-                            {"name": "stream1", "type": "DeclarativeStream"},
-                        ],
+                        "streams": [{"name": "stream1", "type": "DeclarativeStream"}],
                         "action": {"type": "BlockSimultaneousSyncsAction"},
                     },
                     "group_b": {
@@ -5201,26 +5218,20 @@ def test_given_record_selector_is_filtering_when_read_then_raise_error():
                     },
                 }
             },
+            ["stream1", "stream2", "stream3"],
             {"stream1": "group_a", "stream2": "group_b", "stream3": "group_b"},
             id="multiple_groups",
         ),
-        pytest.param(
-            {
-                "stream_groups": {
-                    "fallback_group": {
-                        "streams": [
-                            "#/definitions/my_stream",
-                        ],
-                        "action": {"type": "BlockSimultaneousSyncsAction"},
-                    }
-                }
-            },
-            {"my_stream": "fallback_group"},
-            id="unresolved_string_refs_fallback",
-        ),
     ],
 )
-def test_build_stream_name_to_group(manifest, expected):
-    """Test _build_stream_name_to_group correctly maps stream names to group names."""
-    result = ModelToComponentFactory._build_stream_name_to_group(manifest)
-    assert result == expected
+def test_apply_stream_groups(source_config, stream_names, expected_groups):
+    """Test _apply_stream_groups sets block_simultaneous_read on matching stream instances."""
+    streams = [_make_default_stream(name) for name in stream_names]
+
+    source = Mock()
+    source._source_config = source_config
+
+    ConcurrentDeclarativeSource._apply_stream_groups(source, streams)
+
+    for stream in streams:
+        assert stream.block_simultaneous_read == expected_groups[stream.name]
