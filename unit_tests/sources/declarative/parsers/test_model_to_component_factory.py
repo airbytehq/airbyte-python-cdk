@@ -5215,7 +5215,12 @@ list_stream:
 
 
 def test_block_simultaneous_read_from_stream_groups():
-    """Test that stream_groups in the manifest flow through to DefaultStream.block_simultaneous_read."""
+    """Test that factory-created streams default to empty block_simultaneous_read.
+
+    The factory no longer handles stream_groups — that's done by
+    ConcurrentDeclarativeSource._apply_stream_groups after stream creation.
+    This test verifies the factory creates streams without group info.
+    """
     content = """
     definitions:
       parent_stream:
@@ -5244,75 +5249,6 @@ def test_block_simultaneous_read_from_stream_groups():
             properties:
               id:
                 type: string
-
-      child_stream:
-        type: DeclarativeStream
-        name: "child"
-        primary_key: "id"
-        retriever:
-          type: SimpleRetriever
-          requester:
-            type: HttpRequester
-            url_base: "https://api.example.com"
-            path: "/child"
-            http_method: "GET"
-            authenticator:
-              type: BearerAuthenticator
-              api_token: "{{ config['api_key'] }}"
-          record_selector:
-            type: RecordSelector
-            extractor:
-              type: DpathExtractor
-              field_path: []
-          partition_router:
-            type: SubstreamPartitionRouter
-            parent_stream_configs:
-              - type: ParentStreamConfig
-                stream: "#/definitions/parent_stream"
-                parent_key: "id"
-                partition_field: "parent_id"
-        schema_loader:
-          type: InlineSchemaLoader
-          schema:
-            type: object
-            properties:
-              id:
-                type: string
-              parent_id:
-                type: string
-
-      no_block_stream:
-        type: DeclarativeStream
-        name: "no_block"
-        primary_key: "id"
-        retriever:
-          type: SimpleRetriever
-          requester:
-            type: HttpRequester
-            url_base: "https://api.example.com"
-            path: "/no_block"
-            http_method: "GET"
-            authenticator:
-              type: BearerAuthenticator
-              api_token: "{{ config['api_key'] }}"
-          record_selector:
-            type: RecordSelector
-            extractor:
-              type: DpathExtractor
-              field_path: []
-        schema_loader:
-          type: InlineSchemaLoader
-          schema:
-            type: object
-            properties:
-              id:
-                type: string
-
-    stream_groups:
-      issues_endpoint:
-        streams:
-          - "#/definitions/parent_stream"
-        action: BlockSimultaneousSyncsAction
     """
 
     config = {"api_key": "test_key"}
@@ -5320,45 +5256,18 @@ def test_block_simultaneous_read_from_stream_groups():
     parsed_manifest = YamlDeclarativeSource._parse(content)
     resolved_manifest = resolver.preprocess_manifest(parsed_manifest)
 
-    # Use the factory's set_stream_groups to resolve stream_groups from the manifest
-    factory_with_groups = ModelToComponentFactory()
-    factory_with_groups.set_stream_groups(resolved_manifest)
+    factory = ModelToComponentFactory()
 
-    # Test parent stream gets block_simultaneous_read from stream_groups
     parent_manifest = transformer.propagate_types_and_parameters(
         "", resolved_manifest["definitions"]["parent_stream"], {}
     )
-    parent_stream: DefaultStream = factory_with_groups.create_component(
+    parent_stream: DefaultStream = factory.create_component(
         model_type=DeclarativeStreamModel, component_definition=parent_manifest, config=config
     )
 
     assert isinstance(parent_stream, DefaultStream)
     assert parent_stream.name == "parent"
-    assert parent_stream.block_simultaneous_read == "issues_endpoint"
-
-    # Test child stream is NOT in the group (to avoid deadlock with parent)
-    child_manifest = transformer.propagate_types_and_parameters(
-        "", resolved_manifest["definitions"]["child_stream"], {}
-    )
-    child_stream: DefaultStream = factory_with_groups.create_component(
-        model_type=DeclarativeStreamModel, component_definition=child_manifest, config=config
-    )
-
-    assert isinstance(child_stream, DefaultStream)
-    assert child_stream.name == "child"
-    assert child_stream.block_simultaneous_read == ""
-
-    # Test stream not in any group defaults to empty string
-    no_block_manifest = transformer.propagate_types_and_parameters(
-        "", resolved_manifest["definitions"]["no_block_stream"], {}
-    )
-    no_block_stream: DefaultStream = factory_with_groups.create_component(
-        model_type=DeclarativeStreamModel, component_definition=no_block_manifest, config=config
-    )
-
-    assert isinstance(no_block_stream, DefaultStream)
-    assert no_block_stream.name == "no_block"
-    assert no_block_stream.block_simultaneous_read == ""
+    assert parent_stream.block_simultaneous_read == ""
 
 
 def get_schema_loader(stream: DefaultStream):
