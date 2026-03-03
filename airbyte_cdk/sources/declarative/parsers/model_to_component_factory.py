@@ -705,49 +705,8 @@ class ModelToComponentFactory:
         self._connector_state_manager = connector_state_manager or ConnectorStateManager()
         self._api_budget: Optional[Union[APIBudget]] = api_budget
         self._job_tracker: JobTracker = JobTracker(max_concurrent_async_job_count or 1)
-        self._stream_name_to_group: Dict[str, str] = {}
         # placeholder for deprecation warnings
         self._collected_deprecation_logs: List[ConnectorBuilderLogMessage] = []
-
-    def set_stream_groups(self, manifest: Mapping[str, Any]) -> None:
-        """Build and set the stream-name-to-group mapping from the manifest's stream_groups config.
-
-        After manifest reference resolution, each stream reference in stream_groups.streams
-        is resolved to the full stream definition dict containing a 'name' field.
-        """
-        self._stream_name_to_group = self._build_stream_name_to_group(manifest)
-
-    @staticmethod
-    def _build_stream_name_to_group(manifest: Mapping[str, Any]) -> Dict[str, str]:
-        """Build a mapping from stream name to group name based on the stream_groups manifest config.
-
-        After manifest reference resolution, each stream reference in stream_groups.streams
-        is resolved to the full stream definition dict containing a 'name' field.
-
-        Returns:
-            A dict mapping stream name -> group name for streams that belong to a group.
-        """
-        stream_name_to_group: Dict[str, str] = {}
-        stream_groups = manifest.get("stream_groups", {})
-        if not stream_groups:
-            return stream_name_to_group
-
-        for group_name, group_config in stream_groups.items():
-            streams = group_config.get("streams", [])
-            for stream_ref in streams:
-                if isinstance(stream_ref, dict):
-                    # After reference resolution, stream_ref is a full stream definition dict
-                    stream_name = stream_ref.get("name", "")
-                    if stream_name:
-                        stream_name_to_group[stream_name] = group_name
-                elif isinstance(stream_ref, str):
-                    # If not resolved (shouldn't happen normally), extract name from ref path
-                    # e.g., "#/definitions/my_stream" -> "my_stream"
-                    if stream_ref.startswith("#/definitions/"):
-                        stream_name = stream_ref.split("/")[-1]
-                        stream_name_to_group[stream_name] = group_name
-
-        return stream_name_to_group
 
     def _init_mappings(self) -> None:
         self.PYDANTIC_MODEL_TO_CONSTRUCTOR: Mapping[Type[BaseModel], Callable[..., Any]] = {
@@ -2186,7 +2145,6 @@ class ModelToComponentFactory:
             logger=logging.getLogger(f"airbyte.{stream_name}"),
             cursor=concurrent_cursor,
             supports_file_transfer=hasattr(model, "file_uploader") and bool(model.file_uploader),
-            block_simultaneous_read=self._stream_name_to_group.get(stream_name, ""),
         )
 
     def _migrate_state(self, model: DeclarativeStreamModel, config: Config) -> None:

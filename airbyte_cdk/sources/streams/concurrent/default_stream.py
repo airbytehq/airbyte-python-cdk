@@ -101,6 +101,10 @@ class DefaultStream(AbstractStream):
         """Returns the blocking group name for this stream, or empty string if no blocking"""
         return self._block_simultaneous_read
 
+    @block_simultaneous_read.setter
+    def block_simultaneous_read(self, value: str) -> None:
+        self._block_simultaneous_read = value
+
     def check_availability(self) -> StreamAvailability:
         """
         Check stream availability by attempting to read the first record of the stream.
