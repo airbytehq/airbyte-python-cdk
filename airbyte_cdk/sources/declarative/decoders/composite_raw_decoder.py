@@ -116,7 +116,7 @@ class CsvParser(Parser):
         return self.delimiter
 
     @staticmethod
-    def _skip_rows(text_data: TextIOWrapper, rows_to_skip: int) -> None:
+    def _skip_rows(text_data: io.TextIOBase, rows_to_skip: int) -> None:
         """Skip a specified number of rows from the current position in the text stream."""
         for _ in range(rows_to_skip):
             text_data.readline()
