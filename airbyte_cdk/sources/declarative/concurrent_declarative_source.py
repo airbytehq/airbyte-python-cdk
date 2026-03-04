@@ -430,8 +430,13 @@ class ConcurrentDeclarativeSource(Source):
         """Set block_simultaneous_read on streams based on the manifest's stream_groups config.
 
         Iterates over the resolved manifest's stream_groups and matches group membership
-        against actual created stream instances by name.
+        against actual created stream instances by name. Validates that no stream shares a
+        group with any of its parent streams, which would cause a deadlock.
         """
+        from airbyte_cdk.sources.declarative.partition_routers.substream_partition_router import (
+            SubstreamPartitionRouter,
+        )
+
         stream_groups = self._source_config.get("stream_groups", {})
         if not stream_groups:
             return
@@ -444,6 +449,23 @@ class ConcurrentDeclarativeSource(Source):
                     stream_name = stream_ref.get("name", "")
                     if stream_name:
                         stream_name_to_group[stream_name] = group_name
+
+        # Validate no stream shares a group with its parent streams
+        for stream in streams:
+            if not isinstance(stream, DefaultStream) or stream.name not in stream_name_to_group:
+                continue
+            partition_router = stream.get_partition_router()
+            if not isinstance(partition_router, SubstreamPartitionRouter):
+                continue
+            group_name = stream_name_to_group[stream.name]
+            for parent_config in partition_router.parent_stream_configs:
+                parent_name = parent_config.stream.name
+                if stream_name_to_group.get(parent_name) == group_name:
+                    raise ValueError(
+                        f"Stream '{stream.name}' and its parent stream '{parent_name}' "
+                        f"are both in group '{group_name}'. "
+                        f"A child stream must not share a group with its parent to avoid deadlock."
+                    )
 
         # Apply group to matching stream instances
         for stream in streams:
