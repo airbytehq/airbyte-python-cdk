@@ -76,6 +76,9 @@ from airbyte_cdk.sources.declarative.parsers.manifest_reference_resolver import 
 from airbyte_cdk.sources.declarative.parsers.model_to_component_factory import (
     ModelToComponentFactory,
 )
+from airbyte_cdk.sources.declarative.partition_routers.substream_partition_router import (
+    SubstreamPartitionRouter,
+)
 from airbyte_cdk.sources.declarative.resolvers import COMPONENTS_RESOLVER_TYPE_MAPPING
 from airbyte_cdk.sources.declarative.spec.spec import Spec
 from airbyte_cdk.sources.declarative.types import Config, ConnectionDefinition
@@ -433,10 +436,6 @@ class ConcurrentDeclarativeSource(Source):
         against actual created stream instances by name. Validates that no stream shares a
         group with any of its parent streams, which would cause a deadlock.
         """
-        from airbyte_cdk.sources.declarative.partition_routers.substream_partition_router import (
-            SubstreamPartitionRouter,
-        )
-
         stream_groups = self._source_config.get("stream_groups", {})
         if not stream_groups:
             return
