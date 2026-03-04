@@ -28,8 +28,12 @@ from airbyte_cdk.sources.concurrent_source.partition_generation_completed_sentin
 )
 from airbyte_cdk.sources.concurrent_source.stream_thread_exception import StreamThreadException
 from airbyte_cdk.sources.concurrent_source.thread_pool_manager import ThreadPoolManager
+from airbyte_cdk.sources.declarative.partition_routers.substream_partition_router import (
+    SubstreamPartitionRouter,
+)
 from airbyte_cdk.sources.message import LogMessage, MessageRepository
 from airbyte_cdk.sources.streams.concurrent.abstract_stream import AbstractStream
+from airbyte_cdk.sources.streams.concurrent.default_stream import DefaultStream
 from airbyte_cdk.sources.streams.concurrent.partition_enqueuer import PartitionEnqueuer
 from airbyte_cdk.sources.streams.concurrent.partition_reader import PartitionReader
 from airbyte_cdk.sources.streams.concurrent.partitions.partition import Partition
@@ -822,18 +826,22 @@ class TestBlockSimultaneousRead(unittest.TestCase):
     def _create_mock_stream_with_parent(
         self, name: str, parent_stream, block_simultaneous_read: str = ""
     ):
-        """Helper to create a mock stream with a parent stream"""
-        stream = self._create_mock_stream(name, block_simultaneous_read)
+        """Helper to create a mock stream with a parent stream."""
+        stream = Mock(spec=DefaultStream)
+        stream.name = name
+        stream.block_simultaneous_read = block_simultaneous_read
+        stream.as_airbyte_stream.return_value = AirbyteStream(
+            name=name,
+            json_schema={},
+            supported_sync_modes=[SyncMode.full_refresh],
+        )
+        stream.cursor.ensure_at_least_one_state_emitted = Mock()
 
-        # Mock the retriever and partition router for parent relationship
-        mock_retriever = Mock()
-        mock_partition_router = Mock()
+        mock_partition_router = Mock(spec=SubstreamPartitionRouter)
         mock_parent_config = Mock()
         mock_parent_config.stream = parent_stream
-
         mock_partition_router.parent_stream_configs = [mock_parent_config]
-        mock_retriever.partition_router = mock_partition_router
-        stream.retriever = mock_retriever
+        stream.get_partition_router.return_value = mock_partition_router
 
         return stream
 
@@ -1396,3 +1404,39 @@ class TestBlockSimultaneousRead(unittest.TestCase):
         ]
         assert len(started_messages) == 1
         assert started_messages[0].trace.stream_status.stream_descriptor.name == "child"
+
+
+def test_is_done_raises_when_partition_generation_queue_not_empty():
+    """Test is_done raises AirbyteTracedException if streams remain in the partition generation queue."""
+    partition_enqueuer = Mock(spec=PartitionEnqueuer)
+    thread_pool_manager = Mock(spec=ThreadPoolManager)
+    logger = Mock(spec=logging.Logger)
+    slice_logger = Mock(spec=SliceLogger)
+    message_repository = Mock(spec=MessageRepository)
+    message_repository.consume_queue.return_value = []
+    partition_reader = Mock(spec=PartitionReader)
+
+    stream = Mock(spec=AbstractStream)
+    stream.name = "stuck_stream"
+    stream.block_simultaneous_read = ""
+    stream.as_airbyte_stream.return_value = AirbyteStream(
+        name="stuck_stream",
+        json_schema={},
+        supported_sync_modes=[SyncMode.full_refresh],
+    )
+
+    handler = ConcurrentReadProcessor(
+        [stream],
+        partition_enqueuer,
+        thread_pool_manager,
+        logger,
+        slice_logger,
+        message_repository,
+        partition_reader,
+    )
+
+    # Artificially mark the stream as done without removing it from the partition generation queue
+    handler._streams_done.add("stuck_stream")
+
+    with pytest.raises(AirbyteTracedException, match="remained in the partition generation queue"):
+        handler.is_done()
