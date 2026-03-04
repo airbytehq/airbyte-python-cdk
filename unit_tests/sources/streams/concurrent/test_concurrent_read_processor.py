@@ -28,6 +28,9 @@ from airbyte_cdk.sources.concurrent_source.partition_generation_completed_sentin
 )
 from airbyte_cdk.sources.concurrent_source.stream_thread_exception import StreamThreadException
 from airbyte_cdk.sources.concurrent_source.thread_pool_manager import ThreadPoolManager
+from airbyte_cdk.sources.declarative.partition_routers.grouping_partition_router import (
+    GroupingPartitionRouter,
+)
 from airbyte_cdk.sources.declarative.partition_routers.substream_partition_router import (
     SubstreamPartitionRouter,
 )
@@ -1440,3 +1443,85 @@ def test_is_done_raises_when_partition_generation_queue_not_empty():
 
     with pytest.raises(AirbyteTracedException, match="remained in the partition generation queue"):
         handler.is_done()
+
+
+def test_is_done_raises_when_active_groups_not_empty():
+    """Test is_done raises AirbyteTracedException if active groups remain after all streams complete."""
+    partition_enqueuer = Mock(spec=PartitionEnqueuer)
+    thread_pool_manager = Mock(spec=ThreadPoolManager)
+    logger = Mock(spec=logging.Logger)
+    slice_logger = Mock(spec=SliceLogger)
+    message_repository = Mock(spec=MessageRepository)
+    message_repository.consume_queue.return_value = []
+    partition_reader = Mock(spec=PartitionReader)
+
+    stream = Mock(spec=AbstractStream)
+    stream.name = "stuck_stream"
+    stream.block_simultaneous_read = "my_group"
+    stream.as_airbyte_stream.return_value = AirbyteStream(
+        name="stuck_stream",
+        json_schema={},
+        supported_sync_modes=[SyncMode.full_refresh],
+    )
+
+    handler = ConcurrentReadProcessor(
+        [stream],
+        partition_enqueuer,
+        thread_pool_manager,
+        logger,
+        slice_logger,
+        message_repository,
+        partition_reader,
+    )
+
+    # Mark stream as done but leave the group active (simulating a bug)
+    handler._streams_done.add("stuck_stream")
+    handler._stream_instances_to_start_partition_generation.clear()
+    handler._active_groups["my_group"] = {"stuck_stream"}
+
+    with pytest.raises(
+        AirbyteTracedException, match="still active after all streams were marked done"
+    ):
+        handler.is_done()
+
+
+def test_collect_parent_stream_names_unwraps_grouping_partition_router():
+    """Test _collect_all_parent_stream_names unwraps GroupingPartitionRouter to find parents."""
+    partition_enqueuer = Mock(spec=PartitionEnqueuer)
+    thread_pool_manager = Mock(spec=ThreadPoolManager)
+    logger = Mock(spec=logging.Logger)
+    slice_logger = Mock(spec=SliceLogger)
+    message_repository = Mock(spec=MessageRepository)
+    message_repository.consume_queue.return_value = []
+    partition_reader = Mock(spec=PartitionReader)
+
+    parent_stream = Mock(spec=AbstractStream)
+    parent_stream.name = "parent"
+    parent_stream.block_simultaneous_read = ""
+
+    # Child has a GroupingPartitionRouter wrapping a SubstreamPartitionRouter
+    child_stream = Mock(spec=DefaultStream)
+    child_stream.name = "child"
+    child_stream.block_simultaneous_read = ""
+
+    mock_substream_router = Mock(spec=SubstreamPartitionRouter)
+    mock_parent_config = Mock()
+    mock_parent_config.stream = parent_stream
+    mock_substream_router.parent_stream_configs = [mock_parent_config]
+
+    mock_grouping_router = Mock(spec=GroupingPartitionRouter)
+    mock_grouping_router.underlying_partition_router = mock_substream_router
+    child_stream.get_partition_router.return_value = mock_grouping_router
+
+    handler = ConcurrentReadProcessor(
+        [parent_stream, child_stream],
+        partition_enqueuer,
+        thread_pool_manager,
+        logger,
+        slice_logger,
+        message_repository,
+        partition_reader,
+    )
+
+    parent_names = handler._collect_all_parent_stream_names("child")
+    assert parent_names == {"parent"}
