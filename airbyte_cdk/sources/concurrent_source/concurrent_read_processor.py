@@ -13,6 +13,9 @@ from airbyte_cdk.sources.concurrent_source.partition_generation_completed_sentin
 )
 from airbyte_cdk.sources.concurrent_source.stream_thread_exception import StreamThreadException
 from airbyte_cdk.sources.concurrent_source.thread_pool_manager import ThreadPoolManager
+from airbyte_cdk.sources.declarative.partition_routers.grouping_partition_router import (
+    GroupingPartitionRouter,
+)
 from airbyte_cdk.sources.declarative.partition_routers.substream_partition_router import (
     SubstreamPartitionRouter,
 )
@@ -398,6 +401,8 @@ class ConcurrentReadProcessor:
         partition_router = (
             stream.get_partition_router() if isinstance(stream, DefaultStream) else None
         )
+        if isinstance(partition_router, GroupingPartitionRouter):
+            partition_router = partition_router.underlying_partition_router
 
         if isinstance(partition_router, SubstreamPartitionRouter):
             for parent_config in partition_router.parent_stream_configs:
