@@ -13,8 +13,12 @@ from airbyte_cdk.sources.concurrent_source.partition_generation_completed_sentin
 )
 from airbyte_cdk.sources.concurrent_source.stream_thread_exception import StreamThreadException
 from airbyte_cdk.sources.concurrent_source.thread_pool_manager import ThreadPoolManager
+from airbyte_cdk.sources.declarative.partition_routers.substream_partition_router import (
+    SubstreamPartitionRouter,
+)
 from airbyte_cdk.sources.message import MessageRepository
 from airbyte_cdk.sources.streams.concurrent.abstract_stream import AbstractStream
+from airbyte_cdk.sources.streams.concurrent.default_stream import DefaultStream
 from airbyte_cdk.sources.streams.concurrent.partition_enqueuer import PartitionEnqueuer
 from airbyte_cdk.sources.streams.concurrent.partition_reader import PartitionReader
 from airbyte_cdk.sources.streams.concurrent.partitions.partition import Partition
@@ -356,6 +360,15 @@ class ConcurrentReadProcessor:
                 for stream_name in self._stream_name_to_instance.keys()
             ]
         )
+        if is_done and self._stream_instances_to_start_partition_generation:
+            stuck_stream_names = [
+                s.name for s in self._stream_instances_to_start_partition_generation
+            ]
+            raise AirbyteTracedException(
+                message="Partition generation queue is not empty after all streams completed.",
+                internal_message=f"Streams {stuck_stream_names} remained in the partition generation queue after all streams were marked done.",
+                failure_type=FailureType.system_error,
+            )
         if is_done and self._exceptions_per_stream_name:
             error_message = generate_failed_streams_error_message(self._exceptions_per_stream_name)
             self._logger.info(error_message)
@@ -378,11 +391,6 @@ class ConcurrentReadProcessor:
         For example, if we have: epics -> issues -> comments
         Then for comments, this returns {issues, epics}.
         """
-        from airbyte_cdk.sources.declarative.partition_routers.substream_partition_router import (
-            SubstreamPartitionRouter,
-        )
-        from airbyte_cdk.sources.streams.concurrent.default_stream import DefaultStream
-
         parent_names: Set[str] = set()
         stream = self._stream_name_to_instance.get(stream_name)
 
