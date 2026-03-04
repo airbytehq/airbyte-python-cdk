@@ -9,9 +9,6 @@ from airbyte_cdk.models import AirbyteStream, SyncMode
 from airbyte_cdk.sources.declarative.incremental.concurrent_partition_cursor import (
     ConcurrentPerPartitionCursor,
 )
-from airbyte_cdk.sources.declarative.partition_routers.grouping_partition_router import (
-    GroupingPartitionRouter,
-)
 from airbyte_cdk.sources.declarative.partition_routers.partition_router import PartitionRouter
 from airbyte_cdk.sources.declarative.stream_slicers.declarative_partition_generator import (
     StreamSlicerPartitionGenerator,
@@ -116,20 +113,13 @@ class DefaultStream(AbstractStream):
         self._block_simultaneous_read = value
 
     def get_partition_router(self) -> PartitionRouter | None:
-        """Return the partition router for this stream, or None if not available.
-
-        If the router is a GroupingPartitionRouter, unwraps it to return the
-        underlying router so callers can inspect parent stream relationships.
-        """
+        """Return the partition router for this stream, or None if not available."""
         if not isinstance(self._stream_partition_generator, StreamSlicerPartitionGenerator):
             return None
         stream_slicer = self._stream_partition_generator._stream_slicer
         if not isinstance(stream_slicer, ConcurrentPerPartitionCursor):
             return None
-        router = stream_slicer._partition_router
-        if isinstance(router, GroupingPartitionRouter):
-            return router.underlying_partition_router
-        return router
+        return stream_slicer._partition_router
 
     def check_availability(self) -> StreamAvailability:
         """
