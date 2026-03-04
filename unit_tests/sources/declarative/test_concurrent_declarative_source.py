@@ -5351,3 +5351,147 @@ def test_apply_stream_groups_allows_parent_child_in_different_groups():
 
     assert parent.block_simultaneous_read == "group_a"
     assert child.block_simultaneous_read == "group_b"
+
+
+def _make_child_stream_with_grouping_router(
+    child_name: str, parent_stream: DefaultStream
+) -> DefaultStream:
+    """Create a DefaultStream with GroupingPartitionRouter wrapping SubstreamPartitionRouter."""
+    from airbyte_cdk.sources.declarative.incremental.concurrent_partition_cursor import (
+        ConcurrentCursorFactory,
+        ConcurrentPerPartitionCursor,
+    )
+    from airbyte_cdk.sources.declarative.partition_routers.grouping_partition_router import (
+        GroupingPartitionRouter,
+    )
+    from airbyte_cdk.sources.declarative.partition_routers.substream_partition_router import (
+        ParentStreamConfig,
+        SubstreamPartitionRouter,
+    )
+    from airbyte_cdk.sources.declarative.stream_slicers.declarative_partition_generator import (
+        DeclarativePartitionFactory,
+        StreamSlicerPartitionGenerator,
+    )
+    from airbyte_cdk.sources.streams.concurrent.cursor import FinalStateCursor
+    from airbyte_cdk.sources.streams.concurrent.state_converters.datetime_stream_state_converter import (
+        EpochValueConcurrentStreamStateConverter,
+    )
+
+    substream_router = SubstreamPartitionRouter(
+        parent_stream_configs=[
+            ParentStreamConfig(
+                stream=parent_stream,
+                parent_key="id",
+                partition_field="parent_id",
+                config={},
+                parameters={},
+            )
+        ],
+        config={},
+        parameters={},
+    )
+
+    grouping_router = GroupingPartitionRouter(
+        group_size=10,
+        underlying_partition_router=substream_router,
+        config={},
+    )
+
+    cursor_factory = ConcurrentCursorFactory(lambda *args, **kwargs: Mock())
+    message_repository = InMemoryMessageRepository()
+    state_converter = EpochValueConcurrentStreamStateConverter()
+
+    per_partition_cursor = ConcurrentPerPartitionCursor(
+        cursor_factory=cursor_factory,
+        partition_router=grouping_router,
+        stream_name=child_name,
+        stream_namespace=None,
+        stream_state={},
+        message_repository=message_repository,
+        connector_state_manager=Mock(),
+        connector_state_converter=state_converter,
+        cursor_field=Mock(cursor_field_key="updated_at"),
+    )
+
+    partition_factory = Mock(spec=DeclarativePartitionFactory)
+    partition_generator = StreamSlicerPartitionGenerator(
+        partition_factory=partition_factory,
+        stream_slicer=per_partition_cursor,
+    )
+
+    cursor = FinalStateCursor(
+        stream_name=child_name, stream_namespace=None, message_repository=message_repository
+    )
+    return DefaultStream(
+        partition_generator=partition_generator,
+        name=child_name,
+        json_schema={},
+        primary_key=[],
+        cursor_field=None,
+        logger=logging.getLogger(f"test.{child_name}"),
+        cursor=cursor,
+    )
+
+
+def test_apply_stream_groups_raises_on_parent_child_in_same_group_with_grouping_router():
+    """Test _apply_stream_groups detects deadlock when GroupingPartitionRouter wraps SubstreamPartitionRouter."""
+    parent = _make_default_stream("parent_stream")
+    child = _make_child_stream_with_grouping_router("child_stream", parent)
+
+    source = Mock()
+    source._source_config = {
+        "stream_groups": {
+            "my_group": {
+                "streams": [
+                    {"name": "parent_stream", "type": "DeclarativeStream"},
+                    {"name": "child_stream", "type": "DeclarativeStream"},
+                ],
+                "action": {"type": "BlockSimultaneousSyncsAction"},
+            }
+        }
+    }
+
+    with pytest.raises(ValueError, match="child stream must not share a group with its parent"):
+        ConcurrentDeclarativeSource._apply_stream_groups(source, [parent, child])
+
+
+@pytest.mark.parametrize(
+    "stream_factory,expected_type",
+    [
+        pytest.param(
+            lambda: _make_default_stream("plain_stream"),
+            type(None),
+            id="no_partition_router_returns_none",
+        ),
+        pytest.param(
+            lambda: _make_child_stream_with_parent("child", _make_default_stream("parent")),
+            "SubstreamPartitionRouter",
+            id="substream_returns_substream_router",
+        ),
+        pytest.param(
+            lambda: _make_child_stream_with_grouping_router(
+                "child", _make_default_stream("parent")
+            ),
+            "GroupingPartitionRouter",
+            id="grouping_returns_grouping_router",
+        ),
+    ],
+)
+def test_get_partition_router(stream_factory, expected_type):
+    """Test DefaultStream.get_partition_router returns the correct router type."""
+    from airbyte_cdk.sources.declarative.partition_routers.grouping_partition_router import (
+        GroupingPartitionRouter,
+    )
+    from airbyte_cdk.sources.declarative.partition_routers.substream_partition_router import (
+        SubstreamPartitionRouter,
+    )
+
+    stream = stream_factory()
+    router = stream.get_partition_router()
+
+    if expected_type is type(None):
+        assert router is None
+    elif expected_type == "SubstreamPartitionRouter":
+        assert isinstance(router, SubstreamPartitionRouter)
+    elif expected_type == "GroupingPartitionRouter":
+        assert isinstance(router, GroupingPartitionRouter)
