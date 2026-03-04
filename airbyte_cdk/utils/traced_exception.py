@@ -51,10 +51,9 @@ class AirbyteTracedException(Exception):
 
     def __str__(self) -> str:
         """Return the user-facing message, falling back to internal_message."""
-
-        if self.message:
+        if self.message is not None:
             return self.message
-        elif self.internal_message:
+        if self.internal_message is not None:
             return self.internal_message
         return ""
 

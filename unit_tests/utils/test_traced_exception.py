@@ -246,6 +246,14 @@ class TestAirbyteTracedExceptionStr:
         airbyte_message = exc.as_airbyte_message()
         assert "User sees this." in airbyte_message.trace.error.stack_trace
 
+    def test_str_with_empty_message_does_not_fall_back_to_internal_message(self) -> None:
+        """Explicit empty message should be respected and not replaced by internal_message."""
+        exc = AirbyteTracedException(
+            internal_message="an internal error that should not be shown to the user",
+            message="",
+        )
+        assert str(exc) == ""
+
     def test_internal_message_preserved_in_trace_error(self) -> None:
         """Verify internal_message is still available in the trace error for debugging."""
         exc = AirbyteTracedException(
