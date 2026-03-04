@@ -373,42 +373,30 @@ class ConcurrentReadProcessor:
         return stream_name in self._streams_done
 
     def _collect_all_parent_stream_names(self, stream_name: str) -> Set[str]:
-        """
-        Recursively collect all parent stream names for a given stream.
-        For example, if we have: epics -> issues -> comments
-        Then for comments, this returns {issues, epics}
+        """Recursively collect all parent stream names for a given stream.
 
-        :param stream_name: The stream to collect parents for
-        :return: Set of all parent stream names (recursively)
+        For example, if we have: epics -> issues -> comments
+        Then for comments, this returns {issues, epics}.
         """
+        from airbyte_cdk.sources.declarative.partition_routers.substream_partition_router import (
+            SubstreamPartitionRouter,
+        )
+        from airbyte_cdk.sources.streams.concurrent.default_stream import DefaultStream
+
         parent_names: Set[str] = set()
         stream = self._stream_name_to_instance.get(stream_name)
 
         if not stream:
             return parent_names
 
-        # Get partition router if it exists (this is where parent streams are defined)
-        partition_router = None
+        partition_router = (
+            stream.get_partition_router() if isinstance(stream, DefaultStream) else None
+        )
 
-        # Try DefaultStream path first (_stream_partition_generator._stream_slicer._partition_router)
-        if (
-            hasattr(stream, "_stream_partition_generator")
-            and hasattr(stream._stream_partition_generator, "_stream_slicer")
-            and hasattr(stream._stream_partition_generator._stream_slicer, "_partition_router")
-        ):
-            partition_router = stream._stream_partition_generator._stream_slicer._partition_router
-        # Fallback to legacy path (retriever.partition_router) for backward compatibility and test mocks
-        elif hasattr(stream, "retriever") and hasattr(stream.retriever, "partition_router"):
-            partition_router = stream.retriever.partition_router
-
-        # SubstreamPartitionRouter has parent_stream_configs
-        if partition_router and hasattr(partition_router, "parent_stream_configs"):
+        if isinstance(partition_router, SubstreamPartitionRouter):
             for parent_config in partition_router.parent_stream_configs:
-                parent_stream = parent_config.stream
-                parent_name = parent_stream.name
+                parent_name = parent_config.stream.name
                 parent_names.add(parent_name)
-
-                # Recursively collect grandparents, great-grandparents, etc.
                 parent_names.update(self._collect_all_parent_stream_names(parent_name))
 
         return parent_names
