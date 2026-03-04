@@ -104,24 +104,35 @@ class CsvParser(Parser):
     encoding: Optional[str] = "utf-8"
     delimiter: Optional[str] = ","
     set_values_to_none: Optional[List[str]] = None
+    skip_rows_before_header: int = 0
+    skip_rows_after_header: int = 0
 
     def _get_delimiter(self) -> Optional[str]:
-        """
-        Get delimiter from the configuration. Check for the escape character and decode it.
-        """
+        """Get delimiter from the configuration. Check for the escape character and decode it."""
         if self.delimiter is not None:
             if self.delimiter.startswith("\\"):
                 self.delimiter = self.delimiter.encode("utf-8").decode("unicode_escape")
 
         return self.delimiter
 
+    @staticmethod
+    def _skip_rows(text_data: TextIOWrapper, rows_to_skip: int) -> None:
+        """Skip a specified number of rows from the current position in the text stream."""
+        for _ in range(rows_to_skip):
+            text_data.readline()
+
     def parse(self, data: BufferedIOBase) -> PARSER_OUTPUT_TYPE:
-        """
-        Parse CSV data from decompressed bytes.
-        """
+        """Parse CSV data from decompressed bytes."""
         text_data = TextIOWrapper(data, encoding=self.encoding)  # type: ignore
+        self._skip_rows(text_data, self.skip_rows_before_header)
         reader = csv.DictReader(text_data, delimiter=self._get_delimiter() or ",")
+        # After DictReader reads the header (first row it encounters), skip additional rows
+        # We need to handle skip_rows_after_header by consuming rows from the reader
+        skipped_after_header = 0
         for row in reader:
+            if skipped_after_header < self.skip_rows_after_header:
+                skipped_after_header += 1
+                continue
             if self.set_values_to_none:
                 row = {k: (None if v in self.set_values_to_none else v) for k, v in row.items()}
             yield row
