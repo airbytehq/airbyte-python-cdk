@@ -3,7 +3,10 @@
 #
 
 from logging import Logger
-from typing import Any, Callable, Iterable, List, Mapping, Optional, Union
+from typing import TYPE_CHECKING, Any, Callable, Iterable, List, Mapping, Optional, Union
+
+if TYPE_CHECKING:
+    from airbyte_cdk.sources.declarative.partition_routers.partition_router import PartitionRouter
 
 from airbyte_cdk.models import AirbyteStream, SyncMode
 from airbyte_cdk.sources.streams.concurrent.abstract_stream import AbstractStream
@@ -104,6 +107,22 @@ class DefaultStream(AbstractStream):
     @block_simultaneous_read.setter
     def block_simultaneous_read(self, value: str) -> None:
         self._block_simultaneous_read = value
+
+    def get_partition_router(self) -> "PartitionRouter | None":
+        """Return the partition router for this stream, or None if not available."""
+        from airbyte_cdk.sources.declarative.incremental.concurrent_partition_cursor import (
+            ConcurrentPerPartitionCursor,
+        )
+        from airbyte_cdk.sources.declarative.stream_slicers.declarative_partition_generator import (
+            StreamSlicerPartitionGenerator,
+        )
+
+        if not isinstance(self._stream_partition_generator, StreamSlicerPartitionGenerator):
+            return None
+        stream_slicer = self._stream_partition_generator._stream_slicer
+        if not isinstance(stream_slicer, ConcurrentPerPartitionCursor):
+            return None
+        return stream_slicer._partition_router
 
     def check_availability(self) -> StreamAvailability:
         """
