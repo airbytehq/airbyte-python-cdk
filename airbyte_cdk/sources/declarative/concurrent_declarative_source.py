@@ -452,21 +452,34 @@ class ConcurrentDeclarativeSource(Source):
                     if stream_name:
                         stream_name_to_group[stream_name] = group_name
 
-        # Validate no stream shares a group with its parent streams
+        # Validate no stream shares a group with any of its ancestor streams
+        stream_name_to_instance: Dict[str, AbstractStream] = {s.name: s for s in streams}
+
+        def _collect_all_ancestor_names(stream_name: str) -> Set[str]:
+            """Recursively collect all ancestor stream names."""
+            ancestors: Set[str] = set()
+            inst = stream_name_to_instance.get(stream_name)
+            if not isinstance(inst, DefaultStream):
+                return ancestors
+            router = inst.get_partition_router()
+            if isinstance(router, GroupingPartitionRouter):
+                router = router.underlying_partition_router
+            if not isinstance(router, SubstreamPartitionRouter):
+                return ancestors
+            for parent_config in router.parent_stream_configs:
+                parent_name = parent_config.stream.name
+                ancestors.add(parent_name)
+                ancestors.update(_collect_all_ancestor_names(parent_name))
+            return ancestors
+
         for stream in streams:
             if not isinstance(stream, DefaultStream) or stream.name not in stream_name_to_group:
                 continue
-            partition_router = stream.get_partition_router()
-            if isinstance(partition_router, GroupingPartitionRouter):
-                partition_router = partition_router.underlying_partition_router
-            if not isinstance(partition_router, SubstreamPartitionRouter):
-                continue
             group_name = stream_name_to_group[stream.name]
-            for parent_config in partition_router.parent_stream_configs:
-                parent_name = parent_config.stream.name
-                if stream_name_to_group.get(parent_name) == group_name:
+            for ancestor_name in _collect_all_ancestor_names(stream.name):
+                if stream_name_to_group.get(ancestor_name) == group_name:
                     raise ValueError(
-                        f"Stream '{stream.name}' and its parent stream '{parent_name}' "
+                        f"Stream '{stream.name}' and its parent stream '{ancestor_name}' "
                         f"are both in group '{group_name}'. "
                         f"A child stream must not share a group with its parent to avoid deadlock."
                     )

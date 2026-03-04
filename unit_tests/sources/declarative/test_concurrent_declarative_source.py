@@ -5433,6 +5433,29 @@ def _make_child_stream_with_grouping_router(
     )
 
 
+def test_apply_stream_groups_raises_on_grandparent_child_in_same_group():
+    """Test _apply_stream_groups detects deadlock when a grandchild and grandparent share a group."""
+    grandparent = _make_default_stream("grandparent_stream")
+    parent = _make_child_stream_with_parent("parent_stream", grandparent)
+    child = _make_child_stream_with_parent("child_stream", parent)
+
+    source = Mock()
+    source._source_config = {
+        "stream_groups": {
+            "my_group": {
+                "streams": [
+                    {"name": "grandparent_stream", "type": "DeclarativeStream"},
+                    {"name": "child_stream", "type": "DeclarativeStream"},
+                ],
+                "action": {"type": "BlockSimultaneousSyncsAction"},
+            }
+        }
+    }
+
+    with pytest.raises(ValueError, match="child stream must not share a group with its parent"):
+        ConcurrentDeclarativeSource._apply_stream_groups(source, [grandparent, parent, child])
+
+
 def test_apply_stream_groups_raises_on_parent_child_in_same_group_with_grouping_router():
     """Test _apply_stream_groups detects deadlock when GroupingPartitionRouter wraps SubstreamPartitionRouter."""
     parent = _make_default_stream("parent_stream")
