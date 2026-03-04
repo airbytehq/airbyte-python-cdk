@@ -5171,6 +5171,75 @@ def _make_default_stream(name: str) -> DefaultStream:
     )
 
 
+def _make_child_stream_with_parent(child_name: str, parent_stream: DefaultStream) -> DefaultStream:
+    """Create a DefaultStream that has a SubstreamPartitionRouter pointing to parent_stream."""
+    from airbyte_cdk.sources.declarative.incremental.concurrent_partition_cursor import (
+        ConcurrentCursorFactory,
+        ConcurrentPerPartitionCursor,
+    )
+    from airbyte_cdk.sources.declarative.partition_routers.substream_partition_router import (
+        ParentStreamConfig,
+        SubstreamPartitionRouter,
+    )
+    from airbyte_cdk.sources.declarative.stream_slicers.declarative_partition_generator import (
+        DeclarativePartitionFactory,
+        StreamSlicerPartitionGenerator,
+    )
+    from airbyte_cdk.sources.streams.concurrent.cursor import FinalStateCursor
+    from airbyte_cdk.sources.streams.concurrent.state_converters.datetime_stream_state_converter import (
+        EpochValueConcurrentStreamStateConverter,
+    )
+
+    partition_router = SubstreamPartitionRouter(
+        parent_stream_configs=[
+            ParentStreamConfig(
+                stream=parent_stream,
+                parent_key="id",
+                partition_field="parent_id",
+                config={},
+                parameters={},
+            )
+        ],
+        config={},
+        parameters={},
+    )
+
+    cursor_factory = ConcurrentCursorFactory(lambda *args, **kwargs: Mock())
+    message_repository = InMemoryMessageRepository()
+    state_converter = EpochValueConcurrentStreamStateConverter()
+
+    per_partition_cursor = ConcurrentPerPartitionCursor(
+        cursor_factory=cursor_factory,
+        partition_router=partition_router,
+        stream_name=child_name,
+        stream_namespace=None,
+        stream_state={},
+        message_repository=message_repository,
+        connector_state_manager=Mock(),
+        connector_state_converter=state_converter,
+        cursor_field=Mock(cursor_field_key="updated_at"),
+    )
+
+    partition_factory = Mock(spec=DeclarativePartitionFactory)
+    partition_generator = StreamSlicerPartitionGenerator(
+        partition_factory=partition_factory,
+        stream_slicer=per_partition_cursor,
+    )
+
+    cursor = FinalStateCursor(
+        stream_name=child_name, stream_namespace=None, message_repository=message_repository
+    )
+    return DefaultStream(
+        partition_generator=partition_generator,
+        name=child_name,
+        json_schema={},
+        primary_key=[],
+        cursor_field=None,
+        logger=logging.getLogger(f"test.{child_name}"),
+        cursor=cursor,
+    )
+
+
 @pytest.mark.parametrize(
     "source_config,stream_names,expected_groups",
     [
@@ -5235,3 +5304,50 @@ def test_apply_stream_groups(source_config, stream_names, expected_groups):
 
     for stream in streams:
         assert stream.block_simultaneous_read == expected_groups[stream.name]
+
+
+def test_apply_stream_groups_raises_on_parent_child_in_same_group():
+    """Test _apply_stream_groups raises ValueError when a child and its parent are in the same group."""
+    parent = _make_default_stream("parent_stream")
+    child = _make_child_stream_with_parent("child_stream", parent)
+
+    source = Mock()
+    source._source_config = {
+        "stream_groups": {
+            "my_group": {
+                "streams": [
+                    {"name": "parent_stream", "type": "DeclarativeStream"},
+                    {"name": "child_stream", "type": "DeclarativeStream"},
+                ],
+                "action": {"type": "BlockSimultaneousSyncsAction"},
+            }
+        }
+    }
+
+    with pytest.raises(ValueError, match="child stream must not share a group with its parent"):
+        ConcurrentDeclarativeSource._apply_stream_groups(source, [parent, child])
+
+
+def test_apply_stream_groups_allows_parent_child_in_different_groups():
+    """Test _apply_stream_groups allows a child and its parent in different groups."""
+    parent = _make_default_stream("parent_stream")
+    child = _make_child_stream_with_parent("child_stream", parent)
+
+    source = Mock()
+    source._source_config = {
+        "stream_groups": {
+            "group_a": {
+                "streams": [{"name": "parent_stream", "type": "DeclarativeStream"}],
+                "action": {"type": "BlockSimultaneousSyncsAction"},
+            },
+            "group_b": {
+                "streams": [{"name": "child_stream", "type": "DeclarativeStream"}],
+                "action": {"type": "BlockSimultaneousSyncsAction"},
+            },
+        }
+    }
+
+    ConcurrentDeclarativeSource._apply_stream_groups(source, [parent, child])
+
+    assert parent.block_simultaneous_read == "group_a"
+    assert child.block_simultaneous_read == "group_b"
