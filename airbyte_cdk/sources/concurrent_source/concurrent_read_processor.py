@@ -260,7 +260,8 @@ class ConcurrentReadProcessor:
             stream_name = stream.name
             stream_group = self._stream_block_simultaneous_read.get(stream_name, "")
 
-            # Check if this stream has a blocking group and is already active
+            # Check if this stream has a blocking group and is already active as parent stream
+            # (i.e. being read from during partition generation for another stream)
             if stream_group and stream_name in self._active_stream_names:
                 # Add back to the END of the queue for retry later
                 self._stream_instances_to_start_partition_generation.append(stream)
@@ -318,7 +319,6 @@ class ConcurrentReadProcessor:
                 self._logger.debug(f"Added '{stream_name}' to active group '{stream_group}'")
 
             # Also mark all parent streams as active (they will be read from during partition generation)
-            parent_streams = self._collect_all_parent_stream_names(stream_name)
             for parent_stream_name in parent_streams:
                 parent_group = self._stream_block_simultaneous_read.get(parent_stream_name, "")
                 if parent_group:
