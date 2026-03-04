@@ -372,6 +372,12 @@ class ConcurrentReadProcessor:
                 internal_message=f"Streams {stuck_stream_names} remained in the partition generation queue after all streams were marked done.",
                 failure_type=FailureType.system_error,
             )
+        if is_done and self._active_groups:
+            raise AirbyteTracedException(
+                message="Active stream groups are not empty after all streams completed.",
+                internal_message=f"Groups {dict(self._active_groups)} still active after all streams were marked done.",
+                failure_type=FailureType.system_error,
+            )
         if is_done and self._exceptions_per_stream_name:
             error_message = generate_failed_streams_error_message(self._exceptions_per_stream_name)
             self._logger.info(error_message)
