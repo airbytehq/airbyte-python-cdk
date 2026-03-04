@@ -166,3 +166,92 @@ def test_given_both_from_exception_and_as_sanitized_airbyte_message_with_stream_
     )
     message = traced_exc.as_sanitized_airbyte_message(stream_descriptor=_ANOTHER_STREAM_DESCRIPTOR)
     assert message.trace.error.stream_descriptor == _A_STREAM_DESCRIPTOR
+
+
+class TestAirbyteTracedExceptionStr:
+    """Tests proving that __str__ returns user-facing message instead of internal_message."""
+
+    def test_str_returns_user_facing_message_when_both_set(self) -> None:
+        exc = AirbyteTracedException(
+            internal_message="raw API error: 401 Unauthorized",
+            message="Authentication credentials are invalid.",
+        )
+        assert str(exc) == "Authentication credentials are invalid."
+
+    def test_str_falls_back_to_internal_message_when_message_is_none(self) -> None:
+        exc = AirbyteTracedException(internal_message="an internal error")
+        assert str(exc) == "an internal error"
+
+    def test_str_returns_empty_string_when_both_none(self) -> None:
+        exc = AirbyteTracedException()
+        assert str(exc) == ""
+
+    def test_str_returns_message_when_internal_message_is_none(self) -> None:
+        exc = AirbyteTracedException(message="A user-friendly error occurred.")
+        assert str(exc) == "A user-friendly error occurred."
+
+    def test_str_used_in_fstring_returns_user_facing_message(self) -> None:
+        exc = AirbyteTracedException(
+            internal_message="internal detail",
+            message="Connection timed out.",
+        )
+        assert f"Error: {exc}" == "Error: Connection timed out."
+
+    def test_str_used_in_logging_format_returns_user_facing_message(self) -> None:
+        exc = AirbyteTracedException(
+            internal_message="socket.timeout: read timed out",
+            message="Request timed out.",
+        )
+        assert "Error: %s" % exc == "Error: Request timed out."
+
+    def test_args_still_contains_internal_message(self) -> None:
+        """Verify args[0] is still internal_message for traceback formatting."""
+        exc = AirbyteTracedException(
+            internal_message="internal detail",
+            message="user-facing message",
+        )
+        assert exc.args[0] == "internal detail"
+
+    def test_str_on_subclass_inherits_behavior(self) -> None:
+        """Verify subclasses inherit the __str__ override without needing their own."""
+
+        class CustomTracedException(AirbyteTracedException):
+            pass
+
+        exc = CustomTracedException(
+            internal_message="raw error",
+            message="User-friendly error.",
+        )
+        assert str(exc) == "User-friendly error."
+
+    def test_str_with_from_exception_factory(self) -> None:
+        original = ValueError("original error")
+        exc = AirbyteTracedException.from_exception(
+            original, message="A validation error occurred."
+        )
+        assert str(exc) == "A validation error occurred."
+        assert exc.internal_message == "original error"
+
+    def test_str_with_from_exception_without_message(self) -> None:
+        original = RuntimeError("runtime failure")
+        exc = AirbyteTracedException.from_exception(original)
+        assert str(exc) == "runtime failure"
+
+    def test_stack_trace_uses_str_representation(self) -> None:
+        """Verify traceback one-liner uses __str__ (user-facing message)."""
+        exc = AirbyteTracedException(
+            internal_message="internal detail for traceback",
+            message="User sees this.",
+        )
+        airbyte_message = exc.as_airbyte_message()
+        assert "User sees this." in airbyte_message.trace.error.stack_trace
+
+    def test_internal_message_preserved_in_trace_error(self) -> None:
+        """Verify internal_message is still available in the trace error for debugging."""
+        exc = AirbyteTracedException(
+            internal_message="raw API error: 401",
+            message="Authentication failed.",
+        )
+        airbyte_message = exc.as_airbyte_message()
+        assert airbyte_message.trace.error.internal_message == "raw API error: 401"
+        assert airbyte_message.trace.error.message == "Authentication failed."
