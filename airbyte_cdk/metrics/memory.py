@@ -10,13 +10,20 @@ with fallback to resource.getrusage for non-containerized environments.
 """
 
 import logging
+import os
 import resource
 import sys
+import tracemalloc
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
 logger = logging.getLogger(__name__)
+
+# Environment variable to opt in to tracemalloc-based Python heap metrics.
+# tracemalloc.start() hooks into CPython's allocator and has ~10-30% runtime overhead,
+# so it must not be enabled by default in production.
+ENV_CDK_TRACEMALLOC_ENABLED = "CDK_TRACEMALLOC_ENABLED"
 
 # cgroup v2 file paths (standard in modern K8s pods)
 CGROUP_V2_MEMORY_CURRENT = Path("/sys/fs/cgroup/memory.current")
@@ -153,3 +160,33 @@ def get_memory_info() -> MemoryInfo:
 
     # Fallback to rusage
     return _read_rusage_memory()
+
+
+def _is_tracemalloc_enabled() -> bool:
+    """Return True if the CDK_TRACEMALLOC_ENABLED env var is set to a truthy value."""
+    return os.environ.get(ENV_CDK_TRACEMALLOC_ENABLED, "").lower() in ("1", "true", "yes")
+
+
+def get_python_heap_bytes() -> Optional[int]:
+    """Return Python heap size in bytes via tracemalloc, or None if not enabled.
+
+    tracemalloc hooks into CPython's allocator and has ~10-30% runtime overhead.
+    It is only activated when the ``CDK_TRACEMALLOC_ENABLED`` env var is set to a
+    truthy value (``1``, ``true``, or ``yes``).
+    """
+    if not _is_tracemalloc_enabled():
+        return None
+
+    if not tracemalloc.is_tracing():
+        try:
+            tracemalloc.start()
+            logger.info(
+                "tracemalloc started (CDK_TRACEMALLOC_ENABLED is set). "
+                "Expect ~10-30%% runtime overhead."
+            )
+        except RuntimeError:
+            logger.debug("tracemalloc failed to start", exc_info=True)
+            return None
+
+    current, _ = tracemalloc.get_traced_memory()
+    return current
