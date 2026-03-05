@@ -20,6 +20,12 @@ class AuthFlowType(Enum):
     oauth1_0 = "oauth1.0"
 
 
+class ScopesJoinStrategy(Enum):
+    space = "space"
+    comma = "comma"
+    plus = "plus"
+
+
 class BasicHttpAuthenticator(BaseModel):
     type: Literal["BasicHttpAuthenticator"]
     username: str = Field(
@@ -845,6 +851,23 @@ class OauthConnectorInputSpecification(BaseModel):
         description="The DeclarativeOAuth Specific string of the scopes needed to be grant for authenticated user.",
         examples=["user:read user:read_orders workspaces:read"],
         title="Scopes",
+    )
+    scopes: Optional[List[str]] = Field(
+        None,
+        description="The DeclarativeOAuth Specific list of scopes needed to be granted for the authenticated user.\nWhen present, takes precedence over the `scope` string property.\nThe scopes are joined using the `scopes_join_strategy` (default: space) before being\nsent to the OAuth provider.",
+        examples=[["user:read", "user:write"]],
+        title="Scopes",
+    )
+    optional_scopes: Optional[List[str]] = Field(
+        None,
+        description="The DeclarativeOAuth Specific list of optional scopes to request from the OAuth provider.\nThese scopes may or may not be granted depending on the provider and user consent.",
+        examples=[["admin:read"]],
+        title="Optional Scopes",
+    )
+    scopes_join_strategy: Optional[ScopesJoinStrategy] = Field(
+        ScopesJoinStrategy.space,
+        description="The strategy used to join the `scopes` array into a single string for the OAuth request.\nDefaults to `space` per RFC 6749.",
+        title="Scopes Join Strategy",
     )
     access_token_url: str = Field(
         ...,

@@ -3064,6 +3064,39 @@ definitions:
               The DeclarativeOAuth Specific string of the scopes needed to be grant for authenticated user.
             examples:
               - user:read user:read_orders workspaces:read
+          scopes:
+            title: Scopes
+            type: array
+            items:
+              type: string
+            description: |-
+              The DeclarativeOAuth Specific list of scopes needed to be granted for the authenticated user.
+              When present, takes precedence over the `scope` string property.
+              The scopes are joined using the `scopes_join_strategy` (default: space) before being
+              sent to the OAuth provider.
+            examples:
+              - ["user:read", "user:write"]
+          optional_scopes:
+            title: Optional Scopes
+            type: array
+            items:
+              type: string
+            description: |-
+              The DeclarativeOAuth Specific list of optional scopes to request from the OAuth provider.
+              These scopes may or may not be granted depending on the provider and user consent.
+            examples:
+              - ["admin:read"]
+          scopes_join_strategy:
+            title: Scopes Join Strategy
+            type: string
+            enum:
+              - space
+              - comma
+              - plus
+            default: space
+            description: |-
+              The strategy used to join the `scopes` array into a single string for the OAuth request.
+              Defaults to `space` per RFC 6749.
           access_token_url:
             title: Access Token URL
             type: string
