@@ -130,33 +130,25 @@ class TestEmitMemoryMetrics:
         client, mock_instance = _make_enabled_client()
 
         mock_info = MemoryInfo(usage_bytes=100_000_000, limit_bytes=200_000_000)
-        with (
-            patch("airbyte_cdk.metrics.get_memory_info", return_value=mock_info),
-            patch("airbyte_cdk.metrics.get_python_heap_bytes", return_value=50_000_000),
-        ):
+        with patch("airbyte_cdk.metrics.get_memory_info", return_value=mock_info):
             client.emit_memory_metrics()
 
         gauge_calls = {call[0][0]: call[0][1] for call in mock_instance.gauge.call_args_list}
         assert gauge_calls["cdk.memory.usage_bytes"] == 100_000_000.0
         assert gauge_calls["cdk.memory.limit_bytes"] == 200_000_000.0
         assert gauge_calls["cdk.memory.usage_percent"] == pytest.approx(0.5)
-        assert gauge_calls["cdk.memory.python_heap_bytes"] == 50_000_000.0
 
     def test_skips_limit_when_unknown(self) -> None:
         client, mock_instance = _make_enabled_client()
 
         mock_info = MemoryInfo(usage_bytes=100_000_000, limit_bytes=None)
-        with (
-            patch("airbyte_cdk.metrics.get_memory_info", return_value=mock_info),
-            patch("airbyte_cdk.metrics.get_python_heap_bytes", return_value=None),
-        ):
+        with patch("airbyte_cdk.metrics.get_memory_info", return_value=mock_info):
             client.emit_memory_metrics()
 
         metric_names = [call[0][0] for call in mock_instance.gauge.call_args_list]
         assert "cdk.memory.usage_bytes" in metric_names
         assert "cdk.memory.limit_bytes" not in metric_names
         assert "cdk.memory.usage_percent" not in metric_names
-        assert "cdk.memory.python_heap_bytes" not in metric_names
 
     def test_noop_when_disabled(self) -> None:
         client = MetricsClient()
@@ -186,10 +178,7 @@ class TestMaybeEmitMemoryMetrics:
         client, mock_instance = _make_enabled_client()
 
         mock_info = MemoryInfo(usage_bytes=100, limit_bytes=200)
-        with (
-            patch("airbyte_cdk.metrics.get_memory_info", return_value=mock_info),
-            patch("airbyte_cdk.metrics.get_python_heap_bytes", return_value=50),
-        ):
+        with patch("airbyte_cdk.metrics.get_memory_info", return_value=mock_info):
             client.maybe_emit_memory_metrics(interval_seconds=0.0)
             first_call_count = mock_instance.gauge.call_count
 

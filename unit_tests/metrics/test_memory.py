@@ -15,7 +15,6 @@ from airbyte_cdk.metrics.memory import (
     _read_cgroup_v2_memory,
     _read_rusage_memory,
     get_memory_info,
-    get_python_heap_bytes,
 )
 
 
@@ -177,11 +176,3 @@ class TestGetMemoryInfo:
 
         assert info.usage_bytes > 0
         assert info.limit_bytes is None
-
-
-class TestGetPythonHeapBytes:
-    def test_returns_integer(self) -> None:
-        result = get_python_heap_bytes()
-        assert result is not None
-        assert isinstance(result, int)
-        assert result >= 0

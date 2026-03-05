@@ -149,23 +149,3 @@ def get_memory_info() -> MemoryInfo:
 
     # Fallback to rusage
     return _read_rusage_memory()
-
-
-def get_python_heap_bytes() -> Optional[int]:
-    """
-    Get Python-specific heap memory usage via tracemalloc.
-
-    Returns the current traced memory size in bytes, or None if tracemalloc
-    is not active. Tracemalloc is started lazily on first call.
-    """
-    import tracemalloc
-
-    if not tracemalloc.is_tracing():
-        try:
-            tracemalloc.start()
-        except RuntimeError:
-            # tracemalloc may fail to start in some environments
-            return None
-
-    current, _ = tracemalloc.get_traced_memory()
-    return current

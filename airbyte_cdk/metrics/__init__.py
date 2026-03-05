@@ -14,7 +14,7 @@ import os
 import time
 from typing import Any, Optional
 
-from airbyte_cdk.metrics.memory import MemoryInfo, get_memory_info, get_python_heap_bytes
+from airbyte_cdk.metrics.memory import MemoryInfo, get_memory_info
 
 logger = logging.getLogger(__name__)
 
@@ -22,7 +22,6 @@ logger = logging.getLogger(__name__)
 METRIC_MEMORY_USAGE_BYTES = "cdk.memory.usage_bytes"
 METRIC_MEMORY_LIMIT_BYTES = "cdk.memory.limit_bytes"
 METRIC_MEMORY_USAGE_PERCENT = "cdk.memory.usage_percent"
-METRIC_MEMORY_PYTHON_HEAP_BYTES = "cdk.memory.python_heap_bytes"
 
 # Default emission interval in seconds
 DEFAULT_EMISSION_INTERVAL_SECONDS = 30.0
@@ -140,7 +139,6 @@ class MetricsClient:
         - cdk.memory.usage_bytes: Current container memory usage
         - cdk.memory.limit_bytes: Container memory limit (if known)
         - cdk.memory.usage_percent: Usage/limit ratio (if limit is known)
-        - cdk.memory.python_heap_bytes: Python-specific heap via tracemalloc
         """
         if not self.enabled:
             return
@@ -155,10 +153,6 @@ class MetricsClient:
 
             if info.usage_percent is not None:
                 self.gauge(METRIC_MEMORY_USAGE_PERCENT, info.usage_percent)
-
-            python_heap = get_python_heap_bytes()
-            if python_heap is not None:
-                self.gauge(METRIC_MEMORY_PYTHON_HEAP_BYTES, float(python_heap))
 
         except Exception:
             # Never let metric collection failures affect the sync
