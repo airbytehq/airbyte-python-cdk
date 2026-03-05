@@ -3064,6 +3064,10 @@ definitions:
               The DeclarativeOAuth Specific string of the scopes needed to be grant for authenticated user.
             examples:
               - user:read user:read_orders workspaces:read
+          # NOTE: scopes, optional_scopes, and scopes_join_strategy are processed by the
+          # platform OAuth handler (DeclarativeOAuthSpecHandler.kt), not by the CDK runtime.
+          # The CDK schema defines the manifest contract; the platform reads these fields
+          # during the OAuth consent flow to build the authorization URL.
           scopes:
             title: Scopes
             type: array

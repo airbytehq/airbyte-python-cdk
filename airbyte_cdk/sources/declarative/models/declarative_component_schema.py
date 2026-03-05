@@ -862,6 +862,10 @@ class OauthConnectorInputSpecification(BaseModel):
         examples=["user:read user:read_orders workspaces:read"],
         title="Scopes",
     )
+    # NOTE: scopes, optional_scopes, and scopes_join_strategy are processed by the
+    # platform OAuth handler (DeclarativeOAuthSpecHandler.kt), not by the CDK runtime.
+    # The CDK schema defines the manifest contract; the platform reads these fields
+    # during the OAuth consent flow to build the authorization URL.
     scopes: Optional[List[OAuthScope]] = Field(
         None,
         description="List of OAuth scope objects. When present, takes precedence over the `scope` string property.\nThe scope values are joined using the `scopes_join_strategy` (default: space) before being\nsent to the OAuth provider.",
