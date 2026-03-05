@@ -120,8 +120,15 @@ class AirbyteTracedException(Exception):
         :param exc: the exception that caused the error
         :param stream_descriptor: describe the stream from which the exception comes from
         """
+        if isinstance(exc, AirbyteTracedException):
+            internal_message = exc.internal_message
+            # Preserve the original user-facing message if the caller didn't provide one
+            if "message" not in kwargs:
+                kwargs["message"] = exc.message
+        else:
+            internal_message = str(exc)
         return cls(
-            internal_message=str(exc),
+            internal_message=internal_message,
             exception=exc,
             stream_descriptor=stream_descriptor,
             *args,

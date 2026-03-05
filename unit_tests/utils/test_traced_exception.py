@@ -263,3 +263,74 @@ class TestAirbyteTracedExceptionStr:
         airbyte_message = exc.as_airbyte_message()
         assert airbyte_message.trace.error.internal_message == "raw API error: 401"
         assert airbyte_message.trace.error.message == "Authentication failed."
+
+
+class TestFromExceptionPreservesFields:
+    """Tests proving that from_exception preserves both fields when wrapping an AirbyteTracedException."""
+
+    def test_from_exception_wrapping_traced_preserves_internal_message(self) -> None:
+        """When wrapping an AirbyteTracedException, internal_message should be taken directly, not via str()."""
+        original = AirbyteTracedException(
+            internal_message="raw API error: 401 Unauthorized",
+            message="Authentication failed.",
+        )
+        wrapped = AirbyteTracedException.from_exception(original)
+        assert wrapped.internal_message == "raw API error: 401 Unauthorized"
+
+    def test_from_exception_wrapping_traced_preserves_message(self) -> None:
+        """When wrapping an AirbyteTracedException without explicit message, the original's message is preserved."""
+        original = AirbyteTracedException(
+            internal_message="raw API error",
+            message="User-friendly error.",
+        )
+        wrapped = AirbyteTracedException.from_exception(original)
+        assert wrapped.message == "User-friendly error."
+
+    def test_from_exception_wrapping_traced_caller_message_overrides(self) -> None:
+        """When the caller provides an explicit message, it should override the original's message."""
+        original = AirbyteTracedException(
+            internal_message="raw API error",
+            message="Original user message.",
+        )
+        wrapped = AirbyteTracedException.from_exception(original, message="Custom wrapper message.")
+        assert wrapped.message == "Custom wrapper message."
+        assert wrapped.internal_message == "raw API error"
+
+    def test_from_exception_wrapping_traced_with_only_message(self) -> None:
+        """When wrapping a traced exception that has message but no internal_message, both fields are preserved."""
+        original = AirbyteTracedException(
+            message="User error only.",
+        )
+        wrapped = AirbyteTracedException.from_exception(original)
+        assert wrapped.internal_message is None
+        assert wrapped.message == "User error only."
+
+    def test_from_exception_wrapping_traced_with_only_internal_message(self) -> None:
+        """When wrapping a traced exception that has only internal_message, it is preserved correctly."""
+        original = AirbyteTracedException(
+            internal_message="internal detail only",
+        )
+        wrapped = AirbyteTracedException.from_exception(original)
+        assert wrapped.internal_message == "internal detail only"
+        assert wrapped.message is None
+
+    def test_from_exception_wrapping_traced_with_neither_field(self) -> None:
+        """When wrapping a traced exception with no messages, both remain None."""
+        original = AirbyteTracedException()
+        wrapped = AirbyteTracedException.from_exception(original)
+        assert wrapped.internal_message is None
+        assert wrapped.message is None
+
+    def test_from_exception_wrapping_regular_exception_unchanged(self) -> None:
+        """Wrapping a regular exception should still use str(exc) for internal_message."""
+        original = ValueError("some value error")
+        wrapped = AirbyteTracedException.from_exception(original)
+        assert wrapped.internal_message == "some value error"
+        assert wrapped.message is None
+
+    def test_from_exception_wrapping_regular_exception_with_message(self) -> None:
+        """Wrapping a regular exception with explicit message kwarg still works."""
+        original = RuntimeError("runtime failure")
+        wrapped = AirbyteTracedException.from_exception(original, message="A runtime error occurred.")
+        assert wrapped.internal_message == "runtime failure"
+        assert wrapped.message == "A runtime error occurred."
