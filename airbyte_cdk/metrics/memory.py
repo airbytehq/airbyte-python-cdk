@@ -11,6 +11,7 @@ with fallback to resource.getrusage for non-containerized environments.
 
 import logging
 import resource
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
@@ -121,8 +122,11 @@ def _read_rusage_memory() -> MemoryInfo:
     This fallback cannot determine the container memory limit.
     """
     rusage = resource.getrusage(resource.RUSAGE_SELF)
-    # ru_maxrss is in KB on Linux
-    usage_bytes = rusage.ru_maxrss * 1024
+    # ru_maxrss is in kilobytes on Linux, but bytes on macOS
+    if sys.platform == "darwin":
+        usage_bytes = rusage.ru_maxrss
+    else:
+        usage_bytes = rusage.ru_maxrss * 1024
     return MemoryInfo(usage_bytes=usage_bytes, limit_bytes=None)
 
 
