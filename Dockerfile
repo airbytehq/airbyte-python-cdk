@@ -22,7 +22,7 @@ RUN pip install dist/*.whl
 
 # Install ddtrace for Datadog APM and memory profiling support.
 # This is a no-op unless DD_PROFILING_ENABLED or similar env vars are set at runtime.
-RUN pip install "ddtrace>=2.16,<3"
+RUN pip install "ddtrace>=3,<5"
 
 # Recreate the original structure
 RUN mkdir -p source_declarative_manifest \
