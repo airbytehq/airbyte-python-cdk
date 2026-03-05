@@ -72,43 +72,6 @@ properties:
     description: A description of the connector. It will be presented on the Source documentation page.
 additionalProperties: false
 definitions:
-  StreamGroup:
-    title: Stream Group
-    description: >
-      A group of streams that share a common resource and should not be read simultaneously.
-      Streams in the same group will be blocked from concurrent reads based on the specified action.
-    type: object
-    required:
-      - streams
-      - action
-    properties:
-      streams:
-        title: Streams
-        description: >
-          List of references to streams that belong to this group.
-        type: array
-        items:
-          anyOf:
-            - "$ref": "#/definitions/DeclarativeStream"
-      action:
-        title: Action
-        description: The action to apply to streams in this group.
-        "$ref": "#/definitions/BlockSimultaneousSyncsAction"
-  BlockSimultaneousSyncsAction:
-    title: Block Simultaneous Syncs Action
-    description: >
-      Action that prevents streams in the same group from being read concurrently.
-      When applied to a stream group, streams with this action will be deferred if
-      another stream in the same group is currently active.
-      This is useful for APIs that don't allow concurrent access to the same
-      endpoint or session. Only applies to ConcurrentDeclarativeSource.
-    type: object
-    required:
-      - type
-    properties:
-      type:
-        type: string
-        enum: [BlockSimultaneousSyncsAction]
   AddedFieldDefinition:
     title: Definition Of Field To Add
     description: Defines the field to add on a record.
@@ -312,6 +275,21 @@ definitions:
       $parameters:
         type: object
         additionalProperties: true
+  BlockSimultaneousSyncsAction:
+    title: Block Simultaneous Syncs Action
+    description: >
+      Action that prevents streams in the same group from being read concurrently.
+      When applied to a stream group, streams with this action will be deferred if
+      another stream in the same group is currently active.
+      This is useful for APIs that don't allow concurrent access to the same
+      endpoint or session. Only applies to ConcurrentDeclarativeSource.
+    type: object
+    required:
+      - type
+    properties:
+      type:
+        type: string
+        enum: [BlockSimultaneousSyncsAction]
   SelectiveAuthenticator:
     title: Selective Authenticator
     description: Authenticator that selects concrete authenticator based on config property.
@@ -4237,6 +4215,28 @@ definitions:
             - "$ref": "#/definitions/ConfigRemoveFields"
             - "$ref": "#/definitions/CustomConfigTransformation"
         default: []
+  StreamGroup:
+    title: Stream Group
+    description: >
+      A group of streams that share a common resource and should not be read simultaneously.
+      Streams in the same group will be blocked from concurrent reads based on the specified action.
+    type: object
+    required:
+      - streams
+      - action
+    properties:
+      streams:
+        title: Streams
+        description: >
+          List of references to streams that belong to this group.
+        type: array
+        items:
+          anyOf:
+            - "$ref": "#/definitions/DeclarativeStream"
+      action:
+        title: Action
+        description: The action to apply to streams in this group.
+        "$ref": "#/definitions/BlockSimultaneousSyncsAction"
   SubstreamPartitionRouter:
     title: Substream Partition Router
     description: Partition router that is used to retrieve records that have been partitioned according to records from the specified parent streams. An example of a parent stream is automobile brands and the substream would be the various car models associated with each branch.

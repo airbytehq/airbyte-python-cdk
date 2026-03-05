@@ -52,6 +52,10 @@ class BearerAuthenticator(BaseModel):
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
 
+class BlockSimultaneousSyncsAction(BaseModel):
+    type: Literal["BlockSimultaneousSyncsAction"]
+
+
 class DynamicStreamCheckConfig(BaseModel):
     type: Literal["DynamicStreamCheckConfig"]
     dynamic_stream_name: str = Field(
@@ -2354,23 +2358,6 @@ class ConfigNormalizationRules(BaseModel):
     )
 
 
-class BlockSimultaneousSyncsAction(BaseModel):
-    type: Literal["BlockSimultaneousSyncsAction"]
-
-
-class StreamGroup(BaseModel):
-    streams: List[str] = Field(
-        ...,
-        description='List of references to streams that belong to this group. Use JSON references to stream definitions (e.g., "#/definitions/my_stream").',
-        title="Streams",
-    )
-    action: BlockSimultaneousSyncsAction = Field(
-        ...,
-        description="The action to apply to streams in this group.",
-        title="Action",
-    )
-
-
 class Spec(BaseModel):
     type: Literal["Spec"]
     connection_specification: Dict[str, Any] = Field(
@@ -3121,6 +3108,19 @@ class AsyncRetriever(BaseModel):
         title="Download HTTP Response Format",
     )
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
+
+
+class StreamGroup(BaseModel):
+    streams: List[str] = Field(
+        ...,
+        description='List of references to streams that belong to this group. Use JSON references to stream definitions (e.g., "#/definitions/my_stream").',
+        title="Streams",
+    )
+    action: BlockSimultaneousSyncsAction = Field(
+        ...,
+        description="The action to apply to streams in this group.",
+        title="Action",
+    )
 
 
 class SubstreamPartitionRouter(BaseModel):
