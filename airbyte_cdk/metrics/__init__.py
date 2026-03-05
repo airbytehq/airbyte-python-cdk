@@ -12,9 +12,18 @@ Designed to be a graceful no-op when DD_AGENT_HOST is not set (local dev, CI).
 import logging
 import os
 import time
-from typing import Optional
+from typing import Any, Optional, Protocol
 
 from airbyte_cdk.metrics.memory import MemoryInfo, get_memory_info, get_python_heap_bytes
+
+
+class _StatsdLike(Protocol):
+    """Protocol describing the subset of DogStatsd we use."""
+
+    def gauge(
+        self, metric: str, value: float, tags: Optional[list[str]] = None, **kwargs: Any
+    ) -> None: ...
+
 
 logger = logging.getLogger(__name__)
 
@@ -37,7 +46,7 @@ class MetricsClient:
     """
 
     def __init__(self) -> None:
-        self._statsd: Optional[object] = None
+        self._statsd: Optional[_StatsdLike] = None
         self._tags: list[str] = []
         self._last_emission_time: float = 0.0
         self._initialized = False
@@ -127,7 +136,7 @@ class MetricsClient:
         tags = self._tags + (extra_tags or [])
         try:
             # _statsd is a DogStatsd instance set during initialize(); call gauge directly
-            self._statsd.gauge(metric_name, value, tags=tags)  # type: ignore[union-attr]
+            self._statsd.gauge(metric_name, value, tags=tags)
         except Exception:
             # Never let metric emission failures affect the sync
             logger.debug("Failed to emit metric %s", metric_name, exc_info=True)
