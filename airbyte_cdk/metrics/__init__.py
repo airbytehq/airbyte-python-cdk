@@ -12,18 +12,9 @@ Designed to be a graceful no-op when DD_AGENT_HOST is not set (local dev, CI).
 import logging
 import os
 import time
-from typing import Any, Optional, Protocol
+from typing import Any, Optional
 
 from airbyte_cdk.metrics.memory import MemoryInfo, get_memory_info, get_python_heap_bytes
-
-
-class _StatsdLike(Protocol):
-    """Protocol describing the subset of DogStatsd we use."""
-
-    def gauge(
-        self, metric: str, value: float, tags: Optional[list[str]] = None, **kwargs: Any
-    ) -> None: ...
-
 
 logger = logging.getLogger(__name__)
 
@@ -46,7 +37,7 @@ class MetricsClient:
     """
 
     def __init__(self) -> None:
-        self._statsd: Optional[_StatsdLike] = None
+        self._statsd: Any = None
         self._tags: list[str] = []
         self._last_emission_time: float = 0.0
         self._initialized = False
