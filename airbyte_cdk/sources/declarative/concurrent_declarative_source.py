@@ -250,11 +250,8 @@ class ConcurrentDeclarativeSource(Source):
                 f"initial_number_of_partitions_to_generate={initial_number_of_partitions_to_generate}, "
                 f"source=default (_LOWEST_SAFE_CONCURRENCY_LEVEL)"
             )
-        sys.stdout.write(
-            json.dumps({"type": "LOG", "log": {"level": "INFO", "message": _concurrency_msg}})
-            + "\n"
-        )
-        sys.stdout.flush()
+        sys.stderr.write(f"INFO {_concurrency_msg}\n")
+        sys.stderr.flush()
 
         self._concurrent_source = ConcurrentSource.create(
             num_workers=concurrency_level,
