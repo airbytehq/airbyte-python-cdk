@@ -150,6 +150,32 @@ class TestEmitMemoryMetrics:
         assert "cdk.memory.limit_bytes" not in metric_names
         assert "cdk.memory.usage_percent" not in metric_names
 
+    def test_emits_python_heap_when_tracemalloc_enabled(self) -> None:
+        client, mock_instance = _make_enabled_client()
+
+        mock_info = MemoryInfo(usage_bytes=100_000_000, limit_bytes=200_000_000)
+        with (
+            patch("airbyte_cdk.metrics.get_memory_info", return_value=mock_info),
+            patch("airbyte_cdk.metrics.get_python_heap_bytes", return_value=5_000_000),
+        ):
+            client.emit_memory_metrics()
+
+        gauge_calls = {call[0][0]: call[0][1] for call in mock_instance.gauge.call_args_list}
+        assert gauge_calls["cdk.memory.python_heap_bytes"] == 5_000_000.0
+
+    def test_skips_python_heap_when_tracemalloc_disabled(self) -> None:
+        client, mock_instance = _make_enabled_client()
+
+        mock_info = MemoryInfo(usage_bytes=100_000_000, limit_bytes=200_000_000)
+        with (
+            patch("airbyte_cdk.metrics.get_memory_info", return_value=mock_info),
+            patch("airbyte_cdk.metrics.get_python_heap_bytes", return_value=None),
+        ):
+            client.emit_memory_metrics()
+
+        metric_names = [call[0][0] for call in mock_instance.gauge.call_args_list]
+        assert "cdk.memory.python_heap_bytes" not in metric_names
+
     def test_noop_when_disabled(self) -> None:
         client = MetricsClient()
         # Should not raise

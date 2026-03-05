@@ -4,17 +4,20 @@
 
 """Tests for airbyte_cdk.metrics.memory module."""
 
+import tracemalloc
 from pathlib import Path
 from unittest.mock import patch
 
 import pytest
 
 from airbyte_cdk.metrics.memory import (
+    ENV_CDK_TRACEMALLOC_ENABLED,
     MemoryInfo,
     _read_cgroup_v1_memory,
     _read_cgroup_v2_memory,
     _read_rusage_memory,
     get_memory_info,
+    get_python_heap_bytes,
 )
 
 
@@ -176,3 +179,66 @@ class TestGetMemoryInfo:
 
         assert info.usage_bytes > 0
         assert info.limit_bytes is None
+
+
+class TestGetPythonHeapBytes:
+    """Tests for the opt-in tracemalloc-based heap metric."""
+
+    def test_returns_none_when_env_var_not_set(self) -> None:
+        with patch.dict("os.environ", {}, clear=True):
+            result = get_python_heap_bytes()
+        assert result is None
+
+    def test_returns_none_when_env_var_is_empty(self) -> None:
+        with patch.dict("os.environ", {ENV_CDK_TRACEMALLOC_ENABLED: ""}):
+            result = get_python_heap_bytes()
+        assert result is None
+
+    def test_returns_none_when_env_var_is_false(self) -> None:
+        with patch.dict("os.environ", {ENV_CDK_TRACEMALLOC_ENABLED: "false"}):
+            result = get_python_heap_bytes()
+        assert result is None
+
+    def test_returns_bytes_when_enabled_with_true(self) -> None:
+        was_tracing = tracemalloc.is_tracing()
+        try:
+            with patch.dict("os.environ", {ENV_CDK_TRACEMALLOC_ENABLED: "true"}):
+                result = get_python_heap_bytes()
+            assert result is not None
+            assert isinstance(result, int)
+            assert result >= 0
+        finally:
+            if not was_tracing:
+                tracemalloc.stop()
+
+    def test_returns_bytes_when_enabled_with_1(self) -> None:
+        was_tracing = tracemalloc.is_tracing()
+        try:
+            with patch.dict("os.environ", {ENV_CDK_TRACEMALLOC_ENABLED: "1"}):
+                result = get_python_heap_bytes()
+            assert result is not None
+            assert isinstance(result, int)
+        finally:
+            if not was_tracing:
+                tracemalloc.stop()
+
+    def test_returns_bytes_when_enabled_with_yes(self) -> None:
+        was_tracing = tracemalloc.is_tracing()
+        try:
+            with patch.dict("os.environ", {ENV_CDK_TRACEMALLOC_ENABLED: "yes"}):
+                result = get_python_heap_bytes()
+            assert result is not None
+            assert isinstance(result, int)
+        finally:
+            if not was_tracing:
+                tracemalloc.stop()
+
+    def test_case_insensitive(self) -> None:
+        was_tracing = tracemalloc.is_tracing()
+        try:
+            with patch.dict("os.environ", {ENV_CDK_TRACEMALLOC_ENABLED: "TRUE"}):
+                result = get_python_heap_bytes()
+            assert result is not None
+        finally:
+            if not was_tracing:
+                tracemalloc.stop()
