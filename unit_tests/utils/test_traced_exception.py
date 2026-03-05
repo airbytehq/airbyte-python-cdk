@@ -331,6 +331,8 @@ class TestFromExceptionPreservesFields:
     def test_from_exception_wrapping_regular_exception_with_message(self) -> None:
         """Wrapping a regular exception with explicit message kwarg still works."""
         original = RuntimeError("runtime failure")
-        wrapped = AirbyteTracedException.from_exception(original, message="A runtime error occurred.")
+        wrapped = AirbyteTracedException.from_exception(
+            original, message="A runtime error occurred."
+        )
         assert wrapped.internal_message == "runtime failure"
         assert wrapped.message == "A runtime error occurred."
