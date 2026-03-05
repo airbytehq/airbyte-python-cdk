@@ -3,6 +3,7 @@
 import json
 import logging
 import pkgutil
+import sys
 from copy import deepcopy
 from dataclasses import dataclass, field
 from queue import Queue
@@ -237,25 +238,23 @@ class ConcurrentDeclarativeSource(Source):
             raw_default_concurrency = concurrency_level_from_manifest.get(
                 "default_concurrency", "N/A"
             )
-            self.logger.info(
-                "Concurrency configuration: concurrency_level=%d, initial_number_of_partitions_to_generate=%d, "
-                "source=manifest (expression=%s), config=%s",
-                concurrency_level,
-                initial_number_of_partitions_to_generate,
-                raw_default_concurrency,
-                {
-                    k: v
-                    for k, v in (config or {}).items()
-                    if "worker" in k.lower() or "concurren" in k.lower()
-                },
+            _concurrency_msg = (
+                f"Concurrency configuration: concurrency_level={concurrency_level}, "
+                f"initial_number_of_partitions_to_generate={initial_number_of_partitions_to_generate}, "
+                f"source=manifest (expression={raw_default_concurrency}), "
+                f"config={{{', '.join(f'{k!r}: {v!r}' for k, v in (config or {}).items() if 'worker' in k.lower() or 'concurren' in k.lower())}}}"
             )
         else:
-            self.logger.info(
-                "Concurrency configuration: concurrency_level=%d, initial_number_of_partitions_to_generate=%d, "
-                "source=default (_LOWEST_SAFE_CONCURRENCY_LEVEL)",
-                concurrency_level,
-                initial_number_of_partitions_to_generate,
+            _concurrency_msg = (
+                f"Concurrency configuration: concurrency_level={concurrency_level}, "
+                f"initial_number_of_partitions_to_generate={initial_number_of_partitions_to_generate}, "
+                f"source=default (_LOWEST_SAFE_CONCURRENCY_LEVEL)"
             )
+        sys.stdout.write(
+            json.dumps({"type": "LOG", "log": {"level": "INFO", "message": _concurrency_msg}})
+            + "\n"
+        )
+        sys.stdout.flush()
 
         self._concurrent_source = ConcurrentSource.create(
             num_workers=concurrency_level,
