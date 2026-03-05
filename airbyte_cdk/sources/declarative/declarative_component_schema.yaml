@@ -3068,24 +3068,36 @@ definitions:
             title: Scopes
             type: array
             items:
-              type: string
+              type: object
+              required:
+                - scope
+              properties:
+                scope:
+                  type: string
+                  description: The OAuth scope string to request from the provider.
+              additionalProperties: true
             description: |-
-              The DeclarativeOAuth Specific list of scopes needed to be granted for the authenticated user.
-              When present, takes precedence over the `scope` string property.
-              The scopes are joined using the `scopes_join_strategy` (default: space) before being
+              List of OAuth scope objects. When present, takes precedence over the `scope` string property.
+              The scope values are joined using the `scopes_join_strategy` (default: space) before being
               sent to the OAuth provider.
             examples:
-              - ["user:read", "user:write"]
+              - [{"scope": "user:read"}, {"scope": "user:write"}]
           optional_scopes:
             title: Optional Scopes
             type: array
             items:
-              type: string
+              type: object
+              required:
+                - scope
+              properties:
+                scope:
+                  type: string
+                  description: The OAuth scope string to request from the provider.
+              additionalProperties: true
             description: |-
-              The DeclarativeOAuth Specific list of optional scopes to request from the OAuth provider.
-              These scopes may or may not be granted depending on the provider and user consent.
+              Optional OAuth scope objects that may or may not be granted.
             examples:
-              - ["admin:read"]
+              - [{"scope": "admin:read"}]
           scopes_join_strategy:
             title: Scopes Join Strategy
             type: string

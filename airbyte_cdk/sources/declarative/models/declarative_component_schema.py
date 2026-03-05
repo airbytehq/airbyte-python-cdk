@@ -833,6 +833,16 @@ class State(BaseModel):
     max: int
 
 
+class OAuthScope(BaseModel):
+    class Config:
+        extra = Extra.allow
+
+    scope: str = Field(
+        ...,
+        description="The OAuth scope string to request from the provider.",
+    )
+
+
 class OauthConnectorInputSpecification(BaseModel):
     class Config:
         extra = Extra.allow
@@ -852,16 +862,16 @@ class OauthConnectorInputSpecification(BaseModel):
         examples=["user:read user:read_orders workspaces:read"],
         title="Scopes",
     )
-    scopes: Optional[List[str]] = Field(
+    scopes: Optional[List[OAuthScope]] = Field(
         None,
-        description="The DeclarativeOAuth Specific list of scopes needed to be granted for the authenticated user.\nWhen present, takes precedence over the `scope` string property.\nThe scopes are joined using the `scopes_join_strategy` (default: space) before being\nsent to the OAuth provider.",
-        examples=[["user:read", "user:write"]],
+        description="List of OAuth scope objects. When present, takes precedence over the `scope` string property.\nThe scope values are joined using the `scopes_join_strategy` (default: space) before being\nsent to the OAuth provider.",
+        examples=[[{"scope": "user:read"}, {"scope": "user:write"}]],
         title="Scopes",
     )
-    optional_scopes: Optional[List[str]] = Field(
+    optional_scopes: Optional[List[OAuthScope]] = Field(
         None,
-        description="The DeclarativeOAuth Specific list of optional scopes to request from the OAuth provider.\nThese scopes may or may not be granted depending on the provider and user consent.",
-        examples=[["admin:read"]],
+        description="Optional OAuth scope objects that may or may not be granted.",
+        examples=[[{"scope": "admin:read"}]],
         title="Optional Scopes",
     )
     scopes_join_strategy: Optional[ScopesJoinStrategy] = Field(
