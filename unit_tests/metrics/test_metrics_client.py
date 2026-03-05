@@ -25,6 +25,7 @@ if "datadog" not in sys.modules:
     sys.modules["datadog"] = _mock_datadog
     sys.modules["datadog.dogstatsd"] = _mock_dogstatsd_mod
 
+import airbyte_cdk.metrics as metrics_module  # noqa: E402
 from airbyte_cdk.metrics import MetricsClient, get_metrics_client  # noqa: E402
 
 
@@ -204,8 +205,6 @@ class TestMaybeEmitMemoryMetrics:
 
 class TestGetMetricsClient:
     def test_returns_singleton(self) -> None:
-        import airbyte_cdk.metrics as metrics_module
-
         # Reset the singleton for test isolation
         metrics_module._metrics_client = None
         try:

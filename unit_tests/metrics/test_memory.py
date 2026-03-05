@@ -10,10 +10,6 @@ from unittest.mock import patch
 import pytest
 
 from airbyte_cdk.metrics.memory import (
-    CGROUP_V1_MEMORY_LIMIT,
-    CGROUP_V1_MEMORY_USAGE,
-    CGROUP_V2_MEMORY_CURRENT,
-    CGROUP_V2_MEMORY_MAX,
     MemoryInfo,
     _read_cgroup_v1_memory,
     _read_cgroup_v2_memory,
