@@ -56,7 +56,18 @@ class MetricsClient:
             logger.debug("DD_AGENT_HOST not set; metrics emission disabled")
             return
 
-        dd_dogstatsd_port = int(os.environ.get("DD_DOGSTATSD_PORT", "8125"))
+        port_str = os.environ.get("DD_DOGSTATSD_PORT")
+        if not port_str:
+            dd_dogstatsd_port = 8125
+        else:
+            try:
+                dd_dogstatsd_port = int(port_str)
+            except ValueError:
+                logger.warning(
+                    "Invalid DD_DOGSTATSD_PORT value %r; falling back to default port 8125",
+                    port_str,
+                )
+                dd_dogstatsd_port = 8125
 
         try:
             from datadog.dogstatsd import DogStatsd
@@ -139,9 +150,15 @@ class MetricsClient:
         - cdk.memory.usage_bytes: Current container memory usage
         - cdk.memory.limit_bytes: Container memory limit (if known)
         - cdk.memory.usage_percent: Usage/limit ratio (if limit is known)
+
+        Also updates the last-emission timestamp so that subsequent calls to
+        ``should_emit`` / ``maybe_emit_memory_metrics`` respect the interval.
         """
         if not self.enabled:
             return
+
+        # Update the last-emission timestamp to avoid duplicate snapshots
+        self._last_emission_time = time.monotonic()
 
         try:
             info: MemoryInfo = get_memory_info()
@@ -191,7 +208,10 @@ def get_metrics_client() -> MetricsClient:
     """
     Get or create the module-level MetricsClient singleton.
 
-    The client is initialized lazily on first access.
+    Note: The caller is responsible for calling ``initialize()`` on the
+    returned client before emitting metrics.  Construction and initialization
+    are separate so that the caller controls *when* environment variables
+    are read and the DogStatsD connection is established.
     """
     global _metrics_client
     if _metrics_client is None:

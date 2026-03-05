@@ -283,12 +283,14 @@ class AirbyteEntrypoint(object):
 
         # The Airbyte protocol dictates that counts be expressed as float/double to better protect against integer overflows
         stream_message_counter: DefaultDict[HashableStreamDescriptor, float] = defaultdict(float)
-        for message in self.source.read(self.logger, config, catalog, state):
-            yield self.handle_record_counts(message, stream_message_counter)
-            # Periodically emit memory metrics (every 30s by default)
-            metrics_client.maybe_emit_memory_metrics()
-        # Emit final memory metrics snapshot
-        metrics_client.emit_memory_metrics()
+        try:
+            for message in self.source.read(self.logger, config, catalog, state):
+                yield self.handle_record_counts(message, stream_message_counter)
+                # Periodically emit memory metrics (every 30s by default)
+                metrics_client.maybe_emit_memory_metrics()
+        finally:
+            # Emit final memory metrics snapshot (runs even if the read loop raises)
+            metrics_client.emit_memory_metrics()
         for message in self._emit_queued_messages(self.source):
             yield self.handle_record_counts(message, stream_message_counter)
 
