@@ -275,21 +275,6 @@ definitions:
       $parameters:
         type: object
         additionalProperties: true
-  BlockSimultaneousSyncsAction:
-    title: Block Simultaneous Syncs Action
-    description: >
-      Action that prevents streams in the same group from being read concurrently.
-      When applied to a stream group, streams with this action will be deferred if
-      another stream in the same group is currently active.
-      This is useful for APIs that don't allow concurrent access to the same
-      endpoint or session. Only applies to ConcurrentDeclarativeSource.
-    type: object
-    required:
-      - type
-    properties:
-      type:
-        type: string
-        enum: [BlockSimultaneousSyncsAction]
   SelectiveAuthenticator:
     title: Selective Authenticator
     description: Authenticator that selects concrete authenticator based on config property.
@@ -4151,6 +4136,21 @@ definitions:
         title: Action
         description: The action to apply to streams in this group.
         "$ref": "#/definitions/BlockSimultaneousSyncsAction"
+  BlockSimultaneousSyncsAction:
+    title: Block Simultaneous Syncs Action
+    description: >
+      Action that prevents streams in the same group from being read concurrently.
+      When applied to a stream group, streams with this action will be deferred if
+      another stream in the same group is currently active.
+      This is useful for APIs that don't allow concurrent access to the same
+      endpoint or session. Only applies to ConcurrentDeclarativeSource.
+    type: object
+    required:
+      - type
+    properties:
+      type:
+        type: string
+        enum: [BlockSimultaneousSyncsAction]
   SubstreamPartitionRouter:
     title: Substream Partition Router
     description: Partition router that is used to retrieve records that have been partitioned according to records from the specified parent streams. An example of a parent stream is automobile brands and the substream would be the various car models associated with each branch.

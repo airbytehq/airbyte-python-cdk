@@ -46,10 +46,6 @@ class BearerAuthenticator(BaseModel):
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
 
-class BlockSimultaneousSyncsAction(BaseModel):
-    type: Literal["BlockSimultaneousSyncsAction"]
-
-
 class DynamicStreamCheckConfig(BaseModel):
     type: Literal["DynamicStreamCheckConfig"]
     dynamic_stream_name: str = Field(
@@ -3053,6 +3049,10 @@ class AsyncRetriever(BaseModel):
         title="Download HTTP Response Format",
     )
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
+
+
+class BlockSimultaneousSyncsAction(BaseModel):
+    type: Literal["BlockSimultaneousSyncsAction"]
 
 
 class StreamGroup(BaseModel):
