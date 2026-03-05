@@ -20,6 +20,10 @@ RUN poetry config virtualenvs.create false \
 # Build and install the package
 RUN pip install dist/*.whl
 
+# Install datadog for DogStatsD metrics emission.
+# No-op unless DD_AGENT_HOST is set at runtime.
+RUN pip install "datadog>=0.49.0"
+
 # Recreate the original structure
 RUN mkdir -p source_declarative_manifest \
     && echo 'from source_declarative_manifest.run import run\n\nif __name__ == "__main__":\n    run()' > main.py \
