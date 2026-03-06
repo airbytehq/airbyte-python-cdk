@@ -13,32 +13,36 @@ import pytest
 
 from airbyte_cdk.metrics.memory import MemoryInfo
 
-# Ensure mock datadog module is available for tests regardless of whether
-# the optional `datadog` package is installed.
-_mock_dogstatsd_cls = MagicMock()
 
-if "datadog" not in sys.modules:
-    _mock_datadog = types.ModuleType("datadog")
-    _mock_dogstatsd_mod = types.ModuleType("datadog.dogstatsd")
-    _mock_dogstatsd_mod.DogStatsd = _mock_dogstatsd_cls  # type: ignore[attr-defined]
-    _mock_datadog.dogstatsd = _mock_dogstatsd_mod  # type: ignore[attr-defined]
-    sys.modules["datadog"] = _mock_datadog
-    sys.modules["datadog.dogstatsd"] = _mock_dogstatsd_mod
+@pytest.fixture(autouse=True)
+def _mock_datadog(monkeypatch: pytest.MonkeyPatch) -> MagicMock:
+    """Provide a mock datadog module so tests work regardless of whether the
+    optional ``datadog`` package is installed.  ``monkeypatch`` automatically
+    restores ``sys.modules`` after each test, preventing cross-test pollution."""
+    mock_cls = MagicMock()
+    mock_mod = types.ModuleType("datadog.dogstatsd")
+    mock_mod.DogStatsd = mock_cls  # type: ignore[attr-defined]
+    mock_datadog = types.ModuleType("datadog")
+    mock_datadog.dogstatsd = mock_mod  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "datadog", mock_datadog)
+    monkeypatch.setitem(sys.modules, "datadog.dogstatsd", mock_mod)
+    return mock_cls
+
 
 import airbyte_cdk.metrics as metrics_module  # noqa: E402
 from airbyte_cdk.metrics import MetricsClient, get_metrics_client  # noqa: E402
 
 
-def _make_enabled_client() -> tuple[MetricsClient, MagicMock]:
+def _make_enabled_client(mock_dogstatsd_cls: MagicMock) -> tuple[MetricsClient, MagicMock]:
     """Helper to create an enabled MetricsClient with a mock DogStatsd instance."""
     mock_instance = MagicMock()
-    _mock_dogstatsd_cls.reset_mock()
-    _mock_dogstatsd_cls.return_value = mock_instance
+    mock_dogstatsd_cls.reset_mock()
+    mock_dogstatsd_cls.return_value = mock_instance
 
     client = MetricsClient()
     with (
         patch.dict("os.environ", {"DD_AGENT_HOST": "localhost"}, clear=True),
-        patch("datadog.dogstatsd.DogStatsd", _mock_dogstatsd_cls),
+        patch("datadog.dogstatsd.DogStatsd", mock_dogstatsd_cls),
     ):
         client.initialize()
     return client, mock_instance
@@ -51,8 +55,8 @@ class TestMetricsClientInitialization:
             client.initialize()
         assert not client.enabled
 
-    def test_enabled_when_dd_agent_host_set(self) -> None:
-        client, _ = _make_enabled_client()
+    def test_enabled_when_dd_agent_host_set(self, _mock_datadog: MagicMock) -> None:
+        client, _ = _make_enabled_client(_mock_datadog)
         assert client.enabled
 
     def test_initialize_idempotent(self) -> None:
@@ -73,10 +77,10 @@ class TestMetricsClientInitialization:
 
 
 class TestMetricsClientTags:
-    def test_builds_tags_from_env(self) -> None:
+    def test_builds_tags_from_env(self, _mock_datadog: MagicMock) -> None:
         mock_instance = MagicMock()
-        _mock_dogstatsd_cls.reset_mock()
-        _mock_dogstatsd_cls.return_value = mock_instance
+        _mock_datadog.reset_mock()
+        _mock_datadog.return_value = mock_instance
 
         client = MetricsClient()
         env = {
@@ -88,7 +92,7 @@ class TestMetricsClientTags:
         }
         with (
             patch.dict("os.environ", env, clear=True),
-            patch("datadog.dogstatsd.DogStatsd", _mock_dogstatsd_cls),
+            patch("datadog.dogstatsd.DogStatsd", _mock_datadog),
         ):
             client.initialize()
 
@@ -104,21 +108,21 @@ class TestMetricsClientGauge:
         # Should not raise even when not initialized
         client.gauge("test.metric", 42.0)
 
-    def test_gauge_emits_when_enabled(self) -> None:
-        client, mock_instance = _make_enabled_client()
+    def test_gauge_emits_when_enabled(self, _mock_datadog: MagicMock) -> None:
+        client, mock_instance = _make_enabled_client(_mock_datadog)
 
         client.gauge("test.metric", 42.0)
         mock_instance.gauge.assert_called_once_with("test.metric", 42.0, tags=client._tags)
 
-    def test_gauge_with_extra_tags(self) -> None:
-        client, mock_instance = _make_enabled_client()
+    def test_gauge_with_extra_tags(self, _mock_datadog: MagicMock) -> None:
+        client, mock_instance = _make_enabled_client(_mock_datadog)
 
         client.gauge("test.metric", 42.0, extra_tags=["stream:users"])
         call_tags = mock_instance.gauge.call_args[1]["tags"]
         assert "stream:users" in call_tags
 
-    def test_gauge_swallows_exceptions(self) -> None:
-        client, mock_instance = _make_enabled_client()
+    def test_gauge_swallows_exceptions(self, _mock_datadog: MagicMock) -> None:
+        client, mock_instance = _make_enabled_client(_mock_datadog)
         mock_instance.gauge.side_effect = Exception("network error")
 
         # Should not raise
@@ -126,8 +130,8 @@ class TestMetricsClientGauge:
 
 
 class TestEmitMemoryMetrics:
-    def test_emits_all_metrics_when_enabled(self) -> None:
-        client, mock_instance = _make_enabled_client()
+    def test_emits_all_metrics_when_enabled(self, _mock_datadog: MagicMock) -> None:
+        client, mock_instance = _make_enabled_client(_mock_datadog)
 
         mock_info = MemoryInfo(usage_bytes=100_000_000, limit_bytes=200_000_000)
         with patch("airbyte_cdk.metrics.get_memory_info", return_value=mock_info):
@@ -138,8 +142,8 @@ class TestEmitMemoryMetrics:
         assert gauge_calls["cdk.memory.limit_bytes"] == 200_000_000.0
         assert gauge_calls["cdk.memory.usage_percent"] == pytest.approx(0.5)
 
-    def test_skips_limit_when_unknown(self) -> None:
-        client, mock_instance = _make_enabled_client()
+    def test_skips_limit_when_unknown(self, _mock_datadog: MagicMock) -> None:
+        client, mock_instance = _make_enabled_client(_mock_datadog)
 
         mock_info = MemoryInfo(usage_bytes=100_000_000, limit_bytes=None)
         with patch("airbyte_cdk.metrics.get_memory_info", return_value=mock_info):
@@ -164,18 +168,22 @@ class TestShouldEmit:
     def test_does_not_emit_before_interval(self) -> None:
         client = MetricsClient()
         assert client.should_emit(interval_seconds=30.0)
+        # Manually advance the timestamp (emit_memory_metrics is a no-op
+        # when the client is disabled, so set it directly).
+        client._last_emission_time = time.monotonic()
         assert not client.should_emit(interval_seconds=30.0)
 
     def test_emits_after_interval(self) -> None:
         client = MetricsClient()
         assert client.should_emit(interval_seconds=0.01)
+        client._last_emission_time = time.monotonic()
         time.sleep(0.02)
         assert client.should_emit(interval_seconds=0.01)
 
 
 class TestMaybeEmitMemoryMetrics:
-    def test_emits_on_interval(self) -> None:
-        client, mock_instance = _make_enabled_client()
+    def test_emits_on_interval(self, _mock_datadog: MagicMock) -> None:
+        client, mock_instance = _make_enabled_client(_mock_datadog)
 
         mock_info = MemoryInfo(usage_bytes=100, limit_bytes=200)
         with patch("airbyte_cdk.metrics.get_memory_info", return_value=mock_info):

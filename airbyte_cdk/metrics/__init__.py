@@ -180,12 +180,9 @@ class MetricsClient:
         Check if enough time has passed since the last emission to emit again.
 
         Returns True if at least interval_seconds have elapsed since the last emission.
+        This is a pure query — it does not update any internal state.
         """
-        now = time.monotonic()
-        if now - self._last_emission_time >= interval_seconds:
-            self._last_emission_time = now
-            return True
-        return False
+        return time.monotonic() - self._last_emission_time >= interval_seconds
 
     def maybe_emit_memory_metrics(
         self, interval_seconds: float = DEFAULT_EMISSION_INTERVAL_SECONDS
