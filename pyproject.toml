@@ -218,7 +218,7 @@ python_versions = [
   "3.13",
 ]
 optional_poetry_groups = ["dev"]
-poetry_extras = ["file-based", "vector-db-based", "manifest-server"]
+poetry_extras = ["file-based", "vector-db-based", "manifest-server", "metrics"]
 poe_tasks = ["check-ci"]
 mount_docker_socket = true
 

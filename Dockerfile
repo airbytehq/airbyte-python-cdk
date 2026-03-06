@@ -17,12 +17,8 @@ COPY dist/*.whl ./dist/
 RUN poetry config virtualenvs.create false \
     && poetry install --only main --no-interaction --no-ansi || true
 
-# Build and install the package
-RUN pip install dist/*.whl
-
-# Install datadog for DogStatsD metrics emission.
-# No-op unless DD_AGENT_HOST is set at runtime.
-RUN pip install "datadog>=0.49.0"
+# Build and install the package (with metrics extra for DogStatsD support)
+RUN pip install "dist/*.whl[metrics]"
 
 # Recreate the original structure
 RUN mkdir -p source_declarative_manifest \
