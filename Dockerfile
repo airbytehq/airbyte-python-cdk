@@ -20,6 +20,10 @@ RUN poetry config virtualenvs.create false \
 # Build and install the package
 RUN pip install dist/*.whl
 
+# Install ddtrace for Datadog APM and memory profiling support.
+# This is a no-op unless DD_PROFILING_ENABLED or similar env vars are set at runtime.
+RUN pip install "ddtrace>=3,<4"
+
 # Recreate the original structure
 RUN mkdir -p source_declarative_manifest \
     && echo 'from source_declarative_manifest.run import run\n\nif __name__ == "__main__":\n    run()' > main.py \
