@@ -173,7 +173,9 @@ class ConcurrentReadProcessor:
             yield exception.exception.as_airbyte_message(stream_descriptor=stream_descriptor)
         else:
             yield AirbyteTracedException.from_exception(
-                exception, stream_descriptor=stream_descriptor
+                exception.exception,
+                stream_descriptor=stream_descriptor,
+                message=str(exception.exception),
             ).as_airbyte_message()
 
     def _flag_exception(self, stream_name: str, exception: Exception) -> None:

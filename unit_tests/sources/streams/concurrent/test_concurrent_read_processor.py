@@ -576,7 +576,8 @@ class TestConcurrentReadProcessor(unittest.TestCase):
 
         exception_messages = list(handler.on_exception(exception))
         assert len(exception_messages) == 1
-        assert "StreamThreadException" in exception_messages[0].trace.error.stack_trace
+        assert "RuntimeError" in exception_messages[0].trace.error.stack_trace
+        assert exception_messages[0].trace.error.message == "Something went wrong"
 
         assert list(
             handler.on_partition_complete_sentinel(
