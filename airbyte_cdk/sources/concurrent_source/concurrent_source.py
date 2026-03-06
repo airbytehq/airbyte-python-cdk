@@ -4,7 +4,9 @@
 
 import concurrent
 import logging
-from queue import Queue
+import threading
+import time
+from queue import Empty, Queue
 from typing import Iterable, Iterator, List, Optional
 
 from airbyte_cdk.models import AirbyteMessage
@@ -143,7 +145,42 @@ class ConcurrentSource:
         queue: Queue[QueueItem],
         concurrent_stream_processor: ConcurrentReadProcessor,
     ) -> Iterable[AirbyteMessage]:
-        while airbyte_message_or_record_or_exception := queue.get():
+        last_item_time = time.monotonic()
+        heartbeat_interval = 60.0  # Log heartbeat every 60 seconds
+        items_since_last_heartbeat = 0
+
+        while True:
+            try:
+                airbyte_message_or_record_or_exception = queue.get(timeout=heartbeat_interval)
+            except Empty:
+                elapsed = time.monotonic() - last_item_time
+                self._logger.info(
+                    "Queue heartbeat: no items received for %.0fs. "
+                    "queue_size=%d, threadpool_done=%s, active_threads=%d",
+                    elapsed,
+                    queue.qsize(),
+                    self._threadpool.is_done(),
+                    threading.active_count(),
+                )
+                continue
+
+            if not airbyte_message_or_record_or_exception:
+                break
+
+            now = time.monotonic()
+            items_since_last_heartbeat += 1
+            if now - last_item_time >= heartbeat_interval:
+                self._logger.info(
+                    "Queue heartbeat: processed %d items in last %.0fs. "
+                    "queue_size=%d, item_type=%s",
+                    items_since_last_heartbeat,
+                    now - last_item_time,
+                    queue.qsize(),
+                    type(airbyte_message_or_record_or_exception).__name__,
+                )
+                items_since_last_heartbeat = 0
+            last_item_time = now
+
             yield from self._handle_item(
                 airbyte_message_or_record_or_exception,
                 concurrent_stream_processor,

@@ -1,6 +1,7 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
+import logging
 import time
 from queue import Queue
 
@@ -33,17 +34,30 @@ class PartitionEnqueuer:
         self._sleep_time_in_seconds = sleep_time_in_seconds
 
     def generate_partitions(self, stream: AbstractStream) -> None:
-        """
-        Generate partitions from a partition generator and put them in a queue.
-        When all the partitions are added to the queue, a sentinel is added to the queue to indicate that all the partitions have been generated.
+        """Generate partitions from a partition generator and put them in a queue.
 
-        If an exception is encountered, the exception will be caught and put in the queue. This is very important because if we don't, the
-        main thread will have no way to know that something when wrong and will wait until the timeout is reached
+        When all the partitions are added to the queue, a sentinel is added to the queue to indicate
+        that all the partitions have been generated.
+
+        If an exception is encountered, the exception will be caught and put in the queue. This is
+        very important because if we don't, the main thread will have no way to know that something
+        went wrong and will wait until the timeout is reached.
 
         This method is meant to be called in a separate thread.
         """
+        logger = logging.getLogger(f"airbyte.partition_enqueuer.{stream.name}")
+        logger.info("Partition generation STARTED for stream=%s", stream.name)
+        partition_count = 0
+        start_time = time.monotonic()
         try:
             for partition in stream.generate_partitions():
+                partition_count += 1
+                logger.info(
+                    "Partition generation: enqueuing partition #%d for stream=%s, slice=%s",
+                    partition_count,
+                    stream.name,
+                    partition.to_slice(),
+                )
                 # Adding partitions to the queue generates futures. To avoid having too many futures, we throttle here. We understand that
                 # we might add more futures than the limit by throttling in the threads while it is the main thread that actual adds the
                 # future but we expect the delta between the max futures length and the actual to be small enough that it would not be an
@@ -58,7 +72,22 @@ class PartitionEnqueuer:
                 while self._thread_pool_manager.prune_to_validate_has_reached_futures_limit():
                     time.sleep(self._sleep_time_in_seconds)
                 self._queue.put(partition)
+            elapsed = time.monotonic() - start_time
+            logger.info(
+                "Partition generation COMPLETED for stream=%s: %d partitions in %.1fs",
+                stream.name,
+                partition_count,
+                elapsed,
+            )
             self._queue.put(PartitionGenerationCompletedSentinel(stream))
         except Exception as e:
+            elapsed = time.monotonic() - start_time
+            logger.info(
+                "Partition generation FAILED for stream=%s after %.1fs with %d partitions: %s",
+                stream.name,
+                elapsed,
+                partition_count,
+                str(e)[:200],
+            )
             self._queue.put(StreamThreadException(e, stream.name))
             self._queue.put(PartitionGenerationCompletedSentinel(stream))

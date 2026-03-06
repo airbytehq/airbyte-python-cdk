@@ -1,6 +1,7 @@
 # Copyright (c) 2025 Airbyte, Inc., all rights reserved.
 
 import logging
+import time
 from queue import Queue
 from typing import Optional
 
@@ -72,15 +73,53 @@ class PartitionReader:
         :param partition: The partition to read data from
         :return: None
         """
+        partition_start = time.monotonic()
+        stream_name = partition.stream_name()
+        slice_info = partition.to_slice()
+        logger = logging.getLogger(f"airbyte.partition_reader.{stream_name}")
+        logger.info(
+            "Partition read STARTED for stream=%s, slice=%s",
+            stream_name,
+            slice_info,
+        )
         try:
             if self._partition_logger:
                 self._partition_logger.log(partition)
 
+            record_count = 0
+            last_progress_time = partition_start
             for record in partition.read():
                 self._queue.put(record)
                 cursor.observe(record)
+                record_count += 1
+                now = time.monotonic()
+                if now - last_progress_time >= 30.0:
+                    logger.info(
+                        "Partition read PROGRESS for stream=%s: %d records read so far (%.0fs elapsed), slice=%s",
+                        stream_name,
+                        record_count,
+                        now - partition_start,
+                        slice_info,
+                    )
+                    last_progress_time = now
             cursor.close_partition(partition)
+            elapsed = time.monotonic() - partition_start
+            logger.info(
+                "Partition read COMPLETED for stream=%s: %d records in %.1fs, slice=%s",
+                stream_name,
+                record_count,
+                elapsed,
+                slice_info,
+            )
             self._queue.put(PartitionCompleteSentinel(partition, self._IS_SUCCESSFUL))
         except Exception as e:
-            self._queue.put(StreamThreadException(e, partition.stream_name()))
+            elapsed = time.monotonic() - partition_start
+            logger.info(
+                "Partition read FAILED for stream=%s after %.1fs: %s, slice=%s",
+                stream_name,
+                elapsed,
+                str(e)[:200],
+                slice_info,
+            )
+            self._queue.put(StreamThreadException(e, stream_name))
             self._queue.put(PartitionCompleteSentinel(partition, not self._IS_SUCCESSFUL))
