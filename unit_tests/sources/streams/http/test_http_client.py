@@ -1059,3 +1059,50 @@ def test_refresh_token_then_retry_action_retries_and_succeeds_after_token_refres
     assert mock_authenticator.access_token == "new_refreshed_token"
     assert returned_response == valid_response
     assert call_count == 2
+
+
+def test_send_request_applies_default_timeout_when_not_provided(mocker):
+    http_client = test_http_client()
+    mocked_response = MagicMock(spec=requests.Response)
+    mocked_response.status_code = 200
+    mocked_response.headers = {}
+    mock_send = mocker.patch.object(requests.Session, "send", return_value=mocked_response)
+
+    http_client.send_request(
+        http_method="get", url="https://test_base_url.com/v1/endpoint", request_kwargs={}
+    )
+
+    assert mock_send.call_count == 1
+    call_kwargs = mock_send.call_args
+    # The timeout should be passed as part of the keyword arguments to session.send()
+    # session.send(request, **request_kwargs) unpacks request_kwargs, so timeout appears as a kwarg
+    assert call_kwargs.kwargs.get("timeout") == (
+        HttpClient._DEFAULT_CONNECT_TIMEOUT,
+        HttpClient._DEFAULT_READ_TIMEOUT,
+    ) or call_kwargs[1].get("timeout") == (
+        HttpClient._DEFAULT_CONNECT_TIMEOUT,
+        HttpClient._DEFAULT_READ_TIMEOUT,
+    )
+
+
+def test_send_request_respects_explicit_timeout(mocker):
+    http_client = test_http_client()
+    mocked_response = MagicMock(spec=requests.Response)
+    mocked_response.status_code = 200
+    mocked_response.headers = {}
+    mock_send = mocker.patch.object(requests.Session, "send", return_value=mocked_response)
+
+    custom_timeout = (10, 60)
+    http_client.send_request(
+        http_method="get",
+        url="https://test_base_url.com/v1/endpoint",
+        request_kwargs={"timeout": custom_timeout},
+    )
+
+    assert mock_send.call_count == 1
+    call_kwargs = mock_send.call_args
+    # The explicit timeout should be preserved, not overridden by the default
+    assert (
+        call_kwargs.kwargs.get("timeout") == custom_timeout
+        or call_kwargs[1].get("timeout") == custom_timeout
+    )
