@@ -591,7 +591,10 @@ class HttpClient:
         mutable_request_kwargs: Dict[str, Any] = {**request_kwargs, **env_settings}
 
         if "timeout" not in mutable_request_kwargs:
-            mutable_request_kwargs["timeout"] = (self._DEFAULT_CONNECT_TIMEOUT, self._DEFAULT_READ_TIMEOUT)
+            mutable_request_kwargs["timeout"] = (
+                self._DEFAULT_CONNECT_TIMEOUT,
+                self._DEFAULT_READ_TIMEOUT,
+            )
 
         response: requests.Response = self._send_with_retry(
             request=request,

@@ -1076,8 +1076,13 @@ def test_send_request_applies_default_timeout_when_not_provided(mocker):
     call_kwargs = mock_send.call_args
     # The timeout should be passed as part of the keyword arguments to session.send()
     # session.send(request, **request_kwargs) unpacks request_kwargs, so timeout appears as a kwarg
-    assert call_kwargs.kwargs.get("timeout") == (HttpClient._DEFAULT_CONNECT_TIMEOUT, HttpClient._DEFAULT_READ_TIMEOUT) or \
-        call_kwargs[1].get("timeout") == (HttpClient._DEFAULT_CONNECT_TIMEOUT, HttpClient._DEFAULT_READ_TIMEOUT)
+    assert call_kwargs.kwargs.get("timeout") == (
+        HttpClient._DEFAULT_CONNECT_TIMEOUT,
+        HttpClient._DEFAULT_READ_TIMEOUT,
+    ) or call_kwargs[1].get("timeout") == (
+        HttpClient._DEFAULT_CONNECT_TIMEOUT,
+        HttpClient._DEFAULT_READ_TIMEOUT,
+    )
 
 
 def test_send_request_respects_explicit_timeout(mocker):
@@ -1097,5 +1102,7 @@ def test_send_request_respects_explicit_timeout(mocker):
     assert mock_send.call_count == 1
     call_kwargs = mock_send.call_args
     # The explicit timeout should be preserved, not overridden by the default
-    assert call_kwargs.kwargs.get("timeout") == custom_timeout or \
-        call_kwargs[1].get("timeout") == custom_timeout
+    assert (
+        call_kwargs.kwargs.get("timeout") == custom_timeout
+        or call_kwargs[1].get("timeout") == custom_timeout
+    )
