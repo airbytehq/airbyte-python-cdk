@@ -1479,9 +1479,7 @@ def test_is_done_raises_when_active_groups_not_empty():
     handler._stream_instances_to_start_partition_generation.clear()
     handler._active_groups["my_group"] = {"stuck_stream"}
 
-    with pytest.raises(
-        AirbyteTracedException, match="Active stream groups are not empty"
-    ):
+    with pytest.raises(AirbyteTracedException, match="Active stream groups are not empty"):
         handler.is_done()
 
 
