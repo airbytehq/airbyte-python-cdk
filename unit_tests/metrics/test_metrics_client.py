@@ -143,7 +143,9 @@ class TestEmitMemoryMetrics:
         gauge_calls = {call[0][0]: call[0][1] for call in mock_instance.gauge.call_args_list}
         assert gauge_calls["cdk.memory.usage_bytes"] == 100_000_000.0
         assert gauge_calls["cdk.memory.limit_bytes"] == 200_000_000.0
-        assert gauge_calls["cdk.memory.usage_percent"] == pytest.approx(0.5)
+        # usage_percent is intentionally NOT emitted as a metric;
+        # compute it in Datadog using a / b formulas instead.
+        assert "cdk.memory.usage_percent" not in gauge_calls
 
     def test_skips_limit_when_unknown(self, _mock_datadog: MagicMock) -> None:
         client, mock_instance = _make_enabled_client(_mock_datadog)
@@ -155,7 +157,6 @@ class TestEmitMemoryMetrics:
         metric_names = [call[0][0] for call in mock_instance.gauge.call_args_list]
         assert "cdk.memory.usage_bytes" in metric_names
         assert "cdk.memory.limit_bytes" not in metric_names
-        assert "cdk.memory.usage_percent" not in metric_names
 
     def test_noop_when_disabled(self) -> None:
         client = MetricsClient()

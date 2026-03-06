@@ -21,7 +21,6 @@ logger = logging.getLogger(__name__)
 # Metric names
 METRIC_MEMORY_USAGE_BYTES = "cdk.memory.usage_bytes"
 METRIC_MEMORY_LIMIT_BYTES = "cdk.memory.limit_bytes"
-METRIC_MEMORY_USAGE_PERCENT = "cdk.memory.usage_percent"
 
 # Default emission interval in seconds
 DEFAULT_EMISSION_INTERVAL_SECONDS = 30.0
@@ -149,7 +148,9 @@ class MetricsClient:
         Emits:
         - cdk.memory.usage_bytes: Current container memory usage
         - cdk.memory.limit_bytes: Container memory limit (if known)
-        - cdk.memory.usage_percent: Usage/limit ratio (if limit is known)
+
+        The usage/limit ratio is not emitted as a separate metric — compute it
+        in Datadog using ``a / b`` formulas to avoid extra custom-metric costs.
 
         Also updates the last-emission timestamp so that subsequent calls to
         ``should_emit`` / ``maybe_emit_memory_metrics`` respect the interval.
@@ -167,9 +168,6 @@ class MetricsClient:
 
             if info.limit_bytes is not None:
                 self.gauge(METRIC_MEMORY_LIMIT_BYTES, float(info.limit_bytes))
-
-            if info.usage_percent is not None:
-                self.gauge(METRIC_MEMORY_USAGE_PERCENT, info.usage_percent)
 
         except Exception:
             # Never let metric collection failures affect the sync
