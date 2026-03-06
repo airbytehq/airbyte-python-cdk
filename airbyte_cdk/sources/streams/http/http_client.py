@@ -82,23 +82,6 @@ def monkey_patched_get_item(self, key):  # type: ignore # this interface is a co
 requests_cache.SQLiteDict.__getitem__ = monkey_patched_get_item  # type: ignore # see the method doc for more information
 
 
-class MessageRepresentationAirbyteTracedErrors(AirbyteTracedException):
-    """
-    Before the migration to the HttpClient in low-code, the exception raised was
-    [ReadException](https://github.com/airbytehq/airbyte/blob/8fdd9818ec16e653ba3dd2b167a74b7c07459861/airbyte-cdk/python/airbyte_cdk/sources/declarative/requesters/http_requester.py#L566).
-    This has been moved to a AirbyteTracedException. The printing on this is questionable (AirbyteTracedException string representation
-    shows the internal_message and not the message). We have already discussed moving the AirbyteTracedException string representation to
-    `message` but the impact is unclear and hard to quantify so we will do it here only for now.
-    """
-
-    def __str__(self) -> str:
-        if self.message:
-            return self.message
-        elif self.internal_message:
-            return self.internal_message
-        return ""
-
-
 class HttpClient:
     _DEFAULT_MAX_RETRY: int = 5
     _DEFAULT_MAX_TIME: int = 60 * 10
@@ -311,7 +294,7 @@ class HttpClient:
             return response
         except BaseBackoffException as e:
             self._logger.error(f"Retries exhausted with backoff exception.", exc_info=True)
-            raise MessageRepresentationAirbyteTracedErrors(
+            raise AirbyteTracedException(
                 internal_message=f"Exhausted available request attempts. Exception: {e}",
                 message=f"Exhausted available request attempts. Please see logs for more details. Exception: {e}",
                 failure_type=e.failure_type or FailureType.system_error,
@@ -495,7 +478,7 @@ class HttpClient:
             # ensure the exception message is emitted before raised
             self._logger.error(error_message)
 
-            raise MessageRepresentationAirbyteTracedErrors(
+            raise AirbyteTracedException(
                 internal_message=error_message,
                 message=error_resolution.error_message or error_message,
                 failure_type=error_resolution.failure_type,
