@@ -85,6 +85,8 @@ requests_cache.SQLiteDict.__getitem__ = monkey_patched_get_item  # type: ignore 
 class HttpClient:
     _DEFAULT_MAX_RETRY: int = 5
     _DEFAULT_MAX_TIME: int = 60 * 10
+    _DEFAULT_CONNECT_TIMEOUT: int = 30
+    _DEFAULT_READ_TIMEOUT: int = 300
     _ACTIONS_TO_RETRY_ON = {
         ResponseAction.RETRY,
         ResponseAction.RATE_LIMITED,
@@ -586,11 +588,17 @@ class HttpClient:
             verify=request_kwargs.get("verify"),
             cert=request_kwargs.get("cert"),
         )
-        request_kwargs = {**request_kwargs, **env_settings}
+        mutable_request_kwargs: Dict[str, Any] = {**request_kwargs, **env_settings}
+
+        if "timeout" not in mutable_request_kwargs:
+            mutable_request_kwargs["timeout"] = (
+                self._DEFAULT_CONNECT_TIMEOUT,
+                self._DEFAULT_READ_TIMEOUT,
+            )
 
         response: requests.Response = self._send_with_retry(
             request=request,
-            request_kwargs=request_kwargs,
+            request_kwargs=mutable_request_kwargs,
             log_formatter=log_formatter,
             exit_on_rate_limit=exit_on_rate_limit,
         )
