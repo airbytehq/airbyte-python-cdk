@@ -588,14 +588,14 @@ class HttpClient:
             verify=request_kwargs.get("verify"),
             cert=request_kwargs.get("cert"),
         )
-        request_kwargs = {**request_kwargs, **env_settings}
+        mutable_request_kwargs: Dict[str, Any] = {**request_kwargs, **env_settings}
 
-        if "timeout" not in request_kwargs:
-            request_kwargs["timeout"] = (self._DEFAULT_CONNECT_TIMEOUT, self._DEFAULT_READ_TIMEOUT)
+        if "timeout" not in mutable_request_kwargs:
+            mutable_request_kwargs["timeout"] = (self._DEFAULT_CONNECT_TIMEOUT, self._DEFAULT_READ_TIMEOUT)
 
         response: requests.Response = self._send_with_retry(
             request=request,
-            request_kwargs=request_kwargs,
+            request_kwargs=mutable_request_kwargs,
             log_formatter=log_formatter,
             exit_on_rate_limit=exit_on_rate_limit,
         )
