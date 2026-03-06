@@ -1441,7 +1441,7 @@ def test_is_done_raises_when_partition_generation_queue_not_empty():
     # Artificially mark the stream as done without removing it from the partition generation queue
     handler._streams_done.add("stuck_stream")
 
-    with pytest.raises(AirbyteTracedException, match="remained in the partition generation queue"):
+    with pytest.raises(AirbyteTracedException, match="Partition generation queue is not empty"):
         handler.is_done()
 
 
@@ -1480,7 +1480,7 @@ def test_is_done_raises_when_active_groups_not_empty():
     handler._active_groups["my_group"] = {"stuck_stream"}
 
     with pytest.raises(
-        AirbyteTracedException, match="still active after all streams were marked done"
+        AirbyteTracedException, match="Active stream groups are not empty"
     ):
         handler.is_done()
 
