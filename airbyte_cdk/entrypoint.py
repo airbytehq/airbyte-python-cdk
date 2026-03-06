@@ -23,6 +23,7 @@ from requests import PreparedRequest, Response, Session
 from airbyte_cdk.connector import TConfig
 from airbyte_cdk.exception_handler import init_uncaught_exception_handler
 from airbyte_cdk.logger import PRINT_BUFFER, init_logger, is_platform_debug_log_enabled
+from airbyte_cdk.metrics import get_metrics_client
 from airbyte_cdk.models import (
     AirbyteConnectionStatus,
     AirbyteMessage,
@@ -275,10 +276,26 @@ class AirbyteEntrypoint(object):
         if self.source.check_config_against_spec:
             self.validate_connection(source_spec, config)
 
+        # Initialize and emit initial memory metrics
+        metrics_client = get_metrics_client()
+        metrics_client.initialize()
+        metrics_client.emit_memory_metrics()
+
         # The Airbyte protocol dictates that counts be expressed as float/double to better protect against integer overflows
         stream_message_counter: DefaultDict[HashableStreamDescriptor, float] = defaultdict(float)
-        for message in self.source.read(self.logger, config, catalog, state):
-            yield self.handle_record_counts(message, stream_message_counter)
+        _emit_check_counter = 0
+        try:
+            for message in self.source.read(self.logger, config, catalog, state):
+                yield self.handle_record_counts(message, stream_message_counter)
+                # Check for metric emission every 1000 records to avoid
+                # a time.monotonic() syscall on every single record.
+                _emit_check_counter += 1
+                if _emit_check_counter >= 1000:
+                    _emit_check_counter = 0
+                    metrics_client.maybe_emit_memory_metrics()
+        finally:
+            # Emit final memory metrics snapshot (runs even if the read loop raises)
+            metrics_client.emit_memory_metrics()
         for message in self._emit_queued_messages(self.source):
             yield self.handle_record_counts(message, stream_message_counter)
 

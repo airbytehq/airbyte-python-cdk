@@ -17,8 +17,11 @@ COPY dist/*.whl ./dist/
 RUN poetry config virtualenvs.create false \
     && poetry install --only main --no-interaction --no-ansi || true
 
-# Build and install the package
-RUN pip install dist/*.whl
+# Build and install the package with the metrics extra (for DogStatsD support).
+# Two-step install: first install the wheel, then reinstall with extras using
+# the resolved filename (shell glob + [extras] syntax don't mix in a single arg).
+RUN pip install dist/*.whl \
+    && pip install "$(ls dist/*.whl)[metrics]"
 
 # Recreate the original structure
 RUN mkdir -p source_declarative_manifest \
