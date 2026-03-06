@@ -481,7 +481,7 @@ class AsyncJobOrchestrator:
             # We emitted traced message but we didn't break on non_breaking_exception. We still need to raise an exception so that the
             # call of `create_and_get_completed_partitions` knows that there was an issue with some partitions and the sync is incomplete.
             raise AirbyteTracedException(
-                message="",
+                message=None,
                 internal_message="\n".join(
                     [
                         filter_secrets(exception.__repr__())
