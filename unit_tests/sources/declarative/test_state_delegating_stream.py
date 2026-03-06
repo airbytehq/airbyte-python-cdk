@@ -920,3 +920,143 @@ def test_unconfigured_parent_stream_does_not_emit_state_on_retention_fallback():
             f"Expected no state messages for unconfigured ParentStream, "
             f"but got {len(parent_state_messages)}: {parent_state_messages}"
         )
+
+
+@freezegun.freeze_time("2024-07-15")
+def test_retention_with_interpolated_period_enabled():
+    """Test that Jinja-interpolated api_retention_period resolves and triggers full refresh when cursor is stale."""
+    manifest = _create_manifest_with_retention_period(
+        "{{ 'P7D' if 'TestStream' in config.get('api_retention_streams', []) else '' }}"
+    )
+    config = {**_CONFIG, "api_retention_streams": ["TestStream"]}
+
+    with HttpMocker() as http_mocker:
+        http_mocker.get(
+            HttpRequest(url="https://api.test.com/items"),
+            HttpResponse(
+                body=json.dumps(
+                    [
+                        {"id": 1, "name": "item_1", "updated_at": "2024-07-13"},
+                        {"id": 2, "name": "item_2", "updated_at": "2024-07-14"},
+                    ]
+                )
+            ),
+        )
+
+        # State with cursor older than 7 days → should fall back to full refresh
+        state = [
+            AirbyteStateMessage(
+                type=AirbyteStateType.STREAM,
+                stream=AirbyteStreamState(
+                    stream_descriptor=StreamDescriptor(name="TestStream", namespace=None),
+                    stream_state=AirbyteStateBlob(updated_at="2024-07-01"),
+                ),
+            )
+        ]
+        source = ConcurrentDeclarativeSource(
+            source_config=manifest, config=config, catalog=None, state=state
+        )
+        configured_catalog = create_configured_catalog(source, config)
+
+        records = get_records(source, config, configured_catalog, state)
+        expected = [
+            {"id": 1, "name": "item_1", "updated_at": "2024-07-13"},
+            {"id": 2, "name": "item_2", "updated_at": "2024-07-14"},
+        ]
+        assert expected == records
+
+
+@freezegun.freeze_time("2024-07-15")
+def test_retention_with_interpolated_period_disabled():
+    """Test that Jinja-interpolated api_retention_period resolves to empty string → skips validation."""
+    manifest = _create_manifest_with_retention_period(
+        "{{ 'P7D' if 'TestStream' in config.get('api_retention_streams', []) else '' }}"
+    )
+    # TestStream is NOT in the list → retention period resolves to empty string
+    config = {**_CONFIG, "api_retention_streams": ["OtherStream"]}
+
+    with HttpMocker() as http_mocker:
+        # When retention is disabled, incremental stream is used (items_with_filtration)
+        http_mocker.get(
+            HttpRequest(
+                url="https://api.test.com/items_with_filtration?start=2024-07-01&end=2024-07-15"
+            ),
+            HttpResponse(
+                body=json.dumps(
+                    [
+                        {"id": 1, "name": "item_1", "updated_at": "2024-07-13"},
+                        {"id": 2, "name": "item_2", "updated_at": "2024-07-14"},
+                    ]
+                )
+            ),
+        )
+
+        # State with cursor older than 7 days, but validation is disabled
+        state = [
+            AirbyteStateMessage(
+                type=AirbyteStateType.STREAM,
+                stream=AirbyteStreamState(
+                    stream_descriptor=StreamDescriptor(name="TestStream", namespace=None),
+                    stream_state=AirbyteStateBlob(updated_at="2024-07-01"),
+                ),
+            )
+        ]
+        source = ConcurrentDeclarativeSource(
+            source_config=manifest, config=config, catalog=None, state=state
+        )
+        configured_catalog = create_configured_catalog(source, config)
+
+        all_messages = list(
+            source.read(logger=MagicMock(), config=config, catalog=configured_catalog, state=state)
+        )
+
+        # Should NOT emit a state-reset message since retention validation is skipped
+        state_messages = [msg for msg in all_messages if msg.type == Type.STATE]
+        reset_messages = [
+            msg for msg in state_messages if msg.state.stream.stream_state == AirbyteStateBlob()
+        ]
+        assert len(reset_messages) == 0, (
+            f"Expected no state-reset messages when retention validation is disabled, "
+            f"but got {len(reset_messages)}"
+        )
+
+
+@freezegun.freeze_time("2024-07-15")
+def test_retention_with_plain_string_unchanged():
+    """Regression guard: plain string api_retention_period still works after interpolation support."""
+    manifest = _create_manifest_with_retention_period("P7D")
+
+    with HttpMocker() as http_mocker:
+        http_mocker.get(
+            HttpRequest(url="https://api.test.com/items"),
+            HttpResponse(
+                body=json.dumps(
+                    [
+                        {"id": 1, "name": "item_1", "updated_at": "2024-07-13"},
+                        {"id": 2, "name": "item_2", "updated_at": "2024-07-14"},
+                    ]
+                )
+            ),
+        )
+
+        # State with cursor older than 7 days → should fall back to full refresh
+        state = [
+            AirbyteStateMessage(
+                type=AirbyteStateType.STREAM,
+                stream=AirbyteStreamState(
+                    stream_descriptor=StreamDescriptor(name="TestStream", namespace=None),
+                    stream_state=AirbyteStateBlob(updated_at="2024-07-01"),
+                ),
+            )
+        ]
+        source = ConcurrentDeclarativeSource(
+            source_config=manifest, config=_CONFIG, catalog=None, state=state
+        )
+        configured_catalog = create_configured_catalog(source, _CONFIG)
+
+        records = get_records(source, _CONFIG, configured_catalog, state)
+        expected = [
+            {"id": 1, "name": "item_1", "updated_at": "2024-07-13"},
+            {"id": 2, "name": "item_2", "updated_at": "2024-07-14"},
+        ]
+        assert expected == records

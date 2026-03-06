@@ -3564,7 +3564,17 @@ class ModelToComponentFactory:
                 f"state_delegating_stream, full_refresh_stream name and incremental_stream must have equal names. Instead has {model.name}, {model.full_refresh_stream.name} and {model.incremental_stream.name}."
             )
 
+        # Resolve api_retention_period with config context (supports Jinja2 interpolation)
+        resolved_retention_period: Optional[str] = None
         if model.api_retention_period:
+            interpolated_retention = InterpolatedString.create(
+                model.api_retention_period, parameters=model.parameters or {}
+            )
+            resolved_value = interpolated_retention.eval(config=config)
+            if resolved_value:
+                resolved_retention_period = str(resolved_value)
+
+        if resolved_retention_period:
             for stream_model in (model.full_refresh_stream, model.incremental_stream):
                 if isinstance(stream_model.incremental_sync, IncrementingCountCursorModel):
                     raise ValueError(
@@ -3593,7 +3603,7 @@ class ModelToComponentFactory:
             not self._stream_name_to_configured_stream  # no catalog → validate by default
             or model.name in self._stream_name_to_configured_stream
         )
-        if model.api_retention_period and stream_is_in_catalog:
+        if resolved_retention_period and stream_is_in_catalog:
             full_refresh_stream: DefaultStream = self._create_component_from_model(
                 model.full_refresh_stream, config=config, **kwargs
             )  # type: ignore[assignment]
@@ -3601,7 +3611,7 @@ class ModelToComponentFactory:
                 stream_state,
                 full_refresh_stream.cursor,
                 incremental_stream.cursor,
-                model.api_retention_period,
+                resolved_retention_period,
                 model.name,
             ):
                 # Clear state BEFORE constructing the full_refresh_stream so that
