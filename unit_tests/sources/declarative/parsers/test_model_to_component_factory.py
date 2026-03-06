@@ -5281,6 +5281,62 @@ list_stream:
     assert stream._cursor_field.supports_catalog_defined_cursor_field == True
 
 
+def test_block_simultaneous_read_from_stream_groups():
+    """Test that factory-created streams default to empty block_simultaneous_read.
+
+    The factory no longer handles stream_groups — that's done by
+    ConcurrentDeclarativeSource._apply_stream_groups after stream creation.
+    This test verifies the factory creates streams without group info.
+    """
+    content = """
+    definitions:
+      parent_stream:
+        type: DeclarativeStream
+        name: "parent"
+        primary_key: "id"
+        retriever:
+          type: SimpleRetriever
+          requester:
+            type: HttpRequester
+            url_base: "https://api.example.com"
+            path: "/parent"
+            http_method: "GET"
+            authenticator:
+              type: BearerAuthenticator
+              api_token: "{{ config['api_key'] }}"
+          record_selector:
+            type: RecordSelector
+            extractor:
+              type: DpathExtractor
+              field_path: []
+        schema_loader:
+          type: InlineSchemaLoader
+          schema:
+            type: object
+            properties:
+              id:
+                type: string
+    """
+
+    config = {"api_key": "test_key"}
+
+    parsed_manifest = YamlDeclarativeSource._parse(content)
+    resolved_manifest = resolver.preprocess_manifest(parsed_manifest)
+
+    factory = ModelToComponentFactory()
+
+    parent_manifest = transformer.propagate_types_and_parameters(
+        "", resolved_manifest["definitions"]["parent_stream"], {}
+    )
+    parent_stream: DefaultStream = factory.create_component(
+        model_type=DeclarativeStreamModel, component_definition=parent_manifest, config=config
+    )
+
+    assert isinstance(parent_stream, DefaultStream)
+    assert parent_stream.name == "parent"
+    assert parent_stream.block_simultaneous_read == ""
+
+
 def get_schema_loader(stream: DefaultStream):
     assert isinstance(
         stream._stream_partition_generator._partition_factory._schema_loader,
