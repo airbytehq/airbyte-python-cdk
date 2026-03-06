@@ -29,8 +29,11 @@ def _mock_datadog(monkeypatch: pytest.MonkeyPatch) -> MagicMock:
     return mock_cls
 
 
-import airbyte_cdk.metrics as metrics_module  # noqa: E402
-from airbyte_cdk.metrics import MetricsClient, get_metrics_client  # noqa: E402
+from airbyte_cdk.metrics import (  # noqa: E402
+    MetricsClient,
+    get_metrics_client,
+    reset_metrics_client,
+)
 
 
 def _make_enabled_client(mock_dogstatsd_cls: MagicMock) -> tuple[MetricsClient, MagicMock]:
@@ -134,7 +137,7 @@ class TestEmitMemoryMetrics:
         client, mock_instance = _make_enabled_client(_mock_datadog)
 
         mock_info = MemoryInfo(usage_bytes=100_000_000, limit_bytes=200_000_000)
-        with patch("airbyte_cdk.metrics.get_memory_info", return_value=mock_info):
+        with patch("airbyte_cdk.metrics.metrics_client.get_memory_info", return_value=mock_info):
             client.emit_memory_metrics()
 
         gauge_calls = {call[0][0]: call[0][1] for call in mock_instance.gauge.call_args_list}
@@ -146,7 +149,7 @@ class TestEmitMemoryMetrics:
         client, mock_instance = _make_enabled_client(_mock_datadog)
 
         mock_info = MemoryInfo(usage_bytes=100_000_000, limit_bytes=None)
-        with patch("airbyte_cdk.metrics.get_memory_info", return_value=mock_info):
+        with patch("airbyte_cdk.metrics.metrics_client.get_memory_info", return_value=mock_info):
             client.emit_memory_metrics()
 
         metric_names = [call[0][0] for call in mock_instance.gauge.call_args_list]
@@ -186,7 +189,7 @@ class TestMaybeEmitMemoryMetrics:
         client, mock_instance = _make_enabled_client(_mock_datadog)
 
         mock_info = MemoryInfo(usage_bytes=100, limit_bytes=200)
-        with patch("airbyte_cdk.metrics.get_memory_info", return_value=mock_info):
+        with patch("airbyte_cdk.metrics.metrics_client.get_memory_info", return_value=mock_info):
             client.maybe_emit_memory_metrics(interval_seconds=0.0)
             first_call_count = mock_instance.gauge.call_count
 
@@ -202,11 +205,10 @@ class TestMaybeEmitMemoryMetrics:
 
 class TestGetMetricsClient:
     def test_returns_singleton(self) -> None:
-        # Reset the singleton for test isolation
-        metrics_module._metrics_client = None
+        reset_metrics_client()
         try:
             client1 = get_metrics_client()
             client2 = get_metrics_client()
             assert client1 is client2
         finally:
-            metrics_module._metrics_client = None
+            reset_metrics_client()
