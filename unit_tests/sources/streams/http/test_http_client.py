@@ -179,7 +179,7 @@ def test_connection_pool():
     http_client = HttpClient(
         name="test", logger=MagicMock(), authenticator=TokenAuthenticator("test-token")
     )
-    assert http_client._session.adapters["https://"]._pool_connections == 20
+    assert http_client._session.adapters["https://"]._pool_connections == 40
 
 
 def test_valid_basic_send_request(mocker):
