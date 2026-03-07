@@ -20,6 +20,44 @@ _A_RECORD = Record(
 _A_STREAM_SLICE = StreamSlice(cursor_slice={"stream slice": "slice value"}, partition={})
 
 
+@pytest.mark.parametrize(
+    "pages_per_interval, total_pages, expected_checkpoint_calls",
+    [
+        pytest.param(5, 4, 0, id="below_interval_no_checkpoint"),
+        pytest.param(5, 5, 1, id="exactly_one_interval"),
+        pytest.param(5, 10, 2, id="two_intervals"),
+        pytest.param(5, 12, 2, id="past_second_interval_but_not_third"),
+        pytest.param(3, 9, 3, id="three_intervals_with_smaller_page_size"),
+        pytest.param(1, 3, 3, id="checkpoint_every_page"),
+    ],
+)
+def test_on_page_complete_triggers_checkpoint_at_interval(
+    pages_per_interval: int, total_pages: int, expected_checkpoint_calls: int
+) -> None:
+    checkpoint_cursor = Mock(spec=ConcurrentCursor)
+    tracker = PaginationTracker(
+        checkpoint_cursor=checkpoint_cursor,
+        pages_per_checkpoint_interval=pages_per_interval,
+    )
+
+    for _ in range(total_pages):
+        tracker.on_page_complete(_A_STREAM_SLICE)
+
+    assert checkpoint_cursor.emit_intermediate_state.call_count == expected_checkpoint_calls
+
+
+def test_on_page_complete_without_checkpoint_cursor_is_noop() -> None:
+    tracker = PaginationTracker()
+    tracker.on_page_complete(_A_STREAM_SLICE)
+
+
+def test_on_page_complete_without_interval_is_noop() -> None:
+    checkpoint_cursor = Mock(spec=ConcurrentCursor)
+    tracker = PaginationTracker(checkpoint_cursor=checkpoint_cursor)
+    tracker.on_page_complete(_A_STREAM_SLICE)
+    checkpoint_cursor.emit_intermediate_state.assert_not_called()
+
+
 class TestPaginationTracker(TestCase):
     def setUp(self) -> None:
         self._cursor = Mock(spec=ConcurrentCursor)

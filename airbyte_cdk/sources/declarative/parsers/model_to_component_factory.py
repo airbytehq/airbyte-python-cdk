@@ -545,7 +545,9 @@ from airbyte_cdk.sources.declarative.retrievers.file_uploader import (
     LocalFileSystemFileWriter,
     NoopFileWriter,
 )
-from airbyte_cdk.sources.declarative.retrievers.pagination_tracker import PaginationTracker
+from airbyte_cdk.sources.declarative.retrievers.pagination_tracker import (
+    PaginationTracker,
+)
 from airbyte_cdk.sources.declarative.schema import (
     ComplexFieldType,
     DefaultSchemaLoader,
@@ -3463,16 +3465,29 @@ class ModelToComponentFactory:
             additional_query_properties=query_properties,
             log_formatter=self._get_log_formatter(log_formatter, name),
             pagination_tracker_factory=self._create_pagination_tracker_factory(
-                model.pagination_reset, cursor
+                model.pagination_reset,
+                cursor,
+                incremental_sync.pages_per_checkpoint_interval if incremental_sync else None,
             ),
             parameters=model.parameters or {},
         )
 
     def _create_pagination_tracker_factory(
-        self, model: Optional[PaginationResetModel], cursor: Cursor
+        self,
+        model: Optional[PaginationResetModel],
+        cursor: Cursor,
+        pages_per_checkpoint_interval: int | None = None,
     ) -> Callable[[], PaginationTracker]:
+        checkpoint_cursor: Optional[ConcurrentCursor] = (
+            cursor if isinstance(cursor, ConcurrentCursor) else None
+        )
+        effective_interval = pages_per_checkpoint_interval if checkpoint_cursor else None
+
         if model is None:
-            return lambda: PaginationTracker()
+            return lambda: PaginationTracker(
+                checkpoint_cursor=checkpoint_cursor,
+                pages_per_checkpoint_interval=effective_interval,
+            )
 
         # Until we figure out a way to use any cursor for PaginationTracker, we will have to have this cursor selector logic
         cursor_factory: Callable[[], Optional[ConcurrentCursor]] = lambda: None
@@ -3494,7 +3509,12 @@ class ModelToComponentFactory:
             raise ValueError(f"Unknown PaginationReset action: {model.action}")
 
         limit = model.limits.number_of_records if model and model.limits else None
-        return lambda: PaginationTracker(cursor_factory(), limit)
+        return lambda: PaginationTracker(
+            cursor_factory(),
+            limit,
+            checkpoint_cursor=checkpoint_cursor,
+            pages_per_checkpoint_interval=effective_interval,
+        )
 
     def _get_log_formatter(
         self, log_formatter: Callable[[Response], Any] | None, name: str

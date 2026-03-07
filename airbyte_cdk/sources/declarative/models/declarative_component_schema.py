@@ -1604,6 +1604,11 @@ class IncrementingCountCursor(BaseModel):
         description="Optionally configures how the start value will be sent in requests to the source API.",
         title="Inject Start Value Into Outgoing HTTP Request",
     )
+    pages_per_checkpoint_interval: Optional[int] = Field(
+        None,
+        description="The number of pages to fetch before emitting an intermediate state checkpoint during pagination. This enables resuming long-running syncs closer to where they failed rather than from the beginning of the current slice. Only effective when records are returned in ascending cursor order. Defaults to disabled.",
+        title="Pages Per Checkpoint Interval",
+    )
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
 
@@ -1719,6 +1724,11 @@ class DatetimeBasedCursor(BaseModel):
         description="The size of the time window (ISO8601 duration). Given this field is provided, `cursor_granularity` needs to be provided as well.\n  * **PT1H**: 1 hour\n  * **P1D**: 1 day\n  * **P1W**: 1 week\n  * **P1M**: 1 month\n  * **P1Y**: 1 year\n",
         examples=["P1W", "{{ config['step_increment'] }}"],
         title="Step",
+    )
+    pages_per_checkpoint_interval: Optional[int] = Field(
+        None,
+        description="The number of pages to fetch before emitting an intermediate state checkpoint during pagination. This enables resuming long-running syncs closer to where they failed rather than from the beginning of the current slice. Only effective when records are returned in ascending cursor order. Defaults to disabled.",
+        title="Pages Per Checkpoint Interval",
     )
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
