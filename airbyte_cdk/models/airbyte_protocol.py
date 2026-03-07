@@ -75,11 +75,70 @@ class AirbyteStateMessage:
     destinationStats: Optional[AirbyteStateStats] = None  # type: ignore [name-defined]
 
 
+# The following dataclasses have been redeclared to include scopes, optional_scopes,
+# and scopes_join_strategy fields that are used by declarative OAuth connectors.
+# The protocol model (OauthConnectorInputSpecification) does not include these fields,
+# so serpyco_rs silently drops them during deserialization. By overriding the model here
+# and cascading through OAuthConfigSpecification → AdvancedAuth → ConnectorSpecification,
+# the fields are preserved in the connector's spec output.
+# This follows the same override pattern used above for AirbyteStateBlob.
+@dataclass
+class OauthConnectorInputSpecification:
+    consent_url: str
+    access_token_url: str
+    scope: Optional[str] = None
+    scopes: Optional[List[Dict[str, Any]]] = None
+    optional_scopes: Optional[List[Dict[str, Any]]] = None
+    scopes_join_strategy: Optional[str] = None
+    access_token_headers: Optional[Dict[str, Any]] = None
+    access_token_params: Optional[Dict[str, Any]] = None
+    extract_output: Optional[List[str]] = None
+    state: Optional[State] = None  # type: ignore [name-defined]
+    client_id_key: Optional[str] = None
+    client_secret_key: Optional[str] = None
+    scope_key: Optional[str] = None
+    state_key: Optional[str] = None
+    auth_code_key: Optional[str] = None
+    redirect_uri_key: Optional[str] = None
+    token_expiry_key: Optional[str] = None
+
+
+@dataclass
+class OAuthConfigSpecification:
+    oauth_user_input_from_connector_config_specification: Optional[Dict[str, Any]] = None
+    oauth_connector_input_specification: Optional[OauthConnectorInputSpecification] = None
+    complete_oauth_output_specification: Optional[Dict[str, Any]] = None
+    complete_oauth_server_input_specification: Optional[Dict[str, Any]] = None
+    complete_oauth_server_output_specification: Optional[Dict[str, Any]] = None
+
+
+@dataclass
+class AdvancedAuth:
+    auth_flow_type: Optional[AuthFlowType] = None  # type: ignore [name-defined]
+    predicate_key: Optional[List[str]] = None
+    predicate_value: Optional[str] = None
+    oauth_config_specification: Optional[OAuthConfigSpecification] = None
+
+
+@dataclass
+class ConnectorSpecification:
+    connectionSpecification: Dict[str, Any]
+    documentationUrl: Optional[str] = None
+    changelogUrl: Optional[str] = None
+    supportsIncremental: Optional[bool] = None
+    supportsNormalization: Optional[bool] = False
+    supportsDBT: Optional[bool] = False
+    supported_destination_sync_modes: Optional[List[DestinationSyncMode]] = None  # type: ignore [name-defined]
+    authSpecification: Optional[AuthSpecification] = None  # type: ignore [name-defined]
+    advanced_auth: Optional[AdvancedAuth] = None
+    protocol_version: Optional[str] = None
+
+
 @dataclass
 class AirbyteMessage:
     type: Type  # type: ignore [name-defined]
     log: Optional[AirbyteLogMessage] = None  # type: ignore [name-defined]
-    spec: Optional[ConnectorSpecification] = None  # type: ignore [name-defined]
+    spec: Optional[ConnectorSpecification] = None
     connectionStatus: Optional[AirbyteConnectionStatus] = None  # type: ignore [name-defined]
     catalog: Optional[AirbyteCatalog] = None  # type: ignore [name-defined]
     record: Optional[AirbyteRecordMessage] = None  # type: ignore [name-defined]
