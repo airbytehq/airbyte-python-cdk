@@ -131,6 +131,7 @@ from airbyte_cdk.sources.declarative.validators.validate_adheres_to_schema impor
                         oauth_connector_input_specification=model_declarative_oauth_connector_input_spec(
                             consent_url="https://domain.host.com/endpoint/oauth?{client_id_key}={{client_id_key}}&{redirect_uri_key}={urlEncoder:{{redirect_uri_key}}}&{state_key}={{state_key}}",
                             scope="reports:read campaigns:read",
+                            scopes_join_strategy="space",  # default from component schema, preserved through protocol override
                             access_token_headers={"Content-Type": "application/json"},
                             access_token_params={"{auth_code_key}": "{{auth_code_key}}"},
                             access_token_url="https://domain.host.com/endpoint/v1/oauth2/access_token/",
