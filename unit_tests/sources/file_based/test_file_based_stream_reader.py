@@ -408,6 +408,41 @@ class TestSpec(AbstractFileBasedSpec):
             set(),
             id="all_csvs_modified_exactly_on_start_date",
         ),
+        pytest.param(
+            ["**/*.csv"],
+            {"start_date": "2023-06-01T00:00:00Z", "streams": []},
+            {"a.csv", "a/b.csv", "a/c.csv", "a/b/c.csv", "a/c/c.csv", "a/b/c/d.csv"},
+            set(),
+            id="start_date_without_microseconds",
+        ),
+        pytest.param(
+            ["**/*.csv"],
+            {"start_date": "2023-06-10T00:00:00Z", "streams": []},
+            set(),
+            set(),
+            id="start_date_without_microseconds_modified_before",
+        ),
+        pytest.param(
+            ["**/*.csv"],
+            {"start_date": "2023-06-01T00:00:00+00:00", "streams": []},
+            {"a.csv", "a/b.csv", "a/c.csv", "a/b/c.csv", "a/c/c.csv", "a/b/c/d.csv"},
+            set(),
+            id="start_date_with_utc_offset",
+        ),
+        pytest.param(
+            ["**/*.csv"],
+            {"start_date": "2023-06-05T08:54:07+05:00", "streams": []},
+            {"a.csv", "a/b.csv", "a/c.csv", "a/b/c.csv", "a/c/c.csv", "a/b/c/d.csv"},
+            set(),
+            id="start_date_with_non_zero_offset",
+        ),
+        pytest.param(
+            ["**/*.csv"],
+            {"start_date": "2023-06-01", "streams": []},
+            {"a.csv", "a/b.csv", "a/c.csv", "a/b/c.csv", "a/c/c.csv", "a/b/c/d.csv"},
+            set(),
+            id="start_date_date_only",
+        ),
     ],
 )
 def test_globs_and_prefixes_from_globs(
