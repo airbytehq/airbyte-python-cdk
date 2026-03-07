@@ -1567,6 +1567,13 @@ definitions:
           - "$ref": "#/definitions/SimpleRetriever"
           - "$ref": "#/definitions/AsyncRetriever"
           - "$ref": "#/definitions/CustomRetriever"
+          - type: object
+            properties:
+              $ref:
+                type: string
+                pattern: "^#/definitions/"
+            required: ["$ref"]
+            additionalProperties: true
       incremental_sync:
         title: Incremental Sync
         description: Component used to fetch data incrementally based on a time field in the data.
@@ -2488,6 +2495,13 @@ definitions:
           - "$ref": "#/definitions/SimpleRetriever"
           - "$ref": "#/definitions/AsyncRetriever"
           - "$ref": "#/definitions/CustomRetriever"
+          - type: object
+            properties:
+              $ref:
+                type: string
+                pattern: "^#/definitions/"
+            required: ["$ref"]
+            additionalProperties: true
       schema_filter:
         title: Schema Filter
         description: Responsible for filtering fields to be added to json schema.
@@ -3328,6 +3342,13 @@ definitions:
         anyOf:
           - "$ref": "#/definitions/DeclarativeStream"
           - "$ref": "#/definitions/StateDelegatingStream"
+          - type: object
+            properties:
+              $ref:
+                type: string
+                pattern: "^#/definitions/"
+            required: ["$ref"]
+            additionalProperties: true
       parent_key:
         title: Parent Key
         description: The primary key of records from the parent stream that will be used during the retrieval of records for the current substream. This parent identifier field is typically a characteristic of the child records being extracted from the source API.
@@ -3772,6 +3793,13 @@ definitions:
         anyOf:
           - "$ref": "#/definitions/HttpRequester"
           - "$ref": "#/definitions/CustomRequester"
+          - type: object
+            properties:
+              $ref:
+                type: string
+                pattern: "^#/definitions/"
+            required: ["$ref"]
+            additionalProperties: true
       decoder:
         title: HTTP Response Format
         description: Component decoding the response so records can be extracted.
@@ -4350,6 +4378,13 @@ definitions:
           - "$ref": "#/definitions/SimpleRetriever"
           - "$ref": "#/definitions/AsyncRetriever"
           - "$ref": "#/definitions/CustomRetriever"
+          - type: object
+            properties:
+              $ref:
+                type: string
+                pattern: "^#/definitions/"
+            required: ["$ref"]
+            additionalProperties: true
       components_mapping:
         type: array
         items:
@@ -4484,6 +4519,13 @@ definitions:
         anyOf:
           - "$ref": "#/definitions/DeclarativeStream"
           - "$ref": "#/definitions/StateDelegatingStream"
+          - type: object
+            properties:
+              $ref:
+                type: string
+                pattern: "^#/definitions/"
+            required: ["$ref"]
+            additionalProperties: true
       components_resolver:
         title: Components Resolver
         description: Component resolve and populates stream templates with components values.
