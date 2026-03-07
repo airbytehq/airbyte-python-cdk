@@ -239,9 +239,12 @@ class AbstractOauth2Authenticator(AuthBase):
         """
         Makes a handled HTTP request to refresh an OAuth token.
 
-        This method sends a POST request to the token refresh endpoint with the necessary
-        headers and body to obtain a new access token. It handles various exceptions that
-        may occur during the request and logs the response for troubleshooting purposes.
+        This method sends an HTTP request to the token refresh endpoint with the necessary
+        headers and body/params to obtain a new access token. The HTTP method and parameter
+        encoding are determined by get_token_refresh_request_type():
+        - "body_data" (default): POST with form-encoded body
+        - "body_json": POST with JSON body
+        - "query_params": GET with query parameters
 
         Returns:
             Mapping[str, Any]: The JSON response from the token refresh endpoint.
@@ -254,12 +257,32 @@ class AbstractOauth2Authenticator(AuthBase):
             Exception: For any other exceptions that occur during the request.
         """
         try:
-            response = requests.request(
-                method="POST",
-                url=self.get_token_refresh_endpoint(),  # type: ignore # returns None, if not provided, but str | bytes is expected.
-                data=self.build_refresh_request_body(),
-                headers=self.build_refresh_request_headers(),
-            )
+            request_type = self.get_token_refresh_request_type()
+            headers = self.build_refresh_request_headers()
+            body = self.build_refresh_request_body()
+            url = self.get_token_refresh_endpoint()
+
+            if request_type == "query_params":
+                response = requests.request(
+                    method="GET",
+                    url=url,  # type: ignore[arg-type]  # returns None if not provided, but str | bytes is expected
+                    params=body,
+                    headers=headers,
+                )
+            elif request_type == "body_json":
+                response = requests.request(
+                    method="POST",
+                    url=url,  # type: ignore[arg-type]  # returns None if not provided, but str | bytes is expected
+                    json=body,
+                    headers=headers,
+                )
+            else:
+                response = requests.request(
+                    method="POST",
+                    url=url,  # type: ignore[arg-type]  # returns None if not provided, but str | bytes is expected
+                    data=body,
+                    headers=headers,
+                )
 
             if not response.ok:
                 # log the response even if the request failed for troubleshooting purposes
@@ -542,6 +565,16 @@ class AbstractOauth2Authenticator(AuthBase):
     @abstractmethod
     def get_grant_type_name(self) -> str:
         """Returns grant_type specified name for requesting access_token"""
+
+    def get_token_refresh_request_type(self) -> str:
+        """Returns the request type for the token refresh request.
+
+        Supported values:
+        - "body_data": POST with form-encoded body (default, standard OAuth2)
+        - "body_json": POST with JSON-encoded body
+        - "query_params": GET with query parameters (e.g., Marketo)
+        """
+        return "body_data"
 
     @property
     @abstractmethod
