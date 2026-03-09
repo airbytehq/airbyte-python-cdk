@@ -38,7 +38,8 @@ class MemoryLimitExceeded(AirbyteTracedException):
 class MemoryMonitor:
     """Monitors container memory usage via cgroup files and emits warnings before OOM kills.
 
-    On init, probes cgroup v2 then v1 files. Caches which version exists.
+    Lazily probes cgroup v2 then v1 files on the first call to
+    ``check_memory_usage()``.  Caches which version exists.
     If neither is found (local dev / CI), all subsequent calls are instant no-ops.
     """
 
@@ -55,8 +56,18 @@ class MemoryMonitor:
         self._warning_emitted = False
         self._critical_raised = False
         self._cgroup_version: Optional[int] = None
+        self._probed = False
 
-        # Probe cgroup version on init
+    def _probe_cgroup(self) -> None:
+        """Detect which cgroup version (if any) is available.
+
+        Called lazily on the first ``check_memory_usage()`` invocation so
+        that ``spec`` and ``discover`` commands never incur filesystem I/O.
+        """
+        if self._probed:
+            return
+        self._probed = True
+
         if _CGROUP_V2_CURRENT.exists() and _CGROUP_V2_MAX.exists():
             self._cgroup_version = 2
         elif _CGROUP_V1_USAGE.exists() and _CGROUP_V1_LIMIT.exists():
@@ -114,6 +125,7 @@ class MemoryMonitor:
         Each threshold triggers at most once per sync to avoid log spam.
         This method is a no-op if cgroup files are unavailable.
         """
+        self._probe_cgroup()
         if self._cgroup_version is None:
             return
 

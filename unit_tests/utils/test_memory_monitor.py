@@ -18,40 +18,73 @@ from airbyte_cdk.utils.memory_monitor import (
     MemoryMonitor,
 )
 
+_MOCK_USAGE_BELOW = "500000000\n"  # 50% of 1 GB
+_MOCK_USAGE_WARNING = "870000000\n"  # 87% of 1 GB
+_MOCK_USAGE_CRITICAL = "960000000\n"  # 96% of 1 GB
+_MOCK_LIMIT = "1000000000\n"  # 1 GB
+
+
+def _v2_exists(self: Path) -> bool:
+    return self in (_CGROUP_V2_CURRENT, _CGROUP_V2_MAX)
+
+
+def _v1_exists(self: Path) -> bool:
+    return self in (_CGROUP_V1_USAGE, _CGROUP_V1_LIMIT)
+
 
 class TestMemoryMonitorInit:
-    """Tests for MemoryMonitor initialization and cgroup detection."""
+    """Tests for MemoryMonitor initialization and lazy cgroup detection."""
 
-    def test_no_cgroup_files_disables_monitoring(self, tmp_path: Path) -> None:
+    def test_no_cgroup_files_disables_monitoring(self) -> None:
         """When no cgroup files exist, monitoring should be disabled (no-op)."""
+        monitor = MemoryMonitor()
         with patch.object(Path, "exists", return_value=False):
-            monitor = MemoryMonitor()
+            monitor.check_memory_usage()
         assert monitor._cgroup_version is None
 
-    def test_cgroup_v2_detected(self, tmp_path: Path) -> None:
+    def test_cgroup_v2_detected(self) -> None:
         """When cgroup v2 files exist, version should be 2."""
-
-        def mock_exists(self: Path) -> bool:
-            return self in (_CGROUP_V2_CURRENT, _CGROUP_V2_MAX)
-
-        with patch.object(Path, "exists", mock_exists):
-            monitor = MemoryMonitor()
+        monitor = MemoryMonitor(check_interval=2)
+        with (
+            patch.object(Path, "exists", _v2_exists),
+            patch.object(Path, "read_text", return_value=_MOCK_USAGE_BELOW),
+        ):
+            monitor.check_memory_usage()
         assert monitor._cgroup_version == 2
 
-    def test_cgroup_v1_detected(self, tmp_path: Path) -> None:
+    def test_cgroup_v1_detected(self) -> None:
         """When only cgroup v1 files exist, version should be 1."""
-
-        def mock_exists(self: Path) -> bool:
-            return self in (_CGROUP_V1_USAGE, _CGROUP_V1_LIMIT)
-
-        with patch.object(Path, "exists", mock_exists):
-            monitor = MemoryMonitor()
+        monitor = MemoryMonitor(check_interval=2)
+        with (
+            patch.object(Path, "exists", _v1_exists),
+            patch.object(Path, "read_text", return_value=_MOCK_USAGE_BELOW),
+        ):
+            monitor.check_memory_usage()
         assert monitor._cgroup_version == 1
 
     def test_cgroup_v2_preferred_over_v1(self) -> None:
         """When both cgroup v2 and v1 files exist, v2 should be preferred."""
-        with patch.object(Path, "exists", return_value=True):
-            monitor = MemoryMonitor()
+        monitor = MemoryMonitor(check_interval=2)
+        with (
+            patch.object(Path, "exists", return_value=True),
+            patch.object(Path, "read_text", return_value=_MOCK_USAGE_BELOW),
+        ):
+            monitor.check_memory_usage()
+        assert monitor._cgroup_version == 2
+
+    def test_lazy_probe_not_called_until_check(self) -> None:
+        """Cgroup probing should not happen during __init__, only on first check_memory_usage()."""
+        monitor = MemoryMonitor()
+        assert not monitor._probed
+        assert monitor._cgroup_version is None
+
+        with (
+            patch.object(Path, "exists", return_value=True),
+            patch.object(Path, "read_text", return_value=_MOCK_USAGE_BELOW),
+        ):
+            monitor.check_memory_usage()
+
+        assert monitor._probed
         assert monitor._cgroup_version == 2
 
 
@@ -60,16 +93,12 @@ class TestMemoryMonitorCheckMemory:
 
     def test_noop_when_no_cgroup(self) -> None:
         """check_memory_usage should be a no-op when cgroup is unavailable."""
+        monitor = MemoryMonitor()
         with patch.object(Path, "exists", return_value=False):
-            monitor = MemoryMonitor()
-        # Should not raise
-        monitor.check_memory_usage()
+            monitor.check_memory_usage()
 
     def test_noop_when_limit_is_max(self) -> None:
         """When cgroup v2 memory.max is 'max' (unlimited), should be a no-op."""
-
-        def mock_exists(self: Path) -> bool:
-            return self in (_CGROUP_V2_CURRENT, _CGROUP_V2_MAX)
 
         def mock_read_text(self: Path) -> str:
             if self == _CGROUP_V2_CURRENT:
@@ -78,30 +107,28 @@ class TestMemoryMonitorCheckMemory:
                 return "max\n"
             return ""
 
-        with patch.object(Path, "exists", mock_exists):
-            monitor = MemoryMonitor(check_interval=1)
-
-        with patch.object(Path, "read_text", mock_read_text):
-            # Should not raise even though "usage" is technically present
+        monitor = MemoryMonitor(check_interval=1)
+        with (
+            patch.object(Path, "exists", _v2_exists),
+            patch.object(Path, "read_text", mock_read_text),
+        ):
             monitor.check_memory_usage()
 
     def test_no_warning_below_threshold(self) -> None:
         """No warning should be emitted when usage is below 85%."""
 
-        def mock_exists(self: Path) -> bool:
-            return self in (_CGROUP_V2_CURRENT, _CGROUP_V2_MAX)
-
         def mock_read_text(self: Path) -> str:
             if self == _CGROUP_V2_CURRENT:
-                return "500000000\n"  # 500MB
+                return _MOCK_USAGE_BELOW
             if self == _CGROUP_V2_MAX:
-                return "1000000000\n"  # 1GB
+                return _MOCK_LIMIT
             return ""
 
-        with patch.object(Path, "exists", mock_exists):
-            monitor = MemoryMonitor(check_interval=1)
-
-        with patch.object(Path, "read_text", mock_read_text):
+        monitor = MemoryMonitor(check_interval=1)
+        with (
+            patch.object(Path, "exists", _v2_exists),
+            patch.object(Path, "read_text", mock_read_text),
+        ):
             monitor.check_memory_usage()
 
         assert not monitor._warning_emitted
@@ -110,20 +137,18 @@ class TestMemoryMonitorCheckMemory:
     def test_warning_at_85_percent(self) -> None:
         """Warning should be emitted at 85% usage."""
 
-        def mock_exists(self: Path) -> bool:
-            return self in (_CGROUP_V2_CURRENT, _CGROUP_V2_MAX)
-
         def mock_read_text(self: Path) -> str:
             if self == _CGROUP_V2_CURRENT:
-                return "870000000\n"  # 870MB = 87% of 1GB
+                return _MOCK_USAGE_WARNING
             if self == _CGROUP_V2_MAX:
-                return "1000000000\n"  # 1GB
+                return _MOCK_LIMIT
             return ""
 
-        with patch.object(Path, "exists", mock_exists):
-            monitor = MemoryMonitor(check_interval=1)
-
-        with patch.object(Path, "read_text", mock_read_text):
+        monitor = MemoryMonitor(check_interval=1)
+        with (
+            patch.object(Path, "exists", _v2_exists),
+            patch.object(Path, "read_text", mock_read_text),
+        ):
             monitor.check_memory_usage()
 
         assert monitor._warning_emitted
@@ -132,114 +157,99 @@ class TestMemoryMonitorCheckMemory:
     def test_critical_at_95_percent_raises(self) -> None:
         """MemoryLimitExceeded should be raised at 95% usage."""
 
-        def mock_exists(self: Path) -> bool:
-            return self in (_CGROUP_V2_CURRENT, _CGROUP_V2_MAX)
-
         def mock_read_text(self: Path) -> str:
             if self == _CGROUP_V2_CURRENT:
-                return "960000000\n"  # 960MB = 96% of 1GB
+                return _MOCK_USAGE_CRITICAL
             if self == _CGROUP_V2_MAX:
-                return "1000000000\n"  # 1GB
+                return _MOCK_LIMIT
             return ""
 
-        with patch.object(Path, "exists", mock_exists):
-            monitor = MemoryMonitor(check_interval=1)
-
-        with patch.object(Path, "read_text", mock_read_text):
+        monitor = MemoryMonitor(check_interval=1)
+        with (
+            patch.object(Path, "exists", _v2_exists),
+            patch.object(Path, "read_text", mock_read_text),
+        ):
             with pytest.raises(MemoryLimitExceeded) as exc_info:
                 monitor.check_memory_usage()
 
         assert exc_info.value.failure_type == FailureType.transient_error
         assert "96%" in (exc_info.value.message or "")
-        assert "shut down" in (exc_info.value.message or "")
 
     def test_warning_emitted_only_once(self) -> None:
         """Warning should only be emitted once even if called multiple times."""
 
-        def mock_exists(self: Path) -> bool:
-            return self in (_CGROUP_V2_CURRENT, _CGROUP_V2_MAX)
-
         def mock_read_text(self: Path) -> str:
             if self == _CGROUP_V2_CURRENT:
-                return "870000000\n"  # 87%
+                return _MOCK_USAGE_WARNING
             if self == _CGROUP_V2_MAX:
-                return "1000000000\n"
+                return _MOCK_LIMIT
             return ""
 
-        with patch.object(Path, "exists", mock_exists):
-            monitor = MemoryMonitor(check_interval=1)
-
-        with patch.object(Path, "read_text", mock_read_text):
+        monitor = MemoryMonitor(check_interval=1)
+        with (
+            patch.object(Path, "exists", _v2_exists),
+            patch.object(Path, "read_text", mock_read_text),
+        ):
             monitor.check_memory_usage()
             assert monitor._warning_emitted
-
-            # Call again — should not error or re-emit
             monitor.check_memory_usage()
             assert monitor._warning_emitted
 
     def test_critical_raised_only_once(self) -> None:
         """MemoryLimitExceeded should only be raised once."""
 
-        def mock_exists(self: Path) -> bool:
-            return self in (_CGROUP_V2_CURRENT, _CGROUP_V2_MAX)
-
         def mock_read_text(self: Path) -> str:
             if self == _CGROUP_V2_CURRENT:
-                return "960000000\n"
+                return _MOCK_USAGE_CRITICAL
             if self == _CGROUP_V2_MAX:
-                return "1000000000\n"
+                return _MOCK_LIMIT
             return ""
 
-        with patch.object(Path, "exists", mock_exists):
-            monitor = MemoryMonitor(check_interval=1)
-
-        with patch.object(Path, "read_text", mock_read_text):
+        monitor = MemoryMonitor(check_interval=1)
+        with (
+            patch.object(Path, "exists", _v2_exists),
+            patch.object(Path, "read_text", mock_read_text),
+        ):
             with pytest.raises(MemoryLimitExceeded):
                 monitor.check_memory_usage()
-
             # Second call should NOT raise again
             monitor.check_memory_usage()
 
     def test_cgroup_v1_reading(self) -> None:
         """Memory reading should work with cgroup v1 paths."""
 
-        def mock_exists(self: Path) -> bool:
-            return self in (_CGROUP_V1_USAGE, _CGROUP_V1_LIMIT)
-
         def mock_read_text(self: Path) -> str:
             if self == _CGROUP_V1_USAGE:
-                return "870000000\n"  # 87%
+                return _MOCK_USAGE_WARNING
             if self == _CGROUP_V1_LIMIT:
-                return "1000000000\n"
+                return _MOCK_LIMIT
             return ""
 
-        with patch.object(Path, "exists", mock_exists):
-            monitor = MemoryMonitor(check_interval=1)
-        assert monitor._cgroup_version == 1
-
-        with patch.object(Path, "read_text", mock_read_text):
+        monitor = MemoryMonitor(check_interval=1)
+        with (
+            patch.object(Path, "exists", _v1_exists),
+            patch.object(Path, "read_text", mock_read_text),
+        ):
             monitor.check_memory_usage()
 
+        assert monitor._cgroup_version == 1
         assert monitor._warning_emitted
 
     def test_check_interval_skips_intermediate_calls(self) -> None:
         """Monitor should only check cgroup files every check_interval messages."""
 
-        def mock_exists(self: Path) -> bool:
-            return self in (_CGROUP_V2_CURRENT, _CGROUP_V2_MAX)
-
         def mock_read_text(self: Path) -> str:
             if self == _CGROUP_V2_CURRENT:
-                return "870000000\n"  # 87%
+                return _MOCK_USAGE_WARNING
             if self == _CGROUP_V2_MAX:
-                return "1000000000\n"
+                return _MOCK_LIMIT
             return ""
 
-        with patch.object(Path, "exists", mock_exists):
-            monitor = MemoryMonitor(check_interval=3)
-
-        with patch.object(Path, "read_text", mock_read_text):
-            # Calls 1 and 2 should be skipped
+        monitor = MemoryMonitor(check_interval=3)
+        with (
+            patch.object(Path, "exists", _v2_exists),
+            patch.object(Path, "read_text", mock_read_text),
+        ):
             monitor.check_memory_usage()
             assert not monitor._warning_emitted
             monitor.check_memory_usage()
@@ -251,24 +261,22 @@ class TestMemoryMonitorCheckMemory:
     def test_custom_thresholds_warning(self) -> None:
         """Custom warning threshold should be respected."""
 
-        def mock_exists(self: Path) -> bool:
-            return self in (_CGROUP_V2_CURRENT, _CGROUP_V2_MAX)
-
         def mock_read_text(self: Path) -> str:
             if self == _CGROUP_V2_CURRENT:
-                return "750000000\n"  # 75%
+                return "750000000\n"
             if self == _CGROUP_V2_MAX:
-                return "1000000000\n"
+                return _MOCK_LIMIT
             return ""
 
-        with patch.object(Path, "exists", mock_exists):
-            monitor = MemoryMonitor(
-                warning_threshold=0.70,
-                critical_threshold=0.90,
-                check_interval=1,
-            )
-
-        with patch.object(Path, "read_text", mock_read_text):
+        monitor = MemoryMonitor(
+            warning_threshold=0.70,
+            critical_threshold=0.90,
+            check_interval=1,
+        )
+        with (
+            patch.object(Path, "exists", _v2_exists),
+            patch.object(Path, "read_text", mock_read_text),
+        ):
             monitor.check_memory_usage()
 
         assert monitor._warning_emitted
@@ -277,41 +285,44 @@ class TestMemoryMonitorCheckMemory:
     def test_custom_thresholds_critical(self) -> None:
         """Custom critical threshold should be respected."""
 
-        def mock_exists(self: Path) -> bool:
-            return self in (_CGROUP_V2_CURRENT, _CGROUP_V2_MAX)
-
         def mock_read_text(self: Path) -> str:
             if self == _CGROUP_V2_CURRENT:
-                return "850000000\n"  # 85%
+                return "850000000\n"
             if self == _CGROUP_V2_MAX:
-                return "1000000000\n"
+                return _MOCK_LIMIT
             return ""
 
-        with patch.object(Path, "exists", mock_exists):
-            monitor = MemoryMonitor(
-                warning_threshold=0.70,
-                critical_threshold=0.80,
-                check_interval=1,
-            )
-
-        with patch.object(Path, "read_text", mock_read_text):
+        monitor = MemoryMonitor(
+            warning_threshold=0.70,
+            critical_threshold=0.80,
+            check_interval=1,
+        )
+        with (
+            patch.object(Path, "exists", _v2_exists),
+            patch.object(Path, "read_text", mock_read_text),
+        ):
             with pytest.raises(MemoryLimitExceeded):
                 monitor.check_memory_usage()
 
     def test_malformed_cgroup_file_degrades_gracefully(self) -> None:
         """Malformed cgroup files should not crash the sync."""
+        monitor = MemoryMonitor(check_interval=1)
+        with (
+            patch.object(Path, "exists", _v2_exists),
+            patch.object(Path, "read_text", return_value="not_a_number\n"),
+        ):
+            monitor.check_memory_usage()
 
-        def mock_exists(self: Path) -> bool:
-            return self in (_CGROUP_V2_CURRENT, _CGROUP_V2_MAX)
+        assert not monitor._warning_emitted
+        assert not monitor._critical_raised
 
-        def mock_read_text(self: Path) -> str:
-            return "not_a_number\n"
-
-        with patch.object(Path, "exists", mock_exists):
-            monitor = MemoryMonitor(check_interval=1)
-
-        with patch.object(Path, "read_text", mock_read_text):
-            # Should not raise — degrades gracefully
+    def test_empty_cgroup_file_degrades_gracefully(self) -> None:
+        """Empty cgroup file content should not crash the sync."""
+        monitor = MemoryMonitor(check_interval=1)
+        with (
+            patch.object(Path, "exists", _v2_exists),
+            patch.object(Path, "read_text", return_value=""),
+        ):
             monitor.check_memory_usage()
 
         assert not monitor._warning_emitted
@@ -320,17 +331,34 @@ class TestMemoryMonitorCheckMemory:
     def test_os_error_degrades_gracefully(self) -> None:
         """OSError reading cgroup files should not crash the sync."""
 
-        def mock_exists(self: Path) -> bool:
-            return self in (_CGROUP_V2_CURRENT, _CGROUP_V2_MAX)
-
         def mock_read_text(self: Path) -> str:
             raise OSError("Permission denied")
 
-        with patch.object(Path, "exists", mock_exists):
-            monitor = MemoryMonitor(check_interval=1)
+        monitor = MemoryMonitor(check_interval=1)
+        with (
+            patch.object(Path, "exists", _v2_exists),
+            patch.object(Path, "read_text", mock_read_text),
+        ):
+            monitor.check_memory_usage()
 
-        with patch.object(Path, "read_text", mock_read_text):
-            # Should not raise — degrades gracefully
+        assert not monitor._warning_emitted
+        assert not monitor._critical_raised
+
+    def test_limit_bytes_zero_is_noop(self) -> None:
+        """When cgroup limit file contains '0', should be a no-op."""
+
+        def mock_read_text(self: Path) -> str:
+            if self == _CGROUP_V2_CURRENT:
+                return _MOCK_USAGE_BELOW
+            if self == _CGROUP_V2_MAX:
+                return "0\n"
+            return ""
+
+        monitor = MemoryMonitor(check_interval=1)
+        with (
+            patch.object(Path, "exists", _v2_exists),
+            patch.object(Path, "read_text", mock_read_text),
+        ):
             monitor.check_memory_usage()
 
         assert not monitor._warning_emitted

@@ -835,6 +835,99 @@ def test_handle_record_counts(
         )
 
 
+def test_memory_limit_exceeded_flushes_queued_messages(mocker, spec_mock, config_mock):
+    """When MemoryLimitExceeded is raised mid-read, queued messages should still be flushed.
+
+    The read() try/finally ensures _emit_queued_messages runs even when
+    MemoryLimitExceeded propagates.  The exception still surfaces to the
+    caller, but all messages yielded before (records) and during (finally-
+    block state messages) the exception are available to the consumer.
+    """
+    queued_state = AirbyteMessage(
+        type=Type.STATE,
+        state=AirbyteStateMessage(
+            type=AirbyteStateType.STREAM,
+            stream=AirbyteStreamState(
+                stream_descriptor=StreamDescriptor(name="stream"),
+                stream_state=AirbyteStateBlob(updated_at="2026-01-01"),
+            ),
+        ),
+    )
+    message_repository = MagicMock()
+    # consume_queue calls:
+    #   1. run() preamble → initial queued control message
+    #   2. read() finally block → queued state (the key assertion)
+    #   3. run() outer finally → nothing
+    message_repository.consume_queue.side_effect = [
+        [MESSAGE_FROM_REPOSITORY],
+        [queued_state],
+        [],
+    ]
+    mocker.patch.object(
+        MockSource,
+        "message_repository",
+        new_callable=mocker.PropertyMock,
+        return_value=message_repository,
+    )
+    entrypoint = AirbyteEntrypoint(MockSource())
+
+    record = AirbyteMessage(
+        type=Type.RECORD,
+        record=AirbyteRecordMessage(stream="stream", data={"id": "1"}, emitted_at=1),
+    )
+    mocker.patch.object(MockSource, "read_state", return_value={})
+    mocker.patch.object(MockSource, "read_catalog", return_value={})
+    mocker.patch.object(MockSource, "read", return_value=[record, record])
+
+    from airbyte_cdk.utils.memory_monitor import MemoryLimitExceeded
+
+    call_count = 0
+
+    def _raise_on_second_call() -> None:
+        nonlocal call_count
+        call_count += 1
+        if call_count >= 2:
+            raise MemoryLimitExceeded(
+                internal_message="Memory at 96%",
+                message="Source exceeded memory limit (96% used) and must shut down. "
+                "Reduce the number of streams or increase memory allocation.",
+                failure_type=FailureType.transient_error,
+            )
+
+    mocker.patch.object(
+        entrypoint._memory_monitor, "check_memory_usage", side_effect=_raise_on_second_call
+    )
+
+    parsed_args = Namespace(
+        command="read", config="config_path", state="statepath", catalog="catalogpath"
+    )
+
+    # The generator yields messages until MemoryLimitExceeded propagates.
+    # Collect everything yielded before the exception surfaces.
+    messages: list[str] = []
+    with pytest.raises(MemoryLimitExceeded):
+        for msg in entrypoint.run(parsed_args):
+            messages.append(msg)
+
+    # 1. The first record was yielded before the exception
+    record_messages = [m for m in messages if "RECORD" in m]
+    assert len(record_messages) >= 1, (
+        "At least the first record should be yielded before MemoryLimitExceeded"
+    )
+
+    # 2. The queued state message was flushed by the finally block
+    state_messages = [m for m in messages if "STATE" in m]
+    assert len(state_messages) >= 1, (
+        "Queued state message should be flushed even after MemoryLimitExceeded"
+    )
+
+    # 3. The flushed state has sourceStats.recordCount set by handle_record_counts.
+    #    Both records are yielded (and counted) before the second check_memory_usage
+    #    raises, so the counter is 2.0 at flush time.
+    state_json = orjson.loads(state_messages[0])
+    assert state_json["state"]["sourceStats"]["recordCount"] == 2.0
+
+
 def test_given_serialization_error_using_orjson_then_fallback_on_json(
     entrypoint: AirbyteEntrypoint, mocker, spec_mock, config_mock
 ):
