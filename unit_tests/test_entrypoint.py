@@ -889,9 +889,8 @@ def test_memory_limit_exceeded_flushes_queued_messages(mocker, spec_mock, config
         if call_count >= 2:
             raise MemoryLimitExceeded(
                 internal_message="Memory at 96%",
-                message="Source exceeded memory limit (96% used) and must shut down. "
-                "Reduce the number of streams or increase memory allocation.",
-                failure_type=FailureType.transient_error,
+                message="Source exceeded memory limit (96% used) and must shut down to avoid an out-of-memory crash.",
+                failure_type=FailureType.system_error,
             )
 
     mocker.patch.object(

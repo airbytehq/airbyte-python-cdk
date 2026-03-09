@@ -146,9 +146,8 @@ class MemoryMonitor:
             raise MemoryLimitExceeded(
                 internal_message=f"Memory usage is {usage_percent}% ({usage_bytes} / {limit_bytes} bytes). "
                 f"Critical threshold is {int(self._critical_threshold * 100)}%.",
-                message=f"Source exceeded memory limit ({usage_percent}% used) and must shut down. "
-                f"Reduce the number of streams or increase memory allocation.",
-                failure_type=FailureType.transient_error,
+                message=f"Source exceeded memory limit ({usage_percent}% used) and must shut down to avoid an out-of-memory crash.",
+                failure_type=FailureType.system_error,
             )
 
         if usage_ratio >= self._warning_threshold and not self._warning_emitted:

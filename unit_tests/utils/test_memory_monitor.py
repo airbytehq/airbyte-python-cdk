@@ -172,7 +172,7 @@ class TestMemoryMonitorCheckMemory:
             with pytest.raises(MemoryLimitExceeded) as exc_info:
                 monitor.check_memory_usage()
 
-        assert exc_info.value.failure_type == FailureType.transient_error
+        assert exc_info.value.failure_type == FailureType.system_error
         assert "96%" in (exc_info.value.message or "")
 
     def test_warning_emitted_only_once(self) -> None:
@@ -375,7 +375,7 @@ class TestMemoryLimitExceeded:
         exc = MemoryLimitExceeded(
             internal_message="test",
             message="test message",
-            failure_type=FailureType.transient_error,
+            failure_type=FailureType.system_error,
         )
         assert isinstance(exc, AirbyteTracedException)
 
@@ -384,9 +384,9 @@ class TestMemoryLimitExceeded:
         exc = MemoryLimitExceeded(
             internal_message="Memory at 96%",
             message="Source exceeded memory limit.",
-            failure_type=FailureType.transient_error,
+            failure_type=FailureType.system_error,
         )
-        assert exc.failure_type == FailureType.transient_error
+        assert exc.failure_type == FailureType.system_error
         assert exc.message == "Source exceeded memory limit."
         assert exc.internal_message == "Memory at 96%"
 
