@@ -41,6 +41,7 @@ from airbyte_cdk.sources.utils.schema_helpers import check_config_against_spec_o
 from airbyte_cdk.utils import is_cloud_environment, message_utils
 from airbyte_cdk.utils.airbyte_secrets_utils import get_secrets, update_secrets
 from airbyte_cdk.utils.constants import ENV_REQUEST_CACHE_PATH
+from airbyte_cdk.utils.memory_monitor import DEFAULT_CHECK_INTERVAL, MemoryMonitor
 from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 
 logger = init_logger("airbyte")
@@ -277,8 +278,13 @@ class AirbyteEntrypoint(object):
 
         # The Airbyte protocol dictates that counts be expressed as float/double to better protect against integer overflows
         stream_message_counter: DefaultDict[HashableStreamDescriptor, float] = defaultdict(float)
+        memory_monitor = MemoryMonitor()
+        message_count = 0
         for message in self.source.read(self.logger, config, catalog, state):
             yield self.handle_record_counts(message, stream_message_counter)
+            message_count += 1
+            if message_count % DEFAULT_CHECK_INTERVAL == 0:
+                memory_monitor.check_memory_usage()
         for message in self._emit_queued_messages(self.source):
             yield self.handle_record_counts(message, stream_message_counter)
 
