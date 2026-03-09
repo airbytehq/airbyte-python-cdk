@@ -1288,13 +1288,13 @@ def test_handle_read_external_requests(deployment_mode, url_base, expected_error
         pytest.param(
             "CLOUD",
             "https://10.0.27.27/tokens/bearer",
-            "StreamThreadException",
+            "Error while refreshing access token",
             id="test_cloud_read_with_private_endpoint",
         ),
         pytest.param(
             "CLOUD",
             "http://unsecured.protocol/tokens/bearer",
-            "StreamThreadException",
+            "Invalid Protocol Scheme",
             id="test_cloud_read_with_unsecured_endpoint",
         ),
         pytest.param(
