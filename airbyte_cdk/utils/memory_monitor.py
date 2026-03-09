@@ -60,7 +60,9 @@ class MemoryMonitor:
             self._cgroup_version = 1
 
         if self._cgroup_version is None:
-            logger.debug("No cgroup memory files found. Memory monitoring disabled (likely local dev / CI).")
+            logger.debug(
+                "No cgroup memory files found. Memory monitoring disabled (likely local dev / CI)."
+            )
 
     def _read_memory(self) -> Optional[tuple[int, int]]:
         """Read current memory usage and limit from cgroup files.

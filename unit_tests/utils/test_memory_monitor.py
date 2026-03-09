@@ -9,13 +9,13 @@ import pytest
 
 from airbyte_cdk.models import FailureType
 from airbyte_cdk.utils.memory_monitor import (
-    DEFAULT_CHECK_INTERVAL,
-    MemoryLimitExceeded,
-    MemoryMonitor,
     _CGROUP_V1_LIMIT,
     _CGROUP_V1_USAGE,
     _CGROUP_V2_CURRENT,
     _CGROUP_V2_MAX,
+    DEFAULT_CHECK_INTERVAL,
+    MemoryLimitExceeded,
+    MemoryMonitor,
 )
 
 
