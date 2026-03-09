@@ -281,8 +281,8 @@ class AirbyteEntrypoint(object):
         stream_message_counter: DefaultDict[HashableStreamDescriptor, float] = defaultdict(float)
         try:
             for message in self.source.read(self.logger, config, catalog, state):
-                yield self.handle_record_counts(message, stream_message_counter)
                 self._memory_monitor.check_memory_usage()
+                yield self.handle_record_counts(message, stream_message_counter)
         finally:
             for message in self._emit_queued_messages(self.source):
                 yield self.handle_record_counts(message, stream_message_counter)
