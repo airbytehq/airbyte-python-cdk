@@ -61,6 +61,7 @@ class AirbyteEntrypoint(object):
 
         self.source = source
         self.logger = logging.getLogger(f"airbyte.{getattr(source, 'name', '')}")
+        self._memory_monitor = MemoryMonitor()
 
     @staticmethod
     def parse_args(args: List[str]) -> argparse.Namespace:
@@ -278,11 +279,10 @@ class AirbyteEntrypoint(object):
 
         # The Airbyte protocol dictates that counts be expressed as float/double to better protect against integer overflows
         stream_message_counter: DefaultDict[HashableStreamDescriptor, float] = defaultdict(float)
-        memory_monitor = MemoryMonitor()
         try:
             for message in self.source.read(self.logger, config, catalog, state):
                 yield self.handle_record_counts(message, stream_message_counter)
-                memory_monitor.check_memory_usage()
+                self._memory_monitor.check_memory_usage()
         finally:
             for message in self._emit_queued_messages(self.source):
                 yield self.handle_record_counts(message, stream_message_counter)
