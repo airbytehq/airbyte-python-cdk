@@ -26,7 +26,7 @@ _DEFAULT_WARNING_THRESHOLD = 0.85
 _DEFAULT_CRITICAL_THRESHOLD = 0.95
 
 # Check interval (every N messages)
-DEFAULT_CHECK_INTERVAL = 1000
+_DEFAULT_CHECK_INTERVAL = 1000
 
 
 class MemoryLimitExceeded(AirbyteTracedException):
@@ -47,7 +47,7 @@ class MemoryMonitor:
         self,
         warning_threshold: float = _DEFAULT_WARNING_THRESHOLD,
         critical_threshold: float = _DEFAULT_CRITICAL_THRESHOLD,
-        check_interval: int = DEFAULT_CHECK_INTERVAL,
+        check_interval: int = _DEFAULT_CHECK_INTERVAL,
     ) -> None:
         self._warning_threshold = warning_threshold
         self._critical_threshold = critical_threshold

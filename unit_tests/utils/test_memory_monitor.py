@@ -13,7 +13,6 @@ from airbyte_cdk.utils.memory_monitor import (
     _CGROUP_V1_USAGE,
     _CGROUP_V2_CURRENT,
     _CGROUP_V2_MAX,
-    DEFAULT_CHECK_INTERVAL,
     MemoryLimitExceeded,
     MemoryMonitor,
 )
@@ -389,13 +388,3 @@ class TestMemoryLimitExceeded:
         assert exc.failure_type == FailureType.system_error
         assert exc.message == "Source exceeded memory limit."
         assert exc.internal_message == "Memory at 96%"
-
-
-class TestDefaultCheckInterval:
-    """Tests for the DEFAULT_CHECK_INTERVAL constant."""
-
-    def test_check_interval_is_positive(self) -> None:
-        assert DEFAULT_CHECK_INTERVAL > 0
-
-    def test_check_interval_value(self) -> None:
-        assert DEFAULT_CHECK_INTERVAL == 1000
