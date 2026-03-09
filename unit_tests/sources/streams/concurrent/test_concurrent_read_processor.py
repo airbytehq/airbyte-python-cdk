@@ -578,7 +578,10 @@ class TestConcurrentReadProcessor(unittest.TestCase):
         exception_messages = list(handler.on_exception(exception))
         assert len(exception_messages) == 1
         assert "RuntimeError" in exception_messages[0].trace.error.stack_trace
-        assert exception_messages[0].trace.error.message == f"An unexpected error occurred in stream {_STREAM_NAME}: RuntimeError"
+        assert (
+            exception_messages[0].trace.error.message
+            == f"An unexpected error occurred in stream {_STREAM_NAME}: RuntimeError"
+        )
 
         assert list(
             handler.on_partition_complete_sentinel(
@@ -799,7 +802,10 @@ class TestConcurrentReadProcessor(unittest.TestCase):
 
         trace_error = exception_messages[0].trace.error
         # User-facing message uses safe template (no raw exception text)
-        assert trace_error.message == f"An unexpected error occurred in stream {_STREAM_NAME}: ValueError"
+        assert (
+            trace_error.message
+            == f"An unexpected error occurred in stream {_STREAM_NAME}: ValueError"
+        )
         # Stack trace comes from the inner exception, not the StreamThreadException wrapper
         assert "ValueError" in trace_error.stack_trace
         assert "StreamThreadException" not in trace_error.stack_trace
