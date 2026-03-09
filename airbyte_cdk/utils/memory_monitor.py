@@ -68,31 +68,34 @@ class MemoryMonitor:
         """Read current memory usage and limit from cgroup files.
 
         Returns a tuple of (usage_bytes, limit_bytes) or None if unavailable.
+        Best-effort: failures to read memory info never crash a sync.
         """
         if self._cgroup_version is None:
             return None
 
-        if self._cgroup_version == 2:
-            usage_path = _CGROUP_V2_CURRENT
-            limit_path = _CGROUP_V2_MAX
-        else:
-            usage_path = _CGROUP_V1_USAGE
-            limit_path = _CGROUP_V1_LIMIT
+        try:
+            if self._cgroup_version == 2:
+                usage_path = _CGROUP_V2_CURRENT
+                limit_path = _CGROUP_V2_MAX
+            else:
+                usage_path = _CGROUP_V1_USAGE
+                limit_path = _CGROUP_V1_LIMIT
 
-        usage_text = usage_path.read_text().strip()
-        limit_text = limit_path.read_text().strip()
+            limit_text = limit_path.read_text().strip()
+            # cgroup v2 memory.max can be the literal string "max" (unlimited)
+            if limit_text == "max":
+                return None
 
-        # cgroup v2 memory.max can be the literal string "max" (unlimited)
-        if limit_text == "max":
+            usage_bytes = int(usage_path.read_text().strip())
+            limit_bytes = int(limit_text)
+
+            if limit_bytes <= 0:
+                return None
+
+            return usage_bytes, limit_bytes
+        except (OSError, ValueError):
+            logger.debug("Failed to read cgroup memory files; skipping memory check.")
             return None
-
-        usage_bytes = int(usage_text)
-        limit_bytes = int(limit_text)
-
-        if limit_bytes <= 0:
-            return None
-
-        return usage_bytes, limit_bytes
 
     def check_memory_usage(self) -> None:
         """Check memory usage against thresholds.

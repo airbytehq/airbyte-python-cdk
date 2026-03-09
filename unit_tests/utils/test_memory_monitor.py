@@ -264,6 +264,44 @@ class TestMemoryMonitorCheckMemory:
             with pytest.raises(MemoryLimitExceeded):
                 monitor.check_memory_usage()
 
+    def test_malformed_cgroup_file_degrades_gracefully(self) -> None:
+        """Malformed cgroup files should not crash the sync."""
+
+        def mock_exists(self: Path) -> bool:
+            return self in (_CGROUP_V2_CURRENT, _CGROUP_V2_MAX)
+
+        def mock_read_text(self: Path) -> str:
+            return "not_a_number\n"
+
+        with patch.object(Path, "exists", mock_exists):
+            monitor = MemoryMonitor()
+
+        with patch.object(Path, "read_text", mock_read_text):
+            # Should not raise — degrades gracefully
+            monitor.check_memory_usage()
+
+        assert not monitor._warning_emitted
+        assert not monitor._critical_raised
+
+    def test_os_error_degrades_gracefully(self) -> None:
+        """OSError reading cgroup files should not crash the sync."""
+
+        def mock_exists(self: Path) -> bool:
+            return self in (_CGROUP_V2_CURRENT, _CGROUP_V2_MAX)
+
+        def mock_read_text(self: Path) -> str:
+            raise OSError("Permission denied")
+
+        with patch.object(Path, "exists", mock_exists):
+            monitor = MemoryMonitor()
+
+        with patch.object(Path, "read_text", mock_read_text):
+            # Should not raise — degrades gracefully
+            monitor.check_memory_usage()
+
+        assert not monitor._warning_emitted
+        assert not monitor._critical_raised
+
 
 class TestMemoryLimitExceeded:
     """Tests for the MemoryLimitExceeded exception."""
