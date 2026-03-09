@@ -79,7 +79,7 @@ class TestMemoryMonitorCheckMemory:
             return ""
 
         with patch.object(Path, "exists", mock_exists):
-            monitor = MemoryMonitor()
+            monitor = MemoryMonitor(check_interval=1)
 
         with patch.object(Path, "read_text", mock_read_text):
             # Should not raise even though "usage" is technically present
@@ -99,7 +99,7 @@ class TestMemoryMonitorCheckMemory:
             return ""
 
         with patch.object(Path, "exists", mock_exists):
-            monitor = MemoryMonitor()
+            monitor = MemoryMonitor(check_interval=1)
 
         with patch.object(Path, "read_text", mock_read_text):
             monitor.check_memory_usage()
@@ -121,7 +121,7 @@ class TestMemoryMonitorCheckMemory:
             return ""
 
         with patch.object(Path, "exists", mock_exists):
-            monitor = MemoryMonitor()
+            monitor = MemoryMonitor(check_interval=1)
 
         with patch.object(Path, "read_text", mock_read_text):
             monitor.check_memory_usage()
@@ -143,7 +143,7 @@ class TestMemoryMonitorCheckMemory:
             return ""
 
         with patch.object(Path, "exists", mock_exists):
-            monitor = MemoryMonitor()
+            monitor = MemoryMonitor(check_interval=1)
 
         with patch.object(Path, "read_text", mock_read_text):
             with pytest.raises(MemoryLimitExceeded) as exc_info:
@@ -167,7 +167,7 @@ class TestMemoryMonitorCheckMemory:
             return ""
 
         with patch.object(Path, "exists", mock_exists):
-            monitor = MemoryMonitor()
+            monitor = MemoryMonitor(check_interval=1)
 
         with patch.object(Path, "read_text", mock_read_text):
             monitor.check_memory_usage()
@@ -191,7 +191,7 @@ class TestMemoryMonitorCheckMemory:
             return ""
 
         with patch.object(Path, "exists", mock_exists):
-            monitor = MemoryMonitor()
+            monitor = MemoryMonitor(check_interval=1)
 
         with patch.object(Path, "read_text", mock_read_text):
             with pytest.raises(MemoryLimitExceeded):
@@ -214,13 +214,39 @@ class TestMemoryMonitorCheckMemory:
             return ""
 
         with patch.object(Path, "exists", mock_exists):
-            monitor = MemoryMonitor()
+            monitor = MemoryMonitor(check_interval=1)
         assert monitor._cgroup_version == 1
 
         with patch.object(Path, "read_text", mock_read_text):
             monitor.check_memory_usage()
 
         assert monitor._warning_emitted
+
+    def test_check_interval_skips_intermediate_calls(self) -> None:
+        """Monitor should only check cgroup files every check_interval messages."""
+
+        def mock_exists(self: Path) -> bool:
+            return self in (_CGROUP_V2_CURRENT, _CGROUP_V2_MAX)
+
+        def mock_read_text(self: Path) -> str:
+            if self == _CGROUP_V2_CURRENT:
+                return "870000000\n"  # 87%
+            if self == _CGROUP_V2_MAX:
+                return "1000000000\n"
+            return ""
+
+        with patch.object(Path, "exists", mock_exists):
+            monitor = MemoryMonitor(check_interval=3)
+
+        with patch.object(Path, "read_text", mock_read_text):
+            # Calls 1 and 2 should be skipped
+            monitor.check_memory_usage()
+            assert not monitor._warning_emitted
+            monitor.check_memory_usage()
+            assert not monitor._warning_emitted
+            # Call 3 should trigger the actual check
+            monitor.check_memory_usage()
+            assert monitor._warning_emitted
 
     def test_custom_thresholds_warning(self) -> None:
         """Custom warning threshold should be respected."""
@@ -236,7 +262,11 @@ class TestMemoryMonitorCheckMemory:
             return ""
 
         with patch.object(Path, "exists", mock_exists):
-            monitor = MemoryMonitor(warning_threshold=0.70, critical_threshold=0.90)
+            monitor = MemoryMonitor(
+                warning_threshold=0.70,
+                critical_threshold=0.90,
+                check_interval=1,
+            )
 
         with patch.object(Path, "read_text", mock_read_text):
             monitor.check_memory_usage()
@@ -258,7 +288,11 @@ class TestMemoryMonitorCheckMemory:
             return ""
 
         with patch.object(Path, "exists", mock_exists):
-            monitor = MemoryMonitor(warning_threshold=0.70, critical_threshold=0.80)
+            monitor = MemoryMonitor(
+                warning_threshold=0.70,
+                critical_threshold=0.80,
+                check_interval=1,
+            )
 
         with patch.object(Path, "read_text", mock_read_text):
             with pytest.raises(MemoryLimitExceeded):
@@ -274,7 +308,7 @@ class TestMemoryMonitorCheckMemory:
             return "not_a_number\n"
 
         with patch.object(Path, "exists", mock_exists):
-            monitor = MemoryMonitor()
+            monitor = MemoryMonitor(check_interval=1)
 
         with patch.object(Path, "read_text", mock_read_text):
             # Should not raise — degrades gracefully
@@ -293,7 +327,7 @@ class TestMemoryMonitorCheckMemory:
             raise OSError("Permission denied")
 
         with patch.object(Path, "exists", mock_exists):
-            monitor = MemoryMonitor()
+            monitor = MemoryMonitor(check_interval=1)
 
         with patch.object(Path, "read_text", mock_read_text):
             # Should not raise — degrades gracefully

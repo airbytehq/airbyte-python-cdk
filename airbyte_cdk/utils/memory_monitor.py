@@ -46,9 +46,12 @@ class MemoryMonitor:
         self,
         warning_threshold: float = _DEFAULT_WARNING_THRESHOLD,
         critical_threshold: float = _DEFAULT_CRITICAL_THRESHOLD,
+        check_interval: int = DEFAULT_CHECK_INTERVAL,
     ) -> None:
         self._warning_threshold = warning_threshold
         self._critical_threshold = critical_threshold
+        self._check_interval = check_interval
+        self._message_count = 0
         self._warning_emitted = False
         self._critical_raised = False
         self._cgroup_version: Optional[int] = None
@@ -100,6 +103,10 @@ class MemoryMonitor:
     def check_memory_usage(self) -> None:
         """Check memory usage against thresholds.
 
+        Intended to be called on every message. The monitor internally tracks
+        a message counter and only reads cgroup files every ``check_interval``
+        messages (default 1000) to minimise I/O overhead.
+
         At the warning threshold (default 85%), logs a warning message.
         At the critical threshold (default 95%), raises MemoryLimitExceeded to
         trigger a graceful shutdown with an actionable error message.
@@ -108,6 +115,10 @@ class MemoryMonitor:
         This method is a no-op if cgroup files are unavailable.
         """
         if self._cgroup_version is None:
+            return
+
+        self._message_count += 1
+        if self._message_count % self._check_interval != 0:
             return
 
         memory_info = self._read_memory()
