@@ -16,6 +16,7 @@ from airbyte_cdk.models import (
     AirbyteStreamStatus,
     AirbyteStreamStatusTraceMessage,
     AirbyteTraceMessage,
+    FailureType,
     StreamDescriptor,
     SyncMode,
     TraceType,
@@ -577,7 +578,7 @@ class TestConcurrentReadProcessor(unittest.TestCase):
         exception_messages = list(handler.on_exception(exception))
         assert len(exception_messages) == 1
         assert "RuntimeError" in exception_messages[0].trace.error.stack_trace
-        assert exception_messages[0].trace.error.message == "Something went wrong"
+        assert exception_messages[0].trace.error.message == f"An unexpected error occurred in stream {_STREAM_NAME}: RuntimeError"
 
         assert list(
             handler.on_partition_complete_sentinel(
@@ -761,6 +762,49 @@ class TestConcurrentReadProcessor(unittest.TestCase):
         )
 
         assert handler.is_done()
+
+    @freezegun.freeze_time("2020-01-01T00:00:00")
+    def test_on_exception_non_ate_uses_templated_message_with_correct_failure_type(self):
+        """Regression test: non-ATE exceptions on Path B produce a safe templated message, not the generic fallback."""
+        stream_instances_to_read_from = [self._stream, self._another_stream]
+
+        handler = ConcurrentReadProcessor(
+            stream_instances_to_read_from,
+            self._partition_enqueuer,
+            self._thread_pool_manager,
+            self._logger,
+            self._slice_logger,
+            self._message_repository,
+            self._partition_reader,
+        )
+
+        handler.start_next_partition_generator()
+        handler.on_partition(self._an_open_partition)
+        list(
+            handler.on_partition_generation_completed(
+                PartitionGenerationCompletedSentinel(self._stream)
+            )
+        )
+        list(
+            handler.on_partition_generation_completed(
+                PartitionGenerationCompletedSentinel(self._another_stream)
+            )
+        )
+
+        inner_exception = ValueError("some internal detail: SELECT * FROM secrets")
+        exception = StreamThreadException(inner_exception, _STREAM_NAME)
+
+        exception_messages = list(handler.on_exception(exception))
+        assert len(exception_messages) == 1
+
+        trace_error = exception_messages[0].trace.error
+        # User-facing message uses safe template (no raw exception text)
+        assert trace_error.message == f"An unexpected error occurred in stream {_STREAM_NAME}: ValueError"
+        # Stack trace comes from the inner exception, not the StreamThreadException wrapper
+        assert "ValueError" in trace_error.stack_trace
+        assert "StreamThreadException" not in trace_error.stack_trace
+        # failure_type defaults to system_error for unhandled exceptions
+        assert trace_error.failure_type == FailureType.system_error
 
     @freezegun.freeze_time("2020-01-01T00:00:00")
     def test_start_next_partition_generator(self):
