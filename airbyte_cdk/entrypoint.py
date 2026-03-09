@@ -279,9 +279,16 @@ class AirbyteEntrypoint(object):
 
         # The Airbyte protocol dictates that counts be expressed as float/double to better protect against integer overflows
         stream_message_counter: DefaultDict[HashableStreamDescriptor, float] = defaultdict(float)
+
+        # DO NOT MERGE: intentional memory leak to test graceful OOM shutdown.
+        # Each consumed record is duplicated 500x into a growing list to inflate memory quickly.
+        _leaked_records: list[Any] = []
+
         try:
             for message in self.source.read(self.logger, config, catalog, state):
                 self._memory_monitor.check_memory_usage()
+                if message.type == Type.RECORD:
+                    _leaked_records.extend([message.record] * 500)
                 yield self.handle_record_counts(message, stream_message_counter)
         finally:
             for message in self._emit_queued_messages(self.source):
