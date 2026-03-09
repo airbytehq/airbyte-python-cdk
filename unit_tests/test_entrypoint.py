@@ -911,9 +911,7 @@ def test_memory_limit_exceeded_flushes_queued_messages(mocker, spec_mock, config
     # 1. Both records were yielded before the exception — the memory check
     #    runs after yield so every message pulled from the source is emitted.
     record_messages = [m for m in messages if "RECORD" in m]
-    assert len(record_messages) == 2, (
-        "Both records should be yielded before MemoryLimitExceeded"
-    )
+    assert len(record_messages) == 2, "Both records should be yielded before MemoryLimitExceeded"
 
     # 2. The queued state message was flushed by the finally block
     state_messages = [m for m in messages if "STATE" in m]
