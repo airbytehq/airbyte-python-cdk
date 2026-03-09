@@ -908,11 +908,11 @@ def test_memory_limit_exceeded_flushes_queued_messages(mocker, spec_mock, config
         for msg in entrypoint.run(parsed_args):
             messages.append(msg)
 
-    # 1. Only the first record was yielded; the second triggered the exception
-    #    before its yield so it is handled in the finally block instead.
+    # 1. Both records were yielded before the exception — the memory check
+    #    runs after yield so every message pulled from the source is emitted.
     record_messages = [m for m in messages if "RECORD" in m]
-    assert len(record_messages) >= 1, (
-        "At least the first record should be yielded before MemoryLimitExceeded"
+    assert len(record_messages) == 2, (
+        "Both records should be yielded before MemoryLimitExceeded"
     )
 
     # 2. The queued state message was flushed by the finally block
@@ -922,11 +922,10 @@ def test_memory_limit_exceeded_flushes_queued_messages(mocker, spec_mock, config
     )
 
     # 3. The flushed state has sourceStats.recordCount set by handle_record_counts.
-    #    Only the first record is yielded (and counted) because the memory check
-    #    now runs *before* yield — the second check raises before the second
-    #    record is handled, so the counter is 1.0 at flush time.
+    #    Both records are yielded (and counted) before the second check_memory_usage
+    #    raises, so the counter is 2.0 at flush time.
     state_json = orjson.loads(state_messages[0])
-    assert state_json["state"]["sourceStats"]["recordCount"] == 1.0
+    assert state_json["state"]["sourceStats"]["recordCount"] == 2.0
 
 
 def test_given_serialization_error_using_orjson_then_fallback_on_json(
