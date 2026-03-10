@@ -2,7 +2,7 @@
 
 import logging
 import time
-from queue import Queue
+from queue import Full, Queue
 from typing import Optional
 
 from airbyte_cdk.sources.concurrent_source.stream_thread_exception import StreamThreadException
@@ -49,6 +49,10 @@ class PartitionReader:
     """
 
     _IS_SUCCESSFUL = True
+    # Maximum time (seconds) to block on queue.put() before raising.
+    # Prevents silent deadlocks when the bounded queue is full and the
+    # main-thread consumer cannot drain it.
+    _QUEUE_PUT_TIMEOUT = 300.0  # 5 minutes
 
     def __init__(
         self,
@@ -89,7 +93,7 @@ class PartitionReader:
             record_count = 0
             last_progress_time = partition_start
             for record in partition.read():
-                self._queue.put(record)
+                self._put_with_timeout(record, stream_name, logger)
                 cursor.observe(record)
                 record_count += 1
                 now = time.monotonic()
@@ -111,7 +115,11 @@ class PartitionReader:
                 elapsed,
                 slice_info,
             )
-            self._queue.put(PartitionCompleteSentinel(partition, self._IS_SUCCESSFUL))
+            self._put_with_timeout(
+                PartitionCompleteSentinel(partition, self._IS_SUCCESSFUL),
+                stream_name,
+                logger,
+            )
         except Exception as e:
             elapsed = time.monotonic() - partition_start
             logger.info(
@@ -123,3 +131,34 @@ class PartitionReader:
             )
             self._queue.put(StreamThreadException(e, stream_name))
             self._queue.put(PartitionCompleteSentinel(partition, not self._IS_SUCCESSFUL))
+
+    def _put_with_timeout(
+        self,
+        item: QueueItem,
+        stream_name: str,
+        logger: logging.Logger,
+    ) -> None:
+        """Put an item on the queue, raising if blocked longer than the timeout.
+
+        This prevents a deadlock where all worker threads are blocked on
+        ``queue.put()`` while the main thread is unable to drain the queue.
+        """
+        put_start = time.monotonic()
+        while True:
+            try:
+                self._queue.put(item, timeout=self._QUEUE_PUT_TIMEOUT)
+                return
+            except Full:
+                blocked_secs = time.monotonic() - put_start
+                logger.warning(
+                    "queue.put() blocked for %.0fs for stream=%s "
+                    "(queue_size=%d). Possible deadlock.",
+                    blocked_secs,
+                    stream_name,
+                    self._queue.qsize(),
+                )
+                raise RuntimeError(
+                    f"Timed out putting item on the queue after "
+                    f"{blocked_secs:.0f}s for stream {stream_name}. "
+                    f"This indicates a deadlock in the concurrent read pipeline."
+                )
