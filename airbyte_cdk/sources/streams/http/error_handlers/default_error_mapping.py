@@ -31,7 +31,7 @@ DEFAULT_ERROR_MAPPING: Mapping[Union[int, str, Type[Exception]], ErrorResolution
     400: ErrorResolution(
         response_action=ResponseAction.FAIL,
         failure_type=FailureType.system_error,
-        error_message="HTTP Status Code: 400. Error: Bad request. Please check your request parameters.",
+        error_message="Bad request response from source API.",
     ),
     401: ErrorResolution(
         response_action=ResponseAction.FAIL,
