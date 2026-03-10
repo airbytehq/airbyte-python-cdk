@@ -43,6 +43,8 @@ class MemoryMonitor:
         critical_threshold: float = _DEFAULT_CRITICAL_THRESHOLD,
         check_interval: int = _DEFAULT_CHECK_INTERVAL,
     ) -> None:
+        if check_interval < 1:
+            raise ValueError(f"check_interval must be >= 1, got {check_interval}")
         self._warning_threshold = warning_threshold
         self._critical_threshold = critical_threshold
         self._check_interval = check_interval

@@ -46,6 +46,23 @@ def _v2_mock_read(usage: str = _MOCK_USAGE_BELOW, limit: str = _MOCK_LIMIT):
 
 
 # ---------------------------------------------------------------------------
+# __init__ — input validation
+# ---------------------------------------------------------------------------
+
+
+def test_check_interval_zero_raises() -> None:
+    """check_interval=0 should raise ValueError at construction time."""
+    with pytest.raises(ValueError, match="check_interval must be >= 1"):
+        MemoryMonitor(check_interval=0)
+
+
+def test_check_interval_negative_raises() -> None:
+    """Negative check_interval should raise ValueError at construction time."""
+    with pytest.raises(ValueError, match="check_interval must be >= 1"):
+        MemoryMonitor(check_interval=-1)
+
+
+# ---------------------------------------------------------------------------
 # check_memory_usage — no-op paths
 # ---------------------------------------------------------------------------
 
