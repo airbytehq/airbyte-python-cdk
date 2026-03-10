@@ -59,7 +59,11 @@ class Spec:
             oauth_spec = getattr(self.advanced_auth, "oauth_config_specification", None)
             if oauth_spec:
                 oauth_input = getattr(oauth_spec, "oauth_connector_input_specification", None)
-                if oauth_input and hasattr(oauth_input, "scopes_join_strategy") and oauth_input.scopes_join_strategy is not None:
+                if (
+                    oauth_input
+                    and hasattr(oauth_input, "scopes_join_strategy")
+                    and oauth_input.scopes_join_strategy is not None
+                ):
                     oauth_input.scopes_join_strategy = oauth_input.scopes_join_strategy.value  # type: ignore
             # Map CDK AuthFlow model to protocol AdvancedAuth model
             obj["advanced_auth"] = self.advanced_auth.dict()
