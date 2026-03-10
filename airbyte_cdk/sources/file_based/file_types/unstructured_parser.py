@@ -257,6 +257,9 @@ class UnstructuredParser(FileTypeParser):
                     format.strategy,
                     remote_file,
                 )
+                if format.output_format == "markdown_json":
+                    return json.dumps(elements)
+                return self._render_markdown(elements)
             except Exception as e:
                 # If a parser error happens during remotely processing the file, this means the file is corrupted. This case is handled by the parse_records method, so just rethrow.
                 #
@@ -267,10 +270,6 @@ class UnstructuredParser(FileTypeParser):
                 raise AirbyteTracedException.from_exception(
                     e, failure_type=FailureType.config_error
                 )
-
-            if format.output_format == "markdown_json":
-                return json.dumps(elements)
-            return self._render_markdown(elements)
 
     def _params_to_dict(
         self, params: Optional[List[APIParameterConfigModel]], strategy: str
