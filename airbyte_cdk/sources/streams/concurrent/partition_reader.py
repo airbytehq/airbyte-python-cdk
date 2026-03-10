@@ -129,8 +129,12 @@ class PartitionReader:
                 str(e)[:200],
                 slice_info,
             )
-            self._queue.put(StreamThreadException(e, stream_name))
-            self._queue.put(PartitionCompleteSentinel(partition, not self._IS_SUCCESSFUL))
+            self._put_with_timeout(StreamThreadException(e, stream_name), stream_name, logger)
+            self._put_with_timeout(
+                PartitionCompleteSentinel(partition, not self._IS_SUCCESSFUL),
+                stream_name,
+                logger,
+            )
 
     def _put_with_timeout(
         self,

@@ -96,8 +96,12 @@ class PartitionEnqueuer:
                 partition_count,
                 str(e)[:200],
             )
-            self._queue.put(StreamThreadException(e, stream.name))
-            self._queue.put(PartitionGenerationCompletedSentinel(stream))
+            self._put_with_timeout(StreamThreadException(e, stream.name), stream.name, logger)
+            self._put_with_timeout(
+                PartitionGenerationCompletedSentinel(stream),
+                stream.name,
+                logger,
+            )
 
     def _put_with_timeout(
         self,

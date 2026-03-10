@@ -4,6 +4,8 @@
 
 import concurrent
 import logging
+import os
+import sys
 import threading
 import time
 from queue import Empty, Queue
@@ -38,6 +40,11 @@ class ConcurrentSource:
     """
 
     DEFAULT_TIMEOUT_SECONDS = 900
+    # If the main thread makes no progress for this long, the watchdog
+    # terminates the process.  This breaks deadlocks caused by stdout/stderr
+    # pipe blockage where no in-process timeout can fire because I/O itself
+    # is blocked at the OS level.
+    _WATCHDOG_TIMEOUT_SECONDS = 600.0  # 10 minutes
 
     @staticmethod
     def create(
@@ -108,29 +115,44 @@ class ConcurrentSource:
         streams: List[AbstractStream],
     ) -> Iterator[AirbyteMessage]:
         self._logger.info("Starting syncing")
-        concurrent_stream_processor = ConcurrentReadProcessor(
-            streams,
-            PartitionEnqueuer(self._queue, self._threadpool),
-            self._threadpool,
-            self._logger,
-            self._slice_logger,
-            self._message_repository,
-            PartitionReader(
+        # Shared timestamp updated every time the main thread makes progress
+        # (consumes an item from the queue).  The watchdog reads this to
+        # detect when the main thread is stuck.
+        self._last_progress_time = time.monotonic()
+        self._watchdog_should_run = True
+        watchdog = threading.Thread(
+            target=self._watchdog_loop,
+            daemon=True,
+            name="progress-watchdog",
+        )
+        watchdog.start()
+
+        try:
+            concurrent_stream_processor = ConcurrentReadProcessor(
+                streams,
+                PartitionEnqueuer(self._queue, self._threadpool),
+                self._threadpool,
+                self._logger,
+                self._slice_logger,
+                self._message_repository,
+                PartitionReader(
+                    self._queue,
+                    PartitionLogger(self._slice_logger, self._logger, self._message_repository),
+                ),
+            )
+
+            # Enqueue initial partition generation tasks
+            yield from self._submit_initial_partition_generators(concurrent_stream_processor)
+
+            # Read from the queue until all partitions were generated and read
+            yield from self._consume_from_queue(
                 self._queue,
-                PartitionLogger(self._slice_logger, self._logger, self._message_repository),
-            ),
-        )
-
-        # Enqueue initial partition generation tasks
-        yield from self._submit_initial_partition_generators(concurrent_stream_processor)
-
-        # Read from the queue until all partitions were generated and read
-        yield from self._consume_from_queue(
-            self._queue,
-            concurrent_stream_processor,
-        )
-        self._threadpool.check_for_errors_and_shutdown()
-        self._logger.info("Finished syncing")
+                concurrent_stream_processor,
+            )
+            self._threadpool.check_for_errors_and_shutdown()
+            self._logger.info("Finished syncing")
+        finally:
+            self._watchdog_should_run = False
 
     def _submit_initial_partition_generators(
         self, concurrent_stream_processor: ConcurrentReadProcessor
@@ -179,6 +201,7 @@ class ConcurrentSource:
                     type(airbyte_message_or_record_or_exception).__name__,
                 )
                 items_since_last_heartbeat = 0
+            self._last_progress_time = now
             last_item_time = now
 
             yield from self._handle_item(
@@ -191,6 +214,42 @@ class ConcurrentSource:
             if queue.empty() and concurrent_stream_processor.is_done():
                 # all partitions were generated and processed. we're done here
                 break
+
+    def _watchdog_loop(self) -> None:
+        """Daemon thread that terminates the process when the main thread stalls.
+
+        In Airbyte Cloud the source container's stdout and stderr are read by
+        the platform (replication-orchestrator).  If the platform stops reading
+        (e.g. destination backpressure), both pipes fill up and *all* threads
+        block on I/O — including the main thread's ``yield`` and every worker
+        thread's ``logger.*()`` call.  No in-process timeout can fire because
+        the timeout's own log/write call also blocks.
+
+        This watchdog does **not** perform any I/O.  It simply checks a shared
+        monotonic timestamp that the main thread updates whenever it consumes a
+        queue item.  If no progress is observed for ``_WATCHDOG_TIMEOUT_SECONDS``,
+        it calls ``os._exit(1)`` which is a raw syscall that terminates the
+        process immediately regardless of I/O state.
+        """
+        while self._watchdog_should_run:
+            time.sleep(30)  # check every 30 seconds
+            if not self._watchdog_should_run:
+                return
+            elapsed = time.monotonic() - self._last_progress_time
+            if elapsed >= self._WATCHDOG_TIMEOUT_SECONDS:
+                # Write directly to stderr fd to bypass Python buffering
+                # which may be blocked.  This is best-effort; if the fd is
+                # blocked the write will simply fail and we still exit.
+                try:
+                    msg = (
+                        f"WATCHDOG: Main thread made no progress for "
+                        f"{elapsed:.0f}s (threshold={self._WATCHDOG_TIMEOUT_SECONDS:.0f}s). "
+                        f"Terminating process to prevent indefinite hang.\n"
+                    )
+                    os.write(sys.stderr.fileno(), msg.encode())
+                except Exception:
+                    pass
+                os._exit(1)
 
     def _handle_item(
         self,
