@@ -99,7 +99,14 @@ class AbstractFileBasedStreamReader(ABC):
         ...
 
     def _parse_start_date(self, start_date_str: str) -> datetime:
-        """Parse a start_date string, supporting both with and without microseconds."""
+        """Parse a start_date string, supporting both with and without microseconds.
+
+        AbstractFileBasedSpec accepts start_date in multiple formats as described by its
+        pattern_descriptor: "YYYY-MM-DD, YYYY-MM-DDTHH:mm:ssZ, or YYYY-MM-DDTHH:mm:ss.SSSSSSZ".
+        The primary format (self.DATE_TIME_FORMAT) includes microseconds, but the spec also
+        allows the shorter "YYYY-MM-DDTHH:mm:ssZ" variant. This method tries the primary
+        format first and falls back to the shorter format without microseconds.
+        """
         try:
             return datetime.strptime(start_date_str, self.DATE_TIME_FORMAT)
         except ValueError:
