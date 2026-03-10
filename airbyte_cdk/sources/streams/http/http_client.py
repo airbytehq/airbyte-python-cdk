@@ -297,7 +297,7 @@ class HttpClient:
                 self._logger.error("Rate limit retries exhausted.", exc_info=True)
                 raise AirbyteTracedException(
                     internal_message=f"Rate limit retries exhausted. Exception: {e}",
-                    message="Rate limit exceeded and retries exhausted. Try decreasing concurrency or the number of workers to stay within API rate limits.",
+                    message="Rate limit exceeded and retries exhausted. Try decreasing the number of workers to stay within API rate limits.",
                     failure_type=e.failure_type or FailureType.transient_error,
                     exception=e,
                     stream_descriptor=StreamDescriptor(name=self._name),

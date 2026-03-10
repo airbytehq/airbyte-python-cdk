@@ -223,7 +223,7 @@ def test_stub_custom_backoff_http_stream_retries(mocker, retries):
 
     with pytest.raises(
         AirbyteTracedException,
-        match="Rate limit exceeded. Try decreasing concurrency or the number of workers to stay within API rate limits.",
+        match="Rate limit exceeded \\(HTTP status code 429\\). Try decreasing the number of workers to stay within API rate limits.",
     ):
         list(stream.read_records(SyncMode.full_refresh))
     if retries <= 0:
@@ -317,7 +317,7 @@ def test_raise_on_http_errors_off_429(mocker):
     mocker.patch.object(requests.Session, "send", return_value=req)
     with pytest.raises(
         AirbyteTracedException,
-        match="Rate limit exceeded. Try decreasing concurrency or the number of workers to stay within API rate limits.",
+        match="Rate limit exceeded \\(HTTP status code 429\\). Try decreasing the number of workers to stay within API rate limits.",
     ):
         stream.exit_on_rate_limit = True
         list(stream.read_records(SyncMode.full_refresh))
