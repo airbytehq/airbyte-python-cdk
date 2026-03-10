@@ -106,6 +106,10 @@ class AbstractFileBasedStreamReader(ABC):
         The primary format (self.DATE_TIME_FORMAT) includes microseconds, but the spec also
         allows the shorter "YYYY-MM-DDTHH:mm:ssZ" variant. This method tries the primary
         format first and falls back to the shorter format without microseconds.
+
+        Note: this fallback is only relevant for start_date values provided by the user in the
+        connector configuration. Cursor values persisted in connector state are always formatted
+        using the default DATE_TIME_FORMAT (with microseconds).
         """
         try:
             return datetime.strptime(start_date_str, self.DATE_TIME_FORMAT)
