@@ -140,11 +140,13 @@ class MemoryMonitor:
         usage_bytes, limit_bytes = memory_info
         usage_ratio = usage_bytes / limit_bytes
         usage_percent = int(usage_ratio * 100)
+        usage_gb = usage_bytes / (1024**3)
+        limit_gb = limit_bytes / (1024**3)
 
         if usage_ratio >= self._critical_threshold and not self._critical_raised:
             self._critical_raised = True
             raise MemoryLimitExceeded(
-                internal_message=f"Memory usage is {usage_percent}% ({usage_bytes} / {limit_bytes} bytes). "
+                internal_message=f"Memory usage is {usage_percent}% ({usage_gb:.2f} / {limit_gb:.2f} GB). "
                 f"Critical threshold is {int(self._critical_threshold * 100)}%.",
                 message=f"Source exceeded memory limit ({usage_percent}% used) and must shut down to avoid an out-of-memory crash.",
                 failure_type=FailureType.system_error,
@@ -153,8 +155,8 @@ class MemoryMonitor:
         if usage_ratio >= self._warning_threshold and not self._warning_emitted:
             self._warning_emitted = True
             logger.warning(
-                "Source memory usage reached %d%% of container limit (%d / %d bytes).",
+                "Source memory usage reached %d%% of container limit (%.2f / %.2f GB).",
                 usage_percent,
-                usage_bytes,
-                limit_bytes,
+                usage_gb,
+                limit_gb,
             )
