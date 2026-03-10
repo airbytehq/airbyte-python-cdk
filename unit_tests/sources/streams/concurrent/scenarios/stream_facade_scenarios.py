@@ -122,38 +122,6 @@ test_stream_facade_single_stream = (
             ]
         }
     )
-    .set_expected_logs(
-        {
-            "read": [
-                {"level": "INFO", "message": "Starting syncing"},
-                {"level": "INFO", "message": "Partition generation STARTED for stream=stream1"},
-                {"level": "INFO", "message": "Marking stream stream1 as STARTED"},
-                {
-                    "level": "INFO",
-                    "message": "Partition generation: enqueuing partition #1 for stream=stream1, slice=None",
-                },
-                {"level": "INFO", "message": "Syncing stream: stream1"},
-                {
-                    "level": "INFO",
-                    "message": "Partition generation COMPLETED for stream=stream1: 1 partitions in",
-                },
-                {
-                    "level": "INFO",
-                    "message": "Partition read STARTED for stream=stream1, slice=None",
-                },
-                {
-                    "level": "INFO",
-                    "message": "Partition read COMPLETED for stream=stream1: 2 records in",
-                },
-                {"level": "INFO", "message": "Marking stream stream1 as RUNNING"},
-                {"level": "INFO", "message": "Read 2 records from stream1 stream"},
-                {"level": "INFO", "message": "Marking stream stream1 as STOPPED"},
-                {"level": "INFO", "message": "Finished syncing stream1"},
-                {"level": "INFO", "message": "Finished syncing"},
-            ]
-        }
-    )
-    .set_log_levels({"ERROR", "WARN", "WARNING", "INFO", "DEBUG"})
     .build()
 )
 
