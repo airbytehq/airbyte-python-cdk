@@ -248,6 +248,8 @@ class ConcurrentSource:
                     )
                     os.write(sys.stderr.fileno(), msg.encode())
                 except Exception:
+                    # Intentionally ignored: logging is best-effort and must
+                    # not prevent process termination via os._exit() below.
                     pass
                 os._exit(1)
 
