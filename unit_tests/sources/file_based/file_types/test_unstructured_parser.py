@@ -780,7 +780,7 @@ def test_parse_records_markdown_json_remote(
     logger = MagicMock()
     config = MagicMock()
     config.format = UnstructuredFormat(
-        skip_unprocessable_file_types=False,
+        skip_unprocessable_files=False,
         output_format="markdown_json",
         processing=APIProcessingConfigModel(mode="api", api_key="test"),
     )
