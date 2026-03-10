@@ -146,7 +146,8 @@ def rate_limit_default_backoff_handler(
                 f"Status code: {exc.response.status_code!r}, Response Content: {exc.response.content!r}"
             )
         logger.info(
-            f"Caught retryable error '{str(exc)}' after {details['tries']} tries. Waiting {details['wait']} seconds then retrying..."
+            f"Rate limit hit after {details['tries']} tries. Waiting {details['wait']} seconds then retrying. "
+            f"Try decreasing concurrency or the number of workers to stay within API rate limits."
         )
 
     return backoff.on_exception(  # type: ignore # Decorator function returns a function with a different signature than the input function, so mypy can't infer the type of the returned function

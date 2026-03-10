@@ -61,7 +61,7 @@ DEFAULT_ERROR_MAPPING: Mapping[Union[int, str, Type[Exception]], ErrorResolution
     429: ErrorResolution(
         response_action=ResponseAction.RATE_LIMITED,
         failure_type=FailureType.transient_error,
-        error_message="HTTP Status Code: 429. Error: Too many requests.",
+        error_message="Rate limit exceeded. Try decreasing concurrency or the number of workers to stay within API rate limits.",
     ),
     500: ErrorResolution(
         response_action=ResponseAction.RETRY,
