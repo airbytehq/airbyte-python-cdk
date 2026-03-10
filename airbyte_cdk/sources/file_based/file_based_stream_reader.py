@@ -98,11 +98,10 @@ class AbstractFileBasedStreamReader(ABC):
         """
         ...
 
-    @staticmethod
-    def _parse_start_date(start_date_str: str) -> datetime:
+    def _parse_start_date(self, start_date_str: str) -> datetime:
         """Parse a start_date string, supporting both with and without microseconds."""
         try:
-            return datetime.strptime(start_date_str, AbstractFileBasedStreamReader.DATE_TIME_FORMAT)
+            return datetime.strptime(start_date_str, self.DATE_TIME_FORMAT)
         except ValueError:
             return datetime.strptime(start_date_str, "%Y-%m-%dT%H:%M:%SZ")
 
