@@ -233,6 +233,10 @@ class UnstructuredParser(FileTypeParser):
         if filetype in {FileType.MD, FileType.TXT}:
             file_content: bytes = file_handle.read()
             decoded_content: str = optional_decode(file_content)
+            if format.output_format == "markdown_json":
+                return json.dumps(
+                    [{"type": "NarrativeText", "text": decoded_content, "metadata": {}}]
+                )
             return decoded_content
         if format.processing.mode == "local":
             elements = self._read_file_locally_elements(
