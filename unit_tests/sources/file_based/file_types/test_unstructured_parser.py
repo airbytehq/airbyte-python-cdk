@@ -752,7 +752,7 @@ def test_parse_records_markdown_json_local(
     assert len(content) == 4
     assert content[0]["type"] == "Title"
     assert content[0]["text"] == "heading"
-    assert content[1]["type"] == "NarrativeText"
+    assert content[1]["type"] == "UncategorizedText"
     assert content[1]["text"] == "This is the text"
     assert content[2]["type"] == "ListItem"
     assert content[2]["text"] == "This is a list item"
