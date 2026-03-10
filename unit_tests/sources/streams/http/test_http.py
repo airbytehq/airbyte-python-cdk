@@ -222,7 +222,8 @@ def test_stub_custom_backoff_http_stream_retries(mocker, retries):
     send_mock = mocker.patch.object(requests.Session, "send", return_value=req)
 
     with pytest.raises(
-        AirbyteTracedException, match="Rate limit exceeded. Try decreasing concurrency or the number of workers to stay within API rate limits."
+        AirbyteTracedException,
+        match="Rate limit exceeded. Try decreasing concurrency or the number of workers to stay within API rate limits.",
     ):
         list(stream.read_records(SyncMode.full_refresh))
     if retries <= 0:
