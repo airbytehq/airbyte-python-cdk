@@ -836,10 +836,10 @@ def test_handle_record_counts(
 
 
 def test_memory_limit_exceeded_flushes_queued_messages(mocker, spec_mock, config_mock):
-    """When MemoryLimitExceeded is raised mid-read, queued messages should still be flushed.
+    """When AirbyteTracedException is raised mid-read, queued messages should still be flushed.
 
     The read() try/finally ensures _emit_queued_messages runs even when
-    MemoryLimitExceeded propagates.  The exception still surfaces to the
+    AirbyteTracedException propagates.  The exception still surfaces to the
     caller, but all messages yielded before (records) and during (finally-
     block state messages) the exception are available to the consumer.
     """
@@ -879,7 +879,7 @@ def test_memory_limit_exceeded_flushes_queued_messages(mocker, spec_mock, config
     mocker.patch.object(MockSource, "read_catalog", return_value={})
     mocker.patch.object(MockSource, "read", return_value=[record, record])
 
-    from airbyte_cdk.utils.memory_monitor import MemoryLimitExceeded
+    from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 
     call_count = 0
 
@@ -887,7 +887,7 @@ def test_memory_limit_exceeded_flushes_queued_messages(mocker, spec_mock, config
         nonlocal call_count
         call_count += 1
         if call_count >= 2:
-            raise MemoryLimitExceeded(
+            raise AirbyteTracedException(
                 internal_message="Memory at 96%",
                 message="Source exceeded memory limit (96% used) and must shut down to avoid an out-of-memory crash.",
                 failure_type=FailureType.system_error,
@@ -901,22 +901,22 @@ def test_memory_limit_exceeded_flushes_queued_messages(mocker, spec_mock, config
         command="read", config="config_path", state="statepath", catalog="catalogpath"
     )
 
-    # The generator yields messages until MemoryLimitExceeded propagates.
+    # The generator yields messages until AirbyteTracedException propagates.
     # Collect everything yielded before the exception surfaces.
     messages: list[str] = []
-    with pytest.raises(MemoryLimitExceeded):
+    with pytest.raises(AirbyteTracedException):
         for msg in entrypoint.run(parsed_args):
             messages.append(msg)
 
     # 1. Both records were yielded before the exception — the memory check
     #    runs after yield so every message pulled from the source is emitted.
     record_messages = [m for m in messages if "RECORD" in m]
-    assert len(record_messages) == 2, "Both records should be yielded before MemoryLimitExceeded"
+    assert len(record_messages) == 2, "Both records should be yielded before AirbyteTracedException"
 
     # 2. The queued state message was flushed by the finally block
     state_messages = [m for m in messages if "STATE" in m]
     assert len(state_messages) >= 1, (
-        "Queued state message should be flushed even after MemoryLimitExceeded"
+        "Queued state message should be flushed even after AirbyteTracedException"
     )
 
     # 3. The flushed state has sourceStats.recordCount set by handle_record_counts.

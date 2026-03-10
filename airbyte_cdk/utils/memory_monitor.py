@@ -29,12 +29,6 @@ _DEFAULT_CRITICAL_THRESHOLD = 0.95
 _DEFAULT_CHECK_INTERVAL = 1000
 
 
-class MemoryLimitExceeded(AirbyteTracedException):
-    """Raised when connector memory usage exceeds critical threshold."""
-
-    pass
-
-
 class MemoryMonitor:
     """Monitors container memory usage via cgroup files and emits warnings before OOM kills.
 
@@ -119,8 +113,8 @@ class MemoryMonitor:
         messages (default 1000) to minimise I/O overhead.
 
         At the warning threshold (default 85%), logs a warning message.
-        At the critical threshold (default 95%), raises MemoryLimitExceeded to
-        trigger a graceful shutdown with an actionable error message.
+        At the critical threshold (default 95%), raises ``AirbyteTracedException``
+        to trigger a graceful shutdown with an actionable error message.
 
         Each threshold triggers at most once per sync to avoid log spam.
         This method is a no-op if cgroup files are unavailable.
@@ -145,7 +139,7 @@ class MemoryMonitor:
 
         if usage_ratio >= self._critical_threshold and not self._critical_raised:
             self._critical_raised = True
-            raise MemoryLimitExceeded(
+            raise AirbyteTracedException(
                 internal_message=f"Memory usage is {usage_percent}% ({usage_gb:.2f} / {limit_gb:.2f} GB). "
                 f"Critical threshold is {int(self._critical_threshold * 100)}%.",
                 message=f"Source exceeded memory limit ({usage_percent}% used) and must shut down to avoid an out-of-memory crash.",

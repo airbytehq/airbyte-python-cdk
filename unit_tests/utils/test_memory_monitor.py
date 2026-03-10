@@ -14,9 +14,9 @@ from airbyte_cdk.utils.memory_monitor import (
     _CGROUP_V1_USAGE,
     _CGROUP_V2_CURRENT,
     _CGROUP_V2_MAX,
-    MemoryLimitExceeded,
     MemoryMonitor,
 )
+from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 
 _MOCK_USAGE_BELOW = "500000000\n"  # 50% of 1 GB
 _MOCK_USAGE_WARNING = "870000000\n"  # 87% of 1 GB
@@ -160,13 +160,13 @@ def test_custom_thresholds_warning(caplog: pytest.LogCaptureFixture) -> None:
 
 
 def test_critical_at_95_percent_raises() -> None:
-    """MemoryLimitExceeded should be raised at 96% usage."""
+    """AirbyteTracedException should be raised at 96% usage."""
     monitor = MemoryMonitor(check_interval=1)
     with (
         patch.object(Path, "exists", _v2_exists),
         patch.object(Path, "read_text", _v2_mock_read(usage=_MOCK_USAGE_CRITICAL)),
     ):
-        with pytest.raises(MemoryLimitExceeded) as exc_info:
+        with pytest.raises(AirbyteTracedException) as exc_info:
             monitor.check_memory_usage()
 
     assert exc_info.value.failure_type == FailureType.system_error
@@ -174,13 +174,13 @@ def test_critical_at_95_percent_raises() -> None:
 
 
 def test_critical_raised_only_once() -> None:
-    """MemoryLimitExceeded should only be raised once."""
+    """AirbyteTracedException should only be raised once."""
     monitor = MemoryMonitor(check_interval=1)
     with (
         patch.object(Path, "exists", _v2_exists),
         patch.object(Path, "read_text", _v2_mock_read(usage=_MOCK_USAGE_CRITICAL)),
     ):
-        with pytest.raises(MemoryLimitExceeded):
+        with pytest.raises(AirbyteTracedException):
             monitor.check_memory_usage()
         # Second call should NOT raise again
         monitor.check_memory_usage()
@@ -197,7 +197,7 @@ def test_custom_thresholds_critical() -> None:
         patch.object(Path, "exists", _v2_exists),
         patch.object(Path, "read_text", _v2_mock_read(usage="850000000\n")),
     ):
-        with pytest.raises(MemoryLimitExceeded):
+        with pytest.raises(AirbyteTracedException):
             monitor.check_memory_usage()
 
 
@@ -293,32 +293,3 @@ def test_os_error_degrades_gracefully(caplog: pytest.LogCaptureFixture) -> None:
     ):
         monitor.check_memory_usage()
     assert not caplog.records
-
-
-# ---------------------------------------------------------------------------
-# MemoryLimitExceeded exception
-# ---------------------------------------------------------------------------
-
-
-def test_memory_limit_exceeded_is_airbyte_traced_exception() -> None:
-    """MemoryLimitExceeded should be a subclass of AirbyteTracedException."""
-    from airbyte_cdk.utils.traced_exception import AirbyteTracedException
-
-    exc = MemoryLimitExceeded(
-        internal_message="test",
-        message="test message",
-        failure_type=FailureType.system_error,
-    )
-    assert isinstance(exc, AirbyteTracedException)
-
-
-def test_memory_limit_exceeded_attributes() -> None:
-    """MemoryLimitExceeded should have correct attributes."""
-    exc = MemoryLimitExceeded(
-        internal_message="Memory at 96%",
-        message="Source exceeded memory limit.",
-        failure_type=FailureType.system_error,
-    )
-    assert exc.failure_type == FailureType.system_error
-    assert exc.message == "Source exceeded memory limit."
-    assert exc.internal_message == "Memory at 96%"
