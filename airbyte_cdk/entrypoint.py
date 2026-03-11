@@ -11,8 +11,10 @@ import os.path
 import socket
 import sys
 import tempfile
+import threading
 from collections import defaultdict
 from functools import wraps
+from queue import Queue
 from typing import Any, DefaultDict, Iterable, List, Mapping, Optional
 from urllib.parse import urlparse
 
@@ -374,10 +376,57 @@ def launch(source: Source, args: List[str]) -> None:
     # temporarily removes the PrintBuffer because we're seeing weird print behavior for concurrent syncs
     # Refer to: https://github.com/airbytehq/oncall/issues/6235
     with PRINT_BUFFER:
-        for message in source_entrypoint.run(parsed_args):
-            # simply printing is creating issues for concurrent CDK as Python uses different two instructions to print: one for the message and
-            # the other for the break line. Adding `\n` to the message ensure that both are printed at the same time
-            print(f"{message}\n", end="")
+        _buffered_write_to_stdout(source_entrypoint.run(parsed_args))
+
+
+_STDOUT_WRITER_QUEUE_SIZE = 50_000
+"""Upper bound on the number of serialised messages buffered between the
+main (generator) thread and the dedicated stdout-writer thread.  This
+decouples the generator from OS-level stdout backpressure so that the
+CDK's internal record queue keeps draining even when the platform is
+slow to read from the pipe."""
+
+
+def _buffered_write_to_stdout(messages: Iterable[str]) -> None:
+    """Drain *messages* through a background writer thread.
+
+    The main thread puts serialised messages into an in-memory queue.
+    A dedicated daemon thread reads from that queue and performs the
+    blocking ``print()`` calls.  This prevents stdout pipe backpressure
+    from stalling the main thread (and, by extension, the CDK's
+    internal record queue).
+
+    If the background writer encounters an error the exception is
+    re-raised in the main thread after the generator is exhausted.
+    """
+    _SENTINEL = None  # signals the writer to stop
+    buffer: Queue[Optional[str]] = Queue(maxsize=_STDOUT_WRITER_QUEUE_SIZE)
+    writer_error: List[BaseException] = []
+
+    def _writer() -> None:
+        try:
+            while True:
+                item = buffer.get()
+                if item is _SENTINEL:
+                    return
+                # Adding `\n` to the message ensures both the payload and
+                # the line break are printed in a single write call.
+                print(f"{item}\n", end="")
+        except BaseException as exc:
+            writer_error.append(exc)
+
+    writer_thread = threading.Thread(target=_writer, daemon=True, name="stdout-writer")
+    writer_thread.start()
+
+    try:
+        for message in messages:
+            buffer.put(message)
+    finally:
+        buffer.put(_SENTINEL)
+        writer_thread.join(timeout=300)
+
+    if writer_error:
+        raise writer_error[0]
 
 
 def _init_internal_request_filter() -> None:
