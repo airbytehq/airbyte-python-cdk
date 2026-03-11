@@ -541,6 +541,17 @@ def test_parse_start_date(start_date_str: str, expected: datetime) -> None:
     assert reader._parse_start_date(start_date_str) == expected
 
 
+def test_parse_start_date_respects_overridden_date_time_format() -> None:
+    """Verify that subclasses overriding DATE_TIME_FORMAT are honored by _parse_start_date."""
+
+    class CustomFormatReader(TestStreamReader):
+        DATE_TIME_FORMAT = "custom:%Y/%m/%d %H:%M:%S"
+
+    reader = CustomFormatReader()
+
+    assert reader._parse_start_date("custom:2025/01/01 00:00:00") == datetime(2025, 1, 1, 0, 0, 0)
+
+
 def test_parse_start_date_invalid_raises() -> None:
     reader = TestStreamReader()
     with pytest.raises(ValueError):
