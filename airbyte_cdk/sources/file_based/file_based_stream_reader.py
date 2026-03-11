@@ -118,6 +118,10 @@ class AbstractFileBasedStreamReader(ABC):
             try:
                 return datetime.strptime(start_date_str, "%Y-%m-%dT%H:%M:%SZ")
             except ValueError:
+                # ab_datetime_parse may return a timezone-aware datetime (e.g. for inputs
+                # like "2025-01-01T00:00:00+05:30"). We convert to UTC first so the offset
+                # is applied correctly, then strip tzinfo to produce a naive UTC datetime
+                # compatible with RemoteFile.last_modified comparisons.
                 return (
                     ab_datetime_parse(start_date_str).astimezone(timezone.utc).replace(tzinfo=None)
                 )
