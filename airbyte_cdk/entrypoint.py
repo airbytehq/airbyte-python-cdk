@@ -41,6 +41,7 @@ from airbyte_cdk.sources.utils.schema_helpers import check_config_against_spec_o
 from airbyte_cdk.utils import is_cloud_environment, message_utils
 from airbyte_cdk.utils.airbyte_secrets_utils import get_secrets, update_secrets
 from airbyte_cdk.utils.constants import ENV_REQUEST_CACHE_PATH
+from airbyte_cdk.utils.memory_monitor import MemoryMonitor
 from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 
 logger = init_logger("airbyte")
@@ -60,6 +61,7 @@ class AirbyteEntrypoint(object):
 
         self.source = source
         self.logger = logging.getLogger(f"airbyte.{getattr(source, 'name', '')}")
+        self._memory_monitor = MemoryMonitor()
 
     @staticmethod
     def parse_args(args: List[str]) -> argparse.Namespace:
@@ -279,6 +281,7 @@ class AirbyteEntrypoint(object):
         stream_message_counter: DefaultDict[HashableStreamDescriptor, float] = defaultdict(float)
         for message in self.source.read(self.logger, config, catalog, state):
             yield self.handle_record_counts(message, stream_message_counter)
+            self._memory_monitor.check_memory_usage()
         for message in self._emit_queued_messages(self.source):
             yield self.handle_record_counts(message, stream_message_counter)
 
