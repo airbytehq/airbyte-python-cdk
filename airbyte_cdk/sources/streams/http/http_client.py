@@ -166,13 +166,13 @@ class HttpClient:
         """
         if self._use_cache:
             cache_dir = os.getenv(ENV_REQUEST_CACHE_PATH)
-            # Use in-memory cache if cache_dir is not set
-            # This is a non-obvious interface, but it ensures we don't write sql files when running unit tests
-            # Use in-memory cache if cache_dir is not set
-            # This is a non-obvious interface, but it ensures we don't write sql files when running unit tests
+            # When AIRBYTE_USE_IN_MEMORY_CACHE is set, force in-memory SQLite cache to avoid
+            # file I/O that generates OS page cache (counted as container memory by Kubernetes).
+            use_in_memory = os.getenv("AIRBYTE_USE_IN_MEMORY_CACHE", "").lower() in ("true", "1")
+            # Use in-memory cache if cache_dir is not set or if explicitly requested
             sqlite_path = (
                 str(Path(cache_dir) / self.cache_filename)
-                if cache_dir
+                if cache_dir and not use_in_memory
                 else "file::memory:?cache=shared"
             )
             # By using `PRAGMA synchronous=OFF` and `PRAGMA journal_mode=WAL`, we reduce the possible occurrences of `database table is locked` errors.
