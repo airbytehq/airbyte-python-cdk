@@ -24,6 +24,7 @@ from airbyte_cdk.sources.file_based.config.validate_config_transfer_modes import
 from airbyte_cdk.sources.file_based.exceptions import FileSizeLimitError
 from airbyte_cdk.sources.file_based.file_record_data import FileRecordData
 from airbyte_cdk.sources.file_based.remote_file import RemoteFile, UploadableRemoteFile
+from airbyte_cdk.utils.datetime_helpers import ab_datetime_parse
 
 
 class FileReadMode(Enum):
@@ -114,7 +115,10 @@ class AbstractFileBasedStreamReader(ABC):
         try:
             return datetime.strptime(start_date_str, self.DATE_TIME_FORMAT)
         except ValueError:
-            return datetime.strptime(start_date_str, "%Y-%m-%dT%H:%M:%SZ")
+            try:
+                return datetime.strptime(start_date_str, "%Y-%m-%dT%H:%M:%SZ")
+            except ValueError:
+                return ab_datetime_parse(start_date_str).replace(tzinfo=None)
 
     def filter_files_by_globs_and_start_date(
         self, files: List[RemoteFile], globs: List[str]
