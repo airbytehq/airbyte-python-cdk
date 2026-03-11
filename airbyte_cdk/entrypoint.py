@@ -401,7 +401,7 @@ def _buffered_write_to_stdout(messages: Iterable[str]) -> None:
     """
     _SENTINEL = None  # signals the writer to stop
     buffer: Queue[Optional[str]] = Queue(maxsize=_STDOUT_WRITER_QUEUE_SIZE)
-    writer_error: List[BaseException] = []
+    writer_error: List[Exception] = []
 
     def _writer() -> None:
         try:
@@ -412,7 +412,7 @@ def _buffered_write_to_stdout(messages: Iterable[str]) -> None:
                 # Adding `\n` to the message ensures both the payload and
                 # the line break are printed in a single write call.
                 print(f"{item}\n", end="")
-        except BaseException as exc:
+        except Exception as exc:
             writer_error.append(exc)
 
     writer_thread = threading.Thread(target=_writer, daemon=True, name="stdout-writer")
