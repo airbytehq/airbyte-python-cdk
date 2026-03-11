@@ -379,14 +379,6 @@ def launch(source: Source, args: List[str]) -> None:
         _buffered_write_to_stdout(source_entrypoint.run(parsed_args))
 
 
-_STDOUT_WRITER_QUEUE_SIZE = 50_000
-"""Upper bound on the number of serialised messages buffered between the
-main (generator) thread and the dedicated stdout-writer thread.  This
-decouples the generator from OS-level stdout backpressure so that the
-CDK's internal record queue keeps draining even when the platform is
-slow to read from the pipe."""
-
-
 def _buffered_write_to_stdout(messages: Iterable[str]) -> None:
     """Drain *messages* through a background writer thread.
 
@@ -400,7 +392,7 @@ def _buffered_write_to_stdout(messages: Iterable[str]) -> None:
     re-raised in the main thread after the generator is exhausted.
     """
     _SENTINEL = None  # signals the writer to stop
-    buffer: Queue[Optional[str]] = Queue(maxsize=_STDOUT_WRITER_QUEUE_SIZE)
+    buffer: Queue[Optional[str]] = Queue()
     writer_error: List[Exception] = []
 
     def _writer() -> None:
