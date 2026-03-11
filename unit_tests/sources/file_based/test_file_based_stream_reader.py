@@ -403,6 +403,13 @@ class TestSpec(AbstractFileBasedSpec):
         ),
         pytest.param(
             ["**/*.csv"],
+            {"start_date": "2023-06-01T03:54:07Z", "streams": []},
+            {"a.csv", "a/b.csv", "a/c.csv", "a/b/c.csv", "a/c/c.csv", "a/b/c/d.csv"},
+            set(),
+            id="all_csvs_start_date_without_microseconds",
+        ),
+        pytest.param(
+            ["**/*.csv"],
             {"start_date": "2023-06-05T03:54:07.000Z", "streams": []},
             {"a.csv", "a/b.csv", "a/c.csv", "a/b/c.csv", "a/c/c.csv", "a/b/c/d.csv"},
             set(),
@@ -492,6 +499,63 @@ def test_preserve_sub_directories_scenarios(
     assert file_paths[AbstractFileBasedStreamReader.LOCAL_FILE_PATH] == expected_local_file_path
     assert file_paths[AbstractFileBasedStreamReader.FILE_NAME] == path.basename(source_file_path)
     assert file_paths[AbstractFileBasedStreamReader.FILE_FOLDER] == path.dirname(source_file_path)
+
+
+@pytest.mark.parametrize(
+    "start_date_str, expected",
+    [
+        pytest.param(
+            "2025-01-01T00:00:00.000000Z",
+            datetime(2025, 1, 1, 0, 0, 0),
+            id="with_microseconds_zero",
+        ),
+        pytest.param(
+            "2025-06-15T12:30:45.123456Z",
+            datetime(2025, 6, 15, 12, 30, 45, 123456),
+            id="with_microseconds_nonzero",
+        ),
+        pytest.param(
+            "2025-01-01T00:00:00Z",
+            datetime(2025, 1, 1, 0, 0, 0),
+            id="without_microseconds",
+        ),
+        pytest.param(
+            "2025-12-31T23:59:59Z",
+            datetime(2025, 12, 31, 23, 59, 59),
+            id="without_microseconds_end_of_day",
+        ),
+        pytest.param(
+            "2025-01-01",
+            datetime(2025, 1, 1, 0, 0, 0),
+            id="date_only_ab_datetime_parse_fallback",
+        ),
+        pytest.param(
+            "2025-01-01T00:00:00+05:30",
+            datetime(2024, 12, 31, 18, 30, 0),
+            id="with_timezone_offset_converted_to_utc",
+        ),
+    ],
+)
+def test_parse_start_date(start_date_str: str, expected: datetime) -> None:
+    reader = TestStreamReader()
+    assert reader._parse_start_date(start_date_str) == expected
+
+
+def test_parse_start_date_respects_overridden_date_time_format() -> None:
+    """Verify that subclasses overriding DATE_TIME_FORMAT are honored by _parse_start_date."""
+
+    class CustomFormatReader(TestStreamReader):
+        DATE_TIME_FORMAT = "custom:%Y/%m/%d %H:%M:%S"
+
+    reader = CustomFormatReader()
+
+    assert reader._parse_start_date("custom:2025/01/01 00:00:00") == datetime(2025, 1, 1, 0, 0, 0)
+
+
+def test_parse_start_date_invalid_raises() -> None:
+    reader = TestStreamReader()
+    with pytest.raises(ValueError):
+        reader._parse_start_date("not-a-date")
 
 
 def test_upload_with_file_transfer_reader():
