@@ -5,7 +5,7 @@
 import logging
 import time
 from abc import ABC, abstractmethod
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from io import IOBase
 from os import makedirs, path
@@ -118,7 +118,9 @@ class AbstractFileBasedStreamReader(ABC):
             try:
                 return datetime.strptime(start_date_str, "%Y-%m-%dT%H:%M:%SZ")
             except ValueError:
-                return ab_datetime_parse(start_date_str).replace(tzinfo=None)
+                return (
+                    ab_datetime_parse(start_date_str).astimezone(timezone.utc).replace(tzinfo=None)
+                )
 
     def filter_files_by_globs_and_start_date(
         self, files: List[RemoteFile], globs: List[str]

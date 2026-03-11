@@ -529,6 +529,11 @@ def test_preserve_sub_directories_scenarios(
             datetime(2025, 1, 1, 0, 0, 0),
             id="date_only_ab_datetime_parse_fallback",
         ),
+        pytest.param(
+            "2025-01-01T00:00:00+05:30",
+            datetime(2024, 12, 31, 18, 30, 0),
+            id="with_timezone_offset_converted_to_utc",
+        ),
     ],
 )
 def test_parse_start_date(start_date_str: str, expected: datetime) -> None:
