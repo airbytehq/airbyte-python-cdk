@@ -24,11 +24,6 @@ RUN pip install dist/*.whl
 # This is a no-op unless DD_PROFILING_ENABLED or similar env vars are set at runtime.
 RUN pip install "ddtrace>=2.16,<3"
 
-# Install jemalloc to replace glibc's malloc. jemalloc returns freed memory to the OS
-# much more aggressively than glibc, preventing unbounded RSS growth in long-running syncs
-# caused by native C allocation fragmentation (urllib3, OpenSSL, orjson, etc.).
-RUN apt-get update && apt-get install -y --no-install-recommends libjemalloc2 && rm -rf /var/lib/apt/lists/*
-ENV LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libjemalloc.so.2
 
 # Recreate the original structure
 RUN mkdir -p source_declarative_manifest \
