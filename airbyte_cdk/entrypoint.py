@@ -24,7 +24,7 @@ from requests import PreparedRequest, Response, Session
 
 from airbyte_cdk.connector import TConfig
 from airbyte_cdk.exception_handler import init_uncaught_exception_handler
-from airbyte_cdk.logger import PRINT_BUFFER, init_logger, is_platform_debug_log_enabled
+from airbyte_cdk.logger import init_logger, is_platform_debug_log_enabled
 from airbyte_cdk.models import (
     AirbyteConnectionStatus,
     AirbyteMessage,
@@ -373,10 +373,13 @@ class AirbyteEntrypoint(object):
 def launch(source: Source, args: List[str]) -> None:
     source_entrypoint = AirbyteEntrypoint(source)
     parsed_args = source_entrypoint.parse_args(args)
-    # temporarily removes the PrintBuffer because we're seeing weird print behavior for concurrent syncs
-    # Refer to: https://github.com/airbytehq/oncall/issues/6235
-    with PRINT_BUFFER:
-        _buffered_write_to_stdout(source_entrypoint.run(parsed_args))
+    # PrintBuffer is intentionally NOT used here.  Its RLock + blocking
+    # sys.__stdout__.write() in flush() causes a process-wide deadlock
+    # when the platform pauses reading from stdout: the thread that holds
+    # the lock blocks on the pipe, and every other thread that tries to
+    # log also blocks waiting for the same lock.
+    # See: https://github.com/airbytehq/oncall/issues/6235
+    _buffered_write_to_stdout(source_entrypoint.run(parsed_args))
 
 
 def _buffered_write_to_stdout(messages: Iterable[str]) -> None:
