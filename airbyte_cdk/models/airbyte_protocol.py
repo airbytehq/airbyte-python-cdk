@@ -89,6 +89,8 @@ class OauthConnectorInputSpecification:
     scope: Optional[str] = None
     scopes: Optional[List[Dict[str, Any]]] = None
     optional_scopes: Optional[List[Dict[str, Any]]] = None
+    # Stored as str (not ScopesJoinStrategy enum) because spec.py converts the enum
+    # to its .value before serialization. The protocol layer only sees plain strings.
     scopes_join_strategy: Optional[str] = None
     access_token_headers: Optional[Dict[str, Any]] = None
     access_token_params: Optional[Dict[str, Any]] = None
