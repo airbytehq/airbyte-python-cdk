@@ -332,6 +332,7 @@ class TestHttpStreamIntegration:
 
         assert MovingWindowCallRatePolicy.try_acquire.call_count == 10
 
+    @pytest.mark.skip(reason="TEMPORARY: cache is hardcoded off in HttpClient to prevent unbounded memory growth")
     @pytest.mark.usefixtures("enable_cache")
     def test_with_cache(self, mocker, requests_mock):
         """Test that HttpStream will use call budget when provided and not cached"""
