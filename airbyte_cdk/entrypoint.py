@@ -4,6 +4,7 @@
 
 import argparse
 import importlib
+import io
 import ipaddress
 import json
 import logging
@@ -382,14 +383,49 @@ def launch(source: Source, args: List[str]) -> None:
     _buffered_write_to_stdout(source_entrypoint.run(parsed_args))
 
 
+class _QueueStream(io.TextIOBase):
+    """A file-like stream that puts each write into an unbounded queue.
+
+    This is used to replace the logging handler's stream (and optionally
+    ``sys.stdout`` / ``sys.stderr``) so that **no thread** performs
+    blocking writes to the real stdout pipe.  A single background writer
+    thread drains the queue and is the only thing that touches
+    ``sys.__stdout__``.
+    """
+
+    def __init__(self, buffer: "Queue[Optional[str]]") -> None:
+        self._buffer = buffer
+
+    def write(self, data: str) -> int:  # type: ignore[override]
+        # StreamHandler writes the formatted message, then the terminator
+        # ("\n").  We strip trailing newlines because the writer thread
+        # adds its own.
+        stripped = data.rstrip("\n")
+        if stripped:
+            self._buffer.put(stripped)
+        return len(data)
+
+    def flush(self) -> None:
+        pass  # No-op: the writer thread handles actual I/O.
+
+    def writable(self) -> bool:
+        return True
+
+
 def _buffered_write_to_stdout(messages: Iterable[str]) -> None:
     """Drain *messages* through a background writer thread.
 
     The main thread puts serialised messages into an in-memory queue.
     A dedicated daemon thread reads from that queue and performs the
-    blocking ``print()`` calls.  This prevents stdout pipe backpressure
-    from stalling the main thread (and, by extension, the CDK's
-    internal record queue).
+    blocking ``sys.__stdout__`` writes.  This prevents stdout pipe
+    backpressure from stalling the main thread (and, by extension, the
+    CDK's internal record queue).
+
+    **Critically**, this function also redirects the Python logging
+    handler's stream to the same queue.  Without this, every
+    ``logger.info()`` call still goes through ``PrintBuffer.flush()``
+    → ``sys.__stdout__.write()`` which blocks on the pipe.  The main
+    thread logs heartbeat messages, so it deadlocks the same way.
 
     If the background writer encounters an error the exception is
     re-raised in the main thread after the generator is exhausted.
@@ -404,19 +440,34 @@ def _buffered_write_to_stdout(messages: Iterable[str]) -> None:
                 item = buffer.get()
                 if item is _SENTINEL:
                     return
-                # Adding `\n` to the message ensures both the payload and
-                # the line break are printed in a single write call.
-                print(f"{item}\n", end="")
+                sys.__stdout__.write(f"{item}\n")  # type: ignore[union-attr]
+                sys.__stdout__.flush()  # type: ignore[union-attr]
         except Exception as exc:
             writer_error.append(exc)
 
     writer_thread = threading.Thread(target=_writer, daemon=True, name="stdout-writer")
     writer_thread.start()
 
+    # Redirect the root logger's handler stream so that logger.info() etc.
+    # go through the non-blocking buffer instead of PrintBuffer → pipe.
+    queue_stream = _QueueStream(buffer)
+    original_handler_streams: List[Any] = []
+    root_logger = logging.getLogger()
+    for handler in root_logger.handlers:
+        if isinstance(handler, logging.StreamHandler):
+            original_handler_streams.append(handler.stream)
+            handler.stream = queue_stream  # type: ignore[assignment]
+
     try:
         for message in messages:
             buffer.put(message)
     finally:
+        # Restore original handler streams before shutting down the writer.
+        idx = 0
+        for handler in root_logger.handlers:
+            if isinstance(handler, logging.StreamHandler) and idx < len(original_handler_streams):
+                handler.stream = original_handler_streams[idx]
+                idx += 1
         buffer.put(_SENTINEL)
         writer_thread.join(timeout=300)
 
