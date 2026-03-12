@@ -269,8 +269,7 @@ class ConcurrentSource:
                 break
 
         self._diag(
-            f"_consume_from_queue: EXIT, total_items={total_items}, "
-            f"total_yields={total_yields}"
+            f"_consume_from_queue: EXIT, total_items={total_items}, total_yields={total_yields}"
         )
 
     def _watchdog_loop(self) -> None:
