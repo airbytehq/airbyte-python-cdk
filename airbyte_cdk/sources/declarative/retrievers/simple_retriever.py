@@ -418,6 +418,7 @@ class SimpleRetriever(Retriever):
                 )
                 reset_pagination = False
             else:
+                pagination_tracker.on_page_complete(stream_slice)
                 last_page_token_value = (
                     next_page_token.get("next_page_token") if next_page_token else None
                 )

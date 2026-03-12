@@ -7,13 +7,19 @@ from airbyte_cdk.sources.declarative.types import Record, StreamSlice
 from airbyte_cdk.sources.streams.concurrent.cursor import ConcurrentCursor
 from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 
+DEFAULT_PAGES_PER_CHECKPOINT_INTERVAL = 5
+
 
 class PaginationTracker:
     _record_count: int
     _number_of_attempt_with_same_slice: int
 
     def __init__(
-        self, cursor: Optional[ConcurrentCursor] = None, max_number_of_records: Optional[int] = None
+        self,
+        cursor: Optional[ConcurrentCursor] = None,
+        max_number_of_records: Optional[int] = None,
+        checkpoint_cursor: Optional[ConcurrentCursor] = None,
+        pages_per_checkpoint_interval: Optional[int] = None,
     ) -> None:
         """
         Ideally, we would have passed the `Cursor` interface here instead of `ConcurrentCursor` but not all
@@ -24,6 +30,9 @@ class PaginationTracker:
         """
         self._cursor = cursor
         self._limit = max_number_of_records
+        self._checkpoint_cursor = checkpoint_cursor
+        self._pages_per_checkpoint_interval = pages_per_checkpoint_interval
+        self._page_count = 0
         self._reset()
 
         """
@@ -39,6 +48,12 @@ class PaginationTracker:
         self._record_count += 1
         if self._cursor:
             self._cursor.observe(record)
+
+    def on_page_complete(self, stream_slice: StreamSlice) -> None:
+        if self._checkpoint_cursor and self._pages_per_checkpoint_interval:
+            self._page_count += 1
+            if self._page_count % self._pages_per_checkpoint_interval == 0:
+                self._checkpoint_cursor.emit_intermediate_state(stream_slice)
 
     def has_reached_limit(self) -> bool:
         return self._limit is not None and self._record_count >= self._limit

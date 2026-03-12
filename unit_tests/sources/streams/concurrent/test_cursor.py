@@ -1387,3 +1387,138 @@ def test_given_partitioned_state_with_multiple_slices_when_should_be_synced_then
         )
         == True
     )
+
+
+def test_emit_intermediate_state_with_boundary_fields_emits_state():
+    message_repository = Mock(spec=MessageRepository)
+    state_manager = Mock(spec=ConnectorStateManager)
+    cursor = ConcurrentCursor(
+        _A_STREAM_NAME,
+        _A_STREAM_NAMESPACE,
+        deepcopy(_NO_STATE),
+        message_repository,
+        state_manager,
+        EpochValueConcurrentStreamStateConverter(is_sequential_state=True),
+        CursorField(_A_CURSOR_FIELD_KEY),
+        _SLICE_BOUNDARY_FIELDS,
+        None,
+        EpochValueConcurrentStreamStateConverter.get_end_provider(),
+        _NO_LOOKBACK_WINDOW,
+    )
+
+    stream_slice = StreamSlice(
+        partition={_LOWER_SLICE_BOUNDARY_FIELD: 10, _UPPER_SLICE_BOUNDARY_FIELD: 100},
+        cursor_slice={},
+    )
+    partition = _partition(stream_slice)
+    cursor.observe(
+        Record(
+            data={_A_CURSOR_FIELD_KEY: 50},
+            associated_slice=partition.to_slice(),
+            stream_name=_A_STREAM_NAME,
+        )
+    )
+
+    cursor.emit_intermediate_state(stream_slice)
+
+    message_repository.emit_message.assert_called_once()
+
+
+def test_emit_intermediate_state_without_boundary_fields_emits_state():
+    message_repository = Mock(spec=MessageRepository)
+    state_manager = Mock(spec=ConnectorStateManager)
+    cursor = ConcurrentCursor(
+        _A_STREAM_NAME,
+        _A_STREAM_NAMESPACE,
+        deepcopy(_NO_STATE),
+        message_repository,
+        state_manager,
+        EpochValueConcurrentStreamStateConverter(is_sequential_state=True),
+        CursorField(_A_CURSOR_FIELD_KEY),
+        None,
+        None,
+        EpochValueConcurrentStreamStateConverter.get_end_provider(),
+        _NO_LOOKBACK_WINDOW,
+    )
+
+    partition = _partition(_NO_SLICE)
+    cursor.observe(
+        Record(
+            data={_A_CURSOR_FIELD_KEY: 50},
+            associated_slice=partition.to_slice(),
+            stream_name=_A_STREAM_NAME,
+        )
+    )
+
+    cursor.emit_intermediate_state(partition.to_slice())
+
+    message_repository.emit_message.assert_called_once()
+
+
+def test_emit_intermediate_state_when_not_ascending_order_does_not_emit():
+    message_repository = Mock(spec=MessageRepository)
+    state_manager = Mock(spec=ConnectorStateManager)
+    cursor = ConcurrentCursor(
+        _A_STREAM_NAME,
+        _A_STREAM_NAMESPACE,
+        deepcopy(_NO_STATE),
+        message_repository,
+        state_manager,
+        EpochValueConcurrentStreamStateConverter(is_sequential_state=True),
+        CursorField(_A_CURSOR_FIELD_KEY),
+        _SLICE_BOUNDARY_FIELDS,
+        None,
+        EpochValueConcurrentStreamStateConverter.get_end_provider(),
+        _NO_LOOKBACK_WINDOW,
+    )
+
+    stream_slice = StreamSlice(
+        partition={_LOWER_SLICE_BOUNDARY_FIELD: 10, _UPPER_SLICE_BOUNDARY_FIELD: 100},
+        cursor_slice={},
+    )
+    partition = _partition(stream_slice)
+    cursor.observe(
+        Record(
+            data={_A_CURSOR_FIELD_KEY: 50},
+            associated_slice=partition.to_slice(),
+            stream_name=_A_STREAM_NAME,
+        )
+    )
+    cursor.observe(
+        Record(
+            data={_A_CURSOR_FIELD_KEY: 30},
+            associated_slice=partition.to_slice(),
+            stream_name=_A_STREAM_NAME,
+        )
+    )
+
+    cursor.emit_intermediate_state(stream_slice)
+
+    message_repository.emit_message.assert_not_called()
+
+
+def test_emit_intermediate_state_when_no_records_observed_does_not_emit():
+    message_repository = Mock(spec=MessageRepository)
+    state_manager = Mock(spec=ConnectorStateManager)
+    cursor = ConcurrentCursor(
+        _A_STREAM_NAME,
+        _A_STREAM_NAMESPACE,
+        deepcopy(_NO_STATE),
+        message_repository,
+        state_manager,
+        EpochValueConcurrentStreamStateConverter(is_sequential_state=True),
+        CursorField(_A_CURSOR_FIELD_KEY),
+        _SLICE_BOUNDARY_FIELDS,
+        None,
+        EpochValueConcurrentStreamStateConverter.get_end_provider(),
+        _NO_LOOKBACK_WINDOW,
+    )
+
+    stream_slice = StreamSlice(
+        partition={_LOWER_SLICE_BOUNDARY_FIELD: 10, _UPPER_SLICE_BOUNDARY_FIELD: 100},
+        cursor_slice={},
+    )
+
+    cursor.emit_intermediate_state(stream_slice)
+
+    message_repository.emit_message.assert_not_called()
