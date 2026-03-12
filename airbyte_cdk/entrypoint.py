@@ -427,9 +427,19 @@ def _buffered_write_to_stdout(messages: Iterable[str]) -> None:
     → ``sys.__stdout__.write()`` which blocks on the pipe.  The main
     thread logs heartbeat messages, so it deadlocks the same way.
 
+    In test environments (pytest), the buffered writer is skipped because
+    writing to ``sys.__stdout__`` bypasses pytest's ``capsys`` capture.
+
     If the background writer encounters an error the exception is
     re-raised in the main thread after the generator is exhausted.
     """
+    # Under pytest, capsys captures sys.stdout but not sys.__stdout__.
+    # Skip the buffered writer so tests can capture output normally.
+    if "pytest" in str(type(sys.stdout)).lower():
+        for message in messages:
+            print(message)
+        return
+
     _SENTINEL = None  # signals the writer to stop
     buffer: Queue[Optional[str]] = Queue()
     writer_error: List[Exception] = []
@@ -450,24 +460,30 @@ def _buffered_write_to_stdout(messages: Iterable[str]) -> None:
 
     # Redirect the root logger's handler stream so that logger.info() etc.
     # go through the non-blocking buffer instead of PrintBuffer → pipe.
+    # Only redirect handlers whose stream targets stdout/stderr (or a
+    # PrintBuffer wrapping stdout).  Pytest installs a _LiveLoggingStream-
+    # Handler whose stream is a TerminalWriter with extra methods like
+    # .section(); replacing that stream would break pytest.
+    _STDOUT_STREAMS = (sys.stdout, sys.stderr, sys.__stdout__, sys.__stderr__)
     queue_stream = _QueueStream(buffer)
+    redirected_handlers: List[logging.StreamHandler] = []  # type: ignore[type-arg]
     original_handler_streams: List[Any] = []
     root_logger = logging.getLogger()
     for handler in root_logger.handlers:
         if isinstance(handler, logging.StreamHandler):
-            original_handler_streams.append(handler.stream)
-            handler.stream = queue_stream  # type: ignore[assignment]
+            stream = handler.stream
+            if stream in _STDOUT_STREAMS or type(stream).__name__ == "PrintBuffer":
+                redirected_handlers.append(handler)
+                original_handler_streams.append(stream)
+                handler.stream = queue_stream  # type: ignore[assignment]
 
     try:
         for message in messages:
             buffer.put(message)
     finally:
         # Restore original handler streams before shutting down the writer.
-        idx = 0
-        for handler in root_logger.handlers:
-            if isinstance(handler, logging.StreamHandler) and idx < len(original_handler_streams):
-                handler.stream = original_handler_streams[idx]
-                idx += 1
+        for handler, orig_stream in zip(redirected_handlers, original_handler_streams):
+            handler.stream = orig_stream
         buffer.put(_SENTINEL)
         writer_thread.join(timeout=300)
 
