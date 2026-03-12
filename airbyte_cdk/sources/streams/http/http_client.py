@@ -112,7 +112,7 @@ class HttpClient:
         else:
             # TEMPORARY: Force disable cache to prevent unbounded memory growth from
             # requests_cache SQLite backend accumulating cached HTTP responses in memory.
-            # See: https://github.com/airbytehq/airbyte-python-cdk/pull/932
+            # See: https://github.com/airbytehq/airbyte-python-cdk/pull/952
             self._use_cache = False
             self._session = self._request_session()
             self._session.mount(
