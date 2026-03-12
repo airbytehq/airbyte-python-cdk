@@ -99,7 +99,7 @@ class ConcurrentSource:
         # threads generating partitions that than are max number of workers. If it weren't the case, we could have threads only generating
         # partitions which would fill the queue. This number is arbitrarily set to 10_000 but will probably need to be changed given more
         # information and might even need to be configurable depending on the source
-        self._queue = queue or Queue(maxsize=10_000)
+        self._queue = queue or Queue(maxsize=0)
 
     def read(
         self,
