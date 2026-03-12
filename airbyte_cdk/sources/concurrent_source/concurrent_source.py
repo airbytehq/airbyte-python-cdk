@@ -3,8 +3,13 @@
 #
 
 import concurrent
+import fcntl
 import logging
-from queue import Queue
+import os
+import sys
+import threading
+import time
+from queue import Empty, Queue
 from typing import Iterable, Iterator, List, Optional
 
 from airbyte_cdk.models import AirbyteMessage
@@ -36,6 +41,11 @@ class ConcurrentSource:
     """
 
     DEFAULT_TIMEOUT_SECONDS = 900
+    # If the main thread makes no progress for this long, the watchdog
+    # terminates the process.  This breaks deadlocks caused by stdout/stderr
+    # pipe blockage where no in-process timeout can fire because I/O itself
+    # is blocked at the OS level.
+    _WATCHDOG_TIMEOUT_SECONDS = 600.0  # 10 minutes
 
     @staticmethod
     def create(
@@ -106,29 +116,45 @@ class ConcurrentSource:
         streams: List[AbstractStream],
     ) -> Iterator[AirbyteMessage]:
         self._logger.info("Starting syncing")
-        concurrent_stream_processor = ConcurrentReadProcessor(
-            streams,
-            PartitionEnqueuer(self._queue, self._threadpool),
-            self._threadpool,
-            self._logger,
-            self._slice_logger,
-            self._message_repository,
-            PartitionReader(
+        # Shared timestamp updated every time the main thread makes progress
+        # (consumes an item from the queue).  The watchdog reads this to
+        # detect when the main thread is stuck.
+        self._last_progress_time = time.monotonic()
+        self._ensure_stderr_nonblock()
+        self._watchdog_should_run = True
+        watchdog = threading.Thread(
+            target=self._watchdog_loop,
+            daemon=True,
+            name="progress-watchdog",
+        )
+        watchdog.start()
+
+        try:
+            concurrent_stream_processor = ConcurrentReadProcessor(
+                streams,
+                PartitionEnqueuer(self._queue, self._threadpool),
+                self._threadpool,
+                self._logger,
+                self._slice_logger,
+                self._message_repository,
+                PartitionReader(
+                    self._queue,
+                    PartitionLogger(self._slice_logger, self._logger, self._message_repository),
+                ),
+            )
+
+            # Enqueue initial partition generation tasks
+            yield from self._submit_initial_partition_generators(concurrent_stream_processor)
+
+            # Read from the queue until all partitions were generated and read
+            yield from self._consume_from_queue(
                 self._queue,
-                PartitionLogger(self._slice_logger, self._logger, self._message_repository),
-            ),
-        )
-
-        # Enqueue initial partition generation tasks
-        yield from self._submit_initial_partition_generators(concurrent_stream_processor)
-
-        # Read from the queue until all partitions were generated and read
-        yield from self._consume_from_queue(
-            self._queue,
-            concurrent_stream_processor,
-        )
-        self._threadpool.check_for_errors_and_shutdown()
-        self._logger.info("Finished syncing")
+                concurrent_stream_processor,
+            )
+            self._threadpool.check_for_errors_and_shutdown()
+            self._logger.info("Finished syncing")
+        finally:
+            self._watchdog_should_run = False
 
     def _submit_initial_partition_generators(
         self, concurrent_stream_processor: ConcurrentReadProcessor
@@ -138,22 +164,186 @@ class ConcurrentSource:
             if status_message:
                 yield status_message
 
+    _stderr_nonblock_set = False
+
+    @classmethod
+    def _ensure_stderr_nonblock(cls) -> None:
+        """Set stderr fd 2 to non-blocking mode (once).
+
+        In Airbyte Cloud the platform reads the source container's stdout and
+        stderr pipes.  If the platform pauses reading (e.g. destination
+        backpressure), both pipe buffers fill up.  A blocking ``os.write(2,
+        ...)`` would then stall whichever thread called it — including the
+        main thread, which causes the CDK queue to fill and deadlock all
+        workers.
+
+        Setting ``O_NONBLOCK`` on fd 2 makes ``os.write(2, ...)`` return
+        immediately with ``BlockingIOError`` (EAGAIN) instead of blocking.
+        The ``_diag`` method already catches all exceptions, so the message
+        is simply dropped when the pipe is full.
+        """
+        if cls._stderr_nonblock_set:
+            return
+        try:
+            flags = fcntl.fcntl(2, fcntl.F_GETFL)
+            fcntl.fcntl(2, fcntl.F_SETFL, flags | os.O_NONBLOCK)
+            cls._stderr_nonblock_set = True
+        except Exception:
+            # Best-effort; some environments may not support fcntl on fd 2.
+            pass
+
+    @staticmethod
+    def _diag(msg: str) -> None:
+        """Write diagnostic message directly to stderr fd 2.
+
+        Bypasses all Python buffering (sys.stderr, logging, PrintBuffer)
+        so the message is visible even when stdout/stderr pipes are blocked.
+        The fd is set to non-blocking mode by ``_ensure_stderr_nonblock``
+        so this call never stalls the calling thread.
+        """
+        try:
+            os.write(2, f"DIAG: {msg}\n".encode())
+        except Exception:
+            # Intentionally ignored: diagnostics are best-effort and must
+            # never interfere with program execution.  In non-blocking mode
+            # this catches BlockingIOError (EAGAIN) when the pipe is full.
+            pass
+
     def _consume_from_queue(
         self,
         queue: Queue[QueueItem],
         concurrent_stream_processor: ConcurrentReadProcessor,
     ) -> Iterable[AirbyteMessage]:
-        while airbyte_message_or_record_or_exception := queue.get():
-            yield from self._handle_item(
+        last_item_time = time.monotonic()
+        heartbeat_interval = 60.0  # Log heartbeat every 60 seconds
+        items_since_last_heartbeat = 0
+        total_items = 0
+        total_yields = 0
+        last_diag_time = time.monotonic()
+        diag_interval = 10.0  # Diagnostic log every 10 seconds
+
+        self._diag("_consume_from_queue: ENTER")
+
+        while True:
+            now_pre_get = time.monotonic()
+            try:
+                airbyte_message_or_record_or_exception = queue.get(timeout=heartbeat_interval)
+            except Empty:
+                elapsed = time.monotonic() - last_item_time
+                self._diag(
+                    f"_consume_from_queue: EMPTY after {elapsed:.0f}s, "
+                    f"qsize={queue.qsize()}, pool_done={self._threadpool.is_done()}, "
+                    f"threads={threading.active_count()}"
+                )
+                self._logger.info(
+                    "Queue heartbeat: no items received for %.0fs. "
+                    "queue_size=%d, threadpool_done=%s, active_threads=%d",
+                    elapsed,
+                    queue.qsize(),
+                    self._threadpool.is_done(),
+                    threading.active_count(),
+                )
+                continue
+
+            if not airbyte_message_or_record_or_exception:
+                self._diag("_consume_from_queue: got sentinel, breaking")
+                break
+
+            now = time.monotonic()
+            get_wait = now - now_pre_get
+            total_items += 1
+            items_since_last_heartbeat += 1
+
+            # Periodic diagnostic via os.write(2,...) — visible even when
+            # stdout pipe is blocked.
+            if now - last_diag_time >= diag_interval:
+                item_type = type(airbyte_message_or_record_or_exception).__name__
+                self._diag(
+                    f"_consume_from_queue: alive, "
+                    f"total_items={total_items}, total_yields={total_yields}, "
+                    f"qsize={queue.qsize()}, last_get_wait={get_wait:.3f}s, "
+                    f"item_type={item_type}"
+                )
+                last_diag_time = now
+
+            if now - last_item_time >= heartbeat_interval:
+                self._logger.info(
+                    "Queue heartbeat: processed %d items in last %.0fs. "
+                    "queue_size=%d, item_type=%s",
+                    items_since_last_heartbeat,
+                    now - last_item_time,
+                    queue.qsize(),
+                    type(airbyte_message_or_record_or_exception).__name__,
+                )
+                items_since_last_heartbeat = 0
+            self._last_progress_time = now
+            last_item_time = now
+
+            pre_yield = time.monotonic()
+            for msg in self._handle_item(
                 airbyte_message_or_record_or_exception,
                 concurrent_stream_processor,
-            )
+            ):
+                total_yields += 1
+                yield msg
+            post_yield = time.monotonic()
+            yield_dur = post_yield - pre_yield
+            if yield_dur > 5.0:
+                self._diag(
+                    f"_consume_from_queue: SLOW yield, "
+                    f"duration={yield_dur:.1f}s, "
+                    f"item_type={type(airbyte_message_or_record_or_exception).__name__}"
+                )
+
             # In the event that a partition raises an exception, anything remaining in
             # the queue will be missed because is_done() can raise an exception and exit
             # out of this loop before remaining items are consumed
             if queue.empty() and concurrent_stream_processor.is_done():
                 # all partitions were generated and processed. we're done here
+                self._diag("_consume_from_queue: all done, breaking")
                 break
+
+        self._diag(
+            f"_consume_from_queue: EXIT, total_items={total_items}, total_yields={total_yields}"
+        )
+
+    def _watchdog_loop(self) -> None:
+        """Daemon thread that terminates the process when the main thread stalls.
+
+        In Airbyte Cloud the source container's stdout and stderr are read by
+        the platform (replication-orchestrator).  If the platform stops reading
+        (e.g. destination backpressure), both pipes fill up and *all* threads
+        block on I/O — including the main thread's ``yield`` and every worker
+        thread's ``logger.*()`` call.  No in-process timeout can fire because
+        the timeout's own log/write call also blocks.
+
+        This watchdog does **not** perform any I/O.  It simply checks a shared
+        monotonic timestamp that the main thread updates whenever it consumes a
+        queue item.  If no progress is observed for ``_WATCHDOG_TIMEOUT_SECONDS``,
+        it calls ``os._exit(1)`` which is a raw syscall that terminates the
+        process immediately regardless of I/O state.
+        """
+        while self._watchdog_should_run:
+            time.sleep(30)  # check every 30 seconds
+            if not self._watchdog_should_run:
+                return
+            elapsed = time.monotonic() - self._last_progress_time
+            if elapsed >= self._WATCHDOG_TIMEOUT_SECONDS:
+                # Write directly to stderr fd to bypass Python buffering
+                # which may be blocked.  This is best-effort; if the fd is
+                # blocked the write will simply fail and we still exit.
+                try:
+                    msg = (
+                        f"WATCHDOG: Main thread made no progress for "
+                        f"{elapsed:.0f}s (threshold={self._WATCHDOG_TIMEOUT_SECONDS:.0f}s). "
+                        f"Terminating process to prevent indefinite hang.\n"
+                    )
+                    os.write(sys.stderr.fileno(), msg.encode())
+                except Exception:
+                    # Intentionally ignored: logging is best-effort and must
+                    # not prevent process termination via os._exit() below.
+                    pass
+                os._exit(1)
 
     def _handle_item(
         self,

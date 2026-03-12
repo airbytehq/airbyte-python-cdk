@@ -3,7 +3,9 @@
 #
 
 import argparse
+import fcntl
 import importlib
+import io
 import ipaddress
 import json
 import logging
@@ -11,8 +13,11 @@ import os.path
 import socket
 import sys
 import tempfile
+import threading
+import time
 from collections import defaultdict
 from functools import wraps
+from queue import Queue
 from typing import Any, DefaultDict, Iterable, List, Mapping, Optional
 from urllib.parse import urlparse
 
@@ -22,7 +27,7 @@ from requests import PreparedRequest, Response, Session
 
 from airbyte_cdk.connector import TConfig
 from airbyte_cdk.exception_handler import init_uncaught_exception_handler
-from airbyte_cdk.logger import PRINT_BUFFER, init_logger, is_platform_debug_log_enabled
+from airbyte_cdk.logger import init_logger, is_platform_debug_log_enabled
 from airbyte_cdk.models import (
     AirbyteConnectionStatus,
     AirbyteMessage,
@@ -374,13 +379,224 @@ class AirbyteEntrypoint(object):
 def launch(source: Source, args: List[str]) -> None:
     source_entrypoint = AirbyteEntrypoint(source)
     parsed_args = source_entrypoint.parse_args(args)
-    # temporarily removes the PrintBuffer because we're seeing weird print behavior for concurrent syncs
-    # Refer to: https://github.com/airbytehq/oncall/issues/6235
-    with PRINT_BUFFER:
-        for message in source_entrypoint.run(parsed_args):
-            # simply printing is creating issues for concurrent CDK as Python uses different two instructions to print: one for the message and
-            # the other for the break line. Adding `\n` to the message ensure that both are printed at the same time
-            print(f"{message}\n", end="")
+    # PrintBuffer is intentionally NOT used here.  Its RLock + blocking
+    # sys.__stdout__.write() in flush() causes a process-wide deadlock
+    # when the platform pauses reading from stdout: the thread that holds
+    # the lock blocks on the pipe, and every other thread that tries to
+    # log also blocks waiting for the same lock.
+    # See: https://github.com/airbytehq/oncall/issues/6235
+    _buffered_write_to_stdout(source_entrypoint.run(parsed_args))
+
+
+class _QueueStream(io.TextIOBase):
+    """A file-like stream that puts each write into an unbounded queue.
+
+    This is used to replace the logging handler's stream (and optionally
+    ``sys.stdout`` / ``sys.stderr``) so that **no thread** performs
+    blocking writes to the real stdout pipe.  A single background writer
+    thread drains the queue and is the only thing that touches
+    ``sys.__stdout__``.
+    """
+
+    def __init__(self, buffer: "Queue[Optional[str]]") -> None:
+        self._buffer = buffer
+
+    def write(self, data: str) -> int:  # type: ignore[override]
+        # StreamHandler writes the formatted message, then the terminator
+        # ("\n").  We strip trailing newlines because the writer thread
+        # adds its own.
+        stripped = data.rstrip("\n")
+        if stripped:
+            self._buffer.put(stripped)
+        return len(data)
+
+    def flush(self) -> None:
+        pass  # No-op: the writer thread handles actual I/O.
+
+    def writable(self) -> bool:
+        return True
+
+
+class _StdoutProxy:
+    """Proxy for ``sys.stdout`` / ``sys.stderr`` that intercepts writes.
+
+    Unlike ``_QueueStream`` (which extends ``io.TextIOBase``), this proxy
+    delegates *all* attribute access to the original stream object.  This
+    means code that inspects ``sys.stdout.encoding``, calls
+    ``sys.stdout.fileno()``, or accesses ``sys.stdout.buffer`` continues
+    to work.  Only ``write()`` and ``flush()`` are overridden to route
+    data through the non-blocking buffer queue.
+    """
+
+    def __init__(self, original: Any, buffer: "Queue[Optional[str]]") -> None:
+        # Use object.__setattr__ to bypass our own __setattr__ if we ever add one.
+        object.__setattr__(self, "_original", original)
+        object.__setattr__(self, "_buffer", buffer)
+
+    def write(self, data: str) -> int:
+        stripped = str(data).rstrip("\n")
+        if stripped:
+            self._buffer.put(stripped)
+        return len(data)
+
+    def flush(self) -> None:
+        pass  # No-op: the writer thread handles actual I/O.
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._original, name)
+
+
+def _ensure_stderr_nonblock() -> None:
+    """Set stderr fd 2 to non-blocking mode (once).
+
+    When the Airbyte platform stops reading from the source container's
+    stderr pipe, the pipe buffer fills and any ``os.write(2, ...)`` call
+    blocks the calling thread.  If that thread is the main thread, the
+    CDK's record queue fills and all workers deadlock.
+
+    Setting ``O_NONBLOCK`` makes ``os.write(2, ...)`` raise
+    ``BlockingIOError`` (EAGAIN) instead of blocking, which
+    ``_stderr_diag`` already catches.
+    """
+    try:
+        flags = fcntl.fcntl(2, fcntl.F_GETFL)
+        fcntl.fcntl(2, fcntl.F_SETFL, flags | os.O_NONBLOCK)
+    except Exception:
+        # Best-effort; some environments may not support fcntl on fd 2.
+        pass
+
+
+def _stderr_diag(msg: str) -> None:
+    """Write a diagnostic message directly to stderr fd.
+
+    Uses ``os.write()`` on the raw file descriptor so the write bypasses
+    *all* Python buffering (``sys.stderr``, ``PrintBuffer``, logging
+    handlers).  fd 2 is set to non-blocking mode so this never stalls
+    the calling thread.
+    """
+    try:
+        os.write(2, f"DIAG: {msg}\n".encode())
+    except Exception:
+        # Best-effort; catches BlockingIOError (EAGAIN) when pipe is
+        # full, plus any other I/O error.
+        pass
+
+
+def _buffered_write_to_stdout(messages: Iterable[str]) -> None:
+    """Drain *messages* through a background writer thread.
+
+    The main thread puts serialised messages into an in-memory queue.
+    A dedicated daemon thread reads from that queue and performs the
+    blocking ``sys.__stdout__`` writes.  This prevents stdout pipe
+    backpressure from stalling the main thread (and, by extension, the
+    CDK's internal record queue).
+
+    Three layers of protection are applied:
+
+    1. **Logging handler streams** on the root logger that target stdout,
+       stderr, or a ``PrintBuffer`` are replaced with a ``_QueueStream``
+       that writes into the buffer queue.
+    2. **``sys.stdout`` and ``sys.stderr``** are replaced with
+       ``_StdoutProxy`` objects that also write into the buffer queue.
+       This catches *any* ``print()`` call or direct ``sys.stdout.write()``
+       from any thread.
+    3. The **stdout writer thread** is the only code that touches the
+       real ``sys.__stdout__`` pipe.
+
+    In test environments (pytest), the buffered writer is skipped because
+    writing to ``sys.__stdout__`` bypasses pytest's ``capsys`` capture.
+
+    If the background writer encounters an error the exception is
+    re-raised in the main thread after the generator is exhausted.
+    """
+    # Under pytest, capsys captures sys.stdout but not sys.__stdout__.
+    # Skip the buffered writer so tests can capture output normally.
+    if "pytest" in str(type(sys.stdout)).lower():
+        for message in messages:
+            print(message)
+        return
+
+    _ensure_stderr_nonblock()
+
+    _SENTINEL = None  # signals the writer to stop
+    buffer: Queue[Optional[str]] = Queue()
+    writer_error: List[Exception] = []
+
+    def _writer() -> None:
+        try:
+            while True:
+                item = buffer.get()
+                if item is _SENTINEL:
+                    return
+                sys.__stdout__.write(f"{item}\n")  # type: ignore[union-attr]
+                sys.__stdout__.flush()  # type: ignore[union-attr]
+        except Exception as exc:
+            writer_error.append(exc)
+
+    writer_thread = threading.Thread(target=_writer, daemon=True, name="stdout-writer")
+    writer_thread.start()
+
+    # --- Layer 1: redirect logging handler streams ---
+    _STDOUT_STREAMS = (sys.stdout, sys.stderr, sys.__stdout__, sys.__stderr__)
+    queue_stream = _QueueStream(buffer)
+    redirected_handlers: List[logging.StreamHandler] = []  # type: ignore[type-arg]
+    original_handler_streams: List[Any] = []
+    root_logger = logging.getLogger()
+    for handler in root_logger.handlers:
+        if isinstance(handler, logging.StreamHandler):
+            stream = handler.stream
+            if stream in _STDOUT_STREAMS or type(stream).__name__ == "PrintBuffer":
+                redirected_handlers.append(handler)
+                original_handler_streams.append(stream)
+                handler.stream = queue_stream  # type: ignore[assignment]
+
+    # --- Layer 2: replace sys.stdout / sys.stderr ---
+    # This catches print() calls and direct sys.stdout.write() from any
+    # thread, routing them through the non-blocking buffer instead of the
+    # pipe.  _StdoutProxy delegates all other attribute access (encoding,
+    # fileno, buffer, etc.) to the original stream object.
+    original_stdout = sys.stdout
+    original_stderr = sys.stderr
+    sys.stdout = _StdoutProxy(original_stdout, buffer)  # type: ignore[assignment]
+    sys.stderr = _StdoutProxy(original_stderr, buffer)  # type: ignore[assignment]
+
+    _stderr_diag(
+        f"Buffered writer ACTIVE: "
+        f"handlers_redirected={len(redirected_handlers)}, "
+        f"stdout_type={type(original_stdout).__name__}, "
+        f"stderr_type={type(original_stderr).__name__}"
+    )
+
+    try:
+        msg_count = 0
+        last_diag = time.monotonic()
+        for message in messages:
+            buffer.put(message)
+            msg_count += 1
+            now = time.monotonic()
+            if now - last_diag >= 10.0:
+                _stderr_diag(
+                    f"_buffered_write_to_stdout: alive, "
+                    f"msg_count={msg_count}, buffer_qsize={buffer.qsize()}, "
+                    f"writer_alive={writer_thread.is_alive()}"
+                )
+                last_diag = now
+        _stderr_diag(
+            f"_buffered_write_to_stdout: generator exhausted, "
+            f"msg_count={msg_count}, buffer_qsize={buffer.qsize()}"
+        )
+    finally:
+        # Restore sys.stdout / sys.stderr before shutting down.
+        sys.stdout = original_stdout
+        sys.stderr = original_stderr
+        # Restore original handler streams.
+        for handler, orig_stream in zip(redirected_handlers, original_handler_streams):
+            handler.stream = orig_stream
+        buffer.put(_SENTINEL)
+        writer_thread.join(timeout=300)
+
+    if writer_error:
+        raise writer_error[0]
 
 
 def _init_internal_request_filter() -> None:
