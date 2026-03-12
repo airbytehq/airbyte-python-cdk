@@ -311,6 +311,8 @@ class ConcurrentCursor(Cursor):
                     }
                 )
             else:
+                if "slices" not in self._concurrent_state:
+                    return
                 self._concurrent_state["slices"].append(
                     {
                         self._connector_state_converter.START_KEY: self.start,
