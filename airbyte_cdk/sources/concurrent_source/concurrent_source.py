@@ -3,6 +3,7 @@
 #
 
 import concurrent
+import fcntl
 import logging
 import os
 import sys
@@ -119,6 +120,7 @@ class ConcurrentSource:
         # (consumes an item from the queue).  The watchdog reads this to
         # detect when the main thread is stuck.
         self._last_progress_time = time.monotonic()
+        self._ensure_stderr_nonblock()
         self._watchdog_should_run = True
         watchdog = threading.Thread(
             target=self._watchdog_loop,
@@ -162,18 +164,49 @@ class ConcurrentSource:
             if status_message:
                 yield status_message
 
+    _stderr_nonblock_set = False
+
+    @classmethod
+    def _ensure_stderr_nonblock(cls) -> None:
+        """Set stderr fd 2 to non-blocking mode (once).
+
+        In Airbyte Cloud the platform reads the source container's stdout and
+        stderr pipes.  If the platform pauses reading (e.g. destination
+        backpressure), both pipe buffers fill up.  A blocking ``os.write(2,
+        ...)`` would then stall whichever thread called it — including the
+        main thread, which causes the CDK queue to fill and deadlock all
+        workers.
+
+        Setting ``O_NONBLOCK`` on fd 2 makes ``os.write(2, ...)`` return
+        immediately with ``BlockingIOError`` (EAGAIN) instead of blocking.
+        The ``_diag`` method already catches all exceptions, so the message
+        is simply dropped when the pipe is full.
+        """
+        if cls._stderr_nonblock_set:
+            return
+        try:
+            flags = fcntl.fcntl(2, fcntl.F_GETFL)
+            fcntl.fcntl(2, fcntl.F_SETFL, flags | os.O_NONBLOCK)
+            cls._stderr_nonblock_set = True
+        except Exception:
+            # Best-effort; some environments may not support fcntl on fd 2.
+            pass
+
     @staticmethod
     def _diag(msg: str) -> None:
         """Write diagnostic message directly to stderr fd 2.
 
         Bypasses all Python buffering (sys.stderr, logging, PrintBuffer)
         so the message is visible even when stdout/stderr pipes are blocked.
+        The fd is set to non-blocking mode by ``_ensure_stderr_nonblock``
+        so this call never stalls the calling thread.
         """
         try:
             os.write(2, f"DIAG: {msg}\n".encode())
         except Exception:
             # Intentionally ignored: diagnostics are best-effort and must
-            # never interfere with program execution.
+            # never interfere with program execution.  In non-blocking mode
+            # this catches BlockingIOError (EAGAIN) when the pipe is full.
             pass
 
     def _consume_from_queue(

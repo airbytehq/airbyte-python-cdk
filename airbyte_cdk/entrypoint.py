@@ -3,6 +3,7 @@
 #
 
 import argparse
+import fcntl
 import importlib
 import io
 import ipaddress
@@ -442,18 +443,40 @@ class _StdoutProxy:
         return getattr(self._original, name)
 
 
+def _ensure_stderr_nonblock() -> None:
+    """Set stderr fd 2 to non-blocking mode (once).
+
+    When the Airbyte platform stops reading from the source container's
+    stderr pipe, the pipe buffer fills and any ``os.write(2, ...)`` call
+    blocks the calling thread.  If that thread is the main thread, the
+    CDK's record queue fills and all workers deadlock.
+
+    Setting ``O_NONBLOCK`` makes ``os.write(2, ...)`` raise
+    ``BlockingIOError`` (EAGAIN) instead of blocking, which
+    ``_stderr_diag`` already catches.
+    """
+    try:
+        flags = fcntl.fcntl(2, fcntl.F_GETFL)
+        fcntl.fcntl(2, fcntl.F_SETFL, flags | os.O_NONBLOCK)
+    except Exception:
+        # Best-effort; some environments may not support fcntl on fd 2.
+        pass
+
+
 def _stderr_diag(msg: str) -> None:
     """Write a diagnostic message directly to stderr fd.
 
     Uses ``os.write()`` on the raw file descriptor so the write bypasses
     *all* Python buffering (``sys.stderr``, ``PrintBuffer``, logging
-    handlers).  This works even when the stdout/stderr pipes are blocked
-    because ``os.write(2, …)`` is a direct syscall on fd 2.
+    handlers).  fd 2 is set to non-blocking mode so this never stalls
+    the calling thread.
     """
     try:
         os.write(2, f"DIAG: {msg}\n".encode())
     except Exception:
-        pass  # Best-effort; must not prevent caller from continuing.
+        # Best-effort; catches BlockingIOError (EAGAIN) when pipe is
+        # full, plus any other I/O error.
+        pass
 
 
 def _buffered_write_to_stdout(messages: Iterable[str]) -> None:
@@ -489,6 +512,8 @@ def _buffered_write_to_stdout(messages: Iterable[str]) -> None:
         for message in messages:
             print(message)
         return
+
+    _ensure_stderr_nonblock()
 
     _SENTINEL = None  # signals the writer to stop
     buffer: Queue[Optional[str]] = Queue()
