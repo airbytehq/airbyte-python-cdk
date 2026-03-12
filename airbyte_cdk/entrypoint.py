@@ -412,6 +412,49 @@ class _QueueStream(io.TextIOBase):
         return True
 
 
+class _StdoutProxy:
+    """Proxy for ``sys.stdout`` / ``sys.stderr`` that intercepts writes.
+
+    Unlike ``_QueueStream`` (which extends ``io.TextIOBase``), this proxy
+    delegates *all* attribute access to the original stream object.  This
+    means code that inspects ``sys.stdout.encoding``, calls
+    ``sys.stdout.fileno()``, or accesses ``sys.stdout.buffer`` continues
+    to work.  Only ``write()`` and ``flush()`` are overridden to route
+    data through the non-blocking buffer queue.
+    """
+
+    def __init__(self, original: Any, buffer: "Queue[Optional[str]]") -> None:
+        # Use object.__setattr__ to bypass our own __setattr__ if we ever add one.
+        object.__setattr__(self, "_original", original)
+        object.__setattr__(self, "_buffer", buffer)
+
+    def write(self, data: str) -> int:
+        stripped = str(data).rstrip("\n")
+        if stripped:
+            self._buffer.put(stripped)
+        return len(data)
+
+    def flush(self) -> None:
+        pass  # No-op: the writer thread handles actual I/O.
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._original, name)
+
+
+def _stderr_diag(msg: str) -> None:
+    """Write a diagnostic message directly to stderr fd.
+
+    Uses ``os.write()`` on the raw file descriptor so the write bypasses
+    *all* Python buffering (``sys.stderr``, ``PrintBuffer``, logging
+    handlers).  This works even when the stdout/stderr pipes are blocked
+    because ``os.write(2, …)`` is a direct syscall on fd 2.
+    """
+    try:
+        os.write(2, f"DIAG: {msg}\n".encode())
+    except Exception:
+        pass  # Best-effort; must not prevent caller from continuing.
+
+
 def _buffered_write_to_stdout(messages: Iterable[str]) -> None:
     """Drain *messages* through a background writer thread.
 
@@ -421,11 +464,17 @@ def _buffered_write_to_stdout(messages: Iterable[str]) -> None:
     backpressure from stalling the main thread (and, by extension, the
     CDK's internal record queue).
 
-    **Critically**, this function also redirects the Python logging
-    handler's stream to the same queue.  Without this, every
-    ``logger.info()`` call still goes through ``PrintBuffer.flush()``
-    → ``sys.__stdout__.write()`` which blocks on the pipe.  The main
-    thread logs heartbeat messages, so it deadlocks the same way.
+    Three layers of protection are applied:
+
+    1. **Logging handler streams** on the root logger that target stdout,
+       stderr, or a ``PrintBuffer`` are replaced with a ``_QueueStream``
+       that writes into the buffer queue.
+    2. **``sys.stdout`` and ``sys.stderr``** are replaced with
+       ``_StdoutProxy`` objects that also write into the buffer queue.
+       This catches *any* ``print()`` call or direct ``sys.stdout.write()``
+       from any thread.
+    3. The **stdout writer thread** is the only code that touches the
+       real ``sys.__stdout__`` pipe.
 
     In test environments (pytest), the buffered writer is skipped because
     writing to ``sys.__stdout__`` bypasses pytest's ``capsys`` capture.
@@ -458,12 +507,7 @@ def _buffered_write_to_stdout(messages: Iterable[str]) -> None:
     writer_thread = threading.Thread(target=_writer, daemon=True, name="stdout-writer")
     writer_thread.start()
 
-    # Redirect the root logger's handler stream so that logger.info() etc.
-    # go through the non-blocking buffer instead of PrintBuffer → pipe.
-    # Only redirect handlers whose stream targets stdout/stderr (or a
-    # PrintBuffer wrapping stdout).  Pytest installs a _LiveLoggingStream-
-    # Handler whose stream is a TerminalWriter with extra methods like
-    # .section(); replacing that stream would break pytest.
+    # --- Layer 1: redirect logging handler streams ---
     _STDOUT_STREAMS = (sys.stdout, sys.stderr, sys.__stdout__, sys.__stderr__)
     queue_stream = _QueueStream(buffer)
     redirected_handlers: List[logging.StreamHandler] = []  # type: ignore[type-arg]
@@ -477,11 +521,31 @@ def _buffered_write_to_stdout(messages: Iterable[str]) -> None:
                 original_handler_streams.append(stream)
                 handler.stream = queue_stream  # type: ignore[assignment]
 
+    # --- Layer 2: replace sys.stdout / sys.stderr ---
+    # This catches print() calls and direct sys.stdout.write() from any
+    # thread, routing them through the non-blocking buffer instead of the
+    # pipe.  _StdoutProxy delegates all other attribute access (encoding,
+    # fileno, buffer, etc.) to the original stream object.
+    original_stdout = sys.stdout
+    original_stderr = sys.stderr
+    sys.stdout = _StdoutProxy(original_stdout, buffer)  # type: ignore[assignment]
+    sys.stderr = _StdoutProxy(original_stderr, buffer)  # type: ignore[assignment]
+
+    _stderr_diag(
+        f"Buffered writer ACTIVE: "
+        f"handlers_redirected={len(redirected_handlers)}, "
+        f"stdout_type={type(original_stdout).__name__}, "
+        f"stderr_type={type(original_stderr).__name__}"
+    )
+
     try:
         for message in messages:
             buffer.put(message)
     finally:
-        # Restore original handler streams before shutting down the writer.
+        # Restore sys.stdout / sys.stderr before shutting down.
+        sys.stdout = original_stdout
+        sys.stderr = original_stderr
+        # Restore original handler streams.
         for handler, orig_stream in zip(redirected_handlers, original_handler_streams):
             handler.stream = orig_stream
         buffer.put(_SENTINEL)
