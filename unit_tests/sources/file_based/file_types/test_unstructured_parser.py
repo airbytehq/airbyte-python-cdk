@@ -3,6 +3,7 @@
 #
 
 import asyncio
+import json
 from datetime import datetime
 from unittest import mock
 from unittest.mock import MagicMock, call, mock_open, patch
@@ -674,3 +675,165 @@ def test_parse_records_remotely(
         requests_mock.post.assert_has_calls(expected_requests)
     else:
         requests_mock.post.assert_not_called()
+
+
+@patch("airbyte_cdk.sources.file_based.file_types.unstructured_parser.detect_filetype")
+def test_infer_schema_markdown_json(mock_detect_filetype):
+    """Test that infer_schema returns correct description for markdown_json output format."""
+    main_loop = asyncio.get_event_loop()
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+
+    mock_detect_filetype.return_value = FileType.PDF
+    config = MagicMock()
+    config.format = UnstructuredFormat(
+        skip_unprocessable_files=False, output_format="markdown_json"
+    )
+    schema = loop.run_until_complete(
+        UnstructuredParser().infer_schema(config, MagicMock(), MagicMock(), MagicMock())
+    )
+    assert schema == {
+        "content": {
+            "type": "string",
+            "description": "Content of the file as a JSON array of structured elements with type, text, and metadata fields. Might be null if the file could not be parsed",
+        },
+        "document_key": {
+            "type": "string",
+            "description": "Unique identifier of the document, e.g. the file path",
+        },
+        "_ab_source_file_parse_error": {
+            "type": "string",
+            "description": "Error message if the file could not be parsed even though the file is supported",
+        },
+    }
+    loop.close()
+    asyncio.set_event_loop(main_loop)
+
+
+@patch("unstructured.partition.pdf.partition_pdf")
+@patch("unstructured.partition.pptx.partition_pptx")
+@patch("unstructured.partition.docx.partition_docx")
+@patch("airbyte_cdk.sources.file_based.file_types.unstructured_parser.detect_filetype")
+def test_parse_records_markdown_json_local(
+    mock_detect_filetype,
+    mock_partition_docx,
+    mock_partition_pptx,
+    mock_partition_pdf,
+):
+    """Test that parse_records returns JSON elements when output_format is markdown_json for local processing."""
+    elements = [
+        Title("heading"),
+        Text("This is the text"),
+        ListItem("This is a list item"),
+        Formula("This is a formula"),
+    ]
+    mock_partition_pdf.return_value = elements
+
+    stream_reader = MagicMock()
+    mock_open(stream_reader.open_file, read_data=b"fake pdf content")
+    fake_file = RemoteFile(uri=FILE_URI, last_modified=datetime.now())
+    logger = MagicMock()
+    config = MagicMock()
+    config.format = UnstructuredFormat(
+        skip_unprocessable_files=False,
+        output_format="markdown_json",
+    )
+    mock_detect_filetype.return_value = FileType.PDF
+
+    records = list(
+        UnstructuredParser().parse_records(config, fake_file, stream_reader, logger, MagicMock())
+    )
+    assert len(records) == 1
+    assert records[0]["document_key"] == FILE_URI
+    assert records[0]["_ab_source_file_parse_error"] is None
+    # Verify content is valid JSON
+    content = json.loads(records[0]["content"])
+    assert isinstance(content, list)
+    assert len(content) == 4
+    assert content[0]["type"] == "Title"
+    assert content[0]["text"] == "heading"
+    assert content[1]["type"] == "UncategorizedText"
+    assert content[1]["text"] == "This is the text"
+    assert content[2]["type"] == "ListItem"
+    assert content[2]["text"] == "This is a list item"
+    assert content[3]["type"] == "Formula"
+    assert content[3]["text"] == "This is a formula"
+
+
+@patch("airbyte_cdk.sources.file_based.file_types.unstructured_parser.requests")
+@patch("airbyte_cdk.sources.file_based.file_types.unstructured_parser.detect_filetype")
+@patch("time.sleep", side_effect=lambda _: None)
+def test_parse_records_markdown_json_remote(
+    time_mock,
+    mock_detect_filetype,
+    requests_mock,
+):
+    """Test that parse_records returns JSON elements when output_format is markdown_json for API processing."""
+    json_response = [
+        {"type": "Title", "text": "heading", "metadata": {"page_number": 1}},
+        {"type": "NarrativeText", "text": "Some text", "metadata": {"page_number": 1}},
+    ]
+
+    stream_reader = MagicMock()
+    mock_open(stream_reader.open_file, read_data=b"fake pdf content")
+    fake_file = RemoteFile(uri=FILE_URI, last_modified=datetime.now())
+    logger = MagicMock()
+    config = MagicMock()
+    config.format = UnstructuredFormat(
+        skip_unprocessable_files=False,
+        output_format="markdown_json",
+        processing=APIProcessingConfigModel(mode="api", api_key="test"),
+    )
+    mock_detect_filetype.return_value = FileType.PDF
+    mock_response = MagicMock()
+    mock_response.json.return_value = json_response
+    mock_response.status_code = 200
+    requests_mock.post.return_value = mock_response
+    requests_mock.exceptions.RequestException = requests.exceptions.RequestException
+
+    records = list(
+        UnstructuredParser().parse_records(config, fake_file, stream_reader, logger, MagicMock())
+    )
+    assert len(records) == 1
+    assert records[0]["document_key"] == FILE_URI
+    assert records[0]["_ab_source_file_parse_error"] is None
+    # Verify content is valid JSON matching the API response
+    content = json.loads(records[0]["content"])
+    assert content == json_response
+
+
+@patch("unstructured.partition.pdf.partition_pdf")
+@patch("unstructured.partition.pptx.partition_pptx")
+@patch("unstructured.partition.docx.partition_docx")
+@patch("airbyte_cdk.sources.file_based.file_types.unstructured_parser.detect_filetype")
+def test_parse_records_markdown_json_md_file(
+    mock_detect_filetype,
+    mock_partition_docx,
+    mock_partition_pptx,
+    mock_partition_pdf,
+):
+    """Test that MD/TXT files return a JSON element array when output_format is markdown_json."""
+    stream_reader = MagicMock()
+    mock_open(stream_reader.open_file, read_data=b"# Hello World\n\nSome text content")
+    fake_file = RemoteFile(uri="path/to/file.md", last_modified=datetime.now())
+    logger = MagicMock()
+    config = MagicMock()
+    config.format = UnstructuredFormat(
+        skip_unprocessable_files=False,
+        output_format="markdown_json",
+    )
+    mock_detect_filetype.return_value = FileType.MD
+
+    records = list(
+        UnstructuredParser().parse_records(config, fake_file, stream_reader, logger, MagicMock())
+    )
+    assert len(records) == 1
+    assert records[0]["document_key"] == "path/to/file.md"
+    assert records[0]["_ab_source_file_parse_error"] is None
+    # Verify content is valid JSON with a single NarrativeText element
+    content = json.loads(records[0]["content"])
+    assert isinstance(content, list)
+    assert len(content) == 1
+    assert content[0]["type"] == "NarrativeText"
+    assert content[0]["text"] == "# Hello World\n\nSome text content"
+    assert content[0]["metadata"] == {}
