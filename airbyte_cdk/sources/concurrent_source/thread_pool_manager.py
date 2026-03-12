@@ -12,7 +12,7 @@ class ThreadPoolManager:
     Wrapper to abstract away the threadpool and the logic to wait for pending tasks to be completed.
     """
 
-    DEFAULT_MAX_QUEUE_SIZE = 0  # 0 means unlimited
+    DEFAULT_MAX_QUEUE_SIZE = 10_000
 
     def __init__(
         self,
