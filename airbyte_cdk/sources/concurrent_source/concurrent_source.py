@@ -172,6 +172,8 @@ class ConcurrentSource:
         try:
             os.write(2, f"DIAG: {msg}\n".encode())
         except Exception:
+            # Intentionally ignored: diagnostics are best-effort and must
+            # never interfere with program execution.
             pass
 
     def _consume_from_queue(
