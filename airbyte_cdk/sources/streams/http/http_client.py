@@ -187,7 +187,7 @@ class HttpClient:
             return CachedLimiterSession(
                 cache_name=sqlite_path,
                 backend=backend,
-                expire_after=3600,
+                expire_after=600,
                 api_budget=self._api_budget,
                 match_headers=True,
             )
