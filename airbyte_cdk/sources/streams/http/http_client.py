@@ -127,9 +127,8 @@ class HttpClient:
         if session:
             self._session = session
         else:
-            # Allow disabling cache entirely via env var for debugging memory issues
-            disable_cache = os.getenv("AIRBYTE_DISABLE_CACHE", "").lower() in ("true", "1")
-            self._use_cache = use_cache and not disable_cache
+            # TEMPORARY: Force disable cache entirely to isolate memory growth root cause
+            self._use_cache = False
             self._session = self._request_session()
             self._session.mount(
                 "https://",
