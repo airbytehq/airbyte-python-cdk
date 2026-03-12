@@ -42,7 +42,9 @@ def test_cache_filename():
     http_client.cache_filename == f"{http_client._name}.sqlite"
 
 
-@pytest.mark.skip(reason="TEMPORARY: cache is hardcoded off in HttpClient to prevent unbounded memory growth")
+@pytest.mark.skip(
+    reason="TEMPORARY: cache is hardcoded off in HttpClient to prevent unbounded memory growth"
+)
 @pytest.mark.parametrize(
     "use_cache, expected_session",
     [
@@ -448,7 +450,9 @@ def test_session_request_exception_raises_backoff_exception():
         http_client._send(prepared_request, {})
 
 
-@pytest.mark.skip(reason="TEMPORARY: cache is hardcoded off in HttpClient to prevent unbounded memory growth")
+@pytest.mark.skip(
+    reason="TEMPORARY: cache is hardcoded off in HttpClient to prevent unbounded memory growth"
+)
 def test_that_response_was_cached(requests_mock):
     cached_http_client = test_cache_http_client()
 
@@ -722,7 +726,9 @@ def test_backoff_strategy_endless(
         assert mocked_send.call_count == expected_call_count
 
 
-@pytest.mark.skip(reason="TEMPORARY: cache is hardcoded off in HttpClient to prevent unbounded memory growth")
+@pytest.mark.skip(
+    reason="TEMPORARY: cache is hardcoded off in HttpClient to prevent unbounded memory growth"
+)
 def test_given_different_headers_then_response_is_not_cached(requests_mock):
     http_client = HttpClient(name="test", logger=MagicMock(), use_cache=True)
     first_request_headers = {"header_key": "first"}
