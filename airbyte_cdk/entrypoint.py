@@ -13,6 +13,7 @@ import socket
 import sys
 import tempfile
 import threading
+import time
 from collections import defaultdict
 from functools import wraps
 from queue import Queue
@@ -539,8 +540,23 @@ def _buffered_write_to_stdout(messages: Iterable[str]) -> None:
     )
 
     try:
+        msg_count = 0
+        last_diag = time.monotonic()
         for message in messages:
             buffer.put(message)
+            msg_count += 1
+            now = time.monotonic()
+            if now - last_diag >= 10.0:
+                _stderr_diag(
+                    f"_buffered_write_to_stdout: alive, "
+                    f"msg_count={msg_count}, buffer_qsize={buffer.qsize()}, "
+                    f"writer_alive={writer_thread.is_alive()}"
+                )
+                last_diag = now
+        _stderr_diag(
+            f"_buffered_write_to_stdout: generator exhausted, "
+            f"msg_count={msg_count}, buffer_qsize={buffer.qsize()}"
+        )
     finally:
         # Restore sys.stdout / sys.stderr before shutting down.
         sys.stdout = original_stdout

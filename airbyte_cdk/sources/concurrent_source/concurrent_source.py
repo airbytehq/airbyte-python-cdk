@@ -162,6 +162,18 @@ class ConcurrentSource:
             if status_message:
                 yield status_message
 
+    @staticmethod
+    def _diag(msg: str) -> None:
+        """Write diagnostic message directly to stderr fd 2.
+
+        Bypasses all Python buffering (sys.stderr, logging, PrintBuffer)
+        so the message is visible even when stdout/stderr pipes are blocked.
+        """
+        try:
+            os.write(2, f"DIAG: {msg}\n".encode())
+        except Exception:
+            pass
+
     def _consume_from_queue(
         self,
         queue: Queue[QueueItem],
@@ -170,12 +182,24 @@ class ConcurrentSource:
         last_item_time = time.monotonic()
         heartbeat_interval = 60.0  # Log heartbeat every 60 seconds
         items_since_last_heartbeat = 0
+        total_items = 0
+        total_yields = 0
+        last_diag_time = time.monotonic()
+        diag_interval = 10.0  # Diagnostic log every 10 seconds
+
+        self._diag("_consume_from_queue: ENTER")
 
         while True:
+            now_pre_get = time.monotonic()
             try:
                 airbyte_message_or_record_or_exception = queue.get(timeout=heartbeat_interval)
             except Empty:
                 elapsed = time.monotonic() - last_item_time
+                self._diag(
+                    f"_consume_from_queue: EMPTY after {elapsed:.0f}s, "
+                    f"qsize={queue.qsize()}, pool_done={self._threadpool.is_done()}, "
+                    f"threads={threading.active_count()}"
+                )
                 self._logger.info(
                     "Queue heartbeat: no items received for %.0fs. "
                     "queue_size=%d, threadpool_done=%s, active_threads=%d",
@@ -187,10 +211,26 @@ class ConcurrentSource:
                 continue
 
             if not airbyte_message_or_record_or_exception:
+                self._diag("_consume_from_queue: got sentinel, breaking")
                 break
 
             now = time.monotonic()
+            get_wait = now - now_pre_get
+            total_items += 1
             items_since_last_heartbeat += 1
+
+            # Periodic diagnostic via os.write(2,...) — visible even when
+            # stdout pipe is blocked.
+            if now - last_diag_time >= diag_interval:
+                item_type = type(airbyte_message_or_record_or_exception).__name__
+                self._diag(
+                    f"_consume_from_queue: alive, "
+                    f"total_items={total_items}, total_yields={total_yields}, "
+                    f"qsize={queue.qsize()}, last_get_wait={get_wait:.3f}s, "
+                    f"item_type={item_type}"
+                )
+                last_diag_time = now
+
             if now - last_item_time >= heartbeat_interval:
                 self._logger.info(
                     "Queue heartbeat: processed %d items in last %.0fs. "
@@ -204,16 +244,34 @@ class ConcurrentSource:
             self._last_progress_time = now
             last_item_time = now
 
-            yield from self._handle_item(
+            pre_yield = time.monotonic()
+            for msg in self._handle_item(
                 airbyte_message_or_record_or_exception,
                 concurrent_stream_processor,
-            )
+            ):
+                total_yields += 1
+                yield msg
+            post_yield = time.monotonic()
+            yield_dur = post_yield - pre_yield
+            if yield_dur > 5.0:
+                self._diag(
+                    f"_consume_from_queue: SLOW yield, "
+                    f"duration={yield_dur:.1f}s, "
+                    f"item_type={type(airbyte_message_or_record_or_exception).__name__}"
+                )
+
             # In the event that a partition raises an exception, anything remaining in
             # the queue will be missed because is_done() can raise an exception and exit
             # out of this loop before remaining items are consumed
             if queue.empty() and concurrent_stream_processor.is_done():
                 # all partitions were generated and processed. we're done here
+                self._diag("_consume_from_queue: all done, breaking")
                 break
+
+        self._diag(
+            f"_consume_from_queue: EXIT, total_items={total_items}, "
+            f"total_yields={total_yields}"
+        )
 
     def _watchdog_loop(self) -> None:
         """Daemon thread that terminates the process when the main thread stalls.
