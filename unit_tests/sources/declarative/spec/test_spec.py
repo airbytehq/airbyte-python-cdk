@@ -2,6 +2,8 @@
 # Copyright (c) 2025 Airbyte, Inc., all rights reserved.
 #
 
+import dataclasses
+
 import pytest
 
 from airbyte_cdk.models import (
@@ -131,6 +133,7 @@ from airbyte_cdk.sources.declarative.validators.validate_adheres_to_schema impor
                         oauth_connector_input_specification=model_declarative_oauth_connector_input_spec(
                             consent_url="https://domain.host.com/endpoint/oauth?{client_id_key}={{client_id_key}}&{redirect_uri_key}={urlEncoder:{{redirect_uri_key}}}&{state_key}={{state_key}}",
                             scope="reports:read campaigns:read",
+                            scopes_join_strategy="space",  # default from component schema, preserved through protocol override
                             access_token_headers={"Content-Type": "application/json"},
                             access_token_params={"{auth_code_key}": "{{auth_code_key}}"},
                             access_token_url="https://domain.host.com/endpoint/v1/oauth2/access_token/",
@@ -270,3 +273,45 @@ def test_given_invalid_config_value_when_validating_then_exception_is_raised() -
 
     with pytest.raises(Exception):
         spec.validate_config(input_config)
+
+
+@pytest.mark.parametrize(
+    "upstream_class_name, override_class_name",
+    [
+        ("OauthConnectorInputSpecification", "OauthConnectorInputSpecification"),
+        ("OAuthConfigSpecification", "OAuthConfigSpecification"),
+        ("AdvancedAuth", "AdvancedAuth"),
+        ("ConnectorSpecification", "ConnectorSpecification"),
+    ],
+    ids=[
+        "OauthConnectorInputSpecification",
+        "OAuthConfigSpecification",
+        "AdvancedAuth",
+        "ConnectorSpecification",
+    ],
+)
+def test_protocol_override_fields_in_sync(
+    upstream_class_name: str, override_class_name: str
+) -> None:
+    """Ensure protocol override dataclasses stay compatible with their upstream counterparts.
+
+    The airbyte_protocol.py file redeclares several dataclasses to add fields that the
+    upstream airbyte_protocol_dataclasses package does not yet include (e.g. scopes,
+    optional_scopes, scopes_join_strategy). If the upstream package adds new fields, this
+    test will fail to remind us to update the local overrides.
+    """
+    import airbyte_protocol_dataclasses.models as upstream_models
+
+    import airbyte_cdk.models.airbyte_protocol as override_models
+
+    upstream_cls = getattr(upstream_models, upstream_class_name)
+    override_cls = getattr(override_models, override_class_name)
+
+    upstream_fields = {f.name for f in dataclasses.fields(upstream_cls)}
+    override_fields = {f.name for f in dataclasses.fields(override_cls)}
+
+    missing = upstream_fields - override_fields
+    assert not missing, (
+        f"Upstream protocol added fields {missing} to {upstream_class_name} "
+        f"that are missing from the airbyte_protocol.py override. Update the override to match."
+    )

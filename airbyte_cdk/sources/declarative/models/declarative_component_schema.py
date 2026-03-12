@@ -20,6 +20,12 @@ class AuthFlowType(Enum):
     oauth1_0 = "oauth1.0"
 
 
+class ScopesJoinStrategy(Enum):
+    space = "space"
+    comma = "comma"
+    plus = "plus"
+
+
 class BasicHttpAuthenticator(BaseModel):
     type: Literal["BasicHttpAuthenticator"]
     username: str = Field(
@@ -827,6 +833,16 @@ class State(BaseModel):
     max: int
 
 
+class OAuthScope(BaseModel):
+    class Config:
+        extra = Extra.allow
+
+    scope: str = Field(
+        ...,
+        description="The OAuth scope string to request from the provider.",
+    )
+
+
 class OauthConnectorInputSpecification(BaseModel):
     class Config:
         extra = Extra.allow
@@ -845,6 +861,27 @@ class OauthConnectorInputSpecification(BaseModel):
         description="The DeclarativeOAuth Specific string of the scopes needed to be grant for authenticated user.",
         examples=["user:read user:read_orders workspaces:read"],
         title="Scopes",
+    )
+    # NOTE: scopes, optional_scopes, and scopes_join_strategy are processed by the
+    # platform OAuth handler (DeclarativeOAuthSpecHandler.kt), not by the CDK runtime.
+    # The CDK schema defines the manifest contract; the platform reads these fields
+    # during the OAuth consent flow to build the authorization URL.
+    scopes: Optional[List[OAuthScope]] = Field(
+        None,
+        description="List of OAuth scope objects. When present, takes precedence over the `scope` string property.\nThe scope values are joined using the `scopes_join_strategy` (default: space) before being\nsent to the OAuth provider.",
+        examples=[[{"scope": "user:read"}, {"scope": "user:write"}]],
+        title="Scopes",
+    )
+    optional_scopes: Optional[List[OAuthScope]] = Field(
+        None,
+        description="Optional OAuth scope objects that may or may not be granted.",
+        examples=[[{"scope": "admin:read"}]],
+        title="Optional Scopes",
+    )
+    scopes_join_strategy: Optional[ScopesJoinStrategy] = Field(
+        ScopesJoinStrategy.space,
+        description="The strategy used to join the `scopes` array into a single string for the OAuth request.\nDefaults to `space` per RFC 6749.",
+        title="Scopes Join Strategy",
     )
     access_token_url: str = Field(
         ...,
