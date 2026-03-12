@@ -45,6 +45,15 @@ properties:
     "$ref": "#/definitions/ConcurrencyLevel"
   api_budget:
     "$ref": "#/definitions/HTTPAPIBudget"
+  stream_groups:
+    title: Stream Groups
+    description: >
+      Groups of streams that share a common resource and should not be read simultaneously.
+      Each group defines a set of stream references and an action that controls how concurrent
+      reads are managed. Only applies to ConcurrentDeclarativeSource.
+    type: object
+    additionalProperties:
+      "$ref": "#/definitions/StreamGroup"
   max_concurrent_async_job_count:
     title: Maximum Concurrent Asynchronous Jobs
     description: Maximum number of concurrent asynchronous jobs to run. This property is only relevant for sources/streams that support asynchronous job execution through the AsyncRetriever (e.g. a report-based stream that initiates a job, polls the job status, and then fetches the job results). This is often set by the API's maximum number of concurrent jobs on the account level. Refer to the API's documentation for this information.
@@ -4191,6 +4200,43 @@ definitions:
             - "$ref": "#/definitions/ConfigRemoveFields"
             - "$ref": "#/definitions/CustomConfigTransformation"
         default: []
+  StreamGroup:
+    title: Stream Group
+    description: >
+      A group of streams that share a common resource and should not be read simultaneously.
+      Streams in the same group will be blocked from concurrent reads based on the specified action.
+    type: object
+    required:
+      - streams
+      - action
+    properties:
+      streams:
+        title: Streams
+        description: >
+          List of references to streams that belong to this group.
+        type: array
+        items:
+          anyOf:
+            - "$ref": "#/definitions/DeclarativeStream"
+      action:
+        title: Action
+        description: The action to apply to streams in this group.
+        "$ref": "#/definitions/BlockSimultaneousSyncsAction"
+  BlockSimultaneousSyncsAction:
+    title: Block Simultaneous Syncs Action
+    description: >
+      Action that prevents streams in the same group from being read concurrently.
+      When applied to a stream group, streams with this action will be deferred if
+      another stream in the same group is currently active.
+      This is useful for APIs that don't allow concurrent access to the same
+      endpoint or session. Only applies to ConcurrentDeclarativeSource.
+    type: object
+    required:
+      - type
+    properties:
+      type:
+        type: string
+        enum: [BlockSimultaneousSyncsAction]
   SubstreamPartitionRouter:
     title: Substream Partition Router
     description: Partition router that is used to retrieve records that have been partitioned according to records from the specified parent streams. An example of a parent stream is automobile brands and the substream would be the various car models associated with each branch.

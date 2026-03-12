@@ -76,12 +76,19 @@ from airbyte_cdk.sources.declarative.parsers.manifest_reference_resolver import 
 from airbyte_cdk.sources.declarative.parsers.model_to_component_factory import (
     ModelToComponentFactory,
 )
+from airbyte_cdk.sources.declarative.partition_routers.grouping_partition_router import (
+    GroupingPartitionRouter,
+)
+from airbyte_cdk.sources.declarative.partition_routers.substream_partition_router import (
+    SubstreamPartitionRouter,
+)
 from airbyte_cdk.sources.declarative.resolvers import COMPONENTS_RESOLVER_TYPE_MAPPING
 from airbyte_cdk.sources.declarative.spec.spec import Spec
 from airbyte_cdk.sources.declarative.types import Config, ConnectionDefinition
 from airbyte_cdk.sources.message.concurrent_repository import ConcurrentMessageRepository
 from airbyte_cdk.sources.message.repository import InMemoryMessageRepository
 from airbyte_cdk.sources.streams.concurrent.abstract_stream import AbstractStream
+from airbyte_cdk.sources.streams.concurrent.default_stream import DefaultStream
 from airbyte_cdk.sources.streams.concurrent.partitions.types import QueueItem
 from airbyte_cdk.sources.utils.slice_logger import (
     AlwaysLogSliceLogger,
@@ -405,6 +412,8 @@ class ConcurrentDeclarativeSource(Source):
         if api_budget_model:
             self._constructor.set_api_budget(api_budget_model, self._config)
 
+        prepared_configs = self._initialize_cache_for_parent_streams(deepcopy(stream_configs))
+
         source_streams = [
             self._constructor.create_component(
                 (
@@ -416,9 +425,69 @@ class ConcurrentDeclarativeSource(Source):
                 self._config,
                 emit_connector_builder_messages=self._emit_connector_builder_messages,
             )
-            for stream_config in self._initialize_cache_for_parent_streams(deepcopy(stream_configs))
+            for stream_config in prepared_configs
         ]
+
+        self._apply_stream_groups(source_streams)
+
         return source_streams
+
+    def _apply_stream_groups(self, streams: List[AbstractStream]) -> None:
+        """Set block_simultaneous_read on streams based on the manifest's stream_groups config.
+
+        Iterates over the resolved manifest's stream_groups and matches group membership
+        against actual created stream instances by name. Validates that no stream shares a
+        group with any of its parent streams, which would cause a deadlock.
+        """
+        stream_groups = self._source_config.get("stream_groups", {})
+        if not stream_groups:
+            return
+
+        # Build stream_name -> group_name mapping from the resolved manifest
+        stream_name_to_group: Dict[str, str] = {}
+        for group_name, group_config in stream_groups.items():
+            for stream_ref in group_config.get("streams", []):
+                if isinstance(stream_ref, dict):
+                    stream_name = stream_ref.get("name", "")
+                    if stream_name:
+                        stream_name_to_group[stream_name] = group_name
+
+        # Validate no stream shares a group with any of its ancestor streams
+        stream_name_to_instance: Dict[str, AbstractStream] = {s.name: s for s in streams}
+
+        def _collect_all_ancestor_names(stream_name: str) -> Set[str]:
+            """Recursively collect all ancestor stream names."""
+            ancestors: Set[str] = set()
+            inst = stream_name_to_instance.get(stream_name)
+            if not isinstance(inst, DefaultStream):
+                return ancestors
+            router = inst.get_partition_router()
+            if isinstance(router, GroupingPartitionRouter):
+                router = router.underlying_partition_router
+            if not isinstance(router, SubstreamPartitionRouter):
+                return ancestors
+            for parent_config in router.parent_stream_configs:
+                parent_name = parent_config.stream.name
+                ancestors.add(parent_name)
+                ancestors.update(_collect_all_ancestor_names(parent_name))
+            return ancestors
+
+        for stream in streams:
+            if not isinstance(stream, DefaultStream) or stream.name not in stream_name_to_group:
+                continue
+            group_name = stream_name_to_group[stream.name]
+            for ancestor_name in _collect_all_ancestor_names(stream.name):
+                if stream_name_to_group.get(ancestor_name) == group_name:
+                    raise ValueError(
+                        f"Stream '{stream.name}' and its parent stream '{ancestor_name}' "
+                        f"are both in group '{group_name}'. "
+                        f"A child stream must not share a group with its parent to avoid deadlock."
+                    )
+
+        # Apply group to matching stream instances
+        for stream in streams:
+            if isinstance(stream, DefaultStream) and stream.name in stream_name_to_group:
+                stream.block_simultaneous_read = stream_name_to_group[stream.name]
 
     @staticmethod
     def _initialize_cache_for_parent_streams(
