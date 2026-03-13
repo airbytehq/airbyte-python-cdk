@@ -7,10 +7,13 @@ import importlib
 import ipaddress
 import json
 import logging
+import os
 import os.path
+import select
 import socket
 import sys
 import tempfile
+import time
 from collections import defaultdict
 from functools import wraps
 from typing import Any, DefaultDict, Iterable, List, Mapping, Optional
@@ -374,13 +377,77 @@ class AirbyteEntrypoint(object):
 def launch(source: Source, args: List[str]) -> None:
     source_entrypoint = AirbyteEntrypoint(source)
     parsed_args = source_entrypoint.parse_args(args)
-    # temporarily removes the PrintBuffer because we're seeing weird print behavior for concurrent syncs
-    # Refer to: https://github.com/airbytehq/oncall/issues/6235
     with PRINT_BUFFER:
-        for message in source_entrypoint.run(parsed_args):
-            # simply printing is creating issues for concurrent CDK as Python uses different two instructions to print: one for the message and
-            # the other for the break line. Adding `\n` to the message ensure that both are printed at the same time
+        _nonblocking_write_to_stdout(source_entrypoint.run(parsed_args))
+
+
+def _nonblocking_write_to_stdout(messages: Iterable[str]) -> None:
+    """Write messages to stdout using non-blocking I/O to prevent deadlocks.
+
+    When the Airbyte platform pauses reading from the source container's
+    stdout pipe, a blocking ``write()`` stalls the main thread.  Since the
+    main thread is also responsible for draining the internal record queue,
+    this causes a cascading deadlock: the queue fills, worker threads block
+    on ``queue.put()``, and the entire process hangs.
+
+    This function sets stdout to non-blocking mode so that ``os.write()``
+    raises ``BlockingIOError`` instead of blocking when the pipe buffer is
+    full.  It then uses ``select()`` to wait (with a timeout) until the fd
+    is writable again.  The main thread remains in a Python-level retry
+    loop it controls, so it never gets stuck in a kernel-level syscall.
+
+    Memory stays bounded because the upstream record queue keeps its
+    default bounded size (10,000 items).  When stdout is blocked the main
+    thread pauses here, the queue fills naturally, and worker threads
+    block on ``queue.put()`` with their own timeouts.  When the platform
+    resumes reading, ``select()`` returns, the write completes, the main
+    thread resumes draining the queue, and workers unblock automatically.
+    """
+    stdout_fd = sys.stdout.fileno()
+    original_blocking = os.get_blocking(stdout_fd)
+
+    try:
+        os.set_blocking(stdout_fd, False)
+    except OSError:
+        # Fallback: if we cannot set non-blocking (e.g. redirected to
+        # a file or in a test environment), just write normally.
+        for message in messages:
             print(f"{message}\n", end="")
+        return
+
+    try:
+        for message in messages:
+            data = f"{message}\n".encode()
+            _write_all_nonblocking(stdout_fd, data)
+    finally:
+        try:
+            os.set_blocking(stdout_fd, original_blocking)
+        except OSError:
+            pass
+
+
+def _write_all_nonblocking(fd: int, data: bytes) -> None:
+    """Write all bytes to a non-blocking fd, retrying with select on EAGAIN."""
+    total_written = 0
+    last_progress = time.monotonic()
+
+    while total_written < len(data):
+        try:
+            written = os.write(fd, data[total_written:])
+            total_written += written
+            last_progress = time.monotonic()
+        except BlockingIOError:
+            # Pipe buffer is full. Wait up to 1 second for it to become
+            # writable, then retry.  The short timeout keeps the main
+            # thread responsive and allows periodic stall detection.
+            _, writable, _ = select.select([], [fd], [], 1.0)
+            if not writable:
+                elapsed = time.monotonic() - last_progress
+                if elapsed > 600:
+                    raise RuntimeError(
+                        f"stdout pipe blocked for {elapsed:.0f}s with no progress. "
+                        "The platform is not reading from the source container pipe."
+                    )
 
 
 def _init_internal_request_filter() -> None:
