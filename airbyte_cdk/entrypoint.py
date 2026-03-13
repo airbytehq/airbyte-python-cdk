@@ -436,7 +436,7 @@ def _nonblocking_write_to_stdout(messages: Iterable[str]) -> None:
     _WRITE_QUEUE_SIZE = 1000
     _WATCHDOG_TIMEOUT_S = 600
     write_queue: queue.Queue[Optional[bytes]] = queue.Queue(maxsize=_WRITE_QUEUE_SIZE)
-    writer_error: List[BaseException] = []
+    writer_error: List[Exception] = []
 
     def _stdout_writer() -> None:
         """Dedicated thread that writes queued messages to stdout."""
@@ -449,7 +449,9 @@ def _nonblocking_write_to_stdout(messages: Iterable[str]) -> None:
                 while total < len(data):
                     written = os.write(real_fd, data[total:])
                     total += written
-        except BaseException as exc:
+        except (KeyboardInterrupt, SystemExit):
+            raise
+        except Exception as exc:
             writer_error.append(exc)
 
     writer = threading.Thread(target=_stdout_writer, name="stdout-writer", daemon=True)
