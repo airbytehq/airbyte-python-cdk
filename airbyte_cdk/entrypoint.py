@@ -438,8 +438,17 @@ def _nonblocking_write_to_stdout(messages: Iterable[str]) -> None:
     write_queue: queue.Queue[Optional[bytes]] = queue.Queue(maxsize=_WRITE_QUEUE_SIZE)
     writer_error: List[Exception] = []
 
+    logger = logging.getLogger("airbyte_cdk.stdout_writer")
+    _BLOCK_LOG_THRESHOLD_S = 5.0  # log when a single write blocks longer than this
+    messages_written = 0
+    bytes_written = 0
+    last_write_ts = time.monotonic()
+    total_blocked_s = 0.0
+    block_count = 0
+
     def _stdout_writer() -> None:
         """Dedicated thread that writes queued messages to stdout."""
+        nonlocal messages_written, bytes_written, last_write_ts, total_blocked_s, block_count
         try:
             while True:
                 data = write_queue.get()
@@ -447,8 +456,28 @@ def _nonblocking_write_to_stdout(messages: Iterable[str]) -> None:
                     break
                 total = 0
                 while total < len(data):
+                    before = time.monotonic()
                     written = os.write(real_fd, data[total:])
+                    elapsed = time.monotonic() - before
                     total += written
+                    if elapsed >= _BLOCK_LOG_THRESHOLD_S:
+                        block_count += 1
+                        total_blocked_s += elapsed
+                        logger.warning(
+                            "STDOUT_WRITER: os.write() blocked for %.1fs "
+                            "(wrote %d bytes). block_count=%d total_blocked=%.1fs "
+                            "messages_written=%d bytes_written=%d queue_size=%d",
+                            elapsed,
+                            written,
+                            block_count,
+                            total_blocked_s,
+                            messages_written,
+                            bytes_written,
+                            write_queue.qsize(),
+                        )
+                messages_written += 1
+                bytes_written += len(data)
+                last_write_ts = time.monotonic()
         except (KeyboardInterrupt, SystemExit):
             raise
         except Exception as exc:
@@ -472,10 +501,27 @@ def _nonblocking_write_to_stdout(messages: Iterable[str]) -> None:
                     if writer_error:
                         raise writer_error[0]
                     elapsed = time.monotonic() - last_progress
+                    if int(elapsed) % 30 == 0 and int(elapsed) > 0:
+                        logger.warning(
+                            "STDOUT_WRITER: write_queue full for %.0fs. "
+                            "writer_messages=%d writer_bytes=%d "
+                            "writer_blocks=%d writer_total_blocked=%.1fs "
+                            "writer_last_write=%.1fs_ago queue_size=%d",
+                            elapsed,
+                            messages_written,
+                            bytes_written,
+                            block_count,
+                            total_blocked_s,
+                            time.monotonic() - last_write_ts,
+                            write_queue.qsize(),
+                        )
                     if elapsed > _WATCHDOG_TIMEOUT_S:
                         raise RuntimeError(
                             f"stdout pipe blocked for {elapsed:.0f}s with no progress "
                             f"(watchdog timeout={_WATCHDOG_TIMEOUT_S}s). "
+                            f"Writer stats: messages={messages_written} bytes={bytes_written} "
+                            f"blocks={block_count} total_blocked={total_blocked_s:.1f}s "
+                            f"last_write={time.monotonic() - last_write_ts:.1f}s ago. "
                             "Terminating process to prevent indefinite hang."
                         )
     finally:
