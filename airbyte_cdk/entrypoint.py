@@ -377,8 +377,7 @@ class AirbyteEntrypoint(object):
 def launch(source: Source, args: List[str]) -> None:
     source_entrypoint = AirbyteEntrypoint(source)
     parsed_args = source_entrypoint.parse_args(args)
-    with PRINT_BUFFER:
-        _nonblocking_write_to_stdout(source_entrypoint.run(parsed_args))
+    _nonblocking_write_to_stdout(source_entrypoint.run(parsed_args))
 
 
 def _nonblocking_write_to_stdout(messages: Iterable[str]) -> None:
@@ -403,20 +402,42 @@ def _nonblocking_write_to_stdout(messages: Iterable[str]) -> None:
     resumes reading, ``select()`` returns, the write completes, the main
     thread resumes draining the queue, and workers unblock automatically.
     """
-    # Only use non-blocking I/O when stdout is the real file descriptor.
-    # In test environments (pytest capsys) or when PRINT_BUFFER is active,
-    # sys.stdout is replaced with a wrapper.  Writing to sys.__stdout__
-    # via os.write() would bypass the capture, so fall back to print().
+    # We need to write to the *real* stdout fd for non-blocking I/O.
+    # However, in test environments (pytest capsys) or other wrappers,
+    # sys.stdout may have been replaced.  If sys.stdout.fileno() fails
+    # or doesn't match sys.__stdout__.fileno(), something is capturing
+    # output and we must fall back to print() so it goes through the
+    # capture layer.
+    try:
+        current_fd = sys.stdout.fileno()
+    except (OSError, AttributeError, ValueError):
+        # capsys, PRINT_BUFFER, or other wrapper — no real fd available.
+        for message in messages:
+            print(f"{message}\n", end="")
+        return
+
     real_stdout = sys.__stdout__
-    if real_stdout is None or not hasattr(real_stdout, "fileno") or sys.stdout is not real_stdout:
+    if real_stdout is None or not hasattr(real_stdout, "fileno"):
         for message in messages:
             print(f"{message}\n", end="")
         return
 
     try:
-        stdout_fd = real_stdout.fileno()
-        original_blocking = os.get_blocking(stdout_fd)
-        os.set_blocking(stdout_fd, False)
+        real_fd = real_stdout.fileno()
+    except (OSError, AttributeError, ValueError):
+        for message in messages:
+            print(f"{message}\n", end="")
+        return
+
+    if current_fd != real_fd:
+        # stdout has been redirected; fall back to print().
+        for message in messages:
+            print(f"{message}\n", end="")
+        return
+
+    try:
+        original_blocking = os.get_blocking(real_fd)
+        os.set_blocking(real_fd, False)
     except OSError:
         # Fallback: if we cannot set non-blocking (e.g. the fd does not
         # support non-blocking mode), just write normally.
@@ -427,10 +448,10 @@ def _nonblocking_write_to_stdout(messages: Iterable[str]) -> None:
     try:
         for message in messages:
             data = f"{message}\n".encode()
-            _write_all_nonblocking(stdout_fd, data)
+            _write_all_nonblocking(real_fd, data)
     finally:
         try:
-            os.set_blocking(stdout_fd, original_blocking)
+            os.set_blocking(real_fd, original_blocking)
         except OSError:
             logger.debug("Failed to restore stdout blocking mode", exc_info=True)
 
