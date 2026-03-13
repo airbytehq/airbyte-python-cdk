@@ -403,14 +403,14 @@ def _nonblocking_write_to_stdout(messages: Iterable[str]) -> None:
     resumes reading, ``select()`` returns, the write completes, the main
     thread resumes draining the queue, and workers unblock automatically.
     """
-    stdout_fd = sys.stdout.fileno()
-    original_blocking = os.get_blocking(stdout_fd)
-
     try:
+        stdout_fd = sys.stdout.fileno()
+        original_blocking = os.get_blocking(stdout_fd)
         os.set_blocking(stdout_fd, False)
     except OSError:
-        # Fallback: if we cannot set non-blocking (e.g. redirected to
-        # a file or in a test environment), just write normally.
+        # Fallback: if we cannot set non-blocking (e.g. pytest captures
+        # stdout with a StringIO that has no fileno, or the fd does not
+        # support non-blocking mode), just write normally.
         for message in messages:
             print(f"{message}\n", end="")
         return
@@ -423,7 +423,7 @@ def _nonblocking_write_to_stdout(messages: Iterable[str]) -> None:
         try:
             os.set_blocking(stdout_fd, original_blocking)
         except OSError:
-            pass
+            logger.debug("Failed to restore stdout blocking mode", exc_info=True)
 
 
 def _write_all_nonblocking(fd: int, data: bytes) -> None:
