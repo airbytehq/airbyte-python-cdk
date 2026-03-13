@@ -403,13 +403,21 @@ def _nonblocking_write_to_stdout(messages: Iterable[str]) -> None:
     resumes reading, ``select()`` returns, the write completes, the main
     thread resumes draining the queue, and workers unblock automatically.
     """
+    # Use the *real* stdout (sys.__stdout__) rather than sys.stdout,
+    # because PRINT_BUFFER replaces sys.stdout with a StringIO wrapper
+    # that has no fileno().
+    real_stdout = sys.__stdout__
+    if real_stdout is None or not hasattr(real_stdout, "fileno"):
+        for message in messages:
+            print(f"{message}\n", end="")
+        return
+
     try:
-        stdout_fd = sys.stdout.fileno()
+        stdout_fd = real_stdout.fileno()
         original_blocking = os.get_blocking(stdout_fd)
         os.set_blocking(stdout_fd, False)
     except OSError:
-        # Fallback: if we cannot set non-blocking (e.g. pytest captures
-        # stdout with a StringIO that has no fileno, or the fd does not
+        # Fallback: if we cannot set non-blocking (e.g. the fd does not
         # support non-blocking mode), just write normally.
         for message in messages:
             print(f"{message}\n", end="")
