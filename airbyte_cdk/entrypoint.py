@@ -403,11 +403,12 @@ def _nonblocking_write_to_stdout(messages: Iterable[str]) -> None:
     resumes reading, ``select()`` returns, the write completes, the main
     thread resumes draining the queue, and workers unblock automatically.
     """
-    # Use the *real* stdout (sys.__stdout__) rather than sys.stdout,
-    # because PRINT_BUFFER replaces sys.stdout with a StringIO wrapper
-    # that has no fileno().
+    # Only use non-blocking I/O when stdout is the real file descriptor.
+    # In test environments (pytest capsys) or when PRINT_BUFFER is active,
+    # sys.stdout is replaced with a wrapper.  Writing to sys.__stdout__
+    # via os.write() would bypass the capture, so fall back to print().
     real_stdout = sys.__stdout__
-    if real_stdout is None or not hasattr(real_stdout, "fileno"):
+    if real_stdout is None or not hasattr(real_stdout, "fileno") or sys.stdout is not real_stdout:
         for message in messages:
             print(f"{message}\n", end="")
         return
