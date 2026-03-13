@@ -9,10 +9,11 @@ import json
 import logging
 import os
 import os.path
-import select
+import queue
 import socket
 import sys
 import tempfile
+import threading
 import time
 from collections import defaultdict
 from functools import wraps
@@ -381,37 +382,32 @@ def launch(source: Source, args: List[str]) -> None:
 
 
 def _nonblocking_write_to_stdout(messages: Iterable[str]) -> None:
-    """Write messages to stdout using non-blocking I/O to prevent deadlocks.
+    """Write messages to stdout via a dedicated writer thread to prevent deadlocks.
 
     When the Airbyte platform pauses reading from the source container's
-    stdout pipe, a blocking ``write()`` stalls the main thread.  Since the
-    main thread is also responsible for draining the internal record queue,
-    this causes a cascading deadlock: the queue fills, worker threads block
-    on ``queue.put()``, and the entire process hangs.
+    stdout pipe, a blocking ``write()`` in the main thread stalls message
+    processing.  Since the main thread is also responsible for draining the
+    internal record queue, this causes a cascading deadlock: the queue
+    fills, worker threads block on ``queue.put()``, and the entire process
+    hangs.
 
-    This function sets stdout to non-blocking mode so that ``os.write()``
-    raises ``BlockingIOError`` instead of blocking when the pipe buffer is
-    full.  It then uses ``select()`` to wait (with a timeout) until the fd
-    is writable again.  The main thread remains in a Python-level retry
-    loop it controls, so it never gets stuck in a kernel-level syscall.
+    This function decouples stdout writing from the main thread by routing
+    messages through a bounded internal queue to a dedicated writer thread.
+    The writer thread performs normal blocking ``os.write()`` calls; if the
+    pipe is full, only the writer thread stalls — the main thread continues
+    iterating the message generator (which drains the record queue).
 
-    Memory stays bounded because the upstream record queue keeps its
-    default bounded size (10,000 items).  When stdout is blocked the main
-    thread pauses here, the queue fills naturally, and worker threads
-    block on ``queue.put()`` with their own timeouts.  When the platform
-    resumes reading, ``select()`` returns, the write completes, the main
-    thread resumes draining the queue, and workers unblock automatically.
+    When the internal write queue fills (because the writer is blocked on
+    the pipe), the main thread retries ``queue.put()`` with a 1-second
+    timeout.  A watchdog detects if no message has been accepted for 600
+    seconds and raises ``RuntimeError`` to terminate the process cleanly.
     """
-    # We need to write to the *real* stdout fd for non-blocking I/O.
-    # However, in test environments (pytest capsys) or other wrappers,
-    # sys.stdout may have been replaced.  If sys.stdout.fileno() fails
-    # or doesn't match sys.__stdout__.fileno(), something is capturing
-    # output and we must fall back to print() so it goes through the
-    # capture layer.
+    # In test environments (pytest capsys) or wrappers like PRINT_BUFFER,
+    # sys.stdout may have been replaced.  Detect this via fileno() and
+    # fall back to print() so output goes through the capture layer.
     try:
         current_fd = sys.stdout.fileno()
     except (OSError, AttributeError, ValueError):
-        # capsys, PRINT_BUFFER, or other wrapper — no real fd available.
         for message in messages:
             print(f"{message}\n", end="")
         return
@@ -430,54 +426,60 @@ def _nonblocking_write_to_stdout(messages: Iterable[str]) -> None:
         return
 
     if current_fd != real_fd:
-        # stdout has been redirected; fall back to print().
         for message in messages:
             print(f"{message}\n", end="")
         return
 
-    try:
-        original_blocking = os.get_blocking(real_fd)
-        os.set_blocking(real_fd, False)
-    except OSError:
-        # Fallback: if we cannot set non-blocking (e.g. the fd does not
-        # support non-blocking mode), just write normally.
-        for message in messages:
-            print(f"{message}\n", end="")
-        return
+    # Bounded queue decouples the main thread from stdout I/O.
+    # The writer thread does blocking writes; if the pipe is full only the
+    # writer stalls — the main thread keeps draining the record queue.
+    _WRITE_QUEUE_SIZE = 1000
+    _WATCHDOG_TIMEOUT_S = 600
+    write_queue: queue.Queue[Optional[bytes]] = queue.Queue(maxsize=_WRITE_QUEUE_SIZE)
+    writer_error: List[BaseException] = []
+
+    def _stdout_writer() -> None:
+        """Dedicated thread that writes queued messages to stdout."""
+        try:
+            while True:
+                data = write_queue.get()
+                if data is None:
+                    break
+                total = 0
+                while total < len(data):
+                    written = os.write(real_fd, data[total:])
+                    total += written
+        except BaseException as exc:
+            writer_error.append(exc)
+
+    writer = threading.Thread(target=_stdout_writer, name="stdout-writer", daemon=True)
+    writer.start()
 
     try:
+        last_progress = time.monotonic()
         for message in messages:
+            if writer_error:
+                raise writer_error[0]
             data = f"{message}\n".encode()
-            _write_all_nonblocking(real_fd, data)
+            while True:
+                try:
+                    write_queue.put(data, timeout=1.0)
+                    last_progress = time.monotonic()
+                    break
+                except queue.Full:
+                    if writer_error:
+                        raise writer_error[0]
+                    elapsed = time.monotonic() - last_progress
+                    if elapsed > _WATCHDOG_TIMEOUT_S:
+                        raise RuntimeError(
+                            f"stdout pipe blocked for {elapsed:.0f}s with no progress "
+                            f"(watchdog timeout={_WATCHDOG_TIMEOUT_S}s). "
+                            "Terminating process to prevent indefinite hang."
+                        )
     finally:
-        try:
-            os.set_blocking(real_fd, original_blocking)
-        except OSError:
-            logger.debug("Failed to restore stdout blocking mode", exc_info=True)
-
-
-def _write_all_nonblocking(fd: int, data: bytes) -> None:
-    """Write all bytes to a non-blocking fd, retrying with select on EAGAIN."""
-    total_written = 0
-    last_progress = time.monotonic()
-
-    while total_written < len(data):
-        try:
-            written = os.write(fd, data[total_written:])
-            total_written += written
-            last_progress = time.monotonic()
-        except BlockingIOError:
-            # Pipe buffer is full. Wait up to 1 second for it to become
-            # writable, then retry.  The short timeout keeps the main
-            # thread responsive and allows periodic stall detection.
-            _, writable, _ = select.select([], [fd], [], 1.0)
-            if not writable:
-                elapsed = time.monotonic() - last_progress
-                if elapsed > 600:
-                    raise RuntimeError(
-                        f"stdout pipe blocked for {elapsed:.0f}s with no progress. "
-                        "The platform is not reading from the source container pipe."
-                    )
+        # Signal writer to drain remaining messages and exit.
+        write_queue.put(None)
+        writer.join(timeout=30)
 
 
 def _init_internal_request_filter() -> None:
