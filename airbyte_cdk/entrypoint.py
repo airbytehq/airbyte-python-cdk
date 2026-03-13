@@ -7,10 +7,14 @@ import importlib
 import ipaddress
 import json
 import logging
+import os
 import os.path
+import queue
 import socket
 import sys
 import tempfile
+import threading
+import time
 from collections import defaultdict
 from functools import wraps
 from typing import Any, DefaultDict, Iterable, List, Mapping, Optional
@@ -374,13 +378,156 @@ class AirbyteEntrypoint(object):
 def launch(source: Source, args: List[str]) -> None:
     source_entrypoint = AirbyteEntrypoint(source)
     parsed_args = source_entrypoint.parse_args(args)
-    # temporarily removes the PrintBuffer because we're seeing weird print behavior for concurrent syncs
-    # Refer to: https://github.com/airbytehq/oncall/issues/6235
-    with PRINT_BUFFER:
-        for message in source_entrypoint.run(parsed_args):
-            # simply printing is creating issues for concurrent CDK as Python uses different two instructions to print: one for the message and
-            # the other for the break line. Adding `\n` to the message ensure that both are printed at the same time
+    _nonblocking_write_to_stdout(source_entrypoint.run(parsed_args))
+
+
+def _nonblocking_write_to_stdout(messages: Iterable[str]) -> None:
+    """Write messages to stdout via a dedicated writer thread to prevent deadlocks.
+
+    When the Airbyte platform pauses reading from the source container's
+    stdout pipe, a blocking ``write()`` in the main thread stalls message
+    processing.  Since the main thread is also responsible for draining the
+    internal record queue, this causes a cascading deadlock: the queue
+    fills, worker threads block on ``queue.put()``, and the entire process
+    hangs.
+
+    This function decouples stdout writing from the main thread by routing
+    messages through a bounded internal queue to a dedicated writer thread.
+    The writer thread performs normal blocking ``os.write()`` calls; if the
+    pipe is full, only the writer thread stalls — the main thread continues
+    iterating the message generator (which drains the record queue).
+
+    When the internal write queue fills (because the writer is blocked on
+    the pipe), the main thread retries ``queue.put()`` with a 1-second
+    timeout.  A watchdog detects if no message has been accepted for 600
+    seconds and raises ``RuntimeError`` to terminate the process cleanly.
+    """
+    # In test environments (pytest capsys) or wrappers like PRINT_BUFFER,
+    # sys.stdout may have been replaced.  Detect this via fileno() and
+    # fall back to print() so output goes through the capture layer.
+    try:
+        current_fd = sys.stdout.fileno()
+    except (OSError, AttributeError, ValueError):
+        for message in messages:
             print(f"{message}\n", end="")
+        return
+
+    real_stdout = sys.__stdout__
+    if real_stdout is None or not hasattr(real_stdout, "fileno"):
+        for message in messages:
+            print(f"{message}\n", end="")
+        return
+
+    try:
+        real_fd = real_stdout.fileno()
+    except (OSError, AttributeError, ValueError):
+        for message in messages:
+            print(f"{message}\n", end="")
+        return
+
+    if current_fd != real_fd:
+        for message in messages:
+            print(f"{message}\n", end="")
+        return
+
+    # Bounded queue decouples the main thread from stdout I/O.
+    # The writer thread does blocking writes; if the pipe is full only the
+    # writer stalls — the main thread keeps draining the record queue.
+    _WRITE_QUEUE_SIZE = 1000
+    _WATCHDOG_TIMEOUT_S = 600
+    write_queue: queue.Queue[Optional[bytes]] = queue.Queue(maxsize=_WRITE_QUEUE_SIZE)
+    writer_error: List[Exception] = []
+
+    logger = logging.getLogger("airbyte_cdk.stdout_writer")
+    _BLOCK_LOG_THRESHOLD_S = 5.0  # log when a single write blocks longer than this
+    messages_written = 0
+    bytes_written = 0
+    last_write_ts = time.monotonic()
+    total_blocked_s = 0.0
+    block_count = 0
+
+    def _stdout_writer() -> None:
+        """Dedicated thread that writes queued messages to stdout."""
+        nonlocal messages_written, bytes_written, last_write_ts, total_blocked_s, block_count
+        try:
+            while True:
+                data = write_queue.get()
+                if data is None:
+                    break
+                total = 0
+                while total < len(data):
+                    before = time.monotonic()
+                    written = os.write(real_fd, data[total:])
+                    elapsed = time.monotonic() - before
+                    total += written
+                    if elapsed >= _BLOCK_LOG_THRESHOLD_S:
+                        block_count += 1
+                        total_blocked_s += elapsed
+                        logger.warning(
+                            "STDOUT_WRITER: os.write() blocked for %.1fs "
+                            "(wrote %d bytes). block_count=%d total_blocked=%.1fs "
+                            "messages_written=%d bytes_written=%d queue_size=%d",
+                            elapsed,
+                            written,
+                            block_count,
+                            total_blocked_s,
+                            messages_written,
+                            bytes_written,
+                            write_queue.qsize(),
+                        )
+                messages_written += 1
+                bytes_written += len(data)
+                last_write_ts = time.monotonic()
+        except (KeyboardInterrupt, SystemExit):
+            raise
+        except Exception as exc:
+            writer_error.append(exc)
+
+    writer = threading.Thread(target=_stdout_writer, name="stdout-writer", daemon=True)
+    writer.start()
+
+    try:
+        last_progress = time.monotonic()
+        for message in messages:
+            if writer_error:
+                raise writer_error[0]
+            data = f"{message}\n".encode()
+            while True:
+                try:
+                    write_queue.put(data, timeout=1.0)
+                    last_progress = time.monotonic()
+                    break
+                except queue.Full:
+                    if writer_error:
+                        raise writer_error[0]
+                    elapsed = time.monotonic() - last_progress
+                    if int(elapsed) % 30 == 0 and int(elapsed) > 0:
+                        logger.warning(
+                            "STDOUT_WRITER: write_queue full for %.0fs. "
+                            "writer_messages=%d writer_bytes=%d "
+                            "writer_blocks=%d writer_total_blocked=%.1fs "
+                            "writer_last_write=%.1fs_ago queue_size=%d",
+                            elapsed,
+                            messages_written,
+                            bytes_written,
+                            block_count,
+                            total_blocked_s,
+                            time.monotonic() - last_write_ts,
+                            write_queue.qsize(),
+                        )
+                    if elapsed > _WATCHDOG_TIMEOUT_S:
+                        raise RuntimeError(
+                            f"stdout pipe blocked for {elapsed:.0f}s with no progress "
+                            f"(watchdog timeout={_WATCHDOG_TIMEOUT_S}s). "
+                            f"Writer stats: messages={messages_written} bytes={bytes_written} "
+                            f"blocks={block_count} total_blocked={total_blocked_s:.1f}s "
+                            f"last_write={time.monotonic() - last_write_ts:.1f}s ago. "
+                            "Terminating process to prevent indefinite hang."
+                        )
+    finally:
+        # Signal writer to drain remaining messages and exit.
+        write_queue.put(None)
+        writer.join(timeout=30)
 
 
 def _init_internal_request_filter() -> None:
