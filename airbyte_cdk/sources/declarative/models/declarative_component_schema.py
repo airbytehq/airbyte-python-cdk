@@ -1906,6 +1906,12 @@ class OAuthAuthenticator(BaseModel):
         examples=["refresh_token", "client_credentials"],
         title="Grant Type",
     )
+    token_refresh_request_type: Optional[str] = Field(
+        "body_data",
+        description="Configures how the token refresh request is sent. Use body_data (default) for POST with form-encoded body, body_json for POST with JSON body, or query_params for GET with query parameters (required by some APIs like Marketo).",
+        enum=["body_data", "body_json", "query_params"],
+        title="Token Refresh Request Type",
+    )
     refresh_request_body: Optional[Dict[str, Any]] = Field(
         None,
         description="Body of the request sent to get a new access token.",
