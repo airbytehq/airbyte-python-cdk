@@ -2678,6 +2678,12 @@ class ModelToComponentFactory:
                 encoding=model.encoding,
                 delimiter=model.delimiter,
                 set_values_to_none=model.set_values_to_none,
+                skip_rows_before_header=model.skip_rows_before_header
+                if model.skip_rows_before_header
+                else 0,
+                skip_rows_after_header=model.skip_rows_after_header
+                if model.skip_rows_after_header
+                else 0,
             )
         elif isinstance(model, GzipDecoderModel):
             return GzipParser(

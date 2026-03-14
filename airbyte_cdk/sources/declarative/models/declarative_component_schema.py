@@ -1235,6 +1235,16 @@ class CsvDecoder(BaseModel):
     encoding: Optional[str] = "utf-8"
     delimiter: Optional[str] = ","
     set_values_to_none: Optional[List[str]] = None
+    skip_rows_before_header: Optional[int] = Field(
+        0,
+        description="The number of rows to skip before the header row. For example, if the header row is on the 3rd row, enter 2 in this field.",
+        title="Skip Rows Before Header",
+    )
+    skip_rows_after_header: Optional[int] = Field(
+        0,
+        description="The number of rows to skip after the header row.",
+        title="Skip Rows After Header",
+    )
 
 
 class AsyncJobStatusMap(BaseModel):
