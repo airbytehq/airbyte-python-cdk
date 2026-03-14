@@ -2824,6 +2824,9 @@ class ModelToComponentFactory:
                 refresh_request_headers=InterpolatedMapping(
                     model.refresh_request_headers or {}, parameters=model.parameters or {}
                 ).eval(config),
+                scopes_name=InterpolatedString.create(
+                    model.scopes_name or "scope", parameters=model.parameters or {}
+                ).eval(config),
                 scopes=model.scopes,
                 token_expiry_date_format=model.token_expiry_date_format,
                 token_expiry_is_time_of_expiration=bool(model.token_expiry_date_format),
@@ -2847,6 +2850,7 @@ class ModelToComponentFactory:
             refresh_request_headers=model.refresh_request_headers,
             refresh_token_name=model.refresh_token_name or "refresh_token",
             refresh_token=model.refresh_token,
+            scopes_name=model.scopes_name or "scope",
             scopes=model.scopes,
             token_expiry_date=model.token_expiry_date,
             token_expiry_date_format=model.token_expiry_date_format,
