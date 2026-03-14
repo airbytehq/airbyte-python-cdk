@@ -866,9 +866,7 @@ def test_given_non_json_serializable_type_then_fallback_with_default_str(
         command="read", config="config_path", state="statepath", catalog="catalogpath"
     )
     record = AirbyteMessage(
-        record=AirbyteRecordMessage(
-            stream="stream", data={"value": complex(1, 2)}, emitted_at=1
-        ),
+        record=AirbyteRecordMessage(stream="stream", data={"value": complex(1, 2)}, emitted_at=1),
         type=Type.RECORD,
     )
     mocker.patch.object(MockSource, "read_state", return_value={})
