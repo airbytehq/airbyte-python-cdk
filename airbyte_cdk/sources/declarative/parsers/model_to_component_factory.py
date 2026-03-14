@@ -2389,7 +2389,10 @@ class ModelToComponentFactory:
         model: ResponseToFileExtractorModel,
         **kwargs: Any,
     ) -> ResponseToFileExtractor:
-        return ResponseToFileExtractor(parameters=model.parameters or {})
+        return ResponseToFileExtractor(
+            parameters=model.parameters or {},
+            delimiter=model.delimiter or ",",
+        )
 
     @staticmethod
     def create_exponential_backoff_strategy(
