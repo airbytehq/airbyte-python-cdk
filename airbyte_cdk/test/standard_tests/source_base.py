@@ -62,11 +62,9 @@ class SourceTestSuiteBase(ConnectorTestSuiteBase):
     ) -> None:
         """Standard test for `discover`."""
         if scenario.expected_outcome.expect_exception():
-            # If the scenario expects an exception, we can't ensure it specifically would fail
-            # in discover, because some discover implementations do not need to make a connection.
-            # We skip this test in that case.
-            pytest.skip("Skipping discover test for scenario that expects an exception.")
-            return
+            pytest.skip(
+                "Skipping `discover` test because the scenario is expected to raise an exception."
+            )
 
         run_test_job(
             self.create_connector(scenario),
@@ -111,6 +109,15 @@ class SourceTestSuiteBase(ConnectorTestSuiteBase):
         obtain the catalog of streams, and then it runs a `read` job to fetch
         records from those streams.
         """
+        check_result: entrypoint_wrapper.EntrypointOutput = run_test_job(
+            self.create_connector(scenario),
+            "check",
+            test_scenario=scenario,
+            connector_root=self.get_connector_root_dir(),
+        )
+        if scenario.expected_outcome.expect_exception() and check_result.errors:
+            # Expected failure and we got it. Return early.
+            return
         discover_result = run_test_job(
             self.create_connector(scenario),
             "discover",
@@ -144,7 +151,9 @@ class SourceTestSuiteBase(ConnectorTestSuiteBase):
             connector_root=self.get_connector_root_dir(),
             catalog=configured_catalog,
         )
-
+        if scenario.expected_outcome.expect_exception() and not result.errors:
+            # By now we should have raised an exception.
+            raise AssertionError("Expected an error but got none.")
         if scenario.expected_outcome.expect_success() and not result.records:
             raise AssertionError("Expected records but got none.")
 
@@ -153,6 +162,14 @@ class SourceTestSuiteBase(ConnectorTestSuiteBase):
         scenario: ConnectorTestScenario,
     ) -> None:
         """Standard test for `read` when passed a bad catalog file."""
+        # Recreate the scenario with the same config but set the status to "failed".
+        scenario = ConnectorTestScenario(
+            config_dict=scenario.get_config_dict(
+                connector_root=self.get_connector_root_dir(),
+                empty_if_missing=False,
+            ),
+            status="failed",
+        )
         invalid_configured_catalog = ConfiguredAirbyteCatalog(
             streams=[
                 # Create ConfiguredAirbyteStream which is deliberately invalid
