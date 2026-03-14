@@ -1585,6 +1585,7 @@ definitions:
           loaders defined first taking precedence in the event of a conflict.
         anyOf:
           - "$ref": "#/definitions/InlineSchemaLoader"
+          - "$ref": "#/definitions/InferredSchemaLoader"
           - "$ref": "#/definitions/DynamicSchemaLoader"
           - "$ref": "#/definitions/JsonFileSchemaLoader"
           - title: Multiple Schema Loaders
@@ -1592,6 +1593,7 @@ definitions:
             items:
               anyOf:
                 - "$ref": "#/definitions/InlineSchemaLoader"
+                - "$ref": "#/definitions/InferredSchemaLoader"
                 - "$ref": "#/definitions/DynamicSchemaLoader"
                 - "$ref": "#/definitions/JsonFileSchemaLoader"
                 - "$ref": "#/definitions/CustomSchemaLoader"
@@ -2510,6 +2512,40 @@ definitions:
             - "$ref": "#/definitions/CustomTransformation"
       schema_type_identifier:
         "$ref": "#/definitions/SchemaTypeIdentifier"
+      $parameters:
+        type: object
+        additionalProperties: true
+  InferredSchemaLoader:
+    title: Inferred Schema Loader
+    description: Infers a JSON Schema by reading a sample of records from the stream at discover time. This is useful for streams where the schema is not known in advance or changes dynamically.
+    type: object
+    required:
+      - type
+      - retriever
+    properties:
+      type:
+        type: string
+        enum: [InferredSchemaLoader]
+      retriever:
+        title: Retriever
+        description: Component used to coordinate how records are extracted across stream slices and request pages.
+        anyOf:
+          - "$ref": "#/definitions/SimpleRetriever"
+          - "$ref": "#/definitions/AsyncRetriever"
+          - "$ref": "#/definitions/CustomRetriever"
+      record_sample_size:
+        title: Record Sample Size
+        description: The maximum number of records to read for schema inference. Defaults to 100.
+        type: integer
+        default: 100
+        example:
+          - 100
+          - 500
+          - 1000
+      stream_name:
+        title: Stream Name
+        description: The name of the stream for which to infer the schema. If not provided, it will be inferred from the stream context.
+        type: string
       $parameters:
         type: object
         additionalProperties: true
