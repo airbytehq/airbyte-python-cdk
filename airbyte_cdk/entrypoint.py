@@ -9,7 +9,6 @@ import json
 import logging
 import os
 import os.path
-import queue
 import socket
 import sys
 import tempfile
@@ -378,203 +377,63 @@ class AirbyteEntrypoint(object):
 def launch(source: Source, args: List[str]) -> None:
     source_entrypoint = AirbyteEntrypoint(source)
     parsed_args = source_entrypoint.parse_args(args)
-    _nonblocking_write_to_stdout(source_entrypoint.run(parsed_args))
 
-
-def _nonblocking_write_to_stdout(messages: Iterable[str]) -> None:
-    """Write messages to stdout via a dedicated writer thread to prevent deadlocks.
-
-    When the Airbyte platform pauses reading from the source container's
-    stdout pipe, a blocking ``write()`` in the main thread stalls message
-    processing.  Since the main thread is also responsible for draining the
-    internal record queue, this causes a cascading deadlock: the queue
-    fills, worker threads block on ``queue.put()``, and the entire process
-    hangs.
-
-    This function decouples stdout writing from the main thread by routing
-    messages through a bounded internal queue to a dedicated writer thread.
-    The writer thread performs normal blocking ``os.write()`` calls; if the
-    pipe is full, only the writer thread stalls — the main thread continues
-    iterating the message generator (which drains the record queue).
-
-    When the internal write queue fills (because the writer is blocked on
-    the pipe), the main thread retries ``queue.put()`` with a 1-second
-    timeout.  A watchdog detects if no message has been accepted for 600
-    seconds and raises ``RuntimeError`` to terminate the process cleanly.
-    """
-    # In test environments (pytest capsys) or wrappers like PRINT_BUFFER,
-    # sys.stdout may have been replaced.  Detect this via fileno() and
-    # fall back to print() so output goes through the capture layer.
-    try:
-        current_fd = sys.stdout.fileno()
-    except (OSError, AttributeError, ValueError):
-        for message in messages:
-            print(f"{message}\n", end="")
-        return
-
-    real_stdout = sys.__stdout__
-    if real_stdout is None or not hasattr(real_stdout, "fileno"):
-        for message in messages:
-            print(f"{message}\n", end="")
-        return
-
-    try:
-        real_fd = real_stdout.fileno()
-    except (OSError, AttributeError, ValueError):
-        for message in messages:
-            print(f"{message}\n", end="")
-        return
-
-    if current_fd != real_fd:
-        for message in messages:
-            print(f"{message}\n", end="")
-        return
-
-    # Bounded queue decouples the main thread from stdout I/O.
-    # The writer thread does blocking writes; if the pipe is full only the
-    # writer stalls — the main thread keeps draining the record queue.
-    _WRITE_QUEUE_SIZE = 1000
-    _WATCHDOG_TIMEOUT_S = 600
-    write_queue: queue.Queue[Optional[bytes]] = queue.Queue(maxsize=_WRITE_QUEUE_SIZE)
-    writer_error: List[Exception] = []
-
-    logger = logging.getLogger("airbyte_cdk.stdout_writer")
-    _BLOCK_LOG_THRESHOLD_S = 5.0  # log when a single write blocks longer than this
-    _HEARTBEAT_INTERVAL_S = 30.0  # emit a heartbeat to stderr every 30s
+    # Heartbeat state — shared with the background heartbeat thread.
+    _HEARTBEAT_INTERVAL_S = 30.0
     messages_written = 0
     bytes_written = 0
-    last_write_ts = time.monotonic()
-    total_blocked_s = 0.0
-    block_count = 0
-    pipe_blocked = False  # True while os.write() is in progress
-    pipe_blocked_since = 0.0  # monotonic timestamp when current os.write() started
+    print_blocked = False
+    print_blocked_since = 0.0
     heartbeat_stop = threading.Event()
 
     def _heartbeat() -> None:
-        """Emit periodic status to stderr so we can prove pipe-blocking in Cloud logs.
+        """Emit periodic status to stderr to diagnose stdout pipe blocking.
 
-        This thread writes directly to fd 2 (stderr) which is collected by the
-        Kubernetes container runtime independently of the orchestrator that reads
-        stdout.  Even when the orchestrator stops reading stdout, these heartbeat
-        lines should still appear in the Cloud job logs.
+        Writes directly to fd 2 (stderr) which the Kubernetes container
+        runtime collects independently of the orchestrator reading stdout.
         """
         start = time.monotonic()
-        stderr_fd = 2  # write directly to fd 2, bypassing Python buffering
+        stderr_fd = 2
         while not heartbeat_stop.wait(timeout=_HEARTBEAT_INTERVAL_S):
             now = time.monotonic()
-            elapsed_total = now - start
-            blocked_str = "YES" if pipe_blocked else "NO"
-            blocked_dur = f" blocked_since={now - pipe_blocked_since:.0f}s" if pipe_blocked else ""
+            elapsed = now - start
+            blocked_str = "YES" if print_blocked else "NO"
+            blocked_dur = (
+                f" blocked_since={now - print_blocked_since:.0f}s"
+                if print_blocked
+                else ""
+            )
             line = (
-                f"STDOUT_WRITER_HEARTBEAT: t={elapsed_total:.0f}s "
+                f"STDOUT_HEARTBEAT: t={elapsed:.0f}s "
                 f"msgs={messages_written} bytes={bytes_written} "
-                f"pipe_blocked={blocked_str}{blocked_dur} "
-                f"queue={write_queue.qsize()}/{_WRITE_QUEUE_SIZE}\n"
+                f"print_blocked={blocked_str}{blocked_dur}\n"
             )
             try:
                 os.write(stderr_fd, line.encode())
             except OSError:
-                pass  # stderr itself might be broken; nothing we can do
+                pass
 
     heartbeat_thread = threading.Thread(
-        target=_heartbeat, name="stdout-writer-heartbeat", daemon=True
+        target=_heartbeat, name="stdout-heartbeat", daemon=True
     )
     heartbeat_thread.start()
 
-    def _stdout_writer() -> None:
-        """Dedicated thread that writes queued messages to stdout."""
-        nonlocal messages_written, bytes_written, last_write_ts, total_blocked_s, block_count
-        nonlocal pipe_blocked, pipe_blocked_since
-        try:
-            while True:
-                data = write_queue.get()
-                if data is None:
-                    break
-                total = 0
-                while total < len(data):
-                    pipe_blocked = True
-                    pipe_blocked_since = time.monotonic()
-                    before = pipe_blocked_since
-                    written = os.write(real_fd, data[total:])
-                    elapsed = time.monotonic() - before
-                    pipe_blocked = False
-                    total += written
-                    if elapsed >= _BLOCK_LOG_THRESHOLD_S:
-                        block_count += 1
-                        total_blocked_s += elapsed
-                        logger.warning(
-                            "STDOUT_WRITER: os.write() blocked for %.1fs "
-                            "(wrote %d bytes). block_count=%d total_blocked=%.1fs "
-                            "messages_written=%d bytes_written=%d queue_size=%d",
-                            elapsed,
-                            written,
-                            block_count,
-                            total_blocked_s,
-                            messages_written,
-                            bytes_written,
-                            write_queue.qsize(),
-                        )
+    # temporarily removes the PrintBuffer because we're seeing weird print behavior for concurrent syncs
+    # Refer to: https://github.com/airbytehq/oncall/issues/6235
+    try:
+        with PRINT_BUFFER:
+            for message in source_entrypoint.run(parsed_args):
+                # simply printing is creating issues for concurrent CDK as Python uses different two instructions to print: one for the message and
+                # the other for the break line. Adding `\n` to the message ensure that both are printed at the same time
+                data = f"{message}\n"
+                print_blocked = True
+                print_blocked_since = time.monotonic()
+                print(data, end="")
+                print_blocked = False
                 messages_written += 1
                 bytes_written += len(data)
-                last_write_ts = time.monotonic()
-        except (KeyboardInterrupt, SystemExit):
-            raise
-        except Exception as exc:
-            writer_error.append(exc)
-
-    writer = threading.Thread(target=_stdout_writer, name="stdout-writer", daemon=True)
-    writer.start()
-    logger.info(
-        "STDOUT_WRITER: started writer_thread fd=%d queue_size=%d watchdog=%ds heartbeat=%ds",
-        real_fd,
-        _WRITE_QUEUE_SIZE,
-        _WATCHDOG_TIMEOUT_S,
-        int(_HEARTBEAT_INTERVAL_S),
-    )
-
-    try:
-        last_progress = time.monotonic()
-        for message in messages:
-            if writer_error:
-                raise writer_error[0]
-            data = f"{message}\n".encode()
-            while True:
-                try:
-                    write_queue.put(data, timeout=1.0)
-                    last_progress = time.monotonic()
-                    break
-                except queue.Full:
-                    if writer_error:
-                        raise writer_error[0]
-                    elapsed = time.monotonic() - last_progress
-                    if int(elapsed) % 30 == 0 and int(elapsed) > 0:
-                        logger.warning(
-                            "STDOUT_WRITER: write_queue full for %.0fs. "
-                            "writer_messages=%d writer_bytes=%d "
-                            "writer_blocks=%d writer_total_blocked=%.1fs "
-                            "writer_last_write=%.1fs_ago queue_size=%d",
-                            elapsed,
-                            messages_written,
-                            bytes_written,
-                            block_count,
-                            total_blocked_s,
-                            time.monotonic() - last_write_ts,
-                            write_queue.qsize(),
-                        )
-                    if elapsed > _WATCHDOG_TIMEOUT_S:
-                        raise RuntimeError(
-                            f"stdout pipe blocked for {elapsed:.0f}s with no progress "
-                            f"(watchdog timeout={_WATCHDOG_TIMEOUT_S}s). "
-                            f"Writer stats: messages={messages_written} bytes={bytes_written} "
-                            f"blocks={block_count} total_blocked={total_blocked_s:.1f}s "
-                            f"last_write={time.monotonic() - last_write_ts:.1f}s ago. "
-                            "Terminating process to prevent indefinite hang."
-                        )
     finally:
         heartbeat_stop.set()
-        # Signal writer to drain remaining messages and exit.
-        write_queue.put(None)
-        writer.join(timeout=30)
 
 
 def _init_internal_request_filter() -> None:
