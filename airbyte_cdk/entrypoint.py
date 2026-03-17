@@ -399,9 +399,7 @@ def launch(source: Source, args: List[str]) -> None:
             elapsed = now - start
             blocked_str = "YES" if print_blocked else "NO"
             blocked_dur = (
-                f" blocked_since={now - print_blocked_since:.0f}s"
-                if print_blocked
-                else ""
+                f" blocked_since={now - print_blocked_since:.0f}s" if print_blocked else ""
             )
             line = (
                 f"STDOUT_HEARTBEAT: t={elapsed:.0f}s "
@@ -413,9 +411,7 @@ def launch(source: Source, args: List[str]) -> None:
             except OSError:
                 pass
 
-    heartbeat_thread = threading.Thread(
-        target=_heartbeat, name="stdout-heartbeat", daemon=True
-    )
+    heartbeat_thread = threading.Thread(target=_heartbeat, name="stdout-heartbeat", daemon=True)
     heartbeat_thread.start()
 
     # temporarily removes the PrintBuffer because we're seeing weird print behavior for concurrent syncs
