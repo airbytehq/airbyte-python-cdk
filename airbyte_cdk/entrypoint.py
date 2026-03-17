@@ -440,15 +440,51 @@ def _nonblocking_write_to_stdout(messages: Iterable[str]) -> None:
 
     logger = logging.getLogger("airbyte_cdk.stdout_writer")
     _BLOCK_LOG_THRESHOLD_S = 5.0  # log when a single write blocks longer than this
+    _HEARTBEAT_INTERVAL_S = 30.0  # emit a heartbeat to stderr every 30s
     messages_written = 0
     bytes_written = 0
     last_write_ts = time.monotonic()
     total_blocked_s = 0.0
     block_count = 0
+    pipe_blocked = False  # True while os.write() is in progress
+    pipe_blocked_since = 0.0  # monotonic timestamp when current os.write() started
+    heartbeat_stop = threading.Event()
+
+    def _heartbeat() -> None:
+        """Emit periodic status to stderr so we can prove pipe-blocking in Cloud logs.
+
+        This thread writes directly to fd 2 (stderr) which is collected by the
+        Kubernetes container runtime independently of the orchestrator that reads
+        stdout.  Even when the orchestrator stops reading stdout, these heartbeat
+        lines should still appear in the Cloud job logs.
+        """
+        start = time.monotonic()
+        stderr_fd = 2  # write directly to fd 2, bypassing Python buffering
+        while not heartbeat_stop.wait(timeout=_HEARTBEAT_INTERVAL_S):
+            now = time.monotonic()
+            elapsed_total = now - start
+            blocked_str = "YES" if pipe_blocked else "NO"
+            blocked_dur = f" blocked_since={now - pipe_blocked_since:.0f}s" if pipe_blocked else ""
+            line = (
+                f"STDOUT_WRITER_HEARTBEAT: t={elapsed_total:.0f}s "
+                f"msgs={messages_written} bytes={bytes_written} "
+                f"pipe_blocked={blocked_str}{blocked_dur} "
+                f"queue={write_queue.qsize()}/{_WRITE_QUEUE_SIZE}\n"
+            )
+            try:
+                os.write(stderr_fd, line.encode())
+            except OSError:
+                pass  # stderr itself might be broken; nothing we can do
+
+    heartbeat_thread = threading.Thread(
+        target=_heartbeat, name="stdout-writer-heartbeat", daemon=True
+    )
+    heartbeat_thread.start()
 
     def _stdout_writer() -> None:
         """Dedicated thread that writes queued messages to stdout."""
         nonlocal messages_written, bytes_written, last_write_ts, total_blocked_s, block_count
+        nonlocal pipe_blocked, pipe_blocked_since
         try:
             while True:
                 data = write_queue.get()
@@ -456,9 +492,12 @@ def _nonblocking_write_to_stdout(messages: Iterable[str]) -> None:
                     break
                 total = 0
                 while total < len(data):
-                    before = time.monotonic()
+                    pipe_blocked = True
+                    pipe_blocked_since = time.monotonic()
+                    before = pipe_blocked_since
                     written = os.write(real_fd, data[total:])
                     elapsed = time.monotonic() - before
+                    pipe_blocked = False
                     total += written
                     if elapsed >= _BLOCK_LOG_THRESHOLD_S:
                         block_count += 1
@@ -485,6 +524,13 @@ def _nonblocking_write_to_stdout(messages: Iterable[str]) -> None:
 
     writer = threading.Thread(target=_stdout_writer, name="stdout-writer", daemon=True)
     writer.start()
+    logger.info(
+        "STDOUT_WRITER: started writer_thread fd=%d queue_size=%d watchdog=%ds heartbeat=%ds",
+        real_fd,
+        _WRITE_QUEUE_SIZE,
+        _WATCHDOG_TIMEOUT_S,
+        int(_HEARTBEAT_INTERVAL_S),
+    )
 
     try:
         last_progress = time.monotonic()
@@ -525,6 +571,7 @@ def _nonblocking_write_to_stdout(messages: Iterable[str]) -> None:
                             "Terminating process to prevent indefinite hang."
                         )
     finally:
+        heartbeat_stop.set()
         # Signal writer to drain remaining messages and exit.
         write_queue.put(None)
         writer.join(timeout=30)
