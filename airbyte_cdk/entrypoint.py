@@ -409,7 +409,7 @@ def launch(source: Source, args: List[str]) -> None:
             try:
                 os.write(stderr_fd, line.encode())
             except OSError:
-                pass
+                pass  # Best-effort diagnostic — if stderr (fd 2) is broken, silently give up.
 
     heartbeat_thread = threading.Thread(target=_heartbeat, name="stdout-heartbeat", daemon=True)
     heartbeat_thread.start()
