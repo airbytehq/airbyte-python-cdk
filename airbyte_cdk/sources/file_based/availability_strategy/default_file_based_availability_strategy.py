@@ -9,6 +9,7 @@ import traceback
 from typing import TYPE_CHECKING, Optional, Tuple
 
 from airbyte_cdk import AirbyteTracedException
+from airbyte_cdk.models import FailureType
 from airbyte_cdk.sources import Source
 from airbyte_cdk.sources.file_based.availability_strategy import (
     AbstractFileBasedAvailabilityStrategy,
@@ -133,8 +134,10 @@ class DefaultFileBasedAvailabilityStrategy(AbstractFileBasedAvailabilityStrategy
         except AirbyteTracedException as ate:
             raise ate
         except Exception as exc:
-            raise CheckAvailabilityError(
-                FileBasedSourceError.ERROR_READING_FILE, stream=stream.name, file=file.uri
+            raise AirbyteTracedException(
+                message=FileBasedSourceError.ERROR_READING_FILE.value,
+                internal_message=f"Error reading file {file.uri} in stream {stream.name}: {exc}",
+                failure_type=FailureType.system_error,
             ) from exc
 
         schema = stream.catalog_schema or stream.config.input_schema

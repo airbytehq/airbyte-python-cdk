@@ -3,6 +3,7 @@
 #
 
 from airbyte_cdk.sources.file_based.exceptions import FileBasedSourceError
+from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 from unit_tests.sources.file_based.helpers import (
     FailingSchemaValidationPolicy,
     TestErrorListMatchingFilesInMemoryFilesStreamReader,
@@ -158,7 +159,7 @@ error_reading_file_scenario = (
             )
         )
     )
-    .set_expected_check_error(None, FileBasedSourceError.ERROR_READING_FILE.value)
+    .set_expected_check_error(AirbyteTracedException, FileBasedSourceError.ERROR_READING_FILE.value)
 ).build()
 
 
@@ -222,5 +223,5 @@ error_multi_stream_scenario = (
             ],
         }
     )
-    .set_expected_check_error(None, FileBasedSourceError.ERROR_READING_FILE.value)
+    .set_expected_check_error(AirbyteTracedException, FileBasedSourceError.ERROR_READING_FILE.value)
 ).build()

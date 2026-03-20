@@ -17,7 +17,7 @@ class FileBasedSourceError(Enum):
     ERROR_CASTING_VALUE_UNRECOGNIZED_TYPE = "Could not cast the value to the expected type because the type is not recognized. Valid types are null, array, boolean, integer, number, object, and string."
     ERROR_DECODING_VALUE = "Expected a JSON-decodeable value but could not decode record."
     ERROR_LISTING_FILES = "Error listing files. Please check the credentials provided in the config and verify that they provide permission to list files."
-    ERROR_READING_FILE = "Error opening file. Please check the credentials provided in the config and verify that they provide permission to read files."
+    ERROR_READING_FILE = "File read failed during availability check."
     ERROR_PARSING_RECORD = "Error parsing record. This could be due to a mismatch between the config's file type and the actual file type, or because the file or record is not parseable."
     ERROR_PARSING_USER_PROVIDED_SCHEMA = (
         "The provided schema could not be transformed into valid JSON Schema."
