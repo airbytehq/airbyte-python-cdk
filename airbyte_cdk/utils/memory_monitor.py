@@ -8,10 +8,7 @@ import logging
 from pathlib import Path
 from typing import Optional
 
-try:
-    import sentry_sdk
-except ImportError:
-    sentry_sdk = None  # type: ignore[assignment]
+import sentry_sdk
 
 logger = logging.getLogger("airbyte")
 
@@ -138,16 +135,11 @@ class MemoryMonitor:
         limit_gb = limit_bytes / (1024**3)
 
         if usage_ratio >= _MEMORY_THRESHOLD:
-            logger.warning(
-                "Source memory usage at %d%% of container limit (%.2f / %.2f GB).",
-                usage_percent,
-                usage_gb,
-                limit_gb,
+            message = (
+                "Source memory usage at %d%% of container limit (%.2f / %.2f GB)."
+                % (usage_percent, usage_gb, limit_gb)
             )
-            if not self._sentry_alerted and sentry_sdk is not None:
+            logger.warning(message)
+            if not self._sentry_alerted:
                 self._sentry_alerted = True
-                sentry_sdk.capture_message(
-                    "Source memory usage at %d%% of container limit (%.2f / %.2f GB)."
-                    % (usage_percent, usage_gb, limit_gb),
-                    level="warning",
-                )
+                sentry_sdk.capture_message(message, level="warning")

@@ -302,17 +302,19 @@ def test_sentry_not_called_below_threshold() -> None:
     mock_capture.assert_not_called()
 
 
-def test_sentry_unavailable_degrades_gracefully(caplog: pytest.LogCaptureFixture) -> None:
-    """When sentry_sdk is None (not installed), warning log should still be emitted."""
+def test_sentry_capture_message_includes_memory_details() -> None:
+    """sentry_sdk.capture_message() should include memory percentage and GB values."""
+    mock_capture = MagicMock()
     monitor = MemoryMonitor(check_interval=1)
     with (
-        caplog.at_level(logging.WARNING, logger="airbyte"),
         patch.object(Path, "exists", _v2_exists),
         patch.object(Path, "read_text", _v2_mock_read(usage=_MOCK_USAGE_AT_90)),
-        patch("airbyte_cdk.utils.memory_monitor.sentry_sdk", None),
+        patch("airbyte_cdk.utils.memory_monitor.sentry_sdk") as mock_sentry,
     ):
+        mock_sentry.capture_message = mock_capture
         monitor.check_memory_usage()
 
-    # Warning log should still be emitted even when sentry_sdk is unavailable
-    assert len(caplog.records) == 1
-    assert "91%" in caplog.records[0].message
+    mock_capture.assert_called_once()
+    msg = mock_capture.call_args[0][0]
+    assert "91%" in msg
+    assert "0.85 / 0.93 GB" in msg
