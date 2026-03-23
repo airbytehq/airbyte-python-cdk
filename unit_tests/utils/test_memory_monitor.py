@@ -318,3 +318,49 @@ def test_sentry_capture_message_includes_memory_details() -> None:
     msg = mock_capture.call_args[0][0]
     assert "91%" in msg
     assert "0.85 / 0.93 GB" in msg
+
+
+def test_sentry_failure_does_not_crash_sync(caplog: pytest.LogCaptureFixture) -> None:
+    """A Sentry failure must never abort the sync — capture_message is best-effort."""
+    monitor = MemoryMonitor(check_interval=1)
+    with (
+        caplog.at_level(logging.DEBUG, logger="airbyte"),
+        patch.object(Path, "exists", _v2_exists),
+        patch.object(Path, "read_text", _v2_mock_read(usage=_MOCK_USAGE_AT_90)),
+        patch("airbyte_cdk.utils.memory_monitor.sentry_sdk") as mock_sentry,
+    ):
+        mock_sentry.capture_message = MagicMock(side_effect=RuntimeError("Sentry transport error"))
+        # Must not raise — observability should never break the sync
+        monitor.check_memory_usage()
+
+    # The warning log should still be emitted even though Sentry failed
+    warning_records = [r for r in caplog.records if r.levelno == logging.WARNING]
+    assert len(warning_records) == 1
+    assert "91%" in warning_records[0].message
+
+    # The debug log should mention the Sentry failure
+    debug_records = [r for r in caplog.records if r.levelno == logging.DEBUG]
+    assert any("Failed to send high-memory warning to Sentry" in r.message for r in debug_records)
+
+    # _sentry_alerted should NOT be set, so a retry is possible on the next check
+    assert not monitor._sentry_alerted
+
+
+def test_sentry_retries_after_transient_failure() -> None:
+    """After a transient Sentry failure, the next check should retry capture_message."""
+    monitor = MemoryMonitor(check_interval=1)
+    mock_capture = MagicMock(side_effect=[RuntimeError("transient"), None])
+    with (
+        patch.object(Path, "exists", _v2_exists),
+        patch.object(Path, "read_text", _v2_mock_read(usage=_MOCK_USAGE_AT_90)),
+        patch("airbyte_cdk.utils.memory_monitor.sentry_sdk") as mock_sentry,
+    ):
+        mock_sentry.capture_message = mock_capture
+        # First call: Sentry raises, flag stays False
+        monitor.check_memory_usage()
+        assert not monitor._sentry_alerted
+        # Second call: Sentry succeeds, flag flips True
+        monitor.check_memory_usage()
+        assert monitor._sentry_alerted
+
+    assert mock_capture.call_count == 2

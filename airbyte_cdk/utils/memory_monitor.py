@@ -142,5 +142,9 @@ class MemoryMonitor:
             )
             logger.warning(message)
             if not self._sentry_alerted:
-                self._sentry_alerted = True
-                sentry_sdk.capture_message(message, level="warning")
+                try:
+                    sentry_sdk.capture_message(message, level="warning")
+                except Exception:
+                    logger.debug("Failed to send high-memory warning to Sentry.", exc_info=True)
+                else:
+                    self._sentry_alerted = True
