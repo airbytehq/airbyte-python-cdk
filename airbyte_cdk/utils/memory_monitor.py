@@ -8,6 +8,11 @@ import logging
 from pathlib import Path
 from typing import Optional
 
+try:
+    import sentry_sdk
+except ImportError:
+    sentry_sdk = None  # type: ignore[assignment]
+
 logger = logging.getLogger("airbyte")
 
 # cgroup v2 paths
@@ -47,6 +52,7 @@ class MemoryMonitor:
         self._message_count = 0
         self._cgroup_version: Optional[int] = None
         self._probed = False
+        self._sentry_alerted = False
 
     def _probe_cgroup(self) -> None:
         """Detect which cgroup version (if any) is available.
@@ -138,3 +144,10 @@ class MemoryMonitor:
                 usage_gb,
                 limit_gb,
             )
+            if not self._sentry_alerted and sentry_sdk is not None:
+                self._sentry_alerted = True
+                sentry_sdk.capture_message(
+                    "Source memory usage at %d%% of container limit (%.2f / %.2f GB)."
+                    % (usage_percent, usage_gb, limit_gb),
+                    level="warning",
+                )

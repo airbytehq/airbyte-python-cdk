@@ -4,7 +4,7 @@
 
 import logging
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -245,3 +245,74 @@ def test_os_error_degrades_gracefully(caplog: pytest.LogCaptureFixture) -> None:
     ):
         monitor.check_memory_usage()
     assert not caplog.records
+
+
+# ---------------------------------------------------------------------------
+# check_memory_usage — Sentry capture_message
+# ---------------------------------------------------------------------------
+
+
+def test_sentry_capture_message_called_on_high_memory() -> None:
+    """sentry_sdk.capture_message() should be called once when memory exceeds 90%."""
+    mock_capture = MagicMock()
+    monitor = MemoryMonitor(check_interval=1)
+    with (
+        patch.object(Path, "exists", _v2_exists),
+        patch.object(Path, "read_text", _v2_mock_read(usage=_MOCK_USAGE_AT_90)),
+        patch("airbyte_cdk.utils.memory_monitor.sentry_sdk") as mock_sentry,
+    ):
+        mock_sentry.capture_message = mock_capture
+        monitor.check_memory_usage()
+
+    mock_capture.assert_called_once()
+    call_args = mock_capture.call_args
+    assert "91%" in call_args[0][0]
+    assert call_args[1]["level"] == "warning"
+
+
+def test_sentry_capture_message_only_once_per_sync() -> None:
+    """sentry_sdk.capture_message() should fire only once even if memory stays high."""
+    mock_capture = MagicMock()
+    monitor = MemoryMonitor(check_interval=1)
+    with (
+        patch.object(Path, "exists", _v2_exists),
+        patch.object(Path, "read_text", _v2_mock_read(usage=_MOCK_USAGE_AT_90)),
+        patch("airbyte_cdk.utils.memory_monitor.sentry_sdk") as mock_sentry,
+    ):
+        mock_sentry.capture_message = mock_capture
+        monitor.check_memory_usage()
+        monitor.check_memory_usage()
+        monitor.check_memory_usage()
+
+    mock_capture.assert_called_once()
+
+
+def test_sentry_not_called_below_threshold() -> None:
+    """sentry_sdk.capture_message() should not be called when memory is below 90%."""
+    mock_capture = MagicMock()
+    monitor = MemoryMonitor(check_interval=1)
+    with (
+        patch.object(Path, "exists", _v2_exists),
+        patch.object(Path, "read_text", _v2_mock_read(usage=_MOCK_USAGE_BELOW)),
+        patch("airbyte_cdk.utils.memory_monitor.sentry_sdk") as mock_sentry,
+    ):
+        mock_sentry.capture_message = mock_capture
+        monitor.check_memory_usage()
+
+    mock_capture.assert_not_called()
+
+
+def test_sentry_unavailable_degrades_gracefully(caplog: pytest.LogCaptureFixture) -> None:
+    """When sentry_sdk is None (not installed), warning log should still be emitted."""
+    monitor = MemoryMonitor(check_interval=1)
+    with (
+        caplog.at_level(logging.WARNING, logger="airbyte"),
+        patch.object(Path, "exists", _v2_exists),
+        patch.object(Path, "read_text", _v2_mock_read(usage=_MOCK_USAGE_AT_90)),
+        patch("airbyte_cdk.utils.memory_monitor.sentry_sdk", None),
+    ):
+        monitor.check_memory_usage()
+
+    # Warning log should still be emitted even when sentry_sdk is unavailable
+    assert len(caplog.records) == 1
+    assert "91%" in caplog.records[0].message
