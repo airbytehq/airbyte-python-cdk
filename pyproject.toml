@@ -235,7 +235,8 @@ exclude = [
 DEP001 = [
   # These are imported but not declared:
   "source_declarative_manifest",  # Imported only in dynamic import tests, not in main code
-  "google"  # Imported via google.cloud.secretmanager_v1 which is provided by google-cloud-secret-manager
+  "google",  # Imported via google.cloud.secretmanager_v1 which is provided by google-cloud-secret-manager
+  "sentry_sdk",  # Soft-imported in memory_monitor.py; provided at runtime by connector-execution-service
 ]
 
 # DEP002: Project should not contain unused dependencies.
