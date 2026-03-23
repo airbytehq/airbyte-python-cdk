@@ -135,9 +135,10 @@ class MemoryMonitor:
         limit_gb = limit_bytes / (1024**3)
 
         if usage_ratio >= _MEMORY_THRESHOLD:
-            message = (
-                "Source memory usage at %d%% of container limit (%.2f / %.2f GB)."
-                % (usage_percent, usage_gb, limit_gb)
+            message = "Source memory usage at %d%% of container limit (%.2f / %.2f GB)." % (
+                usage_percent,
+                usage_gb,
+                limit_gb,
             )
             logger.warning(message)
             if not self._sentry_alerted:
