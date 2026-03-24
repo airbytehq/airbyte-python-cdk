@@ -175,16 +175,16 @@ class DeclarativeOauth2Authenticator(AbstractOauth2Authenticator, DeclarativeAut
             client_creds is None for client_creds in [self.client_id, self.client_secret]
         ):
             raise ValueError(
-                "OAuthAuthenticator configuration error: Both 'client_id' and 'client_secret' are required for the "
-                "basic OAuth flow."
+                "OAuth configuration is missing required credentials. Both 'client_id' and 'client_secret' are required for the "
+                "standard OAuth flow."
             )
         if self.profile_assertion is None and self.use_profile_assertion:
             raise ValueError(
-                "OAuthAuthenticator configuration error: 'profile_assertion' is required when using the profile assertion flow."
+                "OAuth configuration is incomplete. A 'profile_assertion' is required for the profile assertion flow."
             )
         if self.get_grant_type() == "refresh_token" and self._refresh_token is None:
             raise ValueError(
-                "OAuthAuthenticator configuration error: A 'refresh_token' is required when the 'grant_type' is set to 'refresh_token'."
+                "OAuth configuration is missing a required field. A 'refresh_token' is required when 'grant_type' is set to 'refresh_token'."
             )
 
     def get_token_refresh_endpoint(self) -> Optional[str]:
@@ -192,7 +192,7 @@ class DeclarativeOauth2Authenticator(AbstractOauth2Authenticator, DeclarativeAut
             refresh_token_endpoint: str = self._token_refresh_endpoint.eval(self.config)
             if not refresh_token_endpoint:
                 raise ValueError(
-                    "OAuthAuthenticator was unable to evaluate token_refresh_endpoint parameter"
+                    "OAuth token refresh endpoint resolved to an empty value. Verify the 'token_refresh_endpoint' in your connector configuration."
                 )
             return refresh_token_endpoint
         return None
@@ -203,7 +203,9 @@ class DeclarativeOauth2Authenticator(AbstractOauth2Authenticator, DeclarativeAut
     def get_client_id(self) -> str:
         client_id = self._client_id.eval(self.config) if self._client_id else self._client_id
         if not client_id:
-            raise ValueError("OAuthAuthenticator was unable to evaluate client_id parameter")
+            raise ValueError(
+                "OAuth client_id resolved to an empty value. Verify the 'client_id' in your connector configuration."
+            )
         return client_id  # type: ignore # value will be returned as a string, or an error will be raised
 
     def get_client_secret_name(self) -> str:
@@ -214,9 +216,10 @@ class DeclarativeOauth2Authenticator(AbstractOauth2Authenticator, DeclarativeAut
             self._client_secret.eval(self.config) if self._client_secret else self._client_secret
         )
         if not client_secret:
-            # We've seen some APIs allowing empty client_secret so we will only log here
+            # Some APIs legitimately allow empty client_secret (e.g. public client OAuth flows),
+            # so we log a warning rather than raising an error.
             logger.warning(
-                "OAuthAuthenticator was unable to evaluate client_secret parameter hence it'll be empty"
+                "OAuth client_secret resolved to an empty value. If this is unexpected, verify the 'client_secret' in your connector configuration."
             )
         return client_secret  # type: ignore # value will be returned as a string, which might be empty
 
