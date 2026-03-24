@@ -296,7 +296,7 @@ class AsyncJobOrchestratorTest(TestCase):
 
         assert len(partitions) == 1  # only _job_for_another_slice has succeeded
         assert self._message_repository.emit_message.call_count == 3  # one for each traced message
-        assert exception.failure_type == FailureType.config_error  # type: ignore  # exception should be of type AirbyteTracedException
+        assert exception.failure_type == FailureType.system_error  # type: ignore  # exception should be of type AirbyteTracedException
 
     @mock.patch(sleep_mock_target)
     def test_given_jobs_failed_more_than_max_attempts_when_create_and_get_completed_partitions_then_free_job_budget(

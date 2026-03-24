@@ -434,8 +434,9 @@ class AsyncJobOrchestrator:
         status_by_job_id = {job.api_job_id(): job.status() for job in partition.jobs}
         self._non_breaking_exceptions.append(
             AirbyteTracedException(
+                message="Async job failed after exhausting all retry attempts.",
                 internal_message=f"At least one job could not be completed for slice {partition.stream_slice}. Job statuses were: {status_by_job_id}. See warning logs for more information.",
-                failure_type=FailureType.config_error,
+                failure_type=FailureType.system_error,
             )
         )
 
@@ -481,14 +482,14 @@ class AsyncJobOrchestrator:
             # We emitted traced message but we didn't break on non_breaking_exception. We still need to raise an exception so that the
             # call of `create_and_get_completed_partitions` knows that there was an issue with some partitions and the sync is incomplete.
             raise AirbyteTracedException(
-                message=None,
+                message="One or more async jobs failed after exhausting all retry attempts.",
                 internal_message="\n".join(
                     [
                         filter_secrets(exception.__repr__())
                         for exception in self._non_breaking_exceptions
                     ]
                 ),
-                failure_type=FailureType.config_error,
+                failure_type=FailureType.system_error,
             )
 
     def _handle_non_breaking_error(self, exception: Exception) -> None:
