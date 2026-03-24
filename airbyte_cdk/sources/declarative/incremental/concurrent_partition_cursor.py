@@ -3,6 +3,7 @@
 #
 
 import copy
+import datetime
 import logging
 import threading
 import time
@@ -658,3 +659,21 @@ class ConcurrentPerPartitionCursor(Cursor):
             if stream_state and "state" in stream_state
             else None
         )
+
+    def get_cursor_datetime_from_state(
+        self, stream_state: Mapping[str, Any]
+    ) -> datetime.datetime | None:
+        """Extract and parse the cursor datetime from the global cursor in per-partition state.
+
+        For per-partition cursors, the global cursor is stored under the "state" key.
+        This method delegates to the underlying cursor factory to parse the datetime.
+
+        Returns None if the global cursor is not present or cannot be parsed.
+        """
+        global_state = stream_state.get(self._GLOBAL_STATE_KEY)
+        if not global_state or not isinstance(global_state, dict):
+            return None
+
+        # Create a cursor to delegate the parsing
+        cursor = self._cursor_factory.create(stream_state={}, runtime_lookback_window=None)
+        return cursor.get_cursor_datetime_from_state(global_state)

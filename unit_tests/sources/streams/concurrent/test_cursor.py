@@ -13,6 +13,7 @@ import pytest
 
 from airbyte_cdk.sources.connector_state_manager import ConnectorStateManager
 from airbyte_cdk.sources.message import MessageRepository
+from airbyte_cdk.sources.streams import NO_CURSOR_STATE_KEY
 from airbyte_cdk.sources.streams.concurrent.clamping import (
     ClampingEndProvider,
     ClampingStrategy,
@@ -24,6 +25,7 @@ from airbyte_cdk.sources.streams.concurrent.cursor import (
     ConcurrentCursor,
     CursorField,
     CursorValueType,
+    FinalStateCursor,
 )
 from airbyte_cdk.sources.streams.concurrent.partitions.partition import Partition
 from airbyte_cdk.sources.streams.concurrent.state_converters.abstract_stream_state_converter import (
@@ -1387,3 +1389,25 @@ def test_given_partitioned_state_with_multiple_slices_when_should_be_synced_then
         )
         == True
     )
+
+
+@freezegun.freeze_time("2024-07-15")
+def test_final_state_cursor_get_cursor_datetime_from_state_returns_now_for_no_cursor_state():
+    """FinalStateCursor returns now() for NO_CURSOR_STATE_KEY state, else None.
+
+    When state has NO_CURSOR_STATE_KEY: True, it means the previous sync was a completed
+    full refresh. Returning now() indicates the cursor is "current" and within any
+    retention period, so we should use incremental sync.
+    """
+    cursor = FinalStateCursor("test_stream", None, Mock(spec=MessageRepository))
+
+    result_with_no_cursor_key = cursor.get_cursor_datetime_from_state({NO_CURSOR_STATE_KEY: True})
+    assert result_with_no_cursor_key == datetime(2024, 7, 15, tzinfo=timezone.utc)
+
+    result_without_no_cursor_key = cursor.get_cursor_datetime_from_state(
+        {"some_other_key": "value"}
+    )
+    assert result_without_no_cursor_key is None
+
+    result_with_empty_state = cursor.get_cursor_datetime_from_state({})
+    assert result_with_empty_state is None

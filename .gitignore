@@ -23,3 +23,6 @@ dist
 
 # ASDF tool versions files
 .tool-versions
+
+# Notes
+/thoughts
