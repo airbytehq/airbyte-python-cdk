@@ -16,18 +16,24 @@ from airbyte_cdk.utils.memory_monitor import (
     _CGROUP_V2_MAX,
     _PROC_SELF_STATUS,
     MemoryMonitor,
-    _read_process_rss_bytes,
+    _read_process_anon_rss_bytes,
 )
 from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 
 _MOCK_USAGE_BELOW = "500000000\n"  # 50% of 1 GB
 _MOCK_USAGE_AT_90 = "910000000\n"  # 91% of 1 GB
-_MOCK_USAGE_AT_95 = "960000000\n"  # 96% of 1 GB
+_MOCK_USAGE_AT_97 = "970000000\n"  # 97% of 1 GB  (below 98% critical threshold)
+_MOCK_USAGE_AT_98 = "980000000\n"  # 98% of 1 GB  (at critical threshold)
 _MOCK_LIMIT = "1000000000\n"  # 1 GB
 
-# RSS mock values (in kB as they appear in /proc/self/status)
-_MOCK_RSS_HIGH = "VmRSS:\t   820000 kB\n"  # ~82% of 1 GB  (above 80% threshold)
-_MOCK_RSS_LOW = "VmRSS:\t   500000 kB\n"  # ~50% of 1 GB  (below 80% threshold)
+# Anonymous RSS mock values (in kB as they appear in /proc/self/status RssAnon field).
+# VmRSS is intentionally kept high in the "low anon" mock to prove the metric choice matters:
+# VmRSS can be inflated by file-backed pages while RssAnon stays low.
+_MOCK_ANON_HIGH = "RssAnon:\t   820000 kB\n"  # ~82% of 1 GB (above 80% threshold)
+_MOCK_ANON_LOW_VMRSS_HIGH = (
+    "VmRSS:\t   900000 kB\n"  # ~90% of 1 GB — high total RSS
+    "RssAnon:\t   500000 kB\n"  # ~50% of 1 GB — low anonymous RSS
+)
 
 
 def _v2_exists(self: Path) -> bool:
@@ -257,34 +263,42 @@ def test_os_error_degrades_gracefully(caplog: pytest.LogCaptureFixture) -> None:
 
 
 # ---------------------------------------------------------------------------
-# _read_process_rss_bytes — unit tests
+# _read_process_anon_rss_bytes — unit tests
 # ---------------------------------------------------------------------------
 
 
-def test_read_process_rss_bytes_parses_vmrss() -> None:
-    """Correctly parses VmRSS from /proc/self/status content."""
+def test_read_process_anon_rss_bytes_parses_rssanon() -> None:
+    """Correctly parses RssAnon from /proc/self/status content."""
     status_content = (
-        "Name:\tpython3\nVmPeak:\t  1000000 kB\nVmRSS:\t   512000 kB\nVmSwap:\t        0 kB\n"
+        "Name:\tpython3\nVmRSS:\t  1000000 kB\nRssAnon:\t   512000 kB\nRssShmem:\t        0 kB\n"
     )
     with patch.object(Path, "read_text", return_value=status_content):
-        result = _read_process_rss_bytes()
+        result = _read_process_anon_rss_bytes()
     assert result == 512000 * 1024
 
 
-def test_read_process_rss_bytes_returns_none_on_missing_file() -> None:
+def test_read_process_anon_rss_bytes_returns_none_on_missing_file() -> None:
     """Returns None when /proc/self/status is unreadable."""
 
     def raise_oserror(self: Path) -> str:
         raise OSError("No such file")
 
     with patch.object(Path, "read_text", raise_oserror):
-        assert _read_process_rss_bytes() is None
+        assert _read_process_anon_rss_bytes() is None
 
 
-def test_read_process_rss_bytes_returns_none_when_vmrss_absent() -> None:
-    """Returns None when VmRSS line is not present."""
-    with patch.object(Path, "read_text", return_value="Name:\tpython3\n"):
-        assert _read_process_rss_bytes() is None
+def test_read_process_anon_rss_bytes_returns_none_when_rssanon_absent() -> None:
+    """Returns None when RssAnon line is not present (e.g. older kernel)."""
+    with patch.object(Path, "read_text", return_value="Name:\tpython3\nVmRSS:\t  512000 kB\n"):
+        assert _read_process_anon_rss_bytes() is None
+
+
+def test_read_process_anon_rss_bytes_ignores_vmrss() -> None:
+    """Ensures the parser reads RssAnon specifically, not VmRSS."""
+    # Only VmRSS present, no RssAnon — should return None
+    status_content = "VmRSS:\t   900000 kB\n"
+    with patch.object(Path, "read_text", return_value=status_content):
+        assert _read_process_anon_rss_bytes() is None
 
 
 # ---------------------------------------------------------------------------
@@ -292,65 +306,73 @@ def test_read_process_rss_bytes_returns_none_when_vmrss_absent() -> None:
 # ---------------------------------------------------------------------------
 
 
-def _proc_status_read(rss_content: str):
+def _proc_status_read(anon_content: str, usage: str = _MOCK_USAGE_AT_98):
     """Return a mock read_text that serves cgroup v2 AND /proc/self/status."""
 
     def mock_read_text(self: Path) -> str:
         if self == _CGROUP_V2_CURRENT:
-            return _MOCK_USAGE_AT_95
+            return usage
         if self == _CGROUP_V2_MAX:
             return _MOCK_LIMIT
         if self == _PROC_SELF_STATUS:
-            return rss_content
+            return anon_content
         return ""
 
     return mock_read_text
 
 
-def test_raises_when_both_cgroup_and_rss_above_thresholds() -> None:
-    """Fail-fast raises AirbyteTracedException when both cgroup >= 95% and RSS >= 80%."""
+def test_raises_when_both_cgroup_and_anon_rss_above_thresholds() -> None:
+    """Fail-fast raises AirbyteTracedException when both cgroup >= 98% and RssAnon >= 80%."""
     monitor = MemoryMonitor(check_interval=1, fail_fast=True)
     with (
         patch.object(Path, "exists", _v2_exists),
-        patch.object(Path, "read_text", _proc_status_read(_MOCK_RSS_HIGH)),
+        patch.object(Path, "read_text", _proc_status_read(_MOCK_ANON_HIGH)),
     ):
         with pytest.raises(AirbyteTracedException) as exc_info:
             monitor.check_memory_usage()
     assert exc_info.value.failure_type == FailureType.system_error
     assert "critical threshold" in (exc_info.value.message or "")
-    assert "96%" in (exc_info.value.message or "")
+    assert "98%" in (exc_info.value.message or "")
+    assert "anonymous RSS" in (exc_info.value.internal_message or "")
 
 
-def test_no_raise_when_cgroup_high_but_rss_low(caplog: pytest.LogCaptureFixture) -> None:
-    """No exception when cgroup >= 95% but RSS < 80% (page cache scenario)."""
+def test_no_raise_when_cgroup_high_but_anon_rss_low(caplog: pytest.LogCaptureFixture) -> None:
+    """No exception when cgroup >= 98% but RssAnon < 80% (file-backed pages scenario).
+
+    This test also proves the metric choice matters: VmRSS is 90% (high) but
+    RssAnon is only 50% (low), so the pressure is from file-backed pages.
+    """
     monitor = MemoryMonitor(check_interval=1, fail_fast=True)
     with (
         caplog.at_level(logging.INFO, logger="airbyte"),
         patch.object(Path, "exists", _v2_exists),
-        patch.object(Path, "read_text", _proc_status_read(_MOCK_RSS_LOW)),
+        patch.object(Path, "read_text", _proc_status_read(_MOCK_ANON_LOW_VMRSS_HIGH)),
     ):
         monitor.check_memory_usage()  # Should NOT raise
-    # Should log an info message about page cache
     info_records = [r for r in caplog.records if r.levelno == logging.INFO]
-    assert any("page cache" in r.message for r in info_records)
+    assert any("file-backed" in r.message for r in info_records)
 
 
 def test_no_raise_when_cgroup_below_critical() -> None:
-    """No exception when cgroup < 95%, even with high RSS."""
+    """No exception when cgroup at 97% (< 98% threshold), even with high RssAnon."""
     monitor = MemoryMonitor(check_interval=1, fail_fast=True)
     with (
         patch.object(Path, "exists", _v2_exists),
-        patch.object(Path, "read_text", _v2_mock_read(usage=_MOCK_USAGE_AT_90)),
+        patch.object(
+            Path, "read_text", _proc_status_read(_MOCK_ANON_HIGH, usage=_MOCK_USAGE_AT_97)
+        ),
     ):
         monitor.check_memory_usage()  # Should NOT raise
 
 
-def test_raises_when_rss_unavailable_and_cgroup_critical() -> None:
-    """Falls back to cgroup-only and raises when /proc/self/status is unavailable."""
+def test_no_raise_when_anon_rss_unavailable_and_cgroup_critical(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Logs warning and skips fail-fast when RssAnon is unavailable (stays truly dual-condition)."""
 
     def mock_read_text(self: Path) -> str:
         if self == _CGROUP_V2_CURRENT:
-            return _MOCK_USAGE_AT_95
+            return _MOCK_USAGE_AT_98
         if self == _CGROUP_V2_MAX:
             return _MOCK_LIMIT
         if self == _PROC_SELF_STATUS:
@@ -359,13 +381,13 @@ def test_raises_when_rss_unavailable_and_cgroup_critical() -> None:
 
     monitor = MemoryMonitor(check_interval=1, fail_fast=True)
     with (
+        caplog.at_level(logging.WARNING, logger="airbyte"),
         patch.object(Path, "exists", _v2_exists),
         patch.object(Path, "read_text", mock_read_text),
     ):
-        with pytest.raises(AirbyteTracedException) as exc_info:
-            monitor.check_memory_usage()
-    assert exc_info.value.failure_type == FailureType.system_error
-    assert "RSS unavailable" in (exc_info.value.internal_message or "")
+        monitor.check_memory_usage()  # Should NOT raise
+    warning_records = [r for r in caplog.records if r.levelno == logging.WARNING]
+    assert any("RssAnon unavailable" in r.message for r in warning_records)
 
 
 # ---------------------------------------------------------------------------
@@ -378,7 +400,7 @@ def test_fail_fast_disabled_via_constructor() -> None:
     monitor = MemoryMonitor(check_interval=1, fail_fast=False)
     with (
         patch.object(Path, "exists", _v2_exists),
-        patch.object(Path, "read_text", _proc_status_read(_MOCK_RSS_HIGH)),
+        patch.object(Path, "read_text", _proc_status_read(_MOCK_ANON_HIGH)),
     ):
         monitor.check_memory_usage()  # Should NOT raise
 
@@ -389,7 +411,7 @@ def test_fail_fast_disabled_via_env_var() -> None:
         monitor = MemoryMonitor(check_interval=1)
     with (
         patch.object(Path, "exists", _v2_exists),
-        patch.object(Path, "read_text", _proc_status_read(_MOCK_RSS_HIGH)),
+        patch.object(Path, "read_text", _proc_status_read(_MOCK_ANON_HIGH)),
     ):
         monitor.check_memory_usage()  # Should NOT raise
 
