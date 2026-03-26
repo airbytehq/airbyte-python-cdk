@@ -838,6 +838,10 @@ def test_handle_record_counts(
 def test_given_serialization_error_using_orjson_then_fallback_on_json(
     entrypoint: AirbyteEntrypoint, mocker, spec_mock, config_mock
 ):
+    # Reset global flags to avoid test pollution
+    entrypoint_module._HAS_LOGGED_FOR_SERIALIZATION_ERROR = False
+    entrypoint_module._HAS_LOGGED_FOR_SERIALIZATION_FALLBACK = False
+
     parsed_args = Namespace(
         command="read", config="config_path", state="statepath", catalog="catalogpath"
     )
@@ -856,3 +860,31 @@ def test_given_serialization_error_using_orjson_then_fallback_on_json(
     # There will be multiple messages here because the fixture `entrypoint` sets a control message. We only care about records here
     record_messages = list(filter(lambda message: "RECORD" in message, messages))
     assert len(record_messages) == 2
+
+
+def test_given_non_json_serializable_type_then_fallback_with_default_str(
+    entrypoint: AirbyteEntrypoint, mocker, spec_mock, config_mock
+):
+    """Test that types which both orjson and json cannot serialize (like complex) are handled via default=str fallback."""
+    # Reset global flags to avoid test pollution
+    entrypoint_module._HAS_LOGGED_FOR_SERIALIZATION_ERROR = False
+    entrypoint_module._HAS_LOGGED_FOR_SERIALIZATION_FALLBACK = False
+
+    parsed_args = Namespace(
+        command="read", config="config_path", state="statepath", catalog="catalogpath"
+    )
+    record = AirbyteMessage(
+        record=AirbyteRecordMessage(stream="stream", data={"value": complex(1, 2)}, emitted_at=1),
+        type=Type.RECORD,
+    )
+    mocker.patch.object(MockSource, "read_state", return_value={})
+    mocker.patch.object(MockSource, "read_catalog", return_value={})
+    mocker.patch.object(MockSource, "read", return_value=[record])
+
+    messages = list(entrypoint.run(parsed_args))
+
+    record_messages = list(filter(lambda message: "RECORD" in message, messages))
+    assert len(record_messages) == 1
+    # Verify the complex value was converted to its string representation
+    parsed_record = orjson.loads(record_messages[0])
+    assert parsed_record["record"]["data"]["value"] == "(1+2j)"
