@@ -30,7 +30,7 @@ _MOCK_LIMIT = "1000000000\n"  # 1 GB
 # Anonymous RSS mock values (in kB as they appear in /proc/self/status RssAnon field).
 # VmRSS is intentionally kept high in the "low anon" mock to prove the metric choice matters:
 # VmRSS can be inflated by file-backed pages while RssAnon stays low.
-_MOCK_ANON_HIGH = "RssAnon:\t   820000 kB\n"  # ~82% of 1 GB (above 80% threshold)
+_MOCK_ANON_HIGH = "RssAnon:\t   920000 kB\n"  # ~92% of 1 GB (above 90% threshold)
 _MOCK_ANON_LOW_VMRSS_HIGH = (
     "VmRSS:\t   900000 kB\n"  # ~90% of 1 GB — high total RSS
     "RssAnon:\t   500000 kB\n"  # ~50% of 1 GB — low anonymous RSS

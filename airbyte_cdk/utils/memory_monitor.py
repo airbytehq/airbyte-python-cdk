@@ -34,7 +34,7 @@ _MEMORY_THRESHOLD = 0.95
 # This dual-condition avoids false positives from reclaimable kernel page cache
 # and file-backed / shared resident pages that inflate VmRSS.
 _CRITICAL_THRESHOLD = 0.98
-_ANON_RSS_THRESHOLD = 0.80
+_ANON_RSS_THRESHOLD = 0.90
 
 # Check interval (every N messages)
 _DEFAULT_CHECK_INTERVAL = 5000
@@ -83,7 +83,7 @@ class MemoryMonitor:
     ``FailureType.system_error`` when *both*:
 
     1. Cgroup usage >= 98% of the container limit (container is near OOM-kill)
-    2. Process anonymous RSS (``RssAnon``) >= 80% of the container limit
+    2. Process anonymous RSS (``RssAnon``) >= 90% of the container limit
        (pressure is from process-private anonymous memory, not elastic kernel
        page cache or file-backed resident pages)
 
@@ -176,7 +176,7 @@ class MemoryMonitor:
         **Logging:** WARNING on every check above 95%.
 
         **Fail-fast (when enabled):** If cgroup usage >= 98% *and* process
-        anonymous RSS (``RssAnon``) >= 80% of the container limit, raises
+        anonymous RSS (``RssAnon``) >= 90% of the container limit, raises
         ``AirbyteTracedException`` with ``FailureType.system_error`` so the
         platform receives a clear error message instead of an opaque OOM-kill.
         If ``RssAnon`` is unavailable, logs a warning and skips fail-fast.
