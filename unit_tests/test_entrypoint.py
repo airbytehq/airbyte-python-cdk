@@ -858,10 +858,10 @@ def test_given_serialization_error_using_orjson_then_fallback_on_json(
     assert len(record_messages) == 2
 
 
-def test_given_non_json_serializable_type_then_fallback_with_default_str(
+def test_given_non_json_serializable_type_then_raise_traced_exception(
     entrypoint: AirbyteEntrypoint, mocker, spec_mock, config_mock
 ):
-    """Test that types which both orjson and json cannot serialize (like complex) are handled via default=str fallback."""
+    """Test that types which both orjson and json cannot serialize (like complex) raise AirbyteTracedException to prevent data corruption."""
     parsed_args = Namespace(
         command="read", config="config_path", state="statepath", catalog="catalogpath"
     )
@@ -873,8 +873,5 @@ def test_given_non_json_serializable_type_then_fallback_with_default_str(
     mocker.patch.object(MockSource, "read_catalog", return_value={})
     mocker.patch.object(MockSource, "read", return_value=[record])
 
-    messages = list(entrypoint.run(parsed_args))
-
-    record_messages = list(filter(lambda message: "RECORD" in message, messages))
-    assert len(record_messages) == 1
-    assert "(1+2j)" in record_messages[0]
+    with pytest.raises(AirbyteTracedException, match="could not be serialized to JSON"):
+        list(entrypoint.run(parsed_args))
