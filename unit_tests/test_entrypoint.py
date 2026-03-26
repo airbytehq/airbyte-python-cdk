@@ -873,5 +873,5 @@ def test_given_non_json_serializable_type_then_raise_traced_exception(
     mocker.patch.object(MockSource, "read_catalog", return_value={})
     mocker.patch.object(MockSource, "read", return_value=[record])
 
-    with pytest.raises(AirbyteTracedException, match="could not be serialized to JSON"):
+    with pytest.raises(AirbyteTracedException, match="failed to be serialized to JSON"):
         list(entrypoint.run(parsed_args))

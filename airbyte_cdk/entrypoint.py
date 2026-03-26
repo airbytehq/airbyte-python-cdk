@@ -348,7 +348,7 @@ class AirbyteEntrypoint(object):
                 raise AirbyteTracedException(
                     internal_message=f"Failed to serialize AirbyteMessage to JSON: `{json_exception}`",
                     failure_type=FailureType.system_error,
-                    message=f"A record could not be serialized to JSON: `{json_exception}`. The sync will be stopped to prevent data corruption. Please verify the source is returning valid data types.",
+                    message="A record returned from the API failed to be serialized to JSON.",
                 ) from json_exception
 
     @classmethod
