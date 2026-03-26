@@ -323,7 +323,7 @@ def _proc_status_read(anon_content: str, usage: str = _MOCK_USAGE_AT_98):
 
 
 def test_raises_when_both_cgroup_and_anon_rss_above_thresholds() -> None:
-    """Fail-fast raises AirbyteTracedException when both cgroup >= 98% and RssAnon >= 80%."""
+    """Fail-fast raises AirbyteTracedException when both cgroup >= 98% and RssAnon >= 90%."""
     monitor = MemoryMonitor(check_interval=1, fail_fast=True)
     with (
         patch.object(Path, "exists", _v2_exists),
@@ -338,7 +338,7 @@ def test_raises_when_both_cgroup_and_anon_rss_above_thresholds() -> None:
 
 
 def test_no_raise_when_cgroup_high_but_anon_rss_low(caplog: pytest.LogCaptureFixture) -> None:
-    """No exception when cgroup >= 98% but RssAnon < 80% (file-backed pages scenario).
+    """No exception when cgroup >= 98% but RssAnon < 90% (file-backed pages scenario).
 
     This test also proves the metric choice matters: VmRSS is 90% (high) but
     RssAnon is only 50% (low), so the pressure is from file-backed pages.
