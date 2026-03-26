@@ -418,7 +418,7 @@ def test_fail_fast_disabled_via_env_var() -> None:
 
 def test_fail_fast_enabled_by_default() -> None:
     """Fail-fast is enabled by default (no env var, no explicit arg)."""
-    with patch.dict("os.environ", {}, clear=False):
+    with patch.dict("os.environ", {}, clear=True):
         monitor = MemoryMonitor(check_interval=1)
     assert monitor._fail_fast is True
 
