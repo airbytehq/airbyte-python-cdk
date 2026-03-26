@@ -21,7 +21,8 @@ from airbyte_cdk.utils.memory_monitor import (
 from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 
 _MOCK_USAGE_BELOW = "500000000\n"  # 50% of 1 GB
-_MOCK_USAGE_AT_90 = "910000000\n"  # 91% of 1 GB
+_MOCK_USAGE_AT_90 = "910000000\n"  # 91% of 1 GB  (below 95% logging threshold)
+_MOCK_USAGE_AT_95 = "960000000\n"  # 96% of 1 GB  (above 95% logging threshold)
 _MOCK_USAGE_AT_97 = "970000000\n"  # 97% of 1 GB  (below 98% critical threshold)
 _MOCK_USAGE_AT_98 = "980000000\n"  # 98% of 1 GB  (at critical threshold)
 _MOCK_LIMIT = "1000000000\n"  # 1 GB
@@ -120,43 +121,43 @@ def test_noop_when_limit_is_zero(caplog: pytest.LogCaptureFixture) -> None:
 
 
 def test_no_warning_below_threshold(caplog: pytest.LogCaptureFixture) -> None:
-    """No warning should be emitted when usage is below 90%."""
+    """No warning should be emitted when usage is below 95%."""
     monitor = MemoryMonitor(check_interval=1)
     with (
         caplog.at_level(logging.WARNING, logger="airbyte"),
         patch.object(Path, "exists", _v2_exists),
-        patch.object(Path, "read_text", _v2_mock_read(usage=_MOCK_USAGE_BELOW)),
+        patch.object(Path, "read_text", _v2_mock_read(usage=_MOCK_USAGE_AT_90)),
     ):
         monitor.check_memory_usage()
     assert not caplog.records
 
 
 # ---------------------------------------------------------------------------
-# check_memory_usage — at/above 90% threshold
+# check_memory_usage — at/above 95% threshold
 # ---------------------------------------------------------------------------
 
 
-def test_logs_at_90_percent(caplog: pytest.LogCaptureFixture) -> None:
-    """Warning log should be emitted at 91% usage (above 90% threshold)."""
+def test_logs_at_95_percent(caplog: pytest.LogCaptureFixture) -> None:
+    """Warning log should be emitted at 96% usage (above 95% threshold)."""
     monitor = MemoryMonitor(check_interval=1)
     with (
         caplog.at_level(logging.WARNING, logger="airbyte"),
         patch.object(Path, "exists", _v2_exists),
-        patch.object(Path, "read_text", _v2_mock_read(usage=_MOCK_USAGE_AT_90)),
+        patch.object(Path, "read_text", _v2_mock_read(usage=_MOCK_USAGE_AT_95)),
     ):
         monitor.check_memory_usage()
 
     assert len(caplog.records) == 1
-    assert "91%" in caplog.records[0].message
+    assert "96%" in caplog.records[0].message
 
 
-def test_logs_on_every_check_above_90_percent(caplog: pytest.LogCaptureFixture) -> None:
-    """Warning should be logged on EVERY check interval when above 90%, not just once."""
+def test_logs_on_every_check_above_95_percent(caplog: pytest.LogCaptureFixture) -> None:
+    """Warning should be logged on EVERY check interval when above 95%, not just once."""
     monitor = MemoryMonitor(check_interval=1)
     with (
         caplog.at_level(logging.WARNING, logger="airbyte"),
         patch.object(Path, "exists", _v2_exists),
-        patch.object(Path, "read_text", _v2_mock_read(usage=_MOCK_USAGE_AT_90)),
+        patch.object(Path, "read_text", _v2_mock_read(usage=_MOCK_USAGE_AT_95)),
     ):
         monitor.check_memory_usage()
         monitor.check_memory_usage()
@@ -165,7 +166,7 @@ def test_logs_on_every_check_above_90_percent(caplog: pytest.LogCaptureFixture) 
     # All three checks should produce a warning (no one-shot flag)
     assert len(caplog.records) == 3
     for record in caplog.records:
-        assert "91%" in record.message
+        assert "96%" in record.message
 
 
 # ---------------------------------------------------------------------------
@@ -178,7 +179,7 @@ def test_cgroup_v1_emits_warning(caplog: pytest.LogCaptureFixture) -> None:
 
     def mock_read_text(self: Path) -> str:
         if self == _CGROUP_V1_USAGE:
-            return _MOCK_USAGE_AT_90
+            return _MOCK_USAGE_AT_95
         if self == _CGROUP_V1_LIMIT:
             return _MOCK_LIMIT
         return ""
@@ -192,7 +193,7 @@ def test_cgroup_v1_emits_warning(caplog: pytest.LogCaptureFixture) -> None:
         monitor.check_memory_usage()
 
     assert len(caplog.records) == 1
-    assert "91%" in caplog.records[0].message
+    assert "96%" in caplog.records[0].message
 
 
 # ---------------------------------------------------------------------------
@@ -206,7 +207,7 @@ def test_check_interval_skips_intermediate_calls(caplog: pytest.LogCaptureFixtur
     with (
         caplog.at_level(logging.WARNING, logger="airbyte"),
         patch.object(Path, "exists", _v2_exists),
-        patch.object(Path, "read_text", _v2_mock_read(usage=_MOCK_USAGE_AT_90)),
+        patch.object(Path, "read_text", _v2_mock_read(usage=_MOCK_USAGE_AT_95)),
     ):
         # First 4999 calls should be skipped
         for _ in range(4999):

@@ -25,8 +25,8 @@ _CGROUP_V1_LIMIT = Path("/sys/fs/cgroup/memory/memory.limit_in_bytes")
 # Process-level anonymous RSS from /proc/self/status (Linux only, no extra dependency)
 _PROC_SELF_STATUS = Path("/proc/self/status")
 
-# Log when usage is at or above 90%
-_MEMORY_THRESHOLD = 0.90
+# Log when usage is at or above 95%
+_MEMORY_THRESHOLD = 0.95
 
 # Raise AirbyteTracedException when BOTH conditions are met:
 #   1. cgroup usage >= critical threshold
@@ -75,7 +75,7 @@ class MemoryMonitor:
     If neither is found (local dev / CI), all subsequent calls are instant no-ops.
 
     **Logging (always active):** Logs a WARNING on every check interval (default
-    5000 messages) when cgroup memory usage is at or above 90% of the container
+    5000 messages) when cgroup memory usage is at or above 95% of the container
     limit.
 
     **Fail-fast (controlled by ``AIRBYTE_MEMORY_FAIL_FAST`` env var, default
@@ -167,13 +167,13 @@ class MemoryMonitor:
             return None
 
     def check_memory_usage(self) -> None:
-        """Check memory usage; log at 90% and raise at critical dual-condition.
+        """Check memory usage; log at 95% and raise at critical dual-condition.
 
         Intended to be called on every message. The monitor internally tracks
         a message counter and only reads cgroup files every ``check_interval``
         messages (default 5000) to minimise I/O overhead.
 
-        **Logging:** WARNING on every check above 90%.
+        **Logging:** WARNING on every check above 95%.
 
         **Fail-fast (when enabled):** If cgroup usage >= 98% *and* process
         anonymous RSS (``RssAnon``) >= 80% of the container limit, raises
