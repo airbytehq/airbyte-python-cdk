@@ -1832,6 +1832,16 @@ definitions:
         description: The headers to match.
         type: object
         additionalProperties: true
+      cost:
+        title: Cost
+        description: >
+          The cost of a request matching this matcher in the API's rate limit cost model.
+          When set, this value is passed as the weight when acquiring a call from the rate limiter,
+          enabling cost-based rate limiting where different endpoints consume different amounts
+          from a shared budget. If not set, each request counts as 1.
+        anyOf:
+          - type: integer
+          - type: string
     additionalProperties: true
   DefaultErrorHandler:
     title: Default Error Handler

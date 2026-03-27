@@ -140,10 +140,13 @@ def test_http_request_matching(mocker):
     users_policy.matches.side_effect = HttpRequestMatcher(
         url="http://domain/api/users", method="GET"
     )
+    users_policy.get_cost.return_value = 1
     groups_policy.matches.side_effect = HttpRequestMatcher(
         url="http://domain/api/groups", method="POST"
     )
+    groups_policy.get_cost.return_value = 1
     root_policy.matches.side_effect = HttpRequestMatcher(method="GET")
+    root_policy.get_cost.return_value = 1
     api_budget = APIBudget(
         policies=[
             users_policy,
@@ -358,6 +361,98 @@ class TestHttpStreamIntegration:
             assert next(records) == {"data": "some_data"}
 
         assert MovingWindowCallRatePolicy.try_acquire.call_count == 1
+
+
+class TestCostBasedRateLimiting:
+    """Tests for cost-based rate limiting where different endpoints consume different amounts from a shared budget."""
+
+    def test_matcher_cost_default_none(self):
+        """HttpRequestRegexMatcher cost defaults to None when not specified."""
+        matcher = HttpRequestRegexMatcher(url_path_pattern=r"/api/test")
+        assert matcher.cost is None
+
+    def test_matcher_cost_is_stored(self):
+        """HttpRequestRegexMatcher stores the cost value when provided."""
+        matcher = HttpRequestRegexMatcher(url_path_pattern=r"/api/test", cost=60)
+        assert matcher.cost == 60
+
+    def test_policy_get_cost_returns_matcher_cost(self):
+        """BaseCallRatePolicy.get_cost returns cost from the matching matcher."""
+        policy = MovingWindowCallRatePolicy(
+            matchers=[HttpRequestRegexMatcher(url_path_pattern=r"/api/expensive", cost=120)],
+            rates=[Rate(1000, timedelta(hours=1))],
+        )
+        req = Request("GET", "https://example.com/api/expensive")
+        assert policy.get_cost(req) == 120
+
+    def test_policy_get_cost_defaults_to_1(self):
+        """BaseCallRatePolicy.get_cost returns 1 when no matcher has a cost set."""
+        policy = MovingWindowCallRatePolicy(
+            matchers=[HttpRequestRegexMatcher(url_path_pattern=r"/api/default")],
+            rates=[Rate(1000, timedelta(hours=1))],
+        )
+        req = Request("GET", "https://example.com/api/default")
+        assert policy.get_cost(req) == 1
+
+    def test_policy_get_cost_no_matching_matcher(self):
+        """BaseCallRatePolicy.get_cost returns 1 when no matcher matches the request."""
+        policy = MovingWindowCallRatePolicy(
+            matchers=[HttpRequestRegexMatcher(url_path_pattern=r"/api/other", cost=50)],
+            rates=[Rate(1000, timedelta(hours=1))],
+        )
+        req = Request("GET", "https://example.com/api/unmatched")
+        assert policy.get_cost(req) == 1
+
+    def test_api_budget_uses_cost_as_weight(self):
+        """APIBudget._do_acquire passes the matcher's cost as weight to try_acquire."""
+        policy = MovingWindowCallRatePolicy(
+            matchers=[HttpRequestRegexMatcher(url_path_pattern=r"/api/heavy", cost=10)],
+            rates=[Rate(100, timedelta(hours=1))],
+        )
+        budget = APIBudget(policies=[policy])
+
+        # Make requests — each costs 10 from the budget of 100
+        for i in range(10):
+            budget.acquire_call(Request("GET", "https://example.com/api/heavy"), block=False)
+
+        # The 11th request should exceed the budget (10 * 10 = 100, one more = 110 > 100)
+        with pytest.raises(CallRateLimitHit):
+            budget.acquire_call(Request("GET", "https://example.com/api/heavy"), block=False)
+
+    def test_cost_1_backward_compatible(self):
+        """When cost is not set, behavior is identical to the old hardcoded weight=1."""
+        policy = MovingWindowCallRatePolicy(
+            matchers=[HttpRequestRegexMatcher(url_path_pattern=r"/api/normal")],
+            rates=[Rate(5, timedelta(hours=1))],
+        )
+        budget = APIBudget(policies=[policy])
+
+        for i in range(5):
+            budget.acquire_call(Request("GET", "https://example.com/api/normal"), block=False)
+
+        with pytest.raises(CallRateLimitHit):
+            budget.acquire_call(Request("GET", "https://example.com/api/normal"), block=False)
+
+    def test_shared_budget_different_costs(self):
+        """Multiple matchers with different costs sharing one policy correctly consume the shared budget."""
+        # Shared policy matches both endpoints via regex
+        policy = MovingWindowCallRatePolicy(
+            matchers=[
+                HttpRequestRegexMatcher(url_path_pattern=r"/api/cheap", cost=1),
+                HttpRequestRegexMatcher(url_path_pattern=r"/api/expensive", cost=10),
+            ],
+            rates=[Rate(20, timedelta(hours=1))],
+        )
+        budget = APIBudget(policies=[policy])
+
+        # Make 1 expensive request (costs 10) and 10 cheap requests (cost 1 each) = total 20
+        budget.acquire_call(Request("GET", "https://example.com/api/expensive"), block=False)
+        for i in range(10):
+            budget.acquire_call(Request("GET", "https://example.com/api/cheap"), block=False)
+
+        # Budget is now at 20/20 — any further request should fail
+        with pytest.raises(CallRateLimitHit):
+            budget.acquire_call(Request("GET", "https://example.com/api/cheap"), block=False)
 
 
 class TestHttpRequestRegexMatcher:

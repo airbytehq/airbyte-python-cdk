@@ -4387,12 +4387,19 @@ class ModelToComponentFactory:
     def create_http_request_matcher(
         self, model: HttpRequestRegexMatcherModel, config: Config, **kwargs: Any
     ) -> HttpRequestRegexMatcher:
+        cost = model.cost
+        if cost is not None:
+            if isinstance(cost, str):
+                cost = int(InterpolatedString.create(cost, parameters={}).eval(config))
+            else:
+                cost = int(cost)
         return HttpRequestRegexMatcher(
             method=model.method,
             url_base=model.url_base,
             url_path_pattern=model.url_path_pattern,
             params=model.params,
             headers=model.headers,
+            cost=cost,
         )
 
     def set_api_budget(self, component_definition: ComponentDefinition, config: Config) -> None:
