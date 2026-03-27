@@ -286,12 +286,10 @@ class BaseCallRatePolicy(AbstractCallRatePolicy, abc.ABC):
         :return: the weight for this request
         """
         for matcher in self._matchers:
-            if (
-                matcher(request)
-                and isinstance(matcher, HttpRequestRegexMatcher)
-                and matcher.weight is not None
-            ):
-                return matcher.weight
+            if matcher(request):
+                if isinstance(matcher, HttpRequestRegexMatcher) and matcher.weight is not None:
+                    return matcher.weight
+                return 1
         return 1
 
 
