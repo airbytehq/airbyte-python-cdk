@@ -492,23 +492,6 @@ class OnNoRecords(Enum):
     emit_parent = "emit_parent"
 
 
-class ParentFieldMapping(BaseModel):
-    type: Literal["ParentFieldMapping"]
-    source_field_path: List[str] = Field(
-        ...,
-        description="Path to the field in the parent record to copy.",
-        examples=[["id"], ["created"], ["metadata", "timestamp"]],
-        title="Source Field Path",
-    )
-    target_field: str = Field(
-        ...,
-        description="Name of the field in the child record where the value will be copied.",
-        examples=["parent_id", "subscription_updated"],
-        title="Target Field",
-    )
-    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
-
-
 class ExponentialBackoffStrategy(BaseModel):
     type: Literal["ExponentialBackoffStrategy"]
     factor: Optional[Union[float, str]] = Field(
@@ -2062,11 +2045,6 @@ class RecordExpander(BaseModel):
         OnNoRecords.skip,
         description='Behavior when the expansion path is missing, not a list, or an empty list. "skip" (default) emits nothing. "emit_parent" emits the original parent record unchanged.',
         title="On No Records",
-    )
-    parent_fields_to_copy: Optional[List[ParentFieldMapping]] = Field(
-        None,
-        description="List of parent field mappings to copy onto each expanded child record. Each mapping specifies a source path in the parent record and a target field name in the child record.",
-        title="Parent Fields To Copy",
     )
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 

@@ -104,6 +104,7 @@ from airbyte_cdk.sources.declarative.extractors import (
     RecordSelector,
     ResponseToFileExtractor,
 )
+from airbyte_cdk.sources.declarative.expanders.record_expander import RecordExpander
 from airbyte_cdk.sources.declarative.extractors.record_extractor import RecordExtractor
 from airbyte_cdk.sources.declarative.extractors.record_filter import (
     ClientSideIncrementalRecordFilterDecorator,
@@ -373,9 +374,6 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     ParametrizedComponentsResolver as ParametrizedComponentsResolverModel,
-)
-from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
-    ParentFieldMapping as ParentFieldMappingModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     ParentStreamConfig as ParentStreamConfigModel,
@@ -2347,25 +2345,12 @@ class ModelToComponentFactory:
         config: Config,
         **kwargs: Any,
     ) -> RecordExpander:
-        parent_field_mappings: list[ParentFieldMapping] = []
-        if model.parent_fields_to_copy:
-            for mapping_model in model.parent_fields_to_copy:
-                parent_field_mappings.append(
-                    ParentFieldMapping(
-                        source_field_path=mapping_model.source_field_path,
-                        target_field=mapping_model.target_field,
-                        config=config,
-                        parameters=mapping_model.parameters or {},
-                    )
-                )
-
         return RecordExpander(
             expand_records_from_field=model.expand_records_from_field,
             config=config,
             parameters=model.parameters or {},
             remain_original_record=model.remain_original_record or False,
             on_no_records=model.on_no_records.value if model.on_no_records else "skip",
-            parent_fields_to_copy=parent_field_mappings,
         )
 
     @staticmethod

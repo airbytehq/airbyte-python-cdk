@@ -2,8 +2,8 @@
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
 
-from dataclasses import InitVar, dataclass, field
-from typing import Any, Iterable, Mapping, MutableMapping, Sequence
+from dataclasses import InitVar, dataclass
+from typing import Any, Iterable, Mapping, MutableMapping
 
 import dpath
 
@@ -12,39 +12,13 @@ from airbyte_cdk.sources.types import Config
 
 
 @dataclass
-class ParentFieldMapping:
-    """Defines a mapping from a parent record field to a child record field."""
-
-    source_field_path: Sequence[str | InterpolatedString]
-    target_field: str
-    config: Config
-    parameters: InitVar[Mapping[str, Any]]
-
-    def __post_init__(self, parameters: Mapping[str, Any]) -> None:
-        self._source_path = [
-            InterpolatedString.create(path, parameters=parameters)
-            for path in self.source_field_path
-        ]
-
-    def copy_field(
-        self, parent_record: Mapping[str, Any], child_record: MutableMapping[str, Any]
-    ) -> None:
-        """Copy a field from parent record to child record."""
-        source_path = [path.eval(self.config) for path in self._source_path]
-        try:
-            value = dpath.get(dict(parent_record), source_path)
-            child_record[self.target_field] = value
-        except KeyError:
-            pass
-
-
-@dataclass
 class RecordExpander:
     """Expands records by extracting items from a nested array field.
 
     When configured, this component extracts items from a specified nested array path
-    within each record and emits each item as a separate record. Optionally, the original
-    parent record can be embedded in each expanded item for context preservation.
+    within each record and emits each item as a separate record. Set `remain_original_record: true`
+    to embed the full parent record under `original_record` in each expanded item when you need
+    downstream transformations to access parent context.
 
     The expand_records_from_field path supports wildcards (*) for matching multiple arrays.
     When wildcards are used, items from all matched arrays are extracted and emitted.
@@ -67,10 +41,6 @@ class RecordExpander:
           - "*"
           - "items"
         on_no_records: emit_parent
-        parent_fields_to_copy:
-          - type: ParentFieldMapping
-            source_field_path: ["id"]
-            target_field: "parent_id"
     ```
 
     Attributes:
@@ -81,8 +51,6 @@ class RecordExpander:
             parent record in an "original_record" field. Defaults to False.
         on_no_records: Behavior when expansion produces no records. "skip" (default)
             emits nothing. "emit_parent" emits the original parent record unchanged.
-        parent_fields_to_copy: List of field mappings to copy from parent to each
-            expanded child record.
         config: The user-provided configuration as specified by the source's spec.
     """
 
@@ -91,7 +59,6 @@ class RecordExpander:
     parameters: InitVar[Mapping[str, Any]]
     remain_original_record: bool = False
     on_no_records: str = "skip"
-    parent_fields_to_copy: list[ParentFieldMapping] = field(default_factory=list)
 
     def __post_init__(self, parameters: Mapping[str, Any]) -> None:
         self._expand_path: list[InterpolatedString] | None = [
@@ -148,6 +115,3 @@ class RecordExpander:
         """Apply parent context to a child record."""
         if self.remain_original_record:
             child_record["original_record"] = parent_record
-
-        for field_mapping in self.parent_fields_to_copy:
-            field_mapping.copy_field(parent_record, child_record)
