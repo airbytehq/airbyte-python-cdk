@@ -376,6 +376,16 @@ class TestWeightBasedRateLimiting:
         matcher = HttpRequestRegexMatcher(url_path_pattern=r"/api/test", weight=60)
         assert matcher.weight == 60
 
+    def test_matcher_rejects_zero_weight(self):
+        """HttpRequestRegexMatcher raises ValueError for weight=0."""
+        with pytest.raises(ValueError, match="weight must be >= 1"):
+            HttpRequestRegexMatcher(url_path_pattern=r"/api/test", weight=0)
+
+    def test_matcher_rejects_negative_weight(self):
+        """HttpRequestRegexMatcher raises ValueError for negative weight."""
+        with pytest.raises(ValueError, match="weight must be >= 1"):
+            HttpRequestRegexMatcher(url_path_pattern=r"/api/test", weight=-5)
+
     def test_policy_get_weight_returns_matcher_weight(self):
         """BaseCallRatePolicy.get_weight returns weight from the matching matcher."""
         policy = MovingWindowCallRatePolicy(

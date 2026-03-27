@@ -179,6 +179,8 @@ class HttpRequestRegexMatcher(RequestMatcher):
             where different endpoints consume different amounts from a shared budget.
             If not set, each request counts as 1.
         """
+        if weight is not None and weight < 1:
+            raise ValueError(f"weight must be >= 1, got {weight}")
         self._weight = weight
         self._method = method.upper() if method else None
 
