@@ -362,3 +362,104 @@ def test_given_response_is_not_streamed_when_decode_then_can_be_called_multiple_
     content_second_time = list(composite_raw_decoder.decode(response))
 
     assert content == content_second_time
+
+
+class TestGzipParserAutoDetection:
+    """Tests for GzipParser auto-detection of gzip content via magic bytes."""
+
+    def test_gzip_csv_without_content_encoding_header(self, requests_mock):
+        """GzipParser should decompress gzip data even without Content-Encoding header."""
+        requests_mock.register_uri(
+            "GET",
+            "https://airbyte.io/",
+            content=generate_csv(should_compress=True),
+            # No Content-Encoding header set
+        )
+        response = requests.get("https://airbyte.io/", stream=True)
+        parser = GzipParser(inner_parser=CsvParser())
+        decoder = CompositeRawDecoder(parser=parser)
+        records = list(decoder.decode(response))
+        assert len(records) == 3
+        assert records[0] == {"id": "1", "name": "John", "age": "28"}
+
+    def test_gzip_jsonl_without_content_encoding_header(self, requests_mock):
+        """GzipParser should decompress gzip JSONL data without Content-Encoding header."""
+        requests_mock.register_uri(
+            "GET",
+            "https://airbyte.io/",
+            content=generate_compressed_jsonlines(),
+            # No Content-Encoding header set
+        )
+        response = requests.get("https://airbyte.io/", stream=True)
+        parser = GzipParser(inner_parser=JsonLineParser())
+        decoder = CompositeRawDecoder(parser=parser)
+        records = list(decoder.decode(response))
+        assert len(records) == 3
+        assert records[0] == {"id": 1, "message": "Hello, World!"}
+
+    def test_non_gzip_data_passthrough(self, requests_mock):
+        """GzipParser should pass non-gzip data through to the inner parser unchanged."""
+        plain_csv = generate_csv(should_compress=False)
+        requests_mock.register_uri(
+            "GET",
+            "https://airbyte.io/",
+            content=plain_csv,
+        )
+        response = requests.get("https://airbyte.io/", stream=True)
+        parser = GzipParser(inner_parser=CsvParser())
+        decoder = CompositeRawDecoder(parser=parser)
+        records = list(decoder.decode(response))
+        assert len(records) == 3
+        assert records[0] == {"id": "1", "name": "John", "age": "28"}
+
+    def test_non_gzip_jsonl_passthrough(self, requests_mock):
+        """GzipParser should pass plain JSONL data through to the inner parser."""
+        plain_jsonl = "".join(generate_jsonlines()).encode("utf-8")
+        requests_mock.register_uri(
+            "GET",
+            "https://airbyte.io/",
+            content=plain_jsonl,
+        )
+        response = requests.get("https://airbyte.io/", stream=True)
+        parser = GzipParser(inner_parser=JsonLineParser())
+        decoder = CompositeRawDecoder(parser=parser)
+        records = list(decoder.decode(response))
+        assert len(records) == 3
+        assert records[0] == {"id": 1, "message": "Hello, World!"}
+
+    def test_empty_data_returns_no_records(self):
+        """GzipParser should gracefully handle empty data."""
+        parser = GzipParser(inner_parser=CsvParser())
+        records = list(parser.parse(BytesIO(b"")))
+        assert records == []
+
+    def test_gzip_fallback_in_by_headers_mode(self, requests_mock):
+        """When used as fallback_parser in by_headers mode, GzipParser should auto-detect gzip."""
+        requests_mock.register_uri(
+            "GET",
+            "https://airbyte.io/",
+            content=generate_compressed_jsonlines(),
+            headers={"Content-Encoding": "identity"},  # Not gzip, so fallback is used
+        )
+        response = requests.get("https://airbyte.io/", stream=True)
+        gzip_parser = GzipParser(inner_parser=JsonLineParser())
+        decoder = CompositeRawDecoder.by_headers(
+            [({"Content-Encoding"}, {"gzip"}, gzip_parser)],
+            stream_response=True,
+            fallback_parser=gzip_parser,
+        )
+        records = list(decoder.decode(response))
+        assert len(records) == 3
+
+    def test_non_streamed_gzip_without_content_encoding(self, requests_mock):
+        """GzipParser should handle gzip data in non-streamed mode (response.content)."""
+        requests_mock.register_uri(
+            "GET",
+            "https://airbyte.io/",
+            content=generate_compressed_jsonlines(),
+        )
+        response = requests.get("https://airbyte.io/")  # Not streamed
+        parser = GzipParser(inner_parser=JsonLineParser())
+        decoder = CompositeRawDecoder(parser=parser, stream_response=False)
+        records = list(decoder.decode(response))
+        assert len(records) == 3
