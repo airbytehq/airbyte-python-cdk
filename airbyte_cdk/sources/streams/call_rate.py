@@ -285,7 +285,11 @@ class BaseCallRatePolicy(AbstractCallRatePolicy, abc.ABC):
         :return: the cost/weight for this request
         """
         for matcher in self._matchers:
-            if matcher(request) and isinstance(matcher, HttpRequestRegexMatcher) and matcher.cost is not None:
+            if (
+                matcher(request)
+                and isinstance(matcher, HttpRequestRegexMatcher)
+                and matcher.cost is not None
+            ):
                 return matcher.cost
         return 1
 
