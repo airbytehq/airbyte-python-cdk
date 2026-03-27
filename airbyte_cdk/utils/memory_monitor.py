@@ -5,7 +5,6 @@
 """Source-side memory introspection with fail-fast shutdown on memory threshold."""
 
 import logging
-import os
 from pathlib import Path
 from typing import Optional
 
@@ -39,9 +38,6 @@ _ANON_RSS_THRESHOLD = 0.90
 # Check interval (every N messages)
 _DEFAULT_CHECK_INTERVAL = 5000
 
-# Environment variable to disable fail-fast (set to "false" to disable)
-_ENV_FAIL_FAST = "AIRBYTE_MEMORY_FAIL_FAST"
-
 
 def _read_process_anon_rss_bytes() -> Optional[int]:
     """Read process-private anonymous resident memory from /proc/self/status.
@@ -74,12 +70,10 @@ class MemoryMonitor:
     ``check_memory_usage()``.  Caches which version exists.
     If neither is found (local dev / CI), all subsequent calls are instant no-ops.
 
-    **Logging (always active):** Logs a WARNING on every check interval (default
-    5000 messages) when cgroup memory usage is at or above 95% of the container
-    limit.
+    **Logging:** Logs a WARNING on every check interval (default 5000 messages)
+    when cgroup memory usage is at or above 95% of the container limit.
 
-    **Fail-fast (controlled by ``AIRBYTE_MEMORY_FAIL_FAST`` env var, default
-    enabled):** Raises ``AirbyteTracedException`` with
+    **Fail-fast:** Raises ``AirbyteTracedException`` with
     ``FailureType.system_error`` when *both*:
 
     1. Cgroup usage >= 98% of the container limit (container is near OOM-kill)
@@ -97,7 +91,6 @@ class MemoryMonitor:
     def __init__(
         self,
         check_interval: int = _DEFAULT_CHECK_INTERVAL,
-        fail_fast: Optional[bool] = None,
     ) -> None:
         if check_interval < 1:
             raise ValueError(f"check_interval must be >= 1, got {check_interval}")
@@ -105,13 +98,6 @@ class MemoryMonitor:
         self._message_count = 0
         self._cgroup_version: Optional[int] = None
         self._probed = False
-
-        # Resolve fail-fast setting: explicit arg > env var > default (True)
-        if fail_fast is not None:
-            self._fail_fast = fail_fast
-        else:
-            env_val = os.environ.get(_ENV_FAIL_FAST, "true").strip().lower()
-            self._fail_fast = env_val != "false"
 
     def _probe_cgroup(self) -> None:
         """Detect which cgroup version (if any) is available.
@@ -175,8 +161,8 @@ class MemoryMonitor:
 
         **Logging:** WARNING on every check above 95%.
 
-        **Fail-fast (when enabled):** If cgroup usage >= 98% *and* process
-        anonymous RSS (``RssAnon``) >= 90% of the container limit, raises
+        **Fail-fast:** If cgroup usage >= 98% *and* process anonymous RSS
+        (``RssAnon``) >= 90% of the container limit, raises
         ``AirbyteTracedException`` with ``FailureType.system_error`` so the
         platform receives a clear error message instead of an opaque OOM-kill.
         If ``RssAnon`` is unavailable, logs a warning and skips fail-fast.
@@ -210,7 +196,7 @@ class MemoryMonitor:
             )
 
         # Fail-fast: dual-condition check
-        if self._fail_fast and usage_ratio >= _CRITICAL_THRESHOLD:
+        if usage_ratio >= _CRITICAL_THRESHOLD:
             anon_rss_bytes = _read_process_anon_rss_bytes()
             if anon_rss_bytes is not None:
                 anon_ratio = anon_rss_bytes / limit_bytes

@@ -324,7 +324,7 @@ def _proc_status_read(anon_content: str, usage: str = _MOCK_USAGE_AT_98):
 
 def test_raises_when_both_cgroup_and_anon_rss_above_thresholds() -> None:
     """Fail-fast raises AirbyteTracedException when both cgroup >= 98% and RssAnon >= 90%."""
-    monitor = MemoryMonitor(check_interval=1, fail_fast=True)
+    monitor = MemoryMonitor(check_interval=1)
     with (
         patch.object(Path, "exists", _v2_exists),
         patch.object(Path, "read_text", _proc_status_read(_MOCK_ANON_HIGH)),
@@ -343,7 +343,7 @@ def test_no_raise_when_cgroup_high_but_anon_rss_low(caplog: pytest.LogCaptureFix
     This test also proves the metric choice matters: VmRSS is 90% (high) but
     RssAnon is only 50% (low), so the pressure is from file-backed pages.
     """
-    monitor = MemoryMonitor(check_interval=1, fail_fast=True)
+    monitor = MemoryMonitor(check_interval=1)
     with (
         caplog.at_level(logging.INFO, logger="airbyte"),
         patch.object(Path, "exists", _v2_exists),
@@ -356,7 +356,7 @@ def test_no_raise_when_cgroup_high_but_anon_rss_low(caplog: pytest.LogCaptureFix
 
 def test_no_raise_when_cgroup_below_critical() -> None:
     """No exception when cgroup at 97% (< 98% threshold), even with high RssAnon."""
-    monitor = MemoryMonitor(check_interval=1, fail_fast=True)
+    monitor = MemoryMonitor(check_interval=1)
     with (
         patch.object(Path, "exists", _v2_exists),
         patch.object(
@@ -380,7 +380,7 @@ def test_no_raise_when_anon_rss_unavailable_and_cgroup_critical(
             raise OSError("No such file")
         return ""
 
-    monitor = MemoryMonitor(check_interval=1, fail_fast=True)
+    monitor = MemoryMonitor(check_interval=1)
     with (
         caplog.at_level(logging.WARNING, logger="airbyte"),
         patch.object(Path, "exists", _v2_exists),
@@ -389,43 +389,3 @@ def test_no_raise_when_anon_rss_unavailable_and_cgroup_critical(
         monitor.check_memory_usage()  # Should NOT raise
     warning_records = [r for r in caplog.records if r.levelno == logging.WARNING]
     assert any("RssAnon unavailable" in r.message for r in warning_records)
-
-
-# ---------------------------------------------------------------------------
-# check_memory_usage — fail-fast feature flag
-# ---------------------------------------------------------------------------
-
-
-def test_fail_fast_disabled_via_constructor() -> None:
-    """No exception when fail_fast=False even at critical thresholds."""
-    monitor = MemoryMonitor(check_interval=1, fail_fast=False)
-    with (
-        patch.object(Path, "exists", _v2_exists),
-        patch.object(Path, "read_text", _proc_status_read(_MOCK_ANON_HIGH)),
-    ):
-        monitor.check_memory_usage()  # Should NOT raise
-
-
-def test_fail_fast_disabled_via_env_var() -> None:
-    """No exception when AIRBYTE_MEMORY_FAIL_FAST=false."""
-    with patch.dict("os.environ", {"AIRBYTE_MEMORY_FAIL_FAST": "false"}):
-        monitor = MemoryMonitor(check_interval=1)
-    with (
-        patch.object(Path, "exists", _v2_exists),
-        patch.object(Path, "read_text", _proc_status_read(_MOCK_ANON_HIGH)),
-    ):
-        monitor.check_memory_usage()  # Should NOT raise
-
-
-def test_fail_fast_enabled_by_default() -> None:
-    """Fail-fast is enabled by default (no env var, no explicit arg)."""
-    with patch.dict("os.environ", {}, clear=True):
-        monitor = MemoryMonitor(check_interval=1)
-    assert monitor._fail_fast is True
-
-
-def test_fail_fast_constructor_overrides_env_var() -> None:
-    """Explicit fail_fast=True overrides env var set to false."""
-    with patch.dict("os.environ", {"AIRBYTE_MEMORY_FAIL_FAST": "false"}):
-        monitor = MemoryMonitor(check_interval=1, fail_fast=True)
-    assert monitor._fail_fast is True
