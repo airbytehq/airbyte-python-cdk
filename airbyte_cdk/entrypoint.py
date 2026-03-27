@@ -283,10 +283,10 @@ class AirbyteEntrypoint(object):
             yield self.handle_record_counts(message, stream_message_counter)
             try:
                 self._memory_monitor.check_memory_usage()
-            except Exception:
+            except AirbyteTracedException:
                 # Flush queued messages (state checkpoints, logs) before propagating
-                # a memory fail-fast (or other) exception, so the platform receives
-                # the last committed state for the next sync.
+                # the memory fail-fast exception, so the platform receives the last
+                # committed state for the next sync.
                 for queued_message in self._emit_queued_messages(self.source):
                     yield self.handle_record_counts(queued_message, stream_message_counter)
                 raise

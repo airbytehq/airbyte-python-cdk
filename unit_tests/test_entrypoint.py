@@ -856,3 +856,76 @@ def test_given_serialization_error_using_orjson_then_fallback_on_json(
     # There will be multiple messages here because the fixture `entrypoint` sets a control message. We only care about records here
     record_messages = list(filter(lambda message: "RECORD" in message, messages))
     assert len(record_messages) == 2
+
+
+def test_memory_failfast_flushes_queued_state_before_raising(mocker):
+    """Queued state messages are emitted before AirbyteTracedException propagates from memory monitor."""
+    # Build a state message that will sit in the message repository queue
+    queued_state = AirbyteMessage(
+        type=Type.STATE,
+        state=AirbyteStateMessage(
+            type=AirbyteStateType.STREAM,
+            stream=AirbyteStreamState(
+                stream_descriptor=StreamDescriptor(name="users", namespace=None),
+                stream_state=AirbyteStateBlob({"cursor": "abc123"}),
+            ),
+        ),
+    )
+
+    # Set up the message repository mock so consume_queue returns the state on first call
+    message_repository = MagicMock()
+    message_repository.consume_queue.side_effect = [
+        [],  # initial flush in run() before read()
+        [queued_state],  # flush during fail-fast exception handling
+        [],  # final flush in run() finally block
+    ]
+    mocker.patch.object(
+        MockSource,
+        "message_repository",
+        new_callable=mocker.PropertyMock,
+        return_value=message_repository,
+    )
+
+    # Source emits one record before memory monitor raises
+    record = AirbyteMessage(
+        record=AirbyteRecordMessage(stream="users", data={"id": 1}, emitted_at=1),
+        type=Type.RECORD,
+    )
+    mocker.patch.object(MockSource, "read_state", return_value={})
+    mocker.patch.object(MockSource, "read_catalog", return_value={})
+    mocker.patch.object(MockSource, "read", return_value=[record])
+
+    fail_fast_exc = AirbyteTracedException(
+        message="Memory usage exceeded critical threshold (98%)",
+        failure_type=FailureType.system_error,
+    )
+
+    config = {"username": "fake"}
+    mocker.patch.object(MockSource, "read_config", return_value=config)
+    mocker.patch.object(MockSource, "configure", return_value=config)
+
+    entrypoint_obj = AirbyteEntrypoint(MockSource())
+    mocker.patch.object(
+        entrypoint_obj._memory_monitor, "check_memory_usage", side_effect=fail_fast_exc
+    )
+
+    mocker.patch.object(
+        MockSource, "spec", return_value=ConnectorSpecification(connectionSpecification={})
+    )
+
+    parsed_args = Namespace(
+        command="read", config="config_path", state="statepath", catalog="catalogpath"
+    )
+
+    # Collect all yielded messages before the exception
+    emitted: list[str] = []
+    with pytest.raises(AirbyteTracedException) as exc_info:
+        for msg in entrypoint_obj.run(parsed_args):
+            emitted.append(msg)
+
+    assert exc_info.value is fail_fast_exc
+
+    # The record should be yielded first, then the queued state (flushed during exception handling)
+    state_messages = [m for m in emitted if "STATE" in m]
+    assert len(state_messages) == 1, "Queued state should be flushed before exception propagates"
+    assert "abc123" in state_messages[0]
