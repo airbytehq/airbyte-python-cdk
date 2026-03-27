@@ -4393,6 +4393,8 @@ class ModelToComponentFactory:
                 weight = int(InterpolatedString.create(weight, parameters={}).eval(config))
             else:
                 weight = int(weight)
+            if weight < 1:
+                raise ValueError(f"weight must be >= 1, got {weight}")
         return HttpRequestRegexMatcher(
             method=model.method,
             url_base=model.url_base,
