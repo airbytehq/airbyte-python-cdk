@@ -104,7 +104,6 @@ from airbyte_cdk.sources.declarative.extractors import (
     RecordSelector,
     ResponseToFileExtractor,
 )
-from airbyte_cdk.sources.declarative.expanders.record_expander import RecordExpander
 from airbyte_cdk.sources.declarative.extractors.record_extractor import RecordExtractor
 from airbyte_cdk.sources.declarative.extractors.record_filter import (
     ClientSideIncrementalRecordFilterDecorator,
@@ -2350,7 +2349,9 @@ class ModelToComponentFactory:
             config=config,
             parameters=model.parameters or {},
             remain_original_record=model.remain_original_record or False,
-            on_no_records=OnNoRecords(model.on_no_records.value) if model.on_no_records else OnNoRecords.skip,
+            on_no_records=OnNoRecords(model.on_no_records.value)
+            if model.on_no_records
+            else OnNoRecords.skip,
         )
 
     @staticmethod

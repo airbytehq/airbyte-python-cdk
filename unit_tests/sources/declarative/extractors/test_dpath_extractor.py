@@ -427,4 +427,3 @@ def test_dpath_extractor_on_no_records(
     actual_records = list(extractor.extract_records(response))
 
     assert actual_records == expected_records
-
