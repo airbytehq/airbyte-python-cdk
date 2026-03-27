@@ -447,6 +447,11 @@ class MovingWindowCallRatePolicy(BaseCallRatePolicy):
         super().__init__(matchers=matchers)
 
     def try_acquire(self, request: Any, weight: int) -> None:
+        lowest_limit = min(rate.limit for rate in self._bucket.rates)
+        if weight > lowest_limit:
+            raise ValueError(
+                f"Weight can not exceed the lowest configured rate limit ({lowest_limit})"
+            )
         if not self.matches(request):
             raise ValueError("Request does not match the policy")
 

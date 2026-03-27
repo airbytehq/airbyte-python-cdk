@@ -464,6 +464,18 @@ class TestWeightBasedRateLimiting:
         with pytest.raises(CallRateLimitHit):
             budget.acquire_call(Request("GET", "https://example.com/api/cheap"), block=False)
 
+    def test_moving_window_rejects_weight_exceeding_limit(self):
+        """MovingWindowCallRatePolicy raises ValueError when weight exceeds the lowest configured rate limit."""
+        policy = MovingWindowCallRatePolicy(
+            matchers=[HttpRequestRegexMatcher(url_path_pattern=r"/api/heavy", weight=50)],
+            rates=[Rate(10, timedelta(hours=1)), Rate(100, timedelta(days=1))],
+        )
+        req = Request("GET", "https://example.com/api/heavy")
+        with pytest.raises(
+            ValueError, match="Weight can not exceed the lowest configured rate limit"
+        ):
+            policy.try_acquire(req, weight=50)
+
 
 class TestHttpRequestRegexMatcher:
     """
