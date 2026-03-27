@@ -486,10 +486,10 @@ class HttpRequestRegexMatcher(BaseModel):
     headers: Optional[Dict[str, Any]] = Field(
         None, description="The headers to match.", title="Headers"
     )
-    cost: Optional[Union[int, str]] = Field(
+    weight: Optional[Union[int, str]] = Field(
         None,
-        description="The cost of a request matching this matcher in the API's rate limit cost model. When set, this value is passed as the weight when acquiring a call from the rate limiter, enabling cost-based rate limiting where different endpoints consume different amounts from a shared budget. If not set, each request counts as 1.",
-        title="Cost",
+        description="The weight of a request matching this matcher when acquiring a call from the rate limiter. Different endpoints can consume different amounts from a shared budget by specifying different weights. If not set, each request counts as 1.",
+        title="Weight",
     )
 
 
