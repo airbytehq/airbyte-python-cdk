@@ -14,7 +14,7 @@ from airbyte_cdk.sources.declarative.decoders.json_decoder import (
     IterableDecoder,
     JsonDecoder,
 )
-from airbyte_cdk.sources.declarative.expanders.record_expander import RecordExpander
+from airbyte_cdk.sources.declarative.expanders.record_expander import OnNoRecords, RecordExpander
 from airbyte_cdk.sources.declarative.extractors.dpath_extractor import DpathExtractor
 
 config = {"field": "record_array"}
@@ -355,7 +355,7 @@ def test_dpath_extractor_with_expansion(
         pytest.param(
             ["data"],
             ["items"],
-            "skip",
+            OnNoRecords.skip,
             {"data": {"id": "parent_1"}},
             [],
             id="on_no_records_skip_missing_path",
@@ -363,7 +363,7 @@ def test_dpath_extractor_with_expansion(
         pytest.param(
             ["data"],
             ["items"],
-            "skip",
+            OnNoRecords.skip,
             {"data": {"id": "parent_1", "items": []}},
             [],
             id="on_no_records_skip_empty_array",
@@ -371,7 +371,7 @@ def test_dpath_extractor_with_expansion(
         pytest.param(
             ["data"],
             ["items"],
-            "emit_parent",
+            OnNoRecords.emit_parent,
             {"data": {"id": "parent_1"}},
             [{"id": "parent_1"}],
             id="on_no_records_emit_parent_missing_path",
@@ -379,7 +379,7 @@ def test_dpath_extractor_with_expansion(
         pytest.param(
             ["data"],
             ["items"],
-            "emit_parent",
+            OnNoRecords.emit_parent,
             {"data": {"id": "parent_1", "items": []}},
             [{"id": "parent_1", "items": []}],
             id="on_no_records_emit_parent_empty_array",
@@ -387,7 +387,7 @@ def test_dpath_extractor_with_expansion(
         pytest.param(
             ["data"],
             ["items"],
-            "emit_parent",
+            OnNoRecords.emit_parent,
             {"data": {"id": "parent_1", "items": "not_an_array"}},
             [{"id": "parent_1", "items": "not_an_array"}],
             id="on_no_records_emit_parent_non_array",
@@ -395,7 +395,7 @@ def test_dpath_extractor_with_expansion(
         pytest.param(
             ["data"],
             ["items"],
-            "emit_parent",
+            OnNoRecords.emit_parent,
             {"data": {"id": "parent_1", "items": [{"id": "child_1"}]}},
             [{"id": "child_1"}],
             id="on_no_records_emit_parent_has_items_extracts_normally",
@@ -405,7 +405,7 @@ def test_dpath_extractor_with_expansion(
 def test_dpath_extractor_on_no_records(
     field_path: List,
     expand_records_from_field: List,
-    on_no_records: str,
+    on_no_records: OnNoRecords,
     body,
     expected_records: List,
 ):

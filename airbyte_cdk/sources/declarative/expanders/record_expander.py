@@ -3,12 +3,22 @@
 #
 
 from dataclasses import InitVar, dataclass
-from typing import Any, Iterable, Mapping, MutableMapping
+from enum import Enum
+from typing import Any, Iterable, Mapping, MutableMapping, Sequence
 
 import dpath
 
 from airbyte_cdk.sources.declarative.interpolation.interpolated_string import InterpolatedString
 from airbyte_cdk.sources.types import Config
+
+
+class OnNoRecords(Enum):
+    """
+    Behavior when record expansion produces no records.
+    """
+
+    skip = "skip"
+    emit_parent = "emit_parent"
 
 
 @dataclass
@@ -58,7 +68,7 @@ class RecordExpander:
     config: Config
     parameters: InitVar[Mapping[str, Any]]
     remain_original_record: bool = False
-    on_no_records: str = "skip"
+    on_no_records: OnNoRecords = OnNoRecords.skip
 
     def __post_init__(self, parameters: Mapping[str, Any]) -> None:
         self._expand_path: list[InterpolatedString] | None = [
@@ -106,7 +116,7 @@ class RecordExpander:
                         yield item
                         expanded_any = True
 
-        if not expanded_any and self.on_no_records == "emit_parent":
+        if not expanded_any and self.on_no_records == OnNoRecords.emit_parent:
             yield parent_record
 
     def _apply_parent_context(
