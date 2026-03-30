@@ -486,6 +486,11 @@ class HttpRequestRegexMatcher(BaseModel):
     headers: Optional[Dict[str, Any]] = Field(
         None, description="The headers to match.", title="Headers"
     )
+    weight: Optional[Union[int, str]] = Field(
+        None,
+        description="The weight of a request matching this matcher when acquiring a call from the rate limiter. Different endpoints can consume different amounts from a shared budget by specifying different weights. If not set, each request counts as 1.",
+        title="Weight",
+    )
 
 
 class DpathExtractor(BaseModel):
