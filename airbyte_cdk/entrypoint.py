@@ -49,6 +49,7 @@ logger = init_logger("airbyte")
 VALID_URL_SCHEMES = ["https"]
 CLOUD_DEPLOYMENT_MODE = "cloud"
 _HAS_LOGGED_FOR_SERIALIZATION_ERROR = False
+_HAS_LOGGED_FOR_SERIALIZATION_FALLBACK = False
 
 
 class AirbyteEntrypoint(object):
@@ -333,16 +334,28 @@ class AirbyteEntrypoint(object):
     @staticmethod
     def airbyte_message_to_string(airbyte_message: AirbyteMessage) -> str:
         global _HAS_LOGGED_FOR_SERIALIZATION_ERROR
+        global _HAS_LOGGED_FOR_SERIALIZATION_FALLBACK
         serialized_message = AirbyteMessageSerializer.dump(airbyte_message)
         try:
             return orjson.dumps(serialized_message).decode()
-        except Exception as exception:
+        except Exception as orjson_error:
             if not _HAS_LOGGED_FOR_SERIALIZATION_ERROR:
                 logger.warning(
-                    f"There was an error during the serialization of an AirbyteMessage: `{exception}`. This might impact the sync performances."
+                    "Record serialization fell back to slower method. Sync will continue with reduced performance."
                 )
+                logger.debug("orjson serialization error: %s", orjson_error)
                 _HAS_LOGGED_FOR_SERIALIZATION_ERROR = True
-            return json.dumps(serialized_message)
+            try:
+                return json.dumps(serialized_message)
+            except TypeError as json_error:
+                if not _HAS_LOGGED_FOR_SERIALIZATION_FALLBACK:
+                    logger.warning(
+                        "Record contains a value that could not be serialized to JSON. "
+                        "The value was converted to a string representation."
+                    )
+                    logger.debug("json serialization error: %s", json_error)
+                    _HAS_LOGGED_FOR_SERIALIZATION_FALLBACK = True
+                return json.dumps(serialized_message, default=str)
 
     @classmethod
     def extract_state(cls, args: List[str]) -> Optional[Any]:
