@@ -1832,6 +1832,15 @@ definitions:
         description: The headers to match.
         type: object
         additionalProperties: true
+      weight:
+        title: Weight
+        description: >
+          The weight of a request matching this matcher when acquiring a call from the rate limiter.
+          Different endpoints can consume different amounts from a shared budget by specifying
+          different weights. If not set, each request counts as 1.
+        anyOf:
+          - type: integer
+          - type: string
     additionalProperties: true
   DefaultErrorHandler:
     title: Default Error Handler
