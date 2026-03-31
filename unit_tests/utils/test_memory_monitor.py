@@ -25,7 +25,6 @@ from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 _MOCK_USAGE_BELOW = "500000000\n"  # 50% of 1 GB
 _MOCK_USAGE_AT_90 = "910000000\n"  # 91% of 1 GB  (below 95% logging threshold)
 _MOCK_USAGE_AT_95 = "960000000\n"  # 96% of 1 GB  (above 95% logging threshold)
-_MOCK_USAGE_AT_97 = "970000000\n"  # 97% of 1 GB  (below 98% critical threshold)
 _MOCK_USAGE_AT_98 = "980000000\n"  # 98% of 1 GB  (at critical threshold)
 _MOCK_LIMIT = "1000000000\n"  # 1 GB
 
@@ -428,6 +427,33 @@ def test_falls_back_to_process_rssanon_when_cgroup_v2_anon_unavailable() -> None
         with pytest.raises(AirbyteTracedException) as exc_info:
             monitor.check_memory_usage()
     assert "process RssAnon" in (exc_info.value.internal_message or "")
+
+
+def test_falls_back_to_process_rssanon_low_and_does_not_raise(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Uses /proc/self/status RssAnon when memory.stat anon is missing, but does not raise when below threshold."""
+
+    def mock_read_text(self: Path) -> str:
+        if self == _CGROUP_V2_CURRENT:
+            return _MOCK_USAGE_AT_98
+        if self == _CGROUP_V2_MAX:
+            return _MOCK_LIMIT
+        if self == _CGROUP_V2_STAT:
+            return _MOCK_MEMORY_STAT_NO_ANON  # anon line missing
+        if self == _PROC_SELF_STATUS:
+            return _MOCK_PROC_ANON_LOW  # ~307 MB — 31.3% of 980 MB usage (below 85%)
+        return ""
+
+    monitor = MemoryMonitor(check_interval=1)
+    with (
+        caplog.at_level(logging.INFO, logger="airbyte"),
+        patch.object(Path, "exists", _v2_exists),
+        patch.object(Path, "read_text", mock_read_text),
+    ):
+        monitor.check_memory_usage()  # Should NOT raise
+    info_records = [r for r in caplog.records if r.levelno == logging.INFO]
+    assert any("file-backed" in r.message for r in info_records)
 
 
 def test_no_raise_when_anonymous_memory_signal_unavailable_at_critical_usage(
