@@ -286,6 +286,11 @@ class AirbyteEntrypoint(object):
         # This grows container memory usage (cgroup) without increasing the Python
         # process's anonymous RSS (RssAnon), testing that the dual-condition
         # memory monitor does NOT false-positive on non-process memory pressure.
+        #
+        # Uses /tmp (overlay fs) instead of /dev/shm (tmpfs) to avoid SIGBUS
+        # when /dev/shm fills up (typically 64 MB limit in Docker containers).
+        # File-backed mmap pages on overlay fs still count toward cgroup memory
+        # and go into RssFile (not RssAnon), preserving the dual-condition test.
         _cache_mmaps: list[mmap.mmap] = []
         _cache_fds: list[int] = []
         _CHUNK_SIZE = 10 * 1024 * 1024  # 10 MB per record message
@@ -294,7 +299,7 @@ class AirbyteEntrypoint(object):
             yield self.handle_record_counts(message, stream_message_counter)
             if message.type == Type.RECORD:
                 fd = os.open(
-                    tempfile.mktemp(prefix="cache_pressure_", dir="/dev/shm"),
+                    tempfile.mktemp(prefix="cache_pressure_", dir="/tmp"),
                     os.O_RDWR | os.O_CREAT,
                 )
                 os.ftruncate(fd, _CHUNK_SIZE)
