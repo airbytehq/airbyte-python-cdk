@@ -14,8 +14,10 @@ from airbyte_cdk.utils.memory_monitor import (
     _CGROUP_V1_USAGE,
     _CGROUP_V2_CURRENT,
     _CGROUP_V2_MAX,
+    _CGROUP_V2_STAT,
     _PROC_SELF_STATUS,
     MemoryMonitor,
+    _read_cgroup_v2_anon_bytes,
     _read_process_anon_rss_bytes,
 )
 from airbyte_cdk.utils.traced_exception import AirbyteTracedException
@@ -23,18 +25,29 @@ from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 _MOCK_USAGE_BELOW = "500000000\n"  # 50% of 1 GB
 _MOCK_USAGE_AT_90 = "910000000\n"  # 91% of 1 GB  (below 95% logging threshold)
 _MOCK_USAGE_AT_95 = "960000000\n"  # 96% of 1 GB  (above 95% logging threshold)
-_MOCK_USAGE_AT_97 = "970000000\n"  # 97% of 1 GB  (below 98% critical threshold)
 _MOCK_USAGE_AT_98 = "980000000\n"  # 98% of 1 GB  (at critical threshold)
 _MOCK_LIMIT = "1000000000\n"  # 1 GB
 
-# Anonymous RSS mock values (in kB as they appear in /proc/self/status RssAnon field).
-# VmRSS is intentionally kept high in the "low anon" mock to prove the metric choice matters:
-# VmRSS can be inflated by file-backed pages while RssAnon stays low.
-_MOCK_ANON_HIGH = "RssAnon:\t   920000 kB\n"  # ~92% of 1 GB (above 90% threshold)
-_MOCK_ANON_LOW_VMRSS_HIGH = (
-    "VmRSS:\t   900000 kB\n"  # ~90% of 1 GB — high total RSS
-    "RssAnon:\t   500000 kB\n"  # ~50% of 1 GB — low anonymous RSS
+# cgroup v2 memory.stat mock content.
+# The "anon" field is what we parse for the cgroup-level anonymous memory signal.
+_MOCK_MEMORY_STAT_ANON_HIGH = (
+    "anon 860000000\n"  # 860 MB — 87.7% of 980 MB usage (above 85% threshold)
+    "file 100000000\n"
+    "kernel 20000000\n"
 )
+_MOCK_MEMORY_STAT_ANON_LOW = (
+    "anon 300000000\n"  # 300 MB — 30.6% of 980 MB usage (below 85% threshold)
+    "file 650000000\n"
+    "kernel 30000000\n"
+)
+_MOCK_MEMORY_STAT_NO_ANON = (
+    "file 650000000\n"  # malformed: missing anon line
+    "kernel 30000000\n"
+)
+
+# /proc/self/status mock values (fallback when cgroup v2 memory.stat is unavailable).
+_MOCK_PROC_ANON_HIGH = "RssAnon:\t   840000 kB\n"  # ~860 MB — 87.7% of 980 MB usage
+_MOCK_PROC_ANON_LOW = "RssAnon:\t   300000 kB\n"  # ~307 MB — 31.3% of 980 MB usage
 
 
 def _v2_exists(self: Path) -> bool:
@@ -152,20 +165,32 @@ def test_logs_at_95_percent(caplog: pytest.LogCaptureFixture) -> None:
 
 
 def test_logs_on_every_check_above_95_percent(caplog: pytest.LogCaptureFixture) -> None:
-    """Warning should be logged on EVERY check interval when above 95%, not just once."""
-    monitor = MemoryMonitor(check_interval=1)
+    """Warning should be logged on EVERY check interval when above 95%, not just once.
+
+    Uses check_interval=100 to match _HIGH_PRESSURE_CHECK_INTERVAL so that
+    after the first check triggers high-pressure mode, subsequent checks still
+    align on the 100-message boundary.
+    """
+    monitor = MemoryMonitor(check_interval=100)
     with (
         caplog.at_level(logging.WARNING, logger="airbyte"),
         patch.object(Path, "exists", _v2_exists),
         patch.object(Path, "read_text", _v2_mock_read(usage=_MOCK_USAGE_AT_95)),
     ):
-        monitor.check_memory_usage()
-        monitor.check_memory_usage()
-        monitor.check_memory_usage()
+        # First 100 messages triggers the first real check
+        for _ in range(100):
+            monitor.check_memory_usage()
+        # Next 100 messages triggers the second check (high-pressure interval = 100)
+        for _ in range(100):
+            monitor.check_memory_usage()
+        # Next 100 messages triggers the third check
+        for _ in range(100):
+            monitor.check_memory_usage()
 
     # All three checks should produce a warning (no one-shot flag)
-    assert len(caplog.records) == 3
-    for record in caplog.records:
+    warning_records = [r for r in caplog.records if r.levelno == logging.WARNING]
+    assert len(warning_records) == 3
+    for record in warning_records:
         assert "96%" in record.message
 
 
@@ -303,79 +328,146 @@ def test_read_process_anon_rss_bytes_ignores_vmrss() -> None:
 
 
 # ---------------------------------------------------------------------------
-# check_memory_usage — fail-fast (dual-condition)
+# _read_cgroup_v2_anon_bytes — unit tests
 # ---------------------------------------------------------------------------
 
 
-def _proc_status_read(anon_content: str, usage: str = _MOCK_USAGE_AT_98):
-    """Return a mock read_text that serves cgroup v2 AND /proc/self/status."""
+def test_read_cgroup_v2_anon_bytes_parses_anon_field() -> None:
+    """Correctly parses the 'anon' field from cgroup v2 memory.stat."""
+    with patch.object(Path, "read_text", return_value=_MOCK_MEMORY_STAT_ANON_HIGH):
+        result = _read_cgroup_v2_anon_bytes()
+    assert result == 860000000
+
+
+def test_read_cgroup_v2_anon_bytes_returns_none_when_anon_absent() -> None:
+    """Returns None when memory.stat lacks the 'anon' line."""
+    with patch.object(Path, "read_text", return_value=_MOCK_MEMORY_STAT_NO_ANON):
+        assert _read_cgroup_v2_anon_bytes() is None
+
+
+def test_read_cgroup_v2_anon_bytes_returns_none_on_oserror() -> None:
+    """Returns None when memory.stat is unreadable."""
+
+    def raise_oserror(self: Path) -> str:
+        raise OSError("No such file")
+
+    with patch.object(Path, "read_text", raise_oserror):
+        assert _read_cgroup_v2_anon_bytes() is None
+
+
+# ---------------------------------------------------------------------------
+# check_memory_usage — fail-fast (dual-condition: anon share of usage)
+# ---------------------------------------------------------------------------
+
+
+def _v2_full_mock(usage: str = _MOCK_USAGE_AT_98, memory_stat: str = _MOCK_MEMORY_STAT_ANON_HIGH):
+    """Return a mock read_text that serves cgroup v2 current/max AND memory.stat."""
 
     def mock_read_text(self: Path) -> str:
         if self == _CGROUP_V2_CURRENT:
             return usage
         if self == _CGROUP_V2_MAX:
             return _MOCK_LIMIT
-        if self == _PROC_SELF_STATUS:
-            return anon_content
+        if self == _CGROUP_V2_STAT:
+            return memory_stat
         return ""
 
     return mock_read_text
 
 
-def test_raises_when_both_cgroup_and_anon_rss_above_thresholds() -> None:
-    """Fail-fast raises AirbyteTracedException when both cgroup >= 98% and RssAnon >= 90%."""
+def test_raises_when_cgroup_critical_and_anon_share_of_usage_above_threshold() -> None:
+    """Fail-fast raises when cgroup >= 98% and anon >= 85% of current usage."""
     monitor = MemoryMonitor(check_interval=1)
     with (
         patch.object(Path, "exists", _v2_exists),
-        patch.object(Path, "read_text", _proc_status_read(_MOCK_ANON_HIGH)),
+        patch.object(Path, "read_text", _v2_full_mock()),
     ):
         with pytest.raises(AirbyteTracedException) as exc_info:
             monitor.check_memory_usage()
     assert exc_info.value.failure_type == FailureType.system_error
     assert "critical threshold" in (exc_info.value.message or "")
     assert "98%" in (exc_info.value.message or "")
-    assert "anonymous RSS" in (exc_info.value.internal_message or "")
+    assert "anon share of usage" in (exc_info.value.internal_message or "")
 
 
-def test_no_raise_when_cgroup_high_but_anon_rss_low(caplog: pytest.LogCaptureFixture) -> None:
-    """No exception when cgroup >= 98% but RssAnon < 90% (file-backed pages scenario).
-
-    This test also proves the metric choice matters: VmRSS is 90% (high) but
-    RssAnon is only 50% (low), so the pressure is from file-backed pages.
-    """
+def test_no_raise_when_cgroup_critical_but_anon_share_of_usage_below_threshold(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """No exception when cgroup >= 98% but anon < 85% of usage (file-backed pressure)."""
     monitor = MemoryMonitor(check_interval=1)
     with (
         caplog.at_level(logging.INFO, logger="airbyte"),
         patch.object(Path, "exists", _v2_exists),
-        patch.object(Path, "read_text", _proc_status_read(_MOCK_ANON_LOW_VMRSS_HIGH)),
+        patch.object(Path, "read_text", _v2_full_mock(memory_stat=_MOCK_MEMORY_STAT_ANON_LOW)),
     ):
         monitor.check_memory_usage()  # Should NOT raise
     info_records = [r for r in caplog.records if r.levelno == logging.INFO]
     assert any("file-backed" in r.message for r in info_records)
 
 
-def test_no_raise_when_cgroup_below_critical() -> None:
-    """No exception when cgroup at 97% (< 98% threshold), even with high RssAnon."""
-    monitor = MemoryMonitor(check_interval=1)
-    with (
-        patch.object(Path, "exists", _v2_exists),
-        patch.object(
-            Path, "read_text", _proc_status_read(_MOCK_ANON_HIGH, usage=_MOCK_USAGE_AT_97)
-        ),
-    ):
-        monitor.check_memory_usage()  # Should NOT raise
-
-
-def test_no_raise_when_anon_rss_unavailable_and_cgroup_critical(
-    caplog: pytest.LogCaptureFixture,
-) -> None:
-    """Logs warning and skips fail-fast when RssAnon is unavailable (stays truly dual-condition)."""
+def test_falls_back_to_process_rssanon_when_cgroup_v2_anon_unavailable() -> None:
+    """Uses /proc/self/status RssAnon when memory.stat anon is missing, and still raises."""
 
     def mock_read_text(self: Path) -> str:
         if self == _CGROUP_V2_CURRENT:
             return _MOCK_USAGE_AT_98
         if self == _CGROUP_V2_MAX:
             return _MOCK_LIMIT
+        if self == _CGROUP_V2_STAT:
+            return _MOCK_MEMORY_STAT_NO_ANON  # anon line missing
+        if self == _PROC_SELF_STATUS:
+            return _MOCK_PROC_ANON_HIGH
+        return ""
+
+    monitor = MemoryMonitor(check_interval=1)
+    with (
+        patch.object(Path, "exists", _v2_exists),
+        patch.object(Path, "read_text", mock_read_text),
+    ):
+        with pytest.raises(AirbyteTracedException) as exc_info:
+            monitor.check_memory_usage()
+    assert "process RssAnon" in (exc_info.value.internal_message or "")
+
+
+def test_falls_back_to_process_rssanon_low_and_does_not_raise(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Uses /proc/self/status RssAnon when memory.stat anon is missing, but does not raise when below threshold."""
+
+    def mock_read_text(self: Path) -> str:
+        if self == _CGROUP_V2_CURRENT:
+            return _MOCK_USAGE_AT_98
+        if self == _CGROUP_V2_MAX:
+            return _MOCK_LIMIT
+        if self == _CGROUP_V2_STAT:
+            return _MOCK_MEMORY_STAT_NO_ANON  # anon line missing
+        if self == _PROC_SELF_STATUS:
+            return _MOCK_PROC_ANON_LOW  # ~307 MB — 31.3% of 980 MB usage (below 85%)
+        return ""
+
+    monitor = MemoryMonitor(check_interval=1)
+    with (
+        caplog.at_level(logging.INFO, logger="airbyte"),
+        patch.object(Path, "exists", _v2_exists),
+        patch.object(Path, "read_text", mock_read_text),
+    ):
+        monitor.check_memory_usage()  # Should NOT raise
+    info_records = [r for r in caplog.records if r.levelno == logging.INFO]
+    assert any("file-backed" in r.message for r in info_records)
+
+
+def test_no_raise_when_anonymous_memory_signal_unavailable_at_critical_usage(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Logs warning and skips fail-fast when neither anon source is available."""
+
+    def mock_read_text(self: Path) -> str:
+        if self == _CGROUP_V2_CURRENT:
+            return _MOCK_USAGE_AT_98
+        if self == _CGROUP_V2_MAX:
+            return _MOCK_LIMIT
+        if self == _CGROUP_V2_STAT:
+            raise OSError("No such file")
         if self == _PROC_SELF_STATUS:
             raise OSError("No such file")
         return ""
@@ -388,4 +480,38 @@ def test_no_raise_when_anon_rss_unavailable_and_cgroup_critical(
     ):
         monitor.check_memory_usage()  # Should NOT raise
     warning_records = [r for r in caplog.records if r.levelno == logging.WARNING]
-    assert any("RssAnon unavailable" in r.message for r in warning_records)
+    assert any("anonymous memory signal unavailable" in r.message for r in warning_records)
+
+
+def test_switches_to_high_pressure_check_interval_after_crossing_95_percent(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Once usage crosses 95%, the monitor tightens polling from 5000 to 100 messages."""
+    monitor = MemoryMonitor(check_interval=5000)
+    assert not monitor._high_pressure_mode
+
+    with (
+        caplog.at_level(logging.INFO, logger="airbyte"),
+        patch.object(Path, "exists", _v2_exists),
+        patch.object(Path, "read_text", _v2_mock_read(usage=_MOCK_USAGE_AT_95)),
+    ):
+        # Pump 5000 messages to trigger the first real check
+        for _ in range(5000):
+            monitor.check_memory_usage()
+
+    assert monitor._high_pressure_mode
+    info_records = [r for r in caplog.records if r.levelno == logging.INFO]
+    assert any("tightening check interval" in r.message for r in info_records)
+
+    # After switching to high-pressure mode, checks happen every 100 messages.
+    # Reset logs and pump 100 more messages at 95% — should trigger another check.
+    caplog.clear()
+    with (
+        caplog.at_level(logging.WARNING, logger="airbyte"),
+        patch.object(Path, "exists", _v2_exists),
+        patch.object(Path, "read_text", _v2_mock_read(usage=_MOCK_USAGE_AT_95)),
+    ):
+        for _ in range(100):
+            monitor.check_memory_usage()
+    warning_records = [r for r in caplog.records if r.levelno == logging.WARNING]
+    assert len(warning_records) == 1  # exactly one check at message 5100
