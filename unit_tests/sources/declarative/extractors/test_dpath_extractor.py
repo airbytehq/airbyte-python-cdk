@@ -124,6 +124,73 @@ def test_dpath_extractor(field_path: List, decoder: Decoder, body, expected_reco
     assert actual_records == expected_records
 
 
+def test_dpath_extractor_interpolated_expand_path():
+    cfg = {"nested": "items"}
+    record_expander = RecordExpander(
+        expand_records_from_field=["{{ config['nested'] }}", "data"],
+        config=cfg,
+        parameters=parameters,
+        remain_original_record=True,
+    )
+    extractor = DpathExtractor(
+        field_path=["data", "object"],
+        config=cfg,
+        decoder=decoder_json,
+        parameters=parameters,
+        record_expander=record_expander,
+    )
+
+    body = {"data": {"object": {"id": "parent", "items": {"data": [{"id": "child"}]}}}}
+    response = create_response(body)
+    actual_records = list(extractor.extract_records(response))
+    assert actual_records == [
+        {"id": "child", "original_record": {"id": "parent", "items": {"data": [{"id": "child"}]}}},
+    ]
+
+
+def test_dpath_extractor_expands_non_mapping_safely():
+    record_expander = RecordExpander(
+        expand_records_from_field=["items"],
+        config=config,
+        parameters=parameters,
+    )
+    extractor = DpathExtractor(
+        field_path=["value"],
+        config=config,
+        decoder=decoder_json,
+        parameters=parameters,
+        record_expander=record_expander,
+    )
+
+    response = create_response({"value": 3})
+    actual_records = list(extractor.extract_records(response))
+    assert actual_records == [3]
+
+
+def test_dpath_extractor_non_dict_items_with_parent_context():
+    parent = {"items": [1, "a"], "meta": "m"}
+    record_expander = RecordExpander(
+        expand_records_from_field=["items"],
+        config=config,
+        parameters=parameters,
+        remain_original_record=True,
+    )
+    extractor = DpathExtractor(
+        field_path=["data"],
+        config=config,
+        decoder=decoder_json,
+        parameters=parameters,
+        record_expander=record_expander,
+    )
+
+    response = create_response({"data": parent})
+    actual_records = list(extractor.extract_records(response))
+    assert actual_records == [
+        {"value": 1, "original_record": parent},
+        {"value": "a", "original_record": parent},
+    ]
+
+
 @pytest.mark.parametrize(
     "field_path, expand_records_from_field, remain_original_record, body, expected_records",
     [

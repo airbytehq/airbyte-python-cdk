@@ -2,6 +2,7 @@
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
 
+import copy
 from dataclasses import InitVar, dataclass
 from enum import Enum
 from typing import Any, Iterable, Mapping, MutableMapping, Sequence
@@ -64,20 +65,25 @@ class RecordExpander:
         config: The user-provided configuration as specified by the source's spec.
     """
 
-    expand_records_from_field: Sequence[str | InterpolatedString]
+    expand_records_from_field: Sequence[str]
     config: Config
     parameters: InitVar[Mapping[str, Any]]
     remain_original_record: bool = False
     on_no_records: OnNoRecords = OnNoRecords.skip
 
     def __post_init__(self, parameters: Mapping[str, Any]) -> None:
-        self._expand_path: list[InterpolatedString] | None = [
+        self._expand_path: list[InterpolatedString] = [
             InterpolatedString.create(path, parameters=parameters)
             for path in self.expand_records_from_field
         ]
 
     def expand_record(self, record: MutableMapping[Any, Any]) -> Iterable[MutableMapping[Any, Any]]:
         """Expand a record by extracting items from a nested array field."""
+        if not isinstance(record, Mapping):
+            # If the input isn't a mapping, expansion can't proceed; yield as-is.
+            yield record
+            return
+
         if not self._expand_path:
             yield record
             return
@@ -86,35 +92,30 @@ class RecordExpander:
         expand_path = [path.eval(self.config) for path in self._expand_path]
         expanded_any = False
 
-        if "*" in expand_path:
-            extracted: Any = dpath.values(parent_record, expand_path)
-            for record in extracted:
-                if isinstance(record, list):
-                    for item in record:
-                        if isinstance(item, dict):
-                            expanded_record = dict(item)
-                            self._apply_parent_context(parent_record, expanded_record)
-                            yield expanded_record
-                            expanded_any = True
-                        else:
-                            yield item
-                            expanded_any = True
-        else:
-            try:
-                extracted = dpath.get(parent_record, expand_path)
-            except KeyError:
-                extracted = None
+        try:
+            extracted_values = dpath.values(parent_record, expand_path)
+        except KeyError:
+            extracted_values = []
 
-            if isinstance(extracted, list):
-                for item in extracted:
-                    if isinstance(item, dict):
-                        expanded_record = dict(item)
-                        self._apply_parent_context(parent_record, expanded_record)
-                        yield expanded_record
-                        expanded_any = True
+        for extracted in extracted_values:
+            if not isinstance(extracted, list):
+                continue
+            items = extracted
+            for item in items:
+                if isinstance(item, dict):
+                    expanded_record = dict(item)
+                    self._apply_parent_context(parent_record, expanded_record)
+                    yield expanded_record
+                    expanded_any = True
+                else:
+                    if self.remain_original_record:
+                        yield {
+                            "value": item,
+                            "original_record": copy.deepcopy(parent_record),
+                        }
                     else:
                         yield item
-                        expanded_any = True
+                    expanded_any = True
 
         if not expanded_any and self.on_no_records == OnNoRecords.emit_parent:
             yield parent_record
@@ -124,4 +125,4 @@ class RecordExpander:
     ) -> None:
         """Apply parent context to a child record."""
         if self.remain_original_record:
-            child_record["original_record"] = parent_record
+            child_record["original_record"] = copy.deepcopy(parent_record)

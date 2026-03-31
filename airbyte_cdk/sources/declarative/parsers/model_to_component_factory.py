@@ -2324,7 +2324,7 @@ class ModelToComponentFactory:
         model_field_path: List[Union[InterpolatedString, str]] = [x for x in model.field_path]
 
         record_expander = None
-        if hasattr(model, "record_expander") and model.record_expander:
+        if model.record_expander:
             record_expander = self._create_component_from_model(
                 model=model.record_expander,
                 config=config,
