@@ -16,6 +16,7 @@ logger = logging.getLogger("airbyte")
 # cgroup v2 paths
 _CGROUP_V2_CURRENT = Path("/sys/fs/cgroup/memory.current")
 _CGROUP_V2_MAX = Path("/sys/fs/cgroup/memory.max")
+_CGROUP_V2_STAT = Path("/sys/fs/cgroup/memory.stat")
 
 # cgroup v1 paths — TODO: remove if all deployments are confirmed cgroup v2
 _CGROUP_V1_USAGE = Path("/sys/fs/cgroup/memory/memory.usage_in_bytes")
@@ -29,14 +30,34 @@ _MEMORY_THRESHOLD = 0.95
 
 # Raise AirbyteTracedException when BOTH conditions are met:
 #   1. cgroup usage >= critical threshold
-#   2. process anonymous RSS (RssAnon) >= anon threshold of the container limit
-# This dual-condition avoids false positives from reclaimable kernel page cache
-# and file-backed / shared resident pages that inflate VmRSS.
+#   2. anonymous memory >= anon-share threshold of *current cgroup usage*
+# Comparing anon to usage (not limit) answers the more relevant question:
+# "is most of the near-OOM memory actually process-owned anonymous memory?"
 _CRITICAL_THRESHOLD = 0.98
-_ANON_RSS_THRESHOLD = 0.90
+_ANON_SHARE_OF_USAGE_THRESHOLD = 0.85
 
-# Check interval (every N messages)
+# Check interval (every N messages) — tightens after crossing high-pressure threshold
 _DEFAULT_CHECK_INTERVAL = 5000
+_HIGH_PRESSURE_CHECK_INTERVAL = 100
+_HIGH_PRESSURE_THRESHOLD = 0.95
+
+
+def _read_cgroup_v2_anon_bytes() -> Optional[int]:
+    """Read cgroup-level anonymous memory from ``/sys/fs/cgroup/memory.stat``.
+
+    The ``anon`` field in ``memory.stat`` accounts for all anonymous pages
+    charged to the cgroup, which is a more accurate view of process-private
+    memory pressure than per-process ``RssAnon`` in multi-process containers.
+
+    Returns anonymous bytes, or ``None`` if unavailable or malformed.
+    """
+    try:
+        for line in _CGROUP_V2_STAT.read_text().splitlines():
+            if line.startswith("anon "):
+                return int(line.split()[1])
+    except (OSError, ValueError):
+        return None
+    return None
 
 
 def _read_process_anon_rss_bytes() -> Optional[int]:
@@ -73,19 +94,27 @@ class MemoryMonitor:
     **Logging:** Logs a WARNING on every check interval (default 5000 messages)
     when cgroup memory usage is at or above 95% of the container limit.
 
+    **High-pressure polling:** Once cgroup usage first crosses 95%, the check
+    interval permanently tightens from 5000 to 100 messages to narrow the race
+    window near OOM.
+
     **Fail-fast:** Raises ``AirbyteTracedException`` with
     ``FailureType.system_error`` when *both*:
 
     1. Cgroup usage >= 98% of the container limit (container is near OOM-kill)
-    2. Process anonymous RSS (``RssAnon``) >= 90% of the container limit
-       (pressure is from process-private anonymous memory, not elastic kernel
-       page cache or file-backed resident pages)
+    2. Anonymous memory >= 85% of *current cgroup usage* (most of the charged
+       memory is process-private anonymous pages, not file-backed cache)
 
-    This dual-condition avoids false positives from SQLite mmap'd pages, shared
-    memory, or other kernel-reclaimable memory that inflates cgroup usage but
-    does not represent real process memory pressure.  If ``RssAnon`` is not
-    available, the monitor logs a warning and skips fail-fast rather than
-    falling back to cgroup-only raising.
+    The anonymous memory signal is read from cgroup v2 ``memory.stat`` (``anon``
+    field) when available, falling back to ``/proc/self/status`` ``RssAnon``.
+    Comparing anonymous memory to current usage (not the container limit) answers
+    the more relevant question: "is most of the near-OOM memory actually
+    process-owned?"  This avoids the brittleness of comparing to the full limit
+    where anonymous memory can dominate usage yet still fall short of a
+    limit-based percentage threshold.
+
+    If the anonymous memory signal is unavailable, the monitor logs a warning
+    and skips fail-fast rather than falling back to cgroup-only raising.
     """
 
     def __init__(
@@ -98,6 +127,7 @@ class MemoryMonitor:
         self._message_count = 0
         self._cgroup_version: Optional[int] = None
         self._probed = False
+        self._high_pressure_mode = False
 
     def _probe_cgroup(self) -> None:
         """Detect which cgroup version (if any) is available.
@@ -152,20 +182,41 @@ class MemoryMonitor:
             logger.debug("Failed to read cgroup memory files; skipping memory check.")
             return None
 
+    def _read_anon_bytes(self) -> Optional[tuple[int, str]]:
+        """Read anonymous memory bytes from the best available source.
+
+        Tries cgroup v2 ``memory.stat`` (``anon`` field) first, then falls back
+        to ``/proc/self/status`` ``RssAnon``.  Returns ``(bytes, source_label)``
+        or ``None`` if neither is available.
+        """
+        if self._cgroup_version == 2:
+            cgroup_anon = _read_cgroup_v2_anon_bytes()
+            if cgroup_anon is not None:
+                return cgroup_anon, "cgroup memory.stat anon"
+
+        proc_anon = _read_process_anon_rss_bytes()
+        if proc_anon is not None:
+            return proc_anon, "process RssAnon"
+
+        return None
+
     def check_memory_usage(self) -> None:
         """Check memory usage; log at 95% and raise at critical dual-condition.
 
         Intended to be called on every message. The monitor internally tracks
         a message counter and only reads cgroup files every ``check_interval``
-        messages (default 5000) to minimise I/O overhead.
+        messages (default 5000). Once usage crosses 95%, the interval tightens
+        to 100 messages for the remainder of the sync.
 
         **Logging:** WARNING on every check above 95%.
 
-        **Fail-fast:** If cgroup usage >= 98% *and* process anonymous RSS
-        (``RssAnon``) >= 90% of the container limit, raises
-        ``AirbyteTracedException`` with ``FailureType.system_error`` so the
-        platform receives a clear error message instead of an opaque OOM-kill.
-        If ``RssAnon`` is unavailable, logs a warning and skips fail-fast.
+        **Fail-fast:** If cgroup usage >= 98% *and* anonymous memory >= 85% of
+        current cgroup usage, raises ``AirbyteTracedException`` with
+        ``FailureType.system_error`` so the platform receives a clear error
+        message instead of an opaque OOM-kill.  Anonymous memory is read from
+        cgroup v2 ``memory.stat`` when available, falling back to
+        ``/proc/self/status`` ``RssAnon``.  If neither is available, logs a
+        warning and skips fail-fast.
 
         This method is a no-op if cgroup files are unavailable.
         """
@@ -174,7 +225,10 @@ class MemoryMonitor:
             return
 
         self._message_count += 1
-        if self._message_count % self._check_interval != 0:
+        interval = (
+            _HIGH_PRESSURE_CHECK_INTERVAL if self._high_pressure_mode else self._check_interval
+        )
+        if self._message_count % interval != 0:
             return
 
         memory_info = self._read_memory()
@@ -187,6 +241,15 @@ class MemoryMonitor:
         usage_gb = usage_bytes / (1024**3)
         limit_gb = limit_bytes / (1024**3)
 
+        if usage_ratio >= _HIGH_PRESSURE_THRESHOLD and not self._high_pressure_mode:
+            self._high_pressure_mode = True
+            logger.info(
+                "Memory usage crossed %d%%; tightening check interval from %d to %d messages.",
+                int(_HIGH_PRESSURE_THRESHOLD * 100),
+                self._check_interval,
+                _HIGH_PRESSURE_CHECK_INTERVAL,
+            )
+
         if usage_ratio >= _MEMORY_THRESHOLD:
             logger.warning(
                 "Source memory usage at %d%% of container limit (%.2f / %.2f GB).",
@@ -197,33 +260,35 @@ class MemoryMonitor:
 
         # Fail-fast: dual-condition check
         if usage_ratio >= _CRITICAL_THRESHOLD:
-            anon_rss_bytes = _read_process_anon_rss_bytes()
-            if anon_rss_bytes is not None:
-                anon_ratio = anon_rss_bytes / limit_bytes
-                anon_percent = int(anon_ratio * 100)
-                if anon_ratio >= _ANON_RSS_THRESHOLD:
+            anon_info = self._read_anon_bytes()
+            if anon_info is not None:
+                anon_bytes, anon_source = anon_info
+                anon_share = anon_bytes / usage_bytes
+                anon_share_percent = int(anon_share * 100)
+                if anon_share >= _ANON_SHARE_OF_USAGE_THRESHOLD:
                     raise AirbyteTracedException(
                         message=f"Source memory usage exceeded critical threshold ({usage_percent}% of container limit).",
                         internal_message=(
                             f"Cgroup memory: {usage_bytes} / {limit_bytes} bytes ({usage_percent}%). "
-                            f"Process anonymous RSS (RssAnon): {anon_rss_bytes} bytes ({anon_percent}% of limit). "
+                            f"Anonymous memory ({anon_source}): {anon_bytes} bytes "
+                            f"({anon_share_percent}% of current cgroup usage). "
                             f"Thresholds: cgroup >= {int(_CRITICAL_THRESHOLD * 100)}%, "
-                            f"anonymous RSS >= {int(_ANON_RSS_THRESHOLD * 100)}%."
+                            f"anon share of usage >= {int(_ANON_SHARE_OF_USAGE_THRESHOLD * 100)}%."
                         ),
                         failure_type=FailureType.system_error,
                     )
                 else:
                     logger.info(
-                        "Cgroup usage at %d%% but process anonymous RSS only %d%% of limit; "
-                        "pressure likely from file-backed or reclaimable pages — not raising.",
+                        "Cgroup usage at %d%% but anonymous memory only %d%% of current cgroup usage; "
+                        "pressure likely from file-backed or kernel memory — not raising.",
                         usage_percent,
-                        anon_percent,
+                        anon_share_percent,
                     )
             else:
-                # RssAnon unavailable — log and skip rather than cgroup-only raising,
-                # so the implementation stays truly dual-condition.
+                # Anonymous memory signal unavailable — log and skip rather than
+                # cgroup-only raising, so the implementation stays truly dual-condition.
                 logger.warning(
-                    "Cgroup usage at %d%% but RssAnon unavailable from /proc/self/status; "
+                    "Cgroup usage at %d%% but anonymous memory signal unavailable; "
                     "skipping fail-fast (cannot confirm anonymous memory pressure).",
                     usage_percent,
                 )
