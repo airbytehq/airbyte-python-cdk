@@ -133,65 +133,17 @@ def test_noop_when_limit_is_zero(caplog: pytest.LogCaptureFixture) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_no_warning_below_threshold(caplog: pytest.LogCaptureFixture) -> None:
-    """No warning should be emitted when usage is below 95%."""
+def test_no_log_below_threshold(caplog: pytest.LogCaptureFixture) -> None:
+    """No log should be emitted when usage is below 95%."""
     monitor = MemoryMonitor(check_interval=1)
     with (
-        caplog.at_level(logging.WARNING, logger="airbyte"),
+        caplog.at_level(logging.DEBUG, logger="airbyte"),
         patch.object(Path, "exists", _v2_exists),
         patch.object(Path, "read_text", _v2_mock_read(usage=_MOCK_USAGE_AT_90)),
     ):
         monitor.check_memory_usage()
-    assert not caplog.records
-
-
-# ---------------------------------------------------------------------------
-# check_memory_usage — at/above 95% threshold
-# ---------------------------------------------------------------------------
-
-
-def test_logs_at_95_percent(caplog: pytest.LogCaptureFixture) -> None:
-    """Warning log should be emitted at 96% usage (above 95% threshold)."""
-    monitor = MemoryMonitor(check_interval=1)
-    with (
-        caplog.at_level(logging.WARNING, logger="airbyte"),
-        patch.object(Path, "exists", _v2_exists),
-        patch.object(Path, "read_text", _v2_mock_read(usage=_MOCK_USAGE_AT_95)),
-    ):
-        monitor.check_memory_usage()
-
-    assert len(caplog.records) == 1
-    assert "96%" in caplog.records[0].message
-
-
-def test_logs_on_every_check_above_95_percent(caplog: pytest.LogCaptureFixture) -> None:
-    """Warning should be logged on EVERY check interval when above 95%, not just once.
-
-    Uses check_interval=100 to match _HIGH_PRESSURE_CHECK_INTERVAL so that
-    after the first check triggers high-pressure mode, subsequent checks still
-    align on the 100-message boundary.
-    """
-    monitor = MemoryMonitor(check_interval=100)
-    with (
-        caplog.at_level(logging.WARNING, logger="airbyte"),
-        patch.object(Path, "exists", _v2_exists),
-        patch.object(Path, "read_text", _v2_mock_read(usage=_MOCK_USAGE_AT_95)),
-    ):
-        # First 100 messages triggers the first real check
-        for _ in range(100):
-            monitor.check_memory_usage()
-        # Next 100 messages triggers the second check (high-pressure interval = 100)
-        for _ in range(100):
-            monitor.check_memory_usage()
-        # Next 100 messages triggers the third check
-        for _ in range(100):
-            monitor.check_memory_usage()
-
-    # All three checks should produce a warning (no one-shot flag)
-    warning_records = [r for r in caplog.records if r.levelno == logging.WARNING]
-    assert len(warning_records) == 3
-    for record in warning_records:
-        assert "96%" in record.message
+    # Only the debug probe message, no info/warning
+    assert all(r.levelno <= logging.DEBUG for r in caplog.records)
 
 
 # ---------------------------------------------------------------------------
@@ -199,8 +151,8 @@ def test_logs_on_every_check_above_95_percent(caplog: pytest.LogCaptureFixture) 
 # ---------------------------------------------------------------------------
 
 
-def test_cgroup_v1_emits_warning(caplog: pytest.LogCaptureFixture) -> None:
-    """Memory reading should work with cgroup v1 paths (proves v1 detection works)."""
+def test_cgroup_v1_activates_high_pressure_mode(caplog: pytest.LogCaptureFixture) -> None:
+    """Memory reading works with cgroup v1 paths and activates high-pressure mode at 95%."""
 
     def mock_read_text(self: Path) -> str:
         if self == _CGROUP_V1_USAGE:
@@ -211,14 +163,15 @@ def test_cgroup_v1_emits_warning(caplog: pytest.LogCaptureFixture) -> None:
 
     monitor = MemoryMonitor(check_interval=1)
     with (
-        caplog.at_level(logging.WARNING, logger="airbyte"),
+        caplog.at_level(logging.INFO, logger="airbyte"),
         patch.object(Path, "exists", _v1_exists),
         patch.object(Path, "read_text", mock_read_text),
     ):
         monitor.check_memory_usage()
 
-    assert len(caplog.records) == 1
-    assert "96%" in caplog.records[0].message
+    assert monitor._high_pressure_mode
+    info_records = [r for r in caplog.records if r.levelno == logging.INFO]
+    assert any("tightening check interval" in r.message for r in info_records)
 
 
 # ---------------------------------------------------------------------------
@@ -230,17 +183,18 @@ def test_check_interval_skips_intermediate_calls(caplog: pytest.LogCaptureFixtur
     """Monitor should only check cgroup files every check_interval messages."""
     monitor = MemoryMonitor(check_interval=5000)
     with (
-        caplog.at_level(logging.WARNING, logger="airbyte"),
+        caplog.at_level(logging.INFO, logger="airbyte"),
         patch.object(Path, "exists", _v2_exists),
         patch.object(Path, "read_text", _v2_mock_read(usage=_MOCK_USAGE_AT_95)),
     ):
         # First 4999 calls should be skipped
         for _ in range(4999):
             monitor.check_memory_usage()
-        assert not caplog.records
-        # Call 5000 should trigger the actual check
+        info_records = [r for r in caplog.records if r.levelno >= logging.INFO]
+        assert not info_records
+        # Call 5000 should trigger the actual check and activate high-pressure mode
         monitor.check_memory_usage()
-    assert len(caplog.records) == 1
+    assert monitor._high_pressure_mode
 
 
 # ---------------------------------------------------------------------------
@@ -393,16 +347,20 @@ def test_raises_when_cgroup_critical_and_anon_share_of_usage_above_threshold() -
 def test_no_raise_when_cgroup_critical_but_anon_share_of_usage_below_threshold(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """No exception when cgroup >= 98% but anon < 85% of usage (file-backed pressure)."""
+    """No exception when cgroup >= 98% but anon < 85% of usage; logs once then silences."""
     monitor = MemoryMonitor(check_interval=1)
     with (
         caplog.at_level(logging.INFO, logger="airbyte"),
         patch.object(Path, "exists", _v2_exists),
         patch.object(Path, "read_text", _v2_full_mock(memory_stat=_MOCK_MEMORY_STAT_ANON_LOW)),
     ):
-        monitor.check_memory_usage()  # Should NOT raise
+        monitor.check_memory_usage()  # Should NOT raise — logs one-shot info
+        monitor.check_memory_usage()  # Should NOT log again (_critical_logged is True)
     info_records = [r for r in caplog.records if r.levelno == logging.INFO]
-    assert any("file-backed" in r.message for r in info_records)
+    # Exactly one critical-not-raising log (one-shot), plus one high-pressure-mode log
+    critical_logs = [r for r in info_records if "not raising" in r.message]
+    assert len(critical_logs) == 1
+    assert monitor._critical_logged
 
 
 def test_falls_back_to_process_rssanon_when_cgroup_v2_anon_unavailable() -> None:
@@ -453,13 +411,13 @@ def test_falls_back_to_process_rssanon_low_and_does_not_raise(
     ):
         monitor.check_memory_usage()  # Should NOT raise
     info_records = [r for r in caplog.records if r.levelno == logging.INFO]
-    assert any("file-backed" in r.message for r in info_records)
+    assert any("not raising" in r.message for r in info_records)
 
 
 def test_no_raise_when_anonymous_memory_signal_unavailable_at_critical_usage(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """Logs warning and skips fail-fast when neither anon source is available."""
+    """Logs warning once and skips fail-fast when neither anon source is available."""
 
     def mock_read_text(self: Path) -> str:
         if self == _CGROUP_V2_CURRENT:
@@ -478,9 +436,12 @@ def test_no_raise_when_anonymous_memory_signal_unavailable_at_critical_usage(
         patch.object(Path, "exists", _v2_exists),
         patch.object(Path, "read_text", mock_read_text),
     ):
-        monitor.check_memory_usage()  # Should NOT raise
+        monitor.check_memory_usage()  # Should NOT raise — logs one-shot warning
+        monitor.check_memory_usage()  # Should NOT log again
     warning_records = [r for r in caplog.records if r.levelno == logging.WARNING]
-    assert any("anonymous memory signal unavailable" in r.message for r in warning_records)
+    assert len(warning_records) == 1
+    assert "anonymous memory signal unavailable" in warning_records[0].message
+    assert monitor._critical_logged
 
 
 def test_switches_to_high_pressure_check_interval_after_crossing_95_percent(
@@ -504,14 +465,11 @@ def test_switches_to_high_pressure_check_interval_after_crossing_95_percent(
     assert any("tightening check interval" in r.message for r in info_records)
 
     # After switching to high-pressure mode, checks happen every 100 messages.
-    # Reset logs and pump 100 more messages at 95% — should trigger another check.
-    caplog.clear()
+    # Verify by pumping 100 messages at critical usage with high anon — should raise.
     with (
-        caplog.at_level(logging.WARNING, logger="airbyte"),
         patch.object(Path, "exists", _v2_exists),
-        patch.object(Path, "read_text", _v2_mock_read(usage=_MOCK_USAGE_AT_95)),
+        patch.object(Path, "read_text", _v2_full_mock()),
     ):
-        for _ in range(100):
-            monitor.check_memory_usage()
-    warning_records = [r for r in caplog.records if r.levelno == logging.WARNING]
-    assert len(warning_records) == 1  # exactly one check at message 5100
+        with pytest.raises(AirbyteTracedException):
+            for _ in range(100):
+                monitor.check_memory_usage()

@@ -25,9 +25,6 @@ _CGROUP_V1_LIMIT = Path("/sys/fs/cgroup/memory/memory.limit_in_bytes")
 # Process-level anonymous RSS from /proc/self/status (Linux only, no extra dependency)
 _PROC_SELF_STATUS = Path("/proc/self/status")
 
-# Log when usage is at or above 95%
-_MEMORY_THRESHOLD = 0.95
-
 # Raise AirbyteTracedException when BOTH conditions are met:
 #   1. cgroup usage >= critical threshold
 #   2. anonymous memory >= anon-share threshold of *current cgroup usage*
@@ -91,8 +88,14 @@ class MemoryMonitor:
     ``check_memory_usage()``.  Caches which version exists.
     If neither is found (local dev / CI), all subsequent calls are instant no-ops.
 
-    **Logging:** Logs a WARNING on every check interval (default 5000 messages)
-    when cgroup memory usage is at or above 95% of the container limit.
+    **Logging (event-based, not periodic):**
+
+    - One INFO when high-pressure mode activates (usage first crosses 95%)
+    - One INFO/WARNING when critical threshold (98%) is crossed but we do
+      *not* raise (either anon share is below the fail-fast gate or the
+      anonymous memory signal is unavailable)
+    - No repeated per-check warnings — logging is driven by state
+      transitions, not periodic sampling
 
     **High-pressure polling:** Once cgroup usage first crosses 95%, the check
     interval permanently tightens from 5000 to 100 messages to narrow the race
@@ -128,6 +131,7 @@ class MemoryMonitor:
         self._cgroup_version: Optional[int] = None
         self._probed = False
         self._high_pressure_mode = False
+        self._critical_logged = False
 
     def _probe_cgroup(self) -> None:
         """Detect which cgroup version (if any) is available.
@@ -201,22 +205,14 @@ class MemoryMonitor:
         return None
 
     def check_memory_usage(self) -> None:
-        """Check memory usage; log at 95% and raise at critical dual-condition.
+        """Check memory usage and raise at critical dual-condition.
 
         Intended to be called on every message. The monitor internally tracks
         a message counter and only reads cgroup files every ``check_interval``
         messages (default 5000). Once usage crosses 95%, the interval tightens
         to 100 messages for the remainder of the sync.
 
-        **Logging:** WARNING on every check above 95%.
-
-        **Fail-fast:** If cgroup usage >= 98% *and* anonymous memory >= 85% of
-        current cgroup usage, raises ``AirbyteTracedException`` with
-        ``FailureType.system_error`` so the platform receives a clear error
-        message instead of an opaque OOM-kill.  Anonymous memory is read from
-        cgroup v2 ``memory.stat`` when available, falling back to
-        ``/proc/self/status`` ``RssAnon``.  If neither is available, logs a
-        warning and skips fail-fast.
+        Logging is event-based (one-shot on state transitions), not periodic.
 
         This method is a no-op if cgroup files are unavailable.
         """
@@ -250,45 +246,34 @@ class MemoryMonitor:
                 _HIGH_PRESSURE_CHECK_INTERVAL,
             )
 
-        if usage_ratio >= _MEMORY_THRESHOLD:
-            logger.warning(
-                "Source memory usage at %d%% of container limit (%.2f / %.2f GB).",
-                usage_percent,
-                usage_gb,
-                limit_gb,
-            )
-
         # Fail-fast: dual-condition check
         if usage_ratio >= _CRITICAL_THRESHOLD:
             anon_info = self._read_anon_bytes()
             if anon_info is not None:
                 anon_bytes, anon_source = anon_info
                 anon_share = anon_bytes / usage_bytes
-                anon_share_percent = int(anon_share * 100)
                 if anon_share >= _ANON_SHARE_OF_USAGE_THRESHOLD:
                     raise AirbyteTracedException(
                         message=f"Source memory usage exceeded critical threshold ({usage_percent}% of container limit).",
                         internal_message=(
                             f"Cgroup memory: {usage_bytes} / {limit_bytes} bytes ({usage_percent}%). "
                             f"Anonymous memory ({anon_source}): {anon_bytes} bytes "
-                            f"({anon_share_percent}% of current cgroup usage). "
+                            f"({int(anon_share * 100)}% of current cgroup usage). "
                             f"Thresholds: cgroup >= {int(_CRITICAL_THRESHOLD * 100)}%, "
                             f"anon share of usage >= {int(_ANON_SHARE_OF_USAGE_THRESHOLD * 100)}%."
                         ),
                         failure_type=FailureType.system_error,
                     )
-                else:
+                elif not self._critical_logged:
+                    self._critical_logged = True
                     logger.info(
-                        "Cgroup usage at %d%% but anonymous memory only %d%% of current cgroup usage; "
-                        "pressure likely from file-backed or kernel memory — not raising.",
-                        usage_percent,
-                        anon_share_percent,
+                        "Cgroup usage crossed %d%% but anonymous memory is only %d%% of current cgroup usage; not raising.",
+                        int(_CRITICAL_THRESHOLD * 100),
+                        int(anon_share * 100),
                     )
-            else:
-                # Anonymous memory signal unavailable — log and skip rather than
-                # cgroup-only raising, so the implementation stays truly dual-condition.
+            elif not self._critical_logged:
+                self._critical_logged = True
                 logger.warning(
-                    "Cgroup usage at %d%% but anonymous memory signal unavailable; "
-                    "skipping fail-fast (cannot confirm anonymous memory pressure).",
-                    usage_percent,
+                    "Cgroup usage crossed %d%% but anonymous memory signal unavailable; skipping fail-fast.",
+                    int(_CRITICAL_THRESHOLD * 100),
                 )
