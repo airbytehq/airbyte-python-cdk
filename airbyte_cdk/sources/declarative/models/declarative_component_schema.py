@@ -2399,6 +2399,11 @@ class DeclarativeSource1(BaseModel):
     spec: Optional[Spec] = None
     concurrency_level: Optional[ConcurrencyLevel] = None
     api_budget: Optional[HTTPAPIBudget] = None
+    stream_groups: Optional[Dict[str, StreamGroup]] = Field(
+        None,
+        description="Groups of streams that share a common resource and should not be read simultaneously. Each group defines a set of stream references and an action that controls how concurrent reads are managed. Only applies to ConcurrentDeclarativeSource.",
+        title="Stream Groups",
+    )
     max_concurrent_async_job_count: Optional[Union[int, str]] = Field(
         None,
         description="Maximum number of concurrent asynchronous jobs to run. This property is only relevant for sources/streams that support asynchronous job execution through the AsyncRetriever (e.g. a report-based stream that initiates a job, polls the job status, and then fetches the job results). This is often set by the API's maximum number of concurrent jobs on the account level. Refer to the API's documentation for this information.",
@@ -2434,6 +2439,11 @@ class DeclarativeSource2(BaseModel):
     spec: Optional[Spec] = None
     concurrency_level: Optional[ConcurrencyLevel] = None
     api_budget: Optional[HTTPAPIBudget] = None
+    stream_groups: Optional[Dict[str, StreamGroup]] = Field(
+        None,
+        description="Groups of streams that share a common resource and should not be read simultaneously. Each group defines a set of stream references and an action that controls how concurrent reads are managed. Only applies to ConcurrentDeclarativeSource.",
+        title="Stream Groups",
+    )
     max_concurrent_async_job_count: Optional[Union[int, str]] = Field(
         None,
         description="Maximum number of concurrent asynchronous jobs to run. This property is only relevant for sources/streams that support asynchronous job execution through the AsyncRetriever (e.g. a report-based stream that initiates a job, polls the job status, and then fetches the job results). This is often set by the API's maximum number of concurrent jobs on the account level. Refer to the API's documentation for this information.",
@@ -3099,6 +3109,23 @@ class AsyncRetriever(BaseModel):
         title="Download HTTP Response Format",
     )
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
+
+
+class BlockSimultaneousSyncsAction(BaseModel):
+    type: Literal["BlockSimultaneousSyncsAction"]
+
+
+class StreamGroup(BaseModel):
+    streams: List[str] = Field(
+        ...,
+        description='List of references to streams that belong to this group. Use JSON references to stream definitions (e.g., "#/definitions/my_stream").',
+        title="Streams",
+    )
+    action: BlockSimultaneousSyncsAction = Field(
+        ...,
+        description="The action to apply to streams in this group.",
+        title="Action",
+    )
 
 
 class SubstreamPartitionRouter(BaseModel):
