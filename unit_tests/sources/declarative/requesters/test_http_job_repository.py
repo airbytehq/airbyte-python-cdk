@@ -205,6 +205,41 @@ class HttpJobRepositoryTest(TestCase):
 
         assert len(records) == 2
 
+    def test_given_stale_polling_response_when_fetch_records_then_re_polls_for_fresh_url(self) -> None:
+        """
+        Verifies that fetch_records re-polls the API before downloading to get a fresh download URL.
+        This prevents failures when download URLs (e.g. Azure SAS tokens) expire between
+        poll-completion and the actual download, which can happen with many concurrent streams.
+        """
+        stale_url = "https://stale.blob.example.com/report?sv=old-sas-token"
+        fresh_url = "https://fresh.blob.example.com/report?sv=new-sas-token"
+
+        self._mock_create_response(_A_JOB_ID)
+        # First poll (during update_jobs_status) returns the stale URL
+        # Second poll (during fetch_records refresh) returns the fresh URL
+        self._http_mocker.get(
+            HttpRequest(url=f"{_EXPORT_URL}/{_A_JOB_ID}"),
+            [
+                HttpResponse(
+                    body=json.dumps({"id": _A_JOB_ID, "status": "ready", "urls": [stale_url]})
+                ),
+                HttpResponse(
+                    body=json.dumps({"id": _A_JOB_ID, "status": "ready", "urls": [fresh_url]})
+                ),
+            ],
+        )
+        # Only the fresh URL should be requested for download
+        self._http_mocker.get(
+            HttpRequest(url=fresh_url),
+            HttpResponse(body=_A_CSV_WITH_ONE_RECORD),
+        )
+
+        job = self._repository.start(_ANY_SLICE)
+        self._repository.update_jobs_status([job])
+        records = list(self._repository.fetch_records(job))
+
+        assert len(records) == 1
+
     def _mock_create_response(self, job_id: str) -> None:
         self._http_mocker.post(
             HttpRequest(url=_EXPORT_URL),

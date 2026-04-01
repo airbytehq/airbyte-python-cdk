@@ -201,6 +201,18 @@ class AsyncHttpJobRepository(AsyncJobRepository):
             if job_status == AsyncJobStatus.COMPLETED:
                 self._polling_job_response_by_id[job.api_job_id()] = polling_response
 
+    def _refresh_download_url(self, job: AsyncJob) -> None:
+        """
+        Re-polls the API to refresh the stored polling response before downloading.
+
+        Download URLs (e.g. Azure Blob Storage SAS tokens) may expire between
+        poll-completion and actual download when many concurrent streams delay
+        record fetching. Re-polling ensures the download URL is still valid.
+        """
+        stream_slice = self._get_create_job_stream_slice(job)
+        polling_response = self._get_validated_polling_response(stream_slice)
+        self._polling_job_response_by_id[job.api_job_id()] = polling_response
+
     def fetch_records(self, job: AsyncJob) -> Iterable[Mapping[str, Any]]:
         """
         Fetches records from the given job.
@@ -212,6 +224,7 @@ class AsyncHttpJobRepository(AsyncJobRepository):
             Iterable[Mapping[str, Any]]: A generator that yields records as dictionaries.
 
         """
+        self._refresh_download_url(job)
 
         for download_target in self._get_download_targets(job):
             job_slice = job.job_parameters()
