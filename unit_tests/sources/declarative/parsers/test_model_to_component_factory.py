@@ -159,7 +159,11 @@ from airbyte_cdk.sources.declarative.requesters.request_options import (
 from airbyte_cdk.sources.declarative.requesters.request_path import RequestPath
 from airbyte_cdk.sources.declarative.requesters.requester import HttpMethod
 from airbyte_cdk.sources.declarative.retrievers import AsyncRetriever, SimpleRetriever
-from airbyte_cdk.sources.declarative.schema import InlineSchemaLoader, JsonFileSchemaLoader
+from airbyte_cdk.sources.declarative.schema import (
+    DynamicSchemaLoader,
+    InlineSchemaLoader,
+    JsonFileSchemaLoader,
+)
 from airbyte_cdk.sources.declarative.schema.caching_schema_loader_decorator import (
     CachingSchemaLoaderDecorator,
 )
@@ -4158,6 +4162,97 @@ def test_create_async_retriever():
     assert not download_retriever_record_selector.transformations
     assert download_retriever_record_selector.record_filter is None
     assert download_retriever_record_selector.schema_normalization._config.name == "NoTransform"
+
+
+def test_dynamic_schema_loader_with_async_retriever():
+    """
+    Verifies that DynamicSchemaLoader can be created with an AsyncRetriever without raising
+    TypeError due to missing stream_slicer kwarg.
+    Regression test for https://github.com/airbytehq/airbyte-python-cdk/issues/766
+    """
+    content = """
+stream_with_dynamic_schema:
+  type: DeclarativeStream
+  name: test_stream
+  schema_loader:
+    type: DynamicSchemaLoader
+    retriever:
+      type: AsyncRetriever
+      record_selector:
+        type: RecordSelector
+        extractor:
+          type: DpathExtractor
+          field_path: ["data"]
+      status_mapping:
+        failed:
+          - Error
+        running:
+          - Pending
+        completed:
+          - Success
+        timeout: []
+      status_extractor:
+        type: DpathExtractor
+        field_path:
+          - status
+      download_target_extractor:
+        type: DpathExtractor
+        field_path:
+          - download_url
+      creation_requester:
+        type: HttpRequester
+        url_base: https://api.test.com
+        path: /reports/create
+        http_method: POST
+      polling_requester:
+        type: HttpRequester
+        url_base: https://api.test.com
+        path: /reports/status
+        http_method: GET
+      download_requester:
+        type: HttpRequester
+        url_base: "{{download_target}}"
+        http_method: GET
+    schema_type_identifier:
+      type: SchemaTypeIdentifier
+      key_pointer:
+        - name
+      type_pointer:
+        - type
+  retriever:
+    type: SimpleRetriever
+    requester:
+      type: HttpRequester
+      url_base: https://api.test.com
+      path: /data
+      http_method: GET
+    record_selector:
+      type: RecordSelector
+      extractor:
+        type: DpathExtractor
+        field_path: []
+    paginator:
+      type: NoPagination
+  $parameters:
+    name: "test_stream"
+    primary_key: "id"
+"""
+    parsed_manifest = YamlDeclarativeSource._parse(content)
+    resolved_manifest = resolver.preprocess_manifest(parsed_manifest)
+    stream_manifest = transformer.propagate_types_and_parameters(
+        "", resolved_manifest["stream_with_dynamic_schema"], {}
+    )
+
+    stream = factory.create_component(
+        model_type=DeclarativeStreamModel,
+        component_definition=stream_manifest,
+        config=input_config,
+    )
+
+    assert isinstance(stream, DefaultStream)
+    schema_loader = get_schema_loader(stream)
+    assert isinstance(schema_loader, DynamicSchemaLoader)
+    assert isinstance(schema_loader.retriever, AsyncRetriever)
 
 
 def test_api_budget():
