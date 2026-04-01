@@ -11,8 +11,6 @@ from dataclasses import dataclass
 from io import BufferedIOBase, TextIOWrapper
 from typing import Any, List, Optional
 
-GZIP_MAGIC_BYTES = b"\x1f\x8b"
-
 import orjson
 import requests
 
@@ -28,31 +26,67 @@ from airbyte_cdk.utils import AirbyteTracedException
 
 logger = logging.getLogger("airbyte")
 
+_GZIP_MAGIC_BYTES = b"\x1f\x8b"
+
+
+class _PrefixedStream(io.RawIOBase):
+    """Prepend already-read bytes back onto a stream without buffering the entire payload."""
+
+    def __init__(self, prefix: bytes, stream: BufferedIOBase) -> None:
+        self._prefix = io.BytesIO(prefix)
+        self._stream = stream
+        self._prefix_done = False
+
+    def readable(self) -> bool:
+        return True
+
+    def read(self, n: int = -1) -> bytes:
+        if not self._prefix_done:
+            chunk = self._prefix.read(n)
+            if chunk:
+                if n != -1 and len(chunk) >= n:
+                    return chunk
+                self._prefix_done = True
+                remaining = self._stream.read(n - len(chunk) if n != -1 else -1)
+                return chunk + (remaining or b"")
+            self._prefix_done = True
+        return self._stream.read(n)
+
+    def readinto(self, b: bytearray | memoryview) -> int:  # type: ignore[override]
+        data = self.read(len(b))
+        n = len(data)
+        b[:n] = data
+        return n
+
 
 @dataclass
 class GzipParser(Parser):
     inner_parser: Parser
 
     def parse(self, data: BufferedIOBase) -> PARSER_OUTPUT_TYPE:
-        """
-        Decompress gzipped bytes and pass decompressed data to the inner parser.
+        """Decompress gzipped bytes and pass decompressed data to the inner parser.
 
         Auto-detects gzip content by checking for magic bytes (0x1f 0x8b) at the start.
         If the data is not gzip-compressed, it is passed directly to the inner parser.
-        This handles APIs that return gzip-compressed bodies without Content-Encoding header.
+        This handles APIs that return gzip-compressed bodies without `Content-Encoding` header.
+
+        Note: In builder mode (`stream_response=False`), the `requests` library auto-decompresses
+        responses that carry `Content-Encoding: gzip`. The already-decompressed bytes will not
+        start with the gzip magic bytes, so they pass through to the inner parser unchanged.
+        A false-positive (decompressed content coincidentally starting with 0x1f 0x8b) is
+        theoretically possible but extremely unlikely for structured formats (CSV, JSON, JSONL).
         """
         header = data.read(2)
         if not header:
             return
 
-        remaining = data.read()
-        full_data = io.BytesIO(header + remaining)
+        stream: BufferedIOBase = _PrefixedStream(header, data)  # type: ignore[assignment]
 
-        if header == GZIP_MAGIC_BYTES:
-            with gzip.GzipFile(fileobj=full_data, mode="rb") as gzipobj:
+        if header == _GZIP_MAGIC_BYTES:
+            with gzip.GzipFile(fileobj=stream, mode="rb") as gzipobj:
                 yield from self.inner_parser.parse(gzipobj)
         else:
-            yield from self.inner_parser.parse(full_data)
+            yield from self.inner_parser.parse(stream)
 
 
 @dataclass
