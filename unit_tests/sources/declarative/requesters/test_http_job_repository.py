@@ -205,7 +205,9 @@ class HttpJobRepositoryTest(TestCase):
 
         assert len(records) == 2
 
-    def test_given_stale_polling_response_when_fetch_records_then_re_polls_for_fresh_url(self) -> None:
+    def test_given_stale_polling_response_when_fetch_records_then_re_polls_for_fresh_url(
+        self,
+    ) -> None:
         """
         Verifies that fetch_records re-polls the API before downloading to get a fresh download URL.
         This prevents failures when download URLs (e.g. Azure SAS tokens) expire between
