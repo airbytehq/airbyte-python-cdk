@@ -26,9 +26,14 @@ class HttpRequesterRequestBodyJsonDataToRequestBody(ManifestMigration):
     replacement_key = "request_body"
 
     def should_migrate(self, manifest: ManifestType) -> bool:
-        return manifest[TYPE_TAG] == self.component_type and any(
-            key in list(manifest.keys()) for key in self.original_keys
-        )
+        if manifest[TYPE_TAG] != self.component_type:
+            return False
+        for key in self.original_keys:
+            if key in manifest:
+                if key == self.body_json_key and isinstance(manifest[key], str):
+                    continue
+                return True
+        return False
 
     def migrate(self, manifest: ManifestType) -> None:
         for key in self.original_keys:
@@ -38,9 +43,18 @@ class HttpRequesterRequestBodyJsonDataToRequestBody(ManifestMigration):
                 self._migrate_body_data(manifest, key)
 
     def validate(self, manifest: ManifestType) -> bool:
-        return self.replacement_key in manifest and all(
-            key not in manifest for key in self.original_keys
+        has_replacement = self.replacement_key in manifest
+        has_unmigrated = any(
+            key in manifest
+            for key in self.original_keys
+            if not (key == self.body_json_key and isinstance(manifest.get(key), str))
         )
+        has_string_json = self.body_json_key in manifest and isinstance(
+            manifest[self.body_json_key], str
+        )
+        if has_string_json:
+            return not has_unmigrated
+        return has_replacement and not has_unmigrated
 
     def _migrate_body_json(self, manifest: ManifestType, key: str) -> None:
         """
@@ -52,7 +66,7 @@ class HttpRequesterRequestBodyJsonDataToRequestBody(ManifestMigration):
         json_object_type = "RequestBodyJsonObject"
 
         if isinstance(manifest[key], str):
-            self._migrate_value(manifest, key, text_type)
+            return
         elif isinstance(manifest[key], dict):
             if isinstance(manifest[key].get(query_key), str):
                 self._migrate_value(manifest, key, graph_ql_type)
