@@ -858,6 +858,25 @@ def test_given_serialization_error_using_orjson_then_fallback_on_json(
     assert len(record_messages) == 2
 
 
+def test_given_non_json_serializable_type_then_raise_traced_exception(
+    entrypoint: AirbyteEntrypoint, mocker, spec_mock, config_mock
+):
+    """Test that types which both orjson and json cannot serialize (like complex) raise AirbyteTracedException to prevent data corruption."""
+    parsed_args = Namespace(
+        command="read", config="config_path", state="statepath", catalog="catalogpath"
+    )
+    record = AirbyteMessage(
+        record=AirbyteRecordMessage(stream="stream", data={"value": complex(1, 2)}, emitted_at=1),
+        type=Type.RECORD,
+    )
+    mocker.patch.object(MockSource, "read_state", return_value={})
+    mocker.patch.object(MockSource, "read_catalog", return_value={})
+    mocker.patch.object(MockSource, "read", return_value=[record])
+
+    with pytest.raises(AirbyteTracedException, match="failed to be serialized to JSON"):
+        list(entrypoint.run(parsed_args))
+
+
 def test_memory_failfast_flushes_queued_state_before_raising(mocker):
     """Record emitted → check_memory_usage raises → queued STATE flushed with recordCount → exception propagates."""
     queued_state = AirbyteMessage(

@@ -352,7 +352,14 @@ class AirbyteEntrypoint(object):
                     f"There was an error during the serialization of an AirbyteMessage: `{exception}`. This might impact the sync performances."
                 )
                 _HAS_LOGGED_FOR_SERIALIZATION_ERROR = True
-            return json.dumps(serialized_message)
+            try:
+                return json.dumps(serialized_message)
+            except Exception as json_exception:
+                raise AirbyteTracedException(
+                    internal_message=f"Failed to serialize AirbyteMessage to JSON: `{json_exception}`",
+                    failure_type=FailureType.system_error,
+                    message="A record returned from the API failed to be serialized to JSON.",
+                ) from json_exception
 
     @classmethod
     def extract_state(cls, args: List[str]) -> Optional[Any]:
