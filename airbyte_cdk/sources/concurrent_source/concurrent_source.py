@@ -166,7 +166,7 @@ class ConcurrentSource:
         elif isinstance(queue_item, PartitionGenerationCompletedSentinel):
             yield from concurrent_stream_processor.on_partition_generation_completed(queue_item)
         elif isinstance(queue_item, Partition):
-            concurrent_stream_processor.on_partition(queue_item)
+            yield from concurrent_stream_processor.on_partition(queue_item)
         elif isinstance(queue_item, PartitionCompleteSentinel):
             yield from concurrent_stream_processor.on_partition_complete_sentinel(queue_item)
         elif isinstance(queue_item, Record):

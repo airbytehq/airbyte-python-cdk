@@ -309,8 +309,19 @@ class FileBasedConcurrentCursor(AbstractConcurrentFileBasedCursor):
     def set_initial_state(self, value: StreamState) -> None:
         pass
 
-    def ensure_at_least_one_state_emitted(self) -> None:
-        self.emit_state_message()
+    def ensure_at_least_one_state_emitted(self) -> Iterable[AirbyteMessage]:
+        """Return the state message directly instead of putting it on the shared queue."""
+        with self._state_lock:
+            new_state = self.get_state()
+            self._connector_state_manager.update_state_for_stream(
+                self._stream_name,
+                self._stream_namespace,
+                new_state,
+            )
+            state_message = self._connector_state_manager.create_state_message(
+                self._stream_name, self._stream_namespace
+            )
+            yield state_message
 
     def should_be_synced(self, record: Record) -> bool:
         return True

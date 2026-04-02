@@ -140,20 +140,19 @@ class ConcurrentReadProcessor:
             if status_message:
                 yield status_message
 
-    def on_partition(self, partition: Partition) -> None:
+    def on_partition(self, partition: Partition) -> Iterable[AirbyteMessage]:
         """
         This method is called when a partition is generated.
         1. Add the partition to the set of partitions for the stream
-        2. Log the slice if necessary
+        2. Log the slice if necessary — yield the log message directly instead of
+           putting it on the shared queue (prevents deadlock when queue is full)
         3. Submit the partition to the thread pool manager
         """
         stream_name = partition.stream_name()
         self._streams_to_running_partitions[stream_name].add(partition)
         cursor = self._stream_name_to_instance[stream_name].cursor
         if self._slice_logger.should_log_slice_message(self._logger):
-            self._message_repository.emit_message(
-                self._slice_logger.create_slice_log_message(partition.to_slice())
-            )
+            yield self._slice_logger.create_slice_log_message(partition.to_slice())
         self._thread_pool_manager.submit(
             self._partition_reader.process_partition, partition, cursor
         )
@@ -426,7 +425,7 @@ class ConcurrentReadProcessor:
         )
         self._logger.info(f"Marking stream {stream_name} as STOPPED")
         stream = self._stream_name_to_instance[stream_name]
-        stream.cursor.ensure_at_least_one_state_emitted()
+        yield from stream.cursor.ensure_at_least_one_state_emitted()
         yield from self._message_repository.consume_queue()
         self._logger.info(f"Finished syncing {stream.name}")
         self._streams_done.add(stream_name)
