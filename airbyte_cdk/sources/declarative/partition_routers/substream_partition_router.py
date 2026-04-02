@@ -262,7 +262,9 @@ class SubstreamPartitionRouter(PartitionRouter):
                                 # themselves are discarded — the parent cursor's close_partition()
                                 # above already emitted state through the queue. This call just
                                 # ensures internal bookkeeping is finalized.
-                                for _msg in parent_stream.cursor.ensure_at_least_one_state_emitted():
+                                for (
+                                    _msg
+                                ) in parent_stream.cursor.ensure_at_least_one_state_emitted():
                                     pass
 
                         if emit_slice:
