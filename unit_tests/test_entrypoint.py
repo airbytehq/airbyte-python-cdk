@@ -875,3 +875,72 @@ def test_given_non_json_serializable_type_then_raise_traced_exception(
 
     with pytest.raises(AirbyteTracedException, match="failed to be serialized to JSON"):
         list(entrypoint.run(parsed_args))
+
+
+def test_memory_failfast_flushes_queued_state_before_raising(mocker):
+    """Record emitted → check_memory_usage raises → queued STATE flushed with recordCount → exception propagates."""
+    queued_state = AirbyteMessage(
+        type=Type.STATE,
+        state=AirbyteStateMessage(
+            type=AirbyteStateType.STREAM,
+            stream=AirbyteStreamState(
+                stream_descriptor=StreamDescriptor(name="users", namespace=None),
+                stream_state=AirbyteStateBlob({"cursor": "abc123"}),
+            ),
+        ),
+    )
+
+    message_repository = MagicMock()
+    message_repository.consume_queue.side_effect = [
+        [queued_state],  # flush during fail-fast exception handling
+        [],  # normal end-of-loop flush (not reached)
+    ]
+    mocker.patch.object(
+        MockSource,
+        "message_repository",
+        new_callable=mocker.PropertyMock,
+        return_value=message_repository,
+    )
+
+    record = AirbyteMessage(
+        record=AirbyteRecordMessage(stream="users", data={"id": 1}, emitted_at=1),
+        type=Type.RECORD,
+    )
+    mocker.patch.object(MockSource, "read_state", return_value={})
+    mocker.patch.object(MockSource, "read_catalog", return_value={})
+    mocker.patch.object(MockSource, "read", return_value=[record])
+
+    fail_fast_exc = AirbyteTracedException(
+        message="Memory usage exceeded critical threshold (98%)",
+        failure_type=FailureType.system_error,
+    )
+
+    entrypoint_obj = AirbyteEntrypoint(MockSource())
+    mocker.patch.object(
+        entrypoint_obj._memory_monitor, "check_memory_usage", side_effect=fail_fast_exc
+    )
+
+    spec = ConnectorSpecification(connectionSpecification={})
+    config: dict[str, str] = {}
+
+    # Call read() directly to get AirbyteMessage objects (not serialised strings)
+    gen = entrypoint_obj.read(spec, config, {}, [])
+
+    # 1. First yielded message is the RECORD
+    first = next(gen)
+    assert first.type == Type.RECORD
+    assert first.record.stream == "users"  # type: ignore[union-attr]
+
+    # 2. Second yielded message is the queued STATE (flushed before exception)
+    second = next(gen)
+    assert second.type == Type.STATE
+    assert second.state.stream.stream_state == AirbyteStateBlob({"cursor": "abc123"})  # type: ignore[union-attr]
+
+    # 3. The STATE passed through handle_record_counts, so sourceStats.recordCount == 1.0
+    assert second.state.sourceStats is not None  # type: ignore[union-attr]
+    assert second.state.sourceStats.recordCount == 1.0  # type: ignore[union-attr]
+
+    # 4. Next iteration re-raises the AirbyteTracedException
+    with pytest.raises(AirbyteTracedException) as exc_info:
+        next(gen)
+    assert exc_info.value is fail_fast_exc

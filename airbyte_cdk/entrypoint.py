@@ -281,7 +281,17 @@ class AirbyteEntrypoint(object):
         stream_message_counter: DefaultDict[HashableStreamDescriptor, float] = defaultdict(float)
         for message in self.source.read(self.logger, config, catalog, state):
             yield self.handle_record_counts(message, stream_message_counter)
-            self._memory_monitor.check_memory_usage()
+            try:
+                self._memory_monitor.check_memory_usage()
+            except AirbyteTracedException:
+                # Flush queued messages (state checkpoints, logs) before propagating
+                # the memory fail-fast exception, so the platform receives the last
+                # committed state for the next sync.
+                for queued_message in self._emit_queued_messages(self.source):
+                    yield self.handle_record_counts(queued_message, stream_message_counter)
+                raise
+
+        # Flush queued messages after normal completion of the read loop.
         for message in self._emit_queued_messages(self.source):
             yield self.handle_record_counts(message, stream_message_counter)
 
