@@ -41,6 +41,7 @@ from airbyte_cdk.sources.utils.schema_helpers import check_config_against_spec_o
 from airbyte_cdk.utils import is_cloud_environment, message_utils
 from airbyte_cdk.utils.airbyte_secrets_utils import get_secrets, update_secrets
 from airbyte_cdk.utils.constants import ENV_REQUEST_CACHE_PATH
+from airbyte_cdk.utils.memory_monitor import MemoryMonitor
 from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 
 logger = init_logger("airbyte")
@@ -60,6 +61,7 @@ class AirbyteEntrypoint(object):
 
         self.source = source
         self.logger = logging.getLogger(f"airbyte.{getattr(source, 'name', '')}")
+        self._memory_monitor = MemoryMonitor()
 
     @staticmethod
     def parse_args(args: List[str]) -> argparse.Namespace:
@@ -279,6 +281,17 @@ class AirbyteEntrypoint(object):
         stream_message_counter: DefaultDict[HashableStreamDescriptor, float] = defaultdict(float)
         for message in self.source.read(self.logger, config, catalog, state):
             yield self.handle_record_counts(message, stream_message_counter)
+            try:
+                self._memory_monitor.check_memory_usage()
+            except AirbyteTracedException:
+                # Flush queued messages (state checkpoints, logs) before propagating
+                # the memory fail-fast exception, so the platform receives the last
+                # committed state for the next sync.
+                for queued_message in self._emit_queued_messages(self.source):
+                    yield self.handle_record_counts(queued_message, stream_message_counter)
+                raise
+
+        # Flush queued messages after normal completion of the read loop.
         for message in self._emit_queued_messages(self.source):
             yield self.handle_record_counts(message, stream_message_counter)
 
@@ -339,7 +352,14 @@ class AirbyteEntrypoint(object):
                     f"There was an error during the serialization of an AirbyteMessage: `{exception}`. This might impact the sync performances."
                 )
                 _HAS_LOGGED_FOR_SERIALIZATION_ERROR = True
-            return json.dumps(serialized_message)
+            try:
+                return json.dumps(serialized_message)
+            except Exception as json_exception:
+                raise AirbyteTracedException(
+                    internal_message=f"Failed to serialize AirbyteMessage to JSON: `{json_exception}`",
+                    failure_type=FailureType.system_error,
+                    message="A record returned from the API failed to be serialized to JSON.",
+                ) from json_exception
 
     @classmethod
     def extract_state(cls, args: List[str]) -> Optional[Any]:

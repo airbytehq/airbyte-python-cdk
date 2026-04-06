@@ -25,6 +25,7 @@ from airbyte_cdk.sources.streams.http.exceptions import (
     RequestBodyException,
     UserDefinedBackoffException,
 )
+from airbyte_cdk.sources.streams.http.http_client import MessageRepresentationAirbyteTracedErrors
 from airbyte_cdk.sources.streams.http.requests_native_auth import TokenAuthenticator
 from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 
@@ -1059,3 +1060,17 @@ def test_refresh_token_then_retry_action_retries_and_succeeds_after_token_refres
     assert mock_authenticator.access_token == "new_refreshed_token"
     assert returned_response == valid_response
     assert call_count == 2
+
+
+def test_deprecated_alias_message_representation_airbyte_traced_errors_is_importable():
+    """Verify that the deprecated alias still resolves to AirbyteTracedException."""
+    assert MessageRepresentationAirbyteTracedErrors is AirbyteTracedException
+
+
+def test_deprecated_alias_is_catchable_as_airbyte_traced_exception():
+    """Verify that exceptions raised as the alias can be caught as AirbyteTracedException."""
+    with pytest.raises(AirbyteTracedException):
+        raise MessageRepresentationAirbyteTracedErrors(
+            internal_message="test",
+            message="test user message",
+        )

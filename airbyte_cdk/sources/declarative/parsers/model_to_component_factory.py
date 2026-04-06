@@ -11,6 +11,7 @@ import logging
 import re
 from functools import partial
 from typing import (
+    TYPE_CHECKING,
     Any,
     Callable,
     Dict,
@@ -26,6 +27,11 @@ from typing import (
     get_origin,
     get_type_hints,
 )
+
+if TYPE_CHECKING:
+    from airbyte_cdk.legacy.sources.declarative.incremental.datetime_based_cursor import (
+        DatetimeBasedCursor,
+    )
 
 from airbyte_protocol_dataclasses.models import ConfiguredAirbyteStream
 from isodate import parse_duration
@@ -3548,7 +3554,6 @@ class ModelToComponentFactory:
         self,
         model: StateDelegatingStreamModel,
         config: Config,
-        has_parent_state: Optional[bool] = None,
         **kwargs: Any,
     ) -> DefaultStream:
         if (
@@ -3559,18 +3564,119 @@ class ModelToComponentFactory:
                 f"state_delegating_stream, full_refresh_stream name and incremental_stream must have equal names. Instead has {model.name}, {model.full_refresh_stream.name} and {model.incremental_stream.name}."
             )
 
-        stream_model = self._get_state_delegating_stream_model(
-            False if has_parent_state is None else has_parent_state, model
-        )
+        # Resolve api_retention_period with config context (supports Jinja2 interpolation)
+        resolved_retention_period: Optional[str] = None
+        if model.api_retention_period:
+            interpolated_retention = InterpolatedString.create(
+                model.api_retention_period, parameters=model.parameters or {}
+            )
+            resolved_value = interpolated_retention.eval(config=config)
+            if resolved_value:
+                resolved_retention_period = str(resolved_value)
 
-        return self._create_component_from_model(stream_model, config=config, **kwargs)  # type: ignore[no-any-return]  # DeclarativeStream will be created as stream_model is alwyas DeclarativeStreamModel
+        if resolved_retention_period:
+            for stream_model in (model.full_refresh_stream, model.incremental_stream):
+                if isinstance(stream_model.incremental_sync, IncrementingCountCursorModel):
+                    raise ValueError(
+                        f"Stream '{model.name}' uses IncrementingCountCursor which is not supported "
+                        f"with api_retention_period. IncrementingCountCursor does not use datetime-based "
+                        f"cursors, so cursor age validation cannot be performed."
+                    )
+
+        stream_state = self._connector_state_manager.get_stream_state(model.name, None)
+
+        if not stream_state:
+            return self._create_component_from_model(  # type: ignore[no-any-return]
+                model.full_refresh_stream, config=config, **kwargs
+            )
+
+        incremental_stream: DefaultStream = self._create_component_from_model(
+            model.incremental_stream, config=config, **kwargs
+        )  # type: ignore[assignment]
+
+        # Only run cursor age validation for streams that are in the configured
+        # catalog (or when no catalog was provided, e.g. during discover / connector
+        # builder).  Streams not selected by the user but instantiated as parent-stream
+        # dependencies must not go through this path because it emits state messages
+        # that the destination does not know about, causing "Stream not found" crashes.
+        stream_is_in_catalog = (
+            not self._stream_name_to_configured_stream  # no catalog → validate by default
+            or model.name in self._stream_name_to_configured_stream
+        )
+        if resolved_retention_period and stream_is_in_catalog:
+            full_refresh_stream: DefaultStream = self._create_component_from_model(
+                model.full_refresh_stream, config=config, **kwargs
+            )  # type: ignore[assignment]
+            if self._is_cursor_older_than_retention_period(
+                stream_state,
+                full_refresh_stream.cursor,
+                incremental_stream.cursor,
+                resolved_retention_period,
+                model.name,
+            ):
+                # Clear state BEFORE constructing the full_refresh_stream so that
+                # its cursor starts from start_date instead of the stale cursor.
+                self._connector_state_manager.update_state_for_stream(model.name, None, {})
+                state_message = self._connector_state_manager.create_state_message(model.name, None)
+                self._message_repository.emit_message(state_message)
+                return self._create_component_from_model(  # type: ignore[no-any-return]
+                    model.full_refresh_stream, config=config, **kwargs
+                )
+
+        return incremental_stream
+
+    @staticmethod
+    def _is_cursor_older_than_retention_period(
+        stream_state: Mapping[str, Any],
+        full_refresh_cursor: Cursor,
+        incremental_cursor: Cursor,
+        api_retention_period: str,
+        stream_name: str,
+    ) -> bool:
+        """Check if the cursor value in the state is older than the API's retention period.
+
+        Checks cursors in sequence: full refresh cursor first, then incremental cursor.
+        FinalStateCursor returns now() for completed full refresh state (NO_CURSOR_STATE_KEY),
+        which is always within retention, so we use incremental. For other states, it returns
+        None and we fall back to checking the incremental cursor.
+
+        Returns True if the cursor is older than the retention period (should use full refresh).
+        Returns False if the cursor is within the retention period (safe to use incremental).
+        """
+        retention_duration = parse_duration(api_retention_period)
+        retention_cutoff = datetime.datetime.now(datetime.timezone.utc) - retention_duration
+
+        # Check full refresh cursor first
+        cursor_datetime = full_refresh_cursor.get_cursor_datetime_from_state(stream_state)
+
+        # If full refresh cursor returns None, check incremental cursor
+        if cursor_datetime is None:
+            cursor_datetime = incremental_cursor.get_cursor_datetime_from_state(stream_state)
+
+        if cursor_datetime is None:
+            # Neither cursor could parse the state - fall back to full refresh to be safe
+            return True
+
+        if cursor_datetime < retention_cutoff:
+            logging.warning(
+                f"Stream '{stream_name}' has a cursor value older than "
+                f"the API's retention period of {api_retention_period} "
+                f"(cutoff: {retention_cutoff.isoformat()}). "
+                f"Falling back to full refresh to avoid data loss."
+            )
+            return True
+
+        return False
 
     def _get_state_delegating_stream_model(
-        self, has_parent_state: bool, model: StateDelegatingStreamModel
+        self,
+        model: StateDelegatingStreamModel,
+        parent_state: Optional[Mapping[str, Any]] = None,
     ) -> DeclarativeStreamModel:
+        """Return the appropriate underlying stream model based on state."""
         return (
             model.incremental_stream
-            if self._connector_state_manager.get_stream_state(model.name, None) or has_parent_state
+            if self._connector_state_manager.get_stream_state(model.name, None) or parent_state
             else model.full_refresh_stream
         )
 
@@ -3901,17 +4007,13 @@ class ModelToComponentFactory:
     def create_parent_stream_config_with_substream_wrapper(
         self, model: ParentStreamConfigModel, config: Config, *, stream_name: str, **kwargs: Any
     ) -> Any:
-        # getting the parent state
         child_state = self._connector_state_manager.get_stream_state(stream_name, None)
 
-        # This flag will be used exclusively for StateDelegatingStream when a parent stream is created
-        has_parent_state = bool(
-            self._connector_state_manager.get_stream_state(stream_name, None)
-            if model.incremental_dependency
-            else False
+        parent_state: Optional[Mapping[str, Any]] = (
+            child_state if model.incremental_dependency and child_state else None
         )
         connector_state_manager = self._instantiate_parent_stream_state_manager(
-            child_state, config, model, has_parent_state
+            child_state, config, model, parent_state
         )
 
         substream_factory = ModelToComponentFactory(
@@ -3943,7 +4045,7 @@ class ModelToComponentFactory:
         child_state: MutableMapping[str, Any],
         config: Config,
         model: ParentStreamConfigModel,
-        has_parent_state: bool,
+        parent_state: Optional[Mapping[str, Any]] = None,
     ) -> ConnectorStateManager:
         """
         With DefaultStream, the state needs to be provided during __init__ of the cursor as opposed to the
@@ -3955,21 +4057,18 @@ class ModelToComponentFactory:
         """
         if model.incremental_dependency and child_state:
             parent_stream_name = model.stream.name or ""
-            parent_state = ConcurrentPerPartitionCursor.get_parent_state(
+            extracted_parent_state = ConcurrentPerPartitionCursor.get_parent_state(
                 child_state, parent_stream_name
             )
 
-            if not parent_state:
-                # there are two migration cases: state value from child stream or from global state
-                parent_state = ConcurrentPerPartitionCursor.get_global_state(
+            if not extracted_parent_state:
+                extracted_parent_state = ConcurrentPerPartitionCursor.get_global_state(
                     child_state, parent_stream_name
                 )
 
-                if not parent_state and not isinstance(parent_state, dict):
+                if not extracted_parent_state and not isinstance(extracted_parent_state, dict):
                     cursor_values = child_state.values()
                     if cursor_values and len(cursor_values) == 1:
-                        # We assume the child state is a pair `{<cursor_field>: <cursor_value>}` and we will use the
-                        # cursor value as a parent state.
                         incremental_sync_model: Union[
                             DatetimeBasedCursorModel,
                             IncrementingCountCursorModel,
@@ -3977,14 +4076,14 @@ class ModelToComponentFactory:
                             model.stream.incremental_sync  # type: ignore  # if we are there, it is because there is incremental_dependency and therefore there is an incremental_sync on the parent stream
                             if isinstance(model.stream, DeclarativeStreamModel)
                             else self._get_state_delegating_stream_model(
-                                has_parent_state, model.stream
+                                model.stream, parent_state=parent_state
                             ).incremental_sync
                         )
                         cursor_field = InterpolatedString.create(
                             incremental_sync_model.cursor_field,
                             parameters=incremental_sync_model.parameters or {},
                         ).eval(config)
-                        parent_state = AirbyteStateMessage(
+                        extracted_parent_state = AirbyteStateMessage(
                             type=AirbyteStateType.STREAM,
                             stream=AirbyteStreamState(
                                 stream_descriptor=StreamDescriptor(
@@ -3995,7 +4094,7 @@ class ModelToComponentFactory:
                                 ),
                             ),
                         )
-            return ConnectorStateManager([parent_state] if parent_state else [])
+            return ConnectorStateManager([extracted_parent_state] if extracted_parent_state else [])
 
         return ConnectorStateManager([])
 
@@ -4288,12 +4387,21 @@ class ModelToComponentFactory:
     def create_http_request_matcher(
         self, model: HttpRequestRegexMatcherModel, config: Config, **kwargs: Any
     ) -> HttpRequestRegexMatcher:
+        weight = model.weight
+        if weight is not None:
+            if isinstance(weight, str):
+                weight = int(InterpolatedString.create(weight, parameters={}).eval(config))
+            else:
+                weight = int(weight)
+            if weight < 1:
+                raise ValueError(f"weight must be >= 1, got {weight}")
         return HttpRequestRegexMatcher(
             method=model.method,
             url_base=model.url_base,
             url_path_pattern=model.url_path_pattern,
             params=model.params,
             headers=model.headers,
+            weight=weight,
         )
 
     def set_api_budget(self, component_definition: ComponentDefinition, config: Config) -> None:

@@ -5,7 +5,7 @@
 import logging
 import time
 from abc import ABC, abstractmethod
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from io import IOBase
 from os import makedirs, path
@@ -24,6 +24,7 @@ from airbyte_cdk.sources.file_based.config.validate_config_transfer_modes import
 from airbyte_cdk.sources.file_based.exceptions import FileSizeLimitError
 from airbyte_cdk.sources.file_based.file_record_data import FileRecordData
 from airbyte_cdk.sources.file_based.remote_file import RemoteFile, UploadableRemoteFile
+from airbyte_cdk.utils.datetime_helpers import ab_datetime_parse
 
 
 class FileReadMode(Enum):
@@ -98,6 +99,33 @@ class AbstractFileBasedStreamReader(ABC):
         """
         ...
 
+    def _parse_start_date(self, start_date_str: str) -> datetime:
+        """Parse a start_date string, supporting both with and without microseconds.
+
+        AbstractFileBasedSpec accepts start_date in multiple formats as described by its
+        pattern_descriptor: "YYYY-MM-DD, YYYY-MM-DDTHH:mm:ssZ, or YYYY-MM-DDTHH:mm:ss.SSSSSSZ".
+        The primary format (self.DATE_TIME_FORMAT) includes microseconds, but the spec also
+        allows the shorter "YYYY-MM-DDTHH:mm:ssZ" variant. This method tries the primary
+        format first and falls back to the shorter format without microseconds.
+
+        Note: this fallback is only relevant for start_date values provided by the user in the
+        connector configuration. Cursor values persisted in connector state are always formatted
+        using the default DATE_TIME_FORMAT (with microseconds).
+        """
+        try:
+            return datetime.strptime(start_date_str, self.DATE_TIME_FORMAT)
+        except ValueError:
+            try:
+                return datetime.strptime(start_date_str, "%Y-%m-%dT%H:%M:%SZ")
+            except ValueError:
+                # ab_datetime_parse may return a timezone-aware datetime (e.g. for inputs
+                # like "2025-01-01T00:00:00+05:30"). We convert to UTC first so the offset
+                # is applied correctly, then strip tzinfo to produce a naive UTC datetime
+                # compatible with RemoteFile.last_modified comparisons.
+                return (
+                    ab_datetime_parse(start_date_str).astimezone(timezone.utc).replace(tzinfo=None)
+                )
+
     def filter_files_by_globs_and_start_date(
         self, files: List[RemoteFile], globs: List[str]
     ) -> Iterable[RemoteFile]:
@@ -105,7 +133,7 @@ class AbstractFileBasedStreamReader(ABC):
         Utility method for filtering files based on globs.
         """
         start_date = (
-            datetime.strptime(self.config.start_date, self.DATE_TIME_FORMAT)
+            self._parse_start_date(self.config.start_date)
             if self.config and self.config.start_date
             else None
         )

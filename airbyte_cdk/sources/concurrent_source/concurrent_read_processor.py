@@ -13,8 +13,15 @@ from airbyte_cdk.sources.concurrent_source.partition_generation_completed_sentin
 )
 from airbyte_cdk.sources.concurrent_source.stream_thread_exception import StreamThreadException
 from airbyte_cdk.sources.concurrent_source.thread_pool_manager import ThreadPoolManager
+from airbyte_cdk.sources.declarative.partition_routers.grouping_partition_router import (
+    GroupingPartitionRouter,
+)
+from airbyte_cdk.sources.declarative.partition_routers.substream_partition_router import (
+    SubstreamPartitionRouter,
+)
 from airbyte_cdk.sources.message import MessageRepository
 from airbyte_cdk.sources.streams.concurrent.abstract_stream import AbstractStream
+from airbyte_cdk.sources.streams.concurrent.default_stream import DefaultStream
 from airbyte_cdk.sources.streams.concurrent.partition_enqueuer import PartitionEnqueuer
 from airbyte_cdk.sources.streams.concurrent.partition_reader import PartitionReader
 from airbyte_cdk.sources.streams.concurrent.partitions.partition import Partition
@@ -66,17 +73,61 @@ class ConcurrentReadProcessor:
         self._streams_done: Set[str] = set()
         self._exceptions_per_stream_name: dict[str, List[Exception]] = {}
 
+        # Track which streams (by name) are currently active
+        # A stream is "active" if it's generating partitions or has partitions being read
+        self._active_stream_names: Set[str] = set()
+
+        # Store blocking group names for streams that require blocking simultaneous reads
+        # Maps stream name -> group name (empty string means no blocking)
+        self._stream_block_simultaneous_read: Dict[str, str] = {
+            stream.name: stream.block_simultaneous_read for stream in stream_instances_to_read_from
+        }
+
+        # Track which groups are currently active
+        # Maps group name -> set of stream names in that group
+        self._active_groups: Dict[str, Set[str]] = {}
+
+        for stream in stream_instances_to_read_from:
+            if stream.block_simultaneous_read:
+                self._logger.info(
+                    f"Stream '{stream.name}' is in blocking group '{stream.block_simultaneous_read}'. "
+                    f"Will defer starting this stream if another stream in the same group or its parents are active."
+                )
+
     def on_partition_generation_completed(
         self, sentinel: PartitionGenerationCompletedSentinel
     ) -> Iterable[AirbyteMessage]:
         """
         This method is called when a partition generation is completed.
         1. Remove the stream from the list of streams currently generating partitions
-        2. If the stream is done, mark it as such and return a stream status message
-        3. If there are more streams to read from, start the next partition generator
+        2. Deactivate parent streams (they were only needed for partition generation)
+        3. If the stream is done, mark it as such and return a stream status message
+        4. If there are more streams to read from, start the next partition generator
         """
         stream_name = sentinel.stream.name
         self._streams_currently_generating_partitions.remove(sentinel.stream.name)
+
+        # Deactivate all parent streams now that partition generation is complete
+        # Parents were only needed to generate slices, they can now be reused
+        parent_streams = self._collect_all_parent_stream_names(stream_name)
+        for parent_stream_name in parent_streams:
+            if parent_stream_name in self._active_stream_names:
+                self._logger.debug(f"Removing '{parent_stream_name}' from active streams")
+                self._active_stream_names.discard(parent_stream_name)
+
+                # Remove from active groups
+                parent_group = self._stream_block_simultaneous_read.get(parent_stream_name, "")
+                if parent_group:
+                    if parent_group in self._active_groups:
+                        self._active_groups[parent_group].discard(parent_stream_name)
+                        if not self._active_groups[parent_group]:
+                            del self._active_groups[parent_group]
+                    self._logger.info(
+                        f"Parent stream '{parent_stream_name}' (group '{parent_group}') deactivated after "
+                        f"partition generation completed for child '{stream_name}'. "
+                        f"Blocked streams in the queue will be retried on next start_next_partition_generator call."
+                    )
+
         # It is possible for the stream to already be done if no partitions were generated
         # If the partition generation process was completed and there are no partitions left to process, the stream is done
         if (
@@ -85,7 +136,9 @@ class ConcurrentReadProcessor:
         ):
             yield from self._on_stream_is_done(stream_name)
         if self._stream_instances_to_start_partition_generation:
-            yield self.start_next_partition_generator()  # type:ignore # None may be yielded
+            status_message = self.start_next_partition_generator()
+            if status_message:
+                yield status_message
 
     def on_partition(self, partition: Partition) -> None:
         """
@@ -113,6 +166,7 @@ class ConcurrentReadProcessor:
         1. Close the partition
         2. If the stream is done, mark it as such and return a stream status message
         3. Emit messages that were added to the message repository
+        4. If there are more streams to read from, start the next partition generator
         """
         partition = sentinel.partition
 
@@ -125,6 +179,11 @@ class ConcurrentReadProcessor:
                 and len(partitions_running) == 0
             ):
                 yield from self._on_stream_is_done(partition.stream_name())
+                # Try to start the next stream in the queue (may be a deferred stream)
+                if self._stream_instances_to_start_partition_generation:
+                    status_message = self.start_next_partition_generator()
+                    if status_message:
+                        yield status_message
         yield from self._message_repository.consume_queue()
 
     def on_record(self, record: Record) -> Iterable[AirbyteMessage]:
@@ -173,7 +232,9 @@ class ConcurrentReadProcessor:
             yield exception.exception.as_airbyte_message(stream_descriptor=stream_descriptor)
         else:
             yield AirbyteTracedException.from_exception(
-                exception, stream_descriptor=stream_descriptor
+                exception.exception,
+                stream_descriptor=stream_descriptor,
+                message=f"An unexpected error occurred in stream {exception.stream_name}: {type(exception.exception).__name__}",
             ).as_airbyte_message()
 
     def _flag_exception(self, stream_name: str, exception: Exception) -> None:
@@ -181,24 +242,112 @@ class ConcurrentReadProcessor:
 
     def start_next_partition_generator(self) -> Optional[AirbyteMessage]:
         """
-        Start the next partition generator.
-        1. Pop the next stream to read from
-        2. Submit the partition generator to the thread pool manager
-        3. Add the stream to the list of streams currently generating partitions
-        4. Return a stream status message
+        Submits the next partition generator to the thread pool.
+
+        A stream will be deferred (moved to end of queue) if:
+        1. The stream itself has block_simultaneous_read=True AND is already active
+        2. Any parent stream has block_simultaneous_read=True AND is currently active
+
+        This prevents simultaneous reads of streams that shouldn't be accessed concurrently.
+
+        :return: A status message if a partition generator was started, otherwise None
         """
-        if self._stream_instances_to_start_partition_generation:
+        if not self._stream_instances_to_start_partition_generation:
+            return None
+
+        # Remember initial queue size to avoid infinite loops if all streams are blocked
+        max_attempts = len(self._stream_instances_to_start_partition_generation)
+        attempts = 0
+
+        while self._stream_instances_to_start_partition_generation and attempts < max_attempts:
+            attempts += 1
+
+            # Pop the first stream from the queue
             stream = self._stream_instances_to_start_partition_generation.pop(0)
+            stream_name = stream.name
+            stream_group = self._stream_block_simultaneous_read.get(stream_name, "")
+
+            # Check if this stream has a blocking group and is already active as parent stream
+            # (i.e. being read from during partition generation for another stream)
+            if stream_group and stream_name in self._active_stream_names:
+                # Add back to the END of the queue for retry later
+                self._stream_instances_to_start_partition_generation.append(stream)
+                self._logger.info(
+                    f"Deferring stream '{stream_name}' (group '{stream_group}') because it's already active. Trying next stream."
+                )
+                continue  # Try the next stream in the queue
+
+            # Check if this stream's group is already active (another stream in the same group is running)
+            if (
+                stream_group
+                and stream_group in self._active_groups
+                and self._active_groups[stream_group]
+            ):
+                # Add back to the END of the queue for retry later
+                self._stream_instances_to_start_partition_generation.append(stream)
+                active_streams_in_group = self._active_groups[stream_group]
+                self._logger.info(
+                    f"Deferring stream '{stream_name}' (group '{stream_group}') because other stream(s) "
+                    f"{active_streams_in_group} in the same group are active. Trying next stream."
+                )
+                continue  # Try the next stream in the queue
+
+            # Check if any parent streams have a blocking group and are currently active
+            parent_streams = self._collect_all_parent_stream_names(stream_name)
+            blocked_by_parents = [
+                p
+                for p in parent_streams
+                if self._stream_block_simultaneous_read.get(p, "")
+                and p in self._active_stream_names
+            ]
+
+            if blocked_by_parents:
+                # Add back to the END of the queue for retry later
+                self._stream_instances_to_start_partition_generation.append(stream)
+                parent_groups = {
+                    self._stream_block_simultaneous_read.get(p, "") for p in blocked_by_parents
+                }
+                self._logger.info(
+                    f"Deferring stream '{stream_name}' because parent stream(s) "
+                    f"{blocked_by_parents} (groups {parent_groups}) are active. Trying next stream."
+                )
+                continue  # Try the next stream in the queue
+
+            # No blocking - start this stream
+            # Mark stream as active before starting
+            self._active_stream_names.add(stream_name)
+            self._streams_currently_generating_partitions.append(stream_name)
+
+            # Track this stream in its group if it has one
+            if stream_group:
+                if stream_group not in self._active_groups:
+                    self._active_groups[stream_group] = set()
+                self._active_groups[stream_group].add(stream_name)
+                self._logger.debug(f"Added '{stream_name}' to active group '{stream_group}'")
+
+            # Also mark all parent streams as active (they will be read from during partition generation)
+            for parent_stream_name in parent_streams:
+                parent_group = self._stream_block_simultaneous_read.get(parent_stream_name, "")
+                if parent_group:
+                    self._active_stream_names.add(parent_stream_name)
+                    if parent_group not in self._active_groups:
+                        self._active_groups[parent_group] = set()
+                    self._active_groups[parent_group].add(parent_stream_name)
+                    self._logger.info(
+                        f"Marking parent stream '{parent_stream_name}' (group '{parent_group}') as active "
+                        f"(will be read during partition generation for '{stream_name}')"
+                    )
+
             self._thread_pool_manager.submit(self._partition_enqueuer.generate_partitions, stream)
-            self._streams_currently_generating_partitions.append(stream.name)
-            self._logger.info(f"Marking stream {stream.name} as STARTED")
-            self._logger.info(f"Syncing stream: {stream.name} ")
+            self._logger.info(f"Marking stream {stream_name} as STARTED")
+            self._logger.info(f"Syncing stream: {stream_name}")
             return stream_status_as_airbyte_message(
                 stream.as_airbyte_stream(),
                 AirbyteStreamStatus.STARTED,
             )
-        else:
-            return None
+
+        # All streams in the queue are currently blocked
+        return None
 
     def is_done(self) -> bool:
         """
@@ -214,6 +363,21 @@ class ConcurrentReadProcessor:
                 for stream_name in self._stream_name_to_instance.keys()
             ]
         )
+        if is_done and self._stream_instances_to_start_partition_generation:
+            stuck_stream_names = [
+                s.name for s in self._stream_instances_to_start_partition_generation
+            ]
+            raise AirbyteTracedException(
+                message="Partition generation queue is not empty after all streams completed.",
+                internal_message=f"Streams {stuck_stream_names} remained in the partition generation queue after all streams were marked done.",
+                failure_type=FailureType.system_error,
+            )
+        if is_done and self._active_groups:
+            raise AirbyteTracedException(
+                message="Active stream groups are not empty after all streams completed.",
+                internal_message=f"Groups {dict(self._active_groups)} still active after all streams were marked done.",
+                failure_type=FailureType.system_error,
+            )
         if is_done and self._exceptions_per_stream_name:
             error_message = generate_failed_streams_error_message(self._exceptions_per_stream_name)
             self._logger.info(error_message)
@@ -229,6 +393,32 @@ class ConcurrentReadProcessor:
 
     def _is_stream_done(self, stream_name: str) -> bool:
         return stream_name in self._streams_done
+
+    def _collect_all_parent_stream_names(self, stream_name: str) -> Set[str]:
+        """Recursively collect all parent stream names for a given stream.
+
+        For example, if we have: epics -> issues -> comments
+        Then for comments, this returns {issues, epics}.
+        """
+        parent_names: Set[str] = set()
+        stream = self._stream_name_to_instance.get(stream_name)
+
+        if not stream:
+            return parent_names
+
+        partition_router = (
+            stream.get_partition_router() if isinstance(stream, DefaultStream) else None
+        )
+        if isinstance(partition_router, GroupingPartitionRouter):
+            partition_router = partition_router.underlying_partition_router
+
+        if isinstance(partition_router, SubstreamPartitionRouter):
+            for parent_config in partition_router.parent_stream_configs:
+                parent_name = parent_config.stream.name
+                parent_names.add(parent_name)
+                parent_names.update(self._collect_all_parent_stream_names(parent_name))
+
+        return parent_names
 
     def _on_stream_is_done(self, stream_name: str) -> Iterable[AirbyteMessage]:
         self._logger.info(
@@ -246,3 +436,19 @@ class ConcurrentReadProcessor:
             else AirbyteStreamStatus.COMPLETE
         )
         yield stream_status_as_airbyte_message(stream.as_airbyte_stream(), stream_status)
+
+        # Remove only this stream from active set (NOT parents)
+        if stream_name in self._active_stream_names:
+            self._active_stream_names.discard(stream_name)
+
+            # Remove from active groups
+            stream_group = self._stream_block_simultaneous_read.get(stream_name, "")
+            if stream_group:
+                if stream_group in self._active_groups:
+                    self._active_groups[stream_group].discard(stream_name)
+                    if not self._active_groups[stream_group]:
+                        del self._active_groups[stream_group]
+                self._logger.info(
+                    f"Stream '{stream_name}' (group '{stream_group}') is no longer active. "
+                    f"Blocked streams in the queue will be retried on next start_next_partition_generator call."
+                )
