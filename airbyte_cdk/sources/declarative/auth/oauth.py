@@ -72,6 +72,7 @@ class DeclarativeOauth2Authenticator(AbstractOauth2Authenticator, DeclarativeAut
     refresh_request_headers: Optional[Mapping[str, Any]] = None
     grant_type_name: Union[InterpolatedString, str] = "grant_type"
     grant_type: Union[InterpolatedString, str] = "refresh_token"
+    token_refresh_request_type: str = "body_data"
     message_repository: MessageRepository = NoopMessageRepository()
     profile_assertion: Optional[DeclarativeAuthenticator] = None
     use_profile_assertion: Optional[Union[InterpolatedBoolean, str, bool]] = False
@@ -246,6 +247,9 @@ class DeclarativeOauth2Authenticator(AbstractOauth2Authenticator, DeclarativeAut
 
     def get_refresh_request_headers(self) -> Mapping[str, Any]:
         return self._refresh_request_headers.eval(self.config)
+
+    def get_token_refresh_request_type(self) -> str:
+        return self.token_refresh_request_type
 
     def get_token_expiry_date(self) -> AirbyteDateTime:
         if not self._has_access_token_been_initialized():

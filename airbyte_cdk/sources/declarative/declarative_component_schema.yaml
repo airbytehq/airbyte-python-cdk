@@ -1409,6 +1409,15 @@ definitions:
         examples:
           - refresh_token
           - client_credentials
+      token_refresh_request_type:
+        title: Token Refresh Request Type
+        description: Configures how the token refresh request is sent. Use body_data (default) for POST with form-encoded body, body_json for POST with JSON body, or query_params for GET with query parameters (required by some APIs like Marketo).
+        type: string
+        default: "body_data"
+        enum:
+          - body_data
+          - body_json
+          - query_params
       refresh_request_body:
         title: Refresh Request Body
         description: Body of the request sent to get a new access token.

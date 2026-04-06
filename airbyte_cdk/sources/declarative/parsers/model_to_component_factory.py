@@ -2876,6 +2876,7 @@ class ModelToComponentFactory:
             expires_in_name=model.expires_in_name or "expires_in",
             grant_type_name=model.grant_type_name or "grant_type",
             grant_type=model.grant_type or "refresh_token",
+            token_refresh_request_type=model.token_refresh_request_type or "body_data",
             refresh_request_body=model.refresh_request_body,
             refresh_request_headers=model.refresh_request_headers,
             refresh_token_name=model.refresh_token_name or "refresh_token",
