@@ -58,6 +58,21 @@ class _PrefixedStream(io.RawIOBase):
         b[:n] = data
         return n
 
+    def close(self) -> None:  # type: ignore[override]
+        try:
+            self._prefix.close()
+        finally:
+            try:
+                self._stream.close()
+            finally:
+                super().close()
+
+    def __enter__(self) -> "_PrefixedStream":
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+        self.close()
+
 
 @dataclass
 class GzipParser(Parser):

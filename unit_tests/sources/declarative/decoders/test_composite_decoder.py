@@ -463,3 +463,23 @@ class TestGzipParserAutoDetection:
         decoder = CompositeRawDecoder(parser=parser, stream_response=False)
         records = list(decoder.decode(response))
         assert len(records) == 3
+
+    def test_prefixed_stream_closes_wrapped_stream(self):
+        """GzipParser should close the underlying stream once parsing completes."""
+
+        class CloseTrackingBytesIO(BytesIO):
+            def __init__(self, data: bytes) -> None:
+                super().__init__(data)
+                self.closed_flag = False
+
+            def close(self) -> None:
+                self.closed_flag = True
+                super().close()
+
+        stream = CloseTrackingBytesIO(compress_with_gzip(json.dumps({"hello": "world"})))
+        parser = GzipParser(inner_parser=JsonParser())
+
+        records = list(parser.parse(stream))
+
+        assert records == [{"hello": "world"}]
+        assert stream.closed_flag is True
