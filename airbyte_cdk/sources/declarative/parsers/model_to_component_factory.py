@@ -3680,6 +3680,8 @@ class ModelToComponentFactory:
             else model.full_refresh_stream
         )
 
+    _OPTIONAL_ASYNC_STATUS_FIELDS = {"skipped"}
+
     def _create_async_job_status_mapping(
         self, model: AsyncJobStatusMapModel, config: Config, **kwargs: Any
     ) -> Mapping[str, AsyncJobStatus]:
@@ -3690,8 +3692,12 @@ class ModelToComponentFactory:
                 continue
 
             if api_statuses is None:
-                # Optional fields like 'skipped' may be None when not provided
-                continue
+                if cdk_status in self._OPTIONAL_ASYNC_STATUS_FIELDS:
+                    continue
+                raise ValueError(
+                    f"Required CDK status '{cdk_status}' has no API statuses mapped. "
+                    f"Please provide at least an empty list for required status fields."
+                )
 
             for status in api_statuses:
                 if status in api_status_to_cdk_status:
