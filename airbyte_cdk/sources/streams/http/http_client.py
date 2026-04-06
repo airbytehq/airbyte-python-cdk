@@ -4,6 +4,7 @@
 
 import logging
 import os
+import time
 import urllib
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Mapping, Optional, Tuple, Union
@@ -36,19 +37,11 @@ from airbyte_cdk.sources.streams.http.error_handlers import (
     ResponseAction,
 )
 from airbyte_cdk.sources.streams.http.exceptions import (
-    BaseBackoffException,
-    DefaultBackoffException,
-    RateLimitBackoffException,
     RequestBodyException,
-    UserDefinedBackoffException,
+    RetryRequestException,
 )
 from airbyte_cdk.sources.streams.http.pagination_reset_exception import (
     PaginationResetRequiredException,
-)
-from airbyte_cdk.sources.streams.http.rate_limiting import (
-    http_client_default_backoff_handler,
-    rate_limit_default_backoff_handler,
-    user_defined_backoff_handler,
 )
 from airbyte_cdk.sources.utils.types import JsonType
 from airbyte_cdk.utils.airbyte_secrets_utils import filter_secrets
@@ -258,6 +251,18 @@ class HttpClient:
             else self._DEFAULT_MAX_TIME
         )
 
+    def _compute_backoff(self, exc: RetryRequestException, attempt: int) -> float:
+        """Compute the backoff duration in seconds for a retry attempt.
+
+        If the exception carries a user-defined `backoff_time`, that value plus
+        one second is returned (preserving the legacy +1 s behaviour).  Otherwise
+        an exponential back-off with base 2 and no jitter is used:
+        ``2 ** attempt`` seconds.
+        """
+        if exc.backoff_time is not None:
+            return exc.backoff_time + 1  # extra second to cover fractions
+        return float(2**attempt)
+
     def _send_with_retry(
         self,
         request: requests.PreparedRequest,
@@ -265,47 +270,57 @@ class HttpClient:
         log_formatter: Optional[Callable[[requests.Response], Any]] = None,
         exit_on_rate_limit: Optional[bool] = False,
     ) -> requests.Response:
+        """Send a request with an explicit retry loop.
+
+        Replaces the previous three-layer ``backoff`` decorator chain with a
+        single ``while True`` loop that catches `RetryRequestException`,
+        computes the appropriate back-off, and sleeps before retrying.
         """
-        Sends a request with retry logic.
-
-        Args:
-            request (requests.PreparedRequest): The prepared HTTP request to send.
-            request_kwargs (Mapping[str, Any]): Additional keyword arguments for the request.
-
-        Returns:
-            requests.Response: The HTTP response received from the server after retries.
-        """
-
-        max_retries = self._max_retries
-        max_tries = max(0, max_retries) + 1
+        max_tries = max(0, self._max_retries) + 1
         max_time = self._max_time
+        attempt = 0
+        start_time = time.monotonic()
 
-        user_backoff_handler = user_defined_backoff_handler(max_tries=max_tries, max_time=max_time)(
-            self._send
-        )
-        rate_limit_backoff_handler = rate_limit_default_backoff_handler(max_tries=max_tries)
-        backoff_handler = http_client_default_backoff_handler(
-            max_tries=max_tries, max_time=max_time
-        )
-        # backoff handlers wrap _send, so it will always return a response -- except when all retries are exhausted
-        try:
-            response = backoff_handler(rate_limit_backoff_handler(user_backoff_handler))(
-                request,
-                request_kwargs,
-                log_formatter=log_formatter,
-                exit_on_rate_limit=exit_on_rate_limit,
-            )  # type: ignore # mypy can't infer that backoff_handler wraps _send
+        while True:
+            try:
+                return self._send(
+                    request,
+                    request_kwargs,
+                    log_formatter=log_formatter,
+                    exit_on_rate_limit=exit_on_rate_limit,
+                )
+            except RetryRequestException as exc:
+                attempt += 1
+                elapsed = time.monotonic() - start_time
 
-            return response
-        except BaseBackoffException as e:
-            self._logger.error(f"Retries exhausted with backoff exception.", exc_info=True)
-            raise AirbyteTracedException(
-                internal_message=f"Exhausted available request attempts. Exception: {e}",
-                message=f"Exhausted available request attempts. Please see logs for more details. Exception: {e}",
-                failure_type=e.failure_type or FailureType.system_error,
-                exception=e,
-                stream_descriptor=StreamDescriptor(name=self._name),
-            )
+                # Determine whether we have exhausted retries.
+                budget_exhausted = False
+                if attempt >= max_tries:
+                    budget_exhausted = True
+                elif elapsed >= max_time:
+                    budget_exhausted = True
+
+                if budget_exhausted:
+                    self._logger.error("Retries exhausted with backoff exception.", exc_info=True)
+                    raise AirbyteTracedException(
+                        internal_message=f"Exhausted available request attempts. Exception: {exc}",
+                        message=f"Exhausted available request attempts. Please see logs for more details. Exception: {exc}",
+                        failure_type=exc.failure_type or FailureType.system_error,
+                        exception=exc,
+                        stream_descriptor=StreamDescriptor(name=self._name),
+                    )
+
+                backoff_seconds = self._compute_backoff(exc, attempt)
+
+                if exc.response is not None and isinstance(exc.response, requests.Response):
+                    self._logger.info(
+                        f"Status code: {exc.response.status_code!r}, Response Content: {exc.response.content!r}"
+                    )
+                self._logger.info(
+                    f"Caught retryable error '{exc!s}' after {attempt} tries. "
+                    f"Waiting {backoff_seconds} seconds then retrying..."
+                )
+                time.sleep(backoff_seconds)
 
     def _send(
         self,
@@ -503,7 +518,7 @@ class HttpClient:
             ResponseAction.RATE_LIMITED,
             ResponseAction.REFRESH_TOKEN_THEN_RETRY,
         ):
-            user_defined_backoff_time = None
+            user_defined_backoff_time: Optional[float] = None
             for backoff_strategy in self._backoff_strategies:
                 backoff_time = backoff_strategy.backoff_time(
                     response_or_exception=response if response is not None else exc,
@@ -522,28 +537,13 @@ class HttpClient:
                 and not exit_on_rate_limit
             )
 
-            if user_defined_backoff_time:
-                raise UserDefinedBackoffException(
-                    backoff=user_defined_backoff_time,
-                    request=request,
-                    response=(response if response is not None else exc),
-                    error_message=error_message,
-                    failure_type=error_resolution.failure_type,
-                )
-
-            elif retry_endlessly:
-                raise RateLimitBackoffException(
-                    request=request,
-                    response=(response if response is not None else exc),
-                    error_message=error_message,
-                    failure_type=error_resolution.failure_type,
-                )
-
-            raise DefaultBackoffException(
+            raise RetryRequestException(
                 request=request,
                 response=(response if response is not None else exc),
                 error_message=error_message,
                 failure_type=error_resolution.failure_type,
+                backoff_time=user_defined_backoff_time,
+                retry_endlessly=retry_endlessly,
             )
 
         elif response:
