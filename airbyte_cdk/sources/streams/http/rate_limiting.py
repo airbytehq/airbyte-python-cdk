@@ -106,22 +106,29 @@ def user_defined_backoff_handler(
     def sleep_on_ratelimit(details: Mapping[str, Any]) -> None:
         _, exc, _ = sys.exc_info()
         if isinstance(exc, UserDefinedBackoffException):
-            if exc.response:
-                logger.info(
-                    f"Status code: {exc.response.status_code!r}, Response Content: {exc.response.content!r}"
-                )
             retry_after = exc.backoff
-            logger.info(f"Retrying. Sleeping for {retry_after} seconds")
-            time.sleep(retry_after + 1)  # extra second to cover any fractions of second
+            sleep_time = retry_after + 1  # extra second to cover any fractions of second
+            if exc.response is not None:
+                logger.info(
+                    f"UserDefinedBackoffException: Rate limit exceeded (HTTP {exc.response.status_code}). Retrying in {sleep_time} seconds."
+                )
+            else:
+                logger.info(
+                    f"UserDefinedBackoffException: Rate limit exceeded. Retrying in {sleep_time} seconds."
+                )
+            time.sleep(sleep_time)
 
     def log_give_up(details: Mapping[str, Any]) -> None:
         _, exc, _ = sys.exc_info()
         if isinstance(exc, RequestException):
             logger.error(
-                f"Max retry limit reached in {details['elapsed']}s. Request: {exc.request}, Response: {exc.response}"
+                f"Max retry limit reached after {details['elapsed']:.1f}s. Request: {exc.request}, Response: {exc.response}"
             )
         else:
             logger.error("Max retry limit reached for unknown request and response")
+
+    # Suppress the backoff library's default log that misleadingly reports interval (0s) instead of actual sleep time
+    kwargs.pop("logger", None)
 
     return backoff.on_exception(  # type: ignore # Decorator function returns a function with a different signature than the input function, so mypy can't infer the type of the returned function
         backoff.constant,
@@ -132,6 +139,7 @@ def user_defined_backoff_handler(
         jitter=None,
         max_tries=max_tries,
         max_time=max_time,
+        logger=None,
         **kwargs,
     )
 
