@@ -493,25 +493,14 @@ class HttpRequestRegexMatcher(BaseModel):
     )
 
 
-class DpathExtractor(BaseModel):
-    type: Literal["DpathExtractor"]
-    field_path: List[str] = Field(
-        ...,
-        description='List of potentially nested fields describing the full path of the field to extract. Use "*" to extract all values from an array. See more info in the [docs](https://docs.airbyte.com/connector-development/config-based/understanding-the-yaml-file/record-selector).',
-        examples=[
-            ["data"],
-            ["data", "records"],
-            ["data", "{{ parameters.name }}"],
-            ["data", "*", "record"],
-        ],
-        title="Field Path",
-    )
-    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
-
-
 class ResponseToFileExtractor(BaseModel):
     type: Literal["ResponseToFileExtractor"]
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
+
+
+class OnNoRecords(Enum):
+    skip = "skip"
+    emit_parent = "emit_parent"
 
 
 class ExponentialBackoffStrategy(BaseModel):
@@ -2088,6 +2077,32 @@ class DefaultPaginator(BaseModel):
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
 
+class RecordExpander(BaseModel):
+    type: Literal["RecordExpander"]
+    expand_records_from_field: List[str] = Field(
+        ...,
+        description="Path to a nested array field within each record. Items from this array will be extracted and emitted as separate records. Supports wildcards (*) for matching multiple arrays.",
+        examples=[
+            ["lines", "data"],
+            ["items"],
+            ["nested", "array"],
+            ["sections", "*", "items"],
+        ],
+        title="Expand Records From Field",
+    )
+    remain_original_record: Optional[bool] = Field(
+        False,
+        description='If true, each expanded record will include the original parent record in an "original_record" field. Defaults to false.',
+        title="Remain Original Record",
+    )
+    on_no_records: Optional[OnNoRecords] = Field(
+        OnNoRecords.skip,
+        description='Behavior when the expansion path is missing, not a list, or an empty list. "skip" (default) emits nothing. "emit_parent" emits the original parent record unchanged.',
+        title="On No Records",
+    )
+    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
+
+
 class SessionTokenRequestApiKeyAuthenticator(BaseModel):
     type: Literal["ApiKey"]
     inject_into: RequestOption = Field(
@@ -2152,27 +2167,6 @@ class ListPartitionRouter(BaseModel):
         None,
         description="A request option describing where the list value should be injected into and under what field name if applicable.",
         title="Inject Partition Value Into Outgoing HTTP Request",
-    )
-    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
-
-
-class RecordSelector(BaseModel):
-    type: Literal["RecordSelector"]
-    extractor: Union[DpathExtractor, CustomRecordExtractor]
-    record_filter: Optional[Union[RecordFilter, CustomRecordFilter]] = Field(
-        None,
-        description="Responsible for filtering records to be emitted by the Source.",
-        title="Record Filter",
-    )
-    schema_normalization: Optional[Union[SchemaNormalization, CustomSchemaNormalization]] = Field(
-        None,
-        description="Responsible for normalization according to the schema.",
-        title="Schema Normalization",
-    )
-    transform_before_filtering: Optional[bool] = Field(
-        None,
-        description="If true, transformation will be applied before record filtering.",
-        title="Transform Before Filtering",
     )
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
@@ -2297,6 +2291,27 @@ class HTTPAPIBudget(BaseModel):
     )
 
 
+class DpathExtractor(BaseModel):
+    type: Literal["DpathExtractor"]
+    field_path: List[str] = Field(
+        ...,
+        description='List of potentially nested fields describing the full path of the field to extract. Use "*" to extract all values from an array. See more info in the [docs](https://docs.airbyte.com/connector-development/config-based/understanding-the-yaml-file/record-selector).',
+        examples=[
+            ["data"],
+            ["data", "records"],
+            ["data", "{{ parameters.name }}"],
+            ["data", "*", "record"],
+        ],
+        title="Field Path",
+    )
+    record_expander: Optional[RecordExpander] = Field(
+        None,
+        description="Optional component to expand records by extracting items from nested array fields.",
+        title="Record Expander",
+    )
+    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
+
+
 class ZipfileDecoder(BaseModel):
     class Config:
         extra = Extra.allow
@@ -2307,6 +2322,27 @@ class ZipfileDecoder(BaseModel):
         description="Parser to parse the decompressed data from the zipfile(s).",
         title="Parser",
     )
+
+
+class RecordSelector(BaseModel):
+    type: Literal["RecordSelector"]
+    extractor: Union[DpathExtractor, CustomRecordExtractor]
+    record_filter: Optional[Union[RecordFilter, CustomRecordFilter]] = Field(
+        None,
+        description="Responsible for filtering records to be emitted by the Source.",
+        title="Record Filter",
+    )
+    schema_normalization: Optional[Union[SchemaNormalization, CustomSchemaNormalization]] = Field(
+        None,
+        description="Responsible for normalization according to the schema.",
+        title="Schema Normalization",
+    )
+    transform_before_filtering: Optional[bool] = Field(
+        None,
+        description="If true, transformation will be applied before record filtering.",
+        title="Transform Before Filtering",
+    )
+    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
 
 class ConfigMigration(BaseModel):
