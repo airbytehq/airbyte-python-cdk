@@ -3689,6 +3689,10 @@ class ModelToComponentFactory:
                 # This is an element of the dict because of the typing of the CDK but it is not a CDK status
                 continue
 
+            if api_statuses is None:
+                # Optional fields like 'skipped' may be None when not provided
+                continue
+
             for status in api_statuses:
                 if status in api_status_to_cdk_status:
                     raise ValueError(
@@ -3707,6 +3711,8 @@ class ModelToComponentFactory:
                 return AsyncJobStatus.FAILED
             case "timeout":
                 return AsyncJobStatus.TIMED_OUT
+            case "skipped":
+                return AsyncJobStatus.SKIPPED
             case _:
                 raise ValueError(f"Unsupported CDK status {status}")
 
