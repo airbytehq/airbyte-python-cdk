@@ -109,10 +109,12 @@ def user_defined_backoff_handler(
             retry_after = exc.backoff
             if exc.response:
                 logger.info(
-                    f"Rate limit exceeded (HTTP {exc.response.status_code}). Retrying in {retry_after} seconds."
+                    f"UserDefinedBackoffException: Rate limit exceeded (HTTP {exc.response.status_code}). Retrying in {retry_after} seconds."
                 )
             else:
-                logger.info(f"Rate limit exceeded. Retrying in {retry_after} seconds.")
+                logger.info(
+                    f"UserDefinedBackoffException: Rate limit exceeded. Retrying in {retry_after} seconds."
+                )
             time.sleep(retry_after + 1)  # extra second to cover any fractions of second
 
     def log_give_up(details: Mapping[str, Any]) -> None:
