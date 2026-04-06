@@ -107,15 +107,16 @@ def user_defined_backoff_handler(
         _, exc, _ = sys.exc_info()
         if isinstance(exc, UserDefinedBackoffException):
             retry_after = exc.backoff
-            if exc.response:
+            sleep_time = retry_after + 1  # extra second to cover any fractions of second
+            if exc.response is not None:
                 logger.info(
-                    f"UserDefinedBackoffException: Rate limit exceeded (HTTP {exc.response.status_code}). Retrying in {retry_after} seconds."
+                    f"UserDefinedBackoffException: Rate limit exceeded (HTTP {exc.response.status_code}). Retrying in {sleep_time} seconds."
                 )
             else:
                 logger.info(
-                    f"UserDefinedBackoffException: Rate limit exceeded. Retrying in {retry_after} seconds."
+                    f"UserDefinedBackoffException: Rate limit exceeded. Retrying in {sleep_time} seconds."
                 )
-            time.sleep(retry_after + 1)  # extra second to cover any fractions of second
+            time.sleep(sleep_time)
 
     def log_give_up(details: Mapping[str, Any]) -> None:
         _, exc, _ = sys.exc_info()
@@ -126,6 +127,9 @@ def user_defined_backoff_handler(
         else:
             logger.error("Max retry limit reached for unknown request and response")
 
+    # Suppress the backoff library's default log that misleadingly reports interval (0s) instead of actual sleep time
+    kwargs.pop("logger", None)
+
     return backoff.on_exception(  # type: ignore # Decorator function returns a function with a different signature than the input function, so mypy can't infer the type of the returned function
         backoff.constant,
         UserDefinedBackoffException,
@@ -135,7 +139,7 @@ def user_defined_backoff_handler(
         jitter=None,
         max_tries=max_tries,
         max_time=max_time,
-        logger=None,  # suppress the backoff library's default log that misleadingly reports interval (0s) instead of actual sleep time
+        logger=None,
         **kwargs,
     )
 
