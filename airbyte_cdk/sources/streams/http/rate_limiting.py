@@ -106,19 +106,20 @@ def user_defined_backoff_handler(
     def sleep_on_ratelimit(details: Mapping[str, Any]) -> None:
         _, exc, _ = sys.exc_info()
         if isinstance(exc, UserDefinedBackoffException):
+            retry_after = exc.backoff
             if exc.response:
                 logger.info(
-                    f"Status code: {exc.response.status_code!r}, Response Content: {exc.response.content!r}"
+                    f"Rate limit exceeded (HTTP {exc.response.status_code}). Retrying in {retry_after} seconds."
                 )
-            retry_after = exc.backoff
-            logger.info(f"Retrying. Sleeping for {retry_after} seconds")
+            else:
+                logger.info(f"Rate limit exceeded. Retrying in {retry_after} seconds.")
             time.sleep(retry_after + 1)  # extra second to cover any fractions of second
 
     def log_give_up(details: Mapping[str, Any]) -> None:
         _, exc, _ = sys.exc_info()
         if isinstance(exc, RequestException):
             logger.error(
-                f"Max retry limit reached in {details['elapsed']}s. Request: {exc.request}, Response: {exc.response}"
+                f"Max retry limit reached after {details['elapsed']:.1f}s. Request: {exc.request}, Response: {exc.response}"
             )
         else:
             logger.error("Max retry limit reached for unknown request and response")
@@ -132,6 +133,7 @@ def user_defined_backoff_handler(
         jitter=None,
         max_tries=max_tries,
         max_time=max_time,
+        logger=None,  # suppress the backoff library's default log that misleadingly reports interval (0s) instead of actual sleep time
         **kwargs,
     )
 
