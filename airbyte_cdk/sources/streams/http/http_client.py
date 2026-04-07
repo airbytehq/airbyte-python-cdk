@@ -251,21 +251,6 @@ class HttpClient:
             else self._DEFAULT_MAX_TIME
         )
 
-    _MAX_BACKOFF_SECONDS: float = 300  # 5-minute ceiling for exponential backoff
-
-    def _compute_backoff(self, exc: RetryRequestException, attempt: int) -> float:
-        """Compute the backoff duration in seconds for a retry attempt.
-
-        If the exception carries a user-defined ``backoff_time``, that value plus
-        one second is returned (preserving the legacy +1 s behaviour).  Otherwise
-        an exponential back-off of ``2 ** (attempt - 1)`` seconds is used (matching
-        the previous ``backoff.expo`` with base=2, factor=1), capped at
-        ``_MAX_BACKOFF_SECONDS``.
-        """
-        if exc.backoff_time is not None:
-            return exc.backoff_time + 1  # extra second to cover fractions
-        return min(float(2 ** (attempt - 1)), self._MAX_BACKOFF_SECONDS)
-
     def _send_with_retry(
         self,
         request: requests.PreparedRequest,
@@ -312,7 +297,8 @@ class HttpClient:
                         stream_descriptor=StreamDescriptor(name=self._name),
                     )
 
-                backoff_seconds = self._compute_backoff(exc, attempt)
+                # User-defined backoff gets +1s to cover fractions; otherwise exponential 2^(n-1)
+                backoff_seconds = exc.backoff_time + 1 if exc.backoff_time is not None else float(2 ** (attempt - 1))
 
                 if exc.response is not None and isinstance(exc.response, requests.Response):
                     self._logger.info(
