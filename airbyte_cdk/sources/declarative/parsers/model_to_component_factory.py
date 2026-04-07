@@ -2598,14 +2598,14 @@ class ModelToComponentFactory:
                     self._create_component_from_model(model=transformation_model, config=config)
                 )
         name = "dynamic_properties"
+        partition_router = self._build_stream_slicer_from_partition_router(model.retriever, config)
         retriever = self._create_component_from_model(
             model=model.retriever,
             config=config,
             name=name,
             primary_key=None,
-            partition_router=self._build_stream_slicer_from_partition_router(
-                model.retriever, config
-            ),
+            stream_slicer=partition_router,
+            partition_router=partition_router,
             transformations=[],
             use_cache=True,
             log_formatter=(
