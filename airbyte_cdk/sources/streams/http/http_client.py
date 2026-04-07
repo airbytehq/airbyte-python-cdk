@@ -251,17 +251,20 @@ class HttpClient:
             else self._DEFAULT_MAX_TIME
         )
 
+    _MAX_BACKOFF_SECONDS: float = 300  # 5-minute ceiling for exponential backoff
+
     def _compute_backoff(self, exc: RetryRequestException, attempt: int) -> float:
         """Compute the backoff duration in seconds for a retry attempt.
 
-        If the exception carries a user-defined `backoff_time`, that value plus
+        If the exception carries a user-defined ``backoff_time``, that value plus
         one second is returned (preserving the legacy +1 s behaviour).  Otherwise
-        an exponential back-off with base 2 and no jitter is used:
-        ``2 ** attempt`` seconds.
+        an exponential back-off of ``2 ** (attempt - 1)`` seconds is used (matching
+        the previous ``backoff.expo`` with base=2, factor=1), capped at
+        ``_MAX_BACKOFF_SECONDS``.
         """
         if exc.backoff_time is not None:
             return exc.backoff_time + 1  # extra second to cover fractions
-        return float(2**attempt)
+        return min(float(2 ** (attempt - 1)), self._MAX_BACKOFF_SECONDS)
 
     def _send_with_retry(
         self,
@@ -293,12 +296,11 @@ class HttpClient:
                 attempt += 1
                 elapsed = time.monotonic() - start_time
 
-                # Determine whether we have exhausted retries.
-                budget_exhausted = False
-                if attempt >= max_tries:
-                    budget_exhausted = True
-                elif elapsed >= max_time:
-                    budget_exhausted = True
+                # Rate-limited requests retry indefinitely unless exit_on_rate_limit was set.
+                # All other retryable errors are bounded by max_tries / max_time.
+                budget_exhausted = not exc.retry_endlessly and (
+                    attempt >= max_tries or elapsed >= max_time
+                )
 
                 if budget_exhausted:
                     self._logger.error("Retries exhausted with backoff exception.", exc_info=True)
@@ -532,9 +534,13 @@ class HttpClient:
                 or f"Request to {request.url} failed with failure type {error_resolution.failure_type}, response action {error_resolution.response_action}."
             )
 
+            # Only retry endlessly when rate-limited AND no custom backoff strategy matched.
+            # When a strategy provides a specific backoff_time, retries are always bounded
+            # by max_tries/max_time (matching the old mutually-exclusive branching).
             retry_endlessly = (
                 error_resolution.response_action == ResponseAction.RATE_LIMITED
                 and not exit_on_rate_limit
+                and user_defined_backoff_time is None
             )
 
             raise RetryRequestException(
