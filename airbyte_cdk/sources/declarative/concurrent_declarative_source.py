@@ -3,6 +3,7 @@
 import json
 import logging
 import pkgutil
+import sys
 from copy import deepcopy
 from dataclasses import dataclass, field
 from queue import Queue
@@ -239,6 +240,25 @@ class ConcurrentDeclarativeSource(Source):
         else:
             concurrency_level = self._LOWEST_SAFE_CONCURRENCY_LEVEL
             initial_number_of_partitions_to_generate = self._LOWEST_SAFE_CONCURRENCY_LEVEL // 2
+
+        if concurrency_level_from_manifest:
+            raw_default_concurrency = concurrency_level_from_manifest.get(
+                "default_concurrency", "N/A"
+            )
+            _concurrency_msg = (
+                f"Concurrency configuration: concurrency_level={concurrency_level}, "
+                f"initial_number_of_partitions_to_generate={initial_number_of_partitions_to_generate}, "
+                f"source=manifest (expression={raw_default_concurrency}), "
+                f"config={{{', '.join(f'{k!r}: {v!r}' for k, v in (config or {}).items() if 'worker' in k.lower() or 'concurren' in k.lower())}}}"
+            )
+        else:
+            _concurrency_msg = (
+                f"Concurrency configuration: concurrency_level={concurrency_level}, "
+                f"initial_number_of_partitions_to_generate={initial_number_of_partitions_to_generate}, "
+                f"source=default (_LOWEST_SAFE_CONCURRENCY_LEVEL)"
+            )
+        sys.stderr.write(f"INFO {_concurrency_msg}\n")
+        sys.stderr.flush()
 
         self._concurrent_source = ConcurrentSource.create(
             num_workers=concurrency_level,
