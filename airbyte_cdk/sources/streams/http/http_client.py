@@ -71,6 +71,11 @@ def monkey_patched_get_item(self, key):  # type: ignore # this interface is a co
     con.execute can lead to `sqlite3.InterfaceError: bad parameter or other API misuse`. There was a fix implemented
     [here](https://github.com/requests-cache/requests-cache/commit/5ca6b9cdcb2797dd2fed485872110ccd72aee55d#diff-f43db4a5edf931647c32dec28ea7557aae4cae8444af4b26c8ecbe88d8c925aaL330-R332)
     but there is still no official releases of requests_cache that this is part of. Hence, we will monkeypatch it for now.
+
+    Additionally, ``self.deserialize`` can raise ``EOFError`` when the SQLite cache contains
+    corrupted or truncated pickle data (which may happen due to ``fast_save=True`` combined with
+    ``synchronous=OFF``). We treat this the same as a cache miss by converting it to ``KeyError``,
+    so ``requests_cache`` will transparently re-fetch from the upstream API.
     """
     with self.connection() as con:
         # Using placeholders here with python 3.12+ and concurrency results in the error:
@@ -81,7 +86,10 @@ def monkey_patched_get_item(self, key):  # type: ignore # this interface is a co
         if not row:
             raise KeyError(key)
 
-        return self.deserialize(key, row[0])
+        try:
+            return self.deserialize(key, row[0])
+        except EOFError:
+            raise KeyError(key)
 
 
 requests_cache.SQLiteDict.__getitem__ = monkey_patched_get_item  # type: ignore # see the method doc for more information
