@@ -471,21 +471,34 @@ class HttpClient:
 
         if error_resolution.response_action == ResponseAction.FAIL:
             if response is not None:
+                parsed_api_error = self._error_message_parser.parse_response_error_message(response)
                 filtered_response_message = filter_secrets(
                     f"Request (body): '{str(request.body)}'. Response (body): '{self._get_response_body(response)}'. Response (headers): '{response.headers}'."
                 )
-                error_message = f"'{request.method}' request to '{request.url}' failed with status code '{response.status_code}' and error message: '{self._error_message_parser.parse_response_error_message(response)}'. {filtered_response_message}"
+                error_message = f"'{request.method}' request to '{request.url}' failed with status code '{response.status_code}' and error message: '{parsed_api_error}'. {filtered_response_message}"
+
+                # Build user-facing message: prefer the error handler's custom message,
+                # fall back to a concise message with the parsed API error body
+                if error_resolution.error_message:
+                    user_facing_message = error_resolution.error_message
+                elif parsed_api_error:
+                    user_facing_message = filter_secrets(
+                        f"API responded with HTTP {response.status_code}: {parsed_api_error}"
+                    )
+                else:
+                    user_facing_message = f"API responded with HTTP {response.status_code}."
             else:
                 error_message = (
                     f"'{request.method}' request to '{request.url}' failed with exception: '{exc}'"
                 )
+                user_facing_message = error_resolution.error_message or error_message
 
             # ensure the exception message is emitted before raised
             self._logger.error(error_message)
 
             raise AirbyteTracedException(
                 internal_message=error_message,
-                message=error_resolution.error_message or error_message,
+                message=user_facing_message,
                 failure_type=error_resolution.failure_type,
             )
 
