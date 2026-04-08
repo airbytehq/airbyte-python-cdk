@@ -61,7 +61,6 @@ class HttpRequesterRequestBodyJsonDataToRequestBody(ManifestMigration):
         Migrate the value of the request_body_json.
         """
         query_key = "query"
-        text_type = "RequestBodyPlainText"
         graph_ql_type = "RequestBodyGraphQL"
         json_object_type = "RequestBodyJsonObject"
 
