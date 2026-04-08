@@ -115,7 +115,8 @@ class HttpClient:
         if session:
             self._session = session
         else:
-            self._use_cache = use_cache
+            # TEMPORARY: Force disable cache entirely to isolate memory growth root cause
+            self._use_cache = False
             self._session = self._request_session()
             self._session.mount(
                 "https://",
@@ -138,6 +139,8 @@ class HttpClient:
         self._request_attempt_count: Dict[requests.PreparedRequest, int] = {}
         self._disable_retries = disable_retries
         self._message_repository = message_repository
+        self._request_count: int = 0
+        self._CACHE_PURGE_INTERVAL: int = 100
 
     @property
     def cache_filename(self) -> str:
@@ -154,13 +157,13 @@ class HttpClient:
         """
         if self._use_cache:
             cache_dir = os.getenv(ENV_REQUEST_CACHE_PATH)
-            # Use in-memory cache if cache_dir is not set
-            # This is a non-obvious interface, but it ensures we don't write sql files when running unit tests
-            # Use in-memory cache if cache_dir is not set
-            # This is a non-obvious interface, but it ensures we don't write sql files when running unit tests
+            # When AIRBYTE_USE_IN_MEMORY_CACHE is set, force in-memory SQLite cache to avoid
+            # file I/O that generates OS page cache (counted as container memory by Kubernetes).
+            use_in_memory = os.getenv("AIRBYTE_USE_IN_MEMORY_CACHE", "").lower() in ("true", "1")
+            # Use in-memory cache if cache_dir is not set or if explicitly requested
             sqlite_path = (
                 str(Path(cache_dir) / self.cache_filename)
-                if cache_dir
+                if cache_dir and not use_in_memory
                 else "file::memory:?cache=shared"
             )
             # By using `PRAGMA synchronous=OFF` and `PRAGMA journal_mode=WAL`, we reduce the possible occurrences of `database table is locked` errors.
@@ -173,6 +176,7 @@ class HttpClient:
             return CachedLimiterSession(
                 cache_name=sqlite_path,
                 backend=backend,
+                expire_after=600,
                 api_budget=self._api_budget,
                 match_headers=True,
             )
@@ -185,6 +189,22 @@ class HttpClient:
         """
         if isinstance(self._session, requests_cache.CachedSession):
             self._session.cache.clear()  # type: ignore # cache.clear is not typed
+
+    def _purge_expired_cache_entries(self) -> None:
+        """
+        Actively purge expired entries from the HTTP response cache.
+
+        requests_cache uses lazy expiration: expired entries are only removed when
+        re-accessed, not automatically. For connectors making thousands of unique
+        API calls (e.g. paginated endpoints), expired entries accumulate in the
+        SQLite database indefinitely, causing unbounded memory growth when using
+        in-memory cache (or unbounded page cache growth for file-based cache).
+
+        This method is called every _CACHE_PURGE_INTERVAL requests to actively
+        delete expired entries and reclaim memory.
+        """
+        if isinstance(self._session, requests_cache.CachedSession):
+            self._session.cache.delete(expired=True)  # type: ignore # cache.delete is not typed
 
     def _dedupe_query_params(
         self, url: str, params: Optional[Mapping[str, str]]
@@ -599,5 +619,13 @@ class HttpClient:
             log_formatter=log_formatter,
             exit_on_rate_limit=exit_on_rate_limit,
         )
+
+        # Periodically purge expired cache entries to prevent unbounded memory growth.
+        # requests_cache uses lazy expiration, so expired entries stay in memory until
+        # explicitly deleted. This is critical for in-memory SQLite caches where
+        # accumulated responses can cause container OOM kills.
+        self._request_count += 1
+        if self._request_count % self._CACHE_PURGE_INTERVAL == 0:
+            self._purge_expired_cache_entries()
 
         return request, response
