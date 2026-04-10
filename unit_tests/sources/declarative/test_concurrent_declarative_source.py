@@ -5518,3 +5518,54 @@ def test_get_partition_router(stream_factory, expected_type):
         assert isinstance(router, SubstreamPartitionRouter)
     elif expected_type == "GroupingPartitionRouter":
         assert isinstance(router, GroupingPartitionRouter)
+
+
+def test_api_budget_is_set_before_dynamic_streams_evaluated():
+    """Verify that set_api_budget is called before dynamic_streams is accessed in streams().
+
+    This is a regression test for https://github.com/airbytehq/oncall/issues/11954
+    where dynamic stream discovery HTTP requests bypassed the configured rate limiter
+    because set_api_budget was called after self.dynamic_streams was evaluated.
+    """
+    source = ConcurrentDeclarativeSource(
+        source_config=_MANIFEST, config=_CONFIG, catalog=None, state=None
+    )
+
+    call_order: list[str] = []
+    original_set_api_budget = source._constructor.set_api_budget
+
+    def tracking_set_api_budget(*args, **kwargs):
+        call_order.append("set_api_budget")
+        return original_set_api_budget(*args, **kwargs)
+
+    original_dynamic_stream_configs = source._dynamic_stream_configs
+
+    def tracking_dynamic_stream_configs(*args, **kwargs):
+        call_order.append("dynamic_stream_configs")
+        return original_dynamic_stream_configs(*args, **kwargs)
+
+    # Add an api_budget to the source config so set_api_budget is actually called
+    source._source_config["api_budget"] = {
+        "type": "HTTPAPIBudget",
+        "policies": [
+            {
+                "type": "MovingWindowCallRatePolicy",
+                "rates": [{"type": "Rate", "limit": 5, "interval": "PT1S"}],
+                "matchers": [],
+            }
+        ],
+    }
+
+    with (
+        patch.object(source._constructor, "set_api_budget", side_effect=tracking_set_api_budget),
+        patch.object(
+            source, "_dynamic_stream_configs", side_effect=tracking_dynamic_stream_configs
+        ),
+    ):
+        source.streams(config=_CONFIG)
+
+    assert "set_api_budget" in call_order, "set_api_budget was never called"
+    assert "dynamic_stream_configs" in call_order, "dynamic_stream_configs was never called"
+    assert call_order.index("set_api_budget") < call_order.index("dynamic_stream_configs"), (
+        f"set_api_budget must be called before dynamic_stream_configs, but call order was: {call_order}"
+    )
