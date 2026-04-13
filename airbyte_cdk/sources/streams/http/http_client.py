@@ -298,7 +298,11 @@ class HttpClient:
                     )
 
                 # User-defined backoff gets +1s to cover fractions; otherwise exponential 2^(n-1)
-                backoff_seconds = exc.backoff_time + 1 if exc.backoff_time is not None else float(2 ** (attempt - 1))
+                backoff_seconds = (
+                    exc.backoff_time + 1
+                    if exc.backoff_time is not None
+                    else float(2 ** (attempt - 1))
+                )
 
                 if exc.response is not None and isinstance(exc.response, requests.Response):
                     self._logger.info(

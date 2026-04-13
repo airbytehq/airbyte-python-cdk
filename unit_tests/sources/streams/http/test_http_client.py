@@ -805,7 +805,7 @@ def test_send_request_respects_environment_variables():
 
 @pytest.mark.usefixtures("mock_sleep")
 @pytest.mark.parametrize(
-    "response_code, expected_failure_type, error_message, exception_class",
+    "response_code, expected_failure_type, error_message, retry_scenario",
     [
         (400, FailureType.system_error, "test error message", "user_defined"),
         (401, FailureType.config_error, "test error message", "user_defined"),
@@ -819,9 +819,9 @@ def test_send_request_respects_environment_variables():
     ],
 )
 def test_send_with_retry_raises_airbyte_traced_exception_with_failure_type(
-    response_code, expected_failure_type, error_message, exception_class, requests_mock
+    response_code, expected_failure_type, error_message, retry_scenario, requests_mock
 ):
-    if exception_class == "user_defined":
+    if retry_scenario == "user_defined":
 
         class CustomBackoffStrategy:
             def backoff_time(self, response_or_exception, attempt_count):
@@ -829,7 +829,7 @@ def test_send_with_retry_raises_airbyte_traced_exception_with_failure_type(
 
         backoff_strategy = CustomBackoffStrategy()
         response_action = ResponseAction.RETRY
-    elif exception_class == "rate_limited":
+    elif retry_scenario == "rate_limited":
         backoff_strategy = None
         response_action = ResponseAction.RATE_LIMITED
     else:
