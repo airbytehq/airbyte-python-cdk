@@ -7,16 +7,18 @@ import json
 import logging
 from copy import deepcopy
 from datetime import timedelta, timezone
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 import freezegun
 import pytest
 import requests
 from requests import Response
 
+from airbyte_cdk.models import FailureType
 from airbyte_cdk.sources.declarative.auth import DeclarativeOauth2Authenticator
 from airbyte_cdk.sources.declarative.auth.jwt import JwtAuthenticator
 from airbyte_cdk.test.mock_http import HttpMocker, HttpRequest, HttpResponse
+from airbyte_cdk.utils import AirbyteTracedException
 from airbyte_cdk.utils.airbyte_secrets_utils import filter_secrets
 from airbyte_cdk.utils.datetime_helpers import AirbyteDateTime, ab_datetime_now, ab_datetime_parse
 
@@ -645,3 +647,75 @@ def mock_request(method, url, data, headers):
     raise Exception(
         f"Error while refreshing access token with request: {method}, {url}, {data}, {headers}"
     )
+
+
+class TestOauth2AuthenticatorTransientErrorHandling:
+    """Tests for transient network error handling during OAuth token refresh."""
+
+    def _create_authenticator(self):
+        return DeclarativeOauth2Authenticator(
+            token_refresh_endpoint="{{ config['refresh_endpoint'] }}",
+            client_id="{{ config['client_id'] }}",
+            client_secret="{{ config['client_secret'] }}",
+            refresh_token="{{ parameters['refresh_token'] }}",
+            config=config,
+            token_expiry_date="{{ config['token_expiry_date'] }}",
+            parameters=parameters,
+        )
+
+    @pytest.mark.parametrize(
+        "exception_class",
+        [
+            requests.exceptions.ConnectionError,
+            requests.exceptions.ConnectTimeout,
+            requests.exceptions.ReadTimeout,
+        ],
+        ids=["ConnectionError", "ConnectTimeout", "ReadTimeout"],
+    )
+    def test_transient_network_error_wrapped_as_transient_error(self, exception_class):
+        """Transient network errors during OAuth refresh are wrapped in AirbyteTracedException with transient_error."""
+        oauth = self._create_authenticator()
+        with patch.object(
+            oauth, "_make_handled_request", side_effect=exception_class("connection reset")
+        ):
+            with pytest.raises(AirbyteTracedException) as exc_info:
+                oauth.refresh_access_token()
+
+            assert exc_info.value.failure_type == FailureType.transient_error
+            assert "network error" in exc_info.value.message.lower()
+
+    def test_connection_error_is_retried_before_raising(self, mocker):
+        """ConnectionError triggers backoff retries in _make_handled_request before propagating."""
+        oauth = self._create_authenticator()
+
+        call_count = 0
+
+        def request_side_effect(**kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count < 3:
+                raise requests.exceptions.ConnectionError("connection reset by peer")
+            mock_response = Mock(spec=requests.Response)
+            mock_response.ok = True
+            mock_response.json.return_value = {"access_token": "token_value", "expires_in": 3600}
+            return mock_response
+
+        mocker.patch("requests.request", side_effect=request_side_effect)
+        # Patch backoff to avoid actual delays in tests
+        mocker.patch("time.sleep")
+
+        token, _ = oauth.refresh_access_token()
+        assert token == "token_value"
+        assert call_count == 3
+
+    def test_generic_exception_wrapped_as_system_error(self, mocker):
+        """Generic exceptions during OAuth refresh are wrapped in AirbyteTracedException with system_error."""
+        oauth = self._create_authenticator()
+        mocker.patch("requests.request", side_effect=ValueError("unexpected parsing error"))
+        mocker.patch("time.sleep")
+
+        with pytest.raises(AirbyteTracedException) as exc_info:
+            oauth.refresh_access_token()
+
+        assert exc_info.value.failure_type == FailureType.system_error
+        assert "OAuth access token refresh request failed" in exc_info.value.message
