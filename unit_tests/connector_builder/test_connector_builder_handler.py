@@ -1288,7 +1288,7 @@ def test_handle_read_external_requests(deployment_mode, url_base, expected_error
         pytest.param(
             "CLOUD",
             "https://10.0.27.27/tokens/bearer",
-            "Error while refreshing access token",
+            "OAuth access token refresh request failed.",
             id="test_cloud_read_with_private_endpoint",
         ),
         pytest.param(
