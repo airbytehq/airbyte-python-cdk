@@ -15,6 +15,23 @@ class HttpRequesterRequestBodyJsonDataToRequestBody(ManifestMigration):
     This migration is responsible for migrating the `request_body_json` and `request_body_data` keys
     to a unified `request_body` key in the HttpRequester component.
     The migration will copy the value of either original key to `request_body` and remove the original key.
+
+    **String-valued `request_body_json` is intentionally left unmigrated.**
+
+    When `request_body_json` is a string (e.g. a Jinja template like
+    `'{"nested": {"key": "{{ config.option }}"}}'`), it is NOT converted to a
+    `RequestBodyPlainText` or any other typed `request_body` object. This is because:
+
+    1. The `InterpolatedRequestOptionsProvider` already handles string `request_body_json`
+       natively via `InterpolatedNestedRequestInputProvider`, which interpolates the
+       template and parses the result into a dict using `ast.literal_eval`, then sends
+       it as a JSON body.
+    2. Converting it to `RequestBodyPlainText` would route it to `request_body_data`
+       (raw string body) instead of `request_body_json` (JSON body), breaking connectors
+       that rely on the body being sent as JSON with the correct Content-Type header.
+    3. We cannot convert it to `RequestBodyJsonObject` because migrations run before
+       interpolation, so Jinja templates have not been resolved yet and the string
+       cannot be parsed into a dict at migration time.
     """
 
     component_type = "HttpRequester"
@@ -59,6 +76,10 @@ class HttpRequesterRequestBodyJsonDataToRequestBody(ManifestMigration):
     def _migrate_body_json(self, manifest: ManifestType, key: str) -> None:
         """
         Migrate the value of the request_body_json.
+
+        String values are left as-is (not migrated) because they are Jinja templates
+        that will be interpolated and parsed into dicts at runtime by
+        InterpolatedNestedRequestInputProvider. See class docstring for details.
         """
         query_key = "query"
         graph_ql_type = "RequestBodyGraphQL"
