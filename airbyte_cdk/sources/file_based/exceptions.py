@@ -55,7 +55,7 @@ class FileBasedErrorsCollector:
             # raising the single exception
             raise AirbyteTracedException(
                 internal_message="Please check the logged errors for more information.",
-                message="Some errors occured while reading from the source.",
+                message="Some errors occurred while reading from the source.",
                 failure_type=FailureType.config_error,
             )
 
