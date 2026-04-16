@@ -18,12 +18,6 @@ class AuthFlowType(Enum):
     oauth1_0 = "oauth1.0"
 
 
-class ScopesJoinStrategy(Enum):
-    space = "space"
-    comma = "comma"
-    plus = "plus"
-
-
 class BasicHttpAuthenticator(BaseModel):
     type: Literal["BasicHttpAuthenticator"]
     username: str = Field(
@@ -488,7 +482,7 @@ class HttpRequestRegexMatcher(BaseModel):
     )
     weight: Optional[Union[int, str]] = Field(
         None,
-        description="The weight of a request matching this matcher when acquiring a call from the rate limiter. Different endpoints can consume different amounts from a shared budget by specifying different weights. If not set, each request counts as 1.",
+        description="The weight of a request matching this matcher when acquiring a call from the rate limiter. Different endpoints can consume different amounts from a shared budget by specifying different weights. If not set, each request counts as 1.\n",
         title="Weight",
     )
 
@@ -828,22 +822,32 @@ class NoPagination(BaseModel):
     type: Literal["NoPagination"]
 
 
+class Scope(BaseModel):
+    class Config:
+        extra = Extra.allow
+
+    scope: str = Field(..., description="The OAuth scope string to request from the provider.")
+
+
+class OptionalScope(BaseModel):
+    class Config:
+        extra = Extra.allow
+
+    scope: str = Field(..., description="The OAuth scope string to request from the provider.")
+
+
+class ScopesJoinStrategy(Enum):
+    space = "space"
+    comma = "comma"
+    plus = "plus"
+
+
 class State(BaseModel):
     class Config:
         extra = Extra.allow
 
     min: int
     max: int
-
-
-class OAuthScope(BaseModel):
-    class Config:
-        extra = Extra.allow
-
-    scope: str = Field(
-        ...,
-        description="The OAuth scope string to request from the provider.",
-    )
 
 
 class OauthConnectorInputSpecification(BaseModel):
@@ -865,17 +869,13 @@ class OauthConnectorInputSpecification(BaseModel):
         examples=["user:read user:read_orders workspaces:read"],
         title="Scopes",
     )
-    # NOTE: scopes, optional_scopes, and scopes_join_strategy are processed by the
-    # platform OAuth handler (DeclarativeOAuthSpecHandler.kt), not by the CDK runtime.
-    # The CDK schema defines the manifest contract; the platform reads these fields
-    # during the OAuth consent flow to build the authorization URL.
-    scopes: Optional[List[OAuthScope]] = Field(
+    scopes: Optional[List[Scope]] = Field(
         None,
         description="List of OAuth scope objects. When present, takes precedence over the `scope` string property.\nThe scope values are joined using the `scopes_join_strategy` (default: space) before being\nsent to the OAuth provider.",
         examples=[[{"scope": "user:read"}, {"scope": "user:write"}]],
         title="Scopes",
     )
-    optional_scopes: Optional[List[OAuthScope]] = Field(
+    optional_scopes: Optional[List[OptionalScope]] = Field(
         None,
         description="Optional OAuth scope objects that may or may not be granted.",
         examples=[[{"scope": "admin:read"}]],
@@ -1248,6 +1248,10 @@ class AsyncJobStatusMap(BaseModel):
     completed: List[str]
     failed: List[str]
     timeout: List[str]
+
+
+class BlockSimultaneousSyncsAction(BaseModel):
+    type: Literal["BlockSimultaneousSyncsAction"]
 
 
 class ValueType(Enum):
@@ -2401,7 +2405,7 @@ class DeclarativeSource1(BaseModel):
     api_budget: Optional[HTTPAPIBudget] = None
     stream_groups: Optional[Dict[str, StreamGroup]] = Field(
         None,
-        description="Groups of streams that share a common resource and should not be read simultaneously. Each group defines a set of stream references and an action that controls how concurrent reads are managed. Only applies to ConcurrentDeclarativeSource.",
+        description="Groups of streams that share a common resource and should not be read simultaneously. Each group defines a set of stream references and an action that controls how concurrent reads are managed. Only applies to ConcurrentDeclarativeSource.\n",
         title="Stream Groups",
     )
     max_concurrent_async_job_count: Optional[Union[int, str]] = Field(
@@ -2441,7 +2445,7 @@ class DeclarativeSource2(BaseModel):
     api_budget: Optional[HTTPAPIBudget] = None
     stream_groups: Optional[Dict[str, StreamGroup]] = Field(
         None,
-        description="Groups of streams that share a common resource and should not be read simultaneously. Each group defines a set of stream references and an action that controls how concurrent reads are managed. Only applies to ConcurrentDeclarativeSource.",
+        description="Groups of streams that share a common resource and should not be read simultaneously. Each group defines a set of stream references and an action that controls how concurrent reads are managed. Only applies to ConcurrentDeclarativeSource.\n",
         title="Stream Groups",
     )
     max_concurrent_async_job_count: Optional[Union[int, str]] = Field(
@@ -2937,7 +2941,7 @@ class StateDelegatingStream(BaseModel):
     )
     api_retention_period: Optional[str] = Field(
         None,
-        description="The data retention period of the incremental API (ISO8601 duration). If the cursor value is older than this retention period, the connector will automatically fall back to a full refresh to avoid data loss.\nThis is useful for APIs like Stripe Events API which only retain data for 30 days.\n  * **PT1H**: 1 hour\n  * **P1D**: 1 day\n  * **P1W**: 1 week\n  * **P1M**: 1 month\n  * **P1Y**: 1 year\n  * **P30D**: 30 days\n",
+        description="The data retention period of the incremental API (ISO8601 duration). If the cursor value is older than this retention period, the connector will automatically fall back to a full refresh to avoid data loss.\nThis is useful for APIs like Stripe Events API which only retain data for 30 days.\n* **PT1H**: 1 hour\n* **P1D**: 1 day\n* **P1W**: 1 week\n* **P1M**: 1 month\n* **P1Y**: 1 year\n* **P30D**: 30 days\n",
         examples=["P30D", "P90D", "P1Y"],
         title="API Retention Period",
     )
@@ -3111,20 +3115,14 @@ class AsyncRetriever(BaseModel):
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
 
-class BlockSimultaneousSyncsAction(BaseModel):
-    type: Literal["BlockSimultaneousSyncsAction"]
-
-
 class StreamGroup(BaseModel):
-    streams: List[str] = Field(
+    streams: List[DeclarativeStream] = Field(
         ...,
-        description='List of references to streams that belong to this group. Use JSON references to stream definitions (e.g., "#/definitions/my_stream").',
+        description="List of references to streams that belong to this group.\n",
         title="Streams",
     )
     action: BlockSimultaneousSyncsAction = Field(
-        ...,
-        description="The action to apply to streams in this group.",
-        title="Action",
+        ..., description="The action to apply to streams in this group.", title="Action"
     )
 
 

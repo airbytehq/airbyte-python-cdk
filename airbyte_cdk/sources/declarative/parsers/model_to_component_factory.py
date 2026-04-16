@@ -4307,11 +4307,15 @@ class ModelToComponentFactory:
             for matcher in model.matchers
         ]
 
-        # Set the initial reset timestamp to 10 days from now.
-        # This value will be updated by the first request.
+        period = parse_duration(model.period)
+
+        # Set the initial reset timestamp to one period from now.
+        # If the API returns a ratelimit-reset header, this value will be updated
+        # by the first response. Otherwise, the window will reset after one period,
+        # preventing a deadlock when the header is absent.
         return FixedWindowCallRatePolicy(
-            next_reset_ts=datetime.datetime.now() + datetime.timedelta(days=10),
-            period=parse_duration(model.period),
+            next_reset_ts=datetime.datetime.now() + period,
+            period=period,
             call_limit=model.call_limit,
             matchers=matchers,
         )

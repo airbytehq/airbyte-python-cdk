@@ -1718,7 +1718,12 @@ definitions:
     additionalProperties: true
   FixedWindowCallRatePolicy:
     title: Fixed Window Call Rate Policy
-    description: A policy that allows a fixed number of calls within a specific time window.
+    description: >
+      A policy that allows a fixed number of calls within a specific time window.
+      The initial rate limit window resets after one `period`. If the API returns a
+      `ratelimit-reset` response header (as configured on the parent `HTTPAPIBudget`),
+      subsequent windows will align to the server-provided reset timestamp. When the
+      header is absent, the window resets based on the configured `period`.
     type: object
     required:
       - type
