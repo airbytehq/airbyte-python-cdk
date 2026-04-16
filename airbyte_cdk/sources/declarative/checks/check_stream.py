@@ -126,11 +126,14 @@ class CheckStream(ConnectionChecker):
         logger: logging.Logger,
     ) -> Tuple[bool, Any]:
         """Checks the availability of dynamic streams."""
-        dynamic_streams = source.resolved_manifest.get("dynamic_streams", [])  # type: ignore[attr-defined] # The source's resolved_manifest manifest is checked before calling this method
-        dynamic_stream_name_to_dynamic_stream = {
-            ds.get("name", f"dynamic_stream_{i}"): ds for i, ds in enumerate(dynamic_streams)
-        }
-        generated_streams = self._map_generated_streams(source.dynamic_streams)  # type: ignore[attr-defined] # The source's dynamic_streams manifest is checked before calling this method
+        try:
+            dynamic_streams = source.resolved_manifest.get("dynamic_streams", [])  # type: ignore[attr-defined] # The source's resolved_manifest manifest is checked before calling this method
+            dynamic_stream_name_to_dynamic_stream = {
+                ds.get("name", f"dynamic_stream_{i}"): ds for i, ds in enumerate(dynamic_streams)
+            }
+            generated_streams = self._map_generated_streams(source.dynamic_streams)  # type: ignore[attr-defined] # The source's dynamic_streams manifest is checked before calling this method
+        except Exception as error:
+            return self._log_error(logger, "resolving dynamic streams for check", error)
 
         for check_config in self.dynamic_streams_check_configs:  # type: ignore[union-attr] # None value for self.dynamic_streams_check_configs handled in __post_init__
             if check_config.dynamic_stream_name not in dynamic_stream_name_to_dynamic_stream:
