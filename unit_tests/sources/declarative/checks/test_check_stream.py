@@ -13,7 +13,10 @@ import requests
 from jsonschema.exceptions import ValidationError
 
 from airbyte_cdk.models import Status
-from airbyte_cdk.sources.declarative.checks.check_stream import CheckStream
+from airbyte_cdk.sources.declarative.checks.check_stream import (
+    CheckStream,
+    DynamicStreamCheckConfig,
+)
 from airbyte_cdk.sources.declarative.concurrent_declarative_source import (
     ConcurrentDeclarativeSource,
 )
@@ -692,3 +695,86 @@ def test_check_stream_only_type_provided():
     )
     with pytest.raises(ValueError):
         source.check(logger, _CONFIG)
+
+
+class _RaisingManifest:
+    """Dict-like manifest whose `get` call raises, simulating a failure such as a
+    `ConfigComponentsResolver` error while resolving `dynamic_streams`."""
+
+    def get(self, *args, **kwargs):
+        raise RuntimeError("ConfigComponentsResolver failed to resolve manifest")
+
+
+class _FailingResolvedManifestSource:
+    """Fake Source whose resolved_manifest fails when `dynamic_streams` is looked up."""
+
+    resolved_manifest = _RaisingManifest()
+    dynamic_streams: list = []
+
+    def __init__(self, streams):
+        self._streams = streams
+
+    def streams(self, config):
+        return self._streams
+
+
+class _FailingDynamicStreamsSource:
+    """Fake Source whose `dynamic_streams` property raises when accessed from inside
+    `_check_dynamic_streams_availability`. The first access (from the `hasattr` gate
+    in `check_connection`) succeeds; subsequent accesses raise, simulating a flaky
+    resolver or a resolver whose second call fails."""
+
+    resolved_manifest = {"dynamic_streams": [{"name": "some_dynamic_stream"}]}
+
+    def __init__(self, streams):
+        self._streams = streams
+        self._access_count = 0
+
+    def streams(self, config):
+        return self._streams
+
+    @property
+    def dynamic_streams(self):
+        self._access_count += 1
+        if self._access_count > 1:
+            raise RuntimeError("dynamic stream generation failed")
+        return []
+
+
+@pytest.mark.parametrize(
+    "source_factory, expected_error_substring",
+    [
+        pytest.param(
+            _FailingResolvedManifestSource,
+            "ConfigComponentsResolver failed to resolve manifest",
+            id="resolved_manifest_get_raises",
+        ),
+        pytest.param(
+            _FailingDynamicStreamsSource,
+            "dynamic stream generation failed",
+            id="dynamic_streams_property_raises",
+        ),
+    ],
+)
+def test_check_dynamic_streams_availability_returns_error_when_resolution_raises(
+    source_factory, expected_error_substring
+):
+    """`_check_dynamic_streams_availability` must funnel resolution errors through
+    `_log_error` and return `(False, message)` rather than propagating the exception."""
+    static_stream = MagicMock(spec=Stream)
+    static_stream.name = "static_stream"
+    source = source_factory([static_stream])
+
+    check_stream = CheckStream(
+        stream_names=[],
+        parameters={},
+        dynamic_streams_check_configs=[
+            DynamicStreamCheckConfig(dynamic_stream_name="some_dynamic_stream", stream_count=1)
+        ],
+    )
+
+    is_available, message = check_stream.check_connection(source, logger, config)
+
+    assert is_available is False
+    assert "resolving dynamic streams for check" in message
+    assert expected_error_substring in message
