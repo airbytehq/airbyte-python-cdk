@@ -113,7 +113,7 @@ class ResponseToFileExtractor(RecordExtractor):
             return tmp_file, response_encoding
         else:
             raise ValueError(
-                f"The IO/Error occured while verifying binary data. Tmp file {tmp_file} doesn't exist."
+                f"The IO/Error occurred while verifying binary data. Tmp file {tmp_file} doesn't exist."
             )
 
     def _read_with_chunks(
@@ -147,7 +147,7 @@ class ResponseToFileExtractor(RecordExtractor):
             self.logger.info(f"Empty data received. {e}")
             yield from []
         except IOError as ioe:
-            raise ValueError(f"The IO/Error occured while reading tmp data. Called: {path}", ioe)
+            raise ValueError(f"The IO/Error occurred while reading tmp data. Called: {path}", ioe)
         finally:
             # remove binary tmp file, after data is read
             os.remove(path)
