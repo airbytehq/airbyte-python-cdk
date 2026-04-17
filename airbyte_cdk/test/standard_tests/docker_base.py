@@ -236,7 +236,6 @@ class DockerConnectorTestSuite:
             )
 
         expect_success = scenario.expected_outcome.expect_success()
-        expect_exception = scenario.expected_outcome.expect_exception()
 
         container_config_path = "/secrets/config.json"
         with scenario.with_temp_config_file(
