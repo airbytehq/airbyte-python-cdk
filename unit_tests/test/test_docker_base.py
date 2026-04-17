@@ -99,6 +99,4 @@ def test_assert_check_result_matches_expected_outcome(
     scenario = ConnectorTestScenario(status=scenario_status)
 
     with expectation:
-        DockerConnectorTestSuite._assert_check_result_matches_expected_outcome(
-            output, scenario
-        )
+        DockerConnectorTestSuite._assert_check_result_matches_expected_outcome(output, scenario)
