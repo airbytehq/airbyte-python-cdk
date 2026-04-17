@@ -70,6 +70,7 @@ from airbyte_cdk.sources.declarative.models import (
 from airbyte_cdk.sources.declarative.models import (
     CustomRecordExtractor as CustomRecordExtractorModel,
 )
+from airbyte_cdk.sources.declarative.models import CustomRequester as CustomRequesterModel
 from airbyte_cdk.sources.declarative.models import CustomSchemaLoader as CustomSchemaLoaderModel
 from airbyte_cdk.sources.declarative.models import DatetimeBasedCursor as DatetimeBasedCursorModel
 from airbyte_cdk.sources.declarative.models import DeclarativeStream as DeclarativeStreamModel
@@ -4310,6 +4311,96 @@ def test_api_budget_fixed_window_policy():
     assert matcher._method == "GET"
     assert matcher._url_base == "https://example.org"
     assert matcher._url_path_pattern.pattern == "/v2/data"
+
+
+def test_api_budget_propagated_to_custom_requester_subclass_of_http_requester():
+    """Top-level `api_budget` must be forwarded to custom components that subclass `HttpRequester`.
+
+    Without this propagation, connectors using a `CustomRequester` (i.e., a Python subclass of
+    `HttpRequester`) silently lose the manifest-level rate-limit policies because
+    `create_custom_component` does not forward `self._api_budget` the way
+    `create_http_requester` does. See airbytehq/oncall#12011 for the reproducer.
+    """
+    manifest_api_budget = {
+        "type": "HTTPAPIBudget",
+        "policies": [
+            {
+                "type": "MovingWindowCallRatePolicy",
+                "rates": [
+                    {
+                        "type": "Rate",
+                        "limit": 60,
+                        "interval": "PT1M",
+                    }
+                ],
+                "matchers": [],
+            }
+        ],
+    }
+
+    custom_requester_definition = {
+        "type": "CustomRequester",
+        "class_name": "unit_tests.sources.declarative.parsers.testing_components.TestingRequester",
+        "url_base": "https://example.org",
+        "path": "/v1/data",
+        "http_method": "GET",
+    }
+
+    config: Mapping[str, Any] = {}
+    local_factory = ModelToComponentFactory()
+    local_factory.set_api_budget(manifest_api_budget, config)
+
+    custom_requester = local_factory.create_component(
+        model_type=CustomRequesterModel,
+        component_definition=custom_requester_definition,
+        config=config,
+        name="custom_stream",
+    )
+
+    assert isinstance(custom_requester, HttpRequester)
+    assert custom_requester.api_budget is not None, (
+        "Manifest-level api_budget was not propagated to the CustomRequester instance"
+    )
+    assert len(custom_requester.api_budget._policies) == 1
+    policy = custom_requester.api_budget._policies[0]
+    assert isinstance(policy, MovingWindowCallRatePolicy)
+    # Also verify the underlying HttpClient received the same budget
+    assert custom_requester._http_client._api_budget is custom_requester.api_budget
+
+
+def test_api_budget_not_propagated_to_non_http_requester_custom_components():
+    """Custom components that do NOT subclass `HttpRequester` must not receive `api_budget`.
+
+    This guards against accidentally injecting an `api_budget` kwarg into arbitrary custom
+    components (e.g., custom error handlers, partition routers) whose constructors would
+    reject the unexpected keyword.
+    """
+    manifest_api_budget = {
+        "type": "HTTPAPIBudget",
+        "policies": [
+            {
+                "type": "MovingWindowCallRatePolicy",
+                "rates": [{"type": "Rate", "limit": 1, "interval": "PT60S"}],
+                "matchers": [],
+            }
+        ],
+    }
+
+    custom_error_handler_definition = {
+        "type": "CustomErrorHandler",
+        "class_name": "unit_tests.sources.declarative.parsers.testing_components.TestingSomeComponent",
+        "basic_field": "expected",
+    }
+
+    config: Mapping[str, Any] = {}
+    local_factory = ModelToComponentFactory()
+    local_factory.set_api_budget(manifest_api_budget, config)
+
+    # Must not raise TypeError about an unexpected "api_budget" kwarg.
+    custom_component = local_factory.create_component(
+        CustomErrorHandlerModel, custom_error_handler_definition, config
+    )
+    assert custom_component.basic_field == "expected"
 
 
 def test_create_grouping_partition_router_with_underlying_router():

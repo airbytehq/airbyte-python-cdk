@@ -1859,6 +1859,21 @@ class ModelToComponentFactory:
             for class_field in component_fields.keys()
             if class_field in model_args
         }
+
+        # Propagate the top-level api_budget to custom components that are subclasses of
+        # HttpRequester (and therefore accept an `api_budget` field), unless the manifest
+        # or an explicit kwarg has already provided one. Without this, custom requesters
+        # silently lose the connector-level HTTPAPIBudget and any configured rate-limit
+        # policies have no effect at runtime.
+        if (
+            self._api_budget is not None
+            and "api_budget" in component_fields
+            and kwargs.get("api_budget") is None
+            and isinstance(custom_component_class, type)
+            and issubclass(custom_component_class, HttpRequester)
+        ):
+            kwargs["api_budget"] = self._api_budget
+
         return custom_component_class(**kwargs)
 
     @staticmethod
