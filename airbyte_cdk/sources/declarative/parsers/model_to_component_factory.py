@@ -1884,10 +1884,14 @@ class ModelToComponentFactory:
 
     @staticmethod
     def _sync_injected_api_budget_with_http_client(custom_requester: HttpRequester) -> None:
-        """
-        Custom requesters can replace `_http_client` in `__post_init__` without forwarding `api_budget`.
-        If the factory injected a manifest-level budget and the replacement client kept the default empty
-        budget, sync the active client back to the requester's injected budget.
+        """Align an injected `api_budget` with the active `HttpClient` on custom requesters.
+
+        Custom requesters can replace `_http_client` in `__post_init__` without forwarding
+        `api_budget`. If the factory injected a manifest-level budget and the replacement
+        client kept the default empty `APIBudget`, point both the client and its underlying
+        `LimiterSession`/`CachedLimiterSession` at the injected budget so rate-limiting is
+        actually enforced at request time. Non-`APIBudget` implementations (custom
+        `AbstractAPIBudget` subclasses) are left untouched.
         """
         http_client = getattr(custom_requester, "_http_client", None)
         http_client_api_budget = getattr(http_client, "_api_budget", None)
@@ -1901,8 +1905,17 @@ class ModelToComponentFactory:
         ):
             return
 
-        if len(getattr(http_client_api_budget, "_policies", [])) == 0:
+        if (
+            isinstance(http_client_api_budget, APIBudget)
+            and len(http_client_api_budget._policies) == 0
+        ):
             http_client._api_budget = injected_api_budget
+            http_client_session = getattr(http_client, "_session", None)
+            if (
+                http_client_session is not None
+                and getattr(http_client_session, "_api_budget", None) is http_client_api_budget
+            ):
+                http_client_session._api_budget = injected_api_budget
 
     @staticmethod
     def _get_class_from_fully_qualified_class_name(

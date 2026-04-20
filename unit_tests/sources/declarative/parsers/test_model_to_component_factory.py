@@ -4364,8 +4364,11 @@ def test_api_budget_propagated_to_custom_requester_subclass_of_http_requester():
     assert len(custom_requester.api_budget._policies) == 1
     policy = custom_requester.api_budget._policies[0]
     assert isinstance(policy, MovingWindowCallRatePolicy)
-    # Also verify the underlying HttpClient received the same budget
+    # Verify the underlying HttpClient AND its LimiterSession both received the same
+    # budget: rate-limiting is enforced on the session at send() time, so asserting only
+    # on the client field is insufficient to prove the policies are actually active.
     assert custom_requester._http_client._api_budget is custom_requester.api_budget
+    assert custom_requester._http_client._session._api_budget is custom_requester.api_budget
 
 
 def test_api_budget_propagated_to_custom_requester_that_replaces_http_client():
@@ -4414,6 +4417,10 @@ def test_api_budget_propagated_to_custom_requester_that_replaces_http_client():
     assert isinstance(custom_requester, HttpRequester)
     assert custom_requester.api_budget is not None
     assert custom_requester._http_client._api_budget is custom_requester.api_budget
+    # The LimiterSession holds its own reference to the budget (captured at client
+    # construction time) and is what actually enforces rate limits on send(). Assert
+    # it was synced too, otherwise the injected budget is effectively inert.
+    assert custom_requester._http_client._session._api_budget is custom_requester.api_budget
 
 
 def test_api_budget_not_overwriting_non_empty_budget_on_replaced_http_client():
@@ -4458,6 +4465,13 @@ def test_api_budget_not_overwriting_non_empty_budget_on_replaced_http_client():
     assert custom_requester.api_budget is not None
     assert custom_requester._http_client._api_budget is not custom_requester.api_budget
     assert len(custom_requester._http_client._api_budget._policies) == 1
+    # The client's own budget must remain wired into its LimiterSession as well, so
+    # the sync step never silently swaps an intentionally-installed budget out from
+    # under the active session.
+    assert (
+        custom_requester._http_client._session._api_budget
+        is custom_requester._http_client._api_budget
+    )
 
 
 def test_api_budget_not_propagated_to_non_http_requester_custom_components():
