@@ -4368,6 +4368,98 @@ def test_api_budget_propagated_to_custom_requester_subclass_of_http_requester():
     assert custom_requester._http_client._api_budget is custom_requester.api_budget
 
 
+def test_api_budget_propagated_to_custom_requester_that_replaces_http_client():
+    """Injected api budgets must survive requesters that replace `_http_client` in `__post_init__`.
+
+    Some connector requesters call `super().__post_init__()` and then swap in a custom `HttpClient`
+    implementation without forwarding `api_budget`. The budget should still be applied to the active
+    client so manifest-level rate limits continue to work.
+    """
+    manifest_api_budget = {
+        "type": "HTTPAPIBudget",
+        "policies": [
+            {
+                "type": "MovingWindowCallRatePolicy",
+                "rates": [
+                    {
+                        "type": "Rate",
+                        "limit": 60,
+                        "interval": "PT1M",
+                    }
+                ],
+                "matchers": [],
+            }
+        ],
+    }
+
+    custom_requester_definition = {
+        "type": "CustomRequester",
+        "class_name": "unit_tests.sources.declarative.parsers.testing_components.TestingRequesterWithReplacedHttpClient",
+        "url_base": "https://example.org",
+        "path": "/v1/data",
+        "http_method": "GET",
+    }
+
+    config: Mapping[str, Any] = {}
+    local_factory = ModelToComponentFactory()
+    local_factory.set_api_budget(manifest_api_budget, config)
+
+    custom_requester = local_factory.create_component(
+        model_type=CustomRequesterModel,
+        component_definition=custom_requester_definition,
+        config=config,
+        name="custom_stream",
+    )
+
+    assert isinstance(custom_requester, HttpRequester)
+    assert custom_requester.api_budget is not None
+    assert custom_requester._http_client._api_budget is custom_requester.api_budget
+
+
+def test_api_budget_not_overwriting_non_empty_budget_on_replaced_http_client():
+    """A requester that intentionally installs its own budget should keep it."""
+    manifest_api_budget = {
+        "type": "HTTPAPIBudget",
+        "policies": [
+            {
+                "type": "MovingWindowCallRatePolicy",
+                "rates": [
+                    {
+                        "type": "Rate",
+                        "limit": 60,
+                        "interval": "PT1M",
+                    }
+                ],
+                "matchers": [],
+            }
+        ],
+    }
+
+    custom_requester_definition = {
+        "type": "CustomRequester",
+        "class_name": "unit_tests.sources.declarative.parsers.testing_components.TestingRequesterWithReplacedHttpClientAndOwnBudget",
+        "url_base": "https://example.org",
+        "path": "/v1/data",
+        "http_method": "GET",
+    }
+
+    config: Mapping[str, Any] = {}
+    local_factory = ModelToComponentFactory()
+    local_factory.set_api_budget(manifest_api_budget, config)
+
+    custom_requester = local_factory.create_component(
+        model_type=CustomRequesterModel,
+        component_definition=custom_requester_definition,
+        config=config,
+        name="custom_stream",
+    )
+
+    assert isinstance(custom_requester, HttpRequester)
+    assert custom_requester.api_budget is not None
+    assert custom_requester._http_client._api_budget is not custom_requester.api_budget
+    assert len(custom_requester._http_client._api_budget._policies) == 1
+
+
 def test_api_budget_not_propagated_to_non_http_requester_custom_components():
     """Custom components that do NOT subclass `HttpRequester` must not receive `api_budget`.
 

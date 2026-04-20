@@ -3,6 +3,7 @@
 #
 
 from dataclasses import dataclass, field
+from datetime import timedelta
 from typing import Any, ClassVar, List, Mapping, Optional
 
 from airbyte_cdk.sources.declarative.extractors import DpathExtractor
@@ -21,6 +22,8 @@ from airbyte_cdk.sources.declarative.requesters.request_options.interpolated_req
     RequestInput,
 )
 from airbyte_cdk.sources.declarative.retrievers import SimpleRetriever
+from airbyte_cdk.sources.streams.call_rate import APIBudget, MovingWindowCallRatePolicy, Rate
+from airbyte_cdk.sources.streams.http import HttpClient
 
 
 @dataclass
@@ -114,3 +117,43 @@ class TestingRequester(HttpRequester):
             parameters=parameters or {},
         )
         super().__post_init__(parameters)
+
+
+@dataclass
+class TestingRequesterWithReplacedHttpClient(HttpRequester):
+    def __post_init__(self, parameters: Mapping[str, Any]) -> None:
+        super().__post_init__(parameters)
+        self._http_client = HttpClient(
+            name=self.name,
+            logger=self.logger,
+            error_handler=self.error_handler,
+            authenticator=self._authenticator,
+            use_cache=self.use_cache,
+            backoff_strategy=None,
+            disable_retries=self.disable_retries,
+            message_repository=self.message_repository,
+        )
+
+
+@dataclass
+class TestingRequesterWithReplacedHttpClientAndOwnBudget(HttpRequester):
+    def __post_init__(self, parameters: Mapping[str, Any]) -> None:
+        super().__post_init__(parameters)
+        self._http_client = HttpClient(
+            name=self.name,
+            logger=self.logger,
+            error_handler=self.error_handler,
+            api_budget=APIBudget(
+                policies=[
+                    MovingWindowCallRatePolicy(
+                        rates=[Rate(limit=1, interval=timedelta(seconds=30))],
+                        matchers=[],
+                    )
+                ]
+            ),
+            authenticator=self._authenticator,
+            use_cache=self.use_cache,
+            backoff_strategy=None,
+            disable_retries=self.disable_retries,
+            message_repository=self.message_repository,
+        )

@@ -1865,6 +1865,7 @@ class ModelToComponentFactory:
         # or an explicit kwarg has already provided one. Without this, custom requesters
         # silently lose the connector-level HTTPAPIBudget and any configured rate-limit
         # policies have no effect at runtime.
+        injected_api_budget = False
         if (
             self._api_budget is not None
             and "api_budget" in component_fields
@@ -1873,8 +1874,35 @@ class ModelToComponentFactory:
             and issubclass(custom_component_class, HttpRequester)
         ):
             kwargs["api_budget"] = self._api_budget
+            injected_api_budget = True
 
-        return custom_component_class(**kwargs)
+        custom_component = custom_component_class(**kwargs)
+        if injected_api_budget and isinstance(custom_component, HttpRequester):
+            self._sync_injected_api_budget_with_http_client(custom_component)
+
+        return custom_component
+
+    @staticmethod
+    def _sync_injected_api_budget_with_http_client(custom_requester: HttpRequester) -> None:
+        """
+        Custom requesters can replace `_http_client` in `__post_init__` without forwarding `api_budget`.
+        If the factory injected a manifest-level budget and the replacement client kept the default empty
+        budget, sync the active client back to the requester's injected budget.
+        """
+        http_client = getattr(custom_requester, "_http_client", None)
+        http_client_api_budget = getattr(http_client, "_api_budget", None)
+        injected_api_budget = custom_requester.api_budget
+
+        if (
+            http_client is None
+            or http_client_api_budget is None
+            or injected_api_budget is None
+            or http_client_api_budget is injected_api_budget
+        ):
+            return
+
+        if len(getattr(http_client_api_budget, "_policies", [])) == 0:
+            http_client._api_budget = injected_api_budget
 
     @staticmethod
     def _get_class_from_fully_qualified_class_name(
