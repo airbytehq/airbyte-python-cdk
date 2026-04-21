@@ -298,6 +298,45 @@ class AsyncJobOrchestratorTest(TestCase):
         assert self._message_repository.emit_message.call_count == 3  # one for each traced message
         assert exception.failure_type == FailureType.system_error  # type: ignore  # exception should be of type AirbyteTracedException
 
+    def test_aggregate_failure_type_gives_config_error_highest_precedence(self) -> None:
+        exceptions: List[Exception] = [
+            AirbyteTracedException("a", failure_type=FailureType.transient_error),
+            AirbyteTracedException("b", failure_type=FailureType.config_error),
+            AirbyteTracedException("c"),
+            ValueError("d"),
+        ]
+        assert AsyncJobOrchestrator._aggregate_failure_type(exceptions) == FailureType.config_error
+
+    def test_aggregate_failure_type_prefers_transient_over_system(self) -> None:
+        exceptions: List[Exception] = [
+            AirbyteTracedException("a"),
+            AirbyteTracedException("b", failure_type=FailureType.transient_error),
+            ValueError("c"),
+        ]
+        assert (
+            AsyncJobOrchestrator._aggregate_failure_type(exceptions) == FailureType.transient_error
+        )
+
+    def test_aggregate_failure_type_defaults_to_system_error(self) -> None:
+        exceptions: List[Exception] = [
+            ValueError("a"),
+            AirbyteTracedException("b"),
+        ]
+        assert AsyncJobOrchestrator._aggregate_failure_type(exceptions) == FailureType.system_error
+
+    def test_count_failure_types_counts_traced_and_plain_exceptions(self) -> None:
+        exceptions: List[Exception] = [
+            AirbyteTracedException("a", failure_type=FailureType.transient_error),
+            AirbyteTracedException("b", failure_type=FailureType.transient_error),
+            AirbyteTracedException("c"),
+            ValueError("d"),
+        ]
+        counts = AsyncJobOrchestrator._count_failure_types(exceptions)
+        assert counts == {
+            FailureType.transient_error: 2,
+            FailureType.system_error: 2,
+        }
+
     @mock.patch(sleep_mock_target)
     def test_given_jobs_failed_more_than_max_attempts_when_create_and_get_completed_partitions_then_free_job_budget(
         self, mock_sleep: MagicMock
