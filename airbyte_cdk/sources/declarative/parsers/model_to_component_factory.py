@@ -1246,7 +1246,7 @@ class ModelToComponentFactory:
     ) -> DynamicStreamCheckConfig:
         return DynamicStreamCheckConfig(
             dynamic_stream_name=model.dynamic_stream_name,
-            stream_count=model.stream_count or 0,
+            stream_count=model.stream_count,
         )
 
     def create_check_stream(

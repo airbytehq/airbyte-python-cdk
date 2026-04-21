@@ -439,7 +439,7 @@ _MANIFEST_WITHOUT_CHECK_COMPONENT = {
             False,
             200,
             [],
-            0,
+            1,
             id="test_check_http_dynamic_stream_and_config_dynamic_stream",
         ),
         pytest.param(
@@ -464,7 +464,7 @@ _MANIFEST_WITHOUT_CHECK_COMPONENT = {
             False,
             200,
             [],
-            0,
+            1,
             id="test_check_static_streams_and_http_dynamic_stream_and_config_dynamic_stream",
         ),
         pytest.param(
@@ -486,6 +486,44 @@ _MANIFEST_WITHOUT_CHECK_COMPONENT = {
             [],
             1,
             id="test_stream_count_gt_generated_streams",
+        ),
+        pytest.param(
+            {
+                "check": {
+                    "type": "CheckStream",
+                    "dynamic_streams_check_configs": [
+                        {
+                            "type": "DynamicStreamCheckConfig",
+                            "dynamic_stream_name": "http_dynamic_stream",
+                        },
+                    ],
+                }
+            },
+            Status.SUCCEEDED,
+            False,
+            200,
+            [],
+            1,
+            id="test_stream_count_unset_checks_all_streams",
+        ),
+        pytest.param(
+            {
+                "check": {
+                    "type": "CheckStream",
+                    "dynamic_streams_check_configs": [
+                        {
+                            "type": "DynamicStreamCheckConfig",
+                            "dynamic_stream_name": "http_dynamic_stream",
+                        },
+                    ],
+                }
+            },
+            Status.FAILED,
+            False,
+            404,
+            ["Not found. The requested resource was not found on the server."],
+            0,
+            id="test_stream_count_unset_failed",
         ),
         pytest.param(
             {"check": {"type": "CheckStream", "stream_names": ["non_existent_stream"]}},
@@ -675,6 +713,36 @@ def test_check_stream_missing_fields():
     }
     with pytest.raises(ValidationError):
         source = ConcurrentDeclarativeSource(
+            source_config=manifest,
+            config=_CONFIG,
+            catalog=None,
+            state=None,
+        )
+
+
+@pytest.mark.parametrize(
+    "stream_count",
+    [pytest.param(0, id="zero"), pytest.param(-1, id="negative")],
+)
+def test_check_stream_non_positive_stream_count(stream_count: int) -> None:
+    """A ValidationError is raised when stream_count is less than 1."""
+    manifest = {
+        **deepcopy(_MANIFEST_WITHOUT_CHECK_COMPONENT),
+        **{
+            "check": {
+                "type": "CheckStream",
+                "dynamic_streams_check_configs": [
+                    {
+                        "type": "DynamicStreamCheckConfig",
+                        "dynamic_stream_name": "http_dynamic_stream",
+                        "stream_count": stream_count,
+                    }
+                ],
+            }
+        },
+    }
+    with pytest.raises(ValidationError):
+        ConcurrentDeclarativeSource(
             source_config=manifest,
             config=_CONFIG,
             catalog=None,

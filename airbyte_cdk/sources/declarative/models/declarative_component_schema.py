@@ -58,8 +58,9 @@ class DynamicStreamCheckConfig(BaseModel):
         ..., description="The dynamic stream name.", title="Dynamic Stream Name"
     )
     stream_count: Optional[int] = Field(
-        0,
-        description="The number of streams to attempt reading from during a check operation. If `stream_count` exceeds the total number of available streams, the minimum of the two values will be used.",
+        None,
+        description="The number of streams to attempt reading from during a check operation. If unset, all generated streams are checked. Must be a positive integer; if it exceeds the total number of available streams, all streams are checked.",
+        ge=1,
         title="Stream Count",
     )
 
