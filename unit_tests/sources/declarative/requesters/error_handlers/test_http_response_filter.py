@@ -59,7 +59,7 @@ from airbyte_cdk.sources.streams.http.error_handlers.response_models import (
             ErrorResolution(
                 response_action=ResponseAction.RETRY,
                 failure_type=FailureType.transient_error,
-                error_message="HTTP Status Code: 429. Error: Too many requests.",
+                error_message="Rate limit exceeded (HTTP status code 429). Try decreasing the number of workers to stay within API rate limits.",
             ),
             id="test_http_code_matches_retry_action",
         ),
