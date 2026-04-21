@@ -166,8 +166,8 @@ class CheckStream(ConnectionChecker):
     ) -> Tuple[bool, Any]:
         """Checks availability of generated dynamic streams.
 
-        If `max_count` is `None`, all generated streams are checked. If `max_count` is 0,
-        no streams are checked. Otherwise, the first `max_count` streams are checked.
+        If `max_count` is `None`, all generated streams are checked. Otherwise, the
+        first `max_count` streams are checked (capped at the number of available streams).
         """
         streams_to_check = (
             generated_streams if max_count is None else generated_streams[:max_count]

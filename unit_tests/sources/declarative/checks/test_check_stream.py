@@ -495,46 +495,6 @@ _MANIFEST_WITHOUT_CHECK_COMPONENT = {
                         {
                             "type": "DynamicStreamCheckConfig",
                             "dynamic_stream_name": "http_dynamic_stream",
-                            "stream_count": 0,
-                        },
-                    ],
-                }
-            },
-            Status.SUCCEEDED,
-            False,
-            200,
-            [],
-            0,
-            id="test_stream_count_zero_checks_no_streams",
-        ),
-        pytest.param(
-            {
-                "check": {
-                    "type": "CheckStream",
-                    "dynamic_streams_check_configs": [
-                        {
-                            "type": "DynamicStreamCheckConfig",
-                            "dynamic_stream_name": "http_dynamic_stream",
-                            "stream_count": 0,
-                        },
-                    ],
-                }
-            },
-            Status.SUCCEEDED,
-            False,
-            404,
-            ["Not found. The requested resource was not found on the server."],
-            0,
-            id="test_stream_count_zero_skips_failing_streams",
-        ),
-        pytest.param(
-            {
-                "check": {
-                    "type": "CheckStream",
-                    "dynamic_streams_check_configs": [
-                        {
-                            "type": "DynamicStreamCheckConfig",
-                            "dynamic_stream_name": "http_dynamic_stream",
                         },
                     ],
                 }
@@ -760,8 +720,12 @@ def test_check_stream_missing_fields():
         )
 
 
-def test_check_stream_negative_stream_count():
-    """Test that a ValidationError is raised when stream_count is negative."""
+@pytest.mark.parametrize(
+    "stream_count",
+    [pytest.param(0, id="zero"), pytest.param(-1, id="negative")],
+)
+def test_check_stream_non_positive_stream_count(stream_count: int) -> None:
+    """A ValidationError is raised when stream_count is less than 1."""
     manifest = {
         **deepcopy(_MANIFEST_WITHOUT_CHECK_COMPONENT),
         **{
@@ -771,7 +735,7 @@ def test_check_stream_negative_stream_count():
                     {
                         "type": "DynamicStreamCheckConfig",
                         "dynamic_stream_name": "http_dynamic_stream",
-                        "stream_count": -1,
+                        "stream_count": stream_count,
                     }
                 ],
             }

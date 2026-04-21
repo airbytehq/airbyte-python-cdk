@@ -59,8 +59,8 @@ class DynamicStreamCheckConfig(BaseModel):
     )
     stream_count: Optional[int] = Field(
         None,
-        description="The number of streams to attempt reading from during a check operation. If unset, all generated streams are checked. If set to 0, no streams are checked. If set to a positive value greater than the total number of available streams, all streams are checked.",
-        ge=0,
+        description="The number of streams to attempt reading from during a check operation. If unset, all generated streams are checked. Must be a positive integer; if it exceeds the total number of available streams, all streams are checked.",
+        ge=1,
         title="Stream Count",
     )
 
