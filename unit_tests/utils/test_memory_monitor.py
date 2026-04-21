@@ -17,6 +17,7 @@ from airbyte_cdk.utils.memory_monitor import (
     _CGROUP_V2_STAT,
     _PROC_SELF_STATUS,
     MemoryMonitor,
+    _format_bytes,
     _read_cgroup_v2_anon_bytes,
     _read_process_anon_rss_bytes,
 )
@@ -88,6 +89,46 @@ def test_check_interval_negative_raises() -> None:
         MemoryMonitor(check_interval=-1)
 
 
+def test_init_logs_configured_thresholds(caplog: pytest.LogCaptureFixture) -> None:
+    """Instantiation should emit one INFO line with the configured thresholds and intervals."""
+    with caplog.at_level(logging.INFO, logger="airbyte"):
+        MemoryMonitor(check_interval=1234)
+    init_logs = [r for r in caplog.records if "MemoryMonitor instantiated" in r.message]
+    assert len(init_logs) == 1
+    msg = init_logs[0].message
+    assert "critical threshold: 95%" in msg
+    assert "anon share of usage threshold: 85%" in msg
+    assert "high-pressure threshold: 90%" in msg
+    assert "check interval: 1234 messages" in msg
+    assert "tightens to 100 under high pressure" in msg
+
+
+# ---------------------------------------------------------------------------
+# _format_bytes — unit tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("num_bytes", "expected"),
+    [
+        (0, "0 B"),
+        (999, "999 B"),
+        (1_000, "1.00 KB"),
+        (1_500, "1.50 KB"),
+        (999_999, "1000.00 KB"),
+        (1_000_000, "1.00 MB"),
+        (960_000_000, "960.00 MB"),
+        (999_999_999, "1000.00 MB"),
+        (1_000_000_000, "1.00 GB"),
+        (2_109_915_136, "2.11 GB"),
+        (2_147_483_648, "2.15 GB"),
+    ],
+)
+def test_format_bytes(num_bytes: int, expected: str) -> None:
+    """`_format_bytes` renders byte counts with 2 decimals using decimal units."""
+    assert _format_bytes(num_bytes) == expected
+
+
 # ---------------------------------------------------------------------------
 # check_memory_usage — no-op paths
 # ---------------------------------------------------------------------------
@@ -96,6 +137,7 @@ def test_check_interval_negative_raises() -> None:
 def test_noop_when_no_cgroup(caplog: pytest.LogCaptureFixture) -> None:
     """check_memory_usage should be a no-op when cgroup is unavailable."""
     monitor = MemoryMonitor()
+    caplog.clear()  # discard the one-shot instantiation log
     with (
         caplog.at_level(logging.WARNING, logger="airbyte"),
         patch.object(Path, "exists", return_value=False),
@@ -107,6 +149,7 @@ def test_noop_when_no_cgroup(caplog: pytest.LogCaptureFixture) -> None:
 def test_noop_when_limit_is_max(caplog: pytest.LogCaptureFixture) -> None:
     """When cgroup v2 memory.max is 'max' (unlimited), should be a no-op."""
     monitor = MemoryMonitor(check_interval=1)
+    caplog.clear()
     with (
         caplog.at_level(logging.WARNING, logger="airbyte"),
         patch.object(Path, "exists", _v2_exists),
@@ -119,6 +162,7 @@ def test_noop_when_limit_is_max(caplog: pytest.LogCaptureFixture) -> None:
 def test_noop_when_limit_is_zero(caplog: pytest.LogCaptureFixture) -> None:
     """When cgroup limit file contains '0', should be a no-op."""
     monitor = MemoryMonitor(check_interval=1)
+    caplog.clear()
     with (
         caplog.at_level(logging.WARNING, logger="airbyte"),
         patch.object(Path, "exists", _v2_exists),
@@ -136,6 +180,7 @@ def test_noop_when_limit_is_zero(caplog: pytest.LogCaptureFixture) -> None:
 def test_no_log_below_threshold(caplog: pytest.LogCaptureFixture) -> None:
     """No log should be emitted when usage is below the 90% high-pressure threshold."""
     monitor = MemoryMonitor(check_interval=1)
+    caplog.clear()
     with (
         caplog.at_level(logging.DEBUG, logger="airbyte"),
         patch.object(Path, "exists", _v2_exists),
@@ -182,6 +227,7 @@ def test_cgroup_v1_activates_high_pressure_mode(caplog: pytest.LogCaptureFixture
 def test_check_interval_skips_intermediate_calls(caplog: pytest.LogCaptureFixture) -> None:
     """Monitor should only check cgroup files every check_interval messages."""
     monitor = MemoryMonitor(check_interval=5000)
+    caplog.clear()
     with (
         caplog.at_level(logging.INFO, logger="airbyte"),
         patch.object(Path, "exists", _v2_exists),
@@ -205,6 +251,7 @@ def test_check_interval_skips_intermediate_calls(caplog: pytest.LogCaptureFixtur
 def test_malformed_cgroup_file_degrades_gracefully(caplog: pytest.LogCaptureFixture) -> None:
     """Malformed cgroup files should not crash the sync."""
     monitor = MemoryMonitor(check_interval=1)
+    caplog.clear()
     with (
         caplog.at_level(logging.WARNING, logger="airbyte"),
         patch.object(Path, "exists", _v2_exists),
@@ -217,6 +264,7 @@ def test_malformed_cgroup_file_degrades_gracefully(caplog: pytest.LogCaptureFixt
 def test_empty_cgroup_file_degrades_gracefully(caplog: pytest.LogCaptureFixture) -> None:
     """Empty cgroup file content should not crash the sync."""
     monitor = MemoryMonitor(check_interval=1)
+    caplog.clear()
     with (
         caplog.at_level(logging.WARNING, logger="airbyte"),
         patch.object(Path, "exists", _v2_exists),
@@ -233,6 +281,7 @@ def test_os_error_degrades_gracefully(caplog: pytest.LogCaptureFixture) -> None:
         raise OSError("Permission denied")
 
     monitor = MemoryMonitor(check_interval=1)
+    caplog.clear()
     with (
         caplog.at_level(logging.WARNING, logger="airbyte"),
         patch.object(Path, "exists", _v2_exists),
@@ -342,6 +391,14 @@ def test_raises_when_cgroup_critical_and_anon_share_of_usage_above_threshold() -
     assert "critical threshold" in (exc_info.value.message or "")
     assert "96%" in (exc_info.value.message or "")
     assert "anon share of usage" in (exc_info.value.internal_message or "")
+    # Human-readable byte formatting: 960 MB usage, 1.00 GB limit, 840 MB anon.
+    internal = exc_info.value.internal_message or ""
+    assert "960.00 MB" in internal
+    assert "1.00 GB" in internal
+    assert "840.00 MB" in internal
+    # Raw byte counts should no longer appear in the message.
+    assert "960000000" not in internal
+    assert "1000000000" not in internal
 
 
 def test_no_raise_when_cgroup_critical_but_anon_share_of_usage_below_threshold(
