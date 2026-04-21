@@ -36,7 +36,7 @@ class DynamicStreamCheckConfig:
     and type enforcement."""
 
     dynamic_stream_name: str
-    stream_count: int = 0
+    stream_count: Optional[int] = None
 
 
 @dataclass
@@ -162,13 +162,16 @@ class CheckStream(ConnectionChecker):
         generated_streams: List[Dict[str, Any]],
         stream_name_to_stream: Dict[str, Union[Stream, AbstractStream]],
         logger: logging.Logger,
-        max_count: int,
+        max_count: Optional[int],
     ) -> Tuple[bool, Any]:
         """Checks availability of generated dynamic streams.
 
-        If max_count is 0 or negative, all generated streams are checked.
+        If `max_count` is `None`, all generated streams are checked. If `max_count` is 0,
+        no streams are checked. Otherwise, the first `max_count` streams are checked.
         """
-        streams_to_check = generated_streams if max_count <= 0 else generated_streams[:max_count]
+        streams_to_check = (
+            generated_streams if max_count is None else generated_streams[:max_count]
+        )
         for declarative_stream in streams_to_check:
             stream = stream_name_to_stream[declarative_stream["name"]]
             try:
