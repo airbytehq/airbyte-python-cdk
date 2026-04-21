@@ -30,13 +30,19 @@ _PROC_SELF_STATUS = Path("/proc/self/status")
 #   2. anonymous memory >= anon-share threshold of *current cgroup usage*
 # Comparing anon to usage (not limit) answers the more relevant question:
 # "is most of the near-OOM memory actually process-owned anonymous memory?"
-_CRITICAL_THRESHOLD = 0.98
+#
+# Thresholds are deliberately set below the OOM cliff to leave headroom for
+# the check-interval race window: between two checks, allocations can jump
+# a container past any gate directly into kernel OOM-kill. Firing the fail-
+# fast trace well before the cliff is what makes the failure visible to the
+# platform instead of appearing as a silent exit.
+_CRITICAL_THRESHOLD = 0.95
 _ANON_SHARE_OF_USAGE_THRESHOLD = 0.85
 
 # Check interval (every N messages) — tightens after crossing high-pressure threshold
 _DEFAULT_CHECK_INTERVAL = 5000
 _HIGH_PRESSURE_CHECK_INTERVAL = 100
-_HIGH_PRESSURE_THRESHOLD = 0.95
+_HIGH_PRESSURE_THRESHOLD = 0.90
 
 
 def _read_cgroup_v2_anon_bytes() -> Optional[int]:
@@ -90,21 +96,21 @@ class MemoryMonitor:
 
     **Logging (event-based, not periodic):**
 
-    - One INFO when high-pressure mode activates (usage first crosses 95%)
-    - One INFO/WARNING when critical threshold (98%) is crossed but we do
+    - One INFO when high-pressure mode activates (usage first crosses 90%)
+    - One INFO/WARNING when critical threshold (95%) is crossed but we do
       *not* raise (either anon share is below the fail-fast gate or the
       anonymous memory signal is unavailable)
     - No repeated per-check warnings — logging is driven by state
       transitions, not periodic sampling
 
-    **High-pressure polling:** Once cgroup usage first crosses 95%, the check
+    **High-pressure polling:** Once cgroup usage first crosses 90%, the check
     interval permanently tightens from 5000 to 100 messages to narrow the race
     window near OOM.
 
     **Fail-fast:** Raises ``AirbyteTracedException`` with
     ``FailureType.system_error`` when *both*:
 
-    1. Cgroup usage >= 98% of the container limit (container is near OOM-kill)
+    1. Cgroup usage >= 95% of the container limit (container is near OOM-kill)
     2. Anonymous memory >= 85% of *current cgroup usage* (most of the charged
        memory is process-private anonymous pages, not file-backed cache)
 
@@ -209,7 +215,7 @@ class MemoryMonitor:
 
         Intended to be called on every message. The monitor internally tracks
         a message counter and only reads cgroup files every ``check_interval``
-        messages (default 5000). Once usage crosses 95%, the interval tightens
+        messages (default 5000). Once usage crosses 90%, the interval tightens
         to 100 messages for the remainder of the sync.
 
         Logging is event-based (one-shot on state transitions), not periodic.
