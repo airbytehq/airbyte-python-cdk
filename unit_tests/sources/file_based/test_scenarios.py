@@ -84,7 +84,10 @@ def assert_exception(expected_exception: type[BaseException], output: Entrypoint
 def _verify_read_output(output: EntrypointOutput, scenario: TestScenario[AbstractSource]) -> None:
     records_and_state_messages, log_messages = output.records_and_state_messages, output.logs
     logs = [
-        message.log for message in log_messages if message.log.level.value in scenario.log_levels
+        message.log
+        for message in log_messages
+        if message.log.level.value in scenario.log_levels
+        and not message.log.message.startswith("MemoryMonitor instantiated")
     ]
     if scenario.expected_records is None:
         return
