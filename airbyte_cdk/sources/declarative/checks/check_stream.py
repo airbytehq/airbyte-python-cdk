@@ -169,9 +169,7 @@ class CheckStream(ConnectionChecker):
         If `max_count` is `None`, all generated streams are checked. Otherwise, the
         first `max_count` streams are checked (capped at the number of available streams).
         """
-        streams_to_check = (
-            generated_streams if max_count is None else generated_streams[:max_count]
-        )
+        streams_to_check = generated_streams if max_count is None else generated_streams[:max_count]
         for declarative_stream in streams_to_check:
             stream = stream_name_to_stream[declarative_stream["name"]]
             try:
