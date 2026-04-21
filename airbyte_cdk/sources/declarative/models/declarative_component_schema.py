@@ -1599,6 +1599,11 @@ class AuthFlow(BaseModel):
     oauth_config_specification: Optional[OAuthConfigSpecification] = None
 
 
+class Strategy(Enum):
+    all = "all"
+    any_of = "any_of"
+
+
 class CheckStream(BaseModel):
     type: Literal["CheckStream"]
     stream_names: Optional[List[str]] = Field(
@@ -1606,6 +1611,11 @@ class CheckStream(BaseModel):
         description="Names of the streams to try reading from when running a check operation.",
         examples=[["users"], ["users", "contacts"]],
         title="Stream Names",
+    )
+    strategy: Optional[Strategy] = Field(
+        Strategy.all,
+        description="Strategy used to evaluate success when multiple `stream_names` are provided. `all` (the default) requires every listed stream to be available for the check to pass. `any_of` passes as soon as any listed stream is available, and only fails if every listed stream is unavailable. `any_of` is useful for APIs where different users have scope for different streams (for example permission-scoped OAuth tokens) and a single hardcoded check stream would otherwise produce misleading failures.",
+        title="Check Strategy",
     )
     dynamic_streams_check_configs: Optional[List[DynamicStreamCheckConfig]] = None
 

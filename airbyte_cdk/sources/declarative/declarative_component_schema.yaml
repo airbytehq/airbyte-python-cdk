@@ -339,6 +339,22 @@ definitions:
         examples:
           - ["users"]
           - ["users", "contacts"]
+      strategy:
+        title: Check Strategy
+        description: >-
+          Strategy used to evaluate success when multiple `stream_names` are
+          provided. `all` (the default) requires every listed stream to be
+          available for the check to pass. `any_of` passes as soon as any
+          listed stream is available, and only fails if every listed stream
+          is unavailable. `any_of` is useful for APIs where different users
+          have scope for different streams (for example permission-scoped
+          OAuth tokens) and a single hardcoded check stream would otherwise
+          produce misleading failures.
+        type: string
+        enum:
+          - all
+          - any_of
+        default: all
       dynamic_streams_check_configs:
         type: array
         items:

@@ -106,6 +106,106 @@ def test_check_stream_with_no_stream_slices_aborts():
     assert "no stream slices were found, likely because the parent stream is empty" in reason
 
 
+def _build_stream(name: str, *, available: bool, reason: str | None = None) -> MagicMock:
+    """Builds a mock `Stream` whose availability is driven by stream slice results.
+
+    A stream is considered available when its `stream_slices` yields at least
+    one slice and `read_records` yields at least one record for that slice.
+    To simulate an "unavailable" stream, we make `stream_slices` yield an empty
+    iterator so the availability strategy reports the stream as unavailable.
+    """
+    stream = MagicMock(spec=Stream)
+    stream.name = name
+    stream.availability_strategy = None
+    if available:
+        stream.stream_slices.return_value = iter([{}])
+        stream.read_records.return_value = iter([MagicMock()])
+    else:
+        stream.stream_slices.return_value = iter([])
+    return stream
+
+
+def test_check_stream_strategy_defaults_to_all():
+    """The `strategy` attribute defaults to `all` to preserve existing behavior."""
+    check_stream = CheckStream(["s1"], parameters={})
+    assert check_stream.strategy == "all"
+
+
+def test_check_stream_rejects_unsupported_strategy():
+    with pytest.raises(ValueError, match="Unsupported CheckStream strategy"):
+        CheckStream(["s1"], parameters={}, strategy="first_available")
+
+
+def test_check_stream_any_of_returns_success_when_first_stream_is_available():
+    available = _build_stream("available_stream", available=True)
+    unavailable = _build_stream("unavailable_stream", available=False)
+
+    source = MagicMock()
+    source.streams.return_value = [available, unavailable]
+
+    check_stream = CheckStream(
+        ["available_stream", "unavailable_stream"],
+        parameters={},
+        strategy="any_of",
+    )
+    stream_is_available, reason = check_stream.check_connection(source, logger, config)
+
+    assert stream_is_available
+    assert reason is None
+    # any_of should short-circuit on the first success and skip subsequent streams.
+    unavailable.stream_slices.assert_not_called()
+
+
+def test_check_stream_any_of_returns_success_when_later_stream_is_available():
+    unavailable = _build_stream("unavailable_stream", available=False)
+    available = _build_stream("available_stream", available=True)
+
+    source = MagicMock()
+    source.streams.return_value = [unavailable, available]
+
+    check_stream = CheckStream(
+        ["unavailable_stream", "available_stream"],
+        parameters={},
+        strategy="any_of",
+    )
+    stream_is_available, reason = check_stream.check_connection(source, logger, config)
+
+    assert stream_is_available
+    assert reason is None
+
+
+def test_check_stream_any_of_fails_only_when_all_streams_are_unavailable():
+    first_unavailable = _build_stream("s1", available=False)
+    second_unavailable = _build_stream("s2", available=False)
+
+    source = MagicMock()
+    source.streams.return_value = [first_unavailable, second_unavailable]
+
+    check_stream = CheckStream(["s1", "s2"], parameters={}, strategy="any_of")
+    stream_is_available, reason = check_stream.check_connection(source, logger, config)
+
+    assert not stream_is_available
+    assert "None of the configured check streams were available" in reason
+    # Aggregated failure message should reference both candidate streams so the
+    # user can see why each was rejected.
+    assert "Stream s1 is not available" in reason
+    assert "Stream s2 is not available" in reason
+
+
+def test_check_stream_all_strategy_fails_if_any_stream_is_unavailable():
+    available = _build_stream("s1", available=True)
+    unavailable = _build_stream("s2", available=False)
+
+    source = MagicMock()
+    source.streams.return_value = [available, unavailable]
+
+    check_stream = CheckStream(["s1", "s2"], parameters={}, strategy="all")
+    stream_is_available, reason = check_stream.check_connection(source, logger, config)
+
+    assert not stream_is_available
+    assert "Stream s2 is not available" in reason
+
+
 @pytest.mark.parametrize(
     "test_name, response_code, available_expectation, expected_messages",
     [
