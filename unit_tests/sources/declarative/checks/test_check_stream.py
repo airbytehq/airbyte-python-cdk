@@ -508,6 +508,26 @@ _MANIFEST_WITHOUT_CHECK_COMPONENT = {
             id="test_stream_count_zero_checks_all_streams",
         ),
         pytest.param(
+            {
+                "check": {
+                    "type": "CheckStream",
+                    "dynamic_streams_check_configs": [
+                        {
+                            "type": "DynamicStreamCheckConfig",
+                            "dynamic_stream_name": "http_dynamic_stream",
+                            "stream_count": 0,
+                        },
+                    ],
+                }
+            },
+            Status.FAILED,
+            False,
+            404,
+            ["Not found. The requested resource was not found on the server."],
+            0,
+            id="test_stream_count_zero_failed",
+        ),
+        pytest.param(
             {"check": {"type": "CheckStream", "stream_names": ["non_existent_stream"]}},
             Status.FAILED,
             True,
