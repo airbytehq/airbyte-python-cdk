@@ -387,7 +387,7 @@ def test_raises_when_cgroup_critical_and_anon_share_of_usage_above_threshold() -
     ):
         with pytest.raises(AirbyteTracedException) as exc_info:
             monitor.check_memory_usage()
-    assert exc_info.value.failure_type == FailureType.system_error
+    assert exc_info.value.failure_type == FailureType.transient_error
     assert "critical threshold" in (exc_info.value.message or "")
     assert "96%" in (exc_info.value.message or "")
     assert "anon share of usage" in (exc_info.value.internal_message or "")
