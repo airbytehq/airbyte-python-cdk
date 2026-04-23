@@ -1962,6 +1962,11 @@ definitions:
       type:
         type: string
         enum: [ResponseToFileExtractor]
+      delimiter:
+        title: Delimiter
+        description: The delimiter used to separate values in the CSV data. Defaults to comma (',').
+        type: string
+        default: ","
       $parameters:
         type: object
         additionalProperties: true

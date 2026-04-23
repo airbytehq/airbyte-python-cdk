@@ -496,6 +496,11 @@ class HttpRequestRegexMatcher(BaseModel):
 
 class ResponseToFileExtractor(BaseModel):
     type: Literal["ResponseToFileExtractor"]
+    delimiter: Optional[str] = Field(
+        ",",
+        description="The delimiter used to separate values in the CSV data. Defaults to comma (',').",
+        title="Delimiter",
+    )
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
 

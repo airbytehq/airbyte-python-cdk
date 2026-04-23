@@ -1,6 +1,7 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
+import csv
 import logging
 import os
 import uuid
@@ -30,9 +31,12 @@ class ResponseToFileExtractor(RecordExtractor):
     """
 
     parameters: InitVar[Mapping[str, Any]]
+    delimiter: str = ","
 
     def __post_init__(self, parameters: Mapping[str, Any]) -> None:
         self.logger = logging.getLogger("airbyte")
+        if self.delimiter.startswith("\\"):
+            self.delimiter = self.delimiter.encode("utf-8").decode("unicode_escape")
 
     def _get_response_encoding(self, headers: Dict[str, Any]) -> str:
         """
@@ -137,7 +141,14 @@ class ResponseToFileExtractor(RecordExtractor):
         try:
             with open(path, "r", encoding=file_encoding) as data:
                 chunks = pd.read_csv(
-                    data, chunksize=chunk_size, iterator=True, dialect="unix", dtype=object
+                    data,
+                    chunksize=chunk_size,
+                    iterator=True,
+                    dtype=object,
+                    delimiter=self.delimiter,
+                    quoting=csv.QUOTE_ALL,
+                    doublequote=True,
+                    lineterminator="\n",
                 )
                 for chunk in chunks:
                     chunk = chunk.replace({nan: None}).to_dict(orient="records")
