@@ -164,7 +164,7 @@ class ConcurrentDeclarativeSource(Source):
         # threads generating partitions that than are max number of workers. If it weren't the case, we could have threads only generating
         # partitions which would fill the queue. This number is arbitrarily set to 10_000 but will probably need to be changed given more
         # information and might even need to be configurable depending on the source
-        queue: Queue[QueueItem] = Queue(maxsize=10_000)
+        queue: Queue[QueueItem] = Queue(maxsize=0)
         message_repository = InMemoryMessageRepository(
             Level.DEBUG if emit_connector_builder_messages else Level.INFO
         )
