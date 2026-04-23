@@ -1930,6 +1930,12 @@ class OAuthAuthenticator(BaseModel):
         examples=[["crm.list.read", "crm.objects.contacts.read", "crm.schema.contacts.read"]],
         title="Scopes",
     )
+    scopes_name: Optional[str] = Field(
+        "scope",
+        description='The name of the property to use for scopes in the token refresh request body. Per RFC 6749, the default is "scope" (singular).',
+        examples=["scope", "scopes"],
+        title="Scopes Property Name",
+    )
     token_expiry_date: Optional[str] = Field(
         None,
         description="The access token expiry date.",
