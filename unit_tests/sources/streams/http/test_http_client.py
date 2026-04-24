@@ -20,10 +20,8 @@ from airbyte_cdk.sources.streams.http.error_handlers import (
     ResponseAction,
 )
 from airbyte_cdk.sources.streams.http.exceptions import (
-    DefaultBackoffException,
-    RateLimitBackoffException,
     RequestBodyException,
-    UserDefinedBackoffException,
+    RetryRequestException,
 )
 from airbyte_cdk.sources.streams.http.http_client import MessageRepresentationAirbyteTracedErrors
 from airbyte_cdk.sources.streams.http.requests_native_auth import TokenAuthenticator
@@ -265,7 +263,7 @@ class CustomBackoffStrategy(BackoffStrategy):
 
 @pytest.mark.parametrize(
     "backoff_time_value, exception_type",
-    [(0.1, UserDefinedBackoffException), (None, DefaultBackoffException)],
+    [(0.1, RetryRequestException), (None, RetryRequestException)],
 )
 def test_raises_backoff_exception_with_retry_response_action(
     mocker, backoff_time_value, exception_type
@@ -306,7 +304,7 @@ def test_raises_backoff_exception_with_retry_response_action(
 
 @pytest.mark.parametrize(
     "backoff_time_value, exception_type",
-    [(0.1, UserDefinedBackoffException), (None, DefaultBackoffException)],
+    [(0.1, RetryRequestException), (None, RetryRequestException)],
 )
 def test_raises_backoff_exception_with_response_with_unmapped_error(
     mocker, backoff_time_value, exception_type
@@ -444,7 +442,7 @@ def test_session_request_exception_raises_backoff_exception():
     )
     prepared_request = requests.PreparedRequest()
 
-    with pytest.raises(DefaultBackoffException):
+    with pytest.raises(RetryRequestException):
         http_client._send(prepared_request, {})
 
 
@@ -691,14 +689,9 @@ def test_send_emit_stream_status_with_rate_limit_reason(capsys):
         assert len(trace_messages) == mocked_send.call_count
 
 
-@pytest.mark.parametrize(
-    "exit_on_rate_limit, expected_call_count, expected_error",
-    [[True, 6, DefaultBackoffException], [False, 6, RateLimitBackoffException]],
-)
 @pytest.mark.usefixtures("mock_sleep")
-def test_backoff_strategy_endless(
-    exit_on_rate_limit: bool, expected_call_count: int, expected_error: Exception
-):
+def test_backoff_strategy_rate_limited_with_exit_on_rate_limit():
+    """When exit_on_rate_limit=True, 429 responses exhaust max_tries then raise."""
     http_client = HttpClient(
         name="test", logger=MagicMock(), error_handler=HttpStatusErrorHandler(logger=MagicMock())
     )
@@ -707,18 +700,47 @@ def test_backoff_strategy_endless(
     mocked_response.status_code = 429
     mocked_response.headers = {}
     mocked_response.ok = False
-    session_send = MagicMock(spec=requests.Session.send)
-    session_send.return_value = mocked_response
 
     with patch.object(requests.Session, "send", return_value=mocked_response) as mocked_send:
-        with pytest.raises(AirbyteTracedException) as e:
+        with pytest.raises(AirbyteTracedException):
             http_client.send_request(
                 http_method="get",
                 url="https://test_base_url.com/v1/endpoint",
                 request_kwargs={},
-                exit_on_rate_limit=exit_on_rate_limit,
+                exit_on_rate_limit=True,
             )
-        assert mocked_send.call_count == expected_call_count
+        assert mocked_send.call_count == 6  # 1 initial + 5 retries
+
+
+@pytest.mark.usefixtures("mock_sleep")
+def test_backoff_strategy_rate_limited_retries_endlessly():
+    """When exit_on_rate_limit=False, 429 responses retry past max_tries until success."""
+    http_client = HttpClient(
+        name="test", logger=MagicMock(), error_handler=HttpStatusErrorHandler(logger=MagicMock())
+    )
+
+    rate_limited_response = MagicMock(spec=requests.Response)
+    rate_limited_response.status_code = 429
+    rate_limited_response.headers = {}
+    rate_limited_response.ok = False
+
+    success_response = MagicMock(spec=requests.Response)
+    success_response.status_code = 200
+    success_response.headers = {}
+    success_response.ok = True
+
+    # Fail 10 times (well past max_tries=6), then succeed
+    side_effects = [rate_limited_response] * 10 + [success_response]
+
+    with patch.object(requests.Session, "send", side_effect=side_effects) as mocked_send:
+        _, response = http_client.send_request(
+            http_method="get",
+            url="https://test_base_url.com/v1/endpoint",
+            request_kwargs={},
+            exit_on_rate_limit=False,
+        )
+        assert response.status_code == 200
+        assert mocked_send.call_count == 11  # 10 rate-limited + 1 success
 
 
 def test_given_different_headers_then_response_is_not_cached(requests_mock):
@@ -783,23 +805,23 @@ def test_send_request_respects_environment_variables():
 
 @pytest.mark.usefixtures("mock_sleep")
 @pytest.mark.parametrize(
-    "response_code, expected_failure_type, error_message, exception_class",
+    "response_code, expected_failure_type, error_message, retry_scenario",
     [
-        (400, FailureType.system_error, "test error message", UserDefinedBackoffException),
-        (401, FailureType.config_error, "test error message", UserDefinedBackoffException),
-        (403, FailureType.transient_error, "test error message", UserDefinedBackoffException),
-        (400, FailureType.system_error, "test error message", DefaultBackoffException),
-        (401, FailureType.config_error, "test error message", DefaultBackoffException),
-        (403, FailureType.transient_error, "test error message", DefaultBackoffException),
-        (400, FailureType.system_error, "test error message", RateLimitBackoffException),
-        (401, FailureType.config_error, "test error message", RateLimitBackoffException),
-        (403, FailureType.transient_error, "test error message", RateLimitBackoffException),
+        (400, FailureType.system_error, "test error message", "user_defined"),
+        (401, FailureType.config_error, "test error message", "user_defined"),
+        (403, FailureType.transient_error, "test error message", "user_defined"),
+        (400, FailureType.system_error, "test error message", "default"),
+        (401, FailureType.config_error, "test error message", "default"),
+        (403, FailureType.transient_error, "test error message", "default"),
+        (400, FailureType.system_error, "test error message", "rate_limited"),
+        (401, FailureType.config_error, "test error message", "rate_limited"),
+        (403, FailureType.transient_error, "test error message", "rate_limited"),
     ],
 )
 def test_send_with_retry_raises_airbyte_traced_exception_with_failure_type(
-    response_code, expected_failure_type, error_message, exception_class, requests_mock
+    response_code, expected_failure_type, error_message, retry_scenario, requests_mock
 ):
-    if exception_class == UserDefinedBackoffException:
+    if retry_scenario == "user_defined":
 
         class CustomBackoffStrategy:
             def backoff_time(self, response_or_exception, attempt_count):
@@ -807,7 +829,7 @@ def test_send_with_retry_raises_airbyte_traced_exception_with_failure_type(
 
         backoff_strategy = CustomBackoffStrategy()
         response_action = ResponseAction.RETRY
-    elif exception_class == RateLimitBackoffException:
+    elif retry_scenario == "rate_limited":
         backoff_strategy = None
         response_action = ResponseAction.RATE_LIMITED
     else:
@@ -836,7 +858,12 @@ def test_send_with_retry_raises_airbyte_traced_exception_with_failure_type(
     )
 
     with pytest.raises(AirbyteTracedException) as e:
-        http_client.send_request(http_method="get", url="https://airbyte.io/", request_kwargs={})
+        http_client.send_request(
+            http_method="get",
+            url="https://airbyte.io/",
+            request_kwargs={},
+            exit_on_rate_limit=True,  # ensure rate-limited retries are bounded so the test terminates
+        )
     assert e.value.failure_type == expected_failure_type
 
 
@@ -884,7 +911,7 @@ def test_refresh_token_then_retry_action_refreshes_oauth_token(mocker):
     mocked_response.ok = False
     mocked_session.send.return_value = mocked_response
 
-    with pytest.raises(DefaultBackoffException):
+    with pytest.raises(RetryRequestException):
         http_client._send(prepared_request, {})
 
     assert mock_authenticator.refresh_called
@@ -920,7 +947,7 @@ def test_refresh_token_then_retry_action_without_oauth_authenticator_proceeds_wi
     mocked_response.ok = False
     mocked_session.send.return_value = mocked_response
 
-    with pytest.raises(DefaultBackoffException):
+    with pytest.raises(RetryRequestException):
         http_client._send(prepared_request, {})
 
     mocked_logger.warning.assert_called()
@@ -965,7 +992,7 @@ def test_refresh_token_then_retry_action_handles_refresh_failure_gracefully(mock
     mocked_response.ok = False
     mocked_session.send.return_value = mocked_response
 
-    with pytest.raises(DefaultBackoffException):
+    with pytest.raises(RetryRequestException):
         http_client._send(prepared_request, {})
 
     mocked_logger.warning.assert_called()
@@ -1004,7 +1031,7 @@ def test_refresh_token_then_retry_action_with_single_use_refresh_token_authentic
     mocked_response.ok = False
     mocked_session.send.return_value = mocked_response
 
-    with pytest.raises(DefaultBackoffException):
+    with pytest.raises(RetryRequestException):
         http_client._send(prepared_request, {})
 
     mock_authenticator.refresh_and_set_access_token.assert_called_once()

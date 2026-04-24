@@ -69,3 +69,25 @@ class DefaultBackoffException(BaseBackoffException):
 
 class RateLimitBackoffException(BaseBackoffException):
     pass
+
+
+class RetryRequestException(BaseBackoffException):
+    """Unified retry signal raised by HttpClient when a request should be retried."""
+
+    def __init__(
+        self,
+        request: requests.PreparedRequest,
+        response: Optional[Union[requests.Response, Exception]],
+        error_message: str = "",
+        failure_type: Optional[FailureType] = None,
+        backoff_time: Optional[float] = None,
+        retry_endlessly: bool = False,
+    ):
+        self.backoff_time = backoff_time
+        self.retry_endlessly = retry_endlessly
+        super().__init__(
+            request=request,
+            response=response,
+            error_message=error_message,
+            failure_type=failure_type,
+        )
