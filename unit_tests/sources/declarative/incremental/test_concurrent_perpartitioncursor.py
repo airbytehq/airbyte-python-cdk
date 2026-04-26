@@ -393,7 +393,9 @@ def run_mocked_test(
         final_state_dict = final_state.__dict__
         # Validate partitioned_stream_status exists and has correct shape, then remove for comparison
         partitioned_status = final_state_dict.get("partitioned_stream_status")
-        assert partitioned_status is not None, "partitioned_stream_status must always be present in state"
+        assert partitioned_status is not None, (
+            "partitioned_stream_status must always be present in state"
+        )
         assert "num_partitions_started" in partitioned_status
         assert "num_partitions_completed" in partitioned_status
         assert "num_partitions_expected" in partitioned_status
