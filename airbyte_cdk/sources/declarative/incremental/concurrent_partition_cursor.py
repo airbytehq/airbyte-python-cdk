@@ -188,7 +188,6 @@ class ConcurrentPerPartitionCursor(Cursor):
         # Partitioned stream status tracking for progress estimation.
         # These counters are per-sync only and intentionally NOT restored from persisted state
         # (_set_initial_state does not read them back). On resume, they reset to 0.
-        self._num_partitions_started: int = 0
         self._num_partitions_completed: int = 0
         self._is_partition_discovery_complete: bool = False
 
@@ -225,7 +224,8 @@ class ConcurrentPerPartitionCursor(Cursor):
         if self._parent_state is not None:
             state["parent_state"] = self._parent_state
         state["partitioned_stream_status"] = {
-            "num_partitions_started": self._num_partitions_started,
+            "num_partitions_in_progress": self._generated_partitions_count
+            - self._num_partitions_completed,
             "num_partitions_completed": self._num_partitions_completed,
             "num_partitions_expected": self._generated_partitions_count,
             "is_partition_discovery_complete": self._is_partition_discovery_complete,
@@ -367,7 +367,6 @@ class ConcurrentPerPartitionCursor(Cursor):
         with self._lock:
             seq = self._generated_partitions_count
             self._generated_partitions_count += 1
-            self._num_partitions_started += 1
             self._processing_partitions_indexes.append(seq)
             self._partition_key_to_index[partition_key] = seq
 

@@ -400,17 +400,14 @@ def run_mocked_test(
         assert partitioned_status is not None, (
             "partitioned_stream_status must always be present in state"
         )
-        assert "num_partitions_started" in partitioned_status
+        assert "num_partitions_in_progress" in partitioned_status
         assert "num_partitions_completed" in partitioned_status
         assert "num_partitions_expected" in partitioned_status
         assert "is_partition_discovery_complete" in partitioned_status
-        assert (
-            partitioned_status["num_partitions_started"]
-            >= partitioned_status["num_partitions_completed"]
-        )
+        assert partitioned_status["num_partitions_in_progress"] >= 0
         assert (
             partitioned_status["num_partitions_expected"]
-            >= partitioned_status["num_partitions_started"]
+            >= partitioned_status["num_partitions_completed"]
         )
         _strip_partitioned_stream_status(final_state_dict)
         assert final_state_dict == expected_state
@@ -3694,7 +3691,7 @@ def test_given_no_partitions_processed_when_close_partition_then_no_state_update
     state = cursor.state
     partitioned_status = state.pop("partitioned_stream_status", None)
     assert partitioned_status is not None
-    assert partitioned_status["num_partitions_started"] == 0
+    assert partitioned_status["num_partitions_in_progress"] == 0
     assert partitioned_status["num_partitions_completed"] == 0
     assert partitioned_status["num_partitions_expected"] == 0
     assert partitioned_status["is_partition_discovery_complete"] is True
@@ -3788,7 +3785,7 @@ def test_given_unfinished_first_parent_partition_no_parent_state_update():
     state = cursor.state
     partitioned_status = state.pop("partitioned_stream_status", None)
     assert partitioned_status is not None
-    assert partitioned_status["num_partitions_started"] == 2
+    assert partitioned_status["num_partitions_in_progress"] == 1
     assert partitioned_status["num_partitions_completed"] == 1
     assert partitioned_status["num_partitions_expected"] == 2
     assert partitioned_status["is_partition_discovery_complete"] is True
@@ -3890,7 +3887,7 @@ def test_given_unfinished_last_parent_partition_with_partial_parent_state_update
     state = cursor.state
     partitioned_status = state.pop("partitioned_stream_status", None)
     assert partitioned_status is not None
-    assert partitioned_status["num_partitions_started"] == 2
+    assert partitioned_status["num_partitions_in_progress"] == 1
     assert partitioned_status["num_partitions_completed"] == 1
     assert partitioned_status["num_partitions_expected"] == 2
     assert partitioned_status["is_partition_discovery_complete"] is True
