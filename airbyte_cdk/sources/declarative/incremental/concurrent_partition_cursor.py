@@ -185,7 +185,9 @@ class ConcurrentPerPartitionCursor(Cursor):
         self._last_emission_time: float = 0.0
         self._timer = Timer()
 
-        # Partitioned stream status tracking for progress estimation
+        # Partitioned stream status tracking for progress estimation.
+        # These counters are per-sync only and intentionally NOT restored from persisted state
+        # (_set_initial_state does not read them back). On resume, they reset to 0.
         self._num_partitions_started: int = 0
         self._num_partitions_completed: int = 0
         self._is_partition_discovery_complete: bool = False

@@ -329,7 +329,11 @@ import requests_mock
 
 
 def _strip_partitioned_stream_status(state_dict: dict) -> dict:
-    """Recursively strip partitioned_stream_status from state dicts, including nested parent_state."""
+    """Recursively strip partitioned_stream_status from state dicts in-place, including nested parent_state.
+
+    Mutates and returns the same dict. Callers that need to preserve the original should pass a copy.
+    Only traverses parent_state nesting; extend if the emitted shape gains more nesting layers.
+    """
     state_dict.pop("partitioned_stream_status", None)
     if "parent_state" in state_dict and isinstance(state_dict["parent_state"], dict):
         for value in state_dict["parent_state"].values():
