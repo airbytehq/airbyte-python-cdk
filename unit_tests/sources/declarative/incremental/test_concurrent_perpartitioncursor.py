@@ -328,6 +328,16 @@ import orjson
 import requests_mock
 
 
+def _strip_partitioned_stream_status(state_dict: dict) -> dict:
+    """Recursively strip partitioned_stream_status from state dicts, including nested parent_state."""
+    state_dict.pop("partitioned_stream_status", None)
+    if "parent_state" in state_dict and isinstance(state_dict["parent_state"], dict):
+        for key, value in state_dict["parent_state"].items():
+            if isinstance(value, dict):
+                _strip_partitioned_stream_status(value)
+    return state_dict
+
+
 def run_mocked_test(
     mock_requests,
     manifest,
@@ -380,7 +390,18 @@ def run_mocked_test(
 
         # Verify state
         final_state = output.state_messages[-1].state.stream.stream_state
-        assert final_state.__dict__ == expected_state
+        final_state_dict = final_state.__dict__
+        # Validate partitioned_stream_status exists and has correct shape, then remove for comparison
+        partitioned_status = final_state_dict.get("partitioned_stream_status")
+        if partitioned_status is not None:
+            assert "num_partitions_started" in partitioned_status
+            assert "num_partitions_completed" in partitioned_status
+            assert "num_partitions_expected" in partitioned_status
+            assert "is_partition_discovery_complete" in partitioned_status
+            assert partitioned_status["num_partitions_started"] >= partitioned_status["num_partitions_completed"]
+            assert partitioned_status["num_partitions_expected"] >= partitioned_status["num_partitions_started"]
+        _strip_partitioned_stream_status(final_state_dict)
+        assert final_state_dict == expected_state
 
         # Verify that each request was made exactly once
         for url, _ in mock_requests:
@@ -1107,7 +1128,9 @@ def run_incremental_parent_state_test(
         final_states = []  # To store the final state after each read
 
         # Store the final state after the initial read
-        final_states.append(output.state_messages[-1].state.stream.stream_state.__dict__)
+        initial_final_state = output.state_messages[-1].state.stream.stream_state.__dict__
+        _strip_partitioned_stream_status(initial_final_state)
+        final_states.append(initial_final_state)
 
         for message in output.records_and_state_messages:
             if message.type.value == "RECORD":
@@ -1122,10 +1145,11 @@ def run_incremental_parent_state_test(
         # Assert that the number of intermediate states is as expected
         assert len(intermediate_states) - 1 == num_intermediate_states
         # Assert that ensure_at_least_one_state_emitted is called before yielding the last record from the last slice
-        assert (
-            intermediate_states[-1][0].stream.stream_state.__dict__["parent_state"]
-            == intermediate_states[-2][0].stream.stream_state.__dict__["parent_state"]
-        )
+        last_state_dict = intermediate_states[-1][0].stream.stream_state.__dict__.copy()
+        _strip_partitioned_stream_status(last_state_dict)
+        prev_state_dict = intermediate_states[-2][0].stream.stream_state.__dict__.copy()
+        _strip_partitioned_stream_status(prev_state_dict)
+        assert last_state_dict["parent_state"] == prev_state_dict["parent_state"]
 
         # For each intermediate state, perform another read starting from that state
         for state, records_before_state in intermediate_states[:-1]:
@@ -1151,10 +1175,11 @@ def run_incremental_parent_state_test(
             )
 
             # Store the final state after each intermediate read
-            final_state_intermediate = [
-                message.state.stream.stream_state.__dict__
-                for message in output_intermediate.state_messages
-            ]
+            final_state_intermediate = []
+            for message in output_intermediate.state_messages:
+                state_dict = message.state.stream.stream_state.__dict__.copy()
+                _strip_partitioned_stream_status(state_dict)
+                final_state_intermediate.append(state_dict)
             final_states.append(final_state_intermediate[-1])
 
         # Assert that the final state matches the expected state for all runs
@@ -3654,7 +3679,14 @@ def test_given_no_partitions_processed_when_close_partition_then_no_state_update
             )
         )
 
-    assert cursor.state == {
+    state = cursor.state
+    partitioned_status = state.pop("partitioned_stream_status", None)
+    assert partitioned_status is not None
+    assert partitioned_status["num_partitions_started"] == 0
+    assert partitioned_status["num_partitions_completed"] == 0
+    assert partitioned_status["num_partitions_expected"] == 0
+    assert partitioned_status["is_partition_discovery_complete"] is True
+    assert state == {
         "use_global_cursor": False,
         "lookback_window": 0,
         "states": [],
@@ -3742,6 +3774,12 @@ def test_given_unfinished_first_parent_partition_no_parent_state_update():
     cursor.ensure_at_least_one_state_emitted()
 
     state = cursor.state
+    partitioned_status = state.pop("partitioned_stream_status", None)
+    assert partitioned_status is not None
+    assert partitioned_status["num_partitions_started"] == 2
+    assert partitioned_status["num_partitions_completed"] == 1
+    assert partitioned_status["num_partitions_expected"] == 2
+    assert partitioned_status["is_partition_discovery_complete"] is True
     assert state == {
         "use_global_cursor": False,
         "states": [
@@ -3838,6 +3876,12 @@ def test_given_unfinished_last_parent_partition_with_partial_parent_state_update
     cursor.ensure_at_least_one_state_emitted()
 
     state = cursor.state
+    partitioned_status = state.pop("partitioned_stream_status", None)
+    assert partitioned_status is not None
+    assert partitioned_status["num_partitions_started"] == 2
+    assert partitioned_status["num_partitions_completed"] == 1
+    assert partitioned_status["num_partitions_expected"] == 2
+    assert partitioned_status["is_partition_discovery_complete"] is True
     assert state == {
         "use_global_cursor": False,
         "states": [
