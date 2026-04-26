@@ -332,7 +332,7 @@ def _strip_partitioned_stream_status(state_dict: dict) -> dict:
     """Recursively strip partitioned_stream_status from state dicts, including nested parent_state."""
     state_dict.pop("partitioned_stream_status", None)
     if "parent_state" in state_dict and isinstance(state_dict["parent_state"], dict):
-        for key, value in state_dict["parent_state"].items():
+        for value in state_dict["parent_state"].values():
             if isinstance(value, dict):
                 _strip_partitioned_stream_status(value)
     return state_dict
@@ -1136,7 +1136,7 @@ def run_incremental_parent_state_test(
         final_states = []  # To store the final state after each read
 
         # Store the final state after the initial read
-        initial_final_state = output.state_messages[-1].state.stream.stream_state.__dict__
+        initial_final_state = output.state_messages[-1].state.stream.stream_state.__dict__.copy()
         _strip_partitioned_stream_status(initial_final_state)
         final_states.append(initial_final_state)
 
