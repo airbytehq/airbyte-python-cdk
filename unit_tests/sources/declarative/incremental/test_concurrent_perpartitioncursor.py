@@ -393,19 +393,19 @@ def run_mocked_test(
         final_state_dict = final_state.__dict__
         # Validate partitioned_stream_status exists and has correct shape, then remove for comparison
         partitioned_status = final_state_dict.get("partitioned_stream_status")
-        if partitioned_status is not None:
-            assert "num_partitions_started" in partitioned_status
-            assert "num_partitions_completed" in partitioned_status
-            assert "num_partitions_expected" in partitioned_status
-            assert "is_partition_discovery_complete" in partitioned_status
-            assert (
-                partitioned_status["num_partitions_started"]
-                >= partitioned_status["num_partitions_completed"]
-            )
-            assert (
-                partitioned_status["num_partitions_expected"]
-                >= partitioned_status["num_partitions_started"]
-            )
+        assert partitioned_status is not None, "partitioned_stream_status must always be present in state"
+        assert "num_partitions_started" in partitioned_status
+        assert "num_partitions_completed" in partitioned_status
+        assert "num_partitions_expected" in partitioned_status
+        assert "is_partition_discovery_complete" in partitioned_status
+        assert (
+            partitioned_status["num_partitions_started"]
+            >= partitioned_status["num_partitions_completed"]
+        )
+        assert (
+            partitioned_status["num_partitions_expected"]
+            >= partitioned_status["num_partitions_started"]
+        )
         _strip_partitioned_stream_status(final_state_dict)
         assert final_state_dict == expected_state
 
