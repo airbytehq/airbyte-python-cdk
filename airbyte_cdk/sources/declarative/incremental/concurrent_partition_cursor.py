@@ -228,7 +228,7 @@ class ConcurrentPerPartitionCursor(Cursor):
             state["parent_state"] = self._parent_state
         num_observed = len(self._partitions_observed)
         state["partitioned_stream_status"] = {
-            "num_partitions_in_progress": num_observed - self._num_partitions_completed,
+            "num_partitions_in_progress": max(0, num_observed - self._num_partitions_completed),
             "num_partitions_completed": self._num_partitions_completed,
             "num_partitions_expected": self._generated_partitions_count,
             "is_partition_discovery_complete": self._is_partition_discovery_complete,
