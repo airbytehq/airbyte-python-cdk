@@ -405,9 +405,11 @@ def run_mocked_test(
         assert "num_partitions_expected" in partitioned_status
         assert "is_partition_discovery_complete" in partitioned_status
         assert partitioned_status["num_partitions_in_progress"] >= 0
+        assert partitioned_status["num_partitions_completed"] >= 0
         assert (
             partitioned_status["num_partitions_expected"]
-            >= partitioned_status["num_partitions_completed"]
+            >= partitioned_status["num_partitions_in_progress"]
+            + partitioned_status["num_partitions_completed"]
         )
         _strip_partitioned_stream_status(final_state_dict)
         assert final_state_dict == expected_state
@@ -3695,6 +3697,12 @@ def test_given_no_partitions_processed_when_close_partition_then_no_state_update
     assert partitioned_status["num_partitions_completed"] == 0
     assert partitioned_status["num_partitions_expected"] == 0
     assert partitioned_status["is_partition_discovery_complete"] is True
+    # Invariant: in_progress + completed <= expected
+    assert (
+        partitioned_status["num_partitions_in_progress"]
+        + partitioned_status["num_partitions_completed"]
+        <= partitioned_status["num_partitions_expected"]
+    )
     assert state == {
         "use_global_cursor": False,
         "lookback_window": 0,
@@ -3785,7 +3793,8 @@ def test_given_unfinished_first_parent_partition_no_parent_state_update():
     state = cursor.state
     partitioned_status = state.pop("partitioned_stream_status", None)
     assert partitioned_status is not None
-    assert partitioned_status["num_partitions_in_progress"] == 1
+    # observe() not called in this test, so in_progress comes only from _cleanup_if_done adding to observed
+    assert partitioned_status["num_partitions_in_progress"] == 0
     assert partitioned_status["num_partitions_completed"] == 1
     assert partitioned_status["num_partitions_expected"] == 2
     assert partitioned_status["is_partition_discovery_complete"] is True
@@ -3887,7 +3896,8 @@ def test_given_unfinished_last_parent_partition_with_partial_parent_state_update
     state = cursor.state
     partitioned_status = state.pop("partitioned_stream_status", None)
     assert partitioned_status is not None
-    assert partitioned_status["num_partitions_in_progress"] == 1
+    # observe() not called in this test, so in_progress comes only from _cleanup_if_done adding to observed
+    assert partitioned_status["num_partitions_in_progress"] == 0
     assert partitioned_status["num_partitions_completed"] == 1
     assert partitioned_status["num_partitions_expected"] == 2
     assert partitioned_status["is_partition_discovery_complete"] is True

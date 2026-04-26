@@ -190,6 +190,9 @@ class ConcurrentPerPartitionCursor(Cursor):
         # (_set_initial_state does not read them back). On resume, they reset to 0.
         self._num_partitions_completed: int = 0
         self._is_partition_discovery_complete: bool = False
+        # Tracks partition keys for which observe() has been called (worker produced at least one record).
+        # Only len() is used in state emission; the set itself is never serialized.
+        self._partitions_observed: set[str] = set()
 
         self._set_initial_state(stream_state)
 
@@ -223,9 +226,9 @@ class ConcurrentPerPartitionCursor(Cursor):
             state["lookback_window"] = self._lookback_window
         if self._parent_state is not None:
             state["parent_state"] = self._parent_state
+        num_observed = len(self._partitions_observed)
         state["partitioned_stream_status"] = {
-            "num_partitions_in_progress": self._generated_partitions_count
-            - self._num_partitions_completed,
+            "num_partitions_in_progress": num_observed - self._num_partitions_completed,
             "num_partitions_completed": self._num_partitions_completed,
             "num_partitions_expected": self._generated_partitions_count,
             "is_partition_discovery_complete": self._is_partition_discovery_complete,
@@ -552,11 +555,11 @@ class ConcurrentPerPartitionCursor(Cursor):
             return
 
         self._synced_some_data = True
+        partition_key = self._to_partition_key(record.associated_slice.partition)
+        self._partitions_observed.add(partition_key)
         self._update_global_cursor(record_cursor)
         if not self._use_global_cursor:
-            self._cursor_per_partition[
-                self._to_partition_key(record.associated_slice.partition)
-            ].observe(record)
+            self._cursor_per_partition[partition_key].observe(record)
 
     def _update_global_cursor(self, value: Any) -> None:
         if (
@@ -581,6 +584,8 @@ class ConcurrentPerPartitionCursor(Cursor):
 
         seq = self._partition_key_to_index.pop(partition_key)
         self._processing_partitions_indexes.remove(seq)
+        # Ensure completed partitions are counted as observed (handles partitions with no records)
+        self._partitions_observed.add(partition_key)
         self._num_partitions_completed += 1
 
         logger.debug(f"Partition {partition_key} fully processed and cleaned up.")
