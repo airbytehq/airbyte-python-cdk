@@ -316,6 +316,101 @@ class AsyncJobOrchestratorTest(TestCase):
 
         assert job_tracker.try_to_get_intent()
 
+    @mock.patch(sleep_mock_target)
+    def test_given_transient_errors_on_start_when_max_attempts_reached_then_raise_transient_error(
+        self, mock_sleep: MagicMock
+    ) -> None:
+        """
+        Repeated `transient_error` failures while starting a job should surface
+        as a `transient_error` from the outer wrapper instead of being relabeled
+        as `system_error`. This is the oncall #12043 case (rate-limit 429 on
+        Amazon SP-API `createReport`).
+        """
+        self._job_repository.start.side_effect = [
+            AirbyteTracedException("Rate limited", failure_type=FailureType.transient_error)
+            for _ in range(_MAX_NUMBER_OF_ATTEMPTS)
+        ]
+
+        orchestrator = self._orchestrator([_A_STREAM_SLICE])
+
+        partitions, exception = self._accumulate_create_and_get_completed_partitions(orchestrator)
+
+        assert len(partitions) == 0
+        assert exception is not None
+        assert exception.failure_type == FailureType.transient_error  # type: ignore[attr-defined]
+
+    @mock.patch(sleep_mock_target)
+    def test_given_mixed_transient_and_system_errors_across_partitions_when_max_attempts_reached_then_raise_system_error(
+        self, mock_sleep: MagicMock
+    ) -> None:
+        """
+        When the underlying failures span both `transient_error` and
+        `system_error` across partitions, the outer wrapper should escalate
+        to `system_error` (priority `system_error` > `transient_error`).
+        """
+        self._job_repository.start.side_effect = [
+            AirbyteTracedException("Rate limited", failure_type=FailureType.transient_error),
+            AirbyteTracedException("Unexpected", failure_type=FailureType.system_error),
+        ]
+
+        orchestrator = AsyncJobOrchestrator(
+            self._job_repository,
+            [_A_STREAM_SLICE, _ANOTHER_STREAM_SLICE],
+            JobTracker(_NO_JOB_LIMIT),
+            self._message_repository,
+            job_max_retry=1,
+        )
+
+        _, exception = self._accumulate_create_and_get_completed_partitions(orchestrator)
+
+        assert exception is not None
+        assert exception.failure_type == FailureType.system_error  # type: ignore[attr-defined]
+
+    def test_resolve_failure_type_priority_matrix(self) -> None:
+        """
+        Priority is `config_error` > `system_error` > `transient_error` with
+        `system_error` as the safe fallback when no typed exceptions are
+        available.
+        """
+        resolve = AsyncJobOrchestrator._resolve_failure_type
+
+        assert resolve([]) == FailureType.system_error
+        assert resolve([None, None]) == FailureType.system_error
+        assert (
+            resolve([AirbyteTracedException(failure_type=FailureType.transient_error)])
+            == FailureType.transient_error
+        )
+        assert (
+            resolve([AirbyteTracedException(failure_type=FailureType.system_error)])
+            == FailureType.system_error
+        )
+        assert (
+            resolve([AirbyteTracedException(failure_type=FailureType.config_error)])
+            == FailureType.config_error
+        )
+        assert (
+            resolve(
+                [
+                    AirbyteTracedException(failure_type=FailureType.transient_error),
+                    AirbyteTracedException(failure_type=FailureType.system_error),
+                ]
+            )
+            == FailureType.system_error
+        )
+        assert (
+            resolve(
+                [
+                    AirbyteTracedException(failure_type=FailureType.transient_error),
+                    AirbyteTracedException(failure_type=FailureType.config_error),
+                    AirbyteTracedException(failure_type=FailureType.system_error),
+                ]
+            )
+            == FailureType.config_error
+        )
+        # non-traced exceptions are ignored when computing the priority but the
+        # fallback is still `system_error`.
+        assert resolve([ValueError("boom")]) == FailureType.system_error
+
     def given_budget_already_taken_before_start_when_create_and_get_completed_partitions_then_wait_for_budget_to_be_freed(
         self,
     ) -> None:
