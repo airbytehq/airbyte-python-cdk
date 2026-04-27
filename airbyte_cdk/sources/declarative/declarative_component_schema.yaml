@@ -358,9 +358,9 @@ definitions:
         type: string
       stream_count:
         title: Stream Count
-        description: The number of streams to attempt reading from during a check operation. If `stream_count` exceeds the total number of available streams, the minimum of the two values will be used.
+        description: The number of streams to attempt reading from during a check operation. If unset, all generated streams are checked. Must be a positive integer; if it exceeds the total number of available streams, all streams are checked.
         type: integer
-        default: 0
+        minimum: 1
   CheckDynamicStream:
     title: Dynamic Streams to Check
     description: (This component is experimental. Use at your own risk.) Defines the dynamic streams to try reading when running a check operation.
@@ -1945,6 +1945,10 @@ definitions:
           - ["data", "records"]
           - ["data", "{{ parameters.name }}"]
           - ["data", "*", "record"]
+      record_expander:
+        title: Record Expander
+        description: Optional component to expand records by extracting items from nested array fields.
+        "$ref": "#/definitions/RecordExpander"
       $parameters:
         type: object
         additionalProperties: true
@@ -1958,6 +1962,46 @@ definitions:
       type:
         type: string
         enum: [ResponseToFileExtractor]
+      $parameters:
+        type: object
+        additionalProperties: true
+  RecordExpander:
+    title: Record Expander
+    description: Expands records by extracting items from a nested array field. When configured, this component extracts items from a specified nested array path within each record and emits each item as a separate record. Optionally, the original parent record can be embedded in each expanded item for context preservation. Supports wildcards (*) for matching multiple arrays.
+    type: object
+    required:
+      - type
+      - expand_records_from_field
+    properties:
+      type:
+        type: string
+        enum: [RecordExpander]
+      expand_records_from_field:
+        title: Expand Records From Field
+        description: Path to a nested array field within each record. Items from this array will be extracted and emitted as separate records. Supports wildcards (*) for matching multiple arrays.
+        type: array
+        items:
+          type: string
+        interpolation_context:
+          - config
+        examples:
+          - ["lines", "data"]
+          - ["items"]
+          - ["nested", "array"]
+          - ["sections", "*", "items"]
+      remain_original_record:
+        title: Remain Original Record
+        description: If true, each expanded record will include the original parent record in an "original_record" field. Defaults to false.
+        type: boolean
+        default: false
+      on_no_records:
+        title: On No Records
+        description: Behavior when the expansion path is missing, not a list, or an empty list. "skip" (default) emits nothing. "emit_parent" emits the original parent record unchanged.
+        type: string
+        enum:
+          - skip
+          - emit_parent
+        default: skip
       $parameters:
         type: object
         additionalProperties: true
