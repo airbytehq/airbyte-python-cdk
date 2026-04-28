@@ -67,6 +67,14 @@ DEFAULT_MODEL_TYPES: Mapping[str, str] = {
     "DynamicSchemaLoader.retriever": "SimpleRetriever",
     # SchemaTypeIdentifier
     "SchemaTypeIdentifier.types_map": "TypesMap",
+    # StreamGroup
+    "StreamGroup.streams": "DeclarativeStream",
+}
+
+# Mapping for fields that use the JSON Schema additionalProperties pattern (Dict[str, ComponentType]).
+# The transformer uses this to identify dict values as typed components and recurse into each.
+ADDITIONAL_PROPERTIES_TYPES: Mapping[str, str] = {
+    "DeclarativeSource.stream_groups": "StreamGroup",
 }
 
 # We retain a separate registry for custom components to automatically insert the type if it is missing. This is intended to
@@ -159,12 +167,29 @@ class ManifestComponentTransformer:
                 # We exclude propagating a parameter that matches the current field name because that would result in an infinite cycle
                 excluded_parameter = current_parameters.pop(field_name, None)
                 parent_type_field_identifier = f"{propagated_component.get('type')}.{field_name}"
-                propagated_component[field_name] = self.propagate_types_and_parameters(
-                    parent_type_field_identifier,
-                    field_value,
-                    current_parameters,
-                    use_parent_parameters=use_parent_parameters,
+                additional_props_type = ADDITIONAL_PROPERTIES_TYPES.get(
+                    parent_type_field_identifier
                 )
+                if additional_props_type:
+                    # Handle additionalProperties pattern: field_value is a dict of
+                    # component dicts keyed by arbitrary names.
+                    for key, value in field_value.items():
+                        if isinstance(value, dict):
+                            if "type" not in value:
+                                value["type"] = additional_props_type
+                            field_value[key] = self.propagate_types_and_parameters(
+                                parent_type_field_identifier,
+                                value,
+                                current_parameters,
+                                use_parent_parameters=use_parent_parameters,
+                            )
+                else:
+                    propagated_component[field_name] = self.propagate_types_and_parameters(
+                        parent_type_field_identifier,
+                        field_value,
+                        current_parameters,
+                        use_parent_parameters=use_parent_parameters,
+                    )
                 if excluded_parameter:
                     current_parameters[field_name] = excluded_parameter
             elif isinstance(field_value, typing.List):

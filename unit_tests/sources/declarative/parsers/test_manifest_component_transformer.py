@@ -743,3 +743,130 @@ def test_dynamic_stream_use_parent_parameters_configuration():
     assert result_false["retriever"]["name"] == "retriever_name"
     # When use_parent_parameters=True, parent's $parameters win
     assert result_true["retriever"]["name"] == "parent_name"
+
+
+def test_stream_groups_propagate_types_and_parameters():
+    """stream_groups uses additionalProperties (Dict[str, StreamGroup]).
+
+    The transformer must recurse into each group value, assign
+    type=StreamGroup, then propagate types and $parameters into the
+    nested DeclarativeStream items.
+    """
+    component = {
+        "type": "DeclarativeSource",
+        "streams": [],
+        "stream_groups": {
+            "group_a": {
+                "streams": [
+                    {
+                        "$parameters": {"name": "users", "primary_key": "id"},
+                        "retriever": {
+                            "type": "SimpleRetriever",
+                            "record_selector": {
+                                "type": "RecordSelector",
+                                "extractor": {"type": "DpathExtractor", "field_path": []},
+                            },
+                            "requester": {
+                                "type": "HttpRequester",
+                                "url_base": "https://api.example.com",
+                                "path": "/users",
+                            },
+                        },
+                    },
+                ],
+                "action": {"type": "BlockSimultaneousSyncsAction"},
+            },
+        },
+    }
+
+    transformer = ManifestComponentTransformer()
+    result = transformer.propagate_types_and_parameters("", component, {})
+
+    group = result["stream_groups"]["group_a"]
+    # StreamGroup type is assigned
+    assert group["type"] == "StreamGroup"
+    # The action component is preserved
+    assert group["action"]["type"] == "BlockSimultaneousSyncsAction"
+
+    stream = group["streams"][0]
+    # DeclarativeStream type is inferred via DEFAULT_MODEL_TYPES
+    assert stream["type"] == "DeclarativeStream"
+    # $parameters are propagated into the stream and its children
+    assert stream["name"] == "users"
+    assert stream["primary_key"] == "id"
+    assert stream["retriever"]["name"] == "users"
+    assert stream["retriever"]["primary_key"] == "id"
+    assert stream["retriever"]["requester"]["name"] == "users"
+    assert stream["retriever"]["requester"]["primary_key"] == "id"
+    assert stream["retriever"]["requester"]["$parameters"] == {
+        "name": "users",
+        "primary_key": "id",
+    }
+
+
+def test_stream_groups_with_multiple_groups():
+    """Multiple groups each get type=StreamGroup and proper recursion."""
+    component = {
+        "type": "DeclarativeSource",
+        "streams": [],
+        "stream_groups": {
+            "api_v1": {
+                "streams": [
+                    {
+                        "$parameters": {"name": "posts"},
+                        "retriever": {"type": "SimpleRetriever"},
+                    },
+                ],
+                "action": {"type": "BlockSimultaneousSyncsAction"},
+            },
+            "api_v2": {
+                "streams": [
+                    {
+                        "$parameters": {"name": "comments"},
+                        "retriever": {"type": "SimpleRetriever"},
+                    },
+                ],
+                "action": {"type": "BlockSimultaneousSyncsAction"},
+            },
+        },
+    }
+
+    transformer = ManifestComponentTransformer()
+    result = transformer.propagate_types_and_parameters("", component, {})
+
+    for group_name in ("api_v1", "api_v2"):
+        group = result["stream_groups"][group_name]
+        assert group["type"] == "StreamGroup"
+
+    assert result["stream_groups"]["api_v1"]["streams"][0]["type"] == "DeclarativeStream"
+    assert result["stream_groups"]["api_v1"]["streams"][0]["name"] == "posts"
+
+    assert result["stream_groups"]["api_v2"]["streams"][0]["type"] == "DeclarativeStream"
+    assert result["stream_groups"]["api_v2"]["streams"][0]["name"] == "comments"
+
+
+def test_stream_groups_preserves_explicit_types():
+    """When a stream inside a group already has an explicit type, it is not overwritten."""
+    component = {
+        "type": "DeclarativeSource",
+        "streams": [],
+        "stream_groups": {
+            "my_group": {
+                "type": "StreamGroup",
+                "streams": [
+                    {
+                        "type": "DeclarativeStream",
+                        "retriever": {"type": "SimpleRetriever"},
+                    },
+                ],
+                "action": {"type": "BlockSimultaneousSyncsAction"},
+            },
+        },
+    }
+
+    transformer = ManifestComponentTransformer()
+    result = transformer.propagate_types_and_parameters("", component, {})
+
+    group = result["stream_groups"]["my_group"]
+    assert group["type"] == "StreamGroup"
+    assert group["streams"][0]["type"] == "DeclarativeStream"
