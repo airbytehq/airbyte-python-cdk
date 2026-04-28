@@ -298,7 +298,22 @@ class HttpClient:
 
             return response
         except BaseBackoffException as e:
-            self._logger.error(f"Retries exhausted with backoff exception.", exc_info=True)
+            self._logger.error("Retries exhausted with backoff exception.", exc_info=True)
+
+            is_rate_limited = (
+                isinstance(e.response, requests.Response)
+                and e.response.status_code == requests.codes.too_many_requests
+            )
+
+            if is_rate_limited:
+                raise AirbyteTracedException(
+                    internal_message=f"Rate limit retry budget exhausted. Last exception: {e}",
+                    message="API rate limit exceeded.",
+                    failure_type=FailureType.transient_error,
+                    exception=e,
+                    stream_descriptor=StreamDescriptor(name=self._name),
+                )
+
             raise AirbyteTracedException(
                 internal_message=f"Exhausted available request attempts. Exception: {e}",
                 message=f"Exhausted available request attempts. Please see logs for more details. Exception: {e}",
