@@ -222,7 +222,8 @@ def test_stub_custom_backoff_http_stream_retries(mocker, retries):
     send_mock = mocker.patch.object(requests.Session, "send", return_value=req)
 
     with pytest.raises(
-        AirbyteTracedException, match="Exception: HTTP Status Code: 429. Error: Too many requests."
+        AirbyteTracedException,
+        match="API rate limit exceeded.",
     ):
         list(stream.read_records(SyncMode.full_refresh))
     if retries <= 0:
@@ -316,7 +317,7 @@ def test_raise_on_http_errors_off_429(mocker):
     mocker.patch.object(requests.Session, "send", return_value=req)
     with pytest.raises(
         AirbyteTracedException,
-        match="Exhausted available request attempts. Please see logs for more details. Exception: HTTP Status Code: 429. Error: Too many requests.",
+        match="API rate limit exceeded.",
     ):
         stream.exit_on_rate_limit = True
         list(stream.read_records(SyncMode.full_refresh))
