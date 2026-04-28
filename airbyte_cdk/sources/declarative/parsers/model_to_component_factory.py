@@ -101,6 +101,10 @@ from airbyte_cdk.sources.declarative.decoders.composite_raw_decoder import (
     JsonParser,
     Parser,
 )
+from airbyte_cdk.sources.declarative.expanders.record_expander import (
+    OnNoRecords,
+    RecordExpander,
+)
 from airbyte_cdk.sources.declarative.extractors import (
     DpathExtractor,
     RecordFilter,
@@ -397,6 +401,9 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     Rate as RateModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    RecordExpander as RecordExpanderModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     RecordFilter as RecordFilterModel,
@@ -785,6 +792,7 @@ class ModelToComponentFactory:
             PropertiesFromEndpointModel: self.create_properties_from_endpoint,
             PropertyChunkingModel: self.create_property_chunking,
             QueryPropertiesModel: self.create_query_properties,
+            RecordExpanderModel: self.create_record_expander,
             RecordFilterModel: self.create_record_filter,
             RecordSelectorModel: self.create_record_selector,
             RemoveFieldsModel: self.create_remove_fields,
@@ -1238,7 +1246,7 @@ class ModelToComponentFactory:
     ) -> DynamicStreamCheckConfig:
         return DynamicStreamCheckConfig(
             dynamic_stream_name=model.dynamic_stream_name,
-            stream_count=model.stream_count or 0,
+            stream_count=model.stream_count,
         )
 
     def create_check_stream(
@@ -2377,11 +2385,36 @@ class ModelToComponentFactory:
         else:
             decoder_to_use = JsonDecoder(parameters={})
         model_field_path: List[Union[InterpolatedString, str]] = [x for x in model.field_path]
+
+        record_expander = None
+        if model.record_expander:
+            record_expander = self._create_component_from_model(
+                model=model.record_expander,
+                config=config,
+            )
+
         return DpathExtractor(
             decoder=decoder_to_use,
             field_path=model_field_path,
             config=config,
             parameters=model.parameters or {},
+            record_expander=record_expander,
+        )
+
+    def create_record_expander(
+        self,
+        model: RecordExpanderModel,
+        config: Config,
+        **kwargs: Any,
+    ) -> RecordExpander:
+        return RecordExpander(
+            expand_records_from_field=model.expand_records_from_field,
+            config=config,
+            parameters=model.parameters or {},
+            remain_original_record=model.remain_original_record or False,
+            on_no_records=OnNoRecords(model.on_no_records.value)
+            if model.on_no_records
+            else OnNoRecords.skip,
         )
 
     @staticmethod
@@ -4387,12 +4420,21 @@ class ModelToComponentFactory:
     def create_http_request_matcher(
         self, model: HttpRequestRegexMatcherModel, config: Config, **kwargs: Any
     ) -> HttpRequestRegexMatcher:
+        weight = model.weight
+        if weight is not None:
+            if isinstance(weight, str):
+                weight = int(InterpolatedString.create(weight, parameters={}).eval(config))
+            else:
+                weight = int(weight)
+            if weight < 1:
+                raise ValueError(f"weight must be >= 1, got {weight}")
         return HttpRequestRegexMatcher(
             method=model.method,
             url_base=model.url_base,
             url_path_pattern=model.url_path_pattern,
             params=model.params,
             headers=model.headers,
+            weight=weight,
         )
 
     def set_api_budget(self, component_definition: ComponentDefinition, config: Config) -> None:

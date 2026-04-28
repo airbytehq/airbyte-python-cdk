@@ -58,6 +58,11 @@ from airbyte_cdk.utils.stream_status_utils import (
 )
 from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 
+# Backward-compatible deprecated alias. This class was removed in PR #927 but is still
+# imported by connectors in the airbyte monorepo. Keep as a simple alias to
+# AirbyteTracedException until all downstream usages have been migrated.
+MessageRepresentationAirbyteTracedErrors = AirbyteTracedException
+
 BODY_REQUEST_METHODS = ("GET", "POST", "PUT", "PATCH")
 
 
