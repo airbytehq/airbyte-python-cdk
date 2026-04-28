@@ -183,6 +183,7 @@ class ManifestComponentTransformer:
                                 current_parameters,
                                 use_parent_parameters=use_parent_parameters,
                             )
+                    propagated_component[field_name] = field_value
                 else:
                     propagated_component[field_name] = self.propagate_types_and_parameters(
                         parent_type_field_identifier,
