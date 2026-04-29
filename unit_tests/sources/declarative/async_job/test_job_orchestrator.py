@@ -55,11 +55,38 @@ class AsyncPartitionTest(TestCase):
         )
         assert partition.status == AsyncJobStatus.RUNNING
 
-    def test_given_only_completed_jobs_when_status_then_return_running(self) -> None:
+    def test_given_only_completed_jobs_when_status_then_return_completed(self) -> None:
         partition = AsyncPartition(
             [_create_job(AsyncJobStatus.COMPLETED) for _ in range(10)], _ANY_STREAM_SLICE
         )
         assert partition.status == AsyncJobStatus.COMPLETED
+
+    def test_given_only_skipped_jobs_when_status_then_return_skipped(self) -> None:
+        partition = AsyncPartition(
+            [_create_job(AsyncJobStatus.SKIPPED) for _ in range(3)], _ANY_STREAM_SLICE
+        )
+        assert partition.status == AsyncJobStatus.SKIPPED
+
+    def test_given_completed_and_skipped_jobs_when_status_then_return_completed(self) -> None:
+        partition = AsyncPartition(
+            [_create_job(AsyncJobStatus.COMPLETED), _create_job(AsyncJobStatus.SKIPPED)],
+            _ANY_STREAM_SLICE,
+        )
+        assert partition.status == AsyncJobStatus.COMPLETED
+
+    def test_given_skipped_and_running_jobs_when_status_then_return_running(self) -> None:
+        partition = AsyncPartition(
+            [_create_job(AsyncJobStatus.SKIPPED), _create_job(AsyncJobStatus.RUNNING)],
+            _ANY_STREAM_SLICE,
+        )
+        assert partition.status == AsyncJobStatus.RUNNING
+
+    def test_given_skipped_and_failed_jobs_when_status_then_return_failed(self) -> None:
+        partition = AsyncPartition(
+            [_create_job(AsyncJobStatus.SKIPPED), _create_job(AsyncJobStatus.FAILED)],
+            _ANY_STREAM_SLICE,
+        )
+        assert partition.status == AsyncJobStatus.FAILED
 
 
 def _status_update_per_jobs(
@@ -357,6 +384,37 @@ class AsyncJobOrchestratorTest(TestCase):
             list(orchestrator.create_and_get_completed_partitions())
 
         assert job_tracker.try_to_get_intent()
+
+    @mock.patch(sleep_mock_target)
+    def test_given_skipped_when_create_and_get_completed_partitions_then_skip_without_fetching_records(
+        self, mock_sleep: MagicMock
+    ) -> None:
+        job_tracker = JobTracker(1)
+        self._job_repository.start.return_value = self._job_for_a_slice
+        self._job_repository.update_jobs_status.side_effect = _status_update_per_jobs(
+            {self._job_for_a_slice: [AsyncJobStatus.SKIPPED]}
+        )
+        orchestrator = self._orchestrator([_A_STREAM_SLICE], job_tracker)
+
+        partitions = list(orchestrator.create_and_get_completed_partitions())
+
+        assert len(partitions) == 0  # skipped partitions are not yielded
+        assert job_tracker.try_to_get_intent()  # budget was freed
+        self._job_repository.fetch_records.assert_not_called()
+
+    @mock.patch(sleep_mock_target)
+    def test_given_skipped_does_not_retry(self, mock_sleep: MagicMock) -> None:
+        self._job_repository.start.return_value = self._job_for_a_slice
+        self._job_repository.update_jobs_status.side_effect = _status_update_per_jobs(
+            {self._job_for_a_slice: [AsyncJobStatus.SKIPPED]}
+        )
+        orchestrator = self._orchestrator([_A_STREAM_SLICE])
+
+        partitions = list(orchestrator.create_and_get_completed_partitions())
+
+        assert len(partitions) == 0
+        # start is called only once — SKIPPED does not trigger a retry
+        assert self._job_repository.start.call_count == 1
 
     def _mock_repository(self) -> None:
         self._job_repository = Mock(spec=AsyncJobRepository)

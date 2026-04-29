@@ -91,10 +91,16 @@ class AsyncPartition:
     @property
     def status(self) -> AsyncJobStatus:
         """
-        Given different job statuses, the priority is: FAILED, TIMED_OUT, RUNNING. Else, it means everything is completed.
+        Given different job statuses, the priority is: FAILED, TIMED_OUT, RUNNING. Else, it means everything is completed
+        or skipped. A partition is SKIPPED only when all jobs are SKIPPED (or a mix of COMPLETED and SKIPPED).
         """
         statuses = set(map(lambda job: job.status(), self.jobs))
         if statuses == {AsyncJobStatus.COMPLETED}:
+            return AsyncJobStatus.COMPLETED
+        elif statuses == {AsyncJobStatus.SKIPPED}:
+            return AsyncJobStatus.SKIPPED
+        elif statuses <= {AsyncJobStatus.COMPLETED, AsyncJobStatus.SKIPPED}:
+            # Mix of completed and skipped — treat as completed so records are fetched for the completed jobs
             return AsyncJobStatus.COMPLETED
         elif AsyncJobStatus.FAILED in statuses:
             return AsyncJobStatus.FAILED
@@ -149,6 +155,7 @@ class AsyncJobOrchestrator:
         AsyncJobStatus.FAILED,
         AsyncJobStatus.RUNNING,
         AsyncJobStatus.TIMED_OUT,
+        AsyncJobStatus.SKIPPED,
     }
     _RUNNING_ON_API_SIDE_STATUS = {AsyncJobStatus.RUNNING, AsyncJobStatus.TIMED_OUT}
 
@@ -341,6 +348,19 @@ class AsyncJobOrchestrator:
         for job in partition.jobs:
             self._job_tracker.remove_job(job.api_job_id())
 
+    def _process_skipped_partition(self, partition: AsyncPartition) -> None:
+        """
+        Process a skipped partition. The API indicated there is no data to return for this job
+        (e.g. Amazon SP-API CANCELLED status means no data to report). We clean up the job
+        allocation without fetching any records or raising errors.
+        """
+        job_ids = list(map(lambda job: job.api_job_id(), {job for job in partition.jobs}))
+        LOGGER.info(
+            f"The following jobs for stream slice {partition.stream_slice} have been skipped (no data to return): {job_ids}."
+        )
+        for job in partition.jobs:
+            self._job_tracker.remove_job(job.api_job_id())
+
     def _process_running_partitions_and_yield_completed_ones(
         self,
     ) -> Generator[AsyncPartition, Any, None]:
@@ -359,6 +379,8 @@ class AsyncJobOrchestrator:
                 case AsyncJobStatus.COMPLETED:
                     self._process_completed_partition(partition)
                     yield partition
+                case AsyncJobStatus.SKIPPED:
+                    self._process_skipped_partition(partition)
                 case AsyncJobStatus.RUNNING:
                     current_running_partitions.append(partition)
                 case _ if partition.has_reached_max_attempt():
