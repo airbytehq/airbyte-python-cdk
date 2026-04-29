@@ -1859,7 +1859,63 @@ class ModelToComponentFactory:
             for class_field in component_fields.keys()
             if class_field in model_args
         }
-        return custom_component_class(**kwargs)
+
+        # Propagate the top-level api_budget to custom components that are subclasses of
+        # HttpRequester (and therefore accept an `api_budget` field), unless the manifest
+        # or an explicit kwarg has already provided one. Without this, custom requesters
+        # silently lose the connector-level HTTPAPIBudget and any configured rate-limit
+        # policies have no effect at runtime.
+        injected_api_budget = False
+        if (
+            self._api_budget is not None
+            and "api_budget" in component_fields
+            and kwargs.get("api_budget") is None
+            and isinstance(custom_component_class, type)
+            and issubclass(custom_component_class, HttpRequester)
+        ):
+            kwargs["api_budget"] = self._api_budget
+            injected_api_budget = True
+
+        custom_component = custom_component_class(**kwargs)
+        if injected_api_budget and isinstance(custom_component, HttpRequester):
+            self._sync_injected_api_budget_with_http_client(custom_component)
+
+        return custom_component
+
+    @staticmethod
+    def _sync_injected_api_budget_with_http_client(custom_requester: HttpRequester) -> None:
+        """Align an injected `api_budget` with the active `HttpClient` on custom requesters.
+
+        Custom requesters can replace `_http_client` in `__post_init__` without forwarding
+        `api_budget`. If the factory injected a manifest-level budget and the replacement
+        client kept the default empty `APIBudget`, point both the client and its underlying
+        `LimiterSession`/`CachedLimiterSession` at the injected budget so rate-limiting is
+        actually enforced at request time. Non-`APIBudget` implementations (custom
+        `AbstractAPIBudget` subclasses) are left untouched.
+        """
+        http_client = getattr(custom_requester, "_http_client", None)
+        http_client_api_budget = getattr(http_client, "_api_budget", None)
+        injected_api_budget = custom_requester.api_budget
+
+        if (
+            http_client is None
+            or http_client_api_budget is None
+            or injected_api_budget is None
+            or http_client_api_budget is injected_api_budget
+        ):
+            return
+
+        if (
+            isinstance(http_client_api_budget, APIBudget)
+            and len(http_client_api_budget._policies) == 0
+        ):
+            http_client._api_budget = injected_api_budget
+            http_client_session = getattr(http_client, "_session", None)
+            if (
+                http_client_session is not None
+                and getattr(http_client_session, "_api_budget", None) is http_client_api_budget
+            ):
+                http_client_session._api_budget = injected_api_budget
 
     @staticmethod
     def _get_class_from_fully_qualified_class_name(
