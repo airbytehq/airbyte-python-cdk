@@ -126,7 +126,7 @@ class MemoryMonitor:
     (default 5000) to 100 messages to narrow the race window near OOM.
 
     **Fail-fast:** Raises ``AirbyteTracedException`` with
-    ``FailureType.transient_error`` when *both*:
+    ``FailureType.system_error`` when *both*:
 
     1. Cgroup usage >= 95% of the container limit (container is near OOM-kill)
     2. Anonymous memory >= 85% of *current cgroup usage* (most of the charged
@@ -296,7 +296,7 @@ class MemoryMonitor:
                             f"Thresholds: cgroup >= {int(_CRITICAL_THRESHOLD * 100)}%, "
                             f"anon share of usage >= {int(_ANON_SHARE_OF_USAGE_THRESHOLD * 100)}%."
                         ),
-                        failure_type=FailureType.transient_error,
+                        failure_type=FailureType.system_error,
                     )
                 elif not self._critical_logged:
                     self._critical_logged = True
