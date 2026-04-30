@@ -1206,6 +1206,237 @@ def expected_manifest_with_migrated_to_request_body() -> Dict[str, Any]:
     }
 
 
+@pytest.fixture
+def manifest_with_request_body_plain_text_json() -> Dict[str, Any]:
+    return {
+        "version": "0.0.0",
+        "type": "DeclarativeSource",
+        "check": {
+            "type": "CheckStream",
+            "stream_names": ["A"],
+        },
+        "definitions": {
+            "streams": {
+                "A": {
+                    "type": "DeclarativeStream",
+                    "name": "A",
+                    "retriever": {
+                        "type": "SimpleRetriever",
+                        "requester": {
+                            "type": "HttpRequester",
+                            "url": "https://api.example.com/v1/search",
+                            "http_method": "POST",
+                            "request_body": {
+                                "type": "RequestBodyPlainText",
+                                "value": '{"sort": [{"field": "createdAt", "order": "ASC"}], "filter": [{"type": "equals", "field": "active", "value": "true"}]}',
+                            },
+                        },
+                        "record_selector": {
+                            "type": "RecordSelector",
+                            "extractor": {"type": "DpathExtractor", "field_path": []},
+                        },
+                    },
+                    "schema_loader": {
+                        "type": "InlineSchemaLoader",
+                        "schema": {"$ref": "#/schemas/A"},
+                    },
+                },
+                "B": {
+                    "type": "DeclarativeStream",
+                    "name": "B",
+                    "retriever": {
+                        "type": "SimpleRetriever",
+                        "requester": {
+                            "type": "HttpRequester",
+                            "url": "https://api.example.com/v1/query",
+                            "http_method": "POST",
+                            "request_body": {
+                                "type": "RequestBodyPlainText",
+                                "value": "plain text body that is not JSON",
+                            },
+                        },
+                        "record_selector": {
+                            "type": "RecordSelector",
+                            "extractor": {"type": "DpathExtractor", "field_path": []},
+                        },
+                    },
+                    "schema_loader": {
+                        "type": "InlineSchemaLoader",
+                        "schema": {"$ref": "#/schemas/B"},
+                    },
+                },
+            },
+        },
+        "streams": [
+            {"$ref": "#/definitions/streams/A"},
+            {"$ref": "#/definitions/streams/B"},
+        ],
+        "schemas": {
+            "A": {
+                "type": "object",
+                "$schema": "http://json-schema.org/draft-07/schema#",
+                "additionalProperties": True,
+                "properties": {"field_a1": {"type": "string"}},
+            },
+            "B": {
+                "type": "object",
+                "$schema": "http://json-schema.org/draft-07/schema#",
+                "additionalProperties": True,
+                "properties": {"field_b1": {"type": "string"}},
+            },
+        },
+    }
+
+
+@pytest.fixture
+def expected_manifest_with_plain_text_json_migrated() -> Dict[str, Any]:
+    return {
+        "version": "0.0.0",
+        "type": "DeclarativeSource",
+        "check": {"type": "CheckStream", "stream_names": ["A"]},
+        "definitions": {
+            "streams": {
+                "A": {
+                    "type": "DeclarativeStream",
+                    "name": "A",
+                    "retriever": {
+                        "type": "SimpleRetriever",
+                        "requester": {
+                            "type": "HttpRequester",
+                            "url": "https://api.example.com/v1/search",
+                            "http_method": "POST",
+                            "request_body_json": '{"sort": [{"field": "createdAt", "order": "ASC"}], "filter": [{"type": "equals", "field": "active", "value": "true"}]}',
+                        },
+                        "record_selector": {
+                            "type": "RecordSelector",
+                            "extractor": {"type": "DpathExtractor", "field_path": []},
+                        },
+                    },
+                    "schema_loader": {
+                        "type": "InlineSchemaLoader",
+                        "schema": {
+                            "type": "object",
+                            "$schema": "http://json-schema.org/draft-07/schema#",
+                            "additionalProperties": True,
+                            "properties": {"field_a1": {"type": "string"}},
+                        },
+                    },
+                },
+                "B": {
+                    "type": "DeclarativeStream",
+                    "name": "B",
+                    "retriever": {
+                        "type": "SimpleRetriever",
+                        "requester": {
+                            "type": "HttpRequester",
+                            "url": "https://api.example.com/v1/query",
+                            "http_method": "POST",
+                            "request_body": {
+                                "type": "RequestBodyPlainText",
+                                "value": "plain text body that is not JSON",
+                            },
+                        },
+                        "record_selector": {
+                            "type": "RecordSelector",
+                            "extractor": {"type": "DpathExtractor", "field_path": []},
+                        },
+                    },
+                    "schema_loader": {
+                        "type": "InlineSchemaLoader",
+                        "schema": {
+                            "type": "object",
+                            "$schema": "http://json-schema.org/draft-07/schema#",
+                            "additionalProperties": True,
+                            "properties": {"field_b1": {"type": "string"}},
+                        },
+                    },
+                },
+            },
+        },
+        "streams": [
+            {
+                "type": "DeclarativeStream",
+                "name": "A",
+                "retriever": {
+                    "type": "SimpleRetriever",
+                    "requester": {
+                        "type": "HttpRequester",
+                        "url": "https://api.example.com/v1/search",
+                        "http_method": "POST",
+                        "request_body_json": '{"sort": [{"field": "createdAt", "order": "ASC"}], "filter": [{"type": "equals", "field": "active", "value": "true"}]}',
+                    },
+                    "record_selector": {
+                        "type": "RecordSelector",
+                        "extractor": {"type": "DpathExtractor", "field_path": []},
+                    },
+                },
+                "schema_loader": {
+                    "type": "InlineSchemaLoader",
+                    "schema": {
+                        "type": "object",
+                        "$schema": "http://json-schema.org/draft-07/schema#",
+                        "additionalProperties": True,
+                        "properties": {"field_a1": {"type": "string"}},
+                    },
+                },
+            },
+            {
+                "type": "DeclarativeStream",
+                "name": "B",
+                "retriever": {
+                    "type": "SimpleRetriever",
+                    "requester": {
+                        "type": "HttpRequester",
+                        "url": "https://api.example.com/v1/query",
+                        "http_method": "POST",
+                        "request_body": {
+                            "type": "RequestBodyPlainText",
+                            "value": "plain text body that is not JSON",
+                        },
+                    },
+                    "record_selector": {
+                        "type": "RecordSelector",
+                        "extractor": {"type": "DpathExtractor", "field_path": []},
+                    },
+                },
+                "schema_loader": {
+                    "type": "InlineSchemaLoader",
+                    "schema": {
+                        "type": "object",
+                        "$schema": "http://json-schema.org/draft-07/schema#",
+                        "additionalProperties": True,
+                        "properties": {"field_b1": {"type": "string"}},
+                    },
+                },
+            },
+        ],
+        "schemas": {
+            "A": {
+                "type": "object",
+                "$schema": "http://json-schema.org/draft-07/schema#",
+                "additionalProperties": True,
+                "properties": {"field_a1": {"type": "string"}},
+            },
+            "B": {
+                "type": "object",
+                "$schema": "http://json-schema.org/draft-07/schema#",
+                "additionalProperties": True,
+                "properties": {"field_b1": {"type": "string"}},
+            },
+        },
+        "metadata": {
+            "applied_migrations": [
+                {
+                    "from_version": "0.0.0",
+                    "to_version": "*",
+                    "migration": "HttpRequesterRequestBodyPlainTextJsonToRequestBodyJson",
+                    "migrated_at": "2025-04-01T00:00:00+00:00",
+                },
+            ]
+        },
+    }
+
+
 class DummyMigration(ManifestMigration):
     def _process_manifest(self, manifest):
         self.is_migrated = False
