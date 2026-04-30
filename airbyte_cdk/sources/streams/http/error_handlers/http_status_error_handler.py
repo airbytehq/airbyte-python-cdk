@@ -60,6 +60,16 @@ class HttpStatusErrorHandler(ErrorHandler):
                 response_or_exception.__class__
             )
 
+            if mapped_error is None:
+                for mapped_key, mapped_value in self._error_mapping.items():
+                    if (
+                        isinstance(mapped_key, type)
+                        and issubclass(mapped_key, Exception)
+                        and isinstance(response_or_exception, mapped_key)
+                    ):
+                        mapped_error = mapped_value
+                        break
+
             if mapped_error is not None:
                 return mapped_error
             else:
