@@ -116,9 +116,7 @@ class _CsvReader:
                 csv.unregister_dialect(dialect_name)
 
     def _get_headers(self, fp: IOBase, config_format: CsvFormat, dialect_name: str) -> List[str]:
-        """
-        Assumes the fp is pointing to the beginning of the files and will reset it as such
-        """
+        """Assumes the fp is pointing to the beginning of the files and will reset it as such."""
         # Note that this method assumes the dialect has already been registered if we're parsing the headers
         if isinstance(config_format.header_definition, CsvHeaderUserProvided):
             return config_format.header_definition.column_names
@@ -133,6 +131,14 @@ class _CsvReader:
             self._skip_rows(fp, config_format.skip_rows_before_header)
             reader = csv.reader(fp, dialect=dialect_name)  # type: ignore
             headers = list(next(reader))
+
+            empty_count = sum(1 for h in headers if not h or h.isspace())
+            if empty_count:
+                raise AirbyteTracedException(
+                    message="CSV header row contains empty column name(s). Remove trailing delimiters or empty columns from the header row.",
+                    internal_message=f"Found {empty_count} empty/whitespace-only column name(s) in header: {headers}",
+                    failure_type=FailureType.config_error,
+                )
 
         fp.seek(0)
         return headers
@@ -252,9 +258,7 @@ class CsvParser(FileTypeParser):
                     config_format.strings_can_be_null,
                 )
         except RecordParseError as parse_err:
-            raise RecordParseError(
-                FileBasedSourceError.ERROR_PARSING_RECORD, filename=file.uri, lineno=line_no
-            ) from parse_err
+            raise RecordParseError(str(parse_err), filename=file.uri, lineno=line_no) from parse_err
         finally:
             data_generator.close()
 

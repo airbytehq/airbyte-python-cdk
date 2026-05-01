@@ -11,6 +11,7 @@ from datetime import datetime
 from typing import Any, Dict, Generator, List, Set
 from unittest import TestCase, mock
 from unittest.mock import Mock
+from uuid import uuid4
 
 import pytest
 
@@ -785,3 +786,123 @@ def test_encoding_is_passed_to_stream_reader() -> None:
             mock.call().__exit__(None, None, None),
         ]
     )
+
+
+@pytest.mark.parametrize(
+    "header_row, expected_empty_count",
+    [
+        pytest.param("col1,col2,col3,,,", 3, id="trailing_empty_columns"),
+        pytest.param("col1,,col3", 1, id="middle_empty_column"),
+        pytest.param(",col2,col3", 1, id="leading_empty_column"),
+        pytest.param("col1,col2, ", 1, id="whitespace_only_column"),
+    ],
+)
+def test_get_headers_raises_on_empty_column_names(
+    header_row: str, expected_empty_count: int
+) -> None:
+    csv_reader = _CsvReader()
+    config_format = CsvFormat()
+    fp = io.StringIO(header_row)
+
+    dialect_name = f"test_{uuid4()}"
+    csv.register_dialect(
+        dialect_name,
+        delimiter=config_format.delimiter,
+        quotechar=config_format.quote_char,
+        escapechar=config_format.escape_char,
+        doublequote=config_format.double_quote,
+        quoting=csv.QUOTE_MINIMAL,
+    )
+
+    try:
+        with pytest.raises(AirbyteTracedException) as exc_info:
+            csv_reader._get_headers(fp, config_format, dialect_name)
+
+        assert exc_info.value.failure_type == FailureType.config_error
+        assert "empty column name" in exc_info.value.message
+    finally:
+        csv.unregister_dialect(dialect_name)
+
+
+def test_get_headers_accepts_valid_headers() -> None:
+    csv_reader = _CsvReader()
+    config_format = CsvFormat()
+    fp = io.StringIO("col1,col2,col3")
+
+    dialect_name = f"test_{uuid4()}"
+    csv.register_dialect(
+        dialect_name,
+        delimiter=config_format.delimiter,
+        quotechar=config_format.quote_char,
+        escapechar=config_format.escape_char,
+        doublequote=config_format.double_quote,
+        quoting=csv.QUOTE_MINIMAL,
+    )
+
+    try:
+        headers = csv_reader._get_headers(fp, config_format, dialect_name)
+        assert headers == ["col1", "col2", "col3"]
+    finally:
+        csv.unregister_dialect(dialect_name)
+
+
+def test_read_data_raises_on_empty_column_names() -> None:
+    config_format = CsvFormat()
+    config = Mock()
+    config.name = "config_name"
+    config.format = config_format
+
+    file = RemoteFile(uri="test.csv", last_modified=datetime.now())
+    stream_reader = Mock(spec=AbstractFileBasedStreamReader)
+    logger = Mock(spec=logging.Logger)
+    csv_reader = _CsvReader()
+
+    stream_reader.open_file.return_value = (
+        CsvFileBuilder().with_data(["col1,col2,col3,,,", "v1,v2,v3,v4,v5,v6"]).build()
+    )
+
+    with pytest.raises(AirbyteTracedException) as exc_info:
+        list(
+            csv_reader.read_data(
+                config,
+                file,
+                stream_reader,
+                logger,
+                FileReadMode.READ,
+            )
+        )
+
+    assert exc_info.value.failure_type == FailureType.config_error
+    assert "empty column name" in exc_info.value.message
+
+
+def test_parse_records_preserves_mismatch_error_detail() -> None:
+    config_format = CsvFormat()
+    config = FileBasedStreamConfig(
+        name="test",
+        validation_policy="Emit Record",
+        file_type="csv",
+        format=config_format,
+    )
+
+    file = RemoteFile(uri="test.csv", last_modified=datetime.now())
+    stream_reader = Mock()
+    mock_obj = stream_reader.open_file.return_value
+    mock_obj.__enter__ = Mock(return_value=io.StringIO("header\ntoo many values,value,value,value"))
+    mock_obj.__exit__ = Mock(return_value=None)
+
+    parser = CsvParser()
+
+    with pytest.raises(RecordParseError) as exc_info:
+        list(
+            parser.parse_records(
+                config,
+                file,
+                stream_reader,
+                logger,
+                {"properties": {"header": {"type": "string"}}},
+            )
+        )
+
+    error_msg = str(exc_info.value)
+    assert "more columns than the header" in error_msg
