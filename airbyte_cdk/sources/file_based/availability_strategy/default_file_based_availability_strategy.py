@@ -88,8 +88,8 @@ class DefaultFileBasedAvailabilityStrategy(AbstractFileBasedAvailabilityStrategy
                 # If the parser is set to not check parsability, we still want to check that we can open the file.
                 handle = stream.stream_reader.open_file(file, parser.file_read_mode, None, logger)
                 handle.close()
-        except AirbyteTracedException as ate:
-            raise ate
+        except AirbyteTracedException:
+            raise
         except CheckAvailabilityError as exc:
             logger.exception("Stream availability check failed")
             return False, str(exc)
