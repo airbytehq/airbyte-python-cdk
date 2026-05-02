@@ -5,7 +5,6 @@
 from __future__ import annotations
 
 import logging
-import traceback
 from typing import TYPE_CHECKING, Optional, Tuple
 
 from airbyte_cdk import AirbyteTracedException
@@ -39,12 +38,18 @@ class DefaultFileBasedAvailabilityStrategy(AbstractFileBasedAvailabilityStrategy
         """
         Perform a connection check for the stream (verify that we can list files from the stream).
 
-        Returns (True, None) if successful, otherwise (False, <error message>).
+        Returns `(True, None)` if successful, otherwise `(False, <error message>)`.
+
+        The returned reason is the actionable error string from the underlying
+        `CheckAvailabilityError`. Connector-raised `AirbyteTracedException`s are
+        re-raised so that their actionable `message` propagates to the platform
+        unchanged. The full traceback is still logged for debugging.
         """
         try:
             self._check_list_files(stream)
-        except CheckAvailabilityError:
-            return False, "".join(traceback.format_exc())
+        except CheckAvailabilityError as exc:
+            logger.exception("Stream availability check failed")
+            return False, str(exc)
 
         return True, None
 
@@ -85,8 +90,9 @@ class DefaultFileBasedAvailabilityStrategy(AbstractFileBasedAvailabilityStrategy
                 handle.close()
         except AirbyteTracedException as ate:
             raise ate
-        except CheckAvailabilityError:
-            return False, "".join(traceback.format_exc())
+        except CheckAvailabilityError as exc:
+            logger.exception("Stream availability check failed")
+            return False, str(exc)
 
         return True, None
 
@@ -94,7 +100,12 @@ class DefaultFileBasedAvailabilityStrategy(AbstractFileBasedAvailabilityStrategy
         """
         Check that we can list files from the stream.
 
-        Returns the first file if successful, otherwise raises a CheckAvailabilityError.
+        Returns the first file if successful, otherwise raises a `CheckAvailabilityError`.
+
+        `AirbyteTracedException`s raised by the underlying stream reader are
+        re-raised unchanged so that connector-specific actionable messages
+        (e.g. invalid credentials, missing permissions) reach the platform
+        without being wrapped in a generic `ERROR_LISTING_FILES` reason.
         """
         try:
             file = next(iter(stream.get_files()))
@@ -102,6 +113,8 @@ class DefaultFileBasedAvailabilityStrategy(AbstractFileBasedAvailabilityStrategy
             raise CheckAvailabilityError(FileBasedSourceError.EMPTY_STREAM, stream=stream.name)
         except CustomFileBasedException as exc:
             raise CheckAvailabilityError(str(exc), stream=stream.name) from exc
+        except AirbyteTracedException:
+            raise
         except Exception as exc:
             raise CheckAvailabilityError(
                 FileBasedSourceError.ERROR_LISTING_FILES, stream=stream.name
