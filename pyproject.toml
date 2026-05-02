@@ -84,6 +84,7 @@ cryptography = ">=44.0.0,<45.0.0"  # Constrained as transitive dependency due to
 pytz = "2024.2"
 pytest = {version = "^7", optional = true }
 orjson = "^3.10.7"
+ijson = "^3.3.0"  # Streaming JSON parser, used by connectors with very large response bodies (e.g. Amazon Seller Partner Brand Analytics reports).
 serpyco-rs = "^1.10.2"
 sqlalchemy = {version = "^2.0,!=2.0.36", optional = true }
 fastapi = { version = ">=0.116.1", optional = true }
