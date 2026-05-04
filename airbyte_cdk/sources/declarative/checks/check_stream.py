@@ -13,6 +13,10 @@ from airbyte_cdk.sources.streams.concurrent.abstract_stream import AbstractStrea
 from airbyte_cdk.sources.streams.core import Stream
 from airbyte_cdk.sources.streams.http.availability_strategy import HttpAvailabilityStrategy
 
+STRATEGY_ALL = "all"
+STRATEGY_ANY_OF = "any_of"
+_SUPPORTED_STRATEGIES = (STRATEGY_ALL, STRATEGY_ANY_OF)
+
 
 def evaluate_availability(
     stream: Union[Stream, AbstractStream], logger: logging.Logger
@@ -42,20 +46,37 @@ class DynamicStreamCheckConfig:
 @dataclass
 class CheckStream(ConnectionChecker):
     """
-    Checks the connections by checking availability of one or many streams selected by the developer
+    Checks the connection by checking availability of one or many streams selected by the developer.
+
+    When multiple `stream_names` are provided, the `strategy` attribute controls how
+    success is evaluated:
+
+    - `all` (default): every listed stream must be available for the check to pass.
+      This preserves the original behavior.
+    - `any_of`: the check passes as soon as any listed stream is available, and only
+      fails if every listed stream is unavailable. This is useful for APIs where
+      different users have scope for different streams (for example permission-scoped
+      OAuth tokens).
 
     Attributes:
-        stream_name (List[str]): names of streams to check
+        stream_names: Names of streams to check.
+        strategy: Evaluation strategy, either `all` or `any_of`.
+        dynamic_streams_check_configs: Optional configuration for dynamic stream checks.
     """
 
     stream_names: List[str]
     parameters: InitVar[Mapping[str, Any]]
+    strategy: str = STRATEGY_ALL
     dynamic_streams_check_configs: Optional[List[DynamicStreamCheckConfig]] = None
 
     def __post_init__(self, parameters: Mapping[str, Any]) -> None:
         self._parameters = parameters
         if self.dynamic_streams_check_configs is None:
             self.dynamic_streams_check_configs = []
+        if self.strategy not in _SUPPORTED_STRATEGIES:
+            raise ValueError(
+                f"Unsupported CheckStream strategy {self.strategy!r}. Expected one of {list(_SUPPORTED_STRATEGIES)}."
+            )
 
     def _log_error(self, logger: logging.Logger, action: str, error: Exception) -> Tuple[bool, str]:
         """Logs an error and returns a formatted error message."""
@@ -84,9 +105,15 @@ class CheckStream(ConnectionChecker):
                     f"{stream_name} is not part of the catalog. Expected one of {list(stream_name_to_stream.keys())}."
                 )
 
-            stream_availability, message = self._check_stream_availability(
-                stream_name_to_stream, stream_name, logger
-            )
+        if self.stream_names:
+            if self.strategy == STRATEGY_ANY_OF:
+                stream_availability, message = self._check_any_of_stream_availability(
+                    stream_name_to_stream, logger
+                )
+            else:
+                stream_availability, message = self._check_all_stream_availability(
+                    stream_name_to_stream, logger
+                )
             if not stream_availability:
                 return stream_availability, message
 
@@ -100,6 +127,46 @@ class CheckStream(ConnectionChecker):
             return self._check_dynamic_streams_availability(source, stream_name_to_stream, logger)
 
         return True, None
+
+    def _check_all_stream_availability(
+        self,
+        stream_name_to_stream: Dict[str, Union[Stream, AbstractStream]],
+        logger: logging.Logger,
+    ) -> Tuple[bool, Any]:
+        """Returns success only if every stream in `stream_names` is available."""
+        for stream_name in self.stream_names:
+            stream_availability, message = self._check_stream_availability(
+                stream_name_to_stream, stream_name, logger
+            )
+            if not stream_availability:
+                return stream_availability, message
+        return True, None
+
+    def _check_any_of_stream_availability(
+        self,
+        stream_name_to_stream: Dict[str, Union[Stream, AbstractStream]],
+        logger: logging.Logger,
+    ) -> Tuple[bool, Any]:
+        """Returns success if any stream in `stream_names` is available.
+
+        Short-circuits on the first available stream. If every listed stream is
+        unavailable, returns a single aggregated failure message so the user can
+        see why each candidate was rejected.
+        """
+        failure_messages: List[str] = []
+        for stream_name in self.stream_names:
+            stream_availability, message = self._check_stream_availability(
+                stream_name_to_stream, stream_name, logger
+            )
+            if stream_availability:
+                return True, None
+            failure_messages.append(str(message))
+
+        aggregated = "; ".join(failure_messages)
+        return (
+            False,
+            f"None of the configured check streams were available. {aggregated}",
+        )
 
     def _check_stream_availability(
         self,
