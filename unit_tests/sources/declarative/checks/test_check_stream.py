@@ -40,7 +40,17 @@ record = MagicMock()
             (True, None),
         ),
         ("test_fail_check", None, stream_names, {}, (True, None)),
-        ("test_try_to_check_invalid stream", record, ["invalid_stream_name"], {}, None),
+        (
+            "test_try_to_check_invalid_stream",
+            record,
+            ["invalid_stream_name"],
+            {},
+            (
+                False,
+                "Stream(s) ['invalid_stream_name'] from manifest are not part of the catalog. "
+                "Expected one of ['s1'].",
+            ),
+        ),
     ],
 )
 @pytest.mark.parametrize("slices_as_list", [True, False])
@@ -62,12 +72,8 @@ def test_check_stream_with_slices_as_list(
 
     check_stream = CheckStream(streams_to_check, parameters={})
 
-    if expectation:
-        actual = check_stream.check_connection(source, logger, config)
-        assert actual == expectation
-    else:
-        with pytest.raises(ValueError):
-            check_stream.check_connection(source, logger, config)
+    actual = check_stream.check_connection(source, logger, config)
+    assert actual == expectation
 
 
 def mock_read_records(responses, default_response=None, **kwargs):
@@ -166,6 +172,131 @@ def test_check_http_stream_via_availability_strategy(
     assert stream_is_available == available_expectation
     for message in expected_messages:
         assert message in reason
+
+
+def _make_available_stream(name: str) -> MagicMock:
+    stream = MagicMock(spec=Stream)
+    stream.name = name
+    stream.availability_strategy = None
+    stream.stream_slices.return_value = [{}]
+    stream.read_records.side_effect = mock_read_records({frozenset({}): iter([record])})
+    return stream
+
+
+@pytest.mark.parametrize(
+    "config_value, expected_streams_checked, expected_result",
+    [
+        pytest.param(
+            None,
+            ["s1"],
+            (True, None),
+            id="path_set_but_config_missing_key_falls_back_to_manifest",
+        ),
+        pytest.param(
+            [],
+            ["s1"],
+            (True, None),
+            id="path_set_but_config_value_empty_falls_back_to_manifest",
+        ),
+        pytest.param(
+            ["s2"],
+            ["s2"],
+            (True, None),
+            id="path_set_with_valid_override_uses_config_value",
+        ),
+    ],
+)
+def test_check_stream_with_config_override_uses_expected_streams(
+    config_value, expected_streams_checked, expected_result
+):
+    s1 = _make_available_stream("s1")
+    s2 = _make_available_stream("s2")
+    source = MagicMock()
+    source.streams.return_value = [s1, s2]
+
+    check_stream = CheckStream(
+        stream_names=["s1"],
+        parameters={},
+        config_check_streams_path="check_streams_override",
+    )
+
+    user_config = {"check_streams_override": config_value} if config_value is not None else {}
+    actual = check_stream.check_connection(source, logger, user_config)
+    assert actual == expected_result
+
+    name_to_stream = {"s1": s1, "s2": s2}
+    for stream_name in expected_streams_checked:
+        name_to_stream[stream_name].stream_slices.assert_called()
+    for stream_name, stream in name_to_stream.items():
+        if stream_name not in expected_streams_checked:
+            stream.stream_slices.assert_not_called()
+
+
+def test_check_stream_with_unconfigured_path_keeps_original_behavior():
+    s1 = _make_available_stream("s1")
+    source = MagicMock()
+    source.streams.return_value = [s1]
+
+    check_stream = CheckStream(stream_names=["s1"], parameters={})
+    actual = check_stream.check_connection(source, logger, {"unrelated": "value"})
+    assert actual == (True, None)
+
+
+def test_check_stream_with_config_override_unknown_stream_returns_message():
+    s1 = _make_available_stream("s1")
+    source = MagicMock()
+    source.streams.return_value = [s1]
+
+    check_stream = CheckStream(
+        stream_names=["s1"],
+        parameters={},
+        config_check_streams_path="check_streams_override",
+    )
+    ok, msg = check_stream.check_connection(
+        source, logger, {"check_streams_override": ["does_not_exist"]}
+    )
+    assert ok is False
+    assert "does_not_exist" in msg
+    assert "config path 'check_streams_override'" in msg
+    assert "Expected one of" in msg
+
+
+def test_check_stream_with_config_override_mixed_valid_and_unknown_returns_message():
+    s1 = _make_available_stream("s1")
+    s2 = _make_available_stream("s2")
+    source = MagicMock()
+    source.streams.return_value = [s1, s2]
+
+    check_stream = CheckStream(
+        stream_names=["s1"],
+        parameters={},
+        config_check_streams_path="check_streams_override",
+    )
+    ok, msg = check_stream.check_connection(
+        source, logger, {"check_streams_override": ["s2", "does_not_exist", "also_missing"]}
+    )
+    assert ok is False
+    assert "does_not_exist" in msg
+    assert "also_missing" in msg
+    assert "config path 'check_streams_override'" in msg
+
+
+def test_check_stream_with_config_override_non_list_returns_must_be_a_list_message():
+    s1 = _make_available_stream("s1")
+    source = MagicMock()
+    source.streams.return_value = [s1]
+
+    check_stream = CheckStream(
+        stream_names=["s1"],
+        parameters={},
+        config_check_streams_path="check_streams_override",
+    )
+    ok, msg = check_stream.check_connection(
+        source, logger, {"check_streams_override": "not-a-list"}
+    )
+    assert ok is False
+    assert "must be a list" in msg
+    assert "check_streams_override" in msg
 
 
 _CONFIG = {
@@ -528,7 +659,7 @@ _MANIFEST_WITHOUT_CHECK_COMPONENT = {
         pytest.param(
             {"check": {"type": "CheckStream", "stream_names": ["non_existent_stream"]}},
             Status.FAILED,
-            True,
+            False,
             200,
             [],
             0,
