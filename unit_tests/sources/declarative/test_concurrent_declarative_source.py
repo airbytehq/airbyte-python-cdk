@@ -5518,3 +5518,255 @@ def test_get_partition_router(stream_factory, expected_type):
         assert isinstance(router, SubstreamPartitionRouter)
     elif expected_type == "GroupingPartitionRouter":
         assert isinstance(router, GroupingPartitionRouter)
+
+
+_CONFIG_OVERRIDE_KEY = "check_streams_override"
+
+
+def _build_two_stream_check_manifest(
+    check_block: Mapping[str, Any], spec_block: Optional[Mapping[str, Any]] = None
+) -> Dict[str, Any]:
+    base_stream = {
+        "type": "DeclarativeStream",
+        "primary_key": "id",
+        "schema_loader": {
+            "type": "InlineSchemaLoader",
+            "schema": {
+                "$schema": "http://json-schema.org/schema#",
+                "properties": {"id": {"type": "integer"}},
+                "type": "object",
+            },
+        },
+        "retriever": {
+            "type": "SimpleRetriever",
+            "requester": {
+                "type": "HttpRequester",
+                "url_base": "https://api.test.com",
+                "http_method": "GET",
+            },
+            "record_selector": {
+                "type": "RecordSelector",
+                "extractor": {"type": "DpathExtractor", "field_path": []},
+            },
+            "paginator": {"type": "NoPagination"},
+        },
+    }
+    s1 = deepcopy(base_stream)
+    s1["name"] = "s1"
+    s1["retriever"]["requester"]["path"] = "/s1"
+    s2 = deepcopy(base_stream)
+    s2["name"] = "s2"
+    s2["retriever"]["requester"]["path"] = "/s2"
+
+    manifest: Dict[str, Any] = {
+        "version": "6.7.0",
+        "type": "DeclarativeSource",
+        "streams": [s1, s2],
+        "check": dict(check_block),
+    }
+    if spec_block is not None:
+        manifest["spec"] = dict(spec_block)
+    return manifest
+
+
+def test_check_stream_config_override_path_injects_hidden_spec_property():
+    manifest = _build_two_stream_check_manifest(
+        {
+            "type": "CheckStream",
+            "stream_names": ["s1"],
+            "config_check_streams_path": _CONFIG_OVERRIDE_KEY,
+        },
+        {
+            "type": "Spec",
+            "connection_specification": {
+                "title": "Test Spec",
+                "type": "object",
+                "required": ["api_key"],
+                "properties": {
+                    "api_key": {
+                        "type": "string",
+                        "airbyte_secret": True,
+                        "title": "API Key",
+                    }
+                },
+            },
+        },
+    )
+
+    source = ConcurrentDeclarativeSource(
+        source_config=manifest, config={}, catalog=None, state=None
+    )
+    spec = source.spec(logger)
+
+    properties = spec.connectionSpecification["properties"]
+    assert _CONFIG_OVERRIDE_KEY in properties
+    injected = properties[_CONFIG_OVERRIDE_KEY]
+    assert injected["airbyte_hidden"] is True
+    assert injected["type"] == "array"
+    assert injected["items"] == {"type": "string"}
+    assert _CONFIG_OVERRIDE_KEY not in spec.connectionSpecification.get("required", [])
+
+
+def test_check_stream_config_override_path_injects_into_spec_with_additional_properties_false():
+    manifest = _build_two_stream_check_manifest(
+        {
+            "type": "CheckStream",
+            "stream_names": ["s1"],
+            "config_check_streams_path": _CONFIG_OVERRIDE_KEY,
+        },
+        {
+            "type": "Spec",
+            "connection_specification": {
+                "title": "Test Spec",
+                "type": "object",
+                "additionalProperties": False,
+                "required": ["api_key"],
+                "properties": {
+                    "api_key": {
+                        "type": "string",
+                        "airbyte_secret": True,
+                        "title": "API Key",
+                    }
+                },
+            },
+        },
+    )
+
+    source = ConcurrentDeclarativeSource(
+        source_config=manifest, config={}, catalog=None, state=None
+    )
+    spec = source.spec(logger)
+
+    properties = spec.connectionSpecification["properties"]
+    assert spec.connectionSpecification["additionalProperties"] is False
+    assert _CONFIG_OVERRIDE_KEY in properties
+    assert properties[_CONFIG_OVERRIDE_KEY]["airbyte_hidden"] is True
+
+
+def test_check_stream_config_override_path_preserves_pre_declared_property_and_forces_hidden():
+    pre_declared = {
+        "type": "array",
+        "items": {"type": "string"},
+        "title": "Author-defined override",
+        "description": "manifest-author description",
+    }
+    manifest = _build_two_stream_check_manifest(
+        {
+            "type": "CheckStream",
+            "stream_names": ["s1"],
+            "config_check_streams_path": _CONFIG_OVERRIDE_KEY,
+        },
+        {
+            "type": "Spec",
+            "connection_specification": {
+                "type": "object",
+                "properties": {_CONFIG_OVERRIDE_KEY: pre_declared},
+            },
+        },
+    )
+
+    source = ConcurrentDeclarativeSource(
+        source_config=manifest, config={}, catalog=None, state=None
+    )
+    spec = source.spec(logger)
+
+    injected = spec.connectionSpecification["properties"][_CONFIG_OVERRIDE_KEY]
+    assert injected["airbyte_hidden"] is True
+    assert injected["title"] == "Author-defined override"
+    assert injected["description"] == "manifest-author description"
+
+
+def test_check_stream_config_override_path_with_dotted_path_raises():
+    manifest = _build_two_stream_check_manifest(
+        {
+            "type": "CheckStream",
+            "stream_names": ["s1"],
+            "config_check_streams_path": "advanced.check_streams",
+        }
+    )
+
+    with pytest.raises(ValueError, match="single-level paths"):
+        ConcurrentDeclarativeSource(source_config=manifest, config={}, catalog=None, state=None)
+
+
+def test_check_stream_config_override_uses_config_value_to_check_alternate_stream():
+    manifest = _build_two_stream_check_manifest(
+        {
+            "type": "CheckStream",
+            "stream_names": ["s1"],
+            "config_check_streams_path": _CONFIG_OVERRIDE_KEY,
+        }
+    )
+
+    config = {_CONFIG_OVERRIDE_KEY: ["s2"]}
+
+    with HttpMocker() as http_mocker:
+        http_mocker.get(
+            HttpRequest(url="https://api.test.com/s1"),
+            HttpResponse(body=json.dumps([]), status_code=500),
+        )
+        http_mocker.get(
+            HttpRequest(url="https://api.test.com/s2"),
+            HttpResponse(body=json.dumps([{"id": 1}]), status_code=200),
+        )
+        source = ConcurrentDeclarativeSource(
+            source_config=manifest, config=config, catalog=None, state=None
+        )
+        connection_status = source.check(logger, config)
+
+    assert connection_status.status == Status.SUCCEEDED
+
+
+def test_check_stream_config_override_unknown_stream_returns_failed_status_without_raising():
+    manifest = _build_two_stream_check_manifest(
+        {
+            "type": "CheckStream",
+            "stream_names": ["s1"],
+            "config_check_streams_path": _CONFIG_OVERRIDE_KEY,
+        }
+    )
+
+    config = {_CONFIG_OVERRIDE_KEY: ["does_not_exist"]}
+
+    with HttpMocker() as http_mocker:
+        http_mocker.get(
+            HttpRequest(url="https://api.test.com/s1"),
+            HttpResponse(body=json.dumps([{"id": 1}]), status_code=200),
+        )
+        http_mocker.get(
+            HttpRequest(url="https://api.test.com/s2"),
+            HttpResponse(body=json.dumps([{"id": 1}]), status_code=200),
+        )
+        source = ConcurrentDeclarativeSource(
+            source_config=manifest, config=config, catalog=None, state=None
+        )
+        connection_status = source.check(logger, config)
+
+    assert connection_status.status == Status.FAILED
+    assert "does_not_exist" in (connection_status.message or "")
+
+
+def test_check_stream_config_override_falls_back_to_manifest_when_config_missing():
+    manifest = _build_two_stream_check_manifest(
+        {
+            "type": "CheckStream",
+            "stream_names": ["s1"],
+            "config_check_streams_path": _CONFIG_OVERRIDE_KEY,
+        }
+    )
+
+    with HttpMocker() as http_mocker:
+        http_mocker.get(
+            HttpRequest(url="https://api.test.com/s1"),
+            HttpResponse(body=json.dumps([{"id": 1}]), status_code=200),
+        )
+        http_mocker.get(
+            HttpRequest(url="https://api.test.com/s2"),
+            HttpResponse(body=json.dumps([]), status_code=500),
+        )
+        source = ConcurrentDeclarativeSource(
+            source_config=manifest, config={}, catalog=None, state=None
+        )
+        connection_status = source.check(logger, {})
+
+    assert connection_status.status == Status.SUCCEEDED

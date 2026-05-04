@@ -343,6 +343,21 @@ definitions:
         type: array
         items:
           "$ref": "#/definitions/DynamicStreamCheckConfig"
+      config_check_streams_path:
+        title: Config Check Streams Path
+        description: |-
+          Optional dot-delimited path into the user's config that, when present,
+          overrides `stream_names` for the duration of the check. The referenced
+          config value must be a list of stream names. When empty or missing, the
+          manifest's `stream_names` is used. Setting this also injects a hidden
+          array-of-strings property at the top level of the connector spec
+          (single-level paths only in v1) so platforms that allow a connection
+          to override the check-time streams can plumb the value through without
+          exposing it in the standard config UI.
+        type: string
+        examples:
+          - "check_streams_override"
+          - "advanced.check_streams"
   DynamicStreamCheckConfig:
     type: object
     required:

@@ -7,6 +7,8 @@ import traceback
 from dataclasses import InitVar, dataclass
 from typing import Any, Dict, List, Mapping, Optional, Tuple, Union
 
+import dpath
+
 from airbyte_cdk.sources import Source
 from airbyte_cdk.sources.declarative.checks.connection_checker import ConnectionChecker
 from airbyte_cdk.sources.streams.concurrent.abstract_stream import AbstractStream
@@ -41,16 +43,21 @@ class DynamicStreamCheckConfig:
 
 @dataclass
 class CheckStream(ConnectionChecker):
-    """
-    Checks the connections by checking availability of one or many streams selected by the developer
+    """Checks the connection by verifying availability of one or many streams.
 
     Attributes:
-        stream_name (List[str]): names of streams to check
+        stream_names: Manifest-declared default stream names to check.
+        dynamic_streams_check_configs: Optional dynamic-stream check configs.
+        config_check_streams_path: Optional dot-delimited path into the
+            user-provided config whose value (when present and a non-empty
+            list) overrides `stream_names` for this check. When empty,
+            missing, or `None`, the manifest's `stream_names` is used.
     """
 
     stream_names: List[str]
     parameters: InitVar[Mapping[str, Any]]
     dynamic_streams_check_configs: Optional[List[DynamicStreamCheckConfig]] = None
+    config_check_streams_path: Optional[str] = None
 
     def __post_init__(self, parameters: Mapping[str, Any]) -> None:
         self._parameters = parameters
@@ -62,6 +69,32 @@ class CheckStream(ConnectionChecker):
         error_message = f"Encountered an error while {action}. Error: {error}"
         logger.error(error_message + f"Error traceback: \n {traceback.format_exc()}", exc_info=True)
         return False, error_message
+
+    def _resolve_effective_stream_names(
+        self, config: Mapping[str, Any]
+    ) -> Tuple[Optional[List[str]], Optional[str]]:
+        """Resolves the list of stream names to check for this connection.
+
+        Returns a `(stream_names, error_message)` tuple. When `error_message`
+        is set, the caller should short-circuit with `(False, error_message)`.
+        When `config_check_streams_path` is unset, or the referenced value is
+        missing or an empty list, falls back to the manifest's `stream_names`.
+        """
+        if not self.config_check_streams_path:
+            return self.stream_names, None
+
+        configured_value = dpath.get(
+            dict(config), self.config_check_streams_path, separator=".", default=None
+        )
+        if configured_value is None:
+            return self.stream_names, None
+        if not isinstance(configured_value, list):
+            return None, (
+                f"Config field '{self.config_check_streams_path}' must be a list of stream names."
+            )
+        if not configured_value:
+            return self.stream_names, None
+        return list(configured_value), None
 
     def check_connection(
         self,
@@ -78,12 +111,31 @@ class CheckStream(ConnectionChecker):
             return self._log_error(logger, "discovering streams", error)
 
         stream_name_to_stream = {s.name: s for s in streams}
-        for stream_name in self.stream_names:
-            if stream_name not in stream_name_to_stream:
-                raise ValueError(
-                    f"{stream_name} is not part of the catalog. Expected one of {list(stream_name_to_stream.keys())}."
-                )
 
+        effective_stream_names, override_error = self._resolve_effective_stream_names(config)
+        if override_error is not None:
+            return False, override_error
+
+        source_label = (
+            f"config path '{self.config_check_streams_path}'"
+            if self.config_check_streams_path and effective_stream_names is not self.stream_names
+            else "manifest"
+        )
+
+        unknown_stream_names = [
+            stream_name
+            for stream_name in (effective_stream_names or [])
+            if stream_name not in stream_name_to_stream
+        ]
+        if unknown_stream_names:
+            available = list(stream_name_to_stream.keys())
+            message = (
+                f"Stream(s) {unknown_stream_names} from {source_label} are not part of "
+                f"the catalog. Expected one of {available}."
+            )
+            return False, message
+
+        for stream_name in effective_stream_names or []:
             stream_availability, message = self._check_stream_availability(
                 stream_name_to_stream, stream_name, logger
             )
