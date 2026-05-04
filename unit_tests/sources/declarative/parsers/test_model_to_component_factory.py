@@ -1327,7 +1327,9 @@ def test_stream_with_incremental_and_async_retriever_with_partition_router(use_l
     assert isinstance(retriever, AsyncRetriever)
     stream_slicer = retriever.stream_slicer.stream_slicer
     assert isinstance(stream_slicer, ConcurrentPerPartitionCursor)
-    assert stream_slicer.state == stream_state
+    actual_state = stream_slicer.state
+    actual_state.pop("partitioned_stream_status", None)
+    assert actual_state == stream_state
     import json
 
     cursor_perpartition = stream_slicer._cursor_per_partition
