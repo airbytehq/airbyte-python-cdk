@@ -4699,7 +4699,7 @@ definitions:
           type: string
   RequestBodyJsonObject:
     title: Json Object Body
-    description: Request body value converted into a JSON object
+    description: Request body value converted into a JSON object. Can be a dict or a Jinja-interpolated string that evaluates to a JSON object at runtime.
     type: object
     required:
       - type
@@ -4709,8 +4709,10 @@ definitions:
         type: string
         enum: [RequestBodyJsonObject]
       value:
-        type: object
-        additionalProperties: true
+        anyOf:
+          - type: object
+            additionalProperties: true
+          - type: string
   RequestBodyGraphQL:
     title: GraphQL Body
     description: Request body value converted into a GraphQL query object
