@@ -1401,7 +1401,7 @@ class RequestBodyUrlEncodedForm(BaseModel):
 
 class RequestBodyJsonObject(BaseModel):
     type: Literal["RequestBodyJsonObject"]
-    value: Dict[str, Any]
+    value: Union[Dict[str, Any], str]
 
 
 class RequestBodyGraphQlQuery(BaseModel):

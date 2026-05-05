@@ -162,9 +162,12 @@ def test_should_migrate(manifest, expected):
             {
                 "type": "HttpRequester",
                 "url": "https://api.example.com/search",
-                "request_body_json": '{"sort": [{"field": "createdAt"}], "filter": []}',
+                "request_body": {
+                    "type": "RequestBodyJsonObject",
+                    "value": '{"sort": [{"field": "createdAt"}], "filter": []}',
+                },
             },
-            id="json_object_migrated_to_request_body_json",
+            id="json_object_migrated_to_request_body_json_object",
         ),
         pytest.param(
             {
@@ -178,9 +181,12 @@ def test_should_migrate(manifest, expected):
             {
                 "type": "HttpRequester",
                 "url": "https://api.example.com/search",
-                "request_body_json": '{"sort": [{"field": "{{ config[\'sort_field\'] }}"}]}',
+                "request_body": {
+                    "type": "RequestBodyJsonObject",
+                    "value": '{"sort": [{"field": "{{ config[\'sort_field\'] }}"}]}',
+                },
             },
-            id="json_with_jinja_migrated_to_request_body_json",
+            id="json_with_jinja_migrated_to_request_body_json_object",
         ),
         pytest.param(
             {
@@ -194,9 +200,12 @@ def test_should_migrate(manifest, expected):
             {
                 "type": "HttpRequester",
                 "url": "https://api.example.com/search",
-                "request_body_json": '[{"id": 1}, {"id": 2}]',
+                "request_body": {
+                    "type": "RequestBodyJsonObject",
+                    "value": '[{"id": 1}, {"id": 2}]',
+                },
             },
-            id="json_array_migrated_to_request_body_json",
+            id="json_array_migrated_to_request_body_json_object",
         ),
     ],
 )
@@ -212,7 +221,10 @@ def test_validate_after_migration():
     """Validate returns True when migration was applied correctly."""
     manifest = {
         "type": "HttpRequester",
-        "request_body_json": '{"key": "value"}',
+        "request_body": {
+            "type": "RequestBodyJsonObject",
+            "value": '{"key": "value"}',
+        },
     }
     migration = HttpRequesterRequestBodyPlainTextJsonToRequestBodyJson()
     assert migration.validate(manifest) is True

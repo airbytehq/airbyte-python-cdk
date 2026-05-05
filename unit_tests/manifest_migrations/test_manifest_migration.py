@@ -80,7 +80,7 @@ def test_manifest_migrate_request_body_plain_text_json_to_request_body_json(
     manifest_with_request_body_plain_text_json,
     expected_manifest_with_plain_text_json_migrated,
 ) -> None:
-    """Verify that RequestBodyPlainText with JSON content is migrated to string-valued request_body_json."""
+    """Verify that RequestBodyPlainText with JSON content is migrated to RequestBodyJsonObject with string value."""
 
     resolved_manifest = resolver.preprocess_manifest(manifest_with_request_body_plain_text_json)
     migrated_manifest = ManifestMigrationHandler(dict(resolved_manifest)).apply_migrations()

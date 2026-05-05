@@ -23,7 +23,7 @@ manifest_migrations:
       - name: http_requester_request_body_plain_text_json_to_request_body_json
         order: 4
         description: |
-          This migration converts `RequestBodyPlainText` with JSON-like string content back to
-          string-valued `request_body_json`. The Connector Builder UI sometimes misclassifies
-          JSON string bodies as plain text, which after CDK v7.17.1 routes them to form-encoded
-          `request_body_data` instead of JSON.
+          This migration converts `RequestBodyPlainText` with JSON-like string content to
+          `RequestBodyJsonObject` with a string value. The Connector Builder UI sometimes
+          misclassifies JSON string bodies as plain text, which after CDK v7.17.1 routes them
+          to form-encoded `request_body_data` instead of JSON.

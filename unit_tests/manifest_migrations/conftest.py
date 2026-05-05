@@ -1305,7 +1305,10 @@ def expected_manifest_with_plain_text_json_migrated() -> Dict[str, Any]:
                             "type": "HttpRequester",
                             "url": "https://api.example.com/v1/search",
                             "http_method": "POST",
-                            "request_body_json": '{"sort": [{"field": "createdAt", "order": "ASC"}], "filter": [{"type": "equals", "field": "active", "value": "true"}]}',
+                            "request_body": {
+                                "type": "RequestBodyJsonObject",
+                                "value": '{"sort": [{"field": "createdAt", "order": "ASC"}], "filter": [{"type": "equals", "field": "active", "value": "true"}]}',
+                            },
                         },
                         "record_selector": {
                             "type": "RecordSelector",
@@ -1363,7 +1366,10 @@ def expected_manifest_with_plain_text_json_migrated() -> Dict[str, Any]:
                         "type": "HttpRequester",
                         "url": "https://api.example.com/v1/search",
                         "http_method": "POST",
-                        "request_body_json": '{"sort": [{"field": "createdAt", "order": "ASC"}], "filter": [{"type": "equals", "field": "active", "value": "true"}]}',
+                        "request_body": {
+                            "type": "RequestBodyJsonObject",
+                            "value": '{"sort": [{"field": "createdAt", "order": "ASC"}], "filter": [{"type": "equals", "field": "active", "value": "true"}]}',
+                        },
                     },
                     "record_selector": {
                         "type": "RecordSelector",
