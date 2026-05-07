@@ -2045,10 +2045,10 @@ class DefaultErrorHandler(BaseModel):
         description="List of backoff strategies to use to determine how long to wait before retrying a retryable request.",
         title="Backoff Strategies",
     )
-    max_retries: Optional[int] = Field(
+    max_retries: Optional[Union[int, str]] = Field(
         5,
-        description="The maximum number of time to retry a retryable request before giving up and failing.",
-        examples=[5, 0, 10],
+        description="The maximum number of times to retry a retryable request before giving up and failing. Can be a hardcoded integer or a string interpolated from the connector config.",
+        examples=[5, 0, 10, "{{ config['max_retries_on_throttle'] }}"],
         title="Max Retry Count",
     )
     response_filters: Optional[List[HttpResponseFilter]] = Field(
