@@ -67,6 +67,10 @@ class ConcurrentReadProcessor:
         for stream in stream_instances_to_read_from:
             self._streams_to_running_partitions[stream.name] = set()
             self._record_counter[stream.name] = 0
+        if max_concurrent_partition_generators is not None and max_concurrent_partition_generators < 1:
+            raise ValueError(
+                f"max_concurrent_partition_generators must be >= 1 or None, got {max_concurrent_partition_generators}"
+            )
         self._thread_pool_manager = thread_pool_manager
         self._partition_enqueuer = partition_enqueuer
         self._max_concurrent_partition_generators = max_concurrent_partition_generators
@@ -269,6 +273,10 @@ class ConcurrentReadProcessor:
             and len(self._streams_currently_generating_partitions)
             >= self._max_concurrent_partition_generators
         ):
+            self._logger.debug(
+                f"Concurrent partition generator cap ({self._max_concurrent_partition_generators}) reached "
+                f"({len(self._streams_currently_generating_partitions)} active). Deferring next generator start."
+            )
             return None
 
         # Remember initial queue size to avoid infinite loops if all streams are blocked
