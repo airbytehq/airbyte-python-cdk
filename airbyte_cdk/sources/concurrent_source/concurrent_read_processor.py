@@ -57,9 +57,11 @@ class ConcurrentReadProcessor:
         :param message_repository: MessageRepository instance
         :param partition_reader: PartitionReader instance
         :param max_concurrent_partition_generators: Maximum number of partition generators allowed
-            to run concurrently. None means no limit. When set, must be less than the number of
-            workers so at least one worker slot is always available for partition reading,
-            preventing thread pool starvation. ConcurrentSource passes this explicitly.
+            to run concurrently. None means no limit. When set, should be less than the number of
+            workers in multi-worker mode so at least one worker slot is always available for
+            partition reading, preventing thread pool starvation. In single-threaded mode
+            (num_workers=1) the value may equal num_workers; ConcurrentSource.create() handles
+            this distinction. ConcurrentSource.read() passes this value explicitly.
         """
         self._stream_name_to_instance = {s.name: s for s in stream_instances_to_read_from}
         self._record_counter = {}
