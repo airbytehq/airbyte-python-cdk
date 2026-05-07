@@ -7,7 +7,7 @@ import time
 from datetime import datetime, timedelta, timezone
 from typing import Callable, List, Mapping, Optional, Set, Tuple
 from unittest import TestCase, mock
-from unittest.mock import MagicMock, Mock, call, patch
+from unittest.mock import MagicMock, Mock, call
 
 import pytest
 
