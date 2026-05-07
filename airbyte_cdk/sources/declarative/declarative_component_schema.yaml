@@ -4106,6 +4106,7 @@ definitions:
         description: Time in seconds to wait before retrying a failed async job. This is useful for APIs with cooldown periods between report generation attempts. When set, the orchestrator defers retry of failed jobs until the wait time has elapsed, without blocking other jobs.
         anyOf:
           - type: integer
+            minimum: 1
           - type: string
         interpolation_context:
           - config

@@ -182,6 +182,9 @@ class AsyncJobOrchestrator:
                 "An AsyncJobStatus has been either removed or added which means the logic of this class needs to be reviewed. Once the logic has been updated, please update _KNOWN_JOB_STATUSES"
             )
 
+        if failed_retry_wait_time_in_seconds is not None and failed_retry_wait_time_in_seconds < 0:
+            raise ValueError("failed_retry_wait_time_in_seconds must be >= 0")
+
         self._job_repository: AsyncJobRepository = job_repository
         self._slice_iterator = LookaheadIterator(slices)
         self._running_partitions: List[AsyncPartition] = []
