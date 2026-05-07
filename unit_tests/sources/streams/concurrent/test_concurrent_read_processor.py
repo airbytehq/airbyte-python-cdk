@@ -851,6 +851,20 @@ class TestConcurrentReadProcessor(unittest.TestCase):
             self._partition_enqueuer.generate_partitions, self._stream
         )
 
+    def test_invalid_max_concurrent_partition_generators_raises(self):
+        for invalid in (0, -1):
+            with self.assertRaises(ValueError):
+                ConcurrentReadProcessor(
+                    [self._stream],
+                    self._partition_enqueuer,
+                    self._thread_pool_manager,
+                    self._logger,
+                    self._slice_logger,
+                    self._message_repository,
+                    self._partition_reader,
+                    max_concurrent_partition_generators=invalid,
+                )
+
     def test_start_next_partition_generator_respects_concurrent_limit(self):
         stream_instances_to_read_from = [self._stream]
         handler = ConcurrentReadProcessor(
