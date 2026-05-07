@@ -117,6 +117,7 @@ class ConcurrentSource:
                 self._queue,
                 PartitionLogger(self._slice_logger, self._logger, self._message_repository),
             ),
+            max_concurrent_partition_generators=self._initial_number_partitions_to_generate,
         )
 
         # Enqueue initial partition generation tasks

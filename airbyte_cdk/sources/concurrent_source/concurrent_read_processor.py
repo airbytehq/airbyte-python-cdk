@@ -45,6 +45,7 @@ class ConcurrentReadProcessor:
         slice_logger: SliceLogger,
         message_repository: MessageRepository,
         partition_reader: PartitionReader,
+        max_concurrent_partition_generators: Optional[int] = None,
     ):
         """
         This class is responsible for handling items from a concurrent stream read process.
@@ -55,6 +56,10 @@ class ConcurrentReadProcessor:
         :param slice_logger: SliceLogger instance
         :param message_repository: MessageRepository instance
         :param partition_reader: PartitionReader instance
+        :param max_concurrent_partition_generators: Maximum number of partition generators allowed
+            to run concurrently. None means no limit. When set, must be less than the number of
+            workers so at least one worker slot is always available for partition reading,
+            preventing thread pool starvation. ConcurrentSource passes this explicitly.
         """
         self._stream_name_to_instance = {s.name: s for s in stream_instances_to_read_from}
         self._record_counter = {}
@@ -64,6 +69,7 @@ class ConcurrentReadProcessor:
             self._record_counter[stream.name] = 0
         self._thread_pool_manager = thread_pool_manager
         self._partition_enqueuer = partition_enqueuer
+        self._max_concurrent_partition_generators = max_concurrent_partition_generators
         self._stream_instances_to_start_partition_generation = stream_instances_to_read_from
         self._streams_currently_generating_partitions: List[str] = []
         self._logger = logger
@@ -253,6 +259,16 @@ class ConcurrentReadProcessor:
         :return: A status message if a partition generator was started, otherwise None
         """
         if not self._stream_instances_to_start_partition_generation:
+            return None
+
+        # Enforce the concurrent generator cap so at least one worker slot is always available
+        # for partition reading. Recovery is guaranteed: on_partition_generation_completed
+        # decrements the count before calling here, so the guard always passes there.
+        if (
+            self._max_concurrent_partition_generators is not None
+            and len(self._streams_currently_generating_partitions)
+            >= self._max_concurrent_partition_generators
+        ):
             return None
 
         # Remember initial queue size to avoid infinite loops if all streams are blocked
