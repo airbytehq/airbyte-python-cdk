@@ -3955,6 +3955,17 @@ class ModelToComponentFactory:
             job_timeout=_get_job_timeout(),
         )
 
+        failed_retry_wait_time_in_seconds: Optional[int] = (
+            int(
+                InterpolatedString.create(
+                    str(model.failed_retry_wait_time_in_seconds),
+                    parameters={},
+                ).eval(config)
+            )
+            if model.failed_retry_wait_time_in_seconds
+            else None
+        )
+
         async_job_partition_router = AsyncJobPartitionRouter(
             job_orchestrator_factory=lambda stream_slices: AsyncJobOrchestrator(
                 job_repository,
@@ -3966,6 +3977,7 @@ class ModelToComponentFactory:
                 # set the `job_max_retry` to 1 for the `Connector Builder`` use-case.
                 # `None` == default retry is set to 3 attempts, under the hood.
                 job_max_retry=1 if self._emit_connector_builder_messages else None,
+                failed_retry_wait_time_in_seconds=failed_retry_wait_time_in_seconds,
             ),
             stream_slicer=stream_slicer,
             config=config,

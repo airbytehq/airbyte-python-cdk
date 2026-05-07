@@ -5,7 +5,7 @@ import threading
 import time
 import traceback
 import uuid
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 from typing import (
     Any,
     Generator,
@@ -168,6 +168,7 @@ class AsyncJobOrchestrator:
         exceptions_to_break_on: Iterable[Type[Exception]] = tuple(),
         has_bulk_parent: bool = False,
         job_max_retry: Optional[int] = None,
+        failed_retry_wait_time_in_seconds: Optional[int] = None,
     ) -> None:
         """
         If the stream slices provided as a parameters relies on a async job streams that relies on the same JobTracker, `has_bulk_parent`
@@ -189,6 +190,7 @@ class AsyncJobOrchestrator:
         self._exceptions_to_break_on: Tuple[Type[Exception], ...] = tuple(exceptions_to_break_on)
         self._has_bulk_parent = has_bulk_parent
         self._job_max_retry = job_max_retry
+        self._failed_retry_wait_time_in_seconds = failed_retry_wait_time_in_seconds
 
         self._non_breaking_exceptions: List[Exception] = []
 
@@ -196,6 +198,25 @@ class AsyncJobOrchestrator:
         failed_status_jobs = (AsyncJobStatus.FAILED, AsyncJobStatus.TIMED_OUT)
         jobs_to_replace = [job for job in partition.jobs if job.status() in failed_status_jobs]
         for job in jobs_to_replace:
+            if self._failed_retry_wait_time_in_seconds and job.status() == AsyncJobStatus.FAILED:
+                if not job.ready_to_retry():
+                    lazy_log(
+                        LOGGER,
+                        logging.DEBUG,
+                        lambda: f"Job {job.api_job_id()} is not ready to retry yet (deferred). Skipping.",
+                    )
+                    continue
+                if not job.retry_deferred():
+                    job.set_retry_after(
+                        datetime.now(tz=timezone.utc)
+                        + timedelta(seconds=self._failed_retry_wait_time_in_seconds)
+                    )
+                    lazy_log(
+                        LOGGER,
+                        logging.INFO,
+                        lambda: f"Job {job.api_job_id()} failed. Deferring retry for {self._failed_retry_wait_time_in_seconds} seconds.",
+                    )
+                    continue
             new_job = self._start_job(job.job_parameters(), job.api_job_id())
             partition.replace_job(job, [new_job])
 

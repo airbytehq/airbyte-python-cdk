@@ -1,7 +1,7 @@
 # Copyright (c) 2024 Airbyte, Inc., all rights reserved.
 
 
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from airbyte_cdk.sources.declarative.async_job.timer import Timer
@@ -24,6 +24,7 @@ class AsyncJob:
         self._api_job_id = api_job_id
         self._job_parameters = job_parameters
         self._status = AsyncJobStatus.RUNNING
+        self._retry_after: Optional[datetime] = None
 
         timeout = timeout if timeout else timedelta(minutes=60)
         self._timer = Timer(timeout)
@@ -53,6 +54,20 @@ class AsyncJob:
             self._timer.stop()
 
         self._status = status
+
+    def set_retry_after(self, retry_after: datetime) -> None:
+        """Set the earliest time this job can be retried."""
+        self._retry_after = retry_after
+
+    def retry_deferred(self) -> bool:
+        """Return True if a deferred retry has been scheduled."""
+        return self._retry_after is not None
+
+    def ready_to_retry(self) -> bool:
+        """Return True if the job has no deferred retry or the wait period has elapsed."""
+        if self._retry_after is None:
+            return True
+        return datetime.now(tz=timezone.utc) >= self._retry_after
 
     def __repr__(self) -> str:
         return f"AsyncJob(api_job_id={self.api_job_id()}, job_parameters={self.job_parameters()}, status={self.status()})"

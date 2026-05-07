@@ -3074,6 +3074,10 @@ class AsyncRetriever(BaseModel):
         None,
         description="The time in minutes after which the single Async Job should be considered as Timed Out.",
     )
+    failed_retry_wait_time_in_seconds: Optional[Union[int, str]] = Field(
+        None,
+        description="Time in seconds to wait before retrying a failed async job. This is useful for APIs with cooldown periods between report generation attempts. When set, the orchestrator defers retry of failed jobs until the wait time has elapsed, without blocking other jobs.",
+    )
     download_target_requester: Optional[Union[HttpRequester, CustomRequester]] = Field(
         None,
         description="Requester component that describes how to prepare HTTP requests to send to the source API to extract the url from polling response by the completed async job.",

@@ -4,9 +4,10 @@ import logging
 import sys
 import threading
 import time
+from datetime import datetime, timedelta, timezone
 from typing import Callable, List, Mapping, Optional, Set, Tuple
 from unittest import TestCase, mock
-from unittest.mock import MagicMock, Mock, call
+from unittest.mock import MagicMock, Mock, call, patch
 
 import pytest
 
@@ -415,6 +416,95 @@ class AsyncJobOrchestratorTest(TestCase):
         assert len(partitions) == 0
         # start is called only once — SKIPPED does not trigger a retry
         assert self._job_repository.start.call_count == 1
+
+    @mock.patch(sleep_mock_target)
+    def test_given_failed_retry_wait_time_when_job_fails_then_defers_retry(
+        self, mock_sleep: MagicMock
+    ) -> None:
+        """When failed_retry_wait_time_in_seconds is set and a job fails, the retry should
+        be deferred: first call sets retry_after timestamp and skips, subsequent calls skip
+        until cooldown elapses, then the job is replaced."""
+        job_tracker = JobTracker(_NO_JOB_LIMIT)
+        job = self._an_async_job("deferred-job", _A_STREAM_SLICE)
+        job_tracker._jobs.add("deferred-job")
+        partition = AsyncPartition([job], _A_STREAM_SLICE)
+        orchestrator = AsyncJobOrchestrator(
+            self._job_repository,
+            [],
+            job_tracker,
+            self._message_repository,
+            failed_retry_wait_time_in_seconds=1800,
+        )
+
+        job.update_status(AsyncJobStatus.FAILED)
+
+        # First call: should set retry_after and NOT replace
+        orchestrator._replace_failed_jobs(partition)
+        assert job.retry_deferred()
+        assert not job.ready_to_retry()
+        self._job_repository.start.assert_not_called()
+
+        # Second call while cooldown hasn't elapsed: should still skip
+        orchestrator._replace_failed_jobs(partition)
+        self._job_repository.start.assert_not_called()
+
+        # Simulate cooldown elapsed by setting retry_after to the past
+        job.set_retry_after(datetime.now(tz=timezone.utc) - timedelta(seconds=1))
+        replacement_job = self._an_async_job("replacement-job", _A_STREAM_SLICE)
+        self._job_repository.start.return_value = replacement_job
+
+        # Third call after cooldown: should replace the job
+        orchestrator._replace_failed_jobs(partition)
+        self._job_repository.start.assert_called_once()
+
+    @mock.patch(sleep_mock_target)
+    def test_given_no_failed_retry_wait_time_when_job_fails_then_replaces_immediately(
+        self, mock_sleep: MagicMock
+    ) -> None:
+        """Without failed_retry_wait_time_in_seconds, FAILED jobs are replaced immediately
+        (existing behavior)."""
+        job_tracker = JobTracker(_NO_JOB_LIMIT)
+        job = self._an_async_job("immediate-job", _A_STREAM_SLICE)
+        job_tracker._jobs.add("immediate-job")
+        partition = AsyncPartition([job], _A_STREAM_SLICE)
+        replacement_job = self._an_async_job("replacement-job", _A_STREAM_SLICE)
+        self._job_repository.start.return_value = replacement_job
+        orchestrator = AsyncJobOrchestrator(
+            self._job_repository,
+            [],
+            job_tracker,
+            self._message_repository,
+        )
+
+        job.update_status(AsyncJobStatus.FAILED)
+        orchestrator._replace_failed_jobs(partition)
+
+        self._job_repository.start.assert_called_once()
+
+    @mock.patch(sleep_mock_target)
+    def test_given_failed_retry_wait_time_when_timed_out_job_then_replaces_immediately(
+        self, mock_sleep: MagicMock
+    ) -> None:
+        """TIMED_OUT jobs should be replaced immediately even when
+        failed_retry_wait_time_in_seconds is set (only FAILED gets deferred)."""
+        job_tracker = JobTracker(_NO_JOB_LIMIT)
+        job = self._an_async_job("timed-out-job", _A_STREAM_SLICE)
+        job_tracker._jobs.add("timed-out-job")
+        partition = AsyncPartition([job], _A_STREAM_SLICE)
+        replacement_job = self._an_async_job("replacement-job", _A_STREAM_SLICE)
+        self._job_repository.start.return_value = replacement_job
+        orchestrator = AsyncJobOrchestrator(
+            self._job_repository,
+            [],
+            job_tracker,
+            self._message_repository,
+            failed_retry_wait_time_in_seconds=1800,
+        )
+
+        job.update_status(AsyncJobStatus.TIMED_OUT)
+        orchestrator._replace_failed_jobs(partition)
+
+        self._job_repository.start.assert_called_once()
 
     def _mock_repository(self) -> None:
         self._job_repository = Mock(spec=AsyncJobRepository)
