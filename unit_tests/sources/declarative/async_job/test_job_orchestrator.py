@@ -506,6 +506,49 @@ class AsyncJobOrchestratorTest(TestCase):
 
         self._job_repository.start.assert_called_once()
 
+    @mock.patch(sleep_mock_target)
+    def test_given_synthetic_failed_replacement_when_cooldown_elapses_then_carries_retry_after(
+        self, mock_sleep: MagicMock
+    ) -> None:
+        """When a deferred job's cooldown elapses and _start_job returns a synthetic FAILED
+        job (API still in cooldown), the replacement should inherit _retry_after from the
+        original job to avoid doubling the cooldown wait."""
+        job_tracker = JobTracker(_NO_JOB_LIMIT)
+        job = AsyncJob("original-job", _A_STREAM_SLICE)
+        job_tracker._jobs.add("original-job")
+        partition = AsyncPartition([job], _A_STREAM_SLICE)
+        orchestrator = AsyncJobOrchestrator(
+            self._job_repository,
+            [],
+            job_tracker,
+            self._message_repository,
+            failed_retry_wait_time_in_seconds=1800,
+        )
+
+        job.update_status(AsyncJobStatus.FAILED)
+
+        # First call: arms the cooldown
+        orchestrator._replace_failed_jobs(partition)
+        assert job.retry_deferred()
+
+        # Simulate cooldown elapsed
+        job.set_retry_after(datetime.now(tz=timezone.utc) - timedelta(seconds=1))
+        original_retry_after = job._retry_after
+
+        # _start_job returns a synthetic FAILED job (API still rejects)
+        synthetic_failed_job = AsyncJob("synthetic-failed", _A_STREAM_SLICE)
+        synthetic_failed_job.update_status(AsyncJobStatus.FAILED)
+        self._job_repository.start.return_value = synthetic_failed_job
+        job_tracker._jobs.add("synthetic-failed")
+
+        # Replace should carry _retry_after to the synthetic job
+        orchestrator._replace_failed_jobs(partition)
+        self._job_repository.start.assert_called_once()
+
+        # The synthetic replacement should have inherited _retry_after
+        replaced_job = list(partition.jobs)[0]
+        assert replaced_job._retry_after == original_retry_after
+
     def _mock_repository(self) -> None:
         self._job_repository = Mock(spec=AsyncJobRepository)
 

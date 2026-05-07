@@ -182,8 +182,8 @@ class AsyncJobOrchestrator:
                 "An AsyncJobStatus has been either removed or added which means the logic of this class needs to be reviewed. Once the logic has been updated, please update _KNOWN_JOB_STATUSES"
             )
 
-        if failed_retry_wait_time_in_seconds is not None and failed_retry_wait_time_in_seconds < 0:
-            raise ValueError("failed_retry_wait_time_in_seconds must be >= 0")
+        if failed_retry_wait_time_in_seconds is not None and failed_retry_wait_time_in_seconds <= 0:
+            raise ValueError("failed_retry_wait_time_in_seconds must be >= 1")
 
         self._job_repository: AsyncJobRepository = job_repository
         self._slice_iterator = LookaheadIterator(slices)
@@ -221,6 +221,12 @@ class AsyncJobOrchestrator:
                     )
                     continue
             new_job = self._start_job(job.job_parameters(), job.api_job_id())
+            if (
+                self._failed_retry_wait_time_in_seconds
+                and new_job.status() == AsyncJobStatus.FAILED
+                and job.retry_deferred()
+            ):
+                new_job.set_retry_after(job._retry_after)  # type: ignore[arg-type]
             partition.replace_job(job, [new_job])
 
     def _start_jobs(self) -> None:
