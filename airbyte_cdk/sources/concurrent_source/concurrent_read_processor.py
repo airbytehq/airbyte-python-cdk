@@ -67,7 +67,10 @@ class ConcurrentReadProcessor:
         for stream in stream_instances_to_read_from:
             self._streams_to_running_partitions[stream.name] = set()
             self._record_counter[stream.name] = 0
-        if max_concurrent_partition_generators is not None and max_concurrent_partition_generators < 1:
+        if (
+            max_concurrent_partition_generators is not None
+            and max_concurrent_partition_generators < 1
+        ):
             raise ValueError(
                 f"max_concurrent_partition_generators must be >= 1 or None, got {max_concurrent_partition_generators}"
             )
