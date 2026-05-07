@@ -868,7 +868,9 @@ class TestConcurrentReadProcessor(unittest.TestCase):
         status_message = handler.start_next_partition_generator()
 
         assert status_message is None
-        assert handler._stream_instances_to_start_partition_generation == stream_instances_to_read_from
+        assert (
+            handler._stream_instances_to_start_partition_generation == stream_instances_to_read_from
+        )
         self._thread_pool_manager.submit.assert_not_called()
 
     def test_start_next_partition_generator_starts_when_below_limit(self):
