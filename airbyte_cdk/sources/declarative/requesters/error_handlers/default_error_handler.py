@@ -89,6 +89,7 @@ class DefaultErrorHandler(ErrorHandler):
     Attributes:
         response_filters (Optional[List[HttpResponseFilter]]): response filters to iterate on
         max_retries (Optional[int]): maximum retry attempts
+        max_time (int): maximum cumulative wait time across retries, in seconds
         backoff_strategies (Optional[List[BackoffStrategy]]): list of backoff strategies to use to determine how long
         to wait before retrying
     """
