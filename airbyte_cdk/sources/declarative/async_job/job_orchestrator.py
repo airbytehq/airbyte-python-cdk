@@ -276,13 +276,16 @@ class AsyncJobOrchestrator:
         # Even though we're not sure this will break the stream, we will emit here for simplicity's sake. If we wanted to be more accurate,
         # we would keep the exceptions in-memory until we know that we have reached the max attempt.
         self._message_repository.emit_message(traced_exception.as_airbyte_message())
-        job = self._create_failed_job(_slice)
+        job = self._create_failed_job(_slice, traced_exception)
         self._job_tracker.add_job(intent, job.api_job_id())
         return job
 
-    def _create_failed_job(self, stream_slice: StreamSlice) -> AsyncJob:
+    def _create_failed_job(
+        self, stream_slice: StreamSlice, exception: Optional[Exception] = None
+    ) -> AsyncJob:
         job = AsyncJob(f"{uuid.uuid4()} - Job that could not start", stream_slice, _NO_TIMEOUT)
         job.update_status(AsyncJobStatus.FAILED)
+        job.set_failure_exception(exception)
         return job
 
     def _get_running_jobs(self) -> Set[AsyncJob]:
@@ -442,6 +445,28 @@ class AsyncJobOrchestrator:
         """
         current_running_partitions.insert(0, partition)
 
+    @staticmethod
+    def _resolve_failure_type(exceptions: Iterable[Optional[Exception]]) -> FailureType:
+        """
+        Aggregate `FailureType` from a collection of exceptions.
+
+        Priority is `config_error` > `system_error` > `transient_error`. When no
+        typed exceptions are available (for example a job that transitioned to
+        FAILED on the API side without a captured local exception), fall back
+        to `system_error` so the behaviour matches the previous default.
+        """
+        failure_types: Set[FailureType] = set()
+        for exception in exceptions:
+            if isinstance(exception, AirbyteTracedException):
+                failure_types.add(exception.failure_type)
+        if FailureType.config_error in failure_types:
+            return FailureType.config_error
+        if FailureType.system_error in failure_types:
+            return FailureType.system_error
+        if FailureType.transient_error in failure_types:
+            return FailureType.transient_error
+        return FailureType.system_error
+
     def _process_partitions_with_errors(self, partition: AsyncPartition) -> None:
         """
         Process a partition with status errors (FAILED and TIMEOUT).
@@ -454,11 +479,12 @@ class AsyncJobOrchestrator:
             AirbyteTracedException: If at least one job could not be completed.
         """
         status_by_job_id = {job.api_job_id(): job.status() for job in partition.jobs}
+        failure_type = self._resolve_failure_type(job.failure_exception() for job in partition.jobs)
         self._non_breaking_exceptions.append(
             AirbyteTracedException(
                 message="Async job failed after exhausting all retry attempts.",
                 internal_message=f"At least one job could not be completed for slice {partition.stream_slice}. Job statuses were: {status_by_job_id}. See warning logs for more information.",
-                failure_type=FailureType.system_error,
+                failure_type=failure_type,
             )
         )
 
@@ -511,7 +537,7 @@ class AsyncJobOrchestrator:
                         for exception in self._non_breaking_exceptions
                     ]
                 ),
-                failure_type=FailureType.system_error,
+                failure_type=self._resolve_failure_type(self._non_breaking_exceptions),
             )
 
     def _handle_non_breaking_error(self, exception: Exception) -> None:
