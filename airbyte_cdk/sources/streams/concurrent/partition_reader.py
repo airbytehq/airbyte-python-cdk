@@ -1,7 +1,8 @@
 # Copyright (c) 2025 Airbyte, Inc., all rights reserved.
 
 import logging
-from queue import Queue
+import time
+from queue import Full, Queue
 from typing import Optional
 
 from airbyte_cdk.sources.concurrent_source.stream_thread_exception import StreamThreadException
@@ -48,6 +49,10 @@ class PartitionReader:
     """
 
     _IS_SUCCESSFUL = True
+    # Maximum time (seconds) to block on queue.put() before raising.
+    # Prevents silent deadlocks when the bounded queue is full and the
+    # main-thread consumer cannot drain it.
+    _QUEUE_PUT_TIMEOUT = 300.0  # 5 minutes
 
     def __init__(
         self,
@@ -72,15 +77,92 @@ class PartitionReader:
         :param partition: The partition to read data from
         :return: None
         """
+        partition_start = time.monotonic()
+        stream_name = partition.stream_name()
+        slice_info = partition.to_slice()
+        logger = logging.getLogger(f"airbyte.partition_reader.{stream_name}")
+        logger.info(
+            "Partition read STARTED for stream=%s, slice=%s",
+            stream_name,
+            slice_info,
+        )
         try:
             if self._partition_logger:
                 self._partition_logger.log(partition)
 
+            record_count = 0
+            last_progress_time = partition_start
             for record in partition.read():
-                self._queue.put(record)
+                self._put_with_timeout(record, stream_name, logger)
                 cursor.observe(record)
+                record_count += 1
+                now = time.monotonic()
+                if now - last_progress_time >= 30.0:
+                    logger.info(
+                        "Partition read PROGRESS for stream=%s: %d records read so far (%.0fs elapsed), slice=%s",
+                        stream_name,
+                        record_count,
+                        now - partition_start,
+                        slice_info,
+                    )
+                    last_progress_time = now
             cursor.close_partition(partition)
-            self._queue.put(PartitionCompleteSentinel(partition, self._IS_SUCCESSFUL))
+            elapsed = time.monotonic() - partition_start
+            logger.info(
+                "Partition read COMPLETED for stream=%s: %d records in %.1fs, slice=%s",
+                stream_name,
+                record_count,
+                elapsed,
+                slice_info,
+            )
+            self._put_with_timeout(
+                PartitionCompleteSentinel(partition, self._IS_SUCCESSFUL),
+                stream_name,
+                logger,
+            )
         except Exception as e:
-            self._queue.put(StreamThreadException(e, partition.stream_name()))
-            self._queue.put(PartitionCompleteSentinel(partition, not self._IS_SUCCESSFUL))
+            elapsed = time.monotonic() - partition_start
+            logger.info(
+                "Partition read FAILED for stream=%s after %.1fs: %s, slice=%s",
+                stream_name,
+                elapsed,
+                str(e)[:200],
+                slice_info,
+            )
+            self._put_with_timeout(StreamThreadException(e, stream_name), stream_name, logger)
+            self._put_with_timeout(
+                PartitionCompleteSentinel(partition, not self._IS_SUCCESSFUL),
+                stream_name,
+                logger,
+            )
+
+    def _put_with_timeout(
+        self,
+        item: QueueItem,
+        stream_name: str,
+        logger: logging.Logger,
+    ) -> None:
+        """Put an item on the queue, raising if blocked longer than the timeout.
+
+        This prevents a deadlock where all worker threads are blocked on
+        ``queue.put()`` while the main thread is unable to drain the queue.
+        """
+        put_start = time.monotonic()
+        while True:
+            try:
+                self._queue.put(item, timeout=self._QUEUE_PUT_TIMEOUT)
+                return
+            except Full:
+                blocked_secs = time.monotonic() - put_start
+                logger.warning(
+                    "queue.put() blocked for %.0fs for stream=%s "
+                    "(queue_size=%d). Possible deadlock.",
+                    blocked_secs,
+                    stream_name,
+                    self._queue.qsize(),
+                )
+                raise RuntimeError(
+                    f"Timed out putting item on the queue after "
+                    f"{blocked_secs:.0f}s for stream {stream_name}. "
+                    f"This indicates a deadlock in the concurrent read pipeline."
+                )
