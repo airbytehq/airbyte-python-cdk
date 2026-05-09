@@ -773,9 +773,32 @@ class TestConcurrentReadProcessor(unittest.TestCase):
 
         assert handler.is_done()
 
+    def test_is_done_uses_failure_type_from_collected_exceptions(self):
+        handler = ConcurrentReadProcessor(
+            [],
+            self._partition_enqueuer,
+            self._thread_pool_manager,
+            self._logger,
+            self._slice_logger,
+            self._message_repository,
+            self._partition_reader,
+        )
+        handler._exceptions_per_stream_name = {
+            _STREAM_NAME: [
+                AirbyteTracedException(
+                    message="Internal HTTP response cache failed.",
+                    failure_type=FailureType.system_error,
+                )
+            ]
+        }
+
+        with pytest.raises(AirbyteTracedException) as exc_info:
+            handler.is_done()
+
+        assert exc_info.value.failure_type == FailureType.system_error
+
     @freezegun.freeze_time("2020-01-01T00:00:00")
     def test_on_exception_non_ate_uses_templated_message_with_correct_failure_type(self):
-        """Regression test: non-ATE exceptions on Path B produce a safe templated message, not the generic fallback."""
         stream_instances_to_read_from = [self._stream, self._another_stream]
 
         handler = ConcurrentReadProcessor(

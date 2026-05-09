@@ -4,6 +4,7 @@
 
 import logging
 import os
+import sqlite3
 import urllib
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Mapping, Optional, Tuple, Union
@@ -346,6 +347,14 @@ class HttpClient:
 
         try:
             response = self._session.send(request, **request_kwargs)
+        except sqlite3.OperationalError as e:
+            raise AirbyteTracedException(
+                internal_message=f"HTTP response cache operation failed with OperationalError: {e}",
+                message="Internal HTTP response cache failed.",
+                failure_type=FailureType.system_error,
+                exception=e,
+                stream_descriptor=StreamDescriptor(name=self._name),
+            )
         except requests.RequestException as e:
             exc = e
 
