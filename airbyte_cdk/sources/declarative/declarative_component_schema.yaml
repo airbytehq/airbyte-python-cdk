@@ -1874,13 +1874,18 @@ definitions:
             - "$ref": "#/definitions/CustomBackoffStrategy"
       max_retries:
         title: Max Retry Count
-        description: The maximum number of time to retry a retryable request before giving up and failing.
-        type: integer
+        description: The maximum number of times to retry a retryable request before giving up and failing. Can be a hardcoded integer or a string interpolated from the connector config.
+        anyOf:
+          - type: integer
+          - type: string
+        interpolation_context:
+          - config
         default: 5
         examples:
           - 5
           - 0
           - 10
+          - "{{ config['max_retries_on_throttle'] }}"
       response_filters:
         title: Response Filters
         description: List of response filters to iterate on when deciding how to handle an error. When using an array of multiple filters, the filters will be applied sequentially and the response will be selected if it matches any of the filter's predicate.
