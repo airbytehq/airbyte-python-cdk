@@ -308,3 +308,63 @@ def test_predicate_takes_precedent_over_default_mapped_error():
     assert actual_error_resolution.response_action == ResponseAction.FAIL
     assert actual_error_resolution.failure_type == FailureType.system_error
     assert actual_error_resolution.error_message == DEFAULT_ERROR_MAPPING.get(404).error_message
+
+
+def test_max_retries_default_when_unspecified():
+    error_handler = DefaultErrorHandler(config={}, parameters={})
+    assert error_handler.max_retries == 5
+
+
+def test_max_retries_with_literal_int():
+    error_handler = DefaultErrorHandler(config={}, parameters={}, max_retries=10)
+    assert error_handler.max_retries == 10
+
+
+def test_max_retries_with_zero():
+    error_handler = DefaultErrorHandler(config={}, parameters={}, max_retries=0)
+    assert error_handler.max_retries == 0
+
+
+def test_max_retries_interpolated_from_config():
+    error_handler = DefaultErrorHandler(
+        config={"max_retries_on_throttle": 1},
+        parameters={},
+        max_retries="{{ config['max_retries_on_throttle'] }}",
+    )
+    assert error_handler.max_retries == 1
+
+
+def test_max_retries_interpolated_from_config_with_jinja_default():
+    error_handler = DefaultErrorHandler(
+        config={},
+        parameters={},
+        max_retries="{{ config.get('max_retries_on_throttle', 7) }}",
+    )
+    assert error_handler.max_retries == 7
+
+
+def test_max_retries_interpolated_string_resolving_to_zero():
+    error_handler = DefaultErrorHandler(
+        config={"max_retries_on_throttle": 0},
+        parameters={},
+        max_retries="{{ config['max_retries_on_throttle'] }}",
+    )
+    assert error_handler.max_retries == 0
+
+
+def test_max_retries_interpolated_string_with_numeric_string():
+    error_handler = DefaultErrorHandler(
+        config={"max_retries_on_throttle": "3"},
+        parameters={},
+        max_retries="{{ config['max_retries_on_throttle'] }}",
+    )
+    assert error_handler.max_retries == 3
+
+
+def test_max_retries_raises_when_interpolation_does_not_resolve_to_int():
+    with pytest.raises(ValueError, match="did not evaluate to an integer"):
+        DefaultErrorHandler(
+            config={"max_retries_on_throttle": "not-a-number"},
+            parameters={},
+            max_retries="{{ config['max_retries_on_throttle'] }}",
+        )
