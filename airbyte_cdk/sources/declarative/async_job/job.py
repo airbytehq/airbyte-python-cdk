@@ -25,6 +25,7 @@ class AsyncJob:
         self._job_parameters = job_parameters
         self._status = AsyncJobStatus.RUNNING
         self._retry_after: Optional[datetime] = None
+        self._is_synthetic = False
 
         timeout = timeout if timeout else timedelta(minutes=60)
         self._timer = Timer(timeout)
@@ -54,6 +55,10 @@ class AsyncJob:
             self._timer.stop()
 
         self._status = status
+
+    def is_synthetic(self) -> bool:
+        """Return True if this job was never actually created on the API side."""
+        return self._is_synthetic
 
     def set_retry_after(self, retry_after: datetime) -> None:
         """Set the earliest time this job can be retried."""
