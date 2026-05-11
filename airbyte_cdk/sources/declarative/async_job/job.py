@@ -19,13 +19,17 @@ class AsyncJob:
     """
 
     def __init__(
-        self, api_job_id: str, job_parameters: StreamSlice, timeout: Optional[timedelta] = None
+        self,
+        api_job_id: str,
+        job_parameters: StreamSlice,
+        timeout: Optional[timedelta] = None,
+        is_creation_failure: bool = False,
     ) -> None:
         self._api_job_id = api_job_id
         self._job_parameters = job_parameters
         self._status = AsyncJobStatus.RUNNING
         self._retry_after: Optional[datetime] = None
-        self._is_synthetic = False
+        self._is_creation_failure = is_creation_failure
 
         timeout = timeout if timeout else timedelta(minutes=60)
         self._timer = Timer(timeout)
@@ -56,9 +60,9 @@ class AsyncJob:
 
         self._status = status
 
-    def is_synthetic(self) -> bool:
+    def is_creation_failure(self) -> bool:
         """Return True if this job was never actually created on the API side."""
-        return self._is_synthetic
+        return self._is_creation_failure
 
     def set_retry_after(self, retry_after: datetime) -> None:
         """Set the earliest time this job can be retried."""

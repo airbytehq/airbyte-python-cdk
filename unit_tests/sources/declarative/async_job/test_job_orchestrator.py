@@ -507,18 +507,19 @@ class AsyncJobOrchestratorTest(TestCase):
         self._job_repository.start.assert_called_once()
 
     @mock.patch(sleep_mock_target)
-    def test_given_synthetic_failed_job_when_cooldown_configured_then_replaces_immediately(
+    def test_given_creation_failure_job_when_cooldown_configured_then_replaces_immediately(
         self, mock_sleep: MagicMock
     ) -> None:
-        """Synthetic FAILED jobs (created when API rejects with 429) should be retried
+        """Creation-failure jobs (created when API rejects with 429) should be retried
         immediately even when failed_retry_wait_time_in_seconds is set. Only real FAILED
         jobs (report created but got FATAL) should be deferred."""
         job_tracker = JobTracker(_NO_JOB_LIMIT)
-        synthetic_job = AsyncJob("synthetic-job", _A_STREAM_SLICE)
-        synthetic_job.update_status(AsyncJobStatus.FAILED)
-        synthetic_job._is_synthetic = True
-        job_tracker._jobs.add("synthetic-job")
-        partition = AsyncPartition([synthetic_job], _A_STREAM_SLICE)
+        creation_failure_job = AsyncJob(
+            "creation-failure-job", _A_STREAM_SLICE, is_creation_failure=True
+        )
+        creation_failure_job.update_status(AsyncJobStatus.FAILED)
+        job_tracker._jobs.add("creation-failure-job")
+        partition = AsyncPartition([creation_failure_job], _A_STREAM_SLICE)
         replacement_job = self._an_async_job("replacement-job", _A_STREAM_SLICE)
         self._job_repository.start.return_value = replacement_job
         orchestrator = AsyncJobOrchestrator(
@@ -529,10 +530,75 @@ class AsyncJobOrchestratorTest(TestCase):
             failed_retry_wait_time_in_seconds=1800,
         )
 
-        # Synthetic job should be replaced immediately, no deferral
         orchestrator._replace_failed_jobs(partition)
         self._job_repository.start.assert_called_once()
-        assert not synthetic_job.retry_deferred()
+        assert not creation_failure_job.retry_deferred()
+
+    @mock.patch(sleep_mock_target)
+    def test_given_real_failed_then_cooldown_elapses_then_start_returns_creation_failure_then_no_rearm(
+        self, mock_sleep: MagicMock
+    ) -> None:
+        """Regression test for the original bug: real FAILED -> arm cooldown -> cooldown
+        elapses -> _start_job returns a creation-failure job (API still rejects) -> the
+        replacement must NOT re-arm cooldown; it should be replaced immediately on the
+        next tick."""
+        job_tracker = JobTracker(_NO_JOB_LIMIT)
+        real_job = self._an_async_job("real-job", _A_STREAM_SLICE)
+        job_tracker._jobs.add("real-job")
+        partition = AsyncPartition([real_job], _A_STREAM_SLICE)
+        orchestrator = AsyncJobOrchestrator(
+            self._job_repository,
+            [],
+            job_tracker,
+            self._message_repository,
+            failed_retry_wait_time_in_seconds=1800,
+        )
+
+        real_job.update_status(AsyncJobStatus.FAILED)
+
+        # Tick 1: arms cooldown on the real FAILED job
+        orchestrator._replace_failed_jobs(partition)
+        assert real_job.retry_deferred()
+        self._job_repository.start.assert_not_called()
+
+        # Simulate cooldown elapsed
+        real_job.set_retry_after(datetime.now(tz=timezone.utc) - timedelta(seconds=1))
+
+        # _start_job returns a creation-failure job (API still rejects with 429)
+        creation_failure_replacement = AsyncJob(
+            "creation-failure-replacement", _A_STREAM_SLICE, is_creation_failure=True
+        )
+        creation_failure_replacement.update_status(AsyncJobStatus.FAILED)
+        self._job_repository.start.return_value = creation_failure_replacement
+        job_tracker._jobs.add("creation-failure-replacement")
+
+        # Tick 2: cooldown elapsed, replaces with creation-failure job
+        orchestrator._replace_failed_jobs(partition)
+        self._job_repository.start.assert_called_once()
+
+        # The replacement is a creation-failure -> should NOT have cooldown armed
+        replaced_job = list(partition.jobs)[0]
+        assert replaced_job.is_creation_failure()
+        assert not replaced_job.retry_deferred()
+
+        # Tick 3: creation-failure job should be replaced immediately (no deferral)
+        second_replacement = self._an_async_job("second-replacement", _A_STREAM_SLICE)
+        self._job_repository.start.return_value = second_replacement
+        job_tracker._jobs.add("second-replacement")
+        orchestrator._replace_failed_jobs(partition)
+        assert self._job_repository.start.call_count == 2
+
+    def test_create_failed_job_tags_as_creation_failure(self) -> None:
+        """Verify _create_failed_job produces a job marked as is_creation_failure."""
+        orchestrator = AsyncJobOrchestrator(
+            self._job_repository,
+            [],
+            JobTracker(_NO_JOB_LIMIT),
+            self._message_repository,
+        )
+        job = orchestrator._create_failed_job(_A_STREAM_SLICE)
+        assert job.is_creation_failure()
+        assert job.status() == AsyncJobStatus.FAILED
 
     def _mock_repository(self) -> None:
         self._job_repository = Mock(spec=AsyncJobRepository)

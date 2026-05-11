@@ -202,9 +202,9 @@ class AsyncJobOrchestrator:
         jobs_to_replace = [job for job in partition.jobs if job.status() in failed_status_jobs]
         for job in jobs_to_replace:
             if (
-                self._failed_retry_wait_time_in_seconds
+                self._failed_retry_wait_time_in_seconds is not None
                 and job.status() == AsyncJobStatus.FAILED
-                and not job.is_synthetic()
+                and not job.is_creation_failure()
             ):
                 if not job.ready_to_retry():
                     lazy_log(
@@ -309,9 +309,13 @@ class AsyncJobOrchestrator:
         return job
 
     def _create_failed_job(self, stream_slice: StreamSlice) -> AsyncJob:
-        job = AsyncJob(f"{uuid.uuid4()} - Job that could not start", stream_slice, _NO_TIMEOUT)
+        job = AsyncJob(
+            f"{uuid.uuid4()} - Job that could not start",
+            stream_slice,
+            _NO_TIMEOUT,
+            is_creation_failure=True,
+        )
         job.update_status(AsyncJobStatus.FAILED)
-        job._is_synthetic = True
         return job
 
     def _get_running_jobs(self) -> Set[AsyncJob]:
