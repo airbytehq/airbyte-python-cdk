@@ -321,7 +321,9 @@ class HttpClient:
                 )
 
             if isinstance(e.response, requests.Response):
-                server_error_message = SERVER_ERROR_MESSAGE_BY_STATUS_CODE.get(e.response.status_code)
+                server_error_message = SERVER_ERROR_MESSAGE_BY_STATUS_CODE.get(
+                    e.response.status_code
+                )
                 if server_error_message:
                     internal_message = (
                         "Exhausted available request attempts. "
