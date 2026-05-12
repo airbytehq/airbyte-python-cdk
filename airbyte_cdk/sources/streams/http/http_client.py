@@ -64,6 +64,12 @@ from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 MessageRepresentationAirbyteTracedErrors = AirbyteTracedException
 
 BODY_REQUEST_METHODS = ("GET", "POST", "PUT", "PATCH")
+SERVER_ERROR_MESSAGE_BY_STATUS_CODE = {
+    500: "API server returned HTTP 500.",
+    502: "API server returned HTTP 502.",
+    503: "API server returned HTTP 503.",
+    504: "API server returned HTTP 504.",
+}
 
 
 def monkey_patched_get_item(self, key):  # type: ignore # this interface is a copy/paste from the requests_cache lib
@@ -313,6 +319,23 @@ class HttpClient:
                     exception=e,
                     stream_descriptor=StreamDescriptor(name=self._name),
                 )
+
+            if isinstance(e.response, requests.Response):
+                server_error_message = SERVER_ERROR_MESSAGE_BY_STATUS_CODE.get(e.response.status_code)
+                if server_error_message:
+                    internal_message = (
+                        "Exhausted available request attempts. "
+                        f"Request URL: {e.request.url}, "
+                        f"Response Code: {e.response.status_code}, "
+                        f"Response Text: {e.response.text}"
+                    )
+                    raise AirbyteTracedException(
+                        internal_message=internal_message,
+                        message=server_error_message,
+                        failure_type=e.failure_type or FailureType.transient_error,
+                        exception=e,
+                        stream_descriptor=StreamDescriptor(name=self._name),
+                    )
 
             raise AirbyteTracedException(
                 internal_message=f"Exhausted available request attempts. Exception: {e}",

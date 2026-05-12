@@ -840,6 +840,32 @@ def test_send_with_retry_raises_airbyte_traced_exception_with_failure_type(
     assert e.value.failure_type == expected_failure_type
 
 
+@pytest.mark.usefixtures("mock_sleep")
+def test_send_with_retry_raises_specific_message_for_exhausted_server_error(requests_mock):
+    http_client = HttpClient(
+        name="test",
+        logger=MagicMock(spec=logging.Logger),
+        error_handler=HttpStatusErrorHandler(logger=MagicMock(), max_retries=1),
+    )
+
+    requests_mock.register_uri(
+        "GET",
+        "https://airbyte.io/",
+        status_code=500,
+        text="Internal server error.",
+        headers={},
+    )
+
+    with pytest.raises(AirbyteTracedException) as e:
+        http_client.send_request(http_method="get", url="https://airbyte.io/", request_kwargs={})
+
+    assert e.value.message == "API server returned HTTP 500."
+    assert e.value.failure_type == FailureType.transient_error
+    assert e.value.internal_message is not None
+    assert "https://airbyte.io/" in e.value.internal_message
+    assert "Response Code: 500" in e.value.internal_message
+
+
 class MockOAuthAuthenticator:
     def __init__(self):
         self.access_token = "old_token"
