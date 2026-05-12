@@ -838,6 +838,8 @@ def test_send_with_retry_raises_airbyte_traced_exception_with_failure_type(
     with pytest.raises(AirbyteTracedException) as e:
         http_client.send_request(http_method="get", url="https://airbyte.io/", request_kwargs={})
     assert e.value.failure_type == expected_failure_type
+    if exception_class != RateLimitBackoffException:
+        assert e.value.message == error_message
 
 
 class MockOAuthAuthenticator:
