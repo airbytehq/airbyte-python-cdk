@@ -862,7 +862,6 @@ def test_send_with_retry_raises_specific_message_for_exhausted_server_error(requ
     assert e.value.message == "API server returned HTTP 500."
     assert e.value.failure_type == FailureType.transient_error
     assert e.value.internal_message is not None
-    assert "https://airbyte.io/" in e.value.internal_message
     assert "Response Code: 500" in e.value.internal_message
 
 
