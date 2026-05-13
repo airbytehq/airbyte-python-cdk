@@ -179,7 +179,18 @@ class AbstractOauth2Authenticator(AuthBase):
 
         :return: a tuple of (access_token, token_lifespan)
         """
-        response_json = self._make_handled_request()
+        try:
+            response_json = self._make_handled_request()
+        except (
+            requests.exceptions.ConnectionError,
+            requests.exceptions.ConnectTimeout,
+            requests.exceptions.ReadTimeout,
+        ) as e:
+            raise AirbyteTracedException(
+                message="OAuth access token refresh request failed due to a network error.",
+                internal_message=f"Network error during OAuth token refresh after retries were exhausted: {e}",
+                failure_type=FailureType.transient_error,
+            ) from e
         self._ensure_access_token_in_response(response_json)
 
         return (
@@ -229,7 +240,12 @@ class AbstractOauth2Authenticator(AuthBase):
 
     @backoff.on_exception(
         backoff.expo,
-        DefaultBackoffException,
+        (
+            DefaultBackoffException,
+            requests.exceptions.ConnectionError,
+            requests.exceptions.ConnectTimeout,
+            requests.exceptions.ReadTimeout,
+        ),
         on_backoff=lambda details: logger.info(
             f"Caught retryable error after {details['tries']} tries. Waiting {details['wait']} seconds then retrying..."
         ),
@@ -295,7 +311,11 @@ class AbstractOauth2Authenticator(AuthBase):
                 )
             raise
         except Exception as e:
-            raise Exception(f"Error while refreshing access token: {e}") from e
+            raise AirbyteTracedException(
+                message="OAuth access token refresh request failed.",
+                internal_message=f"Unexpected error during OAuth token refresh: {e}",
+                failure_type=FailureType.system_error,
+            ) from e
 
     def _ensure_access_token_in_response(self, response_data: Mapping[str, Any]) -> None:
         """

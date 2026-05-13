@@ -58,8 +58,9 @@ class DynamicStreamCheckConfig(BaseModel):
         ..., description="The dynamic stream name.", title="Dynamic Stream Name"
     )
     stream_count: Optional[int] = Field(
-        0,
-        description="The number of streams to attempt reading from during a check operation. If `stream_count` exceeds the total number of available streams, the minimum of the two values will be used.",
+        None,
+        description="The number of streams to attempt reading from during a check operation. If unset, all generated streams are checked. Must be a positive integer; if it exceeds the total number of available streams, all streams are checked.",
+        ge=1,
         title="Stream Count",
     )
 
@@ -486,27 +487,21 @@ class HttpRequestRegexMatcher(BaseModel):
     headers: Optional[Dict[str, Any]] = Field(
         None, description="The headers to match.", title="Headers"
     )
-
-
-class DpathExtractor(BaseModel):
-    type: Literal["DpathExtractor"]
-    field_path: List[str] = Field(
-        ...,
-        description='List of potentially nested fields describing the full path of the field to extract. Use "*" to extract all values from an array. See more info in the [docs](https://docs.airbyte.com/connector-development/config-based/understanding-the-yaml-file/record-selector).',
-        examples=[
-            ["data"],
-            ["data", "records"],
-            ["data", "{{ parameters.name }}"],
-            ["data", "*", "record"],
-        ],
-        title="Field Path",
+    weight: Optional[Union[int, str]] = Field(
+        None,
+        description="The weight of a request matching this matcher when acquiring a call from the rate limiter. Different endpoints can consume different amounts from a shared budget by specifying different weights. If not set, each request counts as 1.",
+        title="Weight",
     )
-    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
 
 class ResponseToFileExtractor(BaseModel):
     type: Literal["ResponseToFileExtractor"]
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
+
+
+class OnNoRecords(Enum):
+    skip = "skip"
+    emit_parent = "emit_parent"
 
 
 class ExponentialBackoffStrategy(BaseModel):
@@ -1243,6 +1238,7 @@ class AsyncJobStatusMap(BaseModel):
     completed: List[str]
     failed: List[str]
     timeout: List[str]
+    skipped: Optional[List[str]] = None
 
 
 class ValueType(Enum):
@@ -2049,10 +2045,10 @@ class DefaultErrorHandler(BaseModel):
         description="List of backoff strategies to use to determine how long to wait before retrying a retryable request.",
         title="Backoff Strategies",
     )
-    max_retries: Optional[int] = Field(
+    max_retries: Optional[Union[int, str]] = Field(
         5,
-        description="The maximum number of time to retry a retryable request before giving up and failing.",
-        examples=[5, 0, 10],
+        description="The maximum number of times to retry a retryable request before giving up and failing. Can be a hardcoded integer or a string interpolated from the connector config.",
+        examples=[5, 0, 10, "{{ config['max_retries_on_throttle'] }}"],
         title="Max Retry Count",
     )
     response_filters: Optional[List[HttpResponseFilter]] = Field(
@@ -2079,6 +2075,32 @@ class DefaultPaginator(BaseModel):
         None,
         description="Inject the page token into the outgoing HTTP requests by inserting it into either the request URL path or a field on the request.",
         title="Inject Page Token Into Outgoing HTTP Request",
+    )
+    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
+
+
+class RecordExpander(BaseModel):
+    type: Literal["RecordExpander"]
+    expand_records_from_field: List[str] = Field(
+        ...,
+        description="Path to a nested array field within each record. Items from this array will be extracted and emitted as separate records. Supports wildcards (*) for matching multiple arrays.",
+        examples=[
+            ["lines", "data"],
+            ["items"],
+            ["nested", "array"],
+            ["sections", "*", "items"],
+        ],
+        title="Expand Records From Field",
+    )
+    remain_original_record: Optional[bool] = Field(
+        False,
+        description='If true, each expanded record will include the original parent record in an "original_record" field. Defaults to false.',
+        title="Remain Original Record",
+    )
+    on_no_records: Optional[OnNoRecords] = Field(
+        OnNoRecords.skip,
+        description='Behavior when the expansion path is missing, not a list, or an empty list. "skip" (default) emits nothing. "emit_parent" emits the original parent record unchanged.',
+        title="On No Records",
     )
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
@@ -2147,27 +2169,6 @@ class ListPartitionRouter(BaseModel):
         None,
         description="A request option describing where the list value should be injected into and under what field name if applicable.",
         title="Inject Partition Value Into Outgoing HTTP Request",
-    )
-    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
-
-
-class RecordSelector(BaseModel):
-    type: Literal["RecordSelector"]
-    extractor: Union[DpathExtractor, CustomRecordExtractor]
-    record_filter: Optional[Union[RecordFilter, CustomRecordFilter]] = Field(
-        None,
-        description="Responsible for filtering records to be emitted by the Source.",
-        title="Record Filter",
-    )
-    schema_normalization: Optional[Union[SchemaNormalization, CustomSchemaNormalization]] = Field(
-        None,
-        description="Responsible for normalization according to the schema.",
-        title="Schema Normalization",
-    )
-    transform_before_filtering: Optional[bool] = Field(
-        None,
-        description="If true, transformation will be applied before record filtering.",
-        title="Transform Before Filtering",
     )
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
@@ -2292,6 +2293,27 @@ class HTTPAPIBudget(BaseModel):
     )
 
 
+class DpathExtractor(BaseModel):
+    type: Literal["DpathExtractor"]
+    field_path: List[str] = Field(
+        ...,
+        description='List of potentially nested fields describing the full path of the field to extract. Use "*" to extract all values from an array. See more info in the [docs](https://docs.airbyte.com/connector-development/config-based/understanding-the-yaml-file/record-selector).',
+        examples=[
+            ["data"],
+            ["data", "records"],
+            ["data", "{{ parameters.name }}"],
+            ["data", "*", "record"],
+        ],
+        title="Field Path",
+    )
+    record_expander: Optional[RecordExpander] = Field(
+        None,
+        description="Optional component to expand records by extracting items from nested array fields.",
+        title="Record Expander",
+    )
+    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
+
+
 class ZipfileDecoder(BaseModel):
     class Config:
         extra = Extra.allow
@@ -2302,6 +2324,27 @@ class ZipfileDecoder(BaseModel):
         description="Parser to parse the decompressed data from the zipfile(s).",
         title="Parser",
     )
+
+
+class RecordSelector(BaseModel):
+    type: Literal["RecordSelector"]
+    extractor: Union[DpathExtractor, CustomRecordExtractor]
+    record_filter: Optional[Union[RecordFilter, CustomRecordFilter]] = Field(
+        None,
+        description="Responsible for filtering records to be emitted by the Source.",
+        title="Record Filter",
+    )
+    schema_normalization: Optional[Union[SchemaNormalization, CustomSchemaNormalization]] = Field(
+        None,
+        description="Responsible for normalization according to the schema.",
+        title="Schema Normalization",
+    )
+    transform_before_filtering: Optional[bool] = Field(
+        None,
+        description="If true, transformation will be applied before record filtering.",
+        title="Transform Before Filtering",
+    )
+    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
 
 class ConfigMigration(BaseModel):
@@ -2394,6 +2437,11 @@ class DeclarativeSource1(BaseModel):
     spec: Optional[Spec] = None
     concurrency_level: Optional[ConcurrencyLevel] = None
     api_budget: Optional[HTTPAPIBudget] = None
+    stream_groups: Optional[Dict[str, StreamGroup]] = Field(
+        None,
+        description="Groups of streams that share a common resource and should not be read simultaneously. Each group defines a set of stream references and an action that controls how concurrent reads are managed. Only applies to ConcurrentDeclarativeSource.",
+        title="Stream Groups",
+    )
     max_concurrent_async_job_count: Optional[Union[int, str]] = Field(
         None,
         description="Maximum number of concurrent asynchronous jobs to run. This property is only relevant for sources/streams that support asynchronous job execution through the AsyncRetriever (e.g. a report-based stream that initiates a job, polls the job status, and then fetches the job results). This is often set by the API's maximum number of concurrent jobs on the account level. Refer to the API's documentation for this information.",
@@ -2429,6 +2477,11 @@ class DeclarativeSource2(BaseModel):
     spec: Optional[Spec] = None
     concurrency_level: Optional[ConcurrencyLevel] = None
     api_budget: Optional[HTTPAPIBudget] = None
+    stream_groups: Optional[Dict[str, StreamGroup]] = Field(
+        None,
+        description="Groups of streams that share a common resource and should not be read simultaneously. Each group defines a set of stream references and an action that controls how concurrent reads are managed. Only applies to ConcurrentDeclarativeSource.",
+        title="Stream Groups",
+    )
     max_concurrent_async_job_count: Optional[Union[int, str]] = Field(
         None,
         description="Maximum number of concurrent asynchronous jobs to run. This property is only relevant for sources/streams that support asynchronous job execution through the AsyncRetriever (e.g. a report-based stream that initiates a job, polls the job status, and then fetches the job results). This is often set by the API's maximum number of concurrent jobs on the account level. Refer to the API's documentation for this information.",
@@ -3021,6 +3074,10 @@ class AsyncRetriever(BaseModel):
         None,
         description="The time in minutes after which the single Async Job should be considered as Timed Out.",
     )
+    failed_retry_wait_time_in_seconds: Optional[Union[int, str]] = Field(
+        None,
+        description="Time in seconds to wait before retrying a failed async job. Only applies to jobs that ran on the API side and reported a FAILED status (e.g. report generation failed due to a cooldown). Creation failures (HTTP errors when starting a job, such as 429s) and TIMED_OUT jobs are retried immediately and are not affected by this setting. When set, the orchestrator defers retry of real failed jobs until the wait time has elapsed, without blocking other jobs.",
+    )
     download_target_requester: Optional[Union[HttpRequester, CustomRequester]] = Field(
         None,
         description="Requester component that describes how to prepare HTTP requests to send to the source API to extract the url from polling response by the completed async job.",
@@ -3094,6 +3151,23 @@ class AsyncRetriever(BaseModel):
         title="Download HTTP Response Format",
     )
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
+
+
+class BlockSimultaneousSyncsAction(BaseModel):
+    type: Literal["BlockSimultaneousSyncsAction"]
+
+
+class StreamGroup(BaseModel):
+    streams: List[str] = Field(
+        ...,
+        description='List of references to streams that belong to this group. Use JSON references to stream definitions (e.g., "#/definitions/my_stream").',
+        title="Streams",
+    )
+    action: BlockSimultaneousSyncsAction = Field(
+        ...,
+        description="The action to apply to streams in this group.",
+        title="Action",
+    )
 
 
 class SubstreamPartitionRouter(BaseModel):

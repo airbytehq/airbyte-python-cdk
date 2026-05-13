@@ -166,6 +166,7 @@ class HttpRequestRegexMatcher(RequestMatcher):
         url_path_pattern: Optional[str] = None,
         params: Optional[Mapping[str, Any]] = None,
         headers: Optional[Mapping[str, Any]] = None,
+        weight: Optional[int] = None,
     ):
         """
         :param method: HTTP method (e.g. "GET", "POST"); compared case-insensitively.
@@ -173,7 +174,14 @@ class HttpRequestRegexMatcher(RequestMatcher):
         :param url_path_pattern: A regex pattern that will be applied to the path portion of the URL.
         :param params: Dictionary of query parameters that must be present in the request.
         :param headers: Dictionary of headers that must be present (header keys are compared case-insensitively).
+        :param weight: The weight of a request matching this matcher. If set, this value is used
+            when acquiring a call from the rate limiter, enabling cost-based rate limiting
+            where different endpoints consume different amounts from a shared budget.
+            If not set, each request counts as 1.
         """
+        if weight is not None and weight < 1:
+            raise ValueError(f"weight must be >= 1, got {weight}")
+        self._weight = weight
         self._method = method.upper() if method else None
 
         # Normalize the url_base if provided: remove trailing slash.
@@ -242,11 +250,16 @@ class HttpRequestRegexMatcher(RequestMatcher):
 
         return True
 
+    @property
+    def weight(self) -> Optional[int]:
+        """The weight of a request matching this matcher, or None if not set."""
+        return self._weight
+
     def __str__(self) -> str:
         regex = self._url_path_pattern.pattern if self._url_path_pattern else None
         return (
             f"HttpRequestRegexMatcher(method={self._method}, url_base={self._url_base}, "
-            f"url_path_pattern={regex}, params={self._params}, headers={self._headers})"
+            f"url_path_pattern={regex}, params={self._params}, headers={self._headers}, weight={self._weight})"
         )
 
 
@@ -264,6 +277,22 @@ class BaseCallRatePolicy(AbstractCallRatePolicy, abc.ABC):
         if not self._matchers:
             return True
         return any(matcher(request) for matcher in self._matchers)
+
+    def get_weight(self, request: Any) -> int:
+        """Get the weight for a request based on the first matching matcher.
+
+        If a matcher has a weight configured, that weight is used.
+        Otherwise, defaults to 1.
+
+        :param request: a request object
+        :return: the weight for this request
+        """
+        for matcher in self._matchers:
+            if matcher(request):
+                if isinstance(matcher, HttpRequestRegexMatcher) and matcher.weight is not None:
+                    return matcher.weight
+                return 1
+        return 1
 
 
 class UnlimitedCallRatePolicy(BaseCallRatePolicy):
@@ -420,6 +449,11 @@ class MovingWindowCallRatePolicy(BaseCallRatePolicy):
     def try_acquire(self, request: Any, weight: int) -> None:
         if not self.matches(request):
             raise ValueError("Request does not match the policy")
+        lowest_limit = min(rate.limit for rate in self._bucket.rates)
+        if weight > lowest_limit:
+            raise ValueError(
+                f"Weight can not exceed the lowest configured rate limit ({lowest_limit})"
+            )
 
         try:
             self._limiter.try_acquire(request, weight=weight)
@@ -596,7 +630,8 @@ class APIBudget(AbstractAPIBudget):
         # sometimes we spend all budget before a second attempt, so we have a few more attempts
         for attempt in range(1, self._maximum_attempts_to_acquire):
             try:
-                policy.try_acquire(request, weight=1)
+                weight = policy.get_weight(request) if isinstance(policy, BaseCallRatePolicy) else 1
+                policy.try_acquire(request, weight=weight)
                 return
             except CallRateLimitHit as exc:
                 last_exception = exc

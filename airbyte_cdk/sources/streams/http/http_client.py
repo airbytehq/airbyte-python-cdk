@@ -58,6 +58,11 @@ from airbyte_cdk.utils.stream_status_utils import (
 )
 from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 
+# Backward-compatible deprecated alias. This class was removed in PR #927 but is still
+# imported by connectors in the airbyte monorepo. Keep as a simple alias to
+# AirbyteTracedException until all downstream usages have been migrated.
+MessageRepresentationAirbyteTracedErrors = AirbyteTracedException
+
 BODY_REQUEST_METHODS = ("GET", "POST", "PUT", "PATCH")
 
 
@@ -293,7 +298,22 @@ class HttpClient:
 
             return response
         except BaseBackoffException as e:
-            self._logger.error(f"Retries exhausted with backoff exception.", exc_info=True)
+            self._logger.error("Retries exhausted with backoff exception.", exc_info=True)
+
+            is_rate_limited = (
+                isinstance(e.response, requests.Response)
+                and e.response.status_code == requests.codes.too_many_requests
+            )
+
+            if is_rate_limited:
+                raise AirbyteTracedException(
+                    internal_message=f"Rate limit retry budget exhausted. Last exception: {e}",
+                    message="API rate limit exceeded.",
+                    failure_type=FailureType.transient_error,
+                    exception=e,
+                    stream_descriptor=StreamDescriptor(name=self._name),
+                )
+
             raise AirbyteTracedException(
                 internal_message=f"Exhausted available request attempts. Exception: {e}",
                 message=f"Exhausted available request attempts. Please see logs for more details. Exception: {e}",

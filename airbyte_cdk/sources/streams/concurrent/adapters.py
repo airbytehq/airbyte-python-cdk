@@ -196,6 +196,11 @@ class StreamFacade(AbstractStreamFacade[DefaultStream], Stream):
     def cursor(self) -> Optional[Cursor]:  # type: ignore[override] # StreamFaced expects to use only airbyte_cdk.sources.streams.concurrent.cursor.Cursor
         return self._cursor
 
+    @property
+    def block_simultaneous_read(self) -> str:
+        """Returns the blocking group name from the underlying stream"""
+        return self._abstract_stream.block_simultaneous_read
+
     # FIXME the lru_cache seems to be mostly there because of typing issue
     @lru_cache(maxsize=None)
     def get_json_schema(self) -> Mapping[str, Any]:
