@@ -8,10 +8,11 @@ import os
 from collections.abc import Callable
 from inspect import Parameter, signature
 from pathlib import Path
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Any, cast
 
 from boltons.typeutils import classproperty
 
+from airbyte_cdk.models import ConfiguredAirbyteCatalog
 from airbyte_cdk.test import entrypoint_wrapper
 from airbyte_cdk.test.models import (
     ConnectorTestScenario,
@@ -85,12 +86,23 @@ class ConnectorTestSuiteBase(DockerConnectorTestSuite):
     def create_connector(
         cls,
         scenario: ConnectorTestScenario | None,
+        catalog: ConfiguredAirbyteCatalog | None = None,
     ) -> IConnector:
         """Instantiate the connector class."""
         connector = cls.connector  # type: ignore
         if connector:
             if isinstance(connector, type):
-                return cls._instantiate_connector_class(connector)
+                config = None
+                if scenario and _requires_legacy_file_based_constructor_args(connector):
+                    config = (
+                        scenario.config_dict
+                        if scenario.config_dict is not None
+                        else scenario.get_config_dict(
+                            empty_if_missing=True,
+                            connector_root=cls.get_connector_root_dir(),
+                        )
+                    )
+                return cls._instantiate_connector_class(connector, catalog, config)
             if callable(connector):
                 return connector()
 
@@ -102,14 +114,20 @@ class ConnectorTestSuiteBase(DockerConnectorTestSuite):
         )
 
     @staticmethod
-    def _instantiate_connector_class(connector_class: type[IConnector]) -> IConnector:
+    def _instantiate_connector_class(
+        connector_class: type[IConnector],
+        catalog: ConfiguredAirbyteCatalog | None = None,
+        config: dict[str, Any] | None = None,
+    ) -> IConnector:
         """Instantiate connector classes supported by standard tests."""
         if _requires_legacy_file_based_constructor_args(connector_class):
             legacy_file_based_connector = cast(
-                Callable[[None, None, None], IConnector],
+                Callable[
+                    [ConfiguredAirbyteCatalog | None, dict[str, Any] | None, None], IConnector
+                ],
                 connector_class,
             )
-            return legacy_file_based_connector(None, None, None)
+            return legacy_file_based_connector(catalog, config, None)
 
         return connector_class()
 
