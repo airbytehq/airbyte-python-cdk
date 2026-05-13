@@ -65,24 +65,26 @@ class _CsvReader:
             doublequote=config_format.double_quote,
             quoting=csv.QUOTE_MINIMAL,
         )
-        with stream_reader.open_file(file, file_read_mode, config_format.encoding, logger) as fp:
-            try:
-                headers = self._get_headers(fp, config_format, dialect_name)
-            except UnicodeError:
-                raise AirbyteTracedException(
-                    message=f"{FileBasedSourceError.ENCODING_ERROR.value} Expected encoding: {config_format.encoding}",
+        try:
+            with stream_reader.open_file(
+                file, file_read_mode, config_format.encoding, logger
+            ) as fp:
+                try:
+                    headers = self._get_headers(fp, config_format, dialect_name)
+                except UnicodeError:
+                    raise AirbyteTracedException(
+                        message=f"{FileBasedSourceError.ENCODING_ERROR.value} Expected encoding: {config_format.encoding}",
+                    )
+
+                rows_to_skip = (
+                    config_format.skip_rows_before_header
+                    + (1 if config_format.header_definition.has_header_row() else 0)
+                    + config_format.skip_rows_after_header
                 )
+                self._skip_rows(fp, rows_to_skip)
+                lineno += rows_to_skip
 
-            rows_to_skip = (
-                config_format.skip_rows_before_header
-                + (1 if config_format.header_definition.has_header_row() else 0)
-                + config_format.skip_rows_after_header
-            )
-            self._skip_rows(fp, rows_to_skip)
-            lineno += rows_to_skip
-
-            reader = csv.DictReader(fp, dialect=dialect_name, fieldnames=headers)  # type: ignore
-            try:
+                reader = csv.DictReader(fp, dialect=dialect_name, fieldnames=headers)  # type: ignore
                 for row in reader:
                     lineno += 1
 
@@ -111,14 +113,11 @@ class _CsvReader:
                                 lineno=lineno,
                             )
                     yield row
-            finally:
-                # due to RecordParseError or GeneratorExit
-                csv.unregister_dialect(dialect_name)
+        finally:
+            csv.unregister_dialect(dialect_name)
 
     def _get_headers(self, fp: IOBase, config_format: CsvFormat, dialect_name: str) -> List[str]:
-        """
-        Assumes the fp is pointing to the beginning of the files and will reset it as such
-        """
+        """Assumes the fp is pointing to the beginning of the files and will reset it as such."""
         # Note that this method assumes the dialect has already been registered if we're parsing the headers
         if isinstance(config_format.header_definition, CsvHeaderUserProvided):
             return config_format.header_definition.column_names
@@ -133,6 +132,14 @@ class _CsvReader:
             self._skip_rows(fp, config_format.skip_rows_before_header)
             reader = csv.reader(fp, dialect=dialect_name)  # type: ignore
             headers = list(next(reader))
+
+            empty_count = sum(1 for h in headers if not h or h.isspace())
+            if empty_count:
+                raise AirbyteTracedException(
+                    message="CSV header row contains empty column name(s). Remove trailing delimiters or empty columns from the header row.",
+                    internal_message=f"Found {empty_count} empty/whitespace-only column name(s) in header: {headers}",
+                    failure_type=FailureType.config_error,
+                )
 
         fp.seek(0)
         return headers
@@ -227,7 +234,7 @@ class CsvParser(FileTypeParser):
         logger: logging.Logger,
         discovered_schema: Optional[Mapping[str, SchemaType]],
     ) -> Iterable[Dict[str, Any]]:
-        line_no = 0
+        data_generator = None
         try:
             config_format = _extract_format(config)
             if discovered_schema:
@@ -244,19 +251,15 @@ class CsvParser(FileTypeParser):
                 config, file, stream_reader, logger, self.file_read_mode
             )
             for row in data_generator:
-                line_no += 1
                 yield CsvParser._to_nullable(
                     cast_fn(row),
                     deduped_property_types,
                     config_format.null_values,
                     config_format.strings_can_be_null,
                 )
-        except RecordParseError as parse_err:
-            raise RecordParseError(
-                FileBasedSourceError.ERROR_PARSING_RECORD, filename=file.uri, lineno=line_no
-            ) from parse_err
         finally:
-            data_generator.close()
+            if data_generator is not None:
+                data_generator.close()
 
     @property
     def file_read_mode(self) -> FileReadMode:
