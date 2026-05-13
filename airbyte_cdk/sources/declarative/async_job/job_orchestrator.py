@@ -328,16 +328,19 @@ class AsyncJobOrchestrator:
         # Even though we're not sure this will break the stream, we will emit here for simplicity's sake. If we wanted to be more accurate,
         # we would keep the exceptions in-memory until we know that we have reached the max attempt.
         self._message_repository.emit_message(traced_exception.as_airbyte_message())
-        job = self._create_failed_job(_slice)
+        job = self._create_failed_job(_slice, traced_exception)
         self._job_tracker.add_job(intent, job.api_job_id())
         return job
 
-    def _create_failed_job(self, stream_slice: StreamSlice) -> AsyncJob:
+    def _create_failed_job(
+        self, stream_slice: StreamSlice, exception: Optional[Exception] = None
+    ) -> AsyncJob:
         job = AsyncJob(
             f"{uuid.uuid4()} - Job that could not start",
             stream_slice,
             _NO_TIMEOUT,
             is_creation_failure=True,
+            creation_failure_exception=exception,
         )
         job.update_status(AsyncJobStatus.FAILED)
         return job
@@ -511,11 +514,32 @@ class AsyncJobOrchestrator:
             AirbyteTracedException: If at least one job could not be completed.
         """
         status_by_job_id = {job.api_job_id(): job.status() for job in partition.jobs}
+        creation_failure_exceptions = [
+            exception
+            for exception in (job.creation_failure_exception() for job in partition.jobs)
+            if exception is not None
+        ]
+        creation_failure_details = (
+            "\n".join(
+                ["Creation failure exceptions:"]
+                + [
+                    filter_secrets(exception.__repr__())
+                    for exception in creation_failure_exceptions
+                ]
+            )
+            if creation_failure_exceptions
+            else "See warning logs for more information."
+        )
+        failure_type = (
+            self._aggregate_failure_type(creation_failure_exceptions)
+            if creation_failure_exceptions
+            else FailureType.system_error
+        )
         self._non_breaking_exceptions.append(
             AirbyteTracedException(
                 message="Async job failed after exhausting all retry attempts.",
-                internal_message=f"At least one job could not be completed for slice {partition.stream_slice}. Job statuses were: {status_by_job_id}. See warning logs for more information.",
-                failure_type=FailureType.system_error,
+                internal_message=f"At least one job could not be completed for slice {partition.stream_slice}. Job statuses were: {status_by_job_id}. {creation_failure_details}",
+                failure_type=failure_type,
             )
         )
 

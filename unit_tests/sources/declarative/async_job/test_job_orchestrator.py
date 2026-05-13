@@ -366,6 +366,55 @@ class AsyncJobOrchestratorTest(TestCase):
         }
 
     @mock.patch(sleep_mock_target)
+    def test_given_job_creation_transient_errors_when_attempts_exhausted_then_aggregate_is_transient(
+        self, mock_sleep: MagicMock
+    ) -> None:
+        self._job_repository.start.side_effect = [
+            AirbyteTracedException(
+                message="API rate limit exceeded.",
+                internal_message="HTTP 429",
+                failure_type=FailureType.transient_error,
+            ),
+            AirbyteTracedException(
+                message="API rate limit exceeded.",
+                internal_message="HTTP 429",
+                failure_type=FailureType.transient_error,
+            ),
+            AirbyteTracedException(
+                message="API rate limit exceeded.",
+                internal_message="HTTP 429",
+                failure_type=FailureType.transient_error,
+            ),
+        ]
+        orchestrator = self._orchestrator([_A_STREAM_SLICE])
+
+        partitions, exception = self._accumulate_create_and_get_completed_partitions(orchestrator)
+
+        assert len(partitions) == 0
+        assert isinstance(exception, AirbyteTracedException)
+        assert exception.failure_type == FailureType.transient_error
+        assert exception.internal_message is not None
+        assert "Underlying failure breakdown: transient_error=1." in exception.internal_message
+        assert "HTTP 429" in exception.internal_message
+
+    def test_create_failed_job_keeps_creation_failure_exception(self) -> None:
+        traced_exception = AirbyteTracedException(
+            message="API rate limit exceeded.",
+            internal_message="HTTP 429",
+            failure_type=FailureType.transient_error,
+        )
+        orchestrator = AsyncJobOrchestrator(
+            self._job_repository,
+            [],
+            JobTracker(_NO_JOB_LIMIT),
+            self._message_repository,
+        )
+
+        job = orchestrator._create_failed_job(_A_STREAM_SLICE, traced_exception)
+
+        assert job.creation_failure_exception() is traced_exception
+
+    @mock.patch(sleep_mock_target)
     def test_given_jobs_failed_more_than_max_attempts_when_create_and_get_completed_partitions_then_free_job_budget(
         self, mock_sleep: MagicMock
     ) -> None:
