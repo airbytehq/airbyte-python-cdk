@@ -820,6 +820,7 @@ def test_get_headers_raises_on_empty_column_names(
 
         assert exc_info.value.failure_type == FailureType.config_error
         assert "empty column name" in exc_info.value.message
+        assert f"{expected_empty_count} empty" in exc_info.value.internal_message
     finally:
         csv.unregister_dialect(dialect_name)
 
