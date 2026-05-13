@@ -5,11 +5,35 @@ from typing import Any
 
 import pytest
 
+from airbyte_cdk.models import AirbyteCatalog, AirbyteMessage, ConfiguredAirbyteCatalog
 from airbyte_cdk.sources.declarative.concurrent_declarative_source import (
     ConcurrentDeclarativeSource,
 )
 from airbyte_cdk.sources.source import Source
+from airbyte_cdk.test.models import ConnectorTestScenario
 from airbyte_cdk.test.standard_tests._job_runner import IConnector
+from airbyte_cdk.test.standard_tests.connector_base import ConnectorTestSuiteBase
+
+
+class LegacyFileBasedConnector(Source):
+    def __init__(
+        self,
+        catalog: ConfiguredAirbyteCatalog | None,
+        config: dict[str, Any] | None,
+        state: list[Any] | None,
+    ) -> None:
+        self.catalog = catalog
+        self.config = config
+        self.state = state
+
+    def check(self, **kwargs: Any) -> None:
+        pass
+
+    def discover(self, **kwargs: Any) -> AirbyteCatalog:
+        return AirbyteCatalog(streams=[])
+
+    def read(self, **kwargs: Any) -> list[AirbyteMessage]:
+        return []
 
 
 @pytest.mark.parametrize(
@@ -31,3 +55,15 @@ def test_is_iconnector_check(input: Any, expected: bool) -> None:
         return
 
     assert isinstance(input, IConnector) == expected
+
+
+def test_create_connector_instantiates_legacy_file_based_sources_with_empty_runtime_args() -> None:
+    class TestSuite(ConnectorTestSuiteBase):
+        connector = LegacyFileBasedConnector
+
+    connector = TestSuite.create_connector(ConnectorTestScenario())
+
+    assert isinstance(connector, LegacyFileBasedConnector)
+    assert connector.catalog is None
+    assert connector.config is None
+    assert connector.state is None

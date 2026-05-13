@@ -5,6 +5,8 @@ from __future__ import annotations
 
 import importlib
 import os
+from collections.abc import Callable
+from inspect import Parameter, signature
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
@@ -18,8 +20,6 @@ from airbyte_cdk.test.standard_tests._job_runner import IConnector, run_test_job
 from airbyte_cdk.test.standard_tests.docker_base import DockerConnectorTestSuite
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
-
     from airbyte_cdk.test import entrypoint_wrapper
 
 
@@ -89,9 +89,10 @@ class ConnectorTestSuiteBase(DockerConnectorTestSuite):
         """Instantiate the connector class."""
         connector = cls.connector  # type: ignore
         if connector:
-            if callable(connector) or isinstance(connector, type):
-                # If the connector is a class or factory function, instantiate it:
-                return cast(IConnector, connector())  # type: ignore [redundant-cast]
+            if isinstance(connector, type):
+                return cls._instantiate_connector_class(connector)
+            if callable(connector):
+                return connector()
 
         # Otherwise, we can't instantiate the connector. Fail with a clear error message.
         raise NotImplementedError(
@@ -99,6 +100,18 @@ class ConnectorTestSuiteBase(DockerConnectorTestSuite):
             "Please provide a class or factory function in `cls.connector`, or "
             "override `cls.create_connector()` to define a custom initialization process."
         )
+
+    @staticmethod
+    def _instantiate_connector_class(connector_class: type[IConnector]) -> IConnector:
+        """Instantiate connector classes supported by standard tests."""
+        if _requires_legacy_file_based_constructor_args(connector_class):
+            legacy_file_based_connector = cast(
+                Callable[[None, None, None], IConnector],
+                connector_class,
+            )
+            return legacy_file_based_connector(None, None, None)
+
+        return connector_class()
 
     # Test Definitions
 
@@ -117,3 +130,13 @@ class ConnectorTestSuiteBase(DockerConnectorTestSuite):
             f"Expected exactly one CONNECTION_STATUS message. "
             "Got: {result.connection_status_messages!s}"
         )
+
+
+def _requires_legacy_file_based_constructor_args(connector_class: type[IConnector]) -> bool:
+    required_positional_parameter_names = [
+        parameter.name
+        for parameter in signature(connector_class).parameters.values()
+        if parameter.default is Parameter.empty
+        and parameter.kind in (Parameter.POSITIONAL_ONLY, Parameter.POSITIONAL_OR_KEYWORD)
+    ]
+    return required_positional_parameter_names == ["catalog", "config", "state"]
