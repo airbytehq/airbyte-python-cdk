@@ -1246,7 +1246,7 @@ class ModelToComponentFactory:
     ) -> DynamicStreamCheckConfig:
         return DynamicStreamCheckConfig(
             dynamic_stream_name=model.dynamic_stream_name,
-            stream_count=model.stream_count or 0,
+            stream_count=model.stream_count,
         )
 
     def create_check_stream(
@@ -3713,6 +3713,8 @@ class ModelToComponentFactory:
             else model.full_refresh_stream
         )
 
+    _OPTIONAL_ASYNC_STATUS_FIELDS = {"skipped"}
+
     def _create_async_job_status_mapping(
         self, model: AsyncJobStatusMapModel, config: Config, **kwargs: Any
     ) -> Mapping[str, AsyncJobStatus]:
@@ -3721,6 +3723,14 @@ class ModelToComponentFactory:
             if cdk_status == "type":
                 # This is an element of the dict because of the typing of the CDK but it is not a CDK status
                 continue
+
+            if api_statuses is None:
+                if cdk_status in self._OPTIONAL_ASYNC_STATUS_FIELDS:
+                    continue
+                raise ValueError(
+                    f"Required CDK status '{cdk_status}' has no API statuses mapped. "
+                    f"Please provide at least an empty list for required status fields."
+                )
 
             for status in api_statuses:
                 if status in api_status_to_cdk_status:
@@ -3740,6 +3750,8 @@ class ModelToComponentFactory:
                 return AsyncJobStatus.FAILED
             case "timeout":
                 return AsyncJobStatus.TIMED_OUT
+            case "skipped":
+                return AsyncJobStatus.SKIPPED
             case _:
                 raise ValueError(f"Unsupported CDK status {status}")
 
@@ -3943,6 +3955,17 @@ class ModelToComponentFactory:
             job_timeout=_get_job_timeout(),
         )
 
+        failed_retry_wait_time_in_seconds: Optional[int] = (
+            int(
+                InterpolatedString.create(
+                    str(model.failed_retry_wait_time_in_seconds),
+                    parameters={},
+                ).eval(config)
+            )
+            if model.failed_retry_wait_time_in_seconds
+            else None
+        )
+
         async_job_partition_router = AsyncJobPartitionRouter(
             job_orchestrator_factory=lambda stream_slices: AsyncJobOrchestrator(
                 job_repository,
@@ -3954,6 +3977,7 @@ class ModelToComponentFactory:
                 # set the `job_max_retry` to 1 for the `Connector Builder`` use-case.
                 # `None` == default retry is set to 3 attempts, under the hood.
                 job_max_retry=1 if self._emit_connector_builder_messages else None,
+                failed_retry_wait_time_in_seconds=failed_retry_wait_time_in_seconds,
             ),
             stream_slicer=stream_slicer,
             config=config,

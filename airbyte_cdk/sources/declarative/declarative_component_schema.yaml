@@ -358,9 +358,9 @@ definitions:
         type: string
       stream_count:
         title: Stream Count
-        description: The number of streams to attempt reading from during a check operation. If `stream_count` exceeds the total number of available streams, the minimum of the two values will be used.
+        description: The number of streams to attempt reading from during a check operation. If unset, all generated streams are checked. Must be a positive integer; if it exceeds the total number of available streams, all streams are checked.
         type: integer
-        default: 0
+        minimum: 1
   CheckDynamicStream:
     title: Dynamic Streams to Check
     description: (This component is experimental. Use at your own risk.) Defines the dynamic streams to try reading when running a check operation.
@@ -1874,13 +1874,18 @@ definitions:
             - "$ref": "#/definitions/CustomBackoffStrategy"
       max_retries:
         title: Max Retry Count
-        description: The maximum number of time to retry a retryable request before giving up and failing.
-        type: integer
+        description: The maximum number of times to retry a retryable request before giving up and failing. Can be a hardcoded integer or a string interpolated from the connector config.
+        anyOf:
+          - type: integer
+          - type: string
+        interpolation_context:
+          - config
         default: 5
         examples:
           - 5
           - 0
           - 10
+          - "{{ config['max_retries_on_throttle'] }}"
       response_filters:
         title: Response Filters
         description: List of response filters to iterate on when deciding how to handle an error. When using an array of multiple filters, the filters will be applied sequentially and the response will be selected if it matches any of the filter's predicate.
@@ -4041,6 +4046,11 @@ definitions:
         type: array
         items:
           type: string
+      skipped:
+        description: "Statuses that indicate the job was skipped because there is no data to return. Jobs with these statuses will not be retried and no records will be fetched."
+        type: array
+        items:
+          type: string
   AsyncRetriever:
     title: Asynchronous Retriever
     description: "Retrieves records by Asynchronously sending requests to fetch records. The retriever acts as an orchestrator between the requester, the record selector, the paginator, and the partition router."
@@ -4094,6 +4104,14 @@ definitions:
         description: The time in minutes after which the single Async Job should be considered as Timed Out.
         anyOf:
           - type: integer
+          - type: string
+        interpolation_context:
+          - config
+      failed_retry_wait_time_in_seconds:
+        description: Time in seconds to wait before retrying a failed async job. Only applies to jobs that ran on the API side and reported a FAILED status (e.g. report generation failed due to a cooldown). Creation failures (HTTP errors when starting a job, such as 429s) and TIMED_OUT jobs are retried immediately and are not affected by this setting. When set, the orchestrator defers retry of real failed jobs until the wait time has elapsed, without blocking other jobs.
+        anyOf:
+          - type: integer
+            minimum: 1
           - type: string
         interpolation_context:
           - config

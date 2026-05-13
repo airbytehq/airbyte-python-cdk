@@ -6,6 +6,9 @@ import unittest
 from datetime import datetime
 from unittest.mock import Mock, PropertyMock
 
+import pytest
+
+from airbyte_cdk import AirbyteTracedException, FailureType
 from airbyte_cdk.sources.file_based.availability_strategy.default_file_based_availability_strategy import (
     DefaultFileBasedAvailabilityStrategy,
 )
@@ -61,7 +64,9 @@ class DefaultFileBasedAvailabilityStrategyTest(unittest.TestCase):
 
     def test_not_available_given_no_files(self) -> None:
         """
-        If no files are returned, then the stream is not available.
+        If no files are returned, then the stream is not available, and the
+        reason is the actionable `EMPTY_STREAM` message rather than a Python
+        traceback.
         """
         self._stream.get_files.return_value = []
 
@@ -71,6 +76,62 @@ class DefaultFileBasedAvailabilityStrategyTest(unittest.TestCase):
 
         assert not is_available
         assert "No files were identified in the stream" in reason
+        assert "Traceback" not in reason
+        assert "raise CheckAvailabilityError" not in reason
+
+    def test_check_availability_returns_actionable_reason_when_no_files(self) -> None:
+        """
+        `check_availability` (used by file-transfer / permissions-transfer modes)
+        must also return the actionable reason rather than a traceback string.
+        """
+        self._stream.get_files.return_value = []
+
+        is_available, reason = self._strategy.check_availability(self._stream, Mock(), Mock())
+
+        assert not is_available
+        assert "No files were identified in the stream" in reason
+        assert "Traceback" not in reason
+        assert "raise CheckAvailabilityError" not in reason
+
+    def test_airbyte_traced_exception_from_stream_reader_propagates(self) -> None:
+        """
+        When the underlying stream reader raises an `AirbyteTracedException`
+        (e.g. invalid credentials), the actionable message must propagate
+        unchanged instead of being wrapped in a generic `ERROR_LISTING_FILES`
+        reason.
+        """
+        self._stream.get_files.side_effect = AirbyteTracedException(
+            internal_message="raw provider error",
+            message="Could not authenticate with Google drive. Please check your credentials.",
+            failure_type=FailureType.config_error,
+        )
+
+        with pytest.raises(AirbyteTracedException) as exc_info:
+            self._strategy.check_availability_and_parsability(self._stream, Mock(), Mock())
+
+        assert (
+            exc_info.value.message
+            == "Could not authenticate with Google drive. Please check your credentials."
+        )
+        assert exc_info.value.failure_type == FailureType.config_error
+
+    def test_airbyte_traced_exception_propagates_in_check_availability(self) -> None:
+        """
+        Same propagation guarantee as above for `check_availability`.
+        """
+        self._stream.get_files.side_effect = AirbyteTracedException(
+            internal_message="raw provider error",
+            message="Could not authenticate with Google drive. Please check your credentials.",
+            failure_type=FailureType.config_error,
+        )
+
+        with pytest.raises(AirbyteTracedException) as exc_info:
+            self._strategy.check_availability(self._stream, Mock(), Mock())
+
+        assert (
+            exc_info.value.message
+            == "Could not authenticate with Google drive. Please check your credentials."
+        )
 
     def test_parse_records_is_not_called_with_parser_max_n_files_for_parsability_set(self) -> None:
         """
