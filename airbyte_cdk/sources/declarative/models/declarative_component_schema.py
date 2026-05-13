@@ -2045,10 +2045,10 @@ class DefaultErrorHandler(BaseModel):
         description="List of backoff strategies to use to determine how long to wait before retrying a retryable request.",
         title="Backoff Strategies",
     )
-    max_retries: Optional[int] = Field(
+    max_retries: Optional[Union[int, str]] = Field(
         5,
-        description="The maximum number of time to retry a retryable request before giving up and failing.",
-        examples=[5, 0, 10],
+        description="The maximum number of times to retry a retryable request before giving up and failing. Can be a hardcoded integer or a string interpolated from the connector config.",
+        examples=[5, 0, 10, "{{ config['max_retries_on_throttle'] }}"],
         title="Max Retry Count",
     )
     response_filters: Optional[List[HttpResponseFilter]] = Field(
@@ -3073,6 +3073,10 @@ class AsyncRetriever(BaseModel):
     polling_job_timeout: Optional[Union[int, str]] = Field(
         None,
         description="The time in minutes after which the single Async Job should be considered as Timed Out.",
+    )
+    failed_retry_wait_time_in_seconds: Optional[Union[int, str]] = Field(
+        None,
+        description="Time in seconds to wait before retrying a failed async job. Only applies to jobs that ran on the API side and reported a FAILED status (e.g. report generation failed due to a cooldown). Creation failures (HTTP errors when starting a job, such as 429s) and TIMED_OUT jobs are retried immediately and are not affected by this setting. When set, the orchestrator defers retry of real failed jobs until the wait time has elapsed, without blocking other jobs.",
     )
     download_target_requester: Optional[Union[HttpRequester, CustomRequester]] = Field(
         None,

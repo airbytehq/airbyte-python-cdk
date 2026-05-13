@@ -1874,13 +1874,18 @@ definitions:
             - "$ref": "#/definitions/CustomBackoffStrategy"
       max_retries:
         title: Max Retry Count
-        description: The maximum number of time to retry a retryable request before giving up and failing.
-        type: integer
+        description: The maximum number of times to retry a retryable request before giving up and failing. Can be a hardcoded integer or a string interpolated from the connector config.
+        anyOf:
+          - type: integer
+          - type: string
+        interpolation_context:
+          - config
         default: 5
         examples:
           - 5
           - 0
           - 10
+          - "{{ config['max_retries_on_throttle'] }}"
       response_filters:
         title: Response Filters
         description: List of response filters to iterate on when deciding how to handle an error. When using an array of multiple filters, the filters will be applied sequentially and the response will be selected if it matches any of the filter's predicate.
@@ -4099,6 +4104,14 @@ definitions:
         description: The time in minutes after which the single Async Job should be considered as Timed Out.
         anyOf:
           - type: integer
+          - type: string
+        interpolation_context:
+          - config
+      failed_retry_wait_time_in_seconds:
+        description: Time in seconds to wait before retrying a failed async job. Only applies to jobs that ran on the API side and reported a FAILED status (e.g. report generation failed due to a cooldown). Creation failures (HTTP errors when starting a job, such as 429s) and TIMED_OUT jobs are retried immediately and are not affected by this setting. When set, the orchestrator defers retry of real failed jobs until the wait time has elapsed, without blocking other jobs.
+        anyOf:
+          - type: integer
+            minimum: 1
           - type: string
         interpolation_context:
           - config
