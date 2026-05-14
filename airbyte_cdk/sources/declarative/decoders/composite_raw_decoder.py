@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from io import BufferedIOBase, TextIOWrapper
 from typing import Any, List, Optional
 
+import ijson
 import orjson
 import requests
 
@@ -96,6 +97,33 @@ class JsonLineParser(Parser):
                 yield json.loads(line.decode(encoding=self.encoding or "utf-8"))
             except json.JSONDecodeError as e:
                 logger.warning(f"Cannot decode/parse line {line!r} as JSON, error: {e}")
+
+
+@dataclass
+class JsonItemsParser(Parser):
+    """Streaming JSON parser that yields each element of a nested array.
+
+    Use this for very large single-document JSON responses where the records
+    of interest live under a nested array (e.g. `dataByDepartmentAndSearchTerm`,
+    `data.users`). Powered by `ijson`, this parser does not materialize the
+    full document — peak memory is bounded by a single record plus ijson's
+    internal parse buffers, regardless of document size.
+
+    `items_path` uses `ijson` dotted path syntax (e.g. `data.users`), not
+    JSONPath syntax (`$.data.users[*]`). Internally we append `.item`, which
+    is the `ijson` convention for "iterate elements of this array".
+    """
+
+    items_path: str = ""
+    encoding: Optional[str] = "utf-8"
+
+    def parse(self, data: BufferedIOBase) -> PARSER_OUTPUT_TYPE:
+        if not self.items_path:
+            raise ValueError("JsonItemsParser requires a non-empty items_path.")
+        # ijson auto-selects the best available backend (yajl2_c when present)
+        # and reads from `data` lazily — it does not call `.read()` on the
+        # whole stream up front.
+        yield from ijson.items(data, f"{self.items_path}.item")
 
 
 @dataclass
