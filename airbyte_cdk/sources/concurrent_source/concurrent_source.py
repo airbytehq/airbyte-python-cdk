@@ -12,6 +12,7 @@ from airbyte_cdk.sources.concurrent_source.concurrent_read_processor import Conc
 from airbyte_cdk.sources.concurrent_source.partition_generation_completed_sentinel import (
     PartitionGenerationCompletedSentinel,
 )
+from airbyte_cdk.sources.concurrent_source.queue_registry import register_queue, unregister_queue
 from airbyte_cdk.sources.concurrent_source.stream_thread_exception import StreamThreadException
 from airbyte_cdk.sources.concurrent_source.thread_pool_manager import ThreadPoolManager
 from airbyte_cdk.sources.message import InMemoryMessageRepository, MessageRepository
@@ -106,29 +107,34 @@ class ConcurrentSource:
         streams: List[AbstractStream],
     ) -> Iterator[AirbyteMessage]:
         self._logger.info("Starting syncing")
-        concurrent_stream_processor = ConcurrentReadProcessor(
-            streams,
-            PartitionEnqueuer(self._queue, self._threadpool),
-            self._threadpool,
-            self._logger,
-            self._slice_logger,
-            self._message_repository,
-            PartitionReader(
+        # Register queue so the heartbeat thread can report queue stats for deadlock diagnosis
+        register_queue(self._queue)
+        try:
+            concurrent_stream_processor = ConcurrentReadProcessor(
+                streams,
+                PartitionEnqueuer(self._queue, self._threadpool),
+                self._threadpool,
+                self._logger,
+                self._slice_logger,
+                self._message_repository,
+                PartitionReader(
+                    self._queue,
+                    PartitionLogger(self._slice_logger, self._logger, self._message_repository),
+                ),
+            )
+
+            # Enqueue initial partition generation tasks
+            yield from self._submit_initial_partition_generators(concurrent_stream_processor)
+
+            # Read from the queue until all partitions were generated and read
+            yield from self._consume_from_queue(
                 self._queue,
-                PartitionLogger(self._slice_logger, self._logger, self._message_repository),
-            ),
-        )
-
-        # Enqueue initial partition generation tasks
-        yield from self._submit_initial_partition_generators(concurrent_stream_processor)
-
-        # Read from the queue until all partitions were generated and read
-        yield from self._consume_from_queue(
-            self._queue,
-            concurrent_stream_processor,
-        )
-        self._threadpool.check_for_errors_and_shutdown()
-        self._logger.info("Finished syncing")
+                concurrent_stream_processor,
+            )
+            self._threadpool.check_for_errors_and_shutdown()
+            self._logger.info("Finished syncing")
+        finally:
+            unregister_queue()
 
     def _submit_initial_partition_generators(
         self, concurrent_stream_processor: ConcurrentReadProcessor
