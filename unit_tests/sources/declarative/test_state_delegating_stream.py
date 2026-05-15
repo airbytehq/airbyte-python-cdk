@@ -25,6 +25,7 @@ from airbyte_cdk.sources.declarative.concurrent_declarative_source import (
     ConcurrentDeclarativeSource,
 )
 from airbyte_cdk.test.mock_http import HttpMocker, HttpRequest, HttpResponse
+from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 
 _CONFIG = {"start_date": "2024-07-01T00:00:00.000Z"}
 _MANIFEST = {
@@ -591,7 +592,7 @@ def test_cursor_age_validation_raises_error_for_incrementing_count_cursor():
 
 
 def test_cursor_age_validation_raises_error_for_unparseable_cursor():
-    """Test that unparseable cursor datetime raises ValueError when api_retention_period is set."""
+    """Test that unparseable cursor datetime raises traced exception when api_retention_period is set."""
     manifest = _create_manifest_with_retention_period("P7D")
 
     state = [
@@ -608,8 +609,14 @@ def test_cursor_age_validation_raises_error_for_unparseable_cursor():
         source_config=manifest, config=_CONFIG, catalog=None, state=state
     )
 
-    with pytest.raises(ValueError, match="not-a-date"):
+    with pytest.raises(AirbyteTracedException) as exc_info:
         source.discover(logger=MagicMock(), config=_CONFIG)
+
+    assert (
+        exc_info.value.message
+        == "State cursor timestamp for stream TestStream cannot be parsed by this connector version."
+    )
+    assert "not-a-date" in (exc_info.value.internal_message or "")
 
 
 @freezegun.freeze_time("2024-07-15")
