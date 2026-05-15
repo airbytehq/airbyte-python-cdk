@@ -19,6 +19,7 @@ from typing import (
     Union,
 )
 
+from airbyte_cdk.models import FailureType
 from airbyte_cdk.sources.connector_state_manager import ConnectorStateManager
 from airbyte_cdk.sources.message import MessageRepository, NoopMessageRepository
 from airbyte_cdk.sources.streams import NO_CURSOR_STATE_KEY
@@ -30,6 +31,7 @@ from airbyte_cdk.sources.streams.concurrent.state_converters.abstract_stream_sta
     AbstractStreamStateConverter,
 )
 from airbyte_cdk.sources.types import Record, StreamSlice
+from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 
 LOGGER = logging.getLogger("airbyte")
 
@@ -265,28 +267,36 @@ class ConcurrentCursor(Cursor):
     def _get_concurrent_state(
         self, state: MutableMapping[str, Any]
     ) -> Tuple[CursorValueType, MutableMapping[str, Any]]:
-        if self._connector_state_converter.is_state_message_compatible(state):
-            partitioned_state = self._connector_state_converter.deserialize(state)
-            slices_from_partitioned_state = partitioned_state.get("slices", [])
+        try:
+            if self._connector_state_converter.is_state_message_compatible(state):
+                partitioned_state = self._connector_state_converter.deserialize(state)
+                slices_from_partitioned_state = partitioned_state.get("slices", [])
 
-            value_from_partitioned_state = None
-            if slices_from_partitioned_state:
-                # We assume here that the slices have been already merged
-                first_slice = slices_from_partitioned_state[0]
-                value_from_partitioned_state = (
-                    first_slice[self._connector_state_converter.MOST_RECENT_RECORD_KEY]
-                    if self._connector_state_converter.MOST_RECENT_RECORD_KEY in first_slice
-                    else first_slice[self._connector_state_converter.END_KEY]
+                value_from_partitioned_state = None
+                if slices_from_partitioned_state:
+                    # We assume here that the slices have been already merged
+                    first_slice = slices_from_partitioned_state[0]
+                    value_from_partitioned_state = (
+                        first_slice[self._connector_state_converter.MOST_RECENT_RECORD_KEY]
+                        if self._connector_state_converter.MOST_RECENT_RECORD_KEY in first_slice
+                        else first_slice[self._connector_state_converter.END_KEY]
+                    )
+                return (
+                    value_from_partitioned_state
+                    or self._start
+                    or self._connector_state_converter.zero_value,
+                    partitioned_state,
                 )
-            return (
-                value_from_partitioned_state
-                or self._start
-                or self._connector_state_converter.zero_value,
-                partitioned_state,
+            return self._connector_state_converter.convert_from_sequential_state(
+                self._cursor_field, state, self._start
             )
-        return self._connector_state_converter.convert_from_sequential_state(
-            self._cursor_field, state, self._start
-        )
+        except ValueError as error:
+            raise AirbyteTracedException(
+                message=f"State cursor timestamp for stream {self._stream_name} cannot be parsed by this connector version.",
+                internal_message=f"Failed to parse state cursor field {self._cursor_field.cursor_field_key} for stream {self._stream_name}: {error}",
+                failure_type=FailureType.system_error,
+                exception=error,
+            ) from error
 
     def observe(self, record: Record) -> None:
         # Because observe writes to the most_recent_cursor_value_per_partition mapping,

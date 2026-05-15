@@ -11,6 +11,7 @@ from unittest.mock import Mock
 import freezegun
 import pytest
 
+from airbyte_cdk.models import FailureType
 from airbyte_cdk.sources.connector_state_manager import ConnectorStateManager
 from airbyte_cdk.sources.message import MessageRepository
 from airbyte_cdk.sources.streams import NO_CURSOR_STATE_KEY
@@ -36,6 +37,7 @@ from airbyte_cdk.sources.streams.concurrent.state_converters.datetime_stream_sta
     EpochValueConcurrentStreamStateConverter,
 )
 from airbyte_cdk.sources.types import Record, StreamSlice
+from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 
 _A_STREAM_NAME = "a stream name"
 _A_STREAM_NAMESPACE = "a stream namespace"
@@ -121,6 +123,35 @@ class ConcurrentCursorStateTest(TestCase):
         )
 
         # did not raise
+
+    def test_given_unparseable_state_cursor_when_initialize_then_raise_traced_exception(
+        self,
+    ) -> None:
+        with pytest.raises(AirbyteTracedException) as exc_info:
+            ConcurrentCursor(
+                _A_STREAM_NAME,
+                _A_STREAM_NAMESPACE,
+                {_A_CURSOR_FIELD_KEY: "2024-01-15T23:59:57"},
+                self._message_repository,
+                self._state_manager,
+                CustomFormatConcurrentStreamStateConverter(
+                    datetime_format="%Y-%m-%dT00:00:00",
+                    input_datetime_formats=["%Y-%m-%dT%H:%M:%S.%f%z"],
+                ),
+                CursorField(_A_CURSOR_FIELD_KEY),
+                _NO_SLICE_BOUNDARIES,
+                None,
+                CustomFormatConcurrentStreamStateConverter.get_end_provider(),
+                _NO_LOOKBACK_WINDOW,
+            )
+
+        assert (
+            exc_info.value.message
+            == f"State cursor timestamp for stream {_A_STREAM_NAME} cannot be parsed by this connector version."
+        )
+        assert exc_info.value.failure_type == FailureType.system_error
+        assert "Failed to parse state cursor field" in (exc_info.value.internal_message or "")
+        assert "No format in" in (exc_info.value.internal_message or "")
 
     def test_given_boundary_fields_when_close_partition_then_emit_state(self) -> None:
         cursor = self._cursor_with_slice_boundary_fields()
