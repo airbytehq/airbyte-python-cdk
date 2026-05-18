@@ -2,8 +2,6 @@
 # Copyright (c) 2026 Airbyte, Inc., all rights reserved.
 #
 
-from pathlib import Path
-
 import pytest
 
 from airbyte_cdk.models import FailureType
