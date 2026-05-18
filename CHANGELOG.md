@@ -4,10 +4,6 @@ Newer updates can be found here: [GitHub Release Notes](https://github.com/airby
 
 # Changelog
 
-## 6.5.3
-
-HttpClient: Improve retry-exhausted server error messages for HTTP 5xx responses.
-
 ## 6.5.2
 
 bugfix: Ensure that streams with partition router are not executed concurrently
