@@ -104,14 +104,14 @@ class CheckStream(ConnectionChecker):
         return True, None
 
     def _get_stream_names(self, config: Mapping[str, Any]) -> List[str]:
-        stream_names = config.get(CHECK_STREAM_NAMES_CONFIG_KEY)
-        if stream_names is None:
+        configured_stream_names = config.get(CHECK_STREAM_NAMES_CONFIG_KEY)
+        if configured_stream_names is None:
             return self.stream_names
-        if not isinstance(stream_names, list) or not all(
-            isinstance(stream_name, str) for stream_name in stream_names
+        if not isinstance(configured_stream_names, list) or not all(
+            isinstance(stream_name, str) for stream_name in configured_stream_names
         ):
             raise ValueError(f"{CHECK_STREAM_NAMES_CONFIG_KEY} must be a list of strings.")
-        return stream_names
+        return configured_stream_names
 
     def _check_stream_availability(
         self,
