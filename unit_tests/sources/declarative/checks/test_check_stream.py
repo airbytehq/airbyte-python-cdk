@@ -78,6 +78,82 @@ def mock_read_records(responses, default_response=None, **kwargs):
     )
 
 
+def test_check_stream_names_can_be_overridden_from_config():
+    static_stream = MagicMock(spec=Stream)
+    static_stream.name = "static_stream"
+    selected_stream = MagicMock(spec=Stream)
+    selected_stream.name = "selected_stream"
+    selected_stream.read_records.return_value = iter([record])
+    selected_stream.stream_slices.return_value = iter([{}])
+    source = MagicMock()
+    source.streams.return_value = [static_stream, selected_stream]
+
+    check_stream = CheckStream(["static_stream"], parameters={})
+
+    assert check_stream.check_connection(
+        source, logger, {"airbyte_check_stream_names": ["selected_stream"]}
+    ) == (True, None)
+    static_stream.stream_slices.assert_not_called()
+
+
+def test_check_stream_names_override_accepts_empty_list():
+    stream = MagicMock(spec=Stream)
+    stream.name = "static_stream"
+    source = MagicMock()
+    source.streams.return_value = [stream]
+
+    check_stream = CheckStream(["static_stream"], parameters={})
+
+    assert check_stream.check_connection(source, logger, {"airbyte_check_stream_names": []}) == (
+        True,
+        None,
+    )
+    stream.stream_slices.assert_not_called()
+
+
+@pytest.mark.parametrize("override", ["selected_stream", [1], ["selected_stream", 1]])
+def test_check_stream_names_override_requires_list_of_strings(override):
+    stream = MagicMock(spec=Stream)
+    stream.name = "selected_stream"
+    source = MagicMock()
+    source.streams.return_value = [stream]
+
+    check_stream = CheckStream(["selected_stream"], parameters={})
+
+    with pytest.raises(ValueError, match="airbyte_check_stream_names must be a list of strings."):
+        check_stream.check_connection(source, logger, {"airbyte_check_stream_names": override})
+
+
+def test_check_stream_names_override_rejects_unknown_stream():
+    stream = MagicMock(spec=Stream)
+    stream.name = "selected_stream"
+    source = MagicMock()
+    source.streams.return_value = [stream]
+
+    check_stream = CheckStream(["selected_stream"], parameters={})
+
+    with pytest.raises(ValueError, match="unknown_stream is not part of the catalog."):
+        check_stream.check_connection(
+            source, logger, {"airbyte_check_stream_names": ["unknown_stream"]}
+        )
+
+
+def test_check_stream_names_override_returns_unavailable_stream_message():
+    stream = MagicMock(spec=Stream)
+    stream.name = "selected_stream"
+    stream.stream_slices.return_value = iter([])
+    source = MagicMock()
+    source.streams.return_value = [stream]
+
+    check_stream = CheckStream(["other_stream"], parameters={})
+
+    stream_is_available, reason = check_stream.check_connection(
+        source, logger, {"airbyte_check_stream_names": ["selected_stream"]}
+    )
+    assert not stream_is_available
+    assert "no stream slices were found, likely because the parent stream is empty" in reason
+
+
 def test_check_empty_stream():
     stream = MagicMock(spec=Stream)
     stream.name = "s1"

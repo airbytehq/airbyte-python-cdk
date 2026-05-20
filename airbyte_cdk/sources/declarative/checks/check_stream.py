@@ -13,6 +13,8 @@ from airbyte_cdk.sources.streams.concurrent.abstract_stream import AbstractStrea
 from airbyte_cdk.sources.streams.core import Stream
 from airbyte_cdk.sources.streams.http.availability_strategy import HttpAvailabilityStrategy
 
+CHECK_STREAM_NAMES_CONFIG_KEY = "airbyte_check_stream_names"
+
 
 def evaluate_availability(
     stream: Union[Stream, AbstractStream], logger: logging.Logger
@@ -78,7 +80,7 @@ class CheckStream(ConnectionChecker):
             return self._log_error(logger, "discovering streams", error)
 
         stream_name_to_stream = {s.name: s for s in streams}
-        for stream_name in self.stream_names:
+        for stream_name in self._get_stream_names(config):
             if stream_name not in stream_name_to_stream:
                 raise ValueError(
                     f"{stream_name} is not part of the catalog. Expected one of {list(stream_name_to_stream.keys())}."
@@ -100,6 +102,16 @@ class CheckStream(ConnectionChecker):
             return self._check_dynamic_streams_availability(source, stream_name_to_stream, logger)
 
         return True, None
+
+    def _get_stream_names(self, config: Mapping[str, Any]) -> List[str]:
+        stream_names = config.get(CHECK_STREAM_NAMES_CONFIG_KEY)
+        if stream_names is None:
+            return self.stream_names
+        if not isinstance(stream_names, list) or not all(
+            isinstance(stream_name, str) for stream_name in stream_names
+        ):
+            raise ValueError(f"{CHECK_STREAM_NAMES_CONFIG_KEY} must be a list of strings.")
+        return stream_names
 
     def _check_stream_availability(
         self,
