@@ -72,6 +72,7 @@ class CheckStream(ConnectionChecker):
         config: Mapping[str, Any],
     ) -> Tuple[bool, Any]:
         """Checks the connection to the source and its streams."""
+        stream_names = self._get_stream_names(config)
         try:
             streams: List[Union[Stream, AbstractStream]] = source.streams(config=config)  # type: ignore  # this is a migration step and we expect the declarative CDK to migrate off of ConnectionChecker
             if not streams:
@@ -80,7 +81,7 @@ class CheckStream(ConnectionChecker):
             return self._log_error(logger, "discovering streams", error)
 
         stream_name_to_stream = {s.name: s for s in streams}
-        for stream_name in self._get_stream_names(config):
+        for stream_name in stream_names:
             if stream_name not in stream_name_to_stream:
                 raise ValueError(
                     f"{stream_name} is not part of the catalog. Expected one of {list(stream_name_to_stream.keys())}."
@@ -111,6 +112,7 @@ class CheckStream(ConnectionChecker):
             isinstance(stream_name, str) for stream_name in configured_stream_names
         ):
             raise ValueError(f"{CHECK_STREAM_NAMES_CONFIG_KEY} must be a list of strings.")
+        # An empty override intentionally skips static stream checks; dynamic stream checks still run when configured.
         return configured_stream_names
 
     def _check_stream_availability(
