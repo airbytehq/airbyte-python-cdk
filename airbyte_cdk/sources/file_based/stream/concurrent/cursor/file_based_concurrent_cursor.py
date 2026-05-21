@@ -183,10 +183,7 @@ class FileBasedConcurrentCursor(AbstractConcurrentFileBasedCursor):
 
     def _throttle_state_message(self) -> Optional[float]:
         current_time = time.time()
-        if (
-            current_time - self._last_emission_time
-            <= self.DEFAULT_STATE_EMISSION_INTERVAL_SECONDS
-        ):
+        if current_time - self._last_emission_time <= self.DEFAULT_STATE_EMISSION_INTERVAL_SECONDS:
             return None
         return current_time
 
