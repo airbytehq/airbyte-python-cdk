@@ -6,12 +6,13 @@ import logging
 import warnings
 from io import IOBase
 from pathlib import Path
-from typing import Any, Dict, Iterable, Mapping, Optional, Tuple, Union
+from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple, Union
 
 import orjson
 import pandas as pd
 from pydantic.v1 import BaseModel
 
+from airbyte_cdk.sources.file_based.config.excel_format import SheetsToSync
 from airbyte_cdk.sources.file_based.config.file_based_stream_config import (
     ExcelFormat,
     FileBasedStreamConfig,
@@ -33,6 +34,7 @@ from airbyte_cdk.sources.file_based.schema_helpers import SchemaType
 
 class ExcelParser(FileTypeParser):
     ENCODING = None
+    SHEET_NAME_COLUMN = "_ab_sheet_name"
 
     def check_config(self, config: FileBasedStreamConfig) -> Tuple[bool, Optional[str]]:
         """
@@ -48,32 +50,21 @@ class ExcelParser(FileTypeParser):
         logger: logging.Logger,
     ) -> SchemaType:
         """
-        Infers the schema of the Excel file by examining its contents.
-
-        Args:
-            config (FileBasedStreamConfig): Configuration for the file-based stream.
-            file (RemoteFile): The remote file to be read.
-            stream_reader (AbstractFileBasedStreamReader): Reader to read the file.
-            logger (logging.Logger): Logger for logging information and errors.
-
-        Returns:
-            SchemaType: Inferred schema of the Excel file.
+        Infer the schema of the Excel file by examining its contents.
         """
-
-        # Validate the format of the config
         self.validate_format(config.format, logger)
+        excel_format = self._as_excel_format(config.format, logger)
 
         fields: Dict[str, str] = {}
 
         with stream_reader.open_file(file, self.file_read_mode, self.ENCODING, logger) as fp:
-            df = self.open_and_parse_file(fp, logger, file)
-            for column, df_type in df.dtypes.items():
-                # Choose the broadest data type if the column's data type differs in dataframes
-                prev_frame_column_type = fields.get(column)  # type: ignore [call-overload]
-                fields[column] = self.dtype_to_json_type(  # type: ignore [index]
-                    prev_frame_column_type,
-                    df_type,
-                )
+            for df in self.parse_dataframes(fp, logger, file, excel_format):
+                for column, df_type in df.dtypes.items():
+                    prev_frame_column_type = fields.get(column)  # type: ignore [call-overload]
+                    fields[column] = self.dtype_to_json_type(  # type: ignore [index]
+                        prev_frame_column_type,
+                        df_type,
+                    )
 
         schema = {
             field: (
@@ -94,33 +85,21 @@ class ExcelParser(FileTypeParser):
         discovered_schema: Optional[Mapping[str, SchemaType]] = None,
     ) -> Iterable[Dict[str, Any]]:
         """
-        Parses records from an Excel file with fallback error handling.
-
-        Args:
-            config (FileBasedStreamConfig): Configuration for the file-based stream.
-            file (RemoteFile): The remote file to be read.
-            stream_reader (AbstractFileBasedStreamReader): Reader to read the file.
-            logger (logging.Logger): Logger for logging information and errors.
-            discovered_schema (Optional[Mapping[str, SchemaType]]): Discovered schema for validation.
-
-        Yields:
-            Iterable[Dict[str, Any]]: Parsed records from the Excel file.
+        Parse records from an Excel file with fallback error handling.
         """
-
-        # Validate the format of the config
         self.validate_format(config.format, logger)
+        excel_format = self._as_excel_format(config.format, logger)
 
         try:
-            # Open and parse the file using the stream reader
             with stream_reader.open_file(file, self.file_read_mode, self.ENCODING, logger) as fp:
-                df = self.open_and_parse_file(fp, logger, file)
-                # Yield records as dictionaries
-                # DataFrame.to_dict() method returns datetime values in pandas.Timestamp values, which are not serializable by orjson
-                # DataFrame.to_json() returns string with datetime values serialized to iso8601 with microseconds to align with pydantic behavior
-                # see PR description: https://github.com/airbytehq/airbyte/pull/44444/
-                yield from orjson.loads(
-                    df.to_json(orient="records", date_format="iso", date_unit="us")
-                )
+                for df in self.parse_dataframes(fp, logger, file, excel_format):
+                    # Yield records as dictionaries
+                    # DataFrame.to_dict() method returns datetime values in pandas.Timestamp values, which are not serializable by orjson
+                    # DataFrame.to_json() returns string with datetime values serialized to iso8601 with microseconds to align with pydantic behavior
+                    # see PR description: https://github.com/airbytehq/airbyte/pull/44444/
+                    yield from orjson.loads(
+                        df.to_json(orient="records", date_format="iso", date_unit="us")
+                    )
 
         except Exception as exc:
             # Raise a RecordParseError if any exception occurs during parsing
@@ -131,10 +110,7 @@ class ExcelParser(FileTypeParser):
     @property
     def file_read_mode(self) -> FileReadMode:
         """
-        Returns the file read mode for the Excel file.
-
-        Returns:
-            FileReadMode: The file read mode (binary).
+        Return the file read mode for Excel files.
         """
         return FileReadMode.READ_BINARY
 
@@ -170,17 +146,130 @@ class ExcelParser(FileTypeParser):
     @staticmethod
     def validate_format(excel_format: BaseModel, logger: logging.Logger) -> None:
         """
-        Validates if the given format is of type ExcelFormat.
-
-        Args:
-            excel_format (Any): The format to be validated.
-
-        Raises:
-            ConfigValidationError: If the format is not ExcelFormat.
+        Validate that the format is `ExcelFormat`.
         """
         if not isinstance(excel_format, ExcelFormat):
             logger.info(f"Expected ExcelFormat, got {excel_format}")
             raise ConfigValidationError(FileBasedSourceError.CONFIG_VALIDATION_ERROR)
+
+    @staticmethod
+    def _as_excel_format(excel_format: BaseModel, logger: logging.Logger) -> ExcelFormat:
+        ExcelParser.validate_format(excel_format, logger)
+        if isinstance(excel_format, ExcelFormat):
+            return excel_format
+        raise ConfigValidationError(FileBasedSourceError.CONFIG_VALIDATION_ERROR)
+
+    def parse_dataframes(
+        self,
+        fp: Union[IOBase, str, Path],
+        logger: logging.Logger,
+        file: RemoteFile,
+        excel_format: ExcelFormat,
+    ) -> Iterable[pd.DataFrame]:
+        if self._uses_legacy_first_sheet_only(excel_format):
+            yield self.open_and_parse_file(fp, logger, file)
+            return
+
+        yield from self._parse_sheets(fp, logger, file, excel_format)
+
+    @staticmethod
+    def _uses_legacy_first_sheet_only(excel_format: ExcelFormat) -> bool:
+        return (
+            not excel_format.sheet_names
+            and excel_format.sheets_to_sync == SheetsToSync.FIRST_SHEET_ONLY
+        )
+
+    def _parse_sheets(
+        self,
+        fp: Union[IOBase, str, Path],
+        logger: logging.Logger,
+        file: RemoteFile,
+        excel_format: ExcelFormat,
+    ) -> Iterable[pd.DataFrame]:
+        try:
+            yield from self._parse_sheets_with_calamine(fp, logger, file, excel_format)
+        except ExcelCalamineParsingError:
+            yield from self._parse_sheets_with_openpyxl(fp, logger, file, excel_format)
+
+    def _parse_sheets_with_calamine(
+        self,
+        fp: Union[IOBase, str, Path],
+        logger: logging.Logger,
+        file: RemoteFile,
+        excel_format: ExcelFormat,
+    ) -> Iterable[pd.DataFrame]:
+        try:
+            with pd.ExcelFile(fp, engine="calamine") as workbook:  # type: ignore [arg-type]
+                sheet_names = self._resolve_sheet_names(workbook, excel_format)
+                yield from self._parse_sheets_from_workbook(workbook, sheet_names, file)
+        except BaseException as exc:
+            if "ValueError" in str(exc):
+                logger.warning(
+                    f"Calamine parsing failed for {file.file_uri_for_logging}, falling back to openpyxl: {exc}"
+                )
+                raise ExcelCalamineParsingError(
+                    f"Calamine engine failed to parse {file.file_uri_for_logging}",
+                    filename=file.uri,
+                ) from exc
+            raise exc
+
+    def _parse_sheets_with_openpyxl(
+        self,
+        fp: Union[IOBase, str, Path],
+        logger: logging.Logger,
+        file: RemoteFile,
+        excel_format: ExcelFormat,
+    ) -> Iterable[pd.DataFrame]:
+        # Some file-like objects are not seekable.
+        if hasattr(fp, "seek"):
+            try:
+                fp.seek(0)  # type: ignore [union-attr]
+            except OSError as exc:
+                logger.info(
+                    f"Could not rewind stream for {file.file_uri_for_logging}; "
+                    f"proceeding with openpyxl from current position: {exc}"
+                )
+
+        with warnings.catch_warnings(record=True) as warning_records:
+            warnings.simplefilter("always")
+            with pd.ExcelFile(fp, engine="openpyxl") as workbook:  # type: ignore [arg-type]
+                sheet_names = self._resolve_sheet_names(workbook, excel_format)
+                dataframes = list(self._parse_sheets_from_workbook(workbook, sheet_names, file))
+
+        for warning in warning_records:
+            logger.warning(f"Openpyxl warning for {file.file_uri_for_logging}: {warning.message}")
+
+        yield from dataframes
+
+    def _parse_sheets_from_workbook(
+        self,
+        workbook: pd.ExcelFile,
+        sheet_names: List[str],
+        file: RemoteFile,
+    ) -> Iterable[pd.DataFrame]:
+        workbook_sheet_names = [str(sheet_name) for sheet_name in workbook.sheet_names]
+        missing_sheet_names = sorted(set(sheet_names) - set(workbook_sheet_names))
+        if missing_sheet_names:
+            raise ValueError(
+                f"Sheet names {missing_sheet_names} were not found in {file.file_uri_for_logging}"
+            )
+
+        for sheet_name in sheet_names:
+            df = workbook.parse(sheet_name=sheet_name)  # type: ignore [call-overload]
+            if self.SHEET_NAME_COLUMN in df.columns:
+                raise ValueError(
+                    f"Column {self.SHEET_NAME_COLUMN} is reserved for sheet metadata in {file.file_uri_for_logging}"
+                )
+            df[self.SHEET_NAME_COLUMN] = sheet_name
+            yield df
+
+    @staticmethod
+    def _resolve_sheet_names(workbook: pd.ExcelFile, excel_format: ExcelFormat) -> List[str]:
+        if excel_format.sheet_names:
+            return excel_format.sheet_names
+        if excel_format.sheets_to_sync == SheetsToSync.ALL_SHEETS:
+            return [str(sheet_name) for sheet_name in workbook.sheet_names]
+        return [str(sheet_name) for sheet_name in workbook.sheet_names[:1]]
 
     def _open_and_parse_file_with_calamine(
         self,
