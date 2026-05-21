@@ -13,7 +13,7 @@ from airbyte_cdk.sources.streams.concurrent.abstract_stream import AbstractStrea
 from airbyte_cdk.sources.streams.core import Stream
 from airbyte_cdk.sources.streams.http.availability_strategy import HttpAvailabilityStrategy
 
-CHECK_STREAM_NAMES_CONFIG_KEY = "airbyte_check_stream_names"
+CHECK_STREAM_NAMES_CONFIG_KEY = "__airbyte_check_stream_names"
 
 
 def evaluate_availability(

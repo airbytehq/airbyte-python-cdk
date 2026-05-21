@@ -93,7 +93,7 @@ def test_check_stream_names_can_be_overridden_from_config():
     check_stream = CheckStream(["static_stream"], parameters={})
 
     assert check_stream.check_connection(
-        source, logger, {"airbyte_check_stream_names": ["selected_stream"]}
+        source, logger, {"__airbyte_check_stream_names": ["selected_stream"]}
     ) == (True, None)
     static_stream.stream_slices.assert_not_called()
 
@@ -107,7 +107,7 @@ def test_check_stream_names_override_accepts_empty_list():
 
     check_stream = CheckStream(["static_stream"], parameters={})
 
-    assert check_stream.check_connection(source, logger, {"airbyte_check_stream_names": []}) == (
+    assert check_stream.check_connection(source, logger, {"__airbyte_check_stream_names": []}) == (
         True,
         None,
     )
@@ -124,8 +124,8 @@ def test_check_stream_names_override_requires_list_of_strings(override):
 
     check_stream = CheckStream(["selected_stream"], parameters={})
 
-    with pytest.raises(ValueError, match="airbyte_check_stream_names must be a list of strings."):
-        check_stream.check_connection(source, logger, {"airbyte_check_stream_names": override})
+    with pytest.raises(ValueError, match="__airbyte_check_stream_names must be a list of strings."):
+        check_stream.check_connection(source, logger, {"__airbyte_check_stream_names": override})
 
 
 def test_check_stream_names_override_rejects_unknown_stream():
@@ -139,7 +139,7 @@ def test_check_stream_names_override_rejects_unknown_stream():
 
     with pytest.raises(ValueError, match="unknown_stream is not part of the catalog."):
         check_stream.check_connection(
-            source, logger, {"airbyte_check_stream_names": ["unknown_stream"]}
+            source, logger, {"__airbyte_check_stream_names": ["unknown_stream"]}
         )
 
 
@@ -154,7 +154,7 @@ def test_check_stream_names_override_returns_unavailable_stream_message():
     check_stream = CheckStream(["other_stream"], parameters={})
 
     stream_is_available, reason = check_stream.check_connection(
-        source, logger, {"airbyte_check_stream_names": ["selected_stream"]}
+        source, logger, {"__airbyte_check_stream_names": ["selected_stream"]}
     )
     assert not stream_is_available
     assert "no stream slices were found, likely because the parent stream is empty" in reason
@@ -164,9 +164,9 @@ def test_check_stream_names_override_validates_before_stream_discovery():
     source = MagicMock()
     check_stream = CheckStream(["selected_stream"], parameters={})
 
-    with pytest.raises(ValueError, match="airbyte_check_stream_names must be a list of strings."):
+    with pytest.raises(ValueError, match="__airbyte_check_stream_names must be a list of strings."):
         check_stream.check_connection(
-            source, logger, {"airbyte_check_stream_names": "selected_stream"}
+            source, logger, {"__airbyte_check_stream_names": "selected_stream"}
         )
 
     source.streams.assert_not_called()
@@ -810,7 +810,7 @@ def test_check_empty_static_stream_override_still_checks_dynamic_streams():
             }
         },
     }
-    check_config = {**_CONFIG, "airbyte_check_stream_names": []}
+    check_config = {**_CONFIG, "__airbyte_check_stream_names": []}
 
     with HttpMocker() as http_mocker:
         static_stream_request = HttpRequest(url="https://api.test.com/static")
