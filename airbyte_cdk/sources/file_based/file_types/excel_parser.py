@@ -187,9 +187,10 @@ class ExcelParser(FileTypeParser):
         excel_format: ExcelFormat,
     ) -> Iterable[pd.DataFrame]:
         try:
-            yield from self._parse_sheets_with_calamine(fp, logger, file, excel_format)
+            dataframes = list(self._parse_sheets_with_calamine(fp, logger, file, excel_format))
         except ExcelCalamineParsingError:
-            yield from self._parse_sheets_with_openpyxl(fp, logger, file, excel_format)
+            dataframes = list(self._parse_sheets_with_openpyxl(fp, logger, file, excel_format))
+        yield from dataframes
 
     def _parse_sheets_with_calamine(
         self,

@@ -18,7 +18,11 @@ from airbyte_cdk.sources.file_based.config.file_based_stream_config import (
     FileBasedStreamConfig,
     ValidationPolicy,
 )
-from airbyte_cdk.sources.file_based.exceptions import ConfigValidationError, RecordParseError
+from airbyte_cdk.sources.file_based.exceptions import (
+    ConfigValidationError,
+    ExcelCalamineParsingError,
+    RecordParseError,
+)
 from airbyte_cdk.sources.file_based.file_based_stream_reader import AbstractFileBasedStreamReader
 from airbyte_cdk.sources.file_based.file_types.excel_parser import ExcelParser
 from airbyte_cdk.sources.file_based.remote_file import RemoteFile
@@ -306,6 +310,27 @@ def test_multi_sheet_records_include_sheet_name(
 
     assert len(records) == expected_count
     assert {record[parser.SHEET_NAME_COLUMN] for record in records} == expected_sheets
+
+
+def test_multi_sheet_calamine_fallback_does_not_duplicate_partial_results(remote_file):
+    parser = ExcelParser()
+    fp = BytesIO(b"test")
+    logger = MagicMock()
+    excel_format = ExcelFormat(sheets_to_sync=SheetsToSync.ALL_SHEETS)
+    calamine_df = pd.DataFrame({"id": [1], ExcelParser.SHEET_NAME_COLUMN: ["Calamine"]})
+    fallback_df = pd.DataFrame({"id": [2], ExcelParser.SHEET_NAME_COLUMN: ["Openpyxl"]})
+
+    def parse_with_calamine(*args, **kwargs):
+        yield calamine_df
+        raise ExcelCalamineParsingError("calamine failed", filename=remote_file.uri)
+
+    with (
+        patch.object(parser, "_parse_sheets_with_calamine", side_effect=parse_with_calamine),
+        patch.object(parser, "_parse_sheets_with_openpyxl", return_value=[fallback_df]),
+    ):
+        dataframes = list(parser._parse_sheets(fp, logger, remote_file, excel_format))
+
+    assert dataframes == [fallback_df]
 
 
 def test_all_sheets_schema_merges_columns(remote_file):
