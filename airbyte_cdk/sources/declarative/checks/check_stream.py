@@ -105,9 +105,9 @@ class CheckStream(ConnectionChecker):
         return True, None
 
     def _get_stream_names(self, config: Mapping[str, Any]) -> List[str]:
-        configured_stream_names = config.get(CHECK_STREAM_NAMES_CONFIG_KEY)
-        if configured_stream_names is None:
+        if CHECK_STREAM_NAMES_CONFIG_KEY not in config:
             return self.stream_names
+        configured_stream_names = config[CHECK_STREAM_NAMES_CONFIG_KEY]
         if not isinstance(configured_stream_names, list) or not all(
             isinstance(stream_name, str) for stream_name in configured_stream_names
         ):

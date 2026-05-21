@@ -114,7 +114,7 @@ def test_check_stream_names_override_accepts_empty_list():
     stream.stream_slices.assert_not_called()
 
 
-@pytest.mark.parametrize("override", ["selected_stream", [1], ["selected_stream", 1]])
+@pytest.mark.parametrize("override", ["selected_stream", [1], ["selected_stream", 1], None])
 def test_check_stream_names_override_requires_list_of_strings(override):
     stream = MagicMock(spec=Stream)
     stream.name = "selected_stream"
