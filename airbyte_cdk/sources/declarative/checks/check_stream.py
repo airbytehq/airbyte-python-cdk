@@ -105,14 +105,16 @@ class CheckStream(ConnectionChecker):
         return True, None
 
     def _get_stream_names(self, config: Mapping[str, Any]) -> List[str]:
-        if CHECK_STREAM_NAMES_CONFIG_KEY not in config:
+        if (
+            CHECK_STREAM_NAMES_CONFIG_KEY not in config
+            or config[CHECK_STREAM_NAMES_CONFIG_KEY] == []
+        ):
             return self.stream_names
         configured_stream_names = config[CHECK_STREAM_NAMES_CONFIG_KEY]
         if not isinstance(configured_stream_names, list) or not all(
             isinstance(stream_name, str) for stream_name in configured_stream_names
         ):
             raise ValueError(f"{CHECK_STREAM_NAMES_CONFIG_KEY} must be a list of strings.")
-        # An empty override intentionally skips static stream checks; dynamic stream checks still run when configured.
         return configured_stream_names
 
     def _check_stream_availability(

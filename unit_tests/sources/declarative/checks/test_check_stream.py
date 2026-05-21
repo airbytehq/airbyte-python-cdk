@@ -98,10 +98,12 @@ def test_check_stream_names_can_be_overridden_from_config():
     static_stream.stream_slices.assert_not_called()
 
 
-def test_check_stream_names_override_accepts_empty_list():
+def test_check_stream_names_override_empty_list_falls_back_to_manifest_streams():
     stream = MagicMock(spec=Stream)
     stream.name = "static_stream"
     stream.availability_strategy = None
+    stream.read_records.return_value = iter([record])
+    stream.stream_slices.return_value = iter([{}])
     source = MagicMock()
     source.streams.return_value = [stream]
 
@@ -111,7 +113,7 @@ def test_check_stream_names_override_accepts_empty_list():
         True,
         None,
     )
-    stream.stream_slices.assert_not_called()
+    stream.stream_slices.assert_called_once()
 
 
 @pytest.mark.parametrize("override", ["selected_stream", [1], ["selected_stream", 1], None])
@@ -794,7 +796,7 @@ def test_check_stream1(
             assert connection_status.status == expected_result
 
 
-def test_check_empty_static_stream_override_still_checks_dynamic_streams():
+def test_check_empty_static_stream_override_falls_back_to_manifest_streams_and_checks_dynamic_streams():
     manifest = {
         **deepcopy(_MANIFEST_WITHOUT_CHECK_COMPONENT),
         **{
@@ -840,9 +842,9 @@ def test_check_empty_static_stream_override_still_checks_dynamic_streams():
 
         connection_status = source.check(logger, check_config)
 
-        http_mocker.assert_number_of_calls(static_stream_request, 0)
-        http_mocker.assert_number_of_calls(item_request_2, 1)
-        assert connection_status.status == Status.SUCCEEDED
+        http_mocker.assert_number_of_calls(static_stream_request, 6)
+        http_mocker.assert_number_of_calls(item_request_2, 0)
+        assert connection_status.status == Status.FAILED
 
 
 def test_check_stream_missing_fields():
