@@ -313,7 +313,24 @@ class FileBasedSource(ConcurrentSourceAdapter, ABC):
                         cursor=cursor,
                     )
                 else:
-                    cursor = self.cursor_cls(stream_config)
+                    # This branch fires when sync_mode is None (stream is in the
+                    # connector config but not the selected catalog — also during
+                    # check / discover). For concurrent cursors we cannot use the
+                    # single-arg constructor; dispatch to the full signature so
+                    # connectors with cursor_cls=FileBasedConcurrentCursor (or a
+                    # subclass) don't crash before read even begins.
+                    if issubclass(self.cursor_cls, AbstractConcurrentFileBasedCursor):
+                        cursor = self.cursor_cls(
+                            stream_config,
+                            stream_config.name,
+                            None,
+                            stream_state,
+                            self.message_repository,
+                            state_manager,
+                            CursorField(DefaultFileBasedStream.ab_last_mod_col),
+                        )
+                    else:
+                        cursor = self.cursor_cls(stream_config)
                     stream = self._make_file_based_stream(
                         stream_config=stream_config,
                         cursor=cursor,
