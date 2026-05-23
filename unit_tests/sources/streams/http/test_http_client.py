@@ -785,13 +785,13 @@ def test_send_request_respects_environment_variables():
 @pytest.mark.parametrize(
     "response_code, expected_failure_type, error_message, exception_class",
     [
-        (400, FailureType.system_error, "test error message", UserDefinedBackoffException),
+        (400, FailureType.config_error, "test error message", UserDefinedBackoffException),
         (401, FailureType.config_error, "test error message", UserDefinedBackoffException),
         (403, FailureType.transient_error, "test error message", UserDefinedBackoffException),
-        (400, FailureType.system_error, "test error message", DefaultBackoffException),
+        (400, FailureType.config_error, "test error message", DefaultBackoffException),
         (401, FailureType.config_error, "test error message", DefaultBackoffException),
         (403, FailureType.transient_error, "test error message", DefaultBackoffException),
-        (400, FailureType.system_error, "test error message", RateLimitBackoffException),
+        (400, FailureType.config_error, "test error message", RateLimitBackoffException),
         (401, FailureType.config_error, "test error message", RateLimitBackoffException),
         (403, FailureType.transient_error, "test error message", RateLimitBackoffException),
     ],
