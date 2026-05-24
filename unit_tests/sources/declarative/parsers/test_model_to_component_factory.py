@@ -236,6 +236,23 @@ def test_create_check_stream():
 
     assert isinstance(check, CheckStream)
     assert check.stream_names == ["list_stream"]
+    assert check.strategy == "all"
+
+
+def test_create_check_stream_with_any_of_strategy():
+    manifest = {
+        "check": {
+            "type": "CheckStream",
+            "stream_names": ["users", "contacts"],
+            "strategy": "any_of",
+        }
+    }
+
+    check = factory.create_component(CheckStreamModel, manifest["check"], {})
+
+    assert isinstance(check, CheckStream)
+    assert check.stream_names == ["users", "contacts"]
+    assert check.strategy == "any_of"
 
 
 def test_create_component_type_mismatch():

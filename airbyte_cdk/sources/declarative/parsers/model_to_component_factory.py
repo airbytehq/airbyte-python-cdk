@@ -1268,6 +1268,7 @@ class ModelToComponentFactory:
 
         return CheckStream(
             stream_names=model.stream_names or [],
+            strategy=model.strategy.value if model.strategy is not None else "all",
             dynamic_streams_check_configs=dynamic_streams_check_configs,
             parameters={},
         )
