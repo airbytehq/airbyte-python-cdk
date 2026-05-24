@@ -4,6 +4,10 @@ Newer updates can be found here: [GitHub Release Notes](https://github.com/airby
 
 # Changelog
 
+## Unreleased
+
+low-code: Add opt-in `config_check_streams_path` to `CheckStream` so connections can supply a hidden array-of-strings config field that overrides the manifest's `stream_names` for the duration of the check, and convert the previous `ValueError` raised on unknown stream names into a `(False, message)` result that lists all unknowns and their source (config path vs. manifest).
+
 ## 6.5.2
 
 bugfix: Ensure that streams with partition router are not executed concurrently

@@ -1269,6 +1269,7 @@ class ModelToComponentFactory:
         return CheckStream(
             stream_names=model.stream_names or [],
             dynamic_streams_check_configs=dynamic_streams_check_configs,
+            config_check_streams_path=model.config_check_streams_path,
             parameters={},
         )
 

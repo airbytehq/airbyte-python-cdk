@@ -213,6 +213,8 @@ class ConcurrentDeclarativeSource(Source):
         self._validate_source()
         # apply additional post-processing to the manifest
         self._post_process_manifest()
+        # inject the hidden config-check-streams-path property into the spec, if requested
+        self._inject_config_check_streams_property()
 
         spec: Optional[Mapping[str, Any]] = self._source_config.get("spec")
         self._spec_component: Optional[Spec] = (
@@ -292,6 +294,70 @@ class ConcurrentDeclarativeSource(Source):
         self._migrate_manifest()
         # apply manifest normalization, if required
         self._normalize_manifest()
+
+    def _inject_config_check_streams_property(self) -> None:
+        """Injects the hidden `config_check_streams_path` property into the spec.
+
+        When the manifest's `check` block is a `CheckStream` with a
+        `config_check_streams_path` set, ensure the connector spec exposes a
+        hidden array-of-strings property at that path so platforms can plumb
+        the override through. The injected property is not added to
+        `required`. If the spec already declares a property at that key, its
+        existing shape is preserved and `airbyte_hidden: true` is forced.
+
+        Manifests without a `spec` block are left unchanged — the runtime
+        override still works because it reads directly from the user's
+        config; the injection is only meaningful for platforms that surface
+        the connector spec.
+
+        v1 only supports single-level paths. Dotted paths raise a clear error
+        so the manifest author can simplify their config schema or wait for
+        v2 nesting support.
+        """
+        check = self._source_config.get("check")
+        if not isinstance(check, Mapping) or check.get("type") != "CheckStream":
+            return
+
+        path = check.get("config_check_streams_path")
+        if not isinstance(path, str) or not path:
+            return
+
+        if "." in path:
+            raise ValueError(
+                "CheckStream.config_check_streams_path only supports single-level paths in v1. "
+                f"Got '{path}'. Declare a top-level config field and reference it without dots."
+            )
+
+        spec = self._source_config.get("spec")
+        if not isinstance(spec, dict):
+            return
+        connection_specification = spec.setdefault("connection_specification", {})
+        if not isinstance(connection_specification, dict):
+            raise ValueError(
+                "Expected 'spec.connection_specification' to be a mapping; got "
+                f"{type(connection_specification).__name__}."
+            )
+        properties = connection_specification.setdefault("properties", {})
+        if not isinstance(properties, dict):
+            raise ValueError(
+                "Expected 'spec.connection_specification.properties' to be a mapping; got "
+                f"{type(properties).__name__}."
+            )
+
+        existing = properties.get(path)
+        if isinstance(existing, dict):
+            existing["airbyte_hidden"] = True
+        else:
+            properties[path] = {
+                "type": "array",
+                "items": {"type": "string"},
+                "title": "Check Streams Override",
+                "description": (
+                    "Internal override for the streams that should be exercised during "
+                    "connection check. Set by the platform; not exposed in the standard UI."
+                ),
+                "airbyte_hidden": True,
+            }
 
     def _migrate_manifest(self) -> None:
         """

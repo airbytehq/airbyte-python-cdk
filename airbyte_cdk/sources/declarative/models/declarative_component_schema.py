@@ -1609,6 +1609,12 @@ class CheckStream(BaseModel):
         title="Stream Names",
     )
     dynamic_streams_check_configs: Optional[List[DynamicStreamCheckConfig]] = None
+    config_check_streams_path: Optional[str] = Field(
+        None,
+        description="Optional dot-delimited path into the user's config that, when present,\noverrides `stream_names` for the duration of the check. The referenced\nconfig value must be a list of stream names. When empty or missing, the\nmanifest's `stream_names` is used. Setting this also injects a hidden\narray-of-strings property at the top level of the connector spec\n(single-level paths only in v1) so platforms that allow a connection\nto override the check-time streams can plumb the value through without\nexposing it in the standard config UI.",
+        examples=["check_streams_override", "advanced.check_streams"],
+        title="Config Check Streams Path",
+    )
 
 
 class IncrementingCountCursor(BaseModel):
