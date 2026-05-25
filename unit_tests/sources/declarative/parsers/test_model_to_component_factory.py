@@ -4285,6 +4285,47 @@ def test_api_budget_passed_to_custom_requester():
     assert len(custom_requester._http_client._api_budget._policies) == 1
 
 
+def test_api_budget_does_not_override_custom_requester_default_value():
+    manifest = {
+        "type": "DeclarativeSource",
+        "api_budget": {
+            "type": "HTTPAPIBudget",
+            "policies": [
+                {
+                    "type": "MovingWindowCallRatePolicy",
+                    "rates": [
+                        {
+                            "limit": 3,
+                            "interval": "PT0.1S",
+                        }
+                    ],
+                    "matchers": [],
+                }
+            ],
+        },
+        "my_requester": {
+            "type": "CustomRequester",
+            "class_name": "unit_tests.sources.declarative.parsers.testing_components.TestingRequesterWithDefaultBudget",
+            "path": "/v3/marketing/lists",
+            "url_base": "https://api.sendgrid.com",
+            "http_method": "GET",
+        },
+    }
+
+    factory = ModelToComponentFactory()
+    factory.set_api_budget(manifest["api_budget"], input_config)
+
+    custom_requester = factory.create_component(
+        model_type=CustomRequesterModel,
+        component_definition=manifest["my_requester"],
+        config=input_config,
+        name="lists_stream",
+        decoder=None,
+    )
+
+    assert custom_requester.api_budget is None
+
+
 def test_api_budget_fixed_window_policy():
     manifest = {
         "type": "DeclarativeSource",
