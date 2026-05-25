@@ -90,6 +90,9 @@ from airbyte_cdk.sources.declarative.models import (
     SubstreamPartitionRouter as SubstreamPartitionRouterModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    CustomRequester as CustomRequesterModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     OffsetIncrement as OffsetIncrementModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
@@ -173,7 +176,7 @@ from airbyte_cdk.sources.declarative.transformations.keys_replace_transformation
 )
 from airbyte_cdk.sources.declarative.yaml_declarative_source import YamlDeclarativeSource
 from airbyte_cdk.sources.message.repository import StateFilteringMessageRepository
-from airbyte_cdk.sources.streams.call_rate import MovingWindowCallRatePolicy
+from airbyte_cdk.sources.streams.call_rate import HttpAPIBudget, MovingWindowCallRatePolicy
 from airbyte_cdk.sources.streams.concurrent.clamping import (
     ClampingEndProvider,
     DayClampingStrategy,
@@ -4237,6 +4240,90 @@ def test_api_budget():
     # The 0.1s from 'PT0.1S' is stored in ms by PyRateLimiter internally
     # but here just check that the limit and interval exist
     assert policy._bucket.rates[0].interval == 100  # 100 ms
+
+
+def test_api_budget_passed_to_custom_requester():
+    manifest = {
+        "type": "DeclarativeSource",
+        "api_budget": {
+            "type": "HTTPAPIBudget",
+            "policies": [
+                {
+                    "type": "MovingWindowCallRatePolicy",
+                    "rates": [
+                        {
+                            "limit": 3,
+                            "interval": "PT0.1S",
+                        }
+                    ],
+                    "matchers": [],
+                }
+            ],
+        },
+        "my_requester": {
+            "type": "CustomRequester",
+            "class_name": "unit_tests.sources.declarative.parsers.testing_components.TestingRequester",
+            "path": "/v3/marketing/lists",
+            "url_base": "https://api.sendgrid.com",
+            "http_method": "GET",
+        },
+    }
+
+    factory = ModelToComponentFactory()
+    factory.set_api_budget(manifest["api_budget"], input_config)
+
+    custom_requester = factory.create_component(
+        model_type=CustomRequesterModel,
+        component_definition=manifest["my_requester"],
+        config=input_config,
+        name="lists_stream",
+        decoder=None,
+    )
+
+    assert isinstance(custom_requester.api_budget, HttpAPIBudget)
+    assert custom_requester._http_client._api_budget is custom_requester.api_budget
+    assert len(custom_requester._http_client._api_budget._policies) == 1
+
+
+def test_api_budget_does_not_override_custom_requester_default_value():
+    manifest = {
+        "type": "DeclarativeSource",
+        "api_budget": {
+            "type": "HTTPAPIBudget",
+            "policies": [
+                {
+                    "type": "MovingWindowCallRatePolicy",
+                    "rates": [
+                        {
+                            "limit": 3,
+                            "interval": "PT0.1S",
+                        }
+                    ],
+                    "matchers": [],
+                }
+            ],
+        },
+        "my_requester": {
+            "type": "CustomRequester",
+            "class_name": "unit_tests.sources.declarative.parsers.testing_components.TestingRequesterWithDefaultBudget",
+            "path": "/v3/marketing/lists",
+            "url_base": "https://api.sendgrid.com",
+            "http_method": "GET",
+        },
+    }
+
+    factory = ModelToComponentFactory()
+    factory.set_api_budget(manifest["api_budget"], input_config)
+
+    custom_requester = factory.create_component(
+        model_type=CustomRequesterModel,
+        component_definition=manifest["my_requester"],
+        config=input_config,
+        name="lists_stream",
+        decoder=None,
+    )
+
+    assert custom_requester.api_budget is None
 
 
 def test_api_budget_fixed_window_policy():

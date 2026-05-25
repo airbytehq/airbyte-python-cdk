@@ -1859,6 +1859,10 @@ class ModelToComponentFactory:
             for class_field in component_fields.keys()
             if class_field in model_args
         }
+
+        if "api_budget" in component_fields and kwargs.get("api_budget") is None:
+            kwargs["api_budget"] = self._api_budget
+
         return custom_component_class(**kwargs)
 
     @staticmethod
