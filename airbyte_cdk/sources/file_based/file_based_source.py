@@ -22,6 +22,8 @@ from airbyte_cdk.models import (
     SyncMode,
 )
 from airbyte_cdk.sources.concurrent_source.concurrent_source import ConcurrentSource
+from queue import Queue
+
 from airbyte_cdk.sources.concurrent_source.concurrent_source_adapter import ConcurrentSourceAdapter
 from airbyte_cdk.sources.connector_state_manager import ConnectorStateManager
 from airbyte_cdk.sources.file_based.availability_strategy import (
@@ -87,6 +89,13 @@ class FileBasedSource(ConcurrentSourceAdapter, ABC):
     # We make each source override the concurrency level to give control over when they are upgraded.
     _concurrency_level = None
 
+    # Override on a per-connector basis to bound the in-memory inter-worker
+    # record queue. Smaller values reduce peak source-pod RSS at a small cost
+    # in throughput slack; larger values give more buffering between fast
+    # producers and a slow main thread. Default matches the original
+    # ConcurrentSource behaviour.
+    _concurrent_record_queue_maxsize: int = 10_000
+
     def __init__(
         self,
         stream_reader: AbstractFileBasedStreamReader,
@@ -130,6 +139,7 @@ class FileBasedSource(ConcurrentSourceAdapter, ABC):
             self.logger,
             self._slice_logger,
             self.message_repository,
+            queue=Queue(maxsize=self._concurrent_record_queue_maxsize),
         )
         self._state = None
         super().__init__(concurrent_source)
