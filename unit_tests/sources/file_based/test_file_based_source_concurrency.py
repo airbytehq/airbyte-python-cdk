@@ -7,7 +7,6 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from airbyte_cdk.sources.file_based.file_based_source import (
-    DEFAULT_CONCURRENCY,
     MAX_CONCURRENCY,
     FileBasedSource,
 )
