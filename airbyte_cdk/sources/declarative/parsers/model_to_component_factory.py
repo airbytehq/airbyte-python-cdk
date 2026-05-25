@@ -1801,6 +1801,8 @@ class ModelToComponentFactory:
         component_fields = get_type_hints(custom_component_class)
         model_args = model.dict()
         model_args["config"] = config
+        if "api_budget" in component_fields:
+            model_args["api_budget"] = self._api_budget
 
         # There are cases where a parent component will pass arguments to a child component via kwargs. When there are field collisions
         # we defer to these arguments over the component's definition
