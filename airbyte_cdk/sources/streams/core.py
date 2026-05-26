@@ -5,6 +5,7 @@ import copy
 import inspect
 import itertools
 import logging
+import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from functools import cached_property, lru_cache
@@ -123,6 +124,15 @@ class Stream(ABC):
     _configured_json_schema: Optional[Dict[str, Any]] = None
     _exit_on_rate_limit: bool = False
 
+    # If set, per-slice state messages are emitted at most once per this many
+    # seconds during a sync. The first per-slice emission and the final emission
+    # at the end of the stream always fire. Default `None` keeps the historical
+    # behaviour: emit a state message after every slice. Streams that produce
+    # very many slices with growing state payloads (e.g. file-based sources
+    # carrying a history dict that grows with each file synced) can set this
+    # to keep the platform/orchestrator state buffer bounded.
+    state_emission_throttle_seconds: Optional[float] = None
+
     # Use self.logger in subclasses to log any messages
     @property
     def logger(self) -> logging.Logger:
@@ -184,6 +194,14 @@ class Stream(ABC):
         next_slice = checkpoint_reader.next()
         record_counter = 0
         stream_state_tracker = copy.deepcopy(stream_state)
+
+        # State-emission throttle bookkeeping. Active only when the stream sets
+        # `state_emission_throttle_seconds`; default behavior is preserved.
+        throttle_seconds = self.state_emission_throttle_seconds
+        last_state_emit_at: float = 0.0
+        last_observed_checkpoint: Optional[Mapping[str, Any]] = None
+        throttled_pending_emit = False
+
         while next_slice is not None:
             if slice_logger.should_log_slice_message(logger):
                 yield slice_logger.create_slice_log_message(next_slice)
@@ -240,10 +258,24 @@ class Stream(ABC):
             self._observe_state(checkpoint_reader)
             checkpoint_state = checkpoint_reader.get_checkpoint()
             if should_checkpoint and checkpoint_state is not None:
-                airbyte_state_message = self._checkpoint_state(
-                    checkpoint_state, state_manager=state_manager
-                )
-                yield airbyte_state_message
+                last_observed_checkpoint = checkpoint_state
+                if throttle_seconds is not None:
+                    now = time.time()
+                    if now - last_state_emit_at < throttle_seconds:
+                        # Suppress this per-slice state emission; the final-
+                        # state emit below will catch up if no other emit
+                        # fires before the stream ends.
+                        throttled_pending_emit = True
+                    else:
+                        last_state_emit_at = now
+                        throttled_pending_emit = False
+                        yield self._checkpoint_state(
+                            checkpoint_state, state_manager=state_manager
+                        )
+                else:
+                    yield self._checkpoint_state(
+                        checkpoint_state, state_manager=state_manager
+                    )
 
             next_slice = checkpoint_reader.next()
 
@@ -251,6 +283,16 @@ class Stream(ABC):
         if should_checkpoint and checkpoint is not None:
             airbyte_state_message = self._checkpoint_state(checkpoint, state_manager=state_manager)
             yield airbyte_state_message
+        elif (
+            should_checkpoint
+            and throttle_seconds is not None
+            and throttled_pending_emit
+            and last_observed_checkpoint is not None
+        ):
+            # Throttling suppressed the final per-slice emit. Force a final
+            # state message so the platform/destination always sees the
+            # latest stream state for this sync.
+            yield self._checkpoint_state(last_observed_checkpoint, state_manager=state_manager)
 
     def read_only_records(self, state: Optional[Mapping[str, Any]] = None) -> Iterable[StreamData]:
         """
