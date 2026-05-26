@@ -87,6 +87,16 @@ class FileBasedSource(ConcurrentSourceAdapter, ABC):
     # We make each source override the concurrency level to give control over when they are upgraded.
     _concurrency_level = None
 
+    # When the legacy (non-concurrent) file-based read path is used, the
+    # framework emits a state message after every slice (i.e. every file). On
+    # streams with many small files the platform/orchestrator buffer of those
+    # state messages can OOM the replication pod before the destination ACKs
+    # them. Connectors can override this to throttle per-slice state emission
+    # to once per N seconds; the final state of each sync is always force
+    # emitted so destinations still see the latest cursor. Default `None`
+    # preserves the historical emit-per-slice behaviour.
+    _stream_state_emission_throttle_seconds: Optional[float] = None
+
     def __init__(
         self,
         stream_reader: AbstractFileBasedStreamReader,
@@ -336,7 +346,7 @@ class FileBasedSource(ConcurrentSourceAdapter, ABC):
         cursor: Optional[AbstractFileBasedCursor],
         parsed_config: AbstractFileBasedSpec,
     ) -> AbstractFileBasedStream:
-        return DefaultFileBasedStream(
+        stream = DefaultFileBasedStream(
             config=stream_config,
             catalog_schema=self.stream_schemas.get(stream_config.name),
             stream_reader=self.stream_reader,
@@ -349,6 +359,11 @@ class FileBasedSource(ConcurrentSourceAdapter, ABC):
             use_file_transfer=use_file_transfer(parsed_config),
             preserve_directory_structure=preserve_directory_structure(parsed_config),
         )
+        if self._stream_state_emission_throttle_seconds is not None:
+            stream.state_emission_throttle_seconds = (
+                self._stream_state_emission_throttle_seconds
+            )
+        return stream
 
     def _ensure_permissions_reader_available(self) -> None:
         """
