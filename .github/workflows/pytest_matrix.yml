@@ -58,6 +58,8 @@ jobs:
       # Common steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - id: changes
         uses: dorny/paths-filter@v3.0.2
         with:
