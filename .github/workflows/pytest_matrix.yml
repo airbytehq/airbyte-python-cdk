@@ -16,7 +16,13 @@ on:
       - "unit_tests/**"
       - "poetry.lock"
       - "pyproject.toml"
+      - ".github/workflows/pytest_matrix.yml"
   pull_request:
+
+permissions:
+  contents: read
+  code-quality: write
+  pull-requests: read
 
 jobs:
   pytest:
@@ -58,6 +64,7 @@ jobs:
               - 'bin/**'
               - 'poetry.lock'
               - 'pyproject.toml'
+              - '.github/workflows/pytest_matrix.yml'
       - name: Set up Poetry
         uses: snok/install-poetry@v1
         if: steps.changes.outputs.src == 'true'
@@ -109,3 +116,11 @@ jobs:
         with:
           name: py${{ matrix.python-version }}-${{ matrix.os }}-test-coverage
           path: htmlcov/
+      - name: Upload coverage to GitHub Code Quality
+        if: steps.changes.outputs.src == 'true' && matrix.python-version == '3.11' && matrix.os == 'Ubuntu'
+        uses: actions/upload-code-coverage@v1
+        with:
+          file: htmlcov/coverage.xml
+          language: Python
+          label: code-coverage/pytest-matrix
+          fail-on-error: false
