@@ -121,7 +121,7 @@ jobs:
           name: py${{ matrix.python-version }}-${{ matrix.os }}-test-coverage
           path: htmlcov/
       - name: Upload coverage to GitHub Code Quality
-        if: steps.changes.outputs.src == 'true' && matrix.python-version == '3.11' && matrix.os == 'Ubuntu'
+        if: always() && steps.changes.outputs.src == 'true' && matrix.python-version == '3.11' && matrix.os == 'Ubuntu'
         uses: actions/upload-code-coverage@v1
         with:
           file: htmlcov/coverage.xml
