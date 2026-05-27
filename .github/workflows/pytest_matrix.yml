@@ -46,6 +46,7 @@ jobs:
 
     runs-on: "${{ matrix.os }}-latest"
     permissions:
+      checks: write
       contents: read
       code-quality: write
       pull-requests: read
