@@ -122,7 +122,7 @@ jobs:
           path: htmlcov/
       - name: Upload coverage to GitHub Code Quality
         if: always() && steps.changes.outputs.src == 'true' && matrix.python-version == '3.11' && matrix.os == 'Ubuntu'
-        uses: actions/upload-code-coverage@v1
+        uses: actions/upload-code-coverage@b51da2c3c1b23e04d2d6477cfc34350b1f5cd3e9 # v1
         with:
           file: htmlcov/coverage.xml
           language: Python
