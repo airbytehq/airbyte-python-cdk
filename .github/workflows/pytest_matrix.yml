@@ -45,6 +45,10 @@ jobs:
       fail-fast: false
 
     runs-on: "${{ matrix.os }}-latest"
+    permissions:
+      contents: read
+      code-quality: write
+      pull-requests: read
     env:
       # Enforce UTF-8 encoding so Windows runners don't fail inside the connector code.
       # TODO: See if we can fully enforce this within PyAirbyte itself.

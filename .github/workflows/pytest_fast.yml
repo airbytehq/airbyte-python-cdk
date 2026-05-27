@@ -41,6 +41,10 @@ jobs:
   pytest-fast:
     name: Pytest (Fast)
     runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      code-quality: write
+      pull-requests: read
     steps:
       # Common steps:
       - name: Checkout code
