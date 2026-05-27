@@ -61,6 +61,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
+          persist-credentials: false
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - id: changes
         uses: dorny/paths-filter@v3.0.2
