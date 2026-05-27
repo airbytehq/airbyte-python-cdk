@@ -4,7 +4,7 @@
 
 import random
 from dataclasses import InitVar, dataclass
-from typing import Any, Mapping, Optional, Union
+from typing import Any, Mapping, Optional, Union, cast
 
 import requests
 
@@ -49,11 +49,14 @@ class ConstantBackoffStrategy(BackoffStrategy):
         response_or_exception: Optional[Union[requests.Response, requests.RequestException]],
         attempt_count: int,
     ) -> Optional[float]:
-        backoff_time = float(self.backoff_time_in_seconds.eval(self.config))
-        if self.jitter_range_in_seconds is None:
+        backoff_time = float(
+            cast(InterpolatedString, self.backoff_time_in_seconds).eval(self.config)
+        )
+        jitter_range_in_seconds = self.jitter_range_in_seconds
+        if jitter_range_in_seconds is None:
             return backoff_time
 
-        jitter_range = float(self.jitter_range_in_seconds.eval(self.config))
+        jitter_range = float(cast(InterpolatedString, jitter_range_in_seconds).eval(self.config))
         if jitter_range < 0:
             raise ValueError("jitter_range_in_seconds must be greater than or equal to 0")
 

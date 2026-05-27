@@ -4,7 +4,7 @@
 
 import random
 from dataclasses import InitVar, dataclass
-from typing import Any, Mapping, Optional, Union
+from typing import Any, Mapping, Optional, Union, cast
 
 import requests
 
@@ -44,7 +44,7 @@ class ExponentialBackoffStrategy(BackoffStrategy):
 
     @property
     def _retry_factor(self) -> float:
-        return self._factor.eval(self.config)  # type: ignore # factor is always cast to an interpolated string
+        return float(self._factor.eval(self.config))
 
     def backoff_time(
         self,
@@ -52,10 +52,11 @@ class ExponentialBackoffStrategy(BackoffStrategy):
         attempt_count: int,
     ) -> Optional[float]:
         backoff_time = float(self._retry_factor * 2**attempt_count)
-        if self.jitter_range_in_seconds is None:
+        jitter_range_in_seconds = self.jitter_range_in_seconds
+        if jitter_range_in_seconds is None:
             return backoff_time
 
-        jitter_range = float(self.jitter_range_in_seconds.eval(self.config))
+        jitter_range = float(cast(InterpolatedString, jitter_range_in_seconds).eval(self.config))
         if jitter_range < 0:
             raise ValueError("jitter_range_in_seconds must be greater than or equal to 0")
 
