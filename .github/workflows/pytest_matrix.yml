@@ -102,7 +102,7 @@ jobs:
         if: always() && steps.changes.outputs.src == 'true'
         run: |
           poetry run coverage html -d htmlcov
-          poetry run coverage xml -o htmlcov/coverage.xml
+          poetry run coverage xml --include="airbyte_cdk/*" -o htmlcov/coverage.xml
 
       - name: Publish Test Results
         uses: EnricoMi/publish-unit-test-result-action@v2
