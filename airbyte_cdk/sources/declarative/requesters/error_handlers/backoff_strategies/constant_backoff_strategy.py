@@ -2,6 +2,7 @@
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
 
+import random
 from dataclasses import InitVar, dataclass
 from typing import Any, Mapping, Optional, Union
 
@@ -24,22 +25,36 @@ class ConstantBackoffStrategy(BackoffStrategy):
     backoff_time_in_seconds: Union[float, InterpolatedString, str]
     parameters: InitVar[Mapping[str, Any]]
     config: Config
+    jitter_range_in_seconds: Optional[Union[float, InterpolatedString, str]] = None
 
     def __post_init__(self, parameters: Mapping[str, Any]) -> None:
-        if not isinstance(self.backoff_time_in_seconds, InterpolatedString):
-            self.backoff_time_in_seconds = str(self.backoff_time_in_seconds)
-        if isinstance(self.backoff_time_in_seconds, float):
-            self.backoff_time_in_seconds = InterpolatedString.create(
-                str(self.backoff_time_in_seconds), parameters=parameters
+        self.backoff_time_in_seconds = self._as_interpolated_string(
+            self.backoff_time_in_seconds, parameters
+        )
+        if self.jitter_range_in_seconds is not None:
+            self.jitter_range_in_seconds = self._as_interpolated_string(
+                self.jitter_range_in_seconds, parameters
             )
-        else:
-            self.backoff_time_in_seconds = InterpolatedString.create(
-                self.backoff_time_in_seconds, parameters=parameters
-            )
+
+    @staticmethod
+    def _as_interpolated_string(
+        value: Union[float, InterpolatedString, str], parameters: Mapping[str, Any]
+    ) -> InterpolatedString:
+        if not isinstance(value, InterpolatedString):
+            value = str(value)
+        return InterpolatedString.create(value, parameters=parameters)
 
     def backoff_time(
         self,
         response_or_exception: Optional[Union[requests.Response, requests.RequestException]],
         attempt_count: int,
     ) -> Optional[float]:
-        return self.backoff_time_in_seconds.eval(self.config)  # type: ignore # backoff_time_in_seconds is always cast to an interpolated string
+        backoff_time = float(self.backoff_time_in_seconds.eval(self.config))
+        if self.jitter_range_in_seconds is None:
+            return backoff_time
+
+        jitter_range = float(self.jitter_range_in_seconds.eval(self.config))
+        if jitter_range < 0:
+            raise ValueError("jitter_range_in_seconds must be greater than or equal to 0")
+
+        return random.uniform(max(0, backoff_time - jitter_range), backoff_time + jitter_range)

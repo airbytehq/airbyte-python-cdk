@@ -1754,6 +1754,7 @@ class ModelToComponentFactory:
     ) -> ConstantBackoffStrategy:
         return ConstantBackoffStrategy(
             backoff_time_in_seconds=model.backoff_time_in_seconds,
+            jitter_range_in_seconds=model.jitter_range_in_seconds,
             config=config,
             parameters=model.parameters or {},
         )
@@ -2433,7 +2434,10 @@ class ModelToComponentFactory:
         model: ExponentialBackoffStrategyModel, config: Config
     ) -> ExponentialBackoffStrategy:
         return ExponentialBackoffStrategy(
-            factor=model.factor or 5, parameters=model.parameters or {}, config=config
+            factor=model.factor or 5,
+            jitter_range_in_seconds=model.jitter_range_in_seconds,
+            parameters=model.parameters or {},
+            config=config,
         )
 
     @staticmethod

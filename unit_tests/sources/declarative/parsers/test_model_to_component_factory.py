@@ -1754,6 +1754,64 @@ requester:
     )
 
 
+@pytest.mark.parametrize(
+    "backoff_strategy_yaml, expected_backoff_strategy_type",
+    [
+        pytest.param(
+            """
+  error_handler:
+    backoff_strategies:
+      - type: "ConstantBackoffStrategy"
+        backoff_time_in_seconds: 60
+        jitter_range_in_seconds: 15
+            """,
+            ConstantBackoffStrategy,
+            id="constant_backoff_strategy",
+        ),
+        pytest.param(
+            """
+  error_handler:
+    backoff_strategies:
+      - type: "ExponentialBackoffStrategy"
+        factor: 5
+        jitter_range_in_seconds: "{{ config['backoff_jitter'] }}"
+            """,
+            ExponentialBackoffStrategy,
+            id="exponential_backoff_strategy",
+        ),
+    ],
+)
+def test_create_requester_with_backoff_jitter(
+    backoff_strategy_yaml, expected_backoff_strategy_type
+):
+    content = f"""
+requester:
+  type: HttpRequester
+  path: "/v3/marketing/lists"
+  url_base: "https://api.sendgrid.com"
+  {backoff_strategy_yaml}
+    """
+    parsed_manifest = YamlDeclarativeSource._parse(content)
+    resolved_manifest = resolver.preprocess_manifest(parsed_manifest)
+    requester_manifest = transformer.propagate_types_and_parameters(
+        "", resolved_manifest["requester"], {}
+    )
+
+    requester = factory.create_component(
+        model_type=HttpRequesterModel,
+        component_definition=requester_manifest,
+        config={**input_config, "backoff_jitter": 15},
+        name="name",
+        decoder=None,
+    )
+
+    assert isinstance(requester.error_handler, DefaultErrorHandler)
+    assert len(requester.error_handler.backoff_strategies) == 1
+    backoff_strategy = requester.error_handler.backoff_strategies[0]
+    assert isinstance(backoff_strategy, expected_backoff_strategy_type)
+    assert backoff_strategy.jitter_range_in_seconds.eval({"backoff_jitter": 15}) == 15
+
+
 def test_create_request_with_legacy_session_authenticator():
     content = """
 requester:
