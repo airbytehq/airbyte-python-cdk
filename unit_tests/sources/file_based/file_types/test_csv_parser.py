@@ -791,17 +791,17 @@ def test_encoding_is_passed_to_stream_reader() -> None:
 @pytest.mark.parametrize(
     "header_row, expected_empty_count",
     [
-        pytest.param("col1,col2,col3,,,", 3, id="trailing_empty_columns"),
         pytest.param("col1,,col3", 1, id="middle_empty_column"),
         pytest.param(",col2,col3", 1, id="leading_empty_column"),
-        pytest.param("col1,col2, ", 1, id="whitespace_only_column"),
+        pytest.param("col1,,col3, , ", 1, id="interior_empty_after_trailing_strip"),
     ],
 )
-def test_get_headers_raises_on_empty_column_names(
+def test_get_headers_raises_on_non_trailing_empty_column_names(
     header_row: str, expected_empty_count: int
 ) -> None:
     csv_reader = _CsvReader()
     config_format = CsvFormat()
+    test_logger = logging.getLogger("test")
     fp = io.StringIO(header_row)
 
     dialect_name = f"test_{uuid4()}"
@@ -816,19 +816,34 @@ def test_get_headers_raises_on_empty_column_names(
 
     try:
         with pytest.raises(AirbyteTracedException) as exc_info:
-            csv_reader._get_headers(fp, config_format, dialect_name)
+            csv_reader._get_headers(fp, config_format, dialect_name, test_logger)
 
         assert exc_info.value.failure_type == FailureType.config_error
         assert "empty column name" in exc_info.value.message
+        assert "non-trailing" in exc_info.value.message
         assert f"{expected_empty_count} empty" in exc_info.value.internal_message
     finally:
         csv.unregister_dialect(dialect_name)
 
 
-def test_get_headers_accepts_valid_headers() -> None:
+@pytest.mark.parametrize(
+    "header_row, expected_headers, expected_stripped",
+    [
+        pytest.param("col1,col2,col3", ["col1", "col2", "col3"], 0, id="no_empty_columns"),
+        pytest.param("col1,col2,col3,,,", ["col1", "col2", "col3"], 3, id="trailing_empty_columns"),
+        pytest.param("col1,col2, ", ["col1", "col2"], 1, id="trailing_whitespace_column"),
+        pytest.param(
+            "col1,col2,col3,, , ", ["col1", "col2", "col3"], 3, id="trailing_mixed_empty_whitespace"
+        ),
+    ],
+)
+def test_get_headers_strips_trailing_empty_columns(
+    header_row: str, expected_headers: List[str], expected_stripped: int
+) -> None:
     csv_reader = _CsvReader()
     config_format = CsvFormat()
-    fp = io.StringIO("col1,col2,col3")
+    test_logger = logging.getLogger("test")
+    fp = io.StringIO(header_row)
 
     dialect_name = f"test_{uuid4()}"
     csv.register_dialect(
@@ -841,13 +856,14 @@ def test_get_headers_accepts_valid_headers() -> None:
     )
 
     try:
-        headers = csv_reader._get_headers(fp, config_format, dialect_name)
-        assert headers == ["col1", "col2", "col3"]
+        headers, n_stripped = csv_reader._get_headers(fp, config_format, dialect_name, test_logger)
+        assert headers == expected_headers
+        assert n_stripped == expected_stripped
     finally:
         csv.unregister_dialect(dialect_name)
 
 
-def test_read_data_raises_on_empty_column_names() -> None:
+def test_read_data_strips_trailing_empty_columns() -> None:
     config_format = CsvFormat()
     config = Mock()
     config.name = "config_name"
@@ -855,11 +871,42 @@ def test_read_data_raises_on_empty_column_names() -> None:
 
     file = RemoteFile(uri="test.csv", last_modified=datetime.now())
     stream_reader = Mock(spec=AbstractFileBasedStreamReader)
-    logger = Mock(spec=logging.Logger)
+    test_logger = Mock(spec=logging.Logger)
     csv_reader = _CsvReader()
 
     stream_reader.open_file.return_value = (
         CsvFileBuilder().with_data(["col1,col2,col3,,,", "v1,v2,v3,v4,v5,v6"]).build()
+    )
+
+    rows = list(
+        csv_reader.read_data(
+            config,
+            file,
+            stream_reader,
+            test_logger,
+            FileReadMode.READ,
+        )
+    )
+
+    assert len(rows) == 1
+    assert rows[0] == {"col1": "v1", "col2": "v2", "col3": "v3"}
+    test_logger.warning.assert_called_once()
+    assert "trailing empty" in test_logger.warning.call_args[0][0]
+
+
+def test_read_data_raises_on_non_trailing_empty_column_names() -> None:
+    config_format = CsvFormat()
+    config = Mock()
+    config.name = "config_name"
+    config.format = config_format
+
+    file = RemoteFile(uri="test.csv", last_modified=datetime.now())
+    stream_reader = Mock(spec=AbstractFileBasedStreamReader)
+    test_logger = Mock(spec=logging.Logger)
+    csv_reader = _CsvReader()
+
+    stream_reader.open_file.return_value = (
+        CsvFileBuilder().with_data(["col1,,col3", "v1,v2,v3"]).build()
     )
 
     with pytest.raises(AirbyteTracedException) as exc_info:
@@ -868,13 +915,13 @@ def test_read_data_raises_on_empty_column_names() -> None:
                 config,
                 file,
                 stream_reader,
-                logger,
+                test_logger,
                 FileReadMode.READ,
             )
         )
 
     assert exc_info.value.failure_type == FailureType.config_error
-    assert "empty column name" in exc_info.value.message
+    assert "non-trailing" in exc_info.value.message
 
 
 def test_parse_records_preserves_mismatch_error_detail() -> None:
