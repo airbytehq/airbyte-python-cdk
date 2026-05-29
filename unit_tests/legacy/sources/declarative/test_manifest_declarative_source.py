@@ -2066,7 +2066,7 @@ def test_given_unmigrated_config_when_migrating_then_config_is_migrated(migratio
     )
 
     migration_mocks["message_repository"].emit_message.assert_called_once()
-    migration_mocks["open"].assert_any_call("/fake/config/path", "w")
+    migration_mocks["open"].assert_called_once_with("/fake/config/path", "w")
     migration_mocks["json_dump"].assert_called_once()
     migration_mocks["print"].assert_called()
     migration_mocks["serializer_dump"].assert_called()

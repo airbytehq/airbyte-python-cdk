@@ -1870,6 +1870,7 @@ def test_backoff_jitter_schema_validation(backoff_strategy_model, backoff_strate
     ],
 )
 def test_create_backoff_strategy_with_negative_jitter_raises_error(backoff_strategy_model):
+    # Verify factory validation catches negative jitter even if Pydantic validation is bypassed.
     backoff_strategy_model.__dict__["jitter_range_in_seconds"] = -1
 
     with pytest.raises(ValueError, match="jitter_range_in_seconds"):

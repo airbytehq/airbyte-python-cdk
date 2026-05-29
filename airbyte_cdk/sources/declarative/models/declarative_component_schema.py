@@ -106,7 +106,7 @@ class ConstantBackoffStrategy(BaseModel):
     )
     jitter_range_in_seconds: Optional[float] = Field(
         None,
-        description="Optional jitter range in seconds. When set, the backoff time is uniformly distributed between backoff_time_in_seconds and backoff_time_in_seconds + (jitter_range_in_seconds * 2).",
+        description="Optional additive jitter range in seconds. When set, the backoff time is uniformly distributed between backoff_time_in_seconds and backoff_time_in_seconds + (jitter_range_in_seconds * 2), so jitter only increases the base backoff.",
         examples=[15],
         ge=0,
         title="Jitter Range",
@@ -521,7 +521,7 @@ class ExponentialBackoffStrategy(BaseModel):
     )
     jitter_range_in_seconds: Optional[float] = Field(
         None,
-        description="Optional jitter range in seconds. When set, the backoff time is uniformly distributed between computed_backoff and computed_backoff + (jitter_range_in_seconds * 2).",
+        description="Optional additive jitter range in seconds. When set, the backoff time is uniformly distributed between computed_backoff and computed_backoff + (jitter_range_in_seconds * 2), so jitter only increases the computed backoff.",
         examples=[2],
         ge=0,
         title="Jitter Range",
