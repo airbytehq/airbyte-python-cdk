@@ -193,9 +193,26 @@ class AbstractOauth2Authenticator(AuthBase):
         refresh parameters on the URL query string. Authenticators may override
         `get_refresh_request_params()` to opt into this behavior. When set, any matching
         keys are removed from the request body by `build_refresh_request_body()`.
+
+        If the configured params contain the refresh-token field, the live value from
+        `get_refresh_token()` is substituted on every call. This matters for
+        `SingleUseRefreshTokenOauth2Authenticator` (and any other authenticator that
+        rotates its refresh token between calls): without this substitution, a static
+        mapping baked in at construction time would carry the original refresh token
+        on every request, breaking rotation. Other fields are passed through unchanged
+        so users can still set values like `grant_type` independently.
         """
         params = self.get_refresh_request_params()
-        return params if params else None
+        if not params:
+            return None
+
+        result: MutableMapping[str, Any] = dict(params)
+
+        refresh_token_field_name = self.get_refresh_token_name()
+        if refresh_token_field_name in result:
+            result[refresh_token_field_name] = self.get_refresh_token()
+
+        return result
 
     def refresh_access_token(self) -> Tuple[str, AirbyteDateTime]:
         """

@@ -846,6 +846,62 @@ class TestSingleUseRefreshTokenOauth2Authenticator:
             "new_refresh_token",
         )
 
+    def test_refresh_request_query_params_pick_up_rotated_refresh_token(
+        self, mocker, connector_config
+    ):
+        """`SingleUseRefreshTokenOauth2Authenticator` rotates its refresh token
+        on every refresh. When `refresh_request_params` is configured to send
+        the refresh token on the URL query string, the URL on the second
+        refresh request must carry the **rotated** refresh token (the one
+        returned by the previous refresh), not the original value from the
+        connector config at construction time.
+        """
+        original_refresh_token = connector_config["credentials"]["refresh_token"]
+        rotated_refresh_token = "rotated_refresh_token_value"
+
+        query_params = {
+            "grant_type": "refresh_token",
+            "refresh_token": original_refresh_token,
+        }
+        authenticator = SingleUseRefreshTokenOauth2Authenticator(
+            connector_config,
+            token_refresh_endpoint="https://refresh_endpoint.com",
+            client_id=connector_config["credentials"]["client_id"],
+            client_secret=connector_config["credentials"]["client_secret"],
+            refresh_request_params=query_params,
+            refresh_request_headers={"Authorization": "Basic dGVzdA=="},
+        )
+
+        resp.status_code = 200
+        mocker.patch.object(
+            resp,
+            "json",
+            return_value={
+                authenticator.get_access_token_name(): "new_access_token",
+                authenticator.get_expires_in_name(): 3600,
+                authenticator.get_refresh_token_name(): rotated_refresh_token,
+            },
+        )
+        mocked_request = mocker.patch.object(
+            requests, "request", side_effect=mock_request, autospec=True
+        )
+
+        authenticator.refresh_and_set_access_token()
+        first_call_params = mocked_request.call_args.kwargs["params"]
+        assert first_call_params["refresh_token"] == original_refresh_token
+        assert connector_config["credentials"]["refresh_token"] == rotated_refresh_token, (
+            "config should have been mutated to carry the rotated refresh token"
+        )
+
+        authenticator.refresh_and_set_access_token()
+        second_call_params = mocked_request.call_args.kwargs["params"]
+        assert second_call_params["refresh_token"] == rotated_refresh_token, (
+            "second refresh must send the rotated refresh token on the URL, "
+            "not the stale value baked in at construction time"
+        )
+        second_call_body = mocked_request.call_args.kwargs["data"]
+        assert "refresh_token" not in second_call_body
+
 
 def mock_request(method, url, data, headers, **kwargs):
     if url == "https://refresh_endpoint.com":
