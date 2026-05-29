@@ -28,17 +28,16 @@ class ConstantBackoffStrategy(BackoffStrategy):
     jitter_range_in_seconds: Optional[float] = None
 
     def __post_init__(self, parameters: Mapping[str, Any]) -> None:
-        self.backoff_time_in_seconds = self._as_interpolated_string(
-            self.backoff_time_in_seconds, parameters
-        )
-
-    @staticmethod
-    def _as_interpolated_string(
-        value: Union[float, InterpolatedString, str], parameters: Mapping[str, Any]
-    ) -> InterpolatedString:
-        if not isinstance(value, InterpolatedString):
-            value = str(value)
-        return InterpolatedString.create(value, parameters=parameters)
+        if not isinstance(self.backoff_time_in_seconds, InterpolatedString):
+            self.backoff_time_in_seconds = str(self.backoff_time_in_seconds)
+        if isinstance(self.backoff_time_in_seconds, float):
+            self.backoff_time_in_seconds = InterpolatedString.create(
+                str(self.backoff_time_in_seconds), parameters=parameters
+            )
+        else:
+            self.backoff_time_in_seconds = InterpolatedString.create(
+                self.backoff_time_in_seconds, parameters=parameters
+            )
 
     def backoff_time(
         self,

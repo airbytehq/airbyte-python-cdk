@@ -28,15 +28,12 @@ class ExponentialBackoffStrategy(BackoffStrategy):
     jitter_range_in_seconds: Optional[float] = None
 
     def __post_init__(self, parameters: Mapping[str, Any]) -> None:
-        self._factor = self._as_interpolated_string(self.factor, parameters)
-
-    @staticmethod
-    def _as_interpolated_string(
-        value: Union[float, InterpolatedString, str], parameters: Mapping[str, Any]
-    ) -> InterpolatedString:
-        if not isinstance(value, InterpolatedString):
-            value = str(value)
-        return InterpolatedString.create(value, parameters=parameters)
+        if not isinstance(self.factor, InterpolatedString):
+            self.factor = str(self.factor)
+        if isinstance(self.factor, float):
+            self._factor = InterpolatedString.create(str(self.factor), parameters=parameters)
+        else:
+            self._factor = InterpolatedString.create(self.factor, parameters=parameters)
 
     @property
     def _retry_factor(self) -> float:
