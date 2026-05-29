@@ -482,6 +482,7 @@ definitions:
         anyOf:
           - type: number
             title: Number of seconds
+            minimum: 0
           - type: string
             title: Interpolated Value
         interpolation_context:
@@ -496,6 +497,7 @@ definitions:
         anyOf:
           - type: number
             title: Number of seconds
+            minimum: 0
           - type: string
             title: Interpolated Value
         interpolation_context:

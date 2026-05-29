@@ -90,7 +90,13 @@ from airbyte_cdk.sources.declarative.models import (
     SubstreamPartitionRouter as SubstreamPartitionRouterModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    ConstantBackoffStrategy as ConstantBackoffStrategyModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     CustomRequester as CustomRequesterModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    ExponentialBackoffStrategy as ExponentialBackoffStrategyModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     OffsetIncrement as OffsetIncrementModel,
@@ -1810,6 +1816,38 @@ requester:
     backoff_strategy = requester.error_handler.backoff_strategies[0]
     assert isinstance(backoff_strategy, expected_backoff_strategy_type)
     assert backoff_strategy.jitter_range_in_seconds.eval({"backoff_jitter": 15}) == 15
+
+
+@pytest.mark.parametrize(
+    "backoff_strategy_model, backoff_strategy_arguments",
+    [
+        pytest.param(
+            ConstantBackoffStrategyModel,
+            {
+                "type": "ConstantBackoffStrategy",
+                "backoff_time_in_seconds": 60,
+            },
+            id="constant_backoff_strategy",
+        ),
+        pytest.param(
+            ExponentialBackoffStrategyModel,
+            {
+                "type": "ExponentialBackoffStrategy",
+                "factor": 5,
+            },
+            id="exponential_backoff_strategy",
+        ),
+    ],
+)
+def test_backoff_jitter_schema_validation(backoff_strategy_model, backoff_strategy_arguments):
+    backoff_strategy_model(**backoff_strategy_arguments, jitter_range_in_seconds=0)
+    backoff_strategy_model(
+        **backoff_strategy_arguments,
+        jitter_range_in_seconds="{{ config['backoff_jitter'] }}",
+    )
+
+    with pytest.raises(ValidationError, match="jitter_range_in_seconds"):
+        backoff_strategy_model(**backoff_strategy_arguments, jitter_range_in_seconds=-1)
 
 
 def test_create_request_with_legacy_session_authenticator():

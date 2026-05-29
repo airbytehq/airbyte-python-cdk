@@ -6,7 +6,7 @@ from __future__ import annotations
 from enum import Enum
 from typing import Any, Dict, List, Literal, Optional, Union
 
-from pydantic.v1 import BaseModel, Extra, Field
+from pydantic.v1 import BaseModel, Extra, Field, root_validator
 
 from airbyte_cdk.sources.declarative.models.base_model_with_deprecations import (
     BaseModelWithDeprecations,
@@ -108,9 +108,17 @@ class ConstantBackoffStrategy(BaseModel):
         None,
         description="Optional jitter range in seconds. When set, the backoff time is uniformly distributed between max(0, backoff_time_in_seconds - jitter_range_in_seconds) and backoff_time_in_seconds + jitter_range_in_seconds.",
         examples=[15, "{{ config['backoff_jitter'] }}"],
+        ge=0,
         title="Jitter Range",
     )
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
+
+    @root_validator(pre=True, allow_reuse=True)
+    def non_negative_literal_jitter(cls, values: Dict[str, Any]) -> Dict[str, Any]:
+        jitter_range_in_seconds = values.get("jitter_range_in_seconds")
+        if isinstance(jitter_range_in_seconds, (int, float)) and jitter_range_in_seconds < 0:
+            raise ValueError("jitter_range_in_seconds must be greater than or equal to 0")
+        return values
 
 
 class CursorPagination(BaseModel):
@@ -522,9 +530,17 @@ class ExponentialBackoffStrategy(BaseModel):
         None,
         description="Optional jitter range in seconds. When set, the backoff time is uniformly distributed between max(0, computed_backoff - jitter_range_in_seconds) and computed_backoff + jitter_range_in_seconds.",
         examples=[2, "{{ config['backoff_jitter'] }}"],
+        ge=0,
         title="Jitter Range",
     )
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
+
+    @root_validator(pre=True, allow_reuse=True)
+    def non_negative_literal_jitter(cls, values: Dict[str, Any]) -> Dict[str, Any]:
+        jitter_range_in_seconds = values.get("jitter_range_in_seconds")
+        if isinstance(jitter_range_in_seconds, (int, float)) and jitter_range_in_seconds < 0:
+            raise ValueError("jitter_range_in_seconds must be greater than or equal to 0")
+        return values
 
 
 class GroupByKeyMergeStrategy(BaseModel):
