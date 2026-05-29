@@ -6,7 +6,7 @@ from __future__ import annotations
 from enum import Enum
 from typing import Any, Dict, List, Literal, Optional, Union
 
-from pydantic.v1 import BaseModel, Extra, Field, conint
+from pydantic.v1 import BaseModel, Extra, Field
 
 from airbyte_cdk.sources.declarative.models.base_model_with_deprecations import (
     BaseModelWithDeprecations,
@@ -51,9 +51,10 @@ class DynamicStreamCheckConfig(BaseModel):
     dynamic_stream_name: str = Field(
         ..., description="The dynamic stream name.", title="Dynamic Stream Name"
     )
-    stream_count: Optional[conint(ge=1)] = Field(
+    stream_count: Optional[int] = Field(
         None,
         description="The number of streams to attempt reading from during a check operation. If unset, all generated streams are checked. Must be a positive integer; if it exceeds the total number of available streams, all streams are checked.",
+        ge=1,
         title="Stream Count",
     )
 
@@ -3092,9 +3093,10 @@ class AsyncRetriever(BaseModel):
         None,
         description="The time in minutes after which the single Async Job should be considered as Timed Out.",
     )
-    failed_retry_wait_time_in_seconds: Optional[Union[conint(ge=1), str]] = Field(
+    failed_retry_wait_time_in_seconds: Optional[Union[int, str]] = Field(
         None,
         description="Time in seconds to wait before retrying a failed async job. Only applies to jobs that ran on the API side and reported a FAILED status (e.g. report generation failed due to a cooldown). Creation failures (HTTP errors when starting a job, such as 429s) and TIMED_OUT jobs are retried immediately and are not affected by this setting. When set, the orchestrator defers retry of real failed jobs until the wait time has elapsed, without blocking other jobs.",
+        ge=1,
     )
     download_target_requester: Optional[Union[HttpRequester, CustomRequester]] = Field(
         None,
