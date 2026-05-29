@@ -135,6 +135,11 @@ class AbstractOauth2Authenticator(AuthBase):
         refresh_request_headers contains an Authorization header (e.g., Basic auth).
         This is required by OAuth providers like Gong that expect credentials ONLY in the
         Authorization header and reject requests that include them in both places.
+
+        Any key that is also present in `build_refresh_request_query_params()` is excluded
+        from the body so the same parameter is not sent twice (once on the URL and once in
+        the body). This supports OAuth providers like Gong that expect refresh parameters
+        on the URL query string.
         """
         # Check if credentials are being sent via Authorization header
         headers = self.get_refresh_request_headers()
@@ -142,6 +147,8 @@ class AbstractOauth2Authenticator(AuthBase):
 
         # Only include client credentials in body if not already in header
         include_client_credentials = not credentials_in_header
+
+        query_params = self.get_refresh_request_params() or {}
 
         payload: MutableMapping[str, Any] = {
             self.get_grant_type_name(): self.get_grant_type(),
@@ -163,6 +170,11 @@ class AbstractOauth2Authenticator(AuthBase):
                 if key not in payload:
                     payload[key] = val
 
+        # Strip any keys that are also being sent as URL query parameters so they are
+        # not duplicated across the URL and the body. The query params take precedence.
+        for key in query_params:
+            payload.pop(key, None)
+
         return payload
 
     def build_refresh_request_headers(self) -> Mapping[str, Any] | None:
@@ -172,6 +184,18 @@ class AbstractOauth2Authenticator(AuthBase):
         """
         headers = self.get_refresh_request_headers()
         return headers if headers else None
+
+    def build_refresh_request_query_params(self) -> Mapping[str, Any] | None:
+        """
+        Returns the URL query string parameters to set on the refresh request.
+
+        OAuth providers like Gong document their refresh endpoint as a `POST` with the
+        refresh parameters on the URL query string. Authenticators may override
+        `get_refresh_request_params()` to opt into this behavior. When set, any matching
+        keys are removed from the request body by `build_refresh_request_body()`.
+        """
+        params = self.get_refresh_request_params()
+        return params if params else None
 
     def refresh_access_token(self) -> Tuple[str, AirbyteDateTime]:
         """
@@ -275,6 +299,7 @@ class AbstractOauth2Authenticator(AuthBase):
                 url=self.get_token_refresh_endpoint(),  # type: ignore # returns None, if not provided, but str | bytes is expected.
                 data=self.build_refresh_request_body(),
                 headers=self.build_refresh_request_headers(),
+                params=self.build_refresh_request_query_params(),
             )
 
             if not response.ok:
@@ -554,6 +579,16 @@ class AbstractOauth2Authenticator(AuthBase):
     @abstractmethod
     def get_refresh_request_headers(self) -> Mapping[str, Any]:
         """Returns the request headers to set on the refresh request"""
+
+    def get_refresh_request_params(self) -> Mapping[str, Any]:
+        """Returns the URL query string parameters to set on the refresh request.
+
+        Defaults to an empty mapping so existing authenticators retain their previous
+        behavior (no query params on the refresh URL). Subclasses can override this to
+        send refresh parameters on the URL query string, which is required by OAuth
+        providers like Gong.
+        """
+        return {}
 
     @abstractmethod
     def get_grant_type(self) -> str:

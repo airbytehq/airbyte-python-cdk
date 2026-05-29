@@ -1434,6 +1434,14 @@ definitions:
         examples:
           - Authorization: "<AUTH_TOKEN>"
             Content-Type: "application/x-www-form-urlencoded"
+      refresh_request_query_params:
+        title: Refresh Request Query Parameters
+        description: URL query string parameters of the request sent to get a new access token. When set, any matching keys are removed from the request body so the same parameter is not sent twice. Use this for OAuth providers like Gong that document their refresh endpoint with `grant_type` and `refresh_token` on the URL query string instead of the form body.
+        type: object
+        additionalProperties: true
+        examples:
+          - grant_type: "refresh_token"
+            refresh_token: "{{ config['credentials']['refresh_token'] }}"
       scopes:
         title: Scopes
         description: List of scopes that should be granted to the access token.

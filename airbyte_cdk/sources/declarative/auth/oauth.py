@@ -44,6 +44,7 @@ class DeclarativeOauth2Authenticator(AbstractOauth2Authenticator, DeclarativeAut
         token_expiry_is_time_of_expiration bool: set True it if expires_in is returned as time of expiration instead of the number seconds until expiration
         refresh_request_body (Optional[Mapping[str, Any]]): The request body to send in the refresh request
         refresh_request_headers (Optional[Mapping[str, Any]]): The request headers to send in the refresh request
+        refresh_request_query_params (Optional[Mapping[str, Any]]): URL query string parameters to send on the refresh request
         grant_type: The grant_type to request for access_token. If set to refresh_token, the refresh_token parameter has to be provided
         message_repository (MessageRepository): the message repository used to emit logs on HTTP requests
         refresh_token_error_status_codes (Tuple[int, ...]): Status codes to identify refresh token errors in response
@@ -70,6 +71,7 @@ class DeclarativeOauth2Authenticator(AbstractOauth2Authenticator, DeclarativeAut
     refresh_token_name: Union[InterpolatedString, str] = "refresh_token"
     refresh_request_body: Optional[Mapping[str, Any]] = None
     refresh_request_headers: Optional[Mapping[str, Any]] = None
+    refresh_request_query_params: Optional[Mapping[str, Any]] = None
     grant_type_name: Union[InterpolatedString, str] = "grant_type"
     grant_type: Union[InterpolatedString, str] = "refresh_token"
     message_repository: MessageRepository = NoopMessageRepository()
@@ -134,6 +136,9 @@ class DeclarativeOauth2Authenticator(AbstractOauth2Authenticator, DeclarativeAut
         )
         self._refresh_request_headers = InterpolatedMapping(
             self.refresh_request_headers or {}, parameters=parameters
+        )
+        self._refresh_request_query_params = InterpolatedMapping(
+            self.refresh_request_query_params or {}, parameters=parameters
         )
         try:
             if (
@@ -246,6 +251,9 @@ class DeclarativeOauth2Authenticator(AbstractOauth2Authenticator, DeclarativeAut
 
     def get_refresh_request_headers(self) -> Mapping[str, Any]:
         return self._refresh_request_headers.eval(self.config)
+
+    def get_refresh_request_params(self) -> Mapping[str, Any]:
+        return self._refresh_request_query_params.eval(self.config)
 
     def get_token_expiry_date(self) -> AirbyteDateTime:
         if not self._has_access_token_been_initialized():

@@ -1939,6 +1939,17 @@ class OAuthAuthenticator(BaseModel):
         ],
         title="Refresh Request Headers",
     )
+    refresh_request_query_params: Optional[Dict[str, Any]] = Field(
+        None,
+        description="URL query string parameters of the request sent to get a new access token. When set, any matching keys are removed from the request body so the same parameter is not sent twice. Use this for OAuth providers like Gong that document their refresh endpoint with `grant_type` and `refresh_token` on the URL query string instead of the form body.",
+        examples=[
+            {
+                "grant_type": "refresh_token",
+                "refresh_token": "{{ config['credentials']['refresh_token'] }}",
+            }
+        ],
+        title="Refresh Request Query Parameters",
+    )
     scopes: Optional[List[str]] = Field(
         None,
         description="List of scopes that should be granted to the access token.",
