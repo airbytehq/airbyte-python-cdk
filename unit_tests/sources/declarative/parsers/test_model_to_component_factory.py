@@ -1781,7 +1781,7 @@ requester:
     backoff_strategies:
       - type: "ExponentialBackoffStrategy"
         factor: 5
-        jitter_range_in_seconds: "{{ config['backoff_jitter'] }}"
+        jitter_range_in_seconds: 15
             """,
             ExponentialBackoffStrategy,
             15,
@@ -1808,7 +1808,7 @@ requester:
     requester = factory.create_component(
         model_type=HttpRequesterModel,
         component_definition=requester_manifest,
-        config={**input_config, "backoff_jitter": 15},
+        config=input_config,
         name="name",
         decoder=None,
     )
@@ -1817,10 +1817,7 @@ requester:
     assert len(requester.error_handler.backoff_strategies) == 1
     backoff_strategy = requester.error_handler.backoff_strategies[0]
     assert isinstance(backoff_strategy, expected_backoff_strategy_type)
-    assert (
-        backoff_strategy.jitter_range_in_seconds.eval({"backoff_jitter": 15})
-        == expected_jitter_range
-    )
+    assert backoff_strategy.jitter_range_in_seconds == expected_jitter_range
 
 
 @pytest.mark.parametrize(
@@ -1846,13 +1843,37 @@ requester:
 )
 def test_backoff_jitter_schema_validation(backoff_strategy_model, backoff_strategy_arguments):
     backoff_strategy_model(**backoff_strategy_arguments, jitter_range_in_seconds=0)
-    backoff_strategy_model(
-        **backoff_strategy_arguments,
-        jitter_range_in_seconds="{{ config['backoff_jitter'] }}",
-    )
+
+    with pytest.raises(ValidationError, match="jitter_range_in_seconds"):
+        backoff_strategy_model(
+            **backoff_strategy_arguments,
+            jitter_range_in_seconds="{{ config['backoff_jitter'] }}",
+        )
 
     with pytest.raises(ValidationError, match="jitter_range_in_seconds"):
         backoff_strategy_model(**backoff_strategy_arguments, jitter_range_in_seconds=-1)
+
+
+@pytest.mark.parametrize(
+    "backoff_strategy_model",
+    [
+        pytest.param(
+            ConstantBackoffStrategyModel(
+                type="ConstantBackoffStrategy", backoff_time_in_seconds=60
+            ),
+            id="constant_backoff_strategy",
+        ),
+        pytest.param(
+            ExponentialBackoffStrategyModel(type="ExponentialBackoffStrategy", factor=5),
+            id="exponential_backoff_strategy",
+        ),
+    ],
+)
+def test_create_backoff_strategy_with_negative_jitter_raises_error(backoff_strategy_model):
+    backoff_strategy_model.__dict__["jitter_range_in_seconds"] = -1
+
+    with pytest.raises(ValueError, match="jitter_range_in_seconds"):
+        factory._create_component_from_model(backoff_strategy_model, config=input_config)
 
 
 def test_create_request_with_legacy_session_authenticator():

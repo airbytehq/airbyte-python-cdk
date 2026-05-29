@@ -4,7 +4,7 @@
 
 import random
 from dataclasses import InitVar, dataclass
-from typing import Any, Mapping, Optional, Union, cast
+from typing import Any, Mapping, Optional, Union
 
 import requests
 
@@ -25,14 +25,10 @@ class ExponentialBackoffStrategy(BackoffStrategy):
     parameters: InitVar[Mapping[str, Any]]
     config: Config
     factor: Union[float, InterpolatedString, str] = 5
-    jitter_range_in_seconds: Optional[Union[float, InterpolatedString, str]] = None
+    jitter_range_in_seconds: Optional[float] = None
 
     def __post_init__(self, parameters: Mapping[str, Any]) -> None:
         self._factor = self._as_interpolated_string(self.factor, parameters)
-        if self.jitter_range_in_seconds is not None:
-            self.jitter_range_in_seconds = self._as_interpolated_string(
-                self.jitter_range_in_seconds, parameters
-            )
 
     @staticmethod
     def _as_interpolated_string(
@@ -52,12 +48,7 @@ class ExponentialBackoffStrategy(BackoffStrategy):
         attempt_count: int,
     ) -> Optional[float]:
         backoff_time = float(self._retry_factor * 2**attempt_count)
-        jitter_range_in_seconds = self.jitter_range_in_seconds
-        if jitter_range_in_seconds is None:
+        if self.jitter_range_in_seconds is None:
             return backoff_time
 
-        jitter_range = float(cast(InterpolatedString, jitter_range_in_seconds).eval(self.config))
-        if jitter_range < 0:
-            raise ValueError("jitter_range_in_seconds must be greater than or equal to 0")
-
-        return random.uniform(max(0, backoff_time - jitter_range), backoff_time + jitter_range)
+        return random.uniform(backoff_time, backoff_time + (self.jitter_range_in_seconds * 2))

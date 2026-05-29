@@ -6,7 +6,7 @@ from __future__ import annotations
 from enum import Enum
 from typing import Any, Dict, List, Literal, Optional, Union
 
-from pydantic.v1 import BaseModel, Extra, Field, root_validator
+from pydantic.v1 import BaseModel, Extra, Field
 
 from airbyte_cdk.sources.declarative.models.base_model_with_deprecations import (
     BaseModelWithDeprecations,
@@ -104,22 +104,14 @@ class ConstantBackoffStrategy(BaseModel):
         examples=[30, 30.5, "{{ config['backoff_time'] }}"],
         title="Backoff Time",
     )
-    jitter_range_in_seconds: Optional[Union[float, str]] = Field(
+    jitter_range_in_seconds: Optional[float] = Field(
         None,
-        description="Optional jitter range in seconds. When set, the backoff time is uniformly distributed between max(0, backoff_time_in_seconds - jitter_range_in_seconds) and backoff_time_in_seconds + jitter_range_in_seconds.",
-        examples=[15, "{{ config['backoff_jitter'] }}"],
+        description="Optional jitter range in seconds. When set, the backoff time is uniformly distributed between backoff_time_in_seconds and backoff_time_in_seconds + (jitter_range_in_seconds * 2).",
+        examples=[15],
         ge=0,
         title="Jitter Range",
     )
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
-
-    @root_validator(pre=True, allow_reuse=True)
-    @classmethod
-    def non_negative_literal_jitter(cls, values: Dict[str, Any]) -> Dict[str, Any]:
-        jitter_range_in_seconds = values.get("jitter_range_in_seconds")
-        if isinstance(jitter_range_in_seconds, (int, float)) and jitter_range_in_seconds < 0:
-            raise ValueError("jitter_range_in_seconds must be greater than or equal to 0")
-        return values
 
 
 class CursorPagination(BaseModel):
@@ -527,22 +519,14 @@ class ExponentialBackoffStrategy(BaseModel):
         examples=[5, 5.5, "10"],
         title="Factor",
     )
-    jitter_range_in_seconds: Optional[Union[float, str]] = Field(
+    jitter_range_in_seconds: Optional[float] = Field(
         None,
-        description="Optional jitter range in seconds. When set, the backoff time is uniformly distributed between max(0, computed_backoff - jitter_range_in_seconds) and computed_backoff + jitter_range_in_seconds.",
-        examples=[2, "{{ config['backoff_jitter'] }}"],
+        description="Optional jitter range in seconds. When set, the backoff time is uniformly distributed between computed_backoff and computed_backoff + (jitter_range_in_seconds * 2).",
+        examples=[2],
         ge=0,
         title="Jitter Range",
     )
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
-
-    @root_validator(pre=True, allow_reuse=True)
-    @classmethod
-    def non_negative_literal_jitter(cls, values: Dict[str, Any]) -> Dict[str, Any]:
-        jitter_range_in_seconds = values.get("jitter_range_in_seconds")
-        if isinstance(jitter_range_in_seconds, (int, float)) and jitter_range_in_seconds < 0:
-            raise ValueError("jitter_range_in_seconds must be greater than or equal to 0")
-        return values
 
 
 class GroupByKeyMergeStrategy(BaseModel):
