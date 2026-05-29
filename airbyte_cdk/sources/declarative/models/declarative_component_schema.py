@@ -114,6 +114,7 @@ class ConstantBackoffStrategy(BaseModel):
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
     @root_validator(pre=True, allow_reuse=True)
+    @classmethod
     def non_negative_literal_jitter(cls, values: Dict[str, Any]) -> Dict[str, Any]:
         jitter_range_in_seconds = values.get("jitter_range_in_seconds")
         if isinstance(jitter_range_in_seconds, (int, float)) and jitter_range_in_seconds < 0:
@@ -536,6 +537,7 @@ class ExponentialBackoffStrategy(BaseModel):
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
     @root_validator(pre=True, allow_reuse=True)
+    @classmethod
     def non_negative_literal_jitter(cls, values: Dict[str, Any]) -> Dict[str, Any]:
         jitter_range_in_seconds = values.get("jitter_range_in_seconds")
         if isinstance(jitter_range_in_seconds, (int, float)) and jitter_range_in_seconds < 0:
