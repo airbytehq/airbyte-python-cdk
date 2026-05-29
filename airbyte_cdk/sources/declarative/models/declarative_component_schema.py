@@ -104,6 +104,13 @@ class ConstantBackoffStrategy(BaseModel):
         examples=[30, 30.5, "{{ config['backoff_time'] }}"],
         title="Backoff Time",
     )
+    jitter_range_in_seconds: Optional[float] = Field(
+        None,
+        description="Optional additive jitter range in seconds. When set, the backoff time is uniformly distributed between backoff_time_in_seconds and backoff_time_in_seconds + (jitter_range_in_seconds * 2), so jitter only increases the base backoff.",
+        examples=[15],
+        ge=0,
+        title="Jitter Range",
+    )
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
 
@@ -511,6 +518,13 @@ class ExponentialBackoffStrategy(BaseModel):
         description="Multiplicative constant applied on each retry.",
         examples=[5, 5.5, "10"],
         title="Factor",
+    )
+    jitter_range_in_seconds: Optional[float] = Field(
+        None,
+        description="Optional additive jitter range in seconds. When set, the backoff time is uniformly distributed between computed_backoff and computed_backoff + (jitter_range_in_seconds * 2), so jitter only increases the computed backoff.",
+        examples=[2],
+        ge=0,
+        title="Jitter Range",
     )
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
@@ -3077,6 +3091,7 @@ class AsyncRetriever(BaseModel):
     failed_retry_wait_time_in_seconds: Optional[Union[int, str]] = Field(
         None,
         description="Time in seconds to wait before retrying a failed async job. Only applies to jobs that ran on the API side and reported a FAILED status (e.g. report generation failed due to a cooldown). Creation failures (HTTP errors when starting a job, such as 429s) and TIMED_OUT jobs are retried immediately and are not affected by this setting. When set, the orchestrator defers retry of real failed jobs until the wait time has elapsed, without blocking other jobs.",
+        ge=1,
     )
     download_target_requester: Optional[Union[HttpRequester, CustomRequester]] = Field(
         None,
