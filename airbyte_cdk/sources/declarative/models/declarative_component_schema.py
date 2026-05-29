@@ -3089,6 +3089,7 @@ class AsyncRetriever(BaseModel):
     failed_retry_wait_time_in_seconds: Optional[Union[int, str]] = Field(
         None,
         description="Time in seconds to wait before retrying a failed async job. Only applies to jobs that ran on the API side and reported a FAILED status (e.g. report generation failed due to a cooldown). Creation failures (HTTP errors when starting a job, such as 429s) and TIMED_OUT jobs are retried immediately and are not affected by this setting. When set, the orchestrator defers retry of real failed jobs until the wait time has elapsed, without blocking other jobs.",
+        ge=1,
     )
     download_target_requester: Optional[Union[HttpRequester, CustomRequester]] = Field(
         None,
