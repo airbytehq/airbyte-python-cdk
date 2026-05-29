@@ -1761,7 +1761,7 @@ requester:
 
 
 @pytest.mark.parametrize(
-    "backoff_strategy_yaml, expected_backoff_strategy_type",
+    "backoff_strategy_yaml, expected_backoff_strategy_type, expected_jitter_range",
     [
         pytest.param(
             """
@@ -1769,9 +1769,10 @@ requester:
     backoff_strategies:
       - type: "ConstantBackoffStrategy"
         backoff_time_in_seconds: 60
-        jitter_range_in_seconds: 15
+        jitter_range_in_seconds: 7
             """,
             ConstantBackoffStrategy,
+            7,
             id="constant_backoff_strategy",
         ),
         pytest.param(
@@ -1783,12 +1784,13 @@ requester:
         jitter_range_in_seconds: "{{ config['backoff_jitter'] }}"
             """,
             ExponentialBackoffStrategy,
+            15,
             id="exponential_backoff_strategy",
         ),
     ],
 )
 def test_create_requester_with_backoff_jitter(
-    backoff_strategy_yaml, expected_backoff_strategy_type
+    backoff_strategy_yaml, expected_backoff_strategy_type, expected_jitter_range
 ):
     content = f"""
 requester:
@@ -1815,7 +1817,10 @@ requester:
     assert len(requester.error_handler.backoff_strategies) == 1
     backoff_strategy = requester.error_handler.backoff_strategies[0]
     assert isinstance(backoff_strategy, expected_backoff_strategy_type)
-    assert backoff_strategy.jitter_range_in_seconds.eval({"backoff_jitter": 15}) == 15
+    assert (
+        backoff_strategy.jitter_range_in_seconds.eval({"backoff_jitter": 15})
+        == expected_jitter_range
+    )
 
 
 @pytest.mark.parametrize(

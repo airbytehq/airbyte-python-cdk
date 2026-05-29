@@ -68,6 +68,7 @@ def test_exponential_backoff_with_jitter_bounds(
     ]
 
     assert all(expected_lower_bound <= backoff <= expected_upper_bound for backoff in backoff_times)
+    assert len(set(backoff_times)) > 1
 
 
 def test_exponential_backoff_with_negative_jitter_raises_error():
