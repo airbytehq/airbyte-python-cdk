@@ -6,6 +6,7 @@ import os
 from argparse import Namespace
 from collections import defaultdict
 from copy import deepcopy
+from queue import Queue
 from typing import Any, List, Mapping, MutableMapping, Union
 from unittest import mock
 from unittest.mock import MagicMock, patch
@@ -944,3 +945,98 @@ def test_memory_failfast_flushes_queued_state_before_raising(mocker):
     with pytest.raises(AirbyteTracedException) as exc_info:
         next(gen)
     assert exc_info.value is fail_fast_exc
+
+
+def test_deadlock_diagnostics_heartbeat_includes_stall_thread_dump():
+    emitted: list[bytes] = []
+    timestamps = iter([100.0, 130.0, 160.0, 190.0, 220.0])
+    diagnostics = entrypoint_module._DeadlockDiagnostics(
+        interval_seconds=30.0,
+        stall_interval_count=3,
+        time_fn=lambda: next(timestamps),
+        write_fn=emitted.append,
+    )
+
+    diagnostics.record_message("record\n")
+    diagnostics.emit_heartbeat()
+    diagnostics.emit_heartbeat()
+    diagnostics.emit_heartbeat()
+    diagnostics.emit_heartbeat()
+
+    first_heartbeat, _, _, stalled_heartbeat = [item.decode() for item in emitted]
+    assert "STDOUT_HEARTBEAT: t=30s msgs=1 bytes=7 print_blocked=NO" in first_heartbeat
+    assert "=== THREAD DUMP (stall detected) ===" in stalled_heartbeat
+    assert "=== END THREAD DUMP ===" in stalled_heartbeat
+
+
+def test_deadlock_diagnostics_heartbeat_reports_queue_stats():
+    emitted: list[bytes] = []
+    queue: Queue = Queue(maxsize=1)
+    queue.put("record")
+
+    from airbyte_cdk.sources.concurrent_source.queue_registry import (
+        register_queue,
+        unregister_queue,
+    )
+
+    register_queue(queue)
+    try:
+        diagnostics = entrypoint_module._DeadlockDiagnostics(
+            interval_seconds=30.0,
+            time_fn=lambda: 30.0,
+            write_fn=emitted.append,
+        )
+
+        diagnostics.emit_heartbeat()
+    finally:
+        unregister_queue()
+
+    assert "queue_size=1 queue_full=True" in emitted[0].decode()
+
+
+def test_launch_starts_deadlock_diagnostics_when_enabled(mocker):
+    diagnostics = MagicMock()
+    mocker.patch.object(entrypoint_module, "_DeadlockDiagnostics", return_value=diagnostics)
+    mocker.patch.dict(os.environ, {entrypoint_module._DEADLOCK_DIAGNOSTICS_ENV: "true"})
+    mocker.patch.object(AirbyteEntrypoint, "parse_args", return_value=Namespace(command="spec"))
+    mocker.patch.object(
+        AirbyteEntrypoint,
+        "run",
+        return_value=iter(
+            [
+                AirbyteMessage(
+                    type=Type.SPEC, spec=ConnectorSpecification(connectionSpecification={})
+                )
+            ]
+        ),
+    )
+
+    entrypoint_module.launch(MockSource(), ["spec"])
+
+    diagnostics.start.assert_called_once_with()
+    diagnostics.mark_print_started.assert_called_once_with()
+    diagnostics.mark_print_finished.assert_called_once_with()
+    diagnostics.record_message.assert_called_once()
+    diagnostics.stop.assert_called_once_with()
+
+
+def test_launch_does_not_start_deadlock_diagnostics_by_default(mocker):
+    diagnostics = MagicMock()
+    mocker.patch.object(entrypoint_module, "_DeadlockDiagnostics", return_value=diagnostics)
+    mocker.patch.dict(os.environ, {}, clear=True)
+    mocker.patch.object(AirbyteEntrypoint, "parse_args", return_value=Namespace(command="spec"))
+    mocker.patch.object(
+        AirbyteEntrypoint,
+        "run",
+        return_value=iter(
+            [
+                AirbyteMessage(
+                    type=Type.SPEC, spec=ConnectorSpecification(connectionSpecification={})
+                )
+            ]
+        ),
+    )
+
+    entrypoint_module.launch(MockSource(), ["spec"])
+
+    entrypoint_module._DeadlockDiagnostics.assert_not_called()
