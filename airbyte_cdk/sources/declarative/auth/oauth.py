@@ -252,7 +252,7 @@ class DeclarativeOauth2Authenticator(AbstractOauth2Authenticator, DeclarativeAut
     def get_refresh_request_headers(self) -> Mapping[str, Any]:
         return self._refresh_request_headers.eval(self.config)
 
-    def get_refresh_request_params(self) -> Mapping[str, Any]:
+    def get_refresh_request_query_params(self) -> Mapping[str, Any]:
         return self._refresh_request_query_params.eval(self.config)
 
     def get_token_expiry_date(self) -> AirbyteDateTime:

@@ -206,7 +206,7 @@ class TestOauth2Authenticator:
         assert headers is None
 
     def test_refresh_request_query_params(self):
-        """When `refresh_request_params` is set, the params are returned by
+        """When `refresh_request_query_params` is set, the params are returned by
         `build_refresh_request_query_params()` and the matching keys are
         excluded from the body.
         """
@@ -219,7 +219,7 @@ class TestOauth2Authenticator:
             client_id="some_client_id",
             client_secret="some_client_secret",
             refresh_token="some_refresh_token",
-            refresh_request_params=query_params,
+            refresh_request_query_params=query_params,
             refresh_request_headers={"Authorization": "Basic dGVzdA=="},
         )
         built_params = oauth.build_refresh_request_query_params()
@@ -230,7 +230,7 @@ class TestOauth2Authenticator:
         assert "refresh_token" not in body
 
     def test_refresh_request_query_params_none_returns_none(self):
-        """When no `refresh_request_params` is set, query params should be None."""
+        """When no `refresh_request_query_params` is set, query params should be None."""
         oauth = Oauth2Authenticator(
             token_refresh_endpoint="refresh_end",
             client_id="some_client_id",
@@ -241,7 +241,7 @@ class TestOauth2Authenticator:
 
     def test_refresh_request_query_params_sent_on_request(self, mocker):
         """Verify that URL query params are sent via `params=` kwarg on the
-        HTTP request when `refresh_request_params` is configured.
+        HTTP request when `refresh_request_query_params` is configured.
         """
         query_params = {
             "grant_type": "refresh_token",
@@ -253,7 +253,7 @@ class TestOauth2Authenticator:
             client_id="some_client_id",
             client_secret="some_client_secret",
             refresh_token="some_refresh_token",
-            refresh_request_params=query_params,
+            refresh_request_query_params=query_params,
             refresh_request_headers={"Authorization": "Basic dGVzdA=="},
         )
 
@@ -850,7 +850,7 @@ class TestSingleUseRefreshTokenOauth2Authenticator:
         self, mocker, connector_config
     ):
         """`SingleUseRefreshTokenOauth2Authenticator` rotates its refresh token
-        on every refresh. When `refresh_request_params` is configured to send
+        on every refresh. When `refresh_request_query_params` is configured to send
         the refresh token on the URL query string, the URL on the second
         refresh request must carry the **rotated** refresh token (the one
         returned by the previous refresh), not the original value from the
@@ -868,7 +868,7 @@ class TestSingleUseRefreshTokenOauth2Authenticator:
             token_refresh_endpoint="https://refresh_endpoint.com",
             client_id=connector_config["credentials"]["client_id"],
             client_secret=connector_config["credentials"]["client_secret"],
-            refresh_request_params=query_params,
+            refresh_request_query_params=query_params,
             refresh_request_headers={"Authorization": "Basic dGVzdA=="},
         )
 

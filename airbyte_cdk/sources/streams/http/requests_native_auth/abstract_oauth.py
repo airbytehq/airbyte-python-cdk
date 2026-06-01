@@ -148,7 +148,7 @@ class AbstractOauth2Authenticator(AuthBase):
         # Only include client credentials in body if not already in header
         include_client_credentials = not credentials_in_header
 
-        query_params = self.get_refresh_request_params() or {}
+        query_params = self.get_refresh_request_query_params() or {}
 
         payload: MutableMapping[str, Any] = {
             self.get_grant_type_name(): self.get_grant_type(),
@@ -191,8 +191,8 @@ class AbstractOauth2Authenticator(AuthBase):
 
         OAuth providers like Gong document their refresh endpoint as a `POST` with the
         refresh parameters on the URL query string. Authenticators may override
-        `get_refresh_request_params()` to opt into this behavior. When set, any matching
-        keys are removed from the request body by `build_refresh_request_body()`.
+        `get_refresh_request_query_params()` to opt into this behavior. When set, any
+        matching keys are removed from the request body by `build_refresh_request_body()`.
 
         If the configured params contain the refresh-token field, the live value from
         `get_refresh_token()` is substituted on every call. This matters for
@@ -202,7 +202,7 @@ class AbstractOauth2Authenticator(AuthBase):
         on every request, breaking rotation. Other fields are passed through unchanged
         so users can still set values like `grant_type` independently.
         """
-        params = self.get_refresh_request_params()
+        params = self.get_refresh_request_query_params()
         if not params:
             return None
 
@@ -597,7 +597,7 @@ class AbstractOauth2Authenticator(AuthBase):
     def get_refresh_request_headers(self) -> Mapping[str, Any]:
         """Returns the request headers to set on the refresh request"""
 
-    def get_refresh_request_params(self) -> Mapping[str, Any]:
+    def get_refresh_request_query_params(self) -> Mapping[str, Any]:
         """Returns the URL query string parameters to set on the refresh request.
 
         Defaults to an empty mapping so existing authenticators retain their previous

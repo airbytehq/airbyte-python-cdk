@@ -2872,7 +2872,7 @@ class ModelToComponentFactory:
                 refresh_request_headers=InterpolatedMapping(
                     model.refresh_request_headers or {}, parameters=model.parameters or {}
                 ).eval(config),
-                refresh_request_params=InterpolatedMapping(
+                refresh_request_query_params=InterpolatedMapping(
                     model.refresh_request_query_params or {}, parameters=model.parameters or {}
                 ).eval(config),
                 scopes=model.scopes,
