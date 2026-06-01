@@ -53,7 +53,6 @@ logger = init_logger("airbyte")
 VALID_URL_SCHEMES = ["https"]
 CLOUD_DEPLOYMENT_MODE = "cloud"
 _HAS_LOGGED_FOR_SERIALIZATION_ERROR = False
-_DEADLOCK_DIAGNOSTICS_ENV = "AIRBYTE_CDK_DEADLOCK_DIAGNOSTICS"
 
 
 class _DeadlockDiagnostics:
@@ -534,13 +533,8 @@ class AirbyteEntrypoint(object):
 def launch(source: Source, args: List[str]) -> None:
     source_entrypoint = AirbyteEntrypoint(source)
     parsed_args = source_entrypoint.parse_args(args)
-    diagnostics = (
-        _DeadlockDiagnostics()
-        if os.environ.get(_DEADLOCK_DIAGNOSTICS_ENV, "").lower() == "true"
-        else None
-    )
-    if diagnostics:
-        diagnostics.start()
+    diagnostics = _DeadlockDiagnostics()
+    diagnostics.start()
 
     # temporarily removes the PrintBuffer because we're seeing weird print behavior for concurrent syncs
     # Refer to: https://github.com/airbytehq/oncall/issues/6235
@@ -550,18 +544,14 @@ def launch(source: Source, args: List[str]) -> None:
                 # simply printing is creating issues for concurrent CDK as Python uses different two instructions to print: one for the message and
                 # the other for the break line. Adding `\n` to the message ensure that both are printed at the same time
                 data = f"{message}\n"
-                if diagnostics:
-                    diagnostics.mark_print_started()
+                diagnostics.mark_print_started()
                 try:
                     print(data, end="")
                 finally:
-                    if diagnostics:
-                        diagnostics.mark_print_finished()
-                if diagnostics:
-                    diagnostics.record_message(data)
+                    diagnostics.mark_print_finished()
+                diagnostics.record_message(data)
     finally:
-        if diagnostics:
-            diagnostics.stop()
+        diagnostics.stop()
 
 
 def _init_internal_request_filter() -> None:

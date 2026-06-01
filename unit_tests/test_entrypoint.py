@@ -994,10 +994,9 @@ def test_deadlock_diagnostics_heartbeat_reports_queue_stats():
     assert "queue_size=1 queue_full=True" in emitted[0].decode()
 
 
-def test_launch_starts_deadlock_diagnostics_when_enabled(mocker):
+def test_launch_starts_deadlock_diagnostics(mocker):
     diagnostics = MagicMock()
     mocker.patch.object(entrypoint_module, "_DeadlockDiagnostics", return_value=diagnostics)
-    mocker.patch.dict(os.environ, {entrypoint_module._DEADLOCK_DIAGNOSTICS_ENV: "true"})
     mocker.patch.object(AirbyteEntrypoint, "parse_args", return_value=Namespace(command="spec"))
     mocker.patch.object(
         AirbyteEntrypoint,
@@ -1018,25 +1017,3 @@ def test_launch_starts_deadlock_diagnostics_when_enabled(mocker):
     diagnostics.mark_print_finished.assert_called_once_with()
     diagnostics.record_message.assert_called_once()
     diagnostics.stop.assert_called_once_with()
-
-
-def test_launch_does_not_start_deadlock_diagnostics_by_default(mocker):
-    diagnostics = MagicMock()
-    mocker.patch.object(entrypoint_module, "_DeadlockDiagnostics", return_value=diagnostics)
-    mocker.patch.dict(os.environ, {}, clear=True)
-    mocker.patch.object(AirbyteEntrypoint, "parse_args", return_value=Namespace(command="spec"))
-    mocker.patch.object(
-        AirbyteEntrypoint,
-        "run",
-        return_value=iter(
-            [
-                AirbyteMessage(
-                    type=Type.SPEC, spec=ConnectorSpecification(connectionSpecification={})
-                )
-            ]
-        ),
-    )
-
-    entrypoint_module.launch(MockSource(), ["spec"])
-
-    entrypoint_module._DeadlockDiagnostics.assert_not_called()
