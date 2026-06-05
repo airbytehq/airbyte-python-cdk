@@ -227,12 +227,14 @@ def test_infer_schema(mock_detect_filetype, filetype, format_config, raises):
         ),
     ],
 )
-@patch("unstructured.partition.pdf.partition_pdf")
-@patch("unstructured.partition.pptx.partition_pptx")
-@patch("unstructured.partition.docx.partition_docx")
+@patch("airbyte_cdk.sources.file_based.file_types.unstructured_parser.unstructured_partition_pdf")
+@patch("airbyte_cdk.sources.file_based.file_types.unstructured_parser.unstructured_partition_pptx")
+@patch("airbyte_cdk.sources.file_based.file_types.unstructured_parser.unstructured_partition_docx")
+@patch("airbyte_cdk.sources.file_based.file_types.unstructured_parser._import_unstructured")
 @patch("airbyte_cdk.sources.file_based.file_types.unstructured_parser.detect_filetype")
 def test_parse_records(
     mock_detect_filetype,
+    mock_import_unstructured,
     mock_partition_docx,
     mock_partition_pptx,
     mock_partition_pdf,
