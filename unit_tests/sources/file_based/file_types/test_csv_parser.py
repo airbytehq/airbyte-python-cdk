@@ -648,7 +648,7 @@ class CsvReaderTest(unittest.TestCase):
         self._stream_reader.open_file.return_value = (
             CsvFileBuilder().with_data(["something"]).build()
         )
-        self._csv_reader._get_headers = Mock(
+        self._csv_reader._get_headers_and_trailing_empty_count = Mock(
             side_effect=UnicodeDecodeError("encoding", b"", 0, 1, "reason")
         )
 
@@ -657,7 +657,7 @@ class CsvReaderTest(unittest.TestCase):
             assert len(list(data_generator)) == 0
 
         assert "encoding" in ate.value.message
-        assert self._csv_reader._get_headers.called
+        assert self._csv_reader._get_headers_and_trailing_empty_count.called
 
     def _read_data(self) -> Generator[Dict[str, str], None, None]:
         data_generator = self._csv_reader.read_data(
@@ -791,10 +791,10 @@ def test_encoding_is_passed_to_stream_reader() -> None:
 @pytest.mark.parametrize(
     "header_row, expected_empty_count",
     [
-        pytest.param("col1,col2,col3,,,", 3, id="trailing_empty_columns"),
         pytest.param("col1,,col3", 1, id="middle_empty_column"),
         pytest.param(",col2,col3", 1, id="leading_empty_column"),
-        pytest.param("col1,col2, ", 1, id="whitespace_only_column"),
+        pytest.param("col1, ,col3", 1, id="middle_whitespace_only_column"),
+        pytest.param(" , , ", 3, id="only_empty_columns"),
     ],
 )
 def test_get_headers_raises_on_empty_column_names(
@@ -825,6 +825,41 @@ def test_get_headers_raises_on_empty_column_names(
         csv.unregister_dialect(dialect_name)
 
 
+@pytest.mark.parametrize(
+    "header_row, expected_headers",
+    [
+        pytest.param("col1,col2,col3,,,", ["col1", "col2", "col3"], id="empty_headers"),
+        pytest.param(
+            "col1,col2,col3, , ",
+            ["col1", "col2", "col3"],
+            id="whitespace_only_headers",
+        ),
+    ],
+)
+def test_get_headers_strips_trailing_empty_column_names(
+    header_row: str, expected_headers: List[str]
+) -> None:
+    csv_reader = _CsvReader()
+    config_format = CsvFormat()
+    fp = io.StringIO(header_row)
+
+    dialect_name = f"test_{uuid4()}"
+    csv.register_dialect(
+        dialect_name,
+        delimiter=config_format.delimiter,
+        quotechar=config_format.quote_char,
+        escapechar=config_format.escape_char,
+        doublequote=config_format.double_quote,
+        quoting=csv.QUOTE_MINIMAL,
+    )
+
+    try:
+        headers = csv_reader._get_headers(fp, config_format, dialect_name)
+        assert headers == expected_headers
+    finally:
+        csv.unregister_dialect(dialect_name)
+
+
 def test_get_headers_accepts_valid_headers() -> None:
     csv_reader = _CsvReader()
     config_format = CsvFormat()
@@ -847,7 +882,81 @@ def test_get_headers_accepts_valid_headers() -> None:
         csv.unregister_dialect(dialect_name)
 
 
-def test_read_data_raises_on_empty_column_names() -> None:
+@pytest.mark.parametrize(
+    "data, expected_records",
+    [
+        pytest.param(
+            ["col1,col2,col3,,", "v1,v2,v3,,", "v4,v5,v6"],
+            [
+                {"col1": "v1", "col2": "v2", "col3": "v3"},
+                {"col1": "v4", "col2": "v5", "col3": "v6"},
+            ],
+            id="trailing_empty_headers_and_cells",
+        ),
+        pytest.param(
+            ["col1,col2,col3, , ", "v1,v2,v3, ,", "v4,v5,v6"],
+            [
+                {"col1": "v1", "col2": "v2", "col3": "v3"},
+                {"col1": "v4", "col2": "v5", "col3": "v6"},
+            ],
+            id="trailing_whitespace_headers_and_cells",
+        ),
+        pytest.param(
+            ["col1,col2,col3", "v1,v2,v3"],
+            [{"col1": "v1", "col2": "v2", "col3": "v3"}],
+            id="valid_headers",
+        ),
+    ],
+)
+def test_read_data_strips_trailing_empty_headers_and_values(
+    data: List[str], expected_records: List[Dict[str, str]]
+) -> None:
+    config_format = CsvFormat()
+    config = Mock()
+    config.name = "config_name"
+    config.format = config_format
+
+    file = RemoteFile(uri="test.csv", last_modified=datetime.now())
+    stream_reader = Mock(spec=AbstractFileBasedStreamReader)
+    logger = Mock(spec=logging.Logger)
+    csv_reader = _CsvReader()
+
+    stream_reader.open_file.return_value = CsvFileBuilder().with_data(data).build()
+
+    assert (
+        list(csv_reader.read_data(config, file, stream_reader, logger, FileReadMode.READ))
+        == expected_records
+    )
+
+
+@pytest.mark.parametrize(
+    "data",
+    [
+        pytest.param(["col1,,col3", "v1,,v3"], id="interior_empty_header"),
+        pytest.param(["col1, ,col3", "v1, ,v3"], id="interior_whitespace_header"),
+    ],
+)
+def test_read_data_raises_on_interior_empty_column_names(data: List[str]) -> None:
+    config_format = CsvFormat()
+    config = Mock()
+    config.name = "config_name"
+    config.format = config_format
+
+    file = RemoteFile(uri="test.csv", last_modified=datetime.now())
+    stream_reader = Mock(spec=AbstractFileBasedStreamReader)
+    logger = Mock(spec=logging.Logger)
+    csv_reader = _CsvReader()
+
+    stream_reader.open_file.return_value = CsvFileBuilder().with_data(data).build()
+
+    with pytest.raises(AirbyteTracedException) as exc_info:
+        list(csv_reader.read_data(config, file, stream_reader, logger, FileReadMode.READ))
+
+    assert exc_info.value.failure_type == FailureType.config_error
+    assert "interior empty column name" in exc_info.value.message
+
+
+def test_read_data_raises_on_non_empty_values_under_trailing_empty_headers() -> None:
     config_format = CsvFormat()
     config = Mock()
     config.name = "config_name"
@@ -859,7 +968,7 @@ def test_read_data_raises_on_empty_column_names() -> None:
     csv_reader = _CsvReader()
 
     stream_reader.open_file.return_value = (
-        CsvFileBuilder().with_data(["col1,col2,col3,,,", "v1,v2,v3,v4,v5,v6"]).build()
+        CsvFileBuilder().with_data(["col1,col2,col3,,", "v1,v2,v3,v4,"]).build()
     )
 
     with pytest.raises(AirbyteTracedException) as exc_info:
@@ -874,7 +983,7 @@ def test_read_data_raises_on_empty_column_names() -> None:
         )
 
     assert exc_info.value.failure_type == FailureType.config_error
-    assert "empty column name" in exc_info.value.message
+    assert "non-empty value" in exc_info.value.message
 
 
 def test_parse_records_preserves_mismatch_error_detail() -> None:
