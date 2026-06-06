@@ -80,7 +80,7 @@ nltk = { version = "3.9.1", optional = true }
 unstructured = { version = "0.10.27", extras = ["docx", "pptx"], optional = true }
 "unstructured.pytesseract" = { version = ">=0.3.12", optional = true }
 pyjwt = "^2.8.0"
-cryptography = ">=44.0.0,!=45.0.0,!=45.0.1"  # 45.0.0-45.0.1 had load_pem_private_key() regressions (pyca/cryptography#12958)
+cryptography = ">=44.0.0,<47.0.0,!=45.0.0,!=45.0.1"  # 45.0.0-45.0.1 had regressions (pyca/cryptography#12958)
 pytz = "2024.2"
 pytest = {version = "^7", optional = true }
 orjson = "^3.10.7"
