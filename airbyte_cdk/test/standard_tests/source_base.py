@@ -138,7 +138,7 @@ class SourceTestSuiteBase(ConnectorTestSuiteBase):
             ]
         )
         result = run_test_job(
-            self.create_connector(scenario),
+            self.create_connector(scenario, configured_catalog),
             "read",
             test_scenario=scenario,
             connector_root=self.get_connector_root_dir(),
@@ -173,7 +173,7 @@ class SourceTestSuiteBase(ConnectorTestSuiteBase):
             ],
         )
         result: entrypoint_wrapper.EntrypointOutput = run_test_job(
-            self.create_connector(scenario),
+            self.create_connector(scenario, invalid_configured_catalog),
             "read",
             connector_root=self.get_connector_root_dir(),
             test_scenario=scenario.with_expecting_failure(),  # Expect failure due to bad catalog

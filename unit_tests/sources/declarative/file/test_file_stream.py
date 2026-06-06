@@ -128,6 +128,8 @@ class FileStreamTest(TestCase):
 
     def test_get_article_attachments(self) -> None:
         with HttpMocker() as http_mocker:
+            files_directory = Path(__file__).parent / "staging"
+            files_directory.mkdir(exist_ok=True)
             http_mocker.get(
                 HttpRequest(url=STREAM_URL),
                 HttpResponse(json.dumps(find_template("file_api/articles", __file__)), 200),
@@ -145,12 +147,13 @@ class FileStreamTest(TestCase):
                 ),
             )
 
-            output = read(
-                self._config(),
-                CatalogBuilder()
-                .with_stream(ConfiguredAirbyteStreamBuilder().with_name("article_attachments"))
-                .build(),
-            )
+            with patch.dict("os.environ", {"AIRBYTE_STAGING_DIRECTORY": str(files_directory)}):
+                output = read(
+                    self._config(),
+                    CatalogBuilder()
+                    .with_stream(ConfiguredAirbyteStreamBuilder().with_name("article_attachments"))
+                    .build(),
+                )
 
             assert output.records
             file_reference = output.records[0].record.file_reference
@@ -167,6 +170,8 @@ class FileStreamTest(TestCase):
 
     def test_get_article_attachments_with_filename_extractor(self) -> None:
         with HttpMocker() as http_mocker:
+            files_directory = Path(__file__).parent / "staging"
+            files_directory.mkdir(exist_ok=True)
             http_mocker.get(
                 HttpRequest(url=STREAM_URL),
                 HttpResponse(json.dumps(find_template("file_api/articles", __file__)), 200),
@@ -184,20 +189,21 @@ class FileStreamTest(TestCase):
                 ),
             )
 
-            output = read(
-                self._config(),
-                CatalogBuilder()
-                .with_stream(ConfiguredAirbyteStreamBuilder().with_name("article_attachments"))
-                .build(),
-                yaml_file="test_file_stream_with_filename_extractor.yaml",
-            )
+            with patch.dict("os.environ", {"AIRBYTE_STAGING_DIRECTORY": str(files_directory)}):
+                output = read(
+                    self._config(),
+                    CatalogBuilder()
+                    .with_stream(ConfiguredAirbyteStreamBuilder().with_name("article_attachments"))
+                    .build(),
+                    yaml_file="test_file_stream_with_filename_extractor.yaml",
+                )
 
             assert len(output.records) == 1
             file_reference = output.records[0].record.file_reference
             assert file_reference
             assert (
                 file_reference.staging_file_url
-                == "/tmp/airbyte-file-transfer/article_attachments/12138758717583/some_image_name.png"
+                == f"{files_directory}/article_attachments/12138758717583/some_image_name.png"
             )
             assert file_reference.source_file_relative_path
             assert not re.match(
@@ -207,6 +213,8 @@ class FileStreamTest(TestCase):
 
     def test_get_article_attachments_messages_for_connector_builder(self) -> None:
         with HttpMocker() as http_mocker:
+            files_directory = Path(__file__).parent / "staging"
+            files_directory.mkdir(exist_ok=True)
             http_mocker.get(
                 HttpRequest(url=STREAM_URL),
                 HttpResponse(json.dumps(find_template("file_api/articles", __file__)), 200),
@@ -231,9 +239,12 @@ class FileStreamTest(TestCase):
                     super().__init__(*args, **kwargs)
 
             # Patch the factory class where ConcurrentDeclarativeSource (parent of YamlDeclarativeSource) imports it
-            with patch(
-                "airbyte_cdk.sources.declarative.concurrent_declarative_source.ModelToComponentFactory",
-                new=MockModelToComponentFactory,
+            with (
+                patch(
+                    "airbyte_cdk.sources.declarative.concurrent_declarative_source.ModelToComponentFactory",
+                    new=MockModelToComponentFactory,
+                ),
+                patch.dict("os.environ", {"AIRBYTE_STAGING_DIRECTORY": str(files_directory)}),
             ):
                 output = read(
                     self._config(),

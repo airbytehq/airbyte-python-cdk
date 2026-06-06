@@ -13,7 +13,7 @@ from airbyte_cdk.sources.utils.files_directory import get_files_directory
 
 class FileTransfer:
     def __init__(self) -> None:
-        self._local_directory = get_files_directory()
+        self._local_directory = get_files_directory(is_file_transfer=True)
 
     def upload(
         self,
