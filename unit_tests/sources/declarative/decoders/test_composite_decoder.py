@@ -332,6 +332,83 @@ def test_composite_raw_decoder_csv_parser_without_mocked_response():
         thread.join(timeout=5)  # ensure thread is cleaned up
 
 
+def _generate_csv_with_metadata(
+    metadata_lines: int = 0,
+    post_header_lines: int = 0,
+    encoding: str = "utf-8",
+    delimiter: str = ",",
+) -> bytes:
+    """Generate CSV bytes with metadata lines before and/or after the header."""
+    lines = []
+    for i in range(metadata_lines):
+        lines.append(f"# metadata line {i + 1}")
+    header = delimiter.join(["id", "name", "age"])
+    lines.append(header)
+    for i in range(post_header_lines):
+        lines.append(f"# post-header line {i + 1}")
+    lines.append(delimiter.join(["1", "John", "28"]))
+    lines.append(delimiter.join(["2", "Alice", "34"]))
+    return ("\n".join(lines) + "\n").encode(encoding)
+
+
+@pytest.mark.parametrize(
+    "skip_before,skip_after,metadata_lines,post_header_lines,expected_count",
+    [
+        pytest.param(0, 0, 0, 0, 2, id="no_skip_rows_default_behavior"),
+        pytest.param(3, 0, 3, 0, 2, id="skip_3_rows_before_header"),
+        pytest.param(0, 2, 0, 2, 2, id="skip_2_rows_after_header"),
+        pytest.param(2, 1, 2, 1, 2, id="skip_both_before_and_after"),
+        pytest.param(1, 0, 1, 0, 2, id="skip_1_row_before_header"),
+    ],
+)
+def test_csv_parser_skip_rows(
+    requests_mock,
+    skip_before: int,
+    skip_after: int,
+    metadata_lines: int,
+    post_header_lines: int,
+    expected_count: int,
+):
+    """Verify CsvParser skips metadata rows before and/or after the header."""
+    csv_content = _generate_csv_with_metadata(
+        metadata_lines=metadata_lines,
+        post_header_lines=post_header_lines,
+    )
+    requests_mock.register_uri("GET", "https://airbyte.io/", content=csv_content)
+    response = requests.get("https://airbyte.io/", stream=True)
+
+    parser = CsvParser(
+        skip_rows_before_header=skip_before,
+        skip_rows_after_header=skip_after,
+    )
+    composite_raw_decoder = CompositeRawDecoder(parser=parser)
+    parsed_records = list(composite_raw_decoder.decode(response))
+
+    assert len(parsed_records) == expected_count
+    assert parsed_records[0] == {"id": "1", "name": "John", "age": "28"}
+    assert parsed_records[1] == {"id": "2", "name": "Alice", "age": "34"}
+
+
+def test_csv_parser_skip_rows_before_header_with_tsv(requests_mock):
+    """Verify skip_rows_before_header works with TSV (tab-delimited) data, matching the reporter's use case."""
+    csv_content = _generate_csv_with_metadata(
+        metadata_lines=3,
+        delimiter="\t",
+    )
+    requests_mock.register_uri("GET", "https://airbyte.io/", content=csv_content)
+    response = requests.get("https://airbyte.io/", stream=True)
+
+    parser = CsvParser(
+        delimiter="\t",
+        skip_rows_before_header=3,
+    )
+    composite_raw_decoder = CompositeRawDecoder(parser=parser)
+    parsed_records = list(composite_raw_decoder.decode(response))
+
+    assert len(parsed_records) == 2
+    assert parsed_records[0] == {"id": "1", "name": "John", "age": "28"}
+
+
 def test_given_response_already_consumed_when_decode_then_no_data_is_returned(requests_mock):
     requests_mock.register_uri(
         "GET", "https://airbyte.io/", content=json.dumps({"test": "test"}).encode()
