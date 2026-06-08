@@ -38,6 +38,7 @@ class Oauth2Authenticator(AbstractOauth2Authenticator):
         client_id_name: str = "client_id",
         client_secret_name: str = "client_secret",
         refresh_token_name: str = "refresh_token",
+        scopes_name: str = "scope",
         scopes: List[str] | None = None,
         token_expiry_date: AirbyteDateTime | None = None,
         token_expiry_date_format: str | None = None,
@@ -59,6 +60,7 @@ class Oauth2Authenticator(AbstractOauth2Authenticator):
         self._client_id = client_id
         self._refresh_token_name = refresh_token_name
         self._refresh_token = refresh_token
+        self._scopes_name = scopes_name
         self._scopes = scopes
         self._access_token_name = access_token_name
         self._expires_in_name = expires_in_name
@@ -101,6 +103,9 @@ class Oauth2Authenticator(AbstractOauth2Authenticator):
 
     def get_scopes(self) -> list[str]:
         return self._scopes  # type: ignore[return-value]
+
+    def get_scopes_name(self) -> str:
+        return self._scopes_name
 
     def get_expires_in_name(self) -> str:
         return self._expires_in_name
@@ -154,6 +159,7 @@ class SingleUseRefreshTokenOauth2Authenticator(Oauth2Authenticator):
         self,
         connector_config: Mapping[str, Any],
         token_refresh_endpoint: str,
+        scopes_name: str = "scope",
         scopes: List[str] | None = None,
         access_token_name: str = "access_token",
         expires_in_name: str = "expires_in",
@@ -221,6 +227,7 @@ class SingleUseRefreshTokenOauth2Authenticator(Oauth2Authenticator):
             client_secret=self._client_secret,
             refresh_token=self.get_refresh_token(),
             refresh_token_name=self._refresh_token_name,
+            scopes_name=scopes_name,
             scopes=scopes,
             token_expiry_date=self.get_token_expiry_date(),
             access_token_name=access_token_name,
