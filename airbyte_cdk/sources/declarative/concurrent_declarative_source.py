@@ -406,11 +406,11 @@ class ConcurrentDeclarativeSource(Source):
         if self._spec_component:
             self._spec_component.validate_config(self._config)
 
-        stream_configs = self._stream_configs(self._source_config) + self.dynamic_streams
-
         api_budget_model = self._source_config.get("api_budget")
         if api_budget_model:
             self._constructor.set_api_budget(api_budget_model, self._config)
+
+        stream_configs = self._stream_configs(self._source_config) + self.dynamic_streams
 
         prepared_configs = self._initialize_cache_for_parent_streams(deepcopy(stream_configs))
 
