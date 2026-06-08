@@ -2896,9 +2896,7 @@ class ModelToComponentFactory:
             grant_type=model.grant_type or "refresh_token",
             refresh_request_body=model.refresh_request_body,
             refresh_request_headers=model.refresh_request_headers,
-            send_refresh_request_as_query_params=bool(
-                model.send_refresh_request_as_query_params
-            ),
+            send_refresh_request_as_query_params=bool(model.send_refresh_request_as_query_params),
             refresh_token_name=model.refresh_token_name or "refresh_token",
             refresh_token=model.refresh_token,
             scopes=model.scopes,
