@@ -90,6 +90,15 @@ from airbyte_cdk.sources.declarative.models import (
     SubstreamPartitionRouter as SubstreamPartitionRouterModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    ConstantBackoffStrategy as ConstantBackoffStrategyModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    CustomRequester as CustomRequesterModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    ExponentialBackoffStrategy as ExponentialBackoffStrategyModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     OffsetIncrement as OffsetIncrementModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
@@ -173,7 +182,7 @@ from airbyte_cdk.sources.declarative.transformations.keys_replace_transformation
 )
 from airbyte_cdk.sources.declarative.yaml_declarative_source import YamlDeclarativeSource
 from airbyte_cdk.sources.message.repository import StateFilteringMessageRepository
-from airbyte_cdk.sources.streams.call_rate import MovingWindowCallRatePolicy
+from airbyte_cdk.sources.streams.call_rate import HttpAPIBudget, MovingWindowCallRatePolicy
 from airbyte_cdk.sources.streams.concurrent.clamping import (
     ClampingEndProvider,
     DayClampingStrategy,
@@ -1749,6 +1758,123 @@ requester:
         selector._request_options_provider._headers_interpolator._interpolator.mapping["header"]
         == "header_value"
     )
+
+
+@pytest.mark.parametrize(
+    "backoff_strategy_yaml, expected_backoff_strategy_type, expected_jitter_range",
+    [
+        pytest.param(
+            """
+  error_handler:
+    backoff_strategies:
+      - type: "ConstantBackoffStrategy"
+        backoff_time_in_seconds: 60
+        jitter_range_in_seconds: 7
+            """,
+            ConstantBackoffStrategy,
+            7,
+            id="constant_backoff_strategy",
+        ),
+        pytest.param(
+            """
+  error_handler:
+    backoff_strategies:
+      - type: "ExponentialBackoffStrategy"
+        factor: 5
+        jitter_range_in_seconds: 15
+            """,
+            ExponentialBackoffStrategy,
+            15,
+            id="exponential_backoff_strategy",
+        ),
+    ],
+)
+def test_create_requester_with_backoff_jitter(
+    backoff_strategy_yaml, expected_backoff_strategy_type, expected_jitter_range
+):
+    content = f"""
+requester:
+  type: HttpRequester
+  path: "/v3/marketing/lists"
+  url_base: "https://api.sendgrid.com"
+  {backoff_strategy_yaml}
+    """
+    parsed_manifest = YamlDeclarativeSource._parse(content)
+    resolved_manifest = resolver.preprocess_manifest(parsed_manifest)
+    requester_manifest = transformer.propagate_types_and_parameters(
+        "", resolved_manifest["requester"], {}
+    )
+
+    requester = factory.create_component(
+        model_type=HttpRequesterModel,
+        component_definition=requester_manifest,
+        config=input_config,
+        name="name",
+        decoder=None,
+    )
+
+    assert isinstance(requester.error_handler, DefaultErrorHandler)
+    assert len(requester.error_handler.backoff_strategies) == 1
+    backoff_strategy = requester.error_handler.backoff_strategies[0]
+    assert isinstance(backoff_strategy, expected_backoff_strategy_type)
+    assert backoff_strategy.jitter_range_in_seconds == expected_jitter_range
+
+
+@pytest.mark.parametrize(
+    "backoff_strategy_model, backoff_strategy_arguments",
+    [
+        pytest.param(
+            ConstantBackoffStrategyModel,
+            {
+                "type": "ConstantBackoffStrategy",
+                "backoff_time_in_seconds": 60,
+            },
+            id="constant_backoff_strategy",
+        ),
+        pytest.param(
+            ExponentialBackoffStrategyModel,
+            {
+                "type": "ExponentialBackoffStrategy",
+                "factor": 5,
+            },
+            id="exponential_backoff_strategy",
+        ),
+    ],
+)
+def test_backoff_jitter_schema_validation(backoff_strategy_model, backoff_strategy_arguments):
+    backoff_strategy_model(**backoff_strategy_arguments, jitter_range_in_seconds=0)
+
+    with pytest.raises(ValidationError, match="jitter_range_in_seconds"):
+        backoff_strategy_model(
+            **backoff_strategy_arguments,
+            jitter_range_in_seconds="{{ config['backoff_jitter'] }}",
+        )
+
+    with pytest.raises(ValidationError, match="jitter_range_in_seconds"):
+        backoff_strategy_model(**backoff_strategy_arguments, jitter_range_in_seconds=-1)
+
+
+@pytest.mark.parametrize(
+    "backoff_strategy_model",
+    [
+        pytest.param(
+            ConstantBackoffStrategyModel(
+                type="ConstantBackoffStrategy", backoff_time_in_seconds=60
+            ),
+            id="constant_backoff_strategy",
+        ),
+        pytest.param(
+            ExponentialBackoffStrategyModel(type="ExponentialBackoffStrategy", factor=5),
+            id="exponential_backoff_strategy",
+        ),
+    ],
+)
+def test_create_backoff_strategy_with_negative_jitter_raises_error(backoff_strategy_model):
+    # Verify factory validation catches negative jitter even if Pydantic validation is bypassed.
+    backoff_strategy_model.__dict__["jitter_range_in_seconds"] = -1
+
+    with pytest.raises(ValueError, match="jitter_range_in_seconds"):
+        factory._create_component_from_model(backoff_strategy_model, config=input_config)
 
 
 def test_create_request_with_legacy_session_authenticator():
@@ -4237,6 +4363,90 @@ def test_api_budget():
     # The 0.1s from 'PT0.1S' is stored in ms by PyRateLimiter internally
     # but here just check that the limit and interval exist
     assert policy._bucket.rates[0].interval == 100  # 100 ms
+
+
+def test_api_budget_passed_to_custom_requester():
+    manifest = {
+        "type": "DeclarativeSource",
+        "api_budget": {
+            "type": "HTTPAPIBudget",
+            "policies": [
+                {
+                    "type": "MovingWindowCallRatePolicy",
+                    "rates": [
+                        {
+                            "limit": 3,
+                            "interval": "PT0.1S",
+                        }
+                    ],
+                    "matchers": [],
+                }
+            ],
+        },
+        "my_requester": {
+            "type": "CustomRequester",
+            "class_name": "unit_tests.sources.declarative.parsers.testing_components.TestingRequester",
+            "path": "/v3/marketing/lists",
+            "url_base": "https://api.sendgrid.com",
+            "http_method": "GET",
+        },
+    }
+
+    factory = ModelToComponentFactory()
+    factory.set_api_budget(manifest["api_budget"], input_config)
+
+    custom_requester = factory.create_component(
+        model_type=CustomRequesterModel,
+        component_definition=manifest["my_requester"],
+        config=input_config,
+        name="lists_stream",
+        decoder=None,
+    )
+
+    assert isinstance(custom_requester.api_budget, HttpAPIBudget)
+    assert custom_requester._http_client._api_budget is custom_requester.api_budget
+    assert len(custom_requester._http_client._api_budget._policies) == 1
+
+
+def test_api_budget_does_not_override_custom_requester_default_value():
+    manifest = {
+        "type": "DeclarativeSource",
+        "api_budget": {
+            "type": "HTTPAPIBudget",
+            "policies": [
+                {
+                    "type": "MovingWindowCallRatePolicy",
+                    "rates": [
+                        {
+                            "limit": 3,
+                            "interval": "PT0.1S",
+                        }
+                    ],
+                    "matchers": [],
+                }
+            ],
+        },
+        "my_requester": {
+            "type": "CustomRequester",
+            "class_name": "unit_tests.sources.declarative.parsers.testing_components.TestingRequesterWithDefaultBudget",
+            "path": "/v3/marketing/lists",
+            "url_base": "https://api.sendgrid.com",
+            "http_method": "GET",
+        },
+    }
+
+    factory = ModelToComponentFactory()
+    factory.set_api_budget(manifest["api_budget"], input_config)
+
+    custom_requester = factory.create_component(
+        model_type=CustomRequesterModel,
+        component_definition=manifest["my_requester"],
+        config=input_config,
+        name="lists_stream",
+        decoder=None,
+    )
+
+    assert custom_requester.api_budget is None
 
 
 def test_api_budget_fixed_window_policy():

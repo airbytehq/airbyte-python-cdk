@@ -482,6 +482,7 @@ definitions:
         anyOf:
           - type: number
             title: Number of seconds
+            minimum: 0
           - type: string
             title: Interpolated Value
         interpolation_context:
@@ -490,6 +491,13 @@ definitions:
           - 30
           - 30.5
           - "{{ config['backoff_time'] }}"
+      jitter_range_in_seconds:
+        title: Jitter Range
+        description: Optional additive jitter range in seconds. When set, the backoff time is uniformly distributed between backoff_time_in_seconds and backoff_time_in_seconds + (jitter_range_in_seconds * 2), so jitter only increases the base backoff.
+        type: number
+        minimum: 0
+        examples:
+          - 15
       $parameters:
         type: object
         additionalProperties: true
@@ -2033,6 +2041,13 @@ definitions:
           - 5
           - 5.5
           - "10"
+      jitter_range_in_seconds:
+        title: Jitter Range
+        description: Optional additive jitter range in seconds. When set, the backoff time is uniformly distributed between computed_backoff and computed_backoff + (jitter_range_in_seconds * 2), so jitter only increases the computed backoff.
+        type: number
+        minimum: 0
+        examples:
+          - 2
       $parameters:
         type: object
         additionalProperties: true

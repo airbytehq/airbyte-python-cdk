@@ -1757,11 +1757,18 @@ class ModelToComponentFactory:
     def create_constant_backoff_strategy(
         model: ConstantBackoffStrategyModel, config: Config, **kwargs: Any
     ) -> ConstantBackoffStrategy:
+        ModelToComponentFactory._validate_jitter_range(model.jitter_range_in_seconds)
         return ConstantBackoffStrategy(
             backoff_time_in_seconds=model.backoff_time_in_seconds,
+            jitter_range_in_seconds=model.jitter_range_in_seconds,
             config=config,
             parameters=model.parameters or {},
         )
+
+    @staticmethod
+    def _validate_jitter_range(jitter_range_in_seconds: Optional[float]) -> None:
+        if jitter_range_in_seconds is not None and jitter_range_in_seconds < 0:
+            raise ValueError("jitter_range_in_seconds must be greater than or equal to 0")
 
     def create_cursor_pagination(
         self, model: CursorPaginationModel, config: Config, decoder: Decoder, **kwargs: Any
@@ -1864,6 +1871,10 @@ class ModelToComponentFactory:
             for class_field in component_fields.keys()
             if class_field in model_args
         }
+
+        if "api_budget" in component_fields and kwargs.get("api_budget") is None:
+            kwargs["api_budget"] = self._api_budget
+
         return custom_component_class(**kwargs)
 
     @staticmethod
@@ -2433,8 +2444,12 @@ class ModelToComponentFactory:
     def create_exponential_backoff_strategy(
         model: ExponentialBackoffStrategyModel, config: Config
     ) -> ExponentialBackoffStrategy:
+        ModelToComponentFactory._validate_jitter_range(model.jitter_range_in_seconds)
         return ExponentialBackoffStrategy(
-            factor=model.factor or 5, parameters=model.parameters or {}, config=config
+            factor=model.factor or 5,
+            jitter_range_in_seconds=model.jitter_range_in_seconds,
+            parameters=model.parameters or {},
+            config=config,
         )
 
     @staticmethod
