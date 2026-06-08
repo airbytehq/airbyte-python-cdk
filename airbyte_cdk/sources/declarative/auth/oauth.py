@@ -44,7 +44,7 @@ class DeclarativeOauth2Authenticator(AbstractOauth2Authenticator, DeclarativeAut
         token_expiry_is_time_of_expiration bool: set True it if expires_in is returned as time of expiration instead of the number seconds until expiration
         refresh_request_body (Optional[Mapping[str, Any]]): The request body to send in the refresh request
         refresh_request_headers (Optional[Mapping[str, Any]]): The request headers to send in the refresh request
-        refresh_request_query_params (Optional[Mapping[str, Any]]): URL query string parameters to send on the refresh request
+        send_refresh_request_as_query_params (bool): When True, the standard refresh args (`grant_type`, `refresh_token`, client credentials when not in an `Authorization` header, scopes, plus any `refresh_request_body` extras) are sent on the URL query string instead of in the request body, and the body is emitted empty. Use this for OAuth providers like Gong that document their refresh endpoint with refresh args on the URL query string. Defaults to False.
         grant_type: The grant_type to request for access_token. If set to refresh_token, the refresh_token parameter has to be provided
         message_repository (MessageRepository): the message repository used to emit logs on HTTP requests
         refresh_token_error_status_codes (Tuple[int, ...]): Status codes to identify refresh token errors in response
@@ -71,7 +71,7 @@ class DeclarativeOauth2Authenticator(AbstractOauth2Authenticator, DeclarativeAut
     refresh_token_name: Union[InterpolatedString, str] = "refresh_token"
     refresh_request_body: Optional[Mapping[str, Any]] = None
     refresh_request_headers: Optional[Mapping[str, Any]] = None
-    refresh_request_query_params: Optional[Mapping[str, Any]] = None
+    send_refresh_request_as_query_params: bool = False
     grant_type_name: Union[InterpolatedString, str] = "grant_type"
     grant_type: Union[InterpolatedString, str] = "refresh_token"
     message_repository: MessageRepository = NoopMessageRepository()
@@ -137,9 +137,7 @@ class DeclarativeOauth2Authenticator(AbstractOauth2Authenticator, DeclarativeAut
         self._refresh_request_headers = InterpolatedMapping(
             self.refresh_request_headers or {}, parameters=parameters
         )
-        self._refresh_request_query_params = InterpolatedMapping(
-            self.refresh_request_query_params or {}, parameters=parameters
-        )
+        self._send_refresh_request_as_query_params = self.send_refresh_request_as_query_params
         try:
             if (
                 isinstance(self.token_expiry_date, (int, str))
@@ -252,8 +250,8 @@ class DeclarativeOauth2Authenticator(AbstractOauth2Authenticator, DeclarativeAut
     def get_refresh_request_headers(self) -> Mapping[str, Any]:
         return self._refresh_request_headers.eval(self.config)
 
-    def get_refresh_request_query_params(self) -> Mapping[str, Any]:
-        return self._refresh_request_query_params.eval(self.config)
+    def should_send_refresh_request_as_query_params(self) -> bool:
+        return self._send_refresh_request_as_query_params
 
     def get_token_expiry_date(self) -> AirbyteDateTime:
         if not self._has_access_token_been_initialized():
