@@ -91,8 +91,8 @@ def test_default_error_handler_with_default_response_filter(
                 parameters={},
             ),
             ResponseAction.RETRY,
-            FailureType.system_error,
-            "HTTP Status Code: 400. Error: Bad request. Please check your request parameters.",
+            FailureType.config_error,
+            None,
         ),
         (
             "_with_http_response_status_402_fail_with_default_failure_type",
