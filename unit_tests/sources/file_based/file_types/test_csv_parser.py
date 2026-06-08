@@ -648,7 +648,7 @@ class CsvReaderTest(unittest.TestCase):
         self._stream_reader.open_file.return_value = (
             CsvFileBuilder().with_data(["something"]).build()
         )
-        self._csv_reader._get_headers = Mock(
+        self._csv_reader._read_and_validate_headers = Mock(
             side_effect=UnicodeDecodeError("encoding", b"", 0, 1, "reason")
         )
 
@@ -657,7 +657,7 @@ class CsvReaderTest(unittest.TestCase):
             assert len(list(data_generator)) == 0
 
         assert "encoding" in ate.value.message
-        assert self._csv_reader._get_headers.called
+        assert self._csv_reader._read_and_validate_headers.called
 
     def _read_data(self) -> Generator[Dict[str, str], None, None]:
         data_generator = self._csv_reader.read_data(
