@@ -22,6 +22,7 @@ from airbyte_cdk.models import (
     ConfiguredAirbyteCatalog,
     ConfiguredAirbyteStream,
     DestinationSyncMode,
+    Status,
     SyncMode,
 )
 from airbyte_cdk.models.connector_metadata import MetadataFile
@@ -210,15 +211,16 @@ class DockerConnectorTestSuite:
         """Run `docker_image` acceptance tests.
 
         This test builds the connector image and runs the `check` command inside the container.
+        It validates that the connector emits exactly one `CONNECTION_STATUS` message whose
+        status matches the scenario's expected outcome (`SUCCEEDED` or `FAILED`). Scenarios
+        whose `acceptance-test-config.yml` entry has `status: "failed"` are exercised too,
+        so that `check` against bad configs is validated end-to-end rather than skipped.
 
         Note:
           - It is expected for docker image caches to be reused between test runs.
           - In the rare case that image caches need to be cleared, please clear
             the local docker image cache using `docker image prune -a` command.
         """
-        if scenario.expected_outcome.expect_exception():
-            pytest.skip("Skipping test_docker_image_build_and_check (expected to fail).")
-
         tag = "dev-latest"
         connector_root = self.get_connector_root_dir()
         metadata = MetadataFile.from_file(connector_root / "metadata.yaml")
@@ -233,11 +235,13 @@ class DockerConnectorTestSuite:
                 no_verify=False,
             )
 
+        expect_success = scenario.expected_outcome.expect_success()
+
         container_config_path = "/secrets/config.json"
         with scenario.with_temp_config_file(
             connector_root=connector_root,
         ) as temp_config_file:
-            _ = run_docker_airbyte_command(
+            result = run_docker_airbyte_command(
                 [
                     "docker",
                     "run",
@@ -249,7 +253,50 @@ class DockerConnectorTestSuite:
                     "--config",
                     container_config_path,
                 ],
-                raise_if_errors=True,
+                # Only raise on trace errors when we expect a successful check. When the
+                # scenario expects the check to fail, the connector is supposed to exit
+                # cleanly with a `CONNECTION_STATUS: FAILED` message rather than raising.
+                raise_if_errors=expect_success,
+            )
+
+        self._assert_check_result_matches_expected_outcome(result, scenario)
+
+    @staticmethod
+    def _assert_check_result_matches_expected_outcome(
+        result: EntrypointOutput,
+        scenario: ConnectorTestScenario,
+    ) -> None:
+        """Assert that the `check` output matches the scenario's expected outcome.
+
+        The connector must emit exactly one `CONNECTION_STATUS` message. When the scenario
+        expects success, the status must be `SUCCEEDED`; when it expects an exception (i.e.
+        `acceptance-test-config.yml` declares `status: "failed"` or `status: "exception"`),
+        the status must be `FAILED`. When the expected outcome is `ALLOW_ANY`, only the
+        presence of a single `CONNECTION_STATUS` message is validated.
+        """
+        status_messages = result.connection_status_messages
+        assert len(status_messages) == 1, (
+            "Expected exactly one CONNECTION_STATUS message but got "
+            f"{len(status_messages)}:\n"
+            + "\n".join(str(msg) for msg in status_messages)
+            + result.get_formatted_error_message()
+        )
+
+        connection_status = status_messages[0].connectionStatus
+        assert connection_status is not None, (
+            "Expected CONNECTION_STATUS message to have a connectionStatus payload. Got: \n"
+            + "\n".join(str(msg) for msg in status_messages)
+        )
+
+        if scenario.expected_outcome.expect_success():
+            assert connection_status.status == Status.SUCCEEDED, (
+                "Expected CONNECTION_STATUS to be SUCCEEDED but got "
+                f"{connection_status.status}. Message: {connection_status.message!r}"
+            )
+        elif scenario.expected_outcome.expect_exception():
+            assert connection_status.status == Status.FAILED, (
+                "Expected CONNECTION_STATUS to be FAILED but got "
+                f"{connection_status.status}. Message: {connection_status.message!r}"
             )
 
     @pytest.mark.skipif(
