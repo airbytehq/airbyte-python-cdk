@@ -1208,6 +1208,7 @@ def test_substream_partition_router_closes_all_partitions_even_when_no_records()
 
     mock_cursor = Mock()
     mock_cursor.stream_slices.return_value = []
+    mock_cursor.ensure_at_least_one_state_emitted.return_value = []
 
     partition_router = SubstreamPartitionRouter(
         parent_stream_configs=[
@@ -1270,6 +1271,7 @@ def test_substream_partition_router_closes_partition_even_when_parent_key_missin
 
     mock_cursor = Mock()
     mock_cursor.stream_slices.return_value = []
+    mock_cursor.ensure_at_least_one_state_emitted.return_value = []
 
     partition_router = SubstreamPartitionRouter(
         parent_stream_configs=[

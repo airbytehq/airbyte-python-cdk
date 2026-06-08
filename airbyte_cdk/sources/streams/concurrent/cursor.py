@@ -19,6 +19,7 @@ from typing import (
     Union,
 )
 
+from airbyte_cdk.models import AirbyteMessage
 from airbyte_cdk.sources.connector_state_manager import ConnectorStateManager
 from airbyte_cdk.sources.message import MessageRepository, NoopMessageRepository
 from airbyte_cdk.sources.streams import NO_CURSOR_STATE_KEY
@@ -72,10 +73,13 @@ class Cursor(StreamSlicer, ABC):
         raise NotImplementedError()
 
     @abstractmethod
-    def ensure_at_least_one_state_emitted(self) -> None:
+    def ensure_at_least_one_state_emitted(self) -> Iterable[AirbyteMessage]:
         """
         State messages are emitted when a partition is closed. However, the platform expects at least one state to be emitted per sync per
         stream. Hence, if no partitions are generated, this method needs to be called.
+
+        Returns the state messages directly instead of putting them on the shared queue,
+        so the caller (main thread) can yield them without risk of deadlock.
         """
         raise NotImplementedError()
 
@@ -140,9 +144,10 @@ class FinalStateCursor(Cursor):
     def close_partition(self, partition: Partition) -> None:
         pass
 
-    def ensure_at_least_one_state_emitted(self) -> None:
+    def ensure_at_least_one_state_emitted(self) -> Iterable[AirbyteMessage]:
         """
-        Used primarily for full refresh syncs that do not have a valid cursor value to emit at the end of a sync
+        Used primarily for full refresh syncs that do not have a valid cursor value to emit at the end of a sync.
+        Returns the state message directly instead of putting it on the shared queue.
         """
 
         self._connector_state_manager.update_state_for_stream(
@@ -151,7 +156,7 @@ class FinalStateCursor(Cursor):
         state_message = self._connector_state_manager.create_state_message(
             self._stream_name, self._stream_namespace
         )
-        self._message_repository.emit_message(state_message)
+        yield state_message
 
     def should_be_synced(self, record: Record) -> bool:
         return True
@@ -397,12 +402,21 @@ class ConcurrentCursor(Cursor):
                 f"Partition is expected to have key `{key}` but could not be found"
             ) from exception
 
-    def ensure_at_least_one_state_emitted(self) -> None:
+    def ensure_at_least_one_state_emitted(self) -> Iterable[AirbyteMessage]:
         """
         The platform expect to have at least one state message on successful syncs. Hence, whatever happens, we expect this method to be
         called.
+        Returns the state message directly instead of putting it on the shared queue.
         """
-        self._emit_state_message()
+        self._connector_state_manager.update_state_for_stream(
+            self._stream_name,
+            self._stream_namespace,
+            self.state,
+        )
+        state_message = self._connector_state_manager.create_state_message(
+            self._stream_name, self._stream_namespace
+        )
+        yield state_message
 
     def stream_slices(self) -> Iterable[StreamSlice]:
         """
