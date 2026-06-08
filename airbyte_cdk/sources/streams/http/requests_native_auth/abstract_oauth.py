@@ -144,26 +144,26 @@ class AbstractOauth2Authenticator(AuthBase):
         credentials_in_header = headers and "Authorization" in headers
         include_client_credentials = not credentials_in_header
 
-        args: MutableMapping[str, Any] = {
+        payload: MutableMapping[str, Any] = {
             self.get_grant_type_name(): self.get_grant_type(),
         }
 
         if include_client_credentials:
-            args[self.get_client_id_name()] = self.get_client_id()
-            args[self.get_client_secret_name()] = self.get_client_secret()
+            payload[self.get_client_id_name()] = self.get_client_id()
+            payload[self.get_client_secret_name()] = self.get_client_secret()
 
-        args[self.get_refresh_token_name()] = self.get_refresh_token()
+        payload[self.get_refresh_token_name()] = self.get_refresh_token()
 
         if self.get_scopes():
-            args["scopes"] = self.get_scopes()
+            payload["scopes"] = self.get_scopes()
 
         if self.get_refresh_request_body():
             for key, val in self.get_refresh_request_body().items():
                 # Existing oauth args take precedence over custom configured fields.
-                if key not in args:
-                    args[key] = val
+                if key not in payload:
+                    payload[key] = val
 
-        return args
+        return payload
 
     def build_refresh_request_body(self) -> Mapping[str, Any]:
         """Returns the request body to set on the refresh request.
