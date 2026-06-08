@@ -906,6 +906,19 @@ def test_get_headers_accepts_valid_headers() -> None:
             [{"col1": "v1", "col2": "v2", "col3": "v3"}],
             id="valid_headers",
         ),
+        pytest.param(
+            ["col1,col2", "v1,v2", "", "v3,v4"],
+            [
+                {"col1": "v1", "col2": "v2"},
+                {"col1": "v3", "col2": "v4"},
+            ],
+            id="blank_line_mid_file",
+        ),
+        pytest.param(
+            ["col1,col2", "v1,v2", ""],
+            [{"col1": "v1", "col2": "v2"}],
+            id="trailing_blank_line",
+        ),
     ],
 )
 def test_read_data_strips_trailing_empty_headers_and_values(

@@ -87,13 +87,16 @@ class _CsvReader:
                 lineno += rows_to_skip
 
                 reader = csv.reader(fp, dialect=dialect_name)  # type: ignore
+                trailing_empty_header_count = self._get_trailing_empty_header_count(raw_headers)
                 for values in reader:
                     lineno += 1
+                    if not values:
+                        continue
 
                     values = self._strip_trailing_empty_header_values(
                         values,
                         headers,
-                        raw_headers,
+                        trailing_empty_header_count,
                         file.uri,
                         lineno,
                     )
@@ -192,11 +195,10 @@ class _CsvReader:
         self,
         values: List[str],
         headers: List[str],
-        raw_headers: List[str],
+        trailing_empty_header_count: int,
         filename: str,
         lineno: int,
     ) -> List[str]:
-        trailing_empty_header_count = self._get_trailing_empty_header_count(raw_headers)
         if not trailing_empty_header_count:
             return values
 
