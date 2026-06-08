@@ -628,7 +628,7 @@ class HttpStreamAdapterHttpStatusErrorHandler(HttpStatusErrorHandler):
 
     def interpret_response(
         self, response_or_exception: Optional[Union[requests.Response, Exception]] = None
-    ) -> ErrorResolution:
+    ) -> Optional[ErrorResolution]:
         if isinstance(response_or_exception, Exception):
             return super().interpret_response(response_or_exception)
         elif isinstance(response_or_exception, requests.Response):
