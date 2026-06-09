@@ -67,6 +67,7 @@ class PaginationTracker:
                 >= self._allowed_number_of_attempt_with_same_slice
             ):
                 raise AirbyteTracedException(
+                    message="Pagination reset cannot narrow the stream slice.",
                     internal_message=f"There were {self._number_of_attempt_with_same_slice} attempts with the same slice already while the max allowed is {self._allowed_number_of_attempt_with_same_slice}",
                     failure_type=FailureType.system_error,
                 )
