@@ -199,9 +199,26 @@ def check_config_against_spec_or_exit(
     try:
         validate(instance=config, schema=spec_schema)
     except ValidationError as validation_error:
+        field_path = (
+            ".".join(str(p) for p in validation_error.absolute_path)
+            if validation_error.absolute_path
+            else ""
+        )
+        if field_path:
+            user_message = (
+                f'Config validation error: Field "{field_path}" - {validation_error.message}.'
+            )
+        else:
+            user_message = f"Config validation error: {validation_error.message}."
+        schema_path = (
+            ".".join(str(p) for p in validation_error.absolute_schema_path)
+            if validation_error.absolute_schema_path
+            else ""
+        )
+        internal_message = f"{validation_error.message} (path: {field_path or '<root>'}, schema_path: {schema_path})"
         raise AirbyteTracedException(
-            message="Config validation error: " + validation_error.message,
-            internal_message=validation_error.message,
+            message=user_message,
+            internal_message=internal_message,
             failure_type=FailureType.config_error,
         ) from None  # required to prevent logging config secrets from the ValidationError's stacktrace
 

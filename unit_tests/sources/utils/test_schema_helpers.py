@@ -81,6 +81,62 @@ def test_should_not_fail_validation_for_valid_config(spec_object):
     assert True, "should pass validation with valid config"
 
 
+@pytest.mark.parametrize(
+    "schema,config,expected_message_contains,expected_field_path",
+    [
+        pytest.param(
+            {
+                "type": "object",
+                "properties": {"api_key": {"type": "string"}},
+            },
+            {"api_key": None},
+            'Field "api_key"',
+            "api_key",
+            id="top_level_field_wrong_type",
+        ),
+        pytest.param(
+            {
+                "type": "object",
+                "properties": {
+                    "auth": {
+                        "type": "object",
+                        "properties": {"token": {"type": "string"}},
+                    }
+                },
+            },
+            {"auth": {"token": None}},
+            'Field "auth.token"',
+            "auth.token",
+            id="nested_field_wrong_type",
+        ),
+        pytest.param(
+            {
+                "type": "object",
+                "required": ["api_key"],
+                "properties": {"api_key": {"type": "string"}},
+            },
+            {},
+            "Config validation error:",
+            "",
+            id="missing_required_field_no_path",
+        ),
+    ],
+)
+def test_check_config_error_message_includes_field_path(
+    schema, config, expected_message_contains, expected_field_path
+):
+    spec = ConnectorSpecificationSerializer.load({"connectionSpecification": schema})
+
+    with pytest_raises(AirbyteTracedException) as ex_info:
+        check_config_against_spec_or_exit(config, spec)
+
+    exc = ex_info.value
+    assert expected_message_contains in exc.message
+    assert exc.failure_type == FailureType.config_error
+    if expected_field_path:
+        assert expected_field_path in exc.internal_message
+
+
 class TestResourceSchemaLoader:
     # Test that a simple schema is loaded correctly
     @staticmethod
