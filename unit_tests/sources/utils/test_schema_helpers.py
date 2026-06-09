@@ -202,17 +202,40 @@ class TestResourceSchemaLoader:
     [
         pytest.param(
             {"api_token": "valid", "optional_field": None},
-            {"type": "object", "required": ["api_token"], "properties": {"api_token": {"type": "string"}, "optional_field": {"type": "string"}}},
+            {
+                "type": "object",
+                "required": ["api_token"],
+                "properties": {
+                    "api_token": {"type": "string"},
+                    "optional_field": {"type": "string"},
+                },
+            },
             id="null_optional_field_is_stripped",
         ),
         pytest.param(
             {"api_token": "valid"},
-            {"type": "object", "required": ["api_token"], "properties": {"api_token": {"type": "string"}, "optional_field": {"type": "string"}}},
+            {
+                "type": "object",
+                "required": ["api_token"],
+                "properties": {
+                    "api_token": {"type": "string"},
+                    "optional_field": {"type": "string"},
+                },
+            },
             id="absent_optional_field_passes",
         ),
         pytest.param(
             {"api_token": "valid", "start_date": None, "end_date": None, "app_id": None},
-            {"type": "object", "required": ["api_token"], "properties": {"api_token": {"type": "string"}, "start_date": {"type": "string"}, "end_date": {"type": "string"}, "app_id": {"type": "string"}}},
+            {
+                "type": "object",
+                "required": ["api_token"],
+                "properties": {
+                    "api_token": {"type": "string"},
+                    "start_date": {"type": "string"},
+                    "end_date": {"type": "string"},
+                    "app_id": {"type": "string"},
+                },
+            },
             id="multiple_null_optional_fields_stripped",
         ),
     ],
@@ -227,13 +250,30 @@ def test_check_config_strips_null_optional_fields(config, spec_schema):
     [
         pytest.param(
             {"api_token": None, "optional_field": "present"},
-            {"type": "object", "required": ["api_token"], "properties": {"api_token": {"type": "string"}, "optional_field": {"type": "string"}}},
+            {
+                "type": "object",
+                "required": ["api_token"],
+                "properties": {
+                    "api_token": {"type": "string"},
+                    "optional_field": {"type": "string"},
+                },
+            },
             "api_token",
             id="null_required_field_reports_field_name",
         ),
         pytest.param(
             {"credentials": {"token": 123}},
-            {"type": "object", "required": ["credentials"], "properties": {"credentials": {"type": "object", "required": ["token"], "properties": {"token": {"type": "string"}}}}},
+            {
+                "type": "object",
+                "required": ["credentials"],
+                "properties": {
+                    "credentials": {
+                        "type": "object",
+                        "required": ["token"],
+                        "properties": {"token": {"type": "string"}},
+                    }
+                },
+            },
             "credentials.token",
             id="nested_error_includes_full_path",
         ),

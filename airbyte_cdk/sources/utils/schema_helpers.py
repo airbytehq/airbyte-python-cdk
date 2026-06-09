@@ -185,7 +185,9 @@ class ResourceSchemaLoader:
             raise ValueError(f"Expected resolved to be a dict. Got {resolved}")
 
 
-def _strip_nulls_from_optional_fields(config: Mapping[str, Any], spec_schema: Mapping[str, Any]) -> dict[str, Any]:
+def _strip_nulls_from_optional_fields(
+    config: Mapping[str, Any], spec_schema: Mapping[str, Any]
+) -> dict[str, Any]:
     """Remove keys with None values that are not required by the schema.
 
     The platform may store optional config fields as explicit JSON null rather
