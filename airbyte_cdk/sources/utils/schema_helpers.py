@@ -11,7 +11,7 @@ from copy import deepcopy
 from typing import TYPE_CHECKING, Any, ClassVar, Dict, List, Mapping, MutableMapping, Tuple, cast
 
 import jsonref
-from jsonschema import validate
+from jsonschema import Draft7Validator
 from jsonschema.exceptions import ValidationError
 from pydantic.v1 import BaseModel, Field
 from referencing import Registry, Resource
@@ -199,6 +199,14 @@ def _strip_nulls_from_optional_fields(
     return {k: v for k, v in config.items() if v is not None or k in required_fields}
 
 
+def _format_validation_error(error: ValidationError) -> str:
+    """Format a single validation error with its field path."""
+    field_path = ".".join(str(p) for p in error.absolute_path)
+    if field_path:
+        return f"'{field_path}' - {error.message}"
+    return error.message
+
+
 def check_config_against_spec_or_exit(
     config: Mapping[str, Any], spec: ConnectorSpecification
 ) -> None:
@@ -206,20 +214,18 @@ def check_config_against_spec_or_exit(
 
     Strips null-valued optional fields before validation so that connectors
     are not broken by platform-level null injection for unset fields.
+    Reports all validation errors, not just the first one.
     """
     spec_schema = spec.connectionSpecification
     sanitized_config = _strip_nulls_from_optional_fields(config, spec_schema)
-    try:
-        validate(instance=sanitized_config, schema=spec_schema)
-    except ValidationError as validation_error:
-        field_path = ".".join(str(p) for p in validation_error.absolute_path)
-        if field_path:
-            message = f"Config validation error: '{field_path}' - {validation_error.message}"
-        else:
-            message = f"Config validation error: {validation_error.message}"
+    validator = Draft7Validator(spec_schema)
+    errors = list(validator.iter_errors(sanitized_config))
+    if errors:
+        error_details = [_format_validation_error(e) for e in errors]
+        message = "Config validation error: " + "; ".join(error_details)
         raise AirbyteTracedException(
             message=message,
-            internal_message=validation_error.message,
+            internal_message="; ".join(e.message for e in errors),
             failure_type=FailureType.config_error,
         ) from None  # required to prevent logging config secrets from the ValidationError's stacktrace
 

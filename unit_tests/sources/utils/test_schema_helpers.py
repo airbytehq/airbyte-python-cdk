@@ -246,7 +246,7 @@ def test_check_config_strips_null_optional_fields(config, spec_schema):
 
 
 @pytest.mark.parametrize(
-    "config,spec_schema,expected_substring",
+    "config,spec_schema,expected_substrings",
     [
         pytest.param(
             {"api_token": None, "optional_field": "present"},
@@ -258,7 +258,7 @@ def test_check_config_strips_null_optional_fields(config, spec_schema):
                     "optional_field": {"type": "string"},
                 },
             },
-            "api_token",
+            ["api_token"],
             id="null_required_field_reports_field_name",
         ),
         pytest.param(
@@ -274,18 +274,32 @@ def test_check_config_strips_null_optional_fields(config, spec_schema):
                     }
                 },
             },
-            "credentials.token",
+            ["credentials.token"],
             id="nested_error_includes_full_path",
+        ),
+        pytest.param(
+            {"api_token": None, "region": None},
+            {
+                "type": "object",
+                "required": ["api_token", "region"],
+                "properties": {
+                    "api_token": {"type": "string"},
+                    "region": {"type": "string"},
+                },
+            },
+            ["api_token", "region"],
+            id="multiple_errors_all_reported",
         ),
     ],
 )
-def test_check_config_error_message_includes_field_path(config, spec_schema, expected_substring):
+def test_check_config_error_message_includes_field_path(config, spec_schema, expected_substrings):
     spec = ConnectorSpecificationSerializer.load({"connectionSpecification": spec_schema})
     with pytest_raises(AirbyteTracedException) as exc_info:
         check_config_against_spec_or_exit(config, spec)
     assert exc_info.value.failure_type == FailureType.config_error
-    assert expected_substring in exc_info.value.message
     assert "Config validation error:" in exc_info.value.message
+    for expected in expected_substrings:
+        assert expected in exc_info.value.message
 
 
 @pytest.mark.parametrize(
