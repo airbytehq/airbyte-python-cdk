@@ -204,7 +204,7 @@ def _format_validation_error(error: ValidationError) -> str:
     field_path = ".".join(str(p) for p in error.absolute_path)
     if field_path:
         return f"'{field_path}' - {error.message}"
-    return error.message
+    return str(error.message)
 
 
 def check_config_against_spec_or_exit(
