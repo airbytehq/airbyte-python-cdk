@@ -34,8 +34,8 @@ from airbyte_cdk.sources.streams.http.exceptions import (
 from airbyte_cdk.sources.streams.http.http_client import HttpClient
 from airbyte_cdk.sources.streams.http.requests_native_auth import TokenAuthenticator
 from airbyte_cdk.utils import AirbyteTracedException
-from airbyte_cdk.utils.traced_exception import RateLimitBudgetExhaustedException
 from airbyte_cdk.utils.airbyte_secrets_utils import update_secrets
+from airbyte_cdk.utils.traced_exception import RateLimitBudgetExhaustedException
 
 
 class StubBasicReadHttpStream(HttpStream):

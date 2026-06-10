@@ -27,7 +27,10 @@ from airbyte_cdk.sources.streams.http.exceptions import (
 )
 from airbyte_cdk.sources.streams.http.http_client import MessageRepresentationAirbyteTracedErrors
 from airbyte_cdk.sources.streams.http.requests_native_auth import TokenAuthenticator
-from airbyte_cdk.utils.traced_exception import AirbyteTracedException, RateLimitBudgetExhaustedException
+from airbyte_cdk.utils.traced_exception import (
+    AirbyteTracedException,
+    RateLimitBudgetExhaustedException,
+)
 
 
 def test_http_client():
