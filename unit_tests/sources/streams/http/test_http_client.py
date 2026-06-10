@@ -27,7 +27,7 @@ from airbyte_cdk.sources.streams.http.exceptions import (
 )
 from airbyte_cdk.sources.streams.http.http_client import MessageRepresentationAirbyteTracedErrors
 from airbyte_cdk.sources.streams.http.requests_native_auth import TokenAuthenticator
-from airbyte_cdk.utils.traced_exception import AirbyteTracedException
+from airbyte_cdk.utils.traced_exception import AirbyteTracedException, RateLimitBudgetExhaustedException
 
 
 def test_http_client():
@@ -719,6 +719,29 @@ def test_backoff_strategy_endless(
                 exit_on_rate_limit=exit_on_rate_limit,
             )
         assert mocked_send.call_count == expected_call_count
+
+
+@pytest.mark.usefixtures("mock_sleep")
+def test_given_429_budget_exhausted_then_raises_rate_limit_budget_exhausted_exception():
+    http_client = HttpClient(
+        name="test", logger=MagicMock(), error_handler=HttpStatusErrorHandler(logger=MagicMock())
+    )
+
+    mocked_response = MagicMock(spec=requests.Response)
+    mocked_response.status_code = 429
+    mocked_response.headers = {}
+    mocked_response.ok = False
+
+    with patch.object(requests.Session, "send", return_value=mocked_response):
+        with pytest.raises(RateLimitBudgetExhaustedException) as exc_info:
+            http_client.send_request(
+                http_method="get",
+                url="https://test_base_url.com/v1/endpoint",
+                request_kwargs={},
+                exit_on_rate_limit=True,
+            )
+        assert exc_info.value.failure_type == FailureType.transient_error
+        assert "Rate limit retry budget exhausted" in str(exc_info.value.internal_message)
 
 
 def test_given_different_headers_then_response_is_not_cached(requests_mock):

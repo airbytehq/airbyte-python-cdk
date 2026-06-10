@@ -158,3 +158,12 @@ class AirbyteTracedException(Exception):
                 error_message.trace.error.stack_trace  # type: ignore[union-attr] # AirbyteMessage with MessageType.TRACE has AirbyteTraceMessage
             )
         return error_message
+
+
+class RateLimitBudgetExhaustedException(AirbyteTracedException):
+    """Raised when the HTTP client exhausts its configured 429 retry budget.
+
+    Higher-level retry loops (e.g. the async-job orchestrator) treat this as a
+    terminal failure and do not retry, preventing cascading retries across
+    orchestrator and platform layers.
+    """
