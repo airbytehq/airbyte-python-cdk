@@ -125,29 +125,29 @@ class AbstractOauth2Authenticator(AuthBase):
         """Returns True if the token is expired"""
         return ab_datetime_now() > self.get_token_expiry_date()
 
-    def build_refresh_request_body(self) -> Mapping[str, Any]:
-        """
-        Returns the request body to set on the refresh request.
+    def _build_standard_refresh_args(self) -> MutableMapping[str, Any]:
+        """Build the standard OAuth refresh args (grant_type, refresh_token, client
+        credentials, scopes, plus any user-configured `refresh_request_body` extras).
 
-        Override to define additional parameters.
+        Used by both `build_refresh_request_body()` and
+        `build_refresh_request_query_params()` so the same set of args can be emitted
+        in either the body or the URL query string depending on
+        `should_send_refresh_request_as_query_params()`.
 
-        Client credentials (client_id and client_secret) are excluded from the body when
-        refresh_request_headers contains an Authorization header (e.g., Basic auth).
-        This is required by OAuth providers like Gong that expect credentials ONLY in the
-        Authorization header and reject requests that include them in both places.
+        Client credentials (client_id and client_secret) are excluded when
+        `refresh_request_headers` contains an `Authorization` header (e.g. Basic
+        auth). This is required by OAuth providers like Gong that expect credentials
+        ONLY in the Authorization header and reject requests that include them in
+        both places.
         """
-        # Check if credentials are being sent via Authorization header
         headers = self.get_refresh_request_headers()
         credentials_in_header = headers and "Authorization" in headers
-
-        # Only include client credentials in body if not already in header
         include_client_credentials = not credentials_in_header
 
         payload: MutableMapping[str, Any] = {
             self.get_grant_type_name(): self.get_grant_type(),
         }
 
-        # Only include client credentials in body if configured to do so and not in header
         if include_client_credentials:
             payload[self.get_client_id_name()] = self.get_client_id()
             payload[self.get_client_secret_name()] = self.get_client_secret()
@@ -159,11 +159,24 @@ class AbstractOauth2Authenticator(AuthBase):
 
         if self.get_refresh_request_body():
             for key, val in self.get_refresh_request_body().items():
-                # We defer to existing oauth constructs over custom configured fields
+                # Existing oauth args take precedence over custom configured fields.
                 if key not in payload:
                     payload[key] = val
 
         return payload
+
+    def build_refresh_request_body(self) -> Mapping[str, Any]:
+        """Returns the request body to set on the refresh request.
+
+        When `should_send_refresh_request_as_query_params()` is `True`, the standard
+        refresh args are emitted on the URL query string instead and this method
+        returns an empty body. This supports OAuth providers like Gong that document
+        their refresh endpoint as a `POST` with parameters on the URL query string
+        and an empty body.
+        """
+        if self.should_send_refresh_request_as_query_params():
+            return {}
+        return self._build_standard_refresh_args()
 
     def build_refresh_request_headers(self) -> Mapping[str, Any] | None:
         """
@@ -172,6 +185,21 @@ class AbstractOauth2Authenticator(AuthBase):
         """
         headers = self.get_refresh_request_headers()
         return headers if headers else None
+
+    def build_refresh_request_query_params(self) -> Mapping[str, Any] | None:
+        """Returns the URL query string parameters to set on the refresh request.
+
+        When `should_send_refresh_request_as_query_params()` is `True`, the standard
+        refresh args (grant_type, refresh_token, client credentials, scopes, plus
+        any user-configured `refresh_request_body` extras) are returned here and
+        `build_refresh_request_body()` returns an empty body.
+
+        Returns `None` otherwise so existing authenticators retain their previous
+        behavior (no query params on the refresh URL).
+        """
+        if not self.should_send_refresh_request_as_query_params():
+            return None
+        return self._build_standard_refresh_args()
 
     def refresh_access_token(self) -> Tuple[str, AirbyteDateTime]:
         """
@@ -275,6 +303,7 @@ class AbstractOauth2Authenticator(AuthBase):
                 url=self.get_token_refresh_endpoint(),  # type: ignore # returns None, if not provided, but str | bytes is expected.
                 data=self.build_refresh_request_body(),
                 headers=self.build_refresh_request_headers(),
+                params=self.build_refresh_request_query_params(),
             )
 
             if not response.ok:
@@ -554,6 +583,17 @@ class AbstractOauth2Authenticator(AuthBase):
     @abstractmethod
     def get_refresh_request_headers(self) -> Mapping[str, Any]:
         """Returns the request headers to set on the refresh request"""
+
+    def should_send_refresh_request_as_query_params(self) -> bool:
+        """Returns `True` if the standard refresh args should be sent on the URL
+        query string instead of in the request body.
+
+        Defaults to `False` so existing authenticators retain their previous
+        behavior (params in body, no query params on the refresh URL). Subclasses
+        can override this to opt into the URL-query-string shape required by OAuth
+        providers like Gong.
+        """
+        return False
 
     @abstractmethod
     def get_grant_type(self) -> str:

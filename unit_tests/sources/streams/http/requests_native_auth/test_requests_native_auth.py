@@ -205,6 +205,73 @@ class TestOauth2Authenticator:
         headers = oauth.build_refresh_request_headers()
         assert headers is None
 
+    def test_send_refresh_request_as_query_params(self):
+        """When `send_refresh_request_as_query_params=True`, the standard
+        refresh args are returned by `build_refresh_request_query_params()`
+        and `build_refresh_request_body()` returns an empty body.
+        """
+        oauth = Oauth2Authenticator(
+            token_refresh_endpoint="refresh_end",
+            client_id="some_client_id",
+            client_secret="some_client_secret",
+            refresh_token="some_refresh_token",
+            send_refresh_request_as_query_params=True,
+            refresh_request_headers={"Authorization": "Basic dGVzdA=="},
+        )
+        params = oauth.build_refresh_request_query_params()
+        assert params == {
+            "grant_type": "refresh_token",
+            "refresh_token": "some_refresh_token",
+        }
+
+        body = oauth.build_refresh_request_body()
+        assert body == {}
+
+    def test_send_refresh_request_as_query_params_default_false(self):
+        """When `send_refresh_request_as_query_params` is not set (default `False`),
+        no query params are sent on the refresh URL and the standard refresh
+        args remain in the body.
+        """
+        oauth = Oauth2Authenticator(
+            token_refresh_endpoint="refresh_end",
+            client_id="some_client_id",
+            client_secret="some_client_secret",
+            refresh_token="some_refresh_token",
+        )
+        assert oauth.build_refresh_request_query_params() is None
+        body = oauth.build_refresh_request_body()
+        assert body["grant_type"] == "refresh_token"
+        assert body["refresh_token"] == "some_refresh_token"
+
+    def test_send_refresh_request_as_query_params_sent_on_request(self, mocker):
+        """Verify that URL query params are sent via `params=` kwarg on the
+        HTTP request when `send_refresh_request_as_query_params=True`, and the
+        body is emitted empty.
+        """
+        oauth = Oauth2Authenticator(
+            token_refresh_endpoint="https://refresh_endpoint.com",
+            client_id="some_client_id",
+            client_secret="some_client_secret",
+            refresh_token="some_refresh_token",
+            send_refresh_request_as_query_params=True,
+            refresh_request_headers={"Authorization": "Basic dGVzdA=="},
+        )
+
+        resp.status_code = 200
+        mocker.patch.object(
+            resp, "json", return_value={"access_token": "access_token", "expires_in": 1000}
+        )
+        mocked_request = mocker.patch.object(
+            requests, "request", side_effect=mock_request, autospec=True
+        )
+        token, _ = oauth.refresh_access_token()
+        assert token == "access_token"
+        assert mocked_request.call_args.kwargs["params"] == {
+            "grant_type": "refresh_token",
+            "refresh_token": "some_refresh_token",
+        }
+        assert mocked_request.call_args.kwargs["data"] == {}
+
     def test_refresh_request_body_with_keys_override(self):
         """
         Request body should match given configuration.
@@ -780,8 +847,59 @@ class TestSingleUseRefreshTokenOauth2Authenticator:
             "new_refresh_token",
         )
 
+    def test_send_refresh_request_as_query_params_picks_up_rotated_refresh_token(
+        self, mocker, connector_config
+    ):
+        """`SingleUseRefreshTokenOauth2Authenticator` rotates its refresh token
+        on every refresh. When `send_refresh_request_as_query_params=True`, the
+        URL on the second refresh request must carry the **rotated** refresh
+        token (the one returned by the previous refresh), not the original
+        value from the connector config at construction time.
+        """
+        original_refresh_token = connector_config["credentials"]["refresh_token"]
+        rotated_refresh_token = "rotated_refresh_token_value"
 
-def mock_request(method, url, data, headers):
+        authenticator = SingleUseRefreshTokenOauth2Authenticator(
+            connector_config,
+            token_refresh_endpoint="https://refresh_endpoint.com",
+            client_id=connector_config["credentials"]["client_id"],
+            client_secret=connector_config["credentials"]["client_secret"],
+            send_refresh_request_as_query_params=True,
+            refresh_request_headers={"Authorization": "Basic dGVzdA=="},
+        )
+
+        resp.status_code = 200
+        mocker.patch.object(
+            resp,
+            "json",
+            return_value={
+                authenticator.get_access_token_name(): "new_access_token",
+                authenticator.get_expires_in_name(): 3600,
+                authenticator.get_refresh_token_name(): rotated_refresh_token,
+            },
+        )
+        mocked_request = mocker.patch.object(
+            requests, "request", side_effect=mock_request, autospec=True
+        )
+
+        authenticator.refresh_and_set_access_token()
+        first_call_params = mocked_request.call_args.kwargs["params"]
+        assert first_call_params["refresh_token"] == original_refresh_token
+        assert connector_config["credentials"]["refresh_token"] == rotated_refresh_token, (
+            "config should have been mutated to carry the rotated refresh token"
+        )
+
+        authenticator.refresh_and_set_access_token()
+        second_call_params = mocked_request.call_args.kwargs["params"]
+        assert second_call_params["refresh_token"] == rotated_refresh_token, (
+            "second refresh must send the rotated refresh token on the URL, "
+            "not the stale value baked in at construction time"
+        )
+        second_call_body = mocked_request.call_args.kwargs["data"]
+        assert "refresh_token" not in second_call_body
+
+
+def mock_request(method, url, data, headers, **kwargs):
     if url == "https://refresh_endpoint.com":
         return resp
     raise Exception(

@@ -1939,6 +1939,12 @@ class OAuthAuthenticator(BaseModel):
         ],
         title="Refresh Request Headers",
     )
+    send_refresh_request_as_query_params: Optional[bool] = Field(
+        False,
+        description="When set to true, the standard OAuth refresh args (`grant_type`, `refresh_token`, client credentials when not in an `Authorization` header, scopes, plus any `refresh_request_body` extras) are sent on the URL query string and the request body is emitted empty. Use this for OAuth providers like Gong that document their refresh endpoint with refresh args on the URL query string.",
+        examples=[True],
+        title="Send Refresh Request As Query Params",
+    )
     scopes: Optional[List[str]] = Field(
         None,
         description="List of scopes that should be granted to the access token.",
