@@ -5,6 +5,11 @@ on:
     branches:
       - main
   pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: read
 
 jobs:
   test-build:
@@ -37,10 +42,18 @@ jobs:
   pytest-fast:
     name: Pytest (Fast)
     runs-on: ubuntu-24.04
+    permissions:
+      checks: write
+      contents: read
+      code-quality: write
+      pull-requests: read
     steps:
       # Common steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - name: Set up Poetry
         uses: snok/install-poetry@v1
         with:
@@ -68,7 +81,7 @@ jobs:
         if: always()
         run: |
           poetry run coverage html -d htmlcov
-          poetry run coverage xml -o htmlcov/coverage.xml
+          poetry run coverage xml --include="airbyte_cdk/*" -o htmlcov/coverage.xml
 
       - name: Publish Test Results
         uses: EnricoMi/publish-unit-test-result-action@v2
@@ -85,3 +98,11 @@ jobs:
         with:
           name: fasttest-coverage
           path: htmlcov/
+      - name: Upload coverage to GitHub Code Quality
+        if: always() && hashFiles('htmlcov/coverage.xml') != ''
+        uses: actions/upload-code-coverage@b51da2c3c1b23e04d2d6477cfc34350b1f5cd3e9 # v1
+        with:
+          file: htmlcov/coverage.xml
+          language: Python
+          label: code-coverage/pytest-fast
+          fail-on-error: false
