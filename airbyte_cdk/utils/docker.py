@@ -213,6 +213,14 @@ def build_connector_image(
 
         # ensure the directory exists
         connector_dockerfile_dir.mkdir(parents=True, exist_ok=True)
+        if (
+            metadata.data.language == ConnectorLanguage.PYTHON
+            and (connector_directory / "README.md").is_symlink()
+        ):
+            dockerfile_text = dockerfile_text.replace(
+                "COPY . ./\n",
+                "COPY . ./\nRUN if [ -L README.md ] && [ ! -e README.md ]; then rm README.md && touch README.md; fi\n",
+            )
         dockerfile_path.write_text(dockerfile_text)
         dockerignore_path.write_text(dockerignore_text)
 
