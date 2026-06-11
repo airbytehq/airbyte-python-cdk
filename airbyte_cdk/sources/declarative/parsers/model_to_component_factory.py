@@ -97,6 +97,7 @@ from airbyte_cdk.sources.declarative.decoders.composite_raw_decoder import (
     CompositeRawDecoder,
     CsvParser,
     GzipParser,
+    JsonItemsParser,
     JsonLineParser,
     JsonParser,
     Parser,
@@ -320,6 +321,9 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     JsonFileSchemaLoader as JsonFileSchemaLoaderModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    JsonItemsDecoder as JsonItemsDecoderModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     JsonlDecoder as JsonlDecoderModel,
@@ -763,6 +767,7 @@ class ModelToComponentFactory:
             HttpResponseFilterModel: self.create_http_response_filter,
             InlineSchemaLoaderModel: self.create_inline_schema_loader,
             JsonDecoderModel: self.create_json_decoder,
+            JsonItemsDecoderModel: self.create_json_items_decoder,
             JsonlDecoderModel: self.create_jsonl_decoder,
             JsonSchemaPropertySelectorModel: self.create_json_schema_property_selector,
             GzipDecoderModel: self.create_gzip_decoder,
@@ -2671,6 +2676,14 @@ class ModelToComponentFactory:
             stream_response=False if self._emit_connector_builder_messages else True,
         )
 
+    def create_json_items_decoder(
+        self, model: JsonItemsDecoderModel, config: Config, **kwargs: Any
+    ) -> Decoder:
+        return CompositeRawDecoder(
+            parser=ModelToComponentFactory._get_parser(model, config),
+            stream_response=False if self._emit_connector_builder_messages else True,
+        )
+
     def create_gzip_decoder(
         self, model: GzipDecoderModel, config: Config, **kwargs: Any
     ) -> Decoder:
@@ -2719,6 +2732,11 @@ class ModelToComponentFactory:
         if isinstance(model, JsonDecoderModel):
             # Note that the logic is a bit different from the JsonDecoder as there is some legacy that is maintained to return {} on error cases
             return JsonParser()
+        elif isinstance(model, JsonItemsDecoderModel):
+            return JsonItemsParser(
+                items_path=model.items_path,
+                encoding=model.encoding or "utf-8",
+            )
         elif isinstance(model, JsonlDecoderModel):
             return JsonLineParser()
         elif isinstance(model, CsvDecoderModel):

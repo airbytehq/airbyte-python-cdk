@@ -2650,6 +2650,40 @@ definitions:
       type:
         type: string
         enum: [JsonDecoder]
+  JsonItemsDecoder:
+    title: JSON Items (Streaming)
+    description: >-
+      Select 'JSON Items (Streaming)' to stream-decode a single JSON document
+      by yielding each element of a nested array, one at a time. Use this for
+      very large single-document JSON responses (e.g. a wrapping object
+      containing a multi-GB array) where buffering the whole document into
+      memory would cause out-of-memory errors. Powered by the `ijson`
+      streaming parser.
+    type: object
+    required:
+      - type
+      - items_path
+    properties:
+      type:
+        type: string
+        enum: [JsonItemsDecoder]
+      items_path:
+        title: Items Path
+        description: >-
+          Dot-separated path to the JSON array whose elements should be
+          yielded as records. Uses `ijson` path syntax (e.g. `data.users`),
+          not JSONPath syntax — do not include leading `$.` or trailing
+          `[*]`.
+        type: string
+        examples:
+          - dataByDepartmentAndSearchTerm
+          - dataByAsin
+          - data.users
+      encoding:
+        title: Encoding
+        description: Text encoding used to decode the streamed bytes before JSON parsing.
+        type: string
+        default: utf-8
   JsonlDecoder:
     title: JSON Lines
     description: Select 'JSON Lines' if the response consists of JSON objects separated by new lines ('\n') in JSONL format.
@@ -2891,6 +2925,7 @@ definitions:
           - "$ref": "#/definitions/CsvDecoder"
           - "$ref": "#/definitions/GzipDecoder"
           - "$ref": "#/definitions/JsonDecoder"
+          - "$ref": "#/definitions/JsonItemsDecoder"
           - "$ref": "#/definitions/JsonlDecoder"
   ListPartitionRouter:
     title: List Partition Router
@@ -3931,6 +3966,7 @@ definitions:
         description: Component decoding the response so records can be extracted.
         anyOf:
           - "$ref": "#/definitions/JsonDecoder"
+          - "$ref": "#/definitions/JsonItemsDecoder"
           - "$ref": "#/definitions/XmlDecoder"
           - "$ref": "#/definitions/CsvDecoder"
           - "$ref": "#/definitions/JsonlDecoder"
@@ -4019,6 +4055,7 @@ definitions:
           - "$ref": "#/definitions/CsvDecoder"
           - "$ref": "#/definitions/GzipDecoder"
           - "$ref": "#/definitions/JsonDecoder"
+          - "$ref": "#/definitions/JsonItemsDecoder"
           - "$ref": "#/definitions/JsonlDecoder"
   CsvDecoder:
     title: CSV
@@ -4185,6 +4222,7 @@ definitions:
           - "$ref": "#/definitions/CsvDecoder"
           - "$ref": "#/definitions/GzipDecoder"
           - "$ref": "#/definitions/JsonDecoder"
+          - "$ref": "#/definitions/JsonItemsDecoder"
           - "$ref": "#/definitions/JsonlDecoder"
           - "$ref": "#/definitions/IterableDecoder"
           - "$ref": "#/definitions/XmlDecoder"
@@ -4197,6 +4235,7 @@ definitions:
           - "$ref": "#/definitions/CsvDecoder"
           - "$ref": "#/definitions/GzipDecoder"
           - "$ref": "#/definitions/JsonDecoder"
+          - "$ref": "#/definitions/JsonItemsDecoder"
           - "$ref": "#/definitions/JsonlDecoder"
           - "$ref": "#/definitions/IterableDecoder"
           - "$ref": "#/definitions/XmlDecoder"

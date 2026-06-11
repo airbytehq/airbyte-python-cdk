@@ -674,6 +674,20 @@ class JsonDecoder(BaseModel):
     type: Literal["JsonDecoder"]
 
 
+class JsonItemsDecoder(BaseModel):
+    type: Literal["JsonItemsDecoder"]
+    items_path: str = Field(
+        ...,
+        description="Dot-separated path to the JSON array whose elements should be yielded as records. Uses `ijson` path syntax (e.g. `data.users`), not JSONPath syntax \u2014 do not include leading `$.` or trailing `[*]`.",
+        title="Items Path",
+    )
+    encoding: Optional[str] = Field(
+        "utf-8",
+        description="The character encoding of the JSON data. Defaults to UTF-8.",
+        title="Encoding",
+    )
+
+
 class JsonlDecoder(BaseModel):
     type: Literal["JsonlDecoder"]
 
@@ -2201,7 +2215,7 @@ class PaginationReset(BaseModel):
 
 class GzipDecoder(BaseModel):
     type: Literal["GzipDecoder"]
-    decoder: Union[CsvDecoder, GzipDecoder, JsonDecoder, JsonlDecoder]
+    decoder: Union[CsvDecoder, GzipDecoder, JsonDecoder, JsonItemsDecoder, JsonlDecoder]
 
 
 class RequestBodyGraphQL(BaseModel):
@@ -2339,7 +2353,7 @@ class ZipfileDecoder(BaseModel):
         extra = Extra.allow
 
     type: Literal["ZipfileDecoder"]
-    decoder: Union[CsvDecoder, GzipDecoder, JsonDecoder, JsonlDecoder] = Field(
+    decoder: Union[CsvDecoder, GzipDecoder, JsonDecoder, JsonItemsDecoder, JsonlDecoder] = Field(
         ...,
         description="Parser to parse the decompressed data from the zipfile(s).",
         title="Parser",
@@ -3011,6 +3025,7 @@ class SimpleRetriever(BaseModel):
     decoder: Optional[
         Union[
             JsonDecoder,
+            JsonItemsDecoder,
             XmlDecoder,
             CsvDecoder,
             JsonlDecoder,
@@ -3144,6 +3159,7 @@ class AsyncRetriever(BaseModel):
             CsvDecoder,
             GzipDecoder,
             JsonDecoder,
+            JsonItemsDecoder,
             JsonlDecoder,
             IterableDecoder,
             XmlDecoder,
@@ -3160,6 +3176,7 @@ class AsyncRetriever(BaseModel):
             CsvDecoder,
             GzipDecoder,
             JsonDecoder,
+            JsonItemsDecoder,
             JsonlDecoder,
             IterableDecoder,
             XmlDecoder,
