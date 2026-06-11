@@ -2559,6 +2559,10 @@ definitions:
         title: Default Type
         description: The default Airbyte type to use when no type mapping matches the source field type.
         type: string
+        examples:
+          - "string"
+          - "number"
+          - "integer"
       $parameters:
         type: object
         additionalProperties: true

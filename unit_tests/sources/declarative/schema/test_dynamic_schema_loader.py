@@ -13,6 +13,7 @@ from airbyte_cdk.sources.declarative.concurrent_declarative_source import (
     TestLimits,
 )
 from airbyte_cdk.sources.declarative.schema import DynamicSchemaLoader, SchemaTypeIdentifier
+from airbyte_cdk.sources.declarative.schema.dynamic_schema_loader import TypesMap
 from airbyte_cdk.test.mock_http import HttpMocker, HttpRequest, HttpResponse
 
 _CONFIG = {
@@ -426,6 +427,33 @@ def test_dynamic_schema_loader_invalid_default_type_raises():
         ValueError,
         match="Invalid default Airbyte data type: not_a_real_airbyte_type",
     ):
+        loader.get_json_schema()
+
+
+def test_dynamic_schema_loader_bad_mapping_target_not_masked_by_default_type():
+    schema_type_identifier = SchemaTypeIdentifier(
+        schema_pointer=["schema"],
+        key_pointer=["key"],
+        type_pointer=["type"],
+        types_mapping=[
+            TypesMap(
+                target_type="not_a_real_airbyte_type", current_type="bad_source", condition=None
+            ),
+        ],
+        default_type="string",
+        parameters={},
+    )
+    loader = DynamicSchemaLoader(
+        retriever=MagicMock(),
+        config=MagicMock(),
+        parameters={},
+        schema_type_identifier=schema_type_identifier,
+    )
+    loader.retriever.read_records = MagicMock(
+        return_value=iter([{"schema": [{"key": "field", "type": "bad_source"}]}])
+    )
+
+    with pytest.raises(ValueError, match="Invalid Airbyte data type: not_a_real_airbyte_type"):
         loader.get_json_schema()
 
 
