@@ -534,5 +534,3 @@ def test_dynamic_schema_loader_with_type_conditions():
 
     assert len(actual_catalog.streams) == 1
     assert actual_catalog.streams[0].json_schema == expected_schema
-
-
