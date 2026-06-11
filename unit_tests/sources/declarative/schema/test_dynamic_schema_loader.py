@@ -309,6 +309,126 @@ def test_dynamic_schema_loader_manifest_flow():
     assert actual_catalog.streams[0].json_schema == expected_schema
 
 
+@pytest.mark.parametrize(
+    "retriever_data, default_type, expected_schema",
+    [
+        pytest.param(
+            iter(
+                [
+                    {
+                        "schema": [
+                            {"key": "name", "type": "string"},
+                            {"key": "custom_field", "type": "unknown_source_type"},
+                        ]
+                    }
+                ]
+            ),
+            "string",
+            {
+                "$schema": "https://json-schema.org/draft-07/schema#",
+                "additionalProperties": True,
+                "type": "object",
+                "properties": {
+                    "name": {"type": ["null", "string"]},
+                    "custom_field": {"type": ["null", "string"]},
+                },
+            },
+            id="unmapped_type_falls_back_to_default",
+        ),
+        pytest.param(
+            iter(
+                [
+                    {
+                        "schema": [
+                            {"key": "count", "type": "integer"},
+                            {"key": "blob", "type": "exotic_plugin_type"},
+                        ]
+                    }
+                ]
+            ),
+            "string",
+            {
+                "$schema": "https://json-schema.org/draft-07/schema#",
+                "additionalProperties": True,
+                "type": "object",
+                "properties": {
+                    "count": {"type": ["null", "integer"]},
+                    "blob": {"type": ["null", "string"]},
+                },
+            },
+            id="valid_type_unchanged_unknown_type_uses_default",
+        ),
+    ],
+)
+def test_dynamic_schema_loader_default_type(retriever_data, default_type, expected_schema):
+    schema_type_identifier = SchemaTypeIdentifier(
+        schema_pointer=["schema"],
+        key_pointer=["key"],
+        type_pointer=["type"],
+        types_mapping=[],
+        default_type=default_type,
+        parameters={},
+    )
+    loader = DynamicSchemaLoader(
+        retriever=MagicMock(),
+        config=MagicMock(),
+        parameters={},
+        schema_type_identifier=schema_type_identifier,
+    )
+    loader.retriever.read_records = MagicMock(return_value=retriever_data)
+
+    schema = loader.get_json_schema()
+    assert schema == expected_schema
+
+
+def test_dynamic_schema_loader_no_default_type_raises_on_unknown():
+    schema_type_identifier = SchemaTypeIdentifier(
+        schema_pointer=["schema"],
+        key_pointer=["key"],
+        type_pointer=["type"],
+        types_mapping=[],
+        parameters={},
+    )
+    loader = DynamicSchemaLoader(
+        retriever=MagicMock(),
+        config=MagicMock(),
+        parameters={},
+        schema_type_identifier=schema_type_identifier,
+    )
+    loader.retriever.read_records = MagicMock(
+        return_value=iter([{"schema": [{"key": "field", "type": "totally_unknown"}]}])
+    )
+
+    with pytest.raises(ValueError, match="Invalid Airbyte data type: totally_unknown"):
+        loader.get_json_schema()
+
+
+def test_dynamic_schema_loader_invalid_default_type_raises():
+    schema_type_identifier = SchemaTypeIdentifier(
+        schema_pointer=["schema"],
+        key_pointer=["key"],
+        type_pointer=["type"],
+        types_mapping=[],
+        default_type="not_a_real_airbyte_type",
+        parameters={},
+    )
+    loader = DynamicSchemaLoader(
+        retriever=MagicMock(),
+        config=MagicMock(),
+        parameters={},
+        schema_type_identifier=schema_type_identifier,
+    )
+    loader.retriever.read_records = MagicMock(
+        return_value=iter([{"schema": [{"key": "field", "type": "unknown"}]}])
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="Invalid default Airbyte data type: not_a_real_airbyte_type",
+    ):
+        loader.get_json_schema()
+
+
 def test_dynamic_schema_loader_with_type_conditions():
     _MANIFEST_WITH_TYPE_CONDITIONS = deepcopy(_MANIFEST)
     _MANIFEST_WITH_TYPE_CONDITIONS["definitions"]["party_members_stream"]["schema_loader"][
@@ -414,3 +534,123 @@ def test_dynamic_schema_loader_with_type_conditions():
 
     assert len(actual_catalog.streams) == 1
     assert actual_catalog.streams[0].json_schema == expected_schema
+
+
+@pytest.mark.parametrize(
+    "retriever_data, default_type, expected_schema",
+    [
+        pytest.param(
+            iter(
+                [
+                    {
+                        "schema": [
+                            {"key": "name", "type": "string"},
+                            {"key": "custom_field", "type": "unknown_source_type"},
+                        ]
+                    }
+                ]
+            ),
+            "string",
+            {
+                "$schema": "https://json-schema.org/draft-07/schema#",
+                "additionalProperties": True,
+                "type": "object",
+                "properties": {
+                    "name": {"type": ["null", "string"]},
+                    "custom_field": {"type": ["null", "string"]},
+                },
+            },
+            id="unmapped_type_falls_back_to_default",
+        ),
+        pytest.param(
+            iter(
+                [
+                    {
+                        "schema": [
+                            {"key": "count", "type": "integer"},
+                            {"key": "blob", "type": "exotic_plugin_type"},
+                        ]
+                    }
+                ]
+            ),
+            "string",
+            {
+                "$schema": "https://json-schema.org/draft-07/schema#",
+                "additionalProperties": True,
+                "type": "object",
+                "properties": {
+                    "count": {"type": ["null", "integer"]},
+                    "blob": {"type": ["null", "string"]},
+                },
+            },
+            id="valid_type_unchanged_unknown_type_uses_default",
+        ),
+    ],
+)
+def test_dynamic_schema_loader_default_type(retriever_data, default_type, expected_schema):
+    schema_type_identifier = SchemaTypeIdentifier(
+        schema_pointer=["schema"],
+        key_pointer=["key"],
+        type_pointer=["type"],
+        types_mapping=[],
+        default_type=default_type,
+        parameters={},
+    )
+    loader = DynamicSchemaLoader(
+        retriever=MagicMock(),
+        config=MagicMock(),
+        parameters={},
+        schema_type_identifier=schema_type_identifier,
+    )
+    loader.retriever.read_records = MagicMock(return_value=retriever_data)
+
+    schema = loader.get_json_schema()
+    assert schema == expected_schema
+
+
+def test_dynamic_schema_loader_no_default_type_raises_on_unknown():
+    schema_type_identifier = SchemaTypeIdentifier(
+        schema_pointer=["schema"],
+        key_pointer=["key"],
+        type_pointer=["type"],
+        types_mapping=[],
+        parameters={},
+    )
+    loader = DynamicSchemaLoader(
+        retriever=MagicMock(),
+        config=MagicMock(),
+        parameters={},
+        schema_type_identifier=schema_type_identifier,
+    )
+    loader.retriever.read_records = MagicMock(
+        return_value=iter([{"schema": [{"key": "field", "type": "totally_unknown"}]}])
+    )
+
+    with pytest.raises(ValueError, match="Invalid Airbyte data type: totally_unknown"):
+        loader.get_json_schema()
+
+
+def test_dynamic_schema_loader_invalid_default_type_raises():
+    schema_type_identifier = SchemaTypeIdentifier(
+        schema_pointer=["schema"],
+        key_pointer=["key"],
+        type_pointer=["type"],
+        types_mapping=[],
+        default_type="not_a_real_airbyte_type",
+        parameters={},
+    )
+    loader = DynamicSchemaLoader(
+        retriever=MagicMock(),
+        config=MagicMock(),
+        parameters={},
+        schema_type_identifier=schema_type_identifier,
+    )
+    loader.retriever.read_records = MagicMock(
+        return_value=iter([{"schema": [{"key": "field", "type": "unknown"}]}])
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="Invalid default Airbyte data type: not_a_real_airbyte_type",
+    ):
+        loader.get_json_schema()

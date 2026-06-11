@@ -646,6 +646,11 @@ class SchemaTypeIdentifier(BaseModel):
         title="Type Path",
     )
     types_mapping: Optional[List[TypesMap]] = None
+    default_type: Optional[str] = Field(
+        None,
+        description="The default Airbyte type to use when no type mapping matches the source field type.",
+        title="Default Type",
+    )
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
 

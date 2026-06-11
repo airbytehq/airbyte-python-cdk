@@ -89,6 +89,7 @@ class SchemaTypeIdentifier:
     type_pointer: Optional[List[Union[InterpolatedString, str]]] = None
     types_mapping: Optional[List[TypesMap]] = None
     schema_pointer: Optional[List[Union[InterpolatedString, str]]] = None
+    default_type: Optional[str] = None
 
     def __post_init__(self, parameters: Mapping[str, Any]) -> None:
         self.schema_pointer = (
@@ -269,12 +270,17 @@ class DynamicSchemaLoader(SchemaLoader):
                     return types_map.target_type
         return field_type
 
-    @staticmethod
-    def _get_airbyte_type(field_type: str) -> MutableMapping[str, Any]:
+    def _get_airbyte_type(self, field_type: str) -> MutableMapping[str, Any]:
         """
         Maps a field type to its corresponding Airbyte type definition.
+        Falls back to `default_type` when configured and `field_type` is not recognized.
         """
         if field_type not in AIRBYTE_DATA_TYPES:
+            default_type = self.schema_type_identifier.default_type
+            if default_type is not None:
+                if default_type not in AIRBYTE_DATA_TYPES:
+                    raise ValueError(f"Invalid default Airbyte data type: {default_type}")
+                return deepcopy(AIRBYTE_DATA_TYPES[default_type])
             raise ValueError(f"Invalid Airbyte data type: {field_type}")
 
         return deepcopy(AIRBYTE_DATA_TYPES[field_type])

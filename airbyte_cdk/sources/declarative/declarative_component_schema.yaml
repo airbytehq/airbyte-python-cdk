@@ -2555,6 +2555,10 @@ definitions:
         type: array
         items:
           "$ref": "#/definitions/TypesMap"
+      default_type:
+        title: Default Type
+        description: The default Airbyte type to use when no type mapping matches the source field type.
+        type: string
       $parameters:
         type: object
         additionalProperties: true
