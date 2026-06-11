@@ -227,7 +227,9 @@ class DynamicSchemaLoader(SchemaLoader):
             return {"oneOf": [first_type, second_type]}
 
         elif isinstance(mapped_field_type, str):
-            return self._get_airbyte_type(mapped_field_type, allow_default_fallback=not type_was_mapped)
+            return self._get_airbyte_type(
+                mapped_field_type, allow_default_fallback=not type_was_mapped
+            )
 
         elif isinstance(mapped_field_type, ComplexFieldType):
             return self._resolve_complex_type(mapped_field_type)
@@ -271,7 +273,9 @@ class DynamicSchemaLoader(SchemaLoader):
                     return types_map.target_type
         return field_type
 
-    def _get_airbyte_type(self, field_type: str, *, allow_default_fallback: bool = False) -> MutableMapping[str, Any]:
+    def _get_airbyte_type(
+        self, field_type: str, *, allow_default_fallback: bool = False
+    ) -> MutableMapping[str, Any]:
         """
         Maps a field type to its corresponding Airbyte type definition.
         Falls back to `default_type` when `allow_default_fallback` is True and `field_type` is not recognized.
