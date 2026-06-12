@@ -457,7 +457,9 @@ def test_json_items_parser_yields_floats_not_decimals(requests_mock) -> None:
     import orjson
 
     payload = {"data": [{"ratio": 0.5, "rank": 3, "amount": 0.0000}]}
-    requests_mock.register_uri("GET", "https://airbyte.io/", content=json.dumps(payload).encode("utf-8"))
+    requests_mock.register_uri(
+        "GET", "https://airbyte.io/", content=json.dumps(payload).encode("utf-8")
+    )
     response = requests.get("https://airbyte.io/", stream=True)
 
     records = list(CompositeRawDecoder(parser=JsonItemsParser(items_path="data")).decode(response))
