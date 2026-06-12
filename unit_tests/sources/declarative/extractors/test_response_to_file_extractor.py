@@ -14,7 +14,7 @@ from airbyte_cdk.sources.declarative.extractors import ResponseToFileExtractor
 
 class ResponseToFileExtractorTest(TestCase):
     def setUp(self) -> None:
-        self._extractor = ResponseToFileExtractor({})
+        self._extractor = ResponseToFileExtractor(parameters={})
         self._http_mocker = requests_mock.Mocker()
         self._http_mocker.__enter__()
 
@@ -38,6 +38,55 @@ class ResponseToFileExtractorTest(TestCase):
         extracted_records = list(self._extractor.extract_records(response))
 
         assert extracted_records == [{"FIRST_NAME": "a first name", "LAST_NAME": "a last name"}]
+
+    def test_tab_delimited_response(self) -> None:
+        """Test that a tab-delimited (TSV) response is correctly parsed when delimiter is set to tab."""
+        extractor = ResponseToFileExtractor(parameters={}, delimiter="\t")
+        tsv_data = "Date\tApp Name\tApp Apple Identifier\tEvent\n2026-02-28\tBullseye Blast\t1632779218\tImpression\n"
+        response = self._mock_streamed_response(BytesIO(tsv_data.encode("utf-8")))
+
+        extracted_records = list(extractor.extract_records(response))
+
+        assert len(extracted_records) == 1
+        assert extracted_records[0] == {
+            "Date": "2026-02-28",
+            "App Name": "Bullseye Blast",
+            "App Apple Identifier": "1632779218",
+            "Event": "Impression",
+        }
+
+    def test_escaped_tab_delimiter(self) -> None:
+        """Test that escaped tab delimiter (\\t from YAML) is correctly decoded."""
+        extractor = ResponseToFileExtractor(parameters={}, delimiter="\\t")
+        tsv_data = "col1\tcol2\tcol3\nval1\tval2\tval3\n"
+        response = self._mock_streamed_response(BytesIO(tsv_data.encode("utf-8")))
+
+        extracted_records = list(extractor.extract_records(response))
+
+        assert len(extracted_records) == 1
+        assert extracted_records[0] == {"col1": "val1", "col2": "val2", "col3": "val3"}
+
+    def test_default_comma_delimiter(self) -> None:
+        """Test that the default comma delimiter still works correctly."""
+        extractor = ResponseToFileExtractor(parameters={})
+        csv_data = "col1,col2,col3\nval1,val2,val3\n"
+        response = self._mock_streamed_response(BytesIO(csv_data.encode("utf-8")))
+
+        extracted_records = list(extractor.extract_records(response))
+
+        assert len(extracted_records) == 1
+        assert extracted_records[0] == {"col1": "val1", "col2": "val2", "col3": "val3"}
+
+    def test_tab_delimiter_with_comma_in_values(self) -> None:
+        """Test that commas in field values are preserved when using tab delimiter."""
+        extractor = ResponseToFileExtractor(parameters={}, delimiter="\t")
+        tsv_data = "name\taddress\nJohn Doe\t123 Main St, Apt 4\n"
+        response = self._mock_streamed_response(BytesIO(tsv_data.encode("utf-8")))
+
+        extracted_records = list(extractor.extract_records(response))
+
+        assert len(extracted_records) == 1
+        assert extracted_records[0] == {"name": "John Doe", "address": "123 Main St, Apt 4"}
 
     def _test_folder_path(self) -> Path:
         return Path(__file__).parent.resolve()
@@ -76,7 +125,7 @@ def large_event_response_fixture():
 @pytest.mark.limit_memory("20 MB")
 def test_response_to_file_extractor_memory_usage(requests_mock, large_events_response):
     lines_in_response, file_path = large_events_response
-    extractor = ResponseToFileExtractor({})
+    extractor = ResponseToFileExtractor(parameters={})
 
     url = "https://for-all-mankind.nasa.com/api/v1/users/users1"
     requests_mock.get(url, body=open(file_path, "rb"))
