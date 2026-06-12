@@ -451,6 +451,22 @@ def test_json_items_parser_composes_with_gzip(requests_mock) -> None:
     assert list(decoder.decode(response)) == payload["dataByAsin"]
 
 
+def test_json_items_parser_yields_floats_not_decimals(requests_mock) -> None:
+    """Non-integer numbers must be parsed as float (not Decimal) so downstream JSON
+    serialization (orjson) does not fail on Decimal values."""
+    import orjson
+
+    payload = {"data": [{"ratio": 0.5, "rank": 3, "amount": 0.0000}]}
+    requests_mock.register_uri("GET", "https://airbyte.io/", content=json.dumps(payload).encode("utf-8"))
+    response = requests.get("https://airbyte.io/", stream=True)
+
+    records = list(CompositeRawDecoder(parser=JsonItemsParser(items_path="data")).decode(response))
+    assert isinstance(records[0]["ratio"], float)
+    assert isinstance(records[0]["rank"], int)
+    # Must be serializable by orjson (which rejects Decimal).
+    orjson.dumps(records[0])
+
+
 def test_json_items_parser_requires_items_path() -> None:
     parser = JsonItemsParser()
     with pytest.raises(ValueError, match="items_path"):
