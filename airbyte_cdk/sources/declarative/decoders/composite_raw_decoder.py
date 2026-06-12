@@ -149,7 +149,9 @@ class JsonItemsParser(Parser):
         # ijson auto-selects the best available backend (yajl2_c when present)
         # and reads from `data` lazily — it does not call `.read()` on the
         # whole stream up front.
-        yield from ijson.items(data, f"{self.items_path}.item")
+        # use_float=True yields floats for non-integer numbers instead of Decimal, matching
+        # json.loads/orjson behavior so downstream JSON serialization doesn't choke on Decimal.
+        yield from ijson.items(data, f"{self.items_path}.item", use_float=True)
 
 
 @dataclass
