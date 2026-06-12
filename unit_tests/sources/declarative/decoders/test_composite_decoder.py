@@ -18,6 +18,7 @@ from airbyte_cdk.sources.declarative.decoders.composite_raw_decoder import (
     CompositeRawDecoder,
     CsvParser,
     GzipParser,
+    JsonItemsParser,
     JsonLineParser,
     JsonParser,
 )
@@ -362,3 +363,128 @@ def test_given_response_is_not_streamed_when_decode_then_can_be_called_multiple_
     content_second_time = list(composite_raw_decoder.decode(response))
 
     assert content == content_second_time
+
+
+# ---------------------------------------------------------------------------
+# JsonItemsParser
+# ---------------------------------------------------------------------------
+
+
+def _make_records(count: int) -> List[dict]:
+    return [{"id": i, "name": f"name-{i}"} for i in range(count)]
+
+
+@pytest.mark.parametrize(
+    "payload, items_path, expected_count",
+    [
+        pytest.param(
+            {"dataByDepartmentAndSearchTerm": _make_records(5)},
+            "dataByDepartmentAndSearchTerm",
+            5,
+            id="top_level_array",
+        ),
+        pytest.param(
+            {"data": {"users": _make_records(3)}},
+            "data.users",
+            3,
+            id="nested_array",
+        ),
+        pytest.param(
+            {"dataByAsin": []},
+            "dataByAsin",
+            0,
+            id="empty_array",
+        ),
+    ],
+)
+def test_json_items_parser_yields_each_item(
+    requests_mock, payload: dict, items_path: str, expected_count: int
+) -> None:
+    requests_mock.register_uri(
+        "GET", "https://airbyte.io/", content=json.dumps(payload).encode("utf-8")
+    )
+    response = requests.get("https://airbyte.io/", stream=True)
+
+    decoder = CompositeRawDecoder(parser=JsonItemsParser(items_path=items_path))
+    records = list(decoder.decode(response))
+
+    assert len(records) == expected_count
+    if expected_count:
+        # Records should be yielded in source order and match the payload.
+        expected_items = payload
+        for key in items_path.split("."):
+            expected_items = expected_items[key]
+        assert records == expected_items
+
+
+@pytest.mark.parametrize("encoding", ["utf-8", "iso-8859-1"])
+def test_json_items_parser_honors_encoding(requests_mock, encoding: str) -> None:
+    payload = {"data": [{"name": "Hé"} for _ in range(3)]}
+    # ensure_ascii=False keeps the non-ASCII character literal, so the encoded bytes
+    # genuinely differ between utf-8 and iso-8859-1 and the encoding param must be honored.
+    requests_mock.register_uri(
+        "GET",
+        "https://airbyte.io/",
+        content=json.dumps(payload, ensure_ascii=False).encode(encoding),
+    )
+    response = requests.get("https://airbyte.io/", stream=True)
+
+    decoder = CompositeRawDecoder(parser=JsonItemsParser(items_path="data", encoding=encoding))
+    records = list(decoder.decode(response))
+
+    assert records == payload["data"]
+
+
+def test_json_items_parser_composes_with_gzip(requests_mock) -> None:
+    payload = {"dataByAsin": _make_records(4)}
+    requests_mock.register_uri(
+        "GET",
+        "https://airbyte.io/",
+        content=compress_with_gzip(json.dumps(payload)),
+        headers={"Content-Encoding": "gzip"},
+    )
+    response = requests.get("https://airbyte.io/", stream=True)
+
+    parser = GzipParser(inner_parser=JsonItemsParser(items_path="dataByAsin"))
+    decoder = CompositeRawDecoder(parser=parser)
+
+    assert list(decoder.decode(response)) == payload["dataByAsin"]
+
+
+def test_json_items_parser_requires_items_path() -> None:
+    parser = JsonItemsParser()
+    with pytest.raises(ValueError, match="items_path"):
+        list(parser.parse(BytesIO(b'{"data": []}')))
+
+
+def test_json_items_parser_is_lazy() -> None:
+    """The parser should yield the first record before reading the entire stream."""
+
+    class _CountingStream:
+        """A file-like wrapper that counts how many bytes have been read so far."""
+
+        def __init__(self, content: bytes) -> None:
+            self._buffer = BytesIO(content)
+            self.total_size = len(content)
+            self.bytes_read = 0
+
+        def read(self, size: int = -1) -> bytes:
+            chunk = self._buffer.read(size)
+            self.bytes_read += len(chunk)
+            return chunk
+
+        def readable(self) -> bool:  # pragma: no cover - interface compliance
+            return True
+
+    # Large enough that pulling one record cannot require reading the whole document.
+    payload = {"data": _make_records(10_000)}
+    raw = json.dumps(payload).encode("utf-8")
+    stream = _CountingStream(raw)
+
+    parser = JsonItemsParser(items_path="data")
+    iterator = parser.parse(stream)  # type: ignore[arg-type]
+
+    # Pull one item — we should not have consumed the entire document by this point.
+    first = next(iterator)
+    assert first == {"id": 0, "name": "name-0"}
+    assert stream.bytes_read < stream.total_size
