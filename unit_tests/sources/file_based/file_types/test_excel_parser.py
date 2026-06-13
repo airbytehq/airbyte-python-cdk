@@ -3,6 +3,7 @@
 #
 
 
+import asyncio
 import datetime
 import warnings
 from io import BytesIO
@@ -152,7 +153,7 @@ def test_open_and_parse_file_falls_back_to_openpyxl(mock_logger):
 
     calamine_excel_file = MagicMock()
 
-    def calamine_parse_side_effect():
+    def calamine_parse_side_effect(**kwargs):
         raise FakePanic(
             "failed to construct date: PyErr { type: <class 'ValueError'>, value: ValueError('year 20225 is out of range'), traceback: None }"
         )
@@ -161,7 +162,7 @@ def test_open_and_parse_file_falls_back_to_openpyxl(mock_logger):
 
     openpyxl_excel_file = MagicMock()
 
-    def openpyxl_parse_side_effect():
+    def openpyxl_parse_side_effect(**kwargs):
         warnings.warn("Cell A146 has invalid date", UserWarning)
         return fallback_df
 
@@ -238,3 +239,103 @@ def test_openpyxl_logs_info_when_seek_fails(mock_logger, remote_file, exc_cls):
     assert "Could not rewind stream" in msg
     assert remote_file.file_uri_for_logging in msg
     mock_excel.assert_called_once_with(fp, engine="openpyxl")
+    openpyxl_excel_file.parse.assert_called_once_with(sheet_name=0)
+
+
+def _make_multisheet_excel_bytes() -> bytes:
+    """Creates an in-memory Excel workbook with two sheets for testing."""
+    buf = BytesIO()
+    with pd.ExcelWriter(buf, engine="xlsxwriter") as writer:
+        pd.DataFrame({"col_a": ["first"], "shared": [1]}).to_excel(
+            writer, index=False, sheet_name="First"
+        )
+        pd.DataFrame({"col_b": [2.5], "shared": [2]}).to_excel(
+            writer, index=False, sheet_name="Second"
+        )
+    return buf.getvalue()
+
+
+def _stream_reader_for(excel_bytes: bytes) -> MagicMock:
+    reader = MagicMock(spec=AbstractFileBasedStreamReader)
+    reader.open_file.return_value = BytesIO(excel_bytes)
+    return reader
+
+
+@pytest.mark.parametrize(
+    "sheet_name,expected_records",
+    [
+        pytest.param(
+            "0",
+            [{"col_a": "first", "shared": 1}],
+            id="default_first_sheet",
+        ),
+        pytest.param(
+            "Second",
+            [{"col_b": 2.5, "shared": 2}],
+            id="sheet_by_name",
+        ),
+        pytest.param(
+            "*",
+            [{"col_a": "first", "shared": 1}, {"col_b": 2.5, "shared": 2}],
+            id="all_sheets",
+        ),
+    ],
+)
+def test_parse_records_selects_configured_sheet(sheet_name, expected_records, remote_file):
+    parser = ExcelParser()
+    config = FileBasedStreamConfig(name="test_stream", format=ExcelFormat(sheet_name=sheet_name))
+    reader = _stream_reader_for(_make_multisheet_excel_bytes())
+
+    records = list(parser.parse_records(config, remote_file, reader, MagicMock()))
+
+    assert records == expected_records
+
+
+@pytest.mark.parametrize(
+    "sheet_name,expected_schema",
+    [
+        pytest.param(
+            "0",
+            {"col_a": {"type": "string"}, "shared": {"type": "number"}},
+            id="first_sheet_schema",
+        ),
+        pytest.param(
+            "*",
+            {
+                "col_a": {"type": "string"},
+                "col_b": {"type": "number"},
+                "shared": {"type": "number"},
+            },
+            id="all_sheets_merged_schema",
+        ),
+    ],
+)
+def test_infer_schema_with_sheet_selection(sheet_name, expected_schema, remote_file):
+    parser = ExcelParser()
+    config = FileBasedStreamConfig(name="test_stream", format=ExcelFormat(sheet_name=sheet_name))
+    reader = _stream_reader_for(_make_multisheet_excel_bytes())
+
+    loop = asyncio.new_event_loop()
+    try:
+        schema = loop.run_until_complete(
+            parser.infer_schema(config, remote_file, reader, MagicMock())
+        )
+    finally:
+        loop.close()
+
+    assert schema == expected_schema
+
+
+@pytest.mark.parametrize(
+    "config_value,expected",
+    [
+        pytest.param("0", 0, id="zero_index"),
+        pytest.param("1", 1, id="numeric_index"),
+        pytest.param("MySheet", "MySheet", id="named_sheet"),
+        pytest.param("*", None, id="all_sheets"),
+    ],
+)
+def test_resolve_sheet_name(config_value, expected):
+    parser = ExcelParser()
+    fmt = ExcelFormat(sheet_name=config_value)
+    assert parser._resolve_sheet_name(fmt) == expected
