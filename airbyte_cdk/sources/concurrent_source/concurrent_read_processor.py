@@ -11,6 +11,7 @@ from airbyte_cdk.models import Type as MessageType
 from airbyte_cdk.sources.concurrent_source.partition_generation_completed_sentinel import (
     PartitionGenerationCompletedSentinel,
 )
+from airbyte_cdk.sources.concurrent_source.stream_abort_registry import StreamAbortRegistry
 from airbyte_cdk.sources.concurrent_source.stream_thread_exception import StreamThreadException
 from airbyte_cdk.sources.concurrent_source.thread_pool_manager import ThreadPoolManager
 from airbyte_cdk.sources.declarative.partition_routers.grouping_partition_router import (
@@ -46,6 +47,7 @@ class ConcurrentReadProcessor:
         message_repository: MessageRepository,
         partition_reader: PartitionReader,
         max_concurrent_partition_generators: Optional[int] = None,
+        stream_abort_registry: Optional[StreamAbortRegistry] = None,
     ):
         """
         This class is responsible for handling items from a concurrent stream read process.
@@ -87,6 +89,7 @@ class ConcurrentReadProcessor:
         self._partition_reader = partition_reader
         self._streams_done: Set[str] = set()
         self._exceptions_per_stream_name: dict[str, List[Exception]] = {}
+        self._stream_abort_registry = stream_abort_registry
 
         # Track which streams (by name) are currently active
         # A stream is "active" if it's generating partitions or has partitions being read
@@ -234,13 +237,23 @@ class ConcurrentReadProcessor:
     def on_exception(self, exception: StreamThreadException) -> Iterable[AirbyteMessage]:
         """
         This method is called when an exception is raised.
-        1. Stop all running streams
-        2. Raise the exception
+        1. Record the exception for the stream
+        2. If the failure is stream-wide (a config error, e.g. an authorization failure that
+           affects every partition), abort the stream so its remaining partitions are skipped
+           instead of repeating the same doomed request.
+        3. Emit a trace message for the exception
         """
         self._flag_exception(exception.stream_name, exception.exception)
         self._logger.exception(
             f"Exception while syncing stream {exception.stream_name}", exc_info=exception.exception
         )
+
+        if self._stream_abort_registry and self._is_stream_wide_failure(exception.exception):
+            self._logger.info(
+                f"Stream {exception.stream_name} failed with a stream-wide error. "
+                f"Skipping its remaining partitions."
+            )
+            self._stream_abort_registry.abort(exception.stream_name)
 
         stream_descriptor = StreamDescriptor(name=exception.stream_name)
         if isinstance(exception.exception, AirbyteTracedException):
@@ -254,6 +267,19 @@ class ConcurrentReadProcessor:
 
     def _flag_exception(self, stream_name: str, exception: Exception) -> None:
         self._exceptions_per_stream_name.setdefault(stream_name, []).append(exception)
+
+    @staticmethod
+    def _is_stream_wide_failure(exception: Exception) -> bool:
+        """Whether an exception should abort the whole stream rather than just the partition.
+
+        A `config_error` (e.g. 401/403 authorization failures) affects every partition of the
+        stream, so there is no point reading the rest. Other failures (transient server errors,
+        timeouts, etc.) are left as best-effort: the remaining partitions still get a chance.
+        """
+        return (
+            isinstance(exception, AirbyteTracedException)
+            and exception.failure_type == FailureType.config_error
+        )
 
     def start_next_partition_generator(self) -> Optional[AirbyteMessage]:
         """
