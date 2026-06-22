@@ -898,6 +898,35 @@ class TestSingleUseRefreshTokenOauth2Authenticator:
         second_call_body = mocked_request.call_args.kwargs["data"]
         assert "refresh_token" not in second_call_body
 
+    def test_missing_refresh_token_in_response_preserves_existing_token(
+        self, mocker, connector_config
+    ):
+        """When the OAuth response omits the refresh token, the existing refresh token is preserved."""
+        original_refresh_token = connector_config["credentials"]["refresh_token"]
+        authenticator = SingleUseRefreshTokenOauth2Authenticator(
+            connector_config,
+            token_refresh_endpoint="https://refresh_endpoint.com",
+            client_id=connector_config["credentials"]["client_id"],
+            client_secret=connector_config["credentials"]["client_secret"],
+        )
+
+        resp.status_code = 200
+        mocker.patch.object(
+            resp,
+            "json",
+            return_value={
+                authenticator.get_access_token_name(): "new_access_token",
+                authenticator.get_expires_in_name(): 3600,
+                # no refresh_token in response
+            },
+        )
+        mocker.patch.object(requests, "request", side_effect=mock_request, autospec=True)
+
+        authenticator.refresh_and_set_access_token()
+
+        assert authenticator.access_token == "new_access_token"
+        assert authenticator.get_refresh_token() == original_refresh_token
+
 
 def mock_request(method, url, data, headers, **kwargs):
     if url == "https://refresh_endpoint.com":
