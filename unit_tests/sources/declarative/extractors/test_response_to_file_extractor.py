@@ -39,6 +39,28 @@ class ResponseToFileExtractorTest(TestCase):
 
         assert extracted_records == [{"FIRST_NAME": "a first name", "LAST_NAME": "a last name"}]
 
+    def test_na_string_values_are_preserved(self) -> None:
+        csv_with_na = '"region","name"\n"NA","North America"\n"EMEA","Europe"\n'
+        response = self._mock_streamed_response(BytesIO(csv_with_na.encode("utf-8")))
+
+        extracted_records = list(self._extractor.extract_records(response))
+
+        assert extracted_records == [
+            {"region": "NA", "name": "North America"},
+            {"region": "EMEA", "name": "Europe"},
+        ]
+
+    def test_empty_fields_are_converted_to_none(self) -> None:
+        csv_with_empty = '"region","name"\n"NA","North America"\n,""\n'
+        response = self._mock_streamed_response(BytesIO(csv_with_empty.encode("utf-8")))
+
+        extracted_records = list(self._extractor.extract_records(response))
+
+        assert extracted_records == [
+            {"region": "NA", "name": "North America"},
+            {"region": None, "name": None},
+        ]
+
     def _test_folder_path(self) -> Path:
         return Path(__file__).parent.resolve()
 

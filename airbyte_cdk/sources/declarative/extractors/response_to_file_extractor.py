@@ -137,10 +137,15 @@ class ResponseToFileExtractor(RecordExtractor):
         try:
             with open(path, "r", encoding=file_encoding) as data:
                 chunks = pd.read_csv(
-                    data, chunksize=chunk_size, iterator=True, dialect="unix", dtype=object
+                    data,
+                    chunksize=chunk_size,
+                    iterator=True,
+                    dialect="unix",
+                    dtype=object,
+                    keep_default_na=False,
                 )
                 for chunk in chunks:
-                    chunk = chunk.replace({nan: None}).to_dict(orient="records")
+                    chunk = chunk.replace({nan: None, "": None}).to_dict(orient="records")
                     for row in chunk:
                         yield row
         except pd.errors.EmptyDataError as e:
