@@ -30,7 +30,7 @@ class TokenRotationStrategy(ABC):
     @abstractmethod
     def get_active_token(self) -> str:
         """Return the currently active token."""
-        ...
+        raise NotImplementedError
 
     def update_from_response(self, response: requests.Response) -> None:
         """Update internal state from an HTTP response. Override in subclasses."""
@@ -109,14 +109,16 @@ class RateLimitAwareRotation(TokenRotationStrategy):
             try:
                 state.remaining = int(remaining_header)
             except (ValueError, TypeError):
-                pass
+                logger.debug(
+                    "Could not parse ratelimit-remaining header value: %s", remaining_header
+                )
 
         if reset_header is not None:
             try:
                 reset_ts = float(reset_header)
                 state.reset_at = ab_datetime_parse(str(int(reset_ts)))
             except (ValueError, TypeError):
-                pass
+                logger.debug("Could not parse ratelimit-reset header value: %s", reset_header)
 
         # Proactive rotation: if remaining is below reserve, rotate
         if state.remaining >= 0:
