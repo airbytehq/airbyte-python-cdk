@@ -105,3 +105,40 @@ def test_page_increment_paginator_strategy_initial_token(
     )
 
     assert paginator_strategy.initial_token == expected_initial_token
+
+
+@pytest.mark.parametrize(
+    "initial_page_size,expected_after_reduce",
+    [
+        pytest.param(100, 50, id="halve_100"),
+        pytest.param(10, 5, id="halve_10"),
+        pytest.param(3, 1, id="halve_3_floors_to_1"),
+        pytest.param(1, 1, id="already_at_minimum"),
+    ],
+)
+def test_reduce_page_size(initial_page_size, expected_after_reduce):
+    strategy = PageIncrement(page_size=initial_page_size, parameters={}, config={})
+    strategy.reduce_page_size()
+    assert strategy.get_page_size() == expected_after_reduce
+
+
+def test_reduce_page_size_multiple_times():
+    strategy = PageIncrement(page_size=100, parameters={}, config={})
+    strategy.reduce_page_size()
+    assert strategy.get_page_size() == 50
+    strategy.reduce_page_size()
+    assert strategy.get_page_size() == 25
+
+
+def test_reset_page_size_restores_default():
+    strategy = PageIncrement(page_size=100, parameters={}, config={})
+    strategy.reduce_page_size()
+    assert strategy.get_page_size() == 50
+    strategy.reset_page_size()
+    assert strategy.get_page_size() == 100
+
+
+def test_reduce_page_size_noop_when_none():
+    strategy = PageIncrement(page_size=None, parameters={}, config={})
+    strategy.reduce_page_size()
+    assert strategy.get_page_size() is None
