@@ -82,3 +82,16 @@ class TokenPoolAuthenticator(DeclarativeAuthenticator):
     def on_http_response(self, response: requests.Response) -> None:
         """Called after each HTTP response to update per-token rate-limit state."""
         self._strategy.update_from_response(response)
+
+    def update_token(self) -> None:
+        """Force rotation to the next token.
+
+        Provided for compatibility with imperative-style connectors that call
+        `authenticator.update_token()` from backoff strategies.
+        """
+        if isinstance(self._strategy, RateLimitAwareRotation):
+            self._strategy._rotate()
+        elif isinstance(self._strategy, RoundRobinRotation):
+            # RoundRobinRotation advances on each get_active_token() call, so
+            # calling get_active_token() once consumes the rotation.
+            self._strategy.get_active_token()
