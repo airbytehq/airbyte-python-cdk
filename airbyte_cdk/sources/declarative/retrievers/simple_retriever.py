@@ -28,6 +28,9 @@ from airbyte_cdk.sources.declarative.interpolation import InterpolatedString
 from airbyte_cdk.sources.declarative.partition_routers.single_partition_router import (
     SinglePartitionRouter,
 )
+from airbyte_cdk.sources.declarative.requesters.paginators.default_paginator import (
+    DefaultPaginator,
+)
 from airbyte_cdk.sources.declarative.requesters.paginators.no_pagination import NoPagination
 from airbyte_cdk.sources.declarative.requesters.paginators.paginator import Paginator
 from airbyte_cdk.sources.declarative.requesters.query_properties import QueryProperties
@@ -41,6 +44,9 @@ from airbyte_cdk.sources.declarative.retrievers.retriever import Retriever
 from airbyte_cdk.sources.declarative.stream_slicers.stream_slicer import StreamSlicer
 from airbyte_cdk.sources.source import ExperimentalClassWarning
 from airbyte_cdk.sources.streams.core import StreamData
+from airbyte_cdk.sources.streams.http.page_size_reduction_exception import (
+    PageSizeReductionRequiredException,
+)
 from airbyte_cdk.sources.streams.http.pagination_reset_exception import (
     PaginationResetRequiredException,
 )
@@ -403,7 +409,11 @@ class SimpleRetriever(Retriever):
                         yield current_record
             except PaginationResetRequiredException:
                 reset_pagination = True
+            except PageSizeReductionRequiredException:
+                self._reduce_paginator_page_size()
+                continue
             else:
+                self._reset_paginator_page_size()
                 if not response:
                     break
 
@@ -432,6 +442,25 @@ class SimpleRetriever(Retriever):
 
         # Always return an empty generator just in case no records were ever yielded
         yield from []
+
+    def _reduce_paginator_page_size(self) -> None:
+        """Delegate page-size reduction to the paginator's `PaginationStrategy`, if available."""
+        if isinstance(self._paginator, DefaultPaginator):
+            strategy = self._paginator.pagination_strategy
+            previous = strategy.get_page_size()
+            strategy.reduce_page_size()
+            current = strategy.get_page_size()
+            LOGGER.info(
+                "Reducing page size for stream '%s' from %s to %s due to server error.",
+                self.name,
+                previous,
+                current,
+            )
+
+    def _reset_paginator_page_size(self) -> None:
+        """Restore the paginator's page size to the configured default after a successful fetch."""
+        if isinstance(self._paginator, DefaultPaginator):
+            self._paginator.pagination_strategy.reset_page_size()
 
     def _get_initial_next_page_token(self) -> Optional[Mapping[str, Any]]:
         initial_token = self._paginator.get_initial_token()

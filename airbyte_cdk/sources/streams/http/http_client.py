@@ -42,6 +42,9 @@ from airbyte_cdk.sources.streams.http.exceptions import (
     RequestBodyException,
     UserDefinedBackoffException,
 )
+from airbyte_cdk.sources.streams.http.page_size_reduction_exception import (
+    PageSizeReductionRequiredException,
+)
 from airbyte_cdk.sources.streams.http.pagination_reset_exception import (
     PaginationResetRequiredException,
 )
@@ -440,6 +443,9 @@ class HttpClient:
 
         if error_resolution.response_action == ResponseAction.RESET_PAGINATION:
             raise PaginationResetRequiredException()
+
+        if error_resolution.response_action == ResponseAction.REDUCE_PAGE_SIZE:
+            raise PageSizeReductionRequiredException()
 
         # Emit stream status RUNNING with the reason RATE_LIMITED to log that the rate limit has been reached
         if error_resolution.response_action == ResponseAction.RATE_LIMITED:
