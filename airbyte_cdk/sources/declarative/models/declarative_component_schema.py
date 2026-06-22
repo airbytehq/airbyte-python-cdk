@@ -2633,7 +2633,10 @@ class TokenPoolAuthenticator(BaseModel):
     tokens: str = Field(
         ...,
         description="The API token(s) to rotate through. Can be a single token or multiple tokens joined by the token_separator. Resolved from config via interpolation.",
-        examples=["{{ config['api_tokens'] }}", "{{ config['credentials']['personal_access_token'] }}"],
+        examples=[
+            "{{ config['api_tokens'] }}",
+            "{{ config['credentials']['personal_access_token'] }}",
+        ],
         title="API Tokens",
     )
     token_separator: Optional[str] = Field(

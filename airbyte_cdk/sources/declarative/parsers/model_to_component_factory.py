@@ -73,15 +73,15 @@ from airbyte_cdk.sources.declarative.auth.token import (
     LegacySessionTokenAuthenticator,
 )
 from airbyte_cdk.sources.declarative.auth.token_pool_authenticator import TokenPoolAuthenticator
-from airbyte_cdk.sources.declarative.auth.token_rotation_strategies import (
-    RateLimitAwareRotation,
-    RoundRobinRotation,
-)
 from airbyte_cdk.sources.declarative.auth.token_provider import (
     InterpolatedSessionTokenProvider,
     InterpolatedStringTokenProvider,
     SessionTokenProvider,
     TokenProvider,
+)
+from airbyte_cdk.sources.declarative.auth.token_rotation_strategies import (
+    RateLimitAwareRotation,
+    RoundRobinRotation,
 )
 from airbyte_cdk.sources.declarative.checks import (
     CheckDynamicStream,
@@ -412,6 +412,9 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
     Rate as RateModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    RateLimitAwareRotation as RateLimitAwareRotationModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     RecordExpander as RecordExpanderModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
@@ -436,6 +439,9 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
     ResponseToFileExtractor as ResponseToFileExtractorModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    RoundRobinRotation as RoundRobinRotationModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     SchemaNormalization as SchemaNormalizationModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
@@ -446,15 +452,6 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     SessionTokenAuthenticator as SessionTokenAuthenticatorModel,
-)
-from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
-    TokenPoolAuthenticator as TokenPoolAuthenticatorModel,
-)
-from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
-    RateLimitAwareRotation as RateLimitAwareRotationModel,
-)
-from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
-    RoundRobinRotation as RoundRobinRotationModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     SimpleRetriever as SimpleRetrieverModel,
@@ -468,6 +465,9 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     SubstreamPartitionRouter as SubstreamPartitionRouterModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    TokenPoolAuthenticator as TokenPoolAuthenticatorModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     TypesMap as TypesMapModel,
@@ -3362,8 +3362,12 @@ class ModelToComponentFactory:
             ratelimit_remaining_header=model.ratelimit_remaining_header or "x-ratelimit-remaining",
             ratelimit_reset_header=model.ratelimit_reset_header or "x-ratelimit-reset",
             max_wait_seconds=model.max_wait_seconds if model.max_wait_seconds is not None else 7200,
-            budget_reserve_fraction=model.budget_reserve_fraction if model.budget_reserve_fraction is not None else 0.1,
-            budget_min_reserve=model.budget_min_reserve if model.budget_min_reserve is not None else 50,
+            budget_reserve_fraction=model.budget_reserve_fraction
+            if model.budget_reserve_fraction is not None
+            else 0.1,
+            budget_min_reserve=model.budget_min_reserve
+            if model.budget_min_reserve is not None
+            else 50,
         )
 
     @staticmethod
