@@ -34,7 +34,10 @@ from airbyte_cdk.sources.declarative.requesters.query_properties.property_chunki
     GroupByKey,
     PropertyLimitType,
 )
-from airbyte_cdk.sources.declarative.requesters.request_option import RequestOptionType
+from airbyte_cdk.sources.declarative.requesters.request_option import (
+    RequestOption,
+    RequestOptionType,
+)
 from airbyte_cdk.sources.declarative.requesters.requester import HttpMethod, Requester
 from airbyte_cdk.sources.declarative.retrievers.pagination_tracker import PaginationTracker
 from airbyte_cdk.sources.declarative.retrievers.simple_retriever import SimpleRetriever
@@ -1429,7 +1432,8 @@ def test_given_reach_pagination_limit_after_two_pages_when_read_records_than_red
 def test_given_page_size_reduction_exception_when_read_records_then_retry_same_page_with_reduced_size():
     """Verify that `PageSizeReductionRequiredException` causes the retriever to
     reduce the page size on the pagination strategy and retry the same page
-    (same `next_page_token`), then reset the page size after a successful fetch.
+    (same `next_page_token`) with the halved page size in the request, then
+    reset the page size after a successful fetch.
     """
     strategy = CursorPaginationStrategy(
         page_size=100, cursor_value="{{ response.next }}", config={}, parameters={}
@@ -1439,6 +1443,11 @@ def test_given_page_size_reduction_exception_when_read_records_then_retry_same_p
         url_base="https://api.example.com",
         config={},
         parameters={},
+        page_size_option=RequestOption(
+            inject_into=RequestOptionType.request_parameter,
+            field_name="page_size",
+            parameters={},
+        ),
     )
 
     requester = Mock(spec=Requester)
@@ -1482,24 +1491,29 @@ def test_given_page_size_reduction_exception_when_read_records_then_retry_same_p
     assert len(records) == 2
     assert requester.send_request.call_count == 3
 
-    # The first request used the original page token (None / initial)
-    first_call_token = requester.send_request.call_args_list[0].kwargs.get("next_page_token")
-    assert first_call_token is None
+    # The first request used the original page token (None / initial) and page_size=100
+    first_call = requester.send_request.call_args_list[0].kwargs
+    assert first_call.get("next_page_token") is None
+    assert first_call["request_params"]["page_size"] == 100
 
-    # The second request (which raised the exception) used cursor_abc
-    second_call_token = requester.send_request.call_args_list[1].kwargs.get("next_page_token")
-    assert second_call_token == {"next_page_token": "cursor_abc"}
+    # The second request (which raised the exception) used cursor_abc and page_size=100
+    second_call = requester.send_request.call_args_list[1].kwargs
+    assert second_call["next_page_token"] == {"next_page_token": "cursor_abc"}
+    assert second_call["request_params"]["page_size"] == 100
 
-    # The third request (retry) used the SAME token cursor_abc
-    third_call_token = requester.send_request.call_args_list[2].kwargs.get("next_page_token")
-    assert third_call_token == {"next_page_token": "cursor_abc"}
+    # The third request (retry) used the SAME token cursor_abc but page_size=50
+    third_call = requester.send_request.call_args_list[2].kwargs
+    assert third_call["next_page_token"] == {"next_page_token": "cursor_abc"}
+    assert third_call["request_params"]["page_size"] == 50
 
     # After successful retry, page size should be reset to 100
     assert strategy.get_page_size() == 100
 
 
-def test_page_size_is_halved_during_reduction():
-    """Verify that the page size is actually halved when the exception fires."""
+def test_page_size_is_halved_in_request_during_reduction():
+    """Verify that the page size in the actual request params is halved when
+    the reduction exception fires, and restored after a successful fetch.
+    """
     strategy = CursorPaginationStrategy(
         page_size=100, cursor_value="{{ response.next }}", config={}, parameters={}
     )
@@ -1508,16 +1522,21 @@ def test_page_size_is_halved_during_reduction():
         url_base="https://api.example.com",
         config={},
         parameters={},
+        page_size_option=RequestOption(
+            inject_into=RequestOptionType.request_parameter,
+            field_name="page_size",
+            parameters={},
+        ),
     )
 
     requester = Mock(spec=Requester)
-    observed_page_sizes = []
+    observed_request_page_sizes = []
 
     def capture_page_size_on_send(**kwargs):
-        observed_page_sizes.append(strategy.get_page_size())
-        if len(observed_page_sizes) == 1:
+        observed_request_page_sizes.append(kwargs.get("request_params", {}).get("page_size"))
+        if len(observed_request_page_sizes) == 1:
             return MagicMock()
-        elif len(observed_page_sizes) == 2:
+        elif len(observed_request_page_sizes) == 2:
             raise PageSizeReductionRequiredException()
         else:
             return MagicMock()
@@ -1553,10 +1572,10 @@ def test_page_size_is_halved_during_reduction():
 
     list(retriever.read_records(A_RECORD_SCHEMA, A_STREAM_SLICE))
 
-    # Call 1: page_size=100 (page 1, succeeds)
-    # Call 2: page_size=100 (page 2, raises exception → reduce to 50)
-    # Call 3: page_size=50  (page 2 retry, succeeds → reset to 100)
-    assert observed_page_sizes == [100, 100, 50]
+    # Call 1: request has page_size=100 (page 1, succeeds)
+    # Call 2: request has page_size=100 (page 2, raises exception → strategy reduces to 50)
+    # Call 3: request has page_size=50  (page 2 retry with rebuilt request, succeeds → reset to 100)
+    assert observed_request_page_sizes == [100, 100, 50]
     assert strategy.get_page_size() == 100
 
 
