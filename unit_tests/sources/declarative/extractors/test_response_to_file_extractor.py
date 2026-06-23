@@ -49,7 +49,9 @@ class ResponseToFileExtractorTest(TestCase):
 
         assert len(extracted_records) == len(pandas_na_tokens)
         for record, token in zip(extracted_records, pandas_na_tokens):
-            assert record["region"] == token, f"Expected '{token}' to be preserved but got {record['region']}"
+            assert record["region"] == token, (
+                f"Expected '{token}' to be preserved but got {record['region']}"
+            )
             assert record["name"] == f"{token} value"
 
     def test_empty_fields_are_converted_to_none(self) -> None:
