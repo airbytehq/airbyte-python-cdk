@@ -1220,7 +1220,7 @@ def test_read_source_single_page_single_slice(mock_http_stream):
         pytest.param(
             "CLOUD",
             "https://domainwithoutextension",
-            "Invalid URL",
+            "DNS resolution failed for domainwithoutextension",
             id="test_cloud_read_with_invalid_url_endpoint",
         ),
         pytest.param(
@@ -1300,7 +1300,7 @@ def test_handle_read_external_requests(deployment_mode, url_base, expected_error
         pytest.param(
             "CLOUD",
             "https://domainwithoutextension",
-            "Invalid URL",
+            "DNS resolution failed for domainwithoutextension",
             id="test_cloud_read_with_invalid_url_endpoint",
         ),
         pytest.param(

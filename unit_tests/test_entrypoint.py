@@ -4,6 +4,7 @@
 
 import os
 import socket
+import sys
 from argparse import Namespace
 from collections import defaultdict
 from copy import deepcopy
@@ -977,8 +978,8 @@ def test_filtered_send_raises_connection_error_on_dns_failure(gaierror_errno, ga
             requests.Session().send(prepared)
 
 
-def test_filtered_send_does_not_raise_invalid_url_on_dns_failure():
-    """Verify the old behavior (InvalidURL) no longer occurs for DNS errors."""
+def test_filtered_send_dns_failure_is_not_invalid_url():
+    """Verify DNS errors are raised as ConnectionError, not InvalidURL."""
     entrypoint_module._init_internal_request_filter()
 
     prepared = requests.PreparedRequest()
@@ -989,11 +990,13 @@ def test_filtered_send_does_not_raise_invalid_url_on_dns_failure():
     with patch.object(entrypoint_module, "_is_private_url", side_effect=dns_error):
         with pytest.raises(requests.ConnectionError):
             requests.Session().send(prepared)
-        # Confirm it is NOT InvalidURL
+
+    # The raised exception must not be a subclass of InvalidURL
+    with patch.object(entrypoint_module, "_is_private_url", side_effect=dns_error):
         try:
-            with patch.object(entrypoint_module, "_is_private_url", side_effect=dns_error):
-                requests.Session().send(prepared)
+            requests.Session().send(prepared)
+            pytest.fail("Expected ConnectionError to be raised")
         except requests.ConnectionError:
-            pass
-        except requests.exceptions.InvalidURL:
-            pytest.fail("DNS failure should raise ConnectionError, not InvalidURL")
+            assert not isinstance(sys.exc_info()[1], requests.exceptions.InvalidURL), (
+                "DNS failure should raise ConnectionError, not InvalidURL"
+            )
