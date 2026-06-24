@@ -37,6 +37,8 @@ from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 LOGGER = logging.getLogger("airbyte")
 _NO_TIMEOUT = timedelta.max
 _API_SIDE_RUNNING_STATUS = {AsyncJobStatus.RUNNING, AsyncJobStatus.TIMED_OUT}
+_ASYNC_JOB_TERMINAL_FAILURE_MESSAGE = "Async job failed after exhausting all retry attempts."
+_ASYNC_JOB_FINAL_FAILURE_MESSAGE = "Async job partition did not complete successfully."
 
 
 class AsyncPartition:
@@ -487,11 +489,16 @@ class AsyncJobOrchestrator:
             AirbyteTracedException: If at least one job could not be completed.
         """
         status_by_job_id = {job.api_job_id(): job.status() for job in partition.jobs}
+        failure_type = (
+            FailureType.system_error
+            if any(job.is_creation_failure() for job in partition.jobs)
+            else FailureType.transient_error
+        )
         self._non_breaking_exceptions.append(
             AirbyteTracedException(
-                message="Async job failed after exhausting all retry attempts.",
+                message=_ASYNC_JOB_TERMINAL_FAILURE_MESSAGE,
                 internal_message=f"At least one job could not be completed for slice {partition.stream_slice}. Job statuses were: {status_by_job_id}. See warning logs for more information.",
-                failure_type=FailureType.system_error,
+                failure_type=failure_type,
             )
         )
 
@@ -536,15 +543,25 @@ class AsyncJobOrchestrator:
         if self._non_breaking_exceptions:
             # We emitted traced message but we didn't break on non_breaking_exception. We still need to raise an exception so that the
             # call of `create_and_get_completed_partitions` knows that there was an issue with some partitions and the sync is incomplete.
+            failure_type = (
+                FailureType.transient_error
+                if any(
+                    isinstance(exception, AirbyteTracedException)
+                    and exception.message == _ASYNC_JOB_TERMINAL_FAILURE_MESSAGE
+                    and exception.failure_type == FailureType.transient_error
+                    for exception in self._non_breaking_exceptions
+                )
+                else FailureType.system_error
+            )
             raise AirbyteTracedException(
-                message="One or more async jobs failed after exhausting all retry attempts.",
+                message=_ASYNC_JOB_FINAL_FAILURE_MESSAGE,
                 internal_message="\n".join(
                     [
                         filter_secrets(exception.__repr__())
                         for exception in self._non_breaking_exceptions
                     ]
                 ),
-                failure_type=FailureType.system_error,
+                failure_type=failure_type,
             )
 
     def _handle_non_breaking_error(self, exception: Exception) -> None:
