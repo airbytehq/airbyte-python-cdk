@@ -58,24 +58,12 @@ class CompositeErrorHandler(ErrorHandler):
 
     def interpret_response(
         self, response_or_exception: Optional[Union[requests.Response, Exception]]
-    ) -> ErrorResolution:
-        matched_error_resolution = None
+    ) -> Optional[ErrorResolution]:
         for error_handler in self.error_handlers:
             matched_error_resolution = error_handler.interpret_response(response_or_exception)
 
-            if not isinstance(matched_error_resolution, ErrorResolution):
-                continue
-
-            if matched_error_resolution.response_action in [
-                ResponseAction.SUCCESS,
-                ResponseAction.RETRY,
-                ResponseAction.IGNORE,
-                ResponseAction.RESET_PAGINATION,
-            ]:
+            if isinstance(matched_error_resolution, ErrorResolution):
                 return matched_error_resolution
-
-        if matched_error_resolution:
-            return matched_error_resolution
 
         return create_fallback_error_resolution(response_or_exception)
 
