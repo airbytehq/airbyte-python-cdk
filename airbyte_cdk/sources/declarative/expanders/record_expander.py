@@ -2,7 +2,6 @@
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
 
-import copy
 from dataclasses import InitVar, dataclass
 from enum import Enum
 from typing import Any, Iterable, Mapping, MutableMapping, Sequence
@@ -59,7 +58,9 @@ class RecordExpander:
             Items from this array will be extracted and emitted as separate records.
             Supports wildcards (*).
         remain_original_record: If True, each expanded record will include the original
-            parent record in an "original_record" field. Defaults to False.
+            parent record in an "original_record" field. The parent record is shared
+            (not deep-copied) across all expanded siblings, so treat it as read-only.
+            Defaults to False.
         on_no_records: Behavior when expansion produces no records. "skip" (default)
             emits nothing. "emit_parent" emits the original parent record unchanged.
         config: The user-provided configuration as specified by the source's spec.
@@ -111,7 +112,7 @@ class RecordExpander:
                     if self.remain_original_record:
                         yield {
                             "value": item,
-                            "original_record": copy.deepcopy(parent_record),
+                            "original_record": parent_record,
                         }
                     else:
                         yield item
@@ -125,4 +126,4 @@ class RecordExpander:
     ) -> None:
         """Apply parent context to a child record."""
         if self.remain_original_record:
-            child_record["original_record"] = copy.deepcopy(parent_record)
+            child_record["original_record"] = parent_record
