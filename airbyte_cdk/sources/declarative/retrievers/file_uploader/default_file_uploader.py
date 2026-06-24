@@ -70,7 +70,7 @@ class DefaultFileUploader(FileUploader):
             ),
         )
 
-        files_directory = Path(get_files_directory())
+        files_directory = Path(get_files_directory(is_file_transfer=True))
 
         file_name = (
             self.filename_extractor.eval(self.config, record=record)
