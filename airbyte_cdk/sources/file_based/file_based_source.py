@@ -124,9 +124,16 @@ class FileBasedSource(ConcurrentSourceAdapter, ABC):
         self.logger = init_logger(f"airbyte.{self.name}")
         self.errors_collector: FileBasedErrorsCollector = FileBasedErrorsCollector()
         self._message_repository: Optional[MessageRepository] = None
+        configured_concurrency: int | None = self._concurrency_level
+        concurrency = (
+            min(configured_concurrency, MAX_CONCURRENCY)
+            if configured_concurrency is not None
+            else MAX_CONCURRENCY
+        )
+        initial_n_partitions = max(concurrency // 2, 1)
         concurrent_source = ConcurrentSource.create(
-            MAX_CONCURRENCY,
-            INITIAL_N_PARTITIONS,
+            concurrency,
+            initial_n_partitions,
             self.logger,
             self._slice_logger,
             self.message_repository,
