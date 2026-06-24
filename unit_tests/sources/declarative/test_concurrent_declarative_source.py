@@ -57,6 +57,9 @@ from airbyte_cdk.sources.declarative.extractors.record_filter import (
     ClientSideIncrementalRecordFilterDecorator,
 )
 from airbyte_cdk.sources.declarative.partition_routers import AsyncJobPartitionRouter
+from airbyte_cdk.sources.declarative.resolvers.http_components_resolver import (
+    HttpComponentsResolver,
+)
 from airbyte_cdk.sources.declarative.retrievers.simple_retriever import SimpleRetriever
 from airbyte_cdk.sources.declarative.stream_slicers.declarative_partition_generator import (
     StreamSlicerPartitionGenerator,
@@ -5568,4 +5571,117 @@ def test_api_budget_is_set_before_dynamic_streams_evaluated():
     assert "dynamic_stream_configs" in call_order, "dynamic_stream_configs was never called"
     assert call_order.index("set_api_budget") < call_order.index("dynamic_stream_configs"), (
         f"set_api_budget must be called before dynamic_stream_configs, but call order was: {call_order}"
+    )
+
+
+def test_dynamic_stream_discovery_http_requests_use_api_budget():
+    """Verify that HttpComponentsResolver's requester receives the configured api_budget.
+
+    Regression test for https://github.com/airbytehq/oncall/issues/11954
+    The discovery HTTP requests made by HttpComponentsResolver must be rate-limited
+    by the api_budget configured in the manifest.
+    """
+    manifest = {
+        "version": "5.0.0",
+        "definitions": {
+            "selector": {
+                "type": "RecordSelector",
+                "extractor": {"type": "DpathExtractor", "field_path": []},
+            },
+            "requester": {
+                "type": "HttpRequester",
+                "url_base": "https://api.test.com",
+                "http_method": "GET",
+                "authenticator": {"type": "NoAuth"},
+            },
+        },
+        "dynamic_streams": [
+            {
+                "type": "DynamicDeclarativeStream",
+                "stream_template": {
+                    "type": "DeclarativeStream",
+                    "$parameters": {
+                        "name": "dynamic_items",
+                        "primary_key": "id",
+                        "url_base": "https://api.test.com",
+                    },
+                    "schema_loader": {
+                        "type": "InlineSchemaLoader",
+                        "schema": {
+                            "$schema": "https://json-schema.org/draft-07/schema#",
+                            "type": "object",
+                            "properties": {"id": {"type": "string"}},
+                        },
+                    },
+                    "retriever": {
+                        "type": "SimpleRetriever",
+                        "record_selector": {"$ref": "#/definitions/selector"},
+                        "paginator": {"type": "NoPagination"},
+                        "requester": {
+                            "$ref": "#/definitions/requester",
+                            "path": "/items",
+                        },
+                    },
+                },
+                "components_resolver": {
+                    "type": "HttpComponentsResolver",
+                    "$parameters": {
+                        "name": "resolver",
+                        "primary_key": "id",
+                        "url_base": "https://api.test.com",
+                    },
+                    "retriever": {
+                        "type": "SimpleRetriever",
+                        "record_selector": {"$ref": "#/definitions/selector"},
+                        "paginator": {"type": "NoPagination"},
+                        "requester": {
+                            "$ref": "#/definitions/requester",
+                            "path": "/components",
+                        },
+                    },
+                    "components_mapping": [
+                        {
+                            "type": "ComponentMappingDefinition",
+                            "field_path": ["name"],
+                            "value": "{{ components_values.name }}",
+                        }
+                    ],
+                },
+            }
+        ],
+        "api_budget": {
+            "type": "HTTPAPIBudget",
+            "policies": [
+                {
+                    "type": "MovingWindowCallRatePolicy",
+                    "rates": [{"type": "Rate", "limit": 5, "interval": "PT1S"}],
+                    "matchers": [],
+                }
+            ],
+        },
+        "check": {"type": "CheckStream", "stream_names": []},
+    }
+
+    source = ConcurrentDeclarativeSource(
+        source_config=manifest, config={"api_key": "test"}, catalog=None, state=None
+    )
+
+    captured_resolvers: list[Any] = []
+    original_resolve = HttpComponentsResolver.resolve_components
+
+    def capturing_resolve(resolver_self, *args, **kwargs):
+        captured_resolvers.append(resolver_self)
+        return iter([])
+
+    with patch.object(HttpComponentsResolver, "resolve_components", capturing_resolve):
+        source.streams(config={"api_key": "test"})
+
+    assert len(captured_resolvers) == 1, (
+        f"Expected exactly one HttpComponentsResolver, got {len(captured_resolvers)}"
+    )
+    resolver = captured_resolvers[0]
+    requester = resolver.retriever.requester
+    assert requester.api_budget is not None, (
+        "HttpComponentsResolver's requester should have api_budget set during dynamic stream "
+        "discovery, but it was None. This means discovery HTTP requests are not rate-limited."
     )
