@@ -5,7 +5,10 @@ import logging
 import os
 from typing import Dict, Iterable, List, Optional, Set
 
-from airbyte_cdk.exception_handler import generate_failed_streams_error_message
+from airbyte_cdk.exception_handler import (
+    aggregate_failure_type,
+    generate_failed_streams_error_message,
+)
 from airbyte_cdk.models import AirbyteMessage, AirbyteStreamStatus, FailureType, StreamDescriptor
 from airbyte_cdk.models import Type as MessageType
 from airbyte_cdk.sources.concurrent_source.partition_generation_completed_sentinel import (
@@ -411,12 +414,15 @@ class ConcurrentReadProcessor:
             error_message = generate_failed_streams_error_message(self._exceptions_per_stream_name)
             self._logger.info(error_message)
             # We still raise at least one exception when a stream raises an exception because the platform currently relies
-            # on a non-zero exit code to determine if a sync attempt has failed. We also raise the exception as a config_error
-            # type because this combined error isn't actionable, but rather the previously emitted individual errors.
+            # on a non-zero exit code to determine if a sync attempt has failed.
             raise AirbyteTracedException(
                 message=error_message,
                 internal_message="Concurrent read failure",
-                failure_type=FailureType.config_error,
+                failure_type=aggregate_failure_type(
+                    exception
+                    for exceptions in self._exceptions_per_stream_name.values()
+                    for exception in exceptions
+                ),
             )
         return is_done
 

@@ -674,6 +674,55 @@ class TestConcurrentReadProcessor(unittest.TestCase):
         with pytest.raises(AirbyteTracedException):
             handler.is_done()
 
+    @freezegun.freeze_time("2020-01-01T00:00:00")
+    def test_given_underlying_exception_is_transient_when_is_done_then_aggregate_failure_type_is_transient(
+        self,
+    ):
+        stream_instances_to_read_from = [self._stream, self._another_stream]
+
+        handler = ConcurrentReadProcessor(
+            stream_instances_to_read_from,
+            self._partition_enqueuer,
+            self._thread_pool_manager,
+            self._logger,
+            self._slice_logger,
+            self._message_repository,
+            self._partition_reader,
+        )
+
+        handler.start_next_partition_generator()
+        handler.on_partition(self._an_open_partition)
+        list(
+            handler.on_partition_generation_completed(
+                PartitionGenerationCompletedSentinel(self._stream)
+            )
+        )
+        list(
+            handler.on_partition_generation_completed(
+                PartitionGenerationCompletedSentinel(self._another_stream)
+            )
+        )
+
+        underlying_exception = AirbyteTracedException(
+            message="Source API rate limit exceeded.",
+            internal_message="HTTP 429 Too Many Requests",
+            failure_type=FailureType.transient_error,
+        )
+        exception = StreamThreadException(underlying_exception, _STREAM_NAME)
+
+        list(handler.on_exception(exception))
+        list(
+            handler.on_partition_complete_sentinel(
+                PartitionCompleteSentinel(self._an_open_partition)
+            )
+        )
+
+        with pytest.raises(AirbyteTracedException) as exc_info:
+            handler.is_done()
+
+        assert exc_info.value.failure_type == FailureType.transient_error
+        assert exc_info.value.internal_message == "Concurrent read failure"
+
     def test_given_partition_completion_is_not_success_then_do_not_close_partition(self):
         stream_instances_to_read_from = [self._stream, self._another_stream]
 
