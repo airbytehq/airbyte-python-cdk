@@ -5667,7 +5667,6 @@ def test_dynamic_stream_discovery_http_requests_use_api_budget():
     )
 
     captured_resolvers: list[Any] = []
-    original_resolve = HttpComponentsResolver.resolve_components
 
     def capturing_resolve(resolver_self, *args, **kwargs):
         captured_resolvers.append(resolver_self)
