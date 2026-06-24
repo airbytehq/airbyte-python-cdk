@@ -73,6 +73,12 @@ jobs:
         run: poetry install --all-extras
 
       # Job-specific step(s):
-
-      - name: Run mypy
-        run: poetry run mypy --config-file mypy.ini airbyte_cdk
+      - uses: tsuyoshicho/action-mypy@v5
+        with:
+          github_token: ${{ secrets.github_token }}
+          # Change reviewdog reporter if you need [github-pr-check,github-check,github-pr-review].
+          reporter: github-pr-review
+          level: error
+          execute_command: 'poetry run mypy'
+          fail_on_error: true
+          target: airbyte_cdk
