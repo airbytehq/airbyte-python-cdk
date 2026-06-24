@@ -2,6 +2,7 @@
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
 
+import random
 from dataclasses import InitVar, dataclass
 from typing import Any, Mapping, Optional, Union
 
@@ -24,6 +25,7 @@ class ExponentialBackoffStrategy(BackoffStrategy):
     parameters: InitVar[Mapping[str, Any]]
     config: Config
     factor: Union[float, InterpolatedString, str] = 5
+    jitter_range_in_seconds: Optional[float] = None
 
     def __post_init__(self, parameters: Mapping[str, Any]) -> None:
         if not isinstance(self.factor, InterpolatedString):
@@ -35,11 +37,15 @@ class ExponentialBackoffStrategy(BackoffStrategy):
 
     @property
     def _retry_factor(self) -> float:
-        return self._factor.eval(self.config)  # type: ignore # factor is always cast to an interpolated string
+        return float(self._factor.eval(self.config))
 
     def backoff_time(
         self,
         response_or_exception: Optional[Union[requests.Response, requests.RequestException]],
         attempt_count: int,
     ) -> Optional[float]:
-        return self._retry_factor * 2**attempt_count  # type: ignore # factor is always cast to an interpolated string
+        backoff_time = float(self._retry_factor * 2**attempt_count)
+        if self.jitter_range_in_seconds is None:
+            return backoff_time
+
+        return random.uniform(backoff_time, backoff_time + (self.jitter_range_in_seconds * 2))

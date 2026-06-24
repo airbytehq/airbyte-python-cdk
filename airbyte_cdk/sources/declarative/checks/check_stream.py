@@ -13,6 +13,8 @@ from airbyte_cdk.sources.streams.concurrent.abstract_stream import AbstractStrea
 from airbyte_cdk.sources.streams.core import Stream
 from airbyte_cdk.sources.streams.http.availability_strategy import HttpAvailabilityStrategy
 
+CHECK_STREAM_NAMES_CONFIG_KEY = "__airbyte_check_stream_names"
+
 
 def evaluate_availability(
     stream: Union[Stream, AbstractStream], logger: logging.Logger
@@ -36,7 +38,7 @@ class DynamicStreamCheckConfig:
     and type enforcement."""
 
     dynamic_stream_name: str
-    stream_count: int = 0
+    stream_count: Optional[int] = None
 
 
 @dataclass
@@ -70,6 +72,7 @@ class CheckStream(ConnectionChecker):
         config: Mapping[str, Any],
     ) -> Tuple[bool, Any]:
         """Checks the connection to the source and its streams."""
+        stream_names = self._get_stream_names(config)
         try:
             streams: List[Union[Stream, AbstractStream]] = source.streams(config=config)  # type: ignore  # this is a migration step and we expect the declarative CDK to migrate off of ConnectionChecker
             if not streams:
@@ -78,7 +81,7 @@ class CheckStream(ConnectionChecker):
             return self._log_error(logger, "discovering streams", error)
 
         stream_name_to_stream = {s.name: s for s in streams}
-        for stream_name in self.stream_names:
+        for stream_name in stream_names:
             if stream_name not in stream_name_to_stream:
                 raise ValueError(
                     f"{stream_name} is not part of the catalog. Expected one of {list(stream_name_to_stream.keys())}."
@@ -100,6 +103,19 @@ class CheckStream(ConnectionChecker):
             return self._check_dynamic_streams_availability(source, stream_name_to_stream, logger)
 
         return True, None
+
+    def _get_stream_names(self, config: Mapping[str, Any]) -> List[str]:
+        if (
+            CHECK_STREAM_NAMES_CONFIG_KEY not in config
+            or config[CHECK_STREAM_NAMES_CONFIG_KEY] == []
+        ):
+            return self.stream_names
+        configured_stream_names = config[CHECK_STREAM_NAMES_CONFIG_KEY]
+        if not isinstance(configured_stream_names, list) or not all(
+            isinstance(stream_name, str) for stream_name in configured_stream_names
+        ):
+            raise ValueError(f"{CHECK_STREAM_NAMES_CONFIG_KEY} must be a list of strings.")
+        return configured_stream_names
 
     def _check_stream_availability(
         self,
@@ -162,10 +178,15 @@ class CheckStream(ConnectionChecker):
         generated_streams: List[Dict[str, Any]],
         stream_name_to_stream: Dict[str, Union[Stream, AbstractStream]],
         logger: logging.Logger,
-        max_count: int,
+        max_count: Optional[int],
     ) -> Tuple[bool, Any]:
-        """Checks availability of generated dynamic streams."""
-        for declarative_stream in generated_streams[: min(max_count, len(generated_streams))]:
+        """Checks availability of generated dynamic streams.
+
+        If `max_count` is `None`, all generated streams are checked. Otherwise, the
+        first `max_count` streams are checked (capped at the number of available streams).
+        """
+        streams_to_check = generated_streams if max_count is None else generated_streams[:max_count]
+        for declarative_stream in streams_to_check:
             stream = stream_name_to_stream[declarative_stream["name"]]
             try:
                 stream_is_available, reason = evaluate_availability(stream, logger)

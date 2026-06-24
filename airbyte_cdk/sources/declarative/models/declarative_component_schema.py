@@ -58,8 +58,9 @@ class DynamicStreamCheckConfig(BaseModel):
         ..., description="The dynamic stream name.", title="Dynamic Stream Name"
     )
     stream_count: Optional[int] = Field(
-        0,
-        description="The number of streams to attempt reading from during a check operation. If `stream_count` exceeds the total number of available streams, the minimum of the two values will be used.",
+        None,
+        description="The number of streams to attempt reading from during a check operation. If unset, all generated streams are checked. Must be a positive integer; if it exceeds the total number of available streams, all streams are checked.",
+        ge=1,
         title="Stream Count",
     )
 
@@ -102,6 +103,13 @@ class ConstantBackoffStrategy(BaseModel):
         description="Backoff time in seconds.",
         examples=[30, 30.5, "{{ config['backoff_time'] }}"],
         title="Backoff Time",
+    )
+    jitter_range_in_seconds: Optional[float] = Field(
+        None,
+        description="Optional additive jitter range in seconds. When set, the backoff time is uniformly distributed between backoff_time_in_seconds and backoff_time_in_seconds + (jitter_range_in_seconds * 2), so jitter only increases the base backoff.",
+        examples=[15],
+        ge=0,
+        title="Jitter Range",
     )
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
@@ -511,6 +519,13 @@ class ExponentialBackoffStrategy(BaseModel):
         examples=[5, 5.5, "10"],
         title="Factor",
     )
+    jitter_range_in_seconds: Optional[float] = Field(
+        None,
+        description="Optional additive jitter range in seconds. When set, the backoff time is uniformly distributed between computed_backoff and computed_backoff + (jitter_range_in_seconds * 2), so jitter only increases the computed backoff.",
+        examples=[2],
+        ge=0,
+        title="Jitter Range",
+    )
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
 
@@ -657,6 +672,20 @@ class JsonFileSchemaLoader(BaseModel):
 
 class JsonDecoder(BaseModel):
     type: Literal["JsonDecoder"]
+
+
+class JsonItemsDecoder(BaseModel):
+    type: Literal["JsonItemsDecoder"]
+    items_path: str = Field(
+        ...,
+        description="Dot-separated path to the JSON array whose elements should be yielded as records. Uses `ijson` path syntax (e.g. `data.users`), not JSONPath syntax \u2014 do not include leading `$.` or trailing `[*]`.",
+        title="Items Path",
+    )
+    encoding: Optional[str] = Field(
+        "utf-8",
+        description="The character encoding of the JSON data. Defaults to UTF-8.",
+        title="Encoding",
+    )
 
 
 class JsonlDecoder(BaseModel):
@@ -1237,6 +1266,7 @@ class AsyncJobStatusMap(BaseModel):
     completed: List[str]
     failed: List[str]
     timeout: List[str]
+    skipped: Optional[List[str]] = None
 
 
 class ValueType(Enum):
@@ -1923,6 +1953,12 @@ class OAuthAuthenticator(BaseModel):
         ],
         title="Refresh Request Headers",
     )
+    send_refresh_request_as_query_params: Optional[bool] = Field(
+        False,
+        description="When set to true, the standard OAuth refresh args (`grant_type`, `refresh_token`, client credentials when not in an `Authorization` header, scopes, plus any `refresh_request_body` extras) are sent on the URL query string and the request body is emitted empty. Use this for OAuth providers like Gong that document their refresh endpoint with refresh args on the URL query string.",
+        examples=[True],
+        title="Send Refresh Request As Query Params",
+    )
     scopes: Optional[List[str]] = Field(
         None,
         description="List of scopes that should be granted to the access token.",
@@ -2043,10 +2079,10 @@ class DefaultErrorHandler(BaseModel):
         description="List of backoff strategies to use to determine how long to wait before retrying a retryable request.",
         title="Backoff Strategies",
     )
-    max_retries: Optional[int] = Field(
+    max_retries: Optional[Union[int, str]] = Field(
         5,
-        description="The maximum number of time to retry a retryable request before giving up and failing.",
-        examples=[5, 0, 10],
+        description="The maximum number of times to retry a retryable request before giving up and failing. Can be a hardcoded integer or a string interpolated from the connector config.",
+        examples=[5, 0, 10, "{{ config['max_retries_on_throttle'] }}"],
         title="Max Retry Count",
     )
     response_filters: Optional[List[HttpResponseFilter]] = Field(
@@ -2179,7 +2215,7 @@ class PaginationReset(BaseModel):
 
 class GzipDecoder(BaseModel):
     type: Literal["GzipDecoder"]
-    decoder: Union[CsvDecoder, GzipDecoder, JsonDecoder, JsonlDecoder]
+    decoder: Union[CsvDecoder, GzipDecoder, JsonDecoder, JsonItemsDecoder, JsonlDecoder]
 
 
 class RequestBodyGraphQL(BaseModel):
@@ -2317,7 +2353,7 @@ class ZipfileDecoder(BaseModel):
         extra = Extra.allow
 
     type: Literal["ZipfileDecoder"]
-    decoder: Union[CsvDecoder, GzipDecoder, JsonDecoder, JsonlDecoder] = Field(
+    decoder: Union[CsvDecoder, GzipDecoder, JsonDecoder, JsonItemsDecoder, JsonlDecoder] = Field(
         ...,
         description="Parser to parse the decompressed data from the zipfile(s).",
         title="Parser",
@@ -2989,6 +3025,7 @@ class SimpleRetriever(BaseModel):
     decoder: Optional[
         Union[
             JsonDecoder,
+            JsonItemsDecoder,
             XmlDecoder,
             CsvDecoder,
             JsonlDecoder,
@@ -3072,6 +3109,11 @@ class AsyncRetriever(BaseModel):
         None,
         description="The time in minutes after which the single Async Job should be considered as Timed Out.",
     )
+    failed_retry_wait_time_in_seconds: Optional[Union[int, str]] = Field(
+        None,
+        description="Time in seconds to wait before retrying a failed async job. Only applies to jobs that ran on the API side and reported a FAILED status (e.g. report generation failed due to a cooldown). Creation failures (HTTP errors when starting a job, such as 429s) and TIMED_OUT jobs are retried immediately and are not affected by this setting. When set, the orchestrator defers retry of real failed jobs until the wait time has elapsed, without blocking other jobs.",
+        ge=1,
+    )
     download_target_requester: Optional[Union[HttpRequester, CustomRequester]] = Field(
         None,
         description="Requester component that describes how to prepare HTTP requests to send to the source API to extract the url from polling response by the completed async job.",
@@ -3117,6 +3159,7 @@ class AsyncRetriever(BaseModel):
             CsvDecoder,
             GzipDecoder,
             JsonDecoder,
+            JsonItemsDecoder,
             JsonlDecoder,
             IterableDecoder,
             XmlDecoder,
@@ -3133,6 +3176,7 @@ class AsyncRetriever(BaseModel):
             CsvDecoder,
             GzipDecoder,
             JsonDecoder,
+            JsonItemsDecoder,
             JsonlDecoder,
             IterableDecoder,
             XmlDecoder,

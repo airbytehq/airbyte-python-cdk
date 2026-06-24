@@ -97,6 +97,7 @@ from airbyte_cdk.sources.declarative.decoders.composite_raw_decoder import (
     CompositeRawDecoder,
     CsvParser,
     GzipParser,
+    JsonItemsParser,
     JsonLineParser,
     JsonParser,
     Parser,
@@ -320,6 +321,9 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     JsonFileSchemaLoader as JsonFileSchemaLoaderModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    JsonItemsDecoder as JsonItemsDecoderModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     JsonlDecoder as JsonlDecoderModel,
@@ -763,6 +767,7 @@ class ModelToComponentFactory:
             HttpResponseFilterModel: self.create_http_response_filter,
             InlineSchemaLoaderModel: self.create_inline_schema_loader,
             JsonDecoderModel: self.create_json_decoder,
+            JsonItemsDecoderModel: self.create_json_items_decoder,
             JsonlDecoderModel: self.create_jsonl_decoder,
             JsonSchemaPropertySelectorModel: self.create_json_schema_property_selector,
             GzipDecoderModel: self.create_gzip_decoder,
@@ -1246,7 +1251,7 @@ class ModelToComponentFactory:
     ) -> DynamicStreamCheckConfig:
         return DynamicStreamCheckConfig(
             dynamic_stream_name=model.dynamic_stream_name,
-            stream_count=model.stream_count or 0,
+            stream_count=model.stream_count,
         )
 
     def create_check_stream(
@@ -1752,11 +1757,18 @@ class ModelToComponentFactory:
     def create_constant_backoff_strategy(
         model: ConstantBackoffStrategyModel, config: Config, **kwargs: Any
     ) -> ConstantBackoffStrategy:
+        ModelToComponentFactory._validate_jitter_range(model.jitter_range_in_seconds)
         return ConstantBackoffStrategy(
             backoff_time_in_seconds=model.backoff_time_in_seconds,
+            jitter_range_in_seconds=model.jitter_range_in_seconds,
             config=config,
             parameters=model.parameters or {},
         )
+
+    @staticmethod
+    def _validate_jitter_range(jitter_range_in_seconds: Optional[float]) -> None:
+        if jitter_range_in_seconds is not None and jitter_range_in_seconds < 0:
+            raise ValueError("jitter_range_in_seconds must be greater than or equal to 0")
 
     def create_cursor_pagination(
         self, model: CursorPaginationModel, config: Config, decoder: Decoder, **kwargs: Any
@@ -1859,6 +1871,10 @@ class ModelToComponentFactory:
             for class_field in component_fields.keys()
             if class_field in model_args
         }
+
+        if "api_budget" in component_fields and kwargs.get("api_budget") is None:
+            kwargs["api_budget"] = self._api_budget
+
         return custom_component_class(**kwargs)
 
     @staticmethod
@@ -2428,8 +2444,12 @@ class ModelToComponentFactory:
     def create_exponential_backoff_strategy(
         model: ExponentialBackoffStrategyModel, config: Config
     ) -> ExponentialBackoffStrategy:
+        ModelToComponentFactory._validate_jitter_range(model.jitter_range_in_seconds)
         return ExponentialBackoffStrategy(
-            factor=model.factor or 5, parameters=model.parameters or {}, config=config
+            factor=model.factor or 5,
+            jitter_range_in_seconds=model.jitter_range_in_seconds,
+            parameters=model.parameters or {},
+            config=config,
         )
 
     @staticmethod
@@ -2656,6 +2676,14 @@ class ModelToComponentFactory:
             stream_response=False if self._emit_connector_builder_messages else True,
         )
 
+    def create_json_items_decoder(
+        self, model: JsonItemsDecoderModel, config: Config, **kwargs: Any
+    ) -> Decoder:
+        return CompositeRawDecoder(
+            parser=ModelToComponentFactory._get_parser(model, config),
+            stream_response=False if self._emit_connector_builder_messages else True,
+        )
+
     def create_gzip_decoder(
         self, model: GzipDecoderModel, config: Config, **kwargs: Any
     ) -> Decoder:
@@ -2704,6 +2732,11 @@ class ModelToComponentFactory:
         if isinstance(model, JsonDecoderModel):
             # Note that the logic is a bit different from the JsonDecoder as there is some legacy that is maintained to return {} on error cases
             return JsonParser()
+        elif isinstance(model, JsonItemsDecoderModel):
+            return JsonItemsParser(
+                items_path=model.items_path,
+                encoding=model.encoding,
+            )
         elif isinstance(model, JsonlDecoderModel):
             return JsonLineParser()
         elif isinstance(model, CsvDecoderModel):
@@ -2857,6 +2890,9 @@ class ModelToComponentFactory:
                 refresh_request_headers=InterpolatedMapping(
                     model.refresh_request_headers or {}, parameters=model.parameters or {}
                 ).eval(config),
+                send_refresh_request_as_query_params=bool(
+                    model.send_refresh_request_as_query_params
+                ),
                 scopes=model.scopes,
                 token_expiry_date_format=model.token_expiry_date_format,
                 token_expiry_is_time_of_expiration=bool(model.token_expiry_date_format),
@@ -2878,6 +2914,7 @@ class ModelToComponentFactory:
             grant_type=model.grant_type or "refresh_token",
             refresh_request_body=model.refresh_request_body,
             refresh_request_headers=model.refresh_request_headers,
+            send_refresh_request_as_query_params=bool(model.send_refresh_request_as_query_params),
             refresh_token_name=model.refresh_token_name or "refresh_token",
             refresh_token=model.refresh_token,
             scopes=model.scopes,
@@ -3713,6 +3750,8 @@ class ModelToComponentFactory:
             else model.full_refresh_stream
         )
 
+    _OPTIONAL_ASYNC_STATUS_FIELDS = {"skipped"}
+
     def _create_async_job_status_mapping(
         self, model: AsyncJobStatusMapModel, config: Config, **kwargs: Any
     ) -> Mapping[str, AsyncJobStatus]:
@@ -3721,6 +3760,14 @@ class ModelToComponentFactory:
             if cdk_status == "type":
                 # This is an element of the dict because of the typing of the CDK but it is not a CDK status
                 continue
+
+            if api_statuses is None:
+                if cdk_status in self._OPTIONAL_ASYNC_STATUS_FIELDS:
+                    continue
+                raise ValueError(
+                    f"Required CDK status '{cdk_status}' has no API statuses mapped. "
+                    f"Please provide at least an empty list for required status fields."
+                )
 
             for status in api_statuses:
                 if status in api_status_to_cdk_status:
@@ -3740,6 +3787,8 @@ class ModelToComponentFactory:
                 return AsyncJobStatus.FAILED
             case "timeout":
                 return AsyncJobStatus.TIMED_OUT
+            case "skipped":
+                return AsyncJobStatus.SKIPPED
             case _:
                 raise ValueError(f"Unsupported CDK status {status}")
 
@@ -3943,6 +3992,17 @@ class ModelToComponentFactory:
             job_timeout=_get_job_timeout(),
         )
 
+        failed_retry_wait_time_in_seconds: Optional[int] = (
+            int(
+                InterpolatedString.create(
+                    str(model.failed_retry_wait_time_in_seconds),
+                    parameters={},
+                ).eval(config)
+            )
+            if model.failed_retry_wait_time_in_seconds
+            else None
+        )
+
         async_job_partition_router = AsyncJobPartitionRouter(
             job_orchestrator_factory=lambda stream_slices: AsyncJobOrchestrator(
                 job_repository,
@@ -3954,6 +4014,7 @@ class ModelToComponentFactory:
                 # set the `job_max_retry` to 1 for the `Connector Builder`` use-case.
                 # `None` == default retry is set to 3 attempts, under the hood.
                 job_max_retry=1 if self._emit_connector_builder_messages else None,
+                failed_retry_wait_time_in_seconds=failed_retry_wait_time_in_seconds,
             ),
             stream_slicer=stream_slicer,
             config=config,

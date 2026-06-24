@@ -358,9 +358,9 @@ definitions:
         type: string
       stream_count:
         title: Stream Count
-        description: The number of streams to attempt reading from during a check operation. If `stream_count` exceeds the total number of available streams, the minimum of the two values will be used.
+        description: The number of streams to attempt reading from during a check operation. If unset, all generated streams are checked. Must be a positive integer; if it exceeds the total number of available streams, all streams are checked.
         type: integer
-        default: 0
+        minimum: 1
   CheckDynamicStream:
     title: Dynamic Streams to Check
     description: (This component is experimental. Use at your own risk.) Defines the dynamic streams to try reading when running a check operation.
@@ -482,6 +482,7 @@ definitions:
         anyOf:
           - type: number
             title: Number of seconds
+            minimum: 0
           - type: string
             title: Interpolated Value
         interpolation_context:
@@ -490,6 +491,13 @@ definitions:
           - 30
           - 30.5
           - "{{ config['backoff_time'] }}"
+      jitter_range_in_seconds:
+        title: Jitter Range
+        description: Optional additive jitter range in seconds. When set, the backoff time is uniformly distributed between backoff_time_in_seconds and backoff_time_in_seconds + (jitter_range_in_seconds * 2), so jitter only increases the base backoff.
+        type: number
+        minimum: 0
+        examples:
+          - 15
       $parameters:
         type: object
         additionalProperties: true
@@ -1426,6 +1434,13 @@ definitions:
         examples:
           - Authorization: "<AUTH_TOKEN>"
             Content-Type: "application/x-www-form-urlencoded"
+      send_refresh_request_as_query_params:
+        title: Send Refresh Request As Query Params
+        description: When set to true, the standard OAuth refresh args (`grant_type`, `refresh_token`, client credentials when not in an `Authorization` header, scopes, plus any `refresh_request_body` extras) are sent on the URL query string and the request body is emitted empty. Use this for OAuth providers like Gong that document their refresh endpoint with refresh args on the URL query string.
+        type: boolean
+        default: false
+        examples:
+          - true
       scopes:
         title: Scopes
         description: List of scopes that should be granted to the access token.
@@ -1874,13 +1889,18 @@ definitions:
             - "$ref": "#/definitions/CustomBackoffStrategy"
       max_retries:
         title: Max Retry Count
-        description: The maximum number of time to retry a retryable request before giving up and failing.
-        type: integer
+        description: The maximum number of times to retry a retryable request before giving up and failing. Can be a hardcoded integer or a string interpolated from the connector config.
+        anyOf:
+          - type: integer
+          - type: string
+        interpolation_context:
+          - config
         default: 5
         examples:
           - 5
           - 0
           - 10
+          - "{{ config['max_retries_on_throttle'] }}"
       response_filters:
         title: Response Filters
         description: List of response filters to iterate on when deciding how to handle an error. When using an array of multiple filters, the filters will be applied sequentially and the response will be selected if it matches any of the filter's predicate.
@@ -2028,6 +2048,13 @@ definitions:
           - 5
           - 5.5
           - "10"
+      jitter_range_in_seconds:
+        title: Jitter Range
+        description: Optional additive jitter range in seconds. When set, the backoff time is uniformly distributed between computed_backoff and computed_backoff + (jitter_range_in_seconds * 2), so jitter only increases the computed backoff.
+        type: number
+        minimum: 0
+        examples:
+          - 2
       $parameters:
         type: object
         additionalProperties: true
@@ -2623,6 +2650,40 @@ definitions:
       type:
         type: string
         enum: [JsonDecoder]
+  JsonItemsDecoder:
+    title: JSON Items (Streaming)
+    description: >-
+      Select 'JSON Items (Streaming)' to stream-decode a single JSON document
+      by yielding each element of a nested array, one at a time. Use this for
+      very large single-document JSON responses (e.g. a wrapping object
+      containing a multi-GB array) where buffering the whole document into
+      memory would cause out-of-memory errors. Powered by the `ijson`
+      streaming parser.
+    type: object
+    required:
+      - type
+      - items_path
+    properties:
+      type:
+        type: string
+        enum: [JsonItemsDecoder]
+      items_path:
+        title: Items Path
+        description: >-
+          Dot-separated path to the JSON array whose elements should be
+          yielded as records. Uses `ijson` path syntax (e.g. `data.users`),
+          not JSONPath syntax — do not include leading `$.` or trailing
+          `[*]`.
+        type: string
+        examples:
+          - dataByDepartmentAndSearchTerm
+          - dataByAsin
+          - data.users
+      encoding:
+        title: Encoding
+        description: Text encoding used to decode the streamed bytes before JSON parsing.
+        type: string
+        default: utf-8
   JsonlDecoder:
     title: JSON Lines
     description: Select 'JSON Lines' if the response consists of JSON objects separated by new lines ('\n') in JSONL format.
@@ -2864,6 +2925,7 @@ definitions:
           - "$ref": "#/definitions/CsvDecoder"
           - "$ref": "#/definitions/GzipDecoder"
           - "$ref": "#/definitions/JsonDecoder"
+          - "$ref": "#/definitions/JsonItemsDecoder"
           - "$ref": "#/definitions/JsonlDecoder"
   ListPartitionRouter:
     title: List Partition Router
@@ -3904,6 +3966,7 @@ definitions:
         description: Component decoding the response so records can be extracted.
         anyOf:
           - "$ref": "#/definitions/JsonDecoder"
+          - "$ref": "#/definitions/JsonItemsDecoder"
           - "$ref": "#/definitions/XmlDecoder"
           - "$ref": "#/definitions/CsvDecoder"
           - "$ref": "#/definitions/JsonlDecoder"
@@ -3992,6 +4055,7 @@ definitions:
           - "$ref": "#/definitions/CsvDecoder"
           - "$ref": "#/definitions/GzipDecoder"
           - "$ref": "#/definitions/JsonDecoder"
+          - "$ref": "#/definitions/JsonItemsDecoder"
           - "$ref": "#/definitions/JsonlDecoder"
   CsvDecoder:
     title: CSV
@@ -4038,6 +4102,11 @@ definitions:
         items:
           type: string
       timeout:
+        type: array
+        items:
+          type: string
+      skipped:
+        description: "Statuses that indicate the job was skipped because there is no data to return. Jobs with these statuses will not be retried and no records will be fetched."
         type: array
         items:
           type: string
@@ -4097,6 +4166,14 @@ definitions:
           - type: string
         interpolation_context:
           - config
+      failed_retry_wait_time_in_seconds:
+        description: Time in seconds to wait before retrying a failed async job. Only applies to jobs that ran on the API side and reported a FAILED status (e.g. report generation failed due to a cooldown). Creation failures (HTTP errors when starting a job, such as 429s) and TIMED_OUT jobs are retried immediately and are not affected by this setting. When set, the orchestrator defers retry of real failed jobs until the wait time has elapsed, without blocking other jobs.
+        anyOf:
+          - type: integer
+            minimum: 1
+          - type: string
+        interpolation_context:
+          - config
       download_target_requester:
         description: Requester component that describes how to prepare HTTP requests to send to the source API to extract the url from polling response by the completed async job.
         anyOf:
@@ -4145,6 +4222,7 @@ definitions:
           - "$ref": "#/definitions/CsvDecoder"
           - "$ref": "#/definitions/GzipDecoder"
           - "$ref": "#/definitions/JsonDecoder"
+          - "$ref": "#/definitions/JsonItemsDecoder"
           - "$ref": "#/definitions/JsonlDecoder"
           - "$ref": "#/definitions/IterableDecoder"
           - "$ref": "#/definitions/XmlDecoder"
@@ -4157,6 +4235,7 @@ definitions:
           - "$ref": "#/definitions/CsvDecoder"
           - "$ref": "#/definitions/GzipDecoder"
           - "$ref": "#/definitions/JsonDecoder"
+          - "$ref": "#/definitions/JsonItemsDecoder"
           - "$ref": "#/definitions/JsonlDecoder"
           - "$ref": "#/definitions/IterableDecoder"
           - "$ref": "#/definitions/XmlDecoder"
