@@ -80,8 +80,8 @@ nltk = { version = "3.9.1", optional = true }
 unstructured = { version = "0.10.27", extras = ["docx", "pptx"], optional = true }
 "unstructured.pytesseract" = { version = ">=0.3.12", optional = true }
 pyjwt = "^2.8.0"
-cryptography = ">=44.0.0,<47.0.0,!=45.0.0,!=45.0.1"  # 45.0.0-45.0.1 had regressions (pyca/cryptography#12958)
-pytz = "2024.2"
+cryptography = ">=44.0.0,!=45.0.0,!=45.0.1"  # 45.0.0-45.0.1 had regressions (pyca/cryptography#12958); upper cap removed so >=48.0.1 (ASN.1 OOB read fix) can be installed
+pytz = ">=2024.2"
 pytest = {version = "^7", optional = true }
 orjson = "^3.10.7"
 ijson = "^3.3.0"  # Streaming JSON parser used by `JsonItemsParser` to handle very large response bodies without OOMing.
@@ -243,7 +243,6 @@ DEP001 = [
 # https://deptry.com/rules-violations/#missing-dependencies-dep002
 DEP002 = [
   "setuptools",  # Incorrectly used without declaring in some connectors (e.g. source-shopify)
-  "cryptography",  # 45.0.0-45.0.1 excluded; see pyca/cryptography#12958
   "google-cloud-secret-manager",  # Deptry can't detect that `google.cloud.secretmanager_v1` uses this package
   "dateparser",  # Used by `source-amazon-seller-partner` for parsing string-formatted dates w/ timezone abbreviations. May add to `AirbyteDateTime`.
   "unidecode",  # IMPORTANT: DO NOT USE. Added to support source-google-sheets migration. This dep is deprecated in favour of `anyascii` and is slated for removal.
