@@ -243,7 +243,7 @@ DEP001 = [
 # https://deptry.com/rules-violations/#missing-dependencies-dep002
 DEP002 = [
   "setuptools",  # Incorrectly used without declaring in some connectors (e.g. source-shopify)
-  "cryptography",  # 45.0.0-45.0.1 excluded; see pyca/cryptography#12958. Upper cap removed for >=48.0.1 ASN.1 OOB read fix
+  "cryptography",  # Extra constraints applied on transitive dependency (see above)
   "google-cloud-secret-manager",  # Deptry can't detect that `google.cloud.secretmanager_v1` uses this package
   "dateparser",  # Used by `source-amazon-seller-partner` for parsing string-formatted dates w/ timezone abbreviations. May add to `AirbyteDateTime`.
   "unidecode",  # IMPORTANT: DO NOT USE. Added to support source-google-sheets migration. This dep is deprecated in favour of `anyascii` and is slated for removal.
