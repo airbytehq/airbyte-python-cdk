@@ -72,11 +72,16 @@ from airbyte_cdk.sources.declarative.auth.token import (
     BearerAuthenticator,
     LegacySessionTokenAuthenticator,
 )
+from airbyte_cdk.sources.declarative.auth.token_pool_authenticator import TokenPoolAuthenticator
 from airbyte_cdk.sources.declarative.auth.token_provider import (
     InterpolatedSessionTokenProvider,
     InterpolatedStringTokenProvider,
     SessionTokenProvider,
     TokenProvider,
+)
+from airbyte_cdk.sources.declarative.auth.token_rotation_strategies import (
+    RateLimitAwareRotation,
+    RoundRobinRotation,
 )
 from airbyte_cdk.sources.declarative.checks import (
     CheckDynamicStream,
@@ -407,6 +412,9 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
     Rate as RateModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    RateLimitAwareRotation as RateLimitAwareRotationModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     RecordExpander as RecordExpanderModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
@@ -429,6 +437,9 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     ResponseToFileExtractor as ResponseToFileExtractorModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    RoundRobinRotation as RoundRobinRotationModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     SchemaNormalization as SchemaNormalizationModel,
@@ -454,6 +465,9 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     SubstreamPartitionRouter as SubstreamPartitionRouterModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    TokenPoolAuthenticator as TokenPoolAuthenticatorModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     TypesMap as TypesMapModel,
@@ -805,6 +819,9 @@ class ModelToComponentFactory:
             RequestOptionModel: self.create_request_option,
             LegacySessionTokenAuthenticatorModel: self.create_legacy_session_token_authenticator,
             SelectiveAuthenticatorModel: self.create_selective_authenticator,
+            TokenPoolAuthenticatorModel: self.create_token_pool_authenticator,
+            RoundRobinRotationModel: self.create_round_robin_rotation,
+            RateLimitAwareRotationModel: self.create_rate_limit_aware_rotation,
             SimpleRetrieverModel: self.create_simple_retriever,
             StateDelegatingStreamModel: self.create_state_delegating_stream,
             SpecModel: self.create_spec,
@@ -3308,6 +3325,49 @@ class ModelToComponentFactory:
             authenticators=authenticators,
             authenticator_selection_path=model.authenticator_selection_path,
             **kwargs,
+        )
+
+    def create_token_pool_authenticator(
+        self, model: TokenPoolAuthenticatorModel, config: Config, **kwargs: Any
+    ) -> TokenPoolAuthenticator:
+        rotation_strategy = None
+        if model.rotation_strategy is not None:
+            rotation_strategy = self._create_component_from_model(
+                model=model.rotation_strategy, config=config
+            )
+        return TokenPoolAuthenticator(
+            tokens=model.tokens,
+            config=config,
+            parameters=model.parameters or {},
+            token_separator=model.token_separator or ",",
+            auth_method=model.auth_method if model.auth_method is not None else "Bearer",
+            header=model.header or "Authorization",
+            rotation_strategy=rotation_strategy,
+        )
+
+    def create_round_robin_rotation(
+        self, model: RoundRobinRotationModel, config: Config, **kwargs: Any
+    ) -> RoundRobinRotation:
+        return RoundRobinRotation(
+            tokens=[],  # populated by TokenPoolAuthenticator.__post_init__
+            parameters=model.parameters or {},
+        )
+
+    def create_rate_limit_aware_rotation(
+        self, model: RateLimitAwareRotationModel, config: Config, **kwargs: Any
+    ) -> RateLimitAwareRotation:
+        return RateLimitAwareRotation(
+            tokens=[],  # populated by TokenPoolAuthenticator.__post_init__
+            parameters=model.parameters or {},
+            ratelimit_remaining_header=model.ratelimit_remaining_header or "x-ratelimit-remaining",
+            ratelimit_reset_header=model.ratelimit_reset_header or "x-ratelimit-reset",
+            max_wait_seconds=model.max_wait_seconds if model.max_wait_seconds is not None else 7200,
+            budget_reserve_fraction=model.budget_reserve_fraction
+            if model.budget_reserve_fraction is not None
+            else 0.1,
+            budget_min_reserve=model.budget_min_reserve
+            if model.budget_min_reserve is not None
+            else 50,
         )
 
     @staticmethod

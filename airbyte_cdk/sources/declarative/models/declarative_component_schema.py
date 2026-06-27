@@ -2584,6 +2584,84 @@ class SelectiveAuthenticator(BaseModel):
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
 
+class RoundRobinRotation(BaseModel):
+    class Config:
+        extra = Extra.allow
+
+    type: Literal["RoundRobinRotation"]
+    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
+
+
+class RateLimitAwareRotation(BaseModel):
+    class Config:
+        extra = Extra.allow
+
+    type: Literal["RateLimitAwareRotation"]
+    ratelimit_remaining_header: Optional[str] = Field(
+        "x-ratelimit-remaining",
+        description="Response header indicating remaining API calls for the current token.",
+        title="Rate Limit Remaining Header",
+    )
+    ratelimit_reset_header: Optional[str] = Field(
+        "x-ratelimit-reset",
+        description="Response header indicating when the rate limit window resets (Unix timestamp).",
+        title="Rate Limit Reset Header",
+    )
+    max_wait_seconds: Optional[int] = Field(
+        7200,
+        description="Maximum seconds to wait for any token's rate limit to reset. If all tokens are exhausted and the earliest reset exceeds this, the sync fails with a transient error.",
+        title="Max Wait Seconds",
+    )
+    budget_reserve_fraction: Optional[float] = Field(
+        0.1,
+        description="Start proactive throttling when a token's remaining quota drops below this fraction. Set to 0 to disable.",
+        title="Budget Reserve Fraction",
+    )
+    budget_min_reserve: Optional[int] = Field(
+        50,
+        description="Minimum number of calls to keep in reserve per token before triggering rotation.",
+        title="Budget Min Reserve",
+    )
+    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
+
+
+class TokenPoolAuthenticator(BaseModel):
+    class Config:
+        extra = Extra.allow
+
+    type: Literal["TokenPoolAuthenticator"]
+    tokens: str = Field(
+        ...,
+        description="The API token(s) to rotate through. Can be a single token or multiple tokens joined by the token_separator. Resolved from config via interpolation.",
+        examples=[
+            "{{ config['api_tokens'] }}",
+            "{{ config['credentials']['personal_access_token'] }}",
+        ],
+        title="API Tokens",
+    )
+    token_separator: Optional[str] = Field(
+        ",",
+        description="Separator used to split the tokens string into individual tokens.",
+        title="Token Separator",
+    )
+    auth_method: Optional[str] = Field(
+        "Bearer",
+        description='Prefix for the token value in the header (e.g., "Bearer", "token"). Set to empty string for no prefix.',
+        title="Auth Method",
+    )
+    header: Optional[str] = Field(
+        "Authorization",
+        description="The HTTP header name to set with the active token.",
+        title="Header Name",
+    )
+    rotation_strategy: Optional[Union[RoundRobinRotation, RateLimitAwareRotation]] = Field(
+        None,
+        description="Strategy controlling how tokens are rotated. Defaults to round-robin.",
+        title="Rotation Strategy",
+    )
+    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
+
+
 class ConditionalStreams(BaseModel):
     type: Literal["ConditionalStreams"]
     condition: str = Field(
@@ -2792,6 +2870,7 @@ class HttpRequester(BaseModelWithDeprecations):
             JwtAuthenticator,
             SessionTokenAuthenticator,
             SelectiveAuthenticator,
+            TokenPoolAuthenticator,
             CustomAuthenticator,
             NoAuth,
             LegacySessionTokenAuthenticator,

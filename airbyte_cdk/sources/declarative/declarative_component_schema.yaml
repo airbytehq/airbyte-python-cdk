@@ -320,6 +320,101 @@ definitions:
       $parameters:
         type: object
         additionalProperties: true
+  TokenPoolAuthenticator:
+    title: Token Pool Authenticator
+    description: Authenticator that rotates through multiple API tokens to distribute rate-limit consumption. Tokens are cycled automatically based on the configured rotation strategy.
+    type: object
+    required:
+      - type
+      - tokens
+    properties:
+      type:
+        type: string
+        enum: [TokenPoolAuthenticator]
+      tokens:
+        title: API Tokens
+        description: The API token(s) to rotate through. Can be a single token or multiple tokens joined by the token_separator. Resolved from config via interpolation.
+        type: string
+        interpolation_context:
+          - config
+        examples:
+          - "{{ config['api_tokens'] }}"
+          - "{{ config['credentials']['personal_access_token'] }}"
+      token_separator:
+        title: Token Separator
+        description: Separator used to split the tokens string into individual tokens.
+        type: string
+        default: ","
+      auth_method:
+        title: Auth Method
+        description: Prefix for the token value in the header (e.g., "Bearer", "token"). Set to empty string for no prefix.
+        type: string
+        default: "Bearer"
+      header:
+        title: Header Name
+        description: The HTTP header name to set with the active token.
+        type: string
+        default: "Authorization"
+      rotation_strategy:
+        title: Rotation Strategy
+        description: Strategy controlling how tokens are rotated. Defaults to round-robin.
+        anyOf:
+          - "$ref": "#/definitions/RoundRobinRotation"
+          - "$ref": "#/definitions/RateLimitAwareRotation"
+      $parameters:
+        type: object
+        additionalProperties: true
+  RoundRobinRotation:
+    title: Round Robin Rotation
+    description: Rotates through tokens sequentially on each request. No rate-limit awareness.
+    type: object
+    required:
+      - type
+    properties:
+      type:
+        type: string
+        enum: [RoundRobinRotation]
+      $parameters:
+        type: object
+        additionalProperties: true
+  RateLimitAwareRotation:
+    title: Rate Limit Aware Rotation
+    description: Rotates to the next token when the current token's rate limit is exhausted, based on response headers. Sleeps when all tokens are exhausted until the earliest reset time.
+    type: object
+    required:
+      - type
+    properties:
+      type:
+        type: string
+        enum: [RateLimitAwareRotation]
+      ratelimit_remaining_header:
+        title: Rate Limit Remaining Header
+        description: Response header indicating remaining API calls for the current token.
+        type: string
+        default: "x-ratelimit-remaining"
+      ratelimit_reset_header:
+        title: Rate Limit Reset Header
+        description: Response header indicating when the rate limit window resets (Unix timestamp).
+        type: string
+        default: "x-ratelimit-reset"
+      max_wait_seconds:
+        title: Max Wait Seconds
+        description: Maximum seconds to wait for any token's rate limit to reset. If all tokens are exhausted and the earliest reset exceeds this, the sync fails with a transient error.
+        type: integer
+        default: 7200
+      budget_reserve_fraction:
+        title: Budget Reserve Fraction
+        description: Start proactive throttling when a token's remaining quota drops below this fraction. Set to 0 to disable.
+        type: number
+        default: 0.1
+      budget_min_reserve:
+        title: Budget Min Reserve
+        description: Minimum number of calls to keep in reserve per token before triggering rotation.
+        type: integer
+        default: 50
+      $parameters:
+        type: object
+        additionalProperties: true
   CheckStream:
     title: Streams to Check
     description: Defines the streams to try reading when running a check operation.
@@ -2274,6 +2369,7 @@ definitions:
           - "$ref": "#/definitions/JwtAuthenticator"
           - "$ref": "#/definitions/SessionTokenAuthenticator"
           - "$ref": "#/definitions/SelectiveAuthenticator"
+          - "$ref": "#/definitions/TokenPoolAuthenticator"
           - "$ref": "#/definitions/CustomAuthenticator"
           - "$ref": "#/definitions/NoAuth"
           - "$ref": "#/definitions/LegacySessionTokenAuthenticator"
