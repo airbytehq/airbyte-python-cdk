@@ -56,7 +56,10 @@ from airbyte_cdk.utils.constants import ENV_REQUEST_CACHE_PATH
 from airbyte_cdk.utils.stream_status_utils import (
     as_airbyte_message as stream_status_as_airbyte_message,
 )
-from airbyte_cdk.utils.traced_exception import AirbyteTracedException
+from airbyte_cdk.utils.traced_exception import (
+    AirbyteTracedException,
+    RateLimitBudgetExhaustedException,
+)
 
 # Backward-compatible deprecated alias. This class was removed in PR #927 but is still
 # imported by connectors in the airbyte monorepo. Keep as a simple alias to
@@ -306,9 +309,9 @@ class HttpClient:
             )
 
             if is_rate_limited:
-                raise AirbyteTracedException(
+                raise RateLimitBudgetExhaustedException(
                     internal_message=f"Rate limit retry budget exhausted. Last exception: {e}",
-                    message="API rate limit exceeded.",
+                    message="Rate limit retry budget exhausted.",
                     failure_type=FailureType.transient_error,
                     exception=e,
                     stream_descriptor=StreamDescriptor(name=self._name),
