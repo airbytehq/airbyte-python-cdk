@@ -255,6 +255,23 @@ class ConcurrentReadProcessor:
     def _flag_exception(self, stream_name: str, exception: Exception) -> None:
         self._exceptions_per_stream_name.setdefault(stream_name, []).append(exception)
 
+    def _get_failure_type_for_collected_exceptions(self) -> FailureType:
+        failure_types = [
+            exception.failure_type
+            for exceptions in self._exceptions_per_stream_name.values()
+            for exception in exceptions
+            if isinstance(exception, AirbyteTracedException)
+        ]
+        if failure_types and all(
+            failure_type == FailureType.config_error for failure_type in failure_types
+        ):
+            return FailureType.config_error
+        if failure_types and all(
+            failure_type == FailureType.transient_error for failure_type in failure_types
+        ):
+            return FailureType.transient_error
+        return FailureType.system_error
+
     def start_next_partition_generator(self) -> Optional[AirbyteMessage]:
         """
         Submits the next partition generator to the thread pool.
@@ -411,12 +428,11 @@ class ConcurrentReadProcessor:
             error_message = generate_failed_streams_error_message(self._exceptions_per_stream_name)
             self._logger.info(error_message)
             # We still raise at least one exception when a stream raises an exception because the platform currently relies
-            # on a non-zero exit code to determine if a sync attempt has failed. We also raise the exception as a config_error
-            # type because this combined error isn't actionable, but rather the previously emitted individual errors.
+            # on a non-zero exit code to determine if a sync attempt has failed.
             raise AirbyteTracedException(
                 message=error_message,
                 internal_message="Concurrent read failure",
-                failure_type=FailureType.config_error,
+                failure_type=self._get_failure_type_for_collected_exceptions(),
             )
         return is_done
 
