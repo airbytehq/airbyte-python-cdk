@@ -3,6 +3,7 @@
 #
 
 
+import asyncio
 import datetime
 import warnings
 from io import BytesIO
@@ -11,12 +12,17 @@ from unittest.mock import MagicMock, Mock, mock_open, patch
 import pandas as pd
 import pytest
 
+from airbyte_cdk.sources.file_based.config.excel_format import SheetsToSync
 from airbyte_cdk.sources.file_based.config.file_based_stream_config import (
     ExcelFormat,
     FileBasedStreamConfig,
     ValidationPolicy,
 )
-from airbyte_cdk.sources.file_based.exceptions import ConfigValidationError, RecordParseError
+from airbyte_cdk.sources.file_based.exceptions import (
+    ConfigValidationError,
+    ExcelCalamineParsingError,
+    RecordParseError,
+)
 from airbyte_cdk.sources.file_based.file_based_stream_reader import AbstractFileBasedStreamReader
 from airbyte_cdk.sources.file_based.file_types.excel_parser import ExcelParser
 from airbyte_cdk.sources.file_based.remote_file import RemoteFile
@@ -38,7 +44,7 @@ def file_config():
     return FileBasedStreamConfig(
         name="test.xlsx",
         file_type="excel",
-        format=ExcelFormat(sheet_name="Sheet1"),
+        format=ExcelFormat(),
         validation_policy=ValidationPolicy.emit_record,
     )
 
@@ -52,7 +58,6 @@ def remote_file():
 def setup_parser(remote_file):
     parser = ExcelParser()
 
-    # Sample data for the mock Excel file
     data = pd.DataFrame(
         {
             "column1": [1, 2, 3],
@@ -62,13 +67,11 @@ def setup_parser(remote_file):
         }
     )
 
-    # Convert the DataFrame to an Excel byte stream
     excel_bytes = BytesIO()
     with pd.ExcelWriter(excel_bytes, engine="xlsxwriter") as writer:
         data.to_excel(writer, index=False)
     excel_bytes.seek(0)
 
-    # Mock the stream_reader's open_file method to return the Excel byte stream
     stream_reader = MagicMock(spec=AbstractFileBasedStreamReader)
     stream_reader.open_file.return_value = BytesIO(excel_bytes.read())
 
@@ -83,17 +86,14 @@ def setup_parser(remote_file):
 
 
 @patch("pandas.ExcelFile")
-@pytest.mark.asyncio
-async def test_infer_schema(mock_excel_file, setup_parser):
+def test_infer_schema(mock_excel_file, setup_parser):
     parser, config, file, stream_reader, logger, data = setup_parser
 
-    # Mock the parse method of the pandas ExcelFile object
     mock_excel_file.return_value.parse.return_value = data
 
-    # Call infer_schema
-    schema = await parser.infer_schema(config, file, stream_reader, logger)
+    loop = asyncio.get_event_loop()
+    schema = loop.run_until_complete(parser.infer_schema(config, file, stream_reader, logger))
 
-    # Define the expected schema
     expected_schema: SchemaType = {
         "column1": {"type": "number"},
         "column2": {"type": "string"},
@@ -101,15 +101,12 @@ async def test_infer_schema(mock_excel_file, setup_parser):
         "column4": {"type": "string", "format": "date-time"},
     }
 
-    # Validate the schema
     assert schema == expected_schema
 
-    # Assert that the stream_reader's open_file was called correctly
     stream_reader.open_file.assert_called_once_with(
         file, parser.file_read_mode, parser.ENCODING, logger
     )
 
-    # Assert that the logger was not used for warnings/errors
     logger.info.assert_not_called()
     logger.error.assert_not_called()
 
@@ -238,3 +235,144 @@ def test_openpyxl_logs_info_when_seek_fails(mock_logger, remote_file, exc_cls):
     assert "Could not rewind stream" in msg
     assert remote_file.file_uri_for_logging in msg
     mock_excel.assert_called_once_with(fp, engine="openpyxl")
+
+
+def _make_multi_sheet_workbook(sheet_rows):
+    excel_bytes = BytesIO()
+    with pd.ExcelWriter(excel_bytes, engine="xlsxwriter") as writer:
+        for sheet_name, rows in sheet_rows.items():
+            pd.DataFrame(rows).to_excel(writer, index=False, sheet_name=sheet_name)
+    excel_bytes.seek(0)
+    return excel_bytes.read()
+
+
+def _multi_sheet_setup(remote_file, excel_format, sheet_rows=None):
+    parser = ExcelParser()
+    workbook = _make_multi_sheet_workbook(
+        sheet_rows
+        or {
+            "People": [
+                {"id": 1, "name": "alice"},
+                {"id": 2, "name": "bob"},
+            ],
+            "Orders": [
+                {"id": 3, "amount": 10.5},
+                {"id": 4, "amount": 20.0},
+                {"id": 5, "amount": 30.25},
+            ],
+        }
+    )
+    stream_reader = MagicMock(spec=AbstractFileBasedStreamReader)
+    stream_reader.open_file.side_effect = lambda *args, **kwargs: BytesIO(workbook)
+    config = FileBasedStreamConfig(name="test_stream", format=excel_format)
+    return parser, config, remote_file, stream_reader, MagicMock()
+
+
+def test_default_reads_only_first_sheet(remote_file):
+    parser, config, file, stream_reader, logger = _multi_sheet_setup(remote_file, ExcelFormat())
+
+    records = list(parser.parse_records(config, file, stream_reader, logger))
+
+    assert len(records) == 2
+    assert {record["name"] for record in records} == {"alice", "bob"}
+    assert all(parser.SHEET_NAME_COLUMN not in record for record in records)
+
+
+@pytest.mark.parametrize(
+    "excel_format, expected_sheets, expected_count",
+    [
+        pytest.param(
+            ExcelFormat(sheets_to_sync=SheetsToSync.ALL_SHEETS),
+            {"People", "Orders"},
+            5,
+            id="all-sheets",
+        ),
+        pytest.param(
+            ExcelFormat(sheet_names=["Orders"]),
+            {"Orders"},
+            3,
+            id="explicit-sheet-names",
+        ),
+        pytest.param(
+            ExcelFormat(sheets_to_sync=SheetsToSync.FIRST_SHEET_ONLY, sheet_names=["Orders"]),
+            {"Orders"},
+            3,
+            id="explicit-sheet-names-take-precedence",
+        ),
+    ],
+)
+def test_multi_sheet_records_include_sheet_name(
+    remote_file, excel_format, expected_sheets, expected_count
+):
+    parser, config, file, stream_reader, logger = _multi_sheet_setup(remote_file, excel_format)
+
+    records = list(parser.parse_records(config, file, stream_reader, logger))
+
+    assert len(records) == expected_count
+    assert {record[parser.SHEET_NAME_COLUMN] for record in records} == expected_sheets
+
+
+def test_multi_sheet_calamine_fallback_does_not_duplicate_partial_results(remote_file):
+    parser = ExcelParser()
+    fp = BytesIO(b"test")
+    logger = MagicMock()
+    excel_format = ExcelFormat(sheets_to_sync=SheetsToSync.ALL_SHEETS)
+    calamine_df = pd.DataFrame({"id": [1], ExcelParser.SHEET_NAME_COLUMN: ["Calamine"]})
+    fallback_df = pd.DataFrame({"id": [2], ExcelParser.SHEET_NAME_COLUMN: ["Openpyxl"]})
+
+    def parse_with_calamine(*args, **kwargs):
+        yield calamine_df
+        raise ExcelCalamineParsingError("calamine failed", filename=remote_file.uri)
+
+    with (
+        patch.object(parser, "_parse_sheets_with_calamine", side_effect=parse_with_calamine),
+        patch.object(parser, "_parse_sheets_with_openpyxl", return_value=[fallback_df]),
+    ):
+        dataframes = list(parser._parse_sheets(fp, logger, remote_file, excel_format))
+
+    assert dataframes == [fallback_df]
+
+
+def test_all_sheets_schema_merges_columns(remote_file):
+    parser, config, file, stream_reader, logger = _multi_sheet_setup(
+        remote_file, ExcelFormat(sheets_to_sync=SheetsToSync.ALL_SHEETS)
+    )
+
+    loop = asyncio.get_event_loop()
+    schema = loop.run_until_complete(parser.infer_schema(config, file, stream_reader, logger))
+
+    assert schema == {
+        "id": {"type": "number"},
+        "name": {"type": "string"},
+        "amount": {"type": "number"},
+        parser.SHEET_NAME_COLUMN: {"type": "string"},
+    }
+
+
+def test_default_schema_only_first_sheet(remote_file):
+    parser, config, file, stream_reader, logger = _multi_sheet_setup(remote_file, ExcelFormat())
+
+    loop = asyncio.get_event_loop()
+    schema = loop.run_until_complete(parser.infer_schema(config, file, stream_reader, logger))
+
+    assert schema == {"id": {"type": "number"}, "name": {"type": "string"}}
+
+
+def test_missing_explicit_sheet_name_raises_record_parse_error(remote_file):
+    parser, config, file, stream_reader, logger = _multi_sheet_setup(
+        remote_file, ExcelFormat(sheet_names=["Missing"])
+    )
+
+    with pytest.raises(RecordParseError):
+        list(parser.parse_records(config, file, stream_reader, logger))
+
+
+def test_reserved_sheet_name_column_raises_record_parse_error(remote_file):
+    parser, config, file, stream_reader, logger = _multi_sheet_setup(
+        remote_file,
+        ExcelFormat(sheets_to_sync=SheetsToSync.ALL_SHEETS),
+        sheet_rows={"People": [{"id": 1, ExcelParser.SHEET_NAME_COLUMN: "source value"}]},
+    )
+
+    with pytest.raises(RecordParseError):
+        list(parser.parse_records(config, file, stream_reader, logger))
