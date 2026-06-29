@@ -343,6 +343,12 @@ def test_given_record_for_partition_when_read_then_update_state(caplog):
                 "cursor": {CURSOR_FIELD: "2022-01-01"},
             },
         ],
+        "partitioned_stream_status": {
+            "num_partitions_in_progress": 0,
+            "num_partitions_completed": 2,
+            "num_partitions_expected": 2,
+            "is_partition_discovery_complete": True,
+        },
     }
 
 
@@ -581,6 +587,12 @@ def test_perpartition_with_fallback(caplog):
         "use_global_cursor": True,
         "state": {"cursor_field": "2022-02-19"},
         "lookback_window": 1,
+        "partitioned_stream_status": {
+            "num_partitions_in_progress": 0,
+            "num_partitions_completed": 6,
+            "num_partitions_expected": 6,
+            "is_partition_discovery_complete": True,
+        },
     }
 
 
@@ -763,6 +775,12 @@ def test_per_partition_cursor_within_limit(caplog):
                 "cursor": {CURSOR_FIELD: "2022-03-29"},
             },
         ],
+        "partitioned_stream_status": {
+            "num_partitions_in_progress": 0,
+            "num_partitions_completed": 3,
+            "num_partitions_expected": 3,
+            "is_partition_discovery_complete": True,
+        },
     }
 
 
