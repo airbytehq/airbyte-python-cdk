@@ -39,6 +39,32 @@ class ResponseToFileExtractorTest(TestCase):
 
         assert extracted_records == [{"FIRST_NAME": "a first name", "LAST_NAME": "a last name"}]
 
+    def test_na_string_values_are_preserved(self) -> None:
+        pandas_na_tokens = ["NA", "N/A", "NULL", "None", "nan", "null", "#N/A", "<NA>"]
+        csv_rows = "\n".join(f'"{token}","{token} value"' for token in pandas_na_tokens)
+        csv_with_na = f'"region","name"\n{csv_rows}\n'
+        response = self._mock_streamed_response(BytesIO(csv_with_na.encode("utf-8")))
+
+        extracted_records = list(self._extractor.extract_records(response))
+
+        assert len(extracted_records) == len(pandas_na_tokens)
+        for record, token in zip(extracted_records, pandas_na_tokens):
+            assert record["region"] == token, (
+                f"Expected '{token}' to be preserved but got {record['region']}"
+            )
+            assert record["name"] == f"{token} value"
+
+    def test_empty_fields_are_converted_to_none(self) -> None:
+        csv_with_empty = '"region","name"\n"NA","North America"\n,""\n'
+        response = self._mock_streamed_response(BytesIO(csv_with_empty.encode("utf-8")))
+
+        extracted_records = list(self._extractor.extract_records(response))
+
+        assert extracted_records == [
+            {"region": "NA", "name": "North America"},
+            {"region": None, "name": None},
+        ]
+
     def _test_folder_path(self) -> Path:
         return Path(__file__).parent.resolve()
 
