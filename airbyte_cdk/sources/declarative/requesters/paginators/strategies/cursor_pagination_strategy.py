@@ -61,6 +61,7 @@ class CursorPaginationStrategy(PaginationStrategy):
             if not isinstance(page_size, int):
                 raise Exception(f"{page_size} is of type {type(page_size)}. Expected {int}")
             self._page_size = page_size
+        self._default_page_size = self._page_size
 
     @property
     def initial_token(self) -> Optional[Any]:
@@ -104,3 +105,10 @@ class CursorPaginationStrategy(PaginationStrategy):
 
     def get_page_size(self) -> Optional[int]:
         return self._page_size
+
+    def reduce_page_size(self) -> None:
+        if self._page_size is not None and self._page_size > 1:
+            self._page_size = max(1, self._page_size // 2)
+
+    def reset_page_size(self) -> None:
+        self._page_size = self._default_page_size
