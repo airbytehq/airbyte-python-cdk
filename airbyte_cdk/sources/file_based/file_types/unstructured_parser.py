@@ -76,31 +76,27 @@ def optional_decode(contents: Union[str, bytes]) -> str:
 def _import_unstructured() -> None:
     """Dynamically imported as needed, due to slow import speed.
 
-    Each partition module is imported individually so that a missing optional
-    dependency (e.g. `pi_heif` for PDF) does not block the modules that *are*
-    available.  Callers check the global sentinels before use.
+    DOCX and PPTX are declared extras (`unstructured[docx, pptx]`) and will
+    fail loudly if missing.  PDF requires heavy optional deps (`torch`,
+    `unstructured-inference`) that connectors must opt into by installing
+    `unstructured[pdf]`, so its import is the only one guarded.
     """
     global unstructured_partition_pdf
     global unstructured_partition_docx
     global unstructured_partition_pptx
-    try:
-        from unstructured.partition.docx import partition_docx
 
-        unstructured_partition_docx = partition_docx
-    except ImportError:
-        logging.debug("DOCX partition module unavailable; DOCX parsing will be disabled.")
-    try:
-        from unstructured.partition.pptx import partition_pptx
+    from unstructured.partition.docx import partition_docx
+    from unstructured.partition.pptx import partition_pptx
 
-        unstructured_partition_pptx = partition_pptx
-    except ImportError:
-        logging.debug("PPTX partition module unavailable; PPTX parsing will be disabled.")
+    unstructured_partition_docx = partition_docx
+    unstructured_partition_pptx = partition_pptx
+
     try:
         from unstructured.partition.pdf import partition_pdf
 
         unstructured_partition_pdf = partition_pdf
     except ImportError:
-        logging.debug("PDF partition module unavailable; PDF parsing will be disabled.")
+        logging.debug("PDF partition module unavailable; install unstructured[pdf] to enable.")
 
 
 def user_error(e: Exception) -> bool:
