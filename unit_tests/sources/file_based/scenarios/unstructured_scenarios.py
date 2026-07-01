@@ -212,7 +212,7 @@ unstructured_invalid_file_type_discover_scenario_no_skip = (
         .set_files(
             {
                 "a.csv": {
-                    "contents": bytes("Just a humble text file", "UTF-8"),
+                    "contents": bytes("col1,col2,col3\nval1,val2,val3\nval4,val5,val6", "UTF-8"),
                     "last_modified": "2023-06-05T03:54:07.000Z",
                 },
             }
@@ -263,7 +263,7 @@ unstructured_invalid_file_type_discover_scenario_skip = (
         .set_files(
             {
                 "a.csv": {
-                    "contents": bytes("Just a humble text file", "UTF-8"),
+                    "contents": bytes("col1,col2,col3\nval1,val2,val3\nval4,val5,val6", "UTF-8"),
                     "last_modified": "2023-06-05T03:54:07.000Z",
                 },
             }
@@ -327,7 +327,7 @@ unstructured_invalid_file_type_read_scenario = (
                     "last_modified": "2023-06-05T03:54:07.000Z",
                 },
                 "b.csv": {
-                    "contents": bytes("An evil text file", "UTF-8"),
+                    "contents": bytes("col1,col2,col3\nval1,val2,val3", "UTF-8"),
                     "last_modified": "2023-06-05T03:54:07.000Z",
                 },
             }
