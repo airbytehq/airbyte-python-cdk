@@ -74,29 +74,18 @@ def optional_decode(contents: Union[str, bytes]) -> str:
 
 
 def _import_unstructured() -> None:
-    """Dynamically imported as needed, due to slow import speed.
-
-    DOCX and PPTX are declared extras (`unstructured[docx, pptx]`) and will
-    fail loudly if missing.  PDF requires heavy optional deps (`torch`,
-    `unstructured-inference`) that connectors must opt into by installing
-    `unstructured[pdf]`, so its import is the only one guarded.
-    """
+    """Dynamically imported as needed, due to slow import speed."""
     global unstructured_partition_pdf
     global unstructured_partition_docx
     global unstructured_partition_pptx
 
     from unstructured.partition.docx import partition_docx
+    from unstructured.partition.pdf import partition_pdf
     from unstructured.partition.pptx import partition_pptx
 
     unstructured_partition_docx = partition_docx
+    unstructured_partition_pdf = partition_pdf
     unstructured_partition_pptx = partition_pptx
-
-    try:
-        from unstructured.partition.pdf import partition_pdf
-
-        unstructured_partition_pdf = partition_pdf
-    except ImportError:
-        logging.debug("PDF partition module unavailable; install unstructured[pdf] to enable.")
 
 
 def user_error(e: Exception) -> bool:
@@ -211,8 +200,6 @@ class UnstructuredParser(FileTypeParser):
         format: UnstructuredFormat,
         logger: logging.Logger,
     ) -> str:
-        _import_unstructured()
-
         filetype: FileType | None = self._get_filetype(file_handle, remote_file)
 
         if filetype is None or filetype not in self._supported_file_types():
@@ -364,19 +351,13 @@ class UnstructuredParser(FileTypeParser):
 
         try:
             if filetype == FileType.PDF:
-                if not unstructured_partition_pdf:
-                    raise ImportError("PDF partition dependencies are not installed")
                 file_handle.seek(0)
                 with BytesIO(file_handle.read()) as file:
                     file_handle.seek(0)
                     elements = unstructured_partition_pdf(file=file, strategy=strategy)
             elif filetype == FileType.DOCX:
-                if not unstructured_partition_docx:
-                    raise ImportError("DOCX partition dependencies are not installed")
                 elements = unstructured_partition_docx(file=file)
             elif filetype == FileType.PPTX:
-                if not unstructured_partition_pptx:
-                    raise ImportError("PPTX partition dependencies are not installed")
                 elements = unstructured_partition_pptx(file=file)
         except Exception as e:
             raise self._create_parse_error(remote_file, str(e))
