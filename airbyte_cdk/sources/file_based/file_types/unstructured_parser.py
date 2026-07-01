@@ -363,6 +363,8 @@ class UnstructuredParser(FileTypeParser):
                 elements = unstructured_partition_docx(file=file)
             elif filetype == FileType.PPTX:
                 elements = unstructured_partition_pptx(file=file)
+            else:
+                raise ValueError(f"Unsupported file type for local parsing: {filetype}")
         except Exception as e:
             raise self._create_parse_error(remote_file, str(e))
 
