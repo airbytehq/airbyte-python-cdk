@@ -424,7 +424,9 @@ class UnstructuredParser(FileTypeParser):
         if file_type and file_type != FileType.UNK:
             return file_type
 
-        type_based_on_content = detect_filetype(file=cast(IO[bytes], file))
+        type_based_on_content = detect_filetype(
+            file=cast(IO[bytes], file), metadata_file_path=remote_file.uri
+        )
         file.seek(0)  # detect_filetype is reading to read the file content, so we need to reset
 
         if type_based_on_content and type_based_on_content != FileType.UNK:

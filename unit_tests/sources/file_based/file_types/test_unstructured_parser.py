@@ -239,13 +239,20 @@ def test_parse_records(
     raises,
     expected_records,
     parsing_error,
+    monkeypatch,
 ):
     mock_partition_pdf = MagicMock()
     mock_partition_docx = MagicMock()
     mock_partition_pptx = MagicMock()
-    unstructured_parser_module.unstructured_partition_pdf = mock_partition_pdf
-    unstructured_parser_module.unstructured_partition_docx = mock_partition_docx
-    unstructured_parser_module.unstructured_partition_pptx = mock_partition_pptx
+    monkeypatch.setattr(
+        unstructured_parser_module, "unstructured_partition_pdf", mock_partition_pdf
+    )
+    monkeypatch.setattr(
+        unstructured_parser_module, "unstructured_partition_docx", mock_partition_docx
+    )
+    monkeypatch.setattr(
+        unstructured_parser_module, "unstructured_partition_pptx", mock_partition_pptx
+    )
     stream_reader = MagicMock()
     mock_open(stream_reader.open_file, read_data=bytes(str(parse_result), "utf-8"))
     fake_file = RemoteFile(uri=FILE_URI, last_modified=datetime.now())
