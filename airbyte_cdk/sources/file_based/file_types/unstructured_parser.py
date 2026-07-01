@@ -6,7 +6,7 @@ import os
 import traceback
 from datetime import datetime
 from io import BytesIO, IOBase
-from typing import IO, Any, Dict, Iterable, List, Mapping, Optional, Tuple, Union, cast
+from typing import IO, Any, Callable, Dict, Iterable, List, Mapping, Optional, Tuple, Union, cast
 
 import backoff
 import dpath
@@ -33,9 +33,9 @@ from airbyte_cdk.sources.file_based.schema_helpers import SchemaType
 from airbyte_cdk.utils import is_cloud_environment
 from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 
-unstructured_partition_pdf = None
-unstructured_partition_docx = None
-unstructured_partition_pptx = None
+unstructured_partition_pdf: Optional[Callable[..., Any]] = None
+unstructured_partition_docx: Optional[Callable[..., Any]] = None
+unstructured_partition_pptx: Optional[Callable[..., Any]] = None
 
 AIRBYTE_NLTK_DATA_DIR = "/airbyte/nltk_data"
 TMP_NLTK_DATA_DIR = "/tmp/nltk_data"
@@ -348,6 +348,10 @@ class UnstructuredParser(FileTypeParser):
         file_handle.seek(0)
         file_handle.read()
         file_handle.seek(0)
+
+        assert unstructured_partition_pdf is not None
+        assert unstructured_partition_docx is not None
+        assert unstructured_partition_pptx is not None
 
         try:
             if filetype == FileType.PDF:
