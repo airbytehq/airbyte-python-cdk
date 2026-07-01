@@ -88,19 +88,19 @@ def _import_unstructured() -> None:
 
         unstructured_partition_docx = partition_docx
     except ImportError:
-        pass
+        logging.debug("DOCX partition module unavailable; DOCX parsing will be disabled.")
     try:
         from unstructured.partition.pptx import partition_pptx
 
         unstructured_partition_pptx = partition_pptx
     except ImportError:
-        pass
+        logging.debug("PPTX partition module unavailable; PPTX parsing will be disabled.")
     try:
         from unstructured.partition.pdf import partition_pdf
 
         unstructured_partition_pdf = partition_pdf
     except ImportError:
-        pass
+        logging.debug("PDF partition module unavailable; PDF parsing will be disabled.")
 
 
 def user_error(e: Exception) -> bool:
