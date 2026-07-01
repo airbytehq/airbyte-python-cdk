@@ -262,6 +262,7 @@ DEP002 = [
   "python-snappy",
   "tiktoken",
   "unstructured.pytesseract",
+  "onnxruntime",  # Transitive dep pin: caps below 1.24 for Python 3.10 compat (no direct imports)
 ]
 
 # DEP003: Project should not use transitive dependencies.
