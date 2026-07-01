@@ -466,8 +466,8 @@ corrupted_file_scenario = (
         .set_files(
             {
                 "sample.pdf": {
-                    # bytes that can't be parsed as pdf
-                    "contents": bytes("___ corrupted file ___", "utf-8"),
+                    # PDF magic bytes followed by garbage — detected as PDF but unparseable
+                    "contents": b"%PDF-1.4 corrupted content",
                     "last_modified": "2023-06-05T03:54:07.000Z",
                 },
             }
