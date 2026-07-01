@@ -9,10 +9,10 @@ from io import BytesIO, IOBase
 from typing import IO, Any, Dict, Iterable, List, Mapping, Optional, Tuple, Union, cast
 
 import backoff
+import dpath
 import nltk
 import requests
 from unstructured.file_utils.filetype import FileType, detect_filetype
-from unstructured.staging.base import elements_from_dicts, elements_to_md
 
 from airbyte_cdk.models import FailureType
 from airbyte_cdk.sources.file_based.config.file_based_stream_config import FileBasedStreamConfig
@@ -335,7 +335,7 @@ class UnstructuredParser(FileTypeParser):
 
         json_response = response.json()
 
-        return elements_to_md(elements_from_dicts(json_response))
+        return self._render_markdown(json_response)
 
     def _read_file_locally(
         self, file_handle: IOBase, filetype: FileType, strategy: str, remote_file: RemoteFile
@@ -362,7 +362,7 @@ class UnstructuredParser(FileTypeParser):
         except Exception as e:
             raise self._create_parse_error(remote_file, str(e))
 
-        return elements_to_md(elements)
+        return self._render_markdown([element.to_dict() for element in elements])
 
     def _create_parse_error(
         self,
@@ -429,6 +429,31 @@ class UnstructuredParser(FileTypeParser):
     ) -> str:
         supported_file_types = ", ".join([str(type) for type in self._supported_file_types()])
         return f"File type {file_type or 'None'!s} is not supported. Supported file types are {supported_file_types}"
+
+    def _render_markdown(self, elements: List[Any]) -> str:
+        """Convert parsed elements to markdown.
+
+        Uses our own rendering instead of unstructured's native `elements_to_md()`
+        which does not yet support heading levels, list-item bullets, or formula
+        code-blocks.  Revisit once upstream reaches parity.
+        """
+        return "\n\n".join((self._convert_to_markdown(el) for el in elements))
+
+    def _convert_to_markdown(self, el: Dict[str, Any]) -> str:
+        if dpath.get(el, "type") == "Title":
+            category_depth = dpath.get(el, "metadata/category_depth", default=1) or 1
+            if not isinstance(category_depth, int):
+                category_depth = (
+                    int(category_depth) if isinstance(category_depth, (str, float)) else 1
+                )
+            heading_str = "#" * category_depth
+            return f"{heading_str} {dpath.get(el, 'text')}"
+        elif dpath.get(el, "type") == "ListItem":
+            return f"- {dpath.get(el, 'text')}"
+        elif dpath.get(el, "type") == "Formula":
+            return f"```\n{dpath.get(el, 'text')}\n```"
+        else:
+            return str(dpath.get(el, "text", default=""))
 
     @property
     def file_read_mode(self) -> FileReadMode:

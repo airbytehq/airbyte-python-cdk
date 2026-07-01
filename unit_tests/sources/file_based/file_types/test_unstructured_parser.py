@@ -165,7 +165,7 @@ def test_infer_schema(mock_detect_filetype, filetype, format_config, raises):
             False,
             [
                 {
-                    "content": "# heading\nThis is the text\nThis is a list item\nThis is a formula",
+                    "content": "# heading\n\nThis is the text\n\n- This is a list item\n\n```\nThis is a formula\n```",
                     "document_key": FILE_URI,
                     "_ab_source_file_parse_error": None,
                 }
@@ -183,7 +183,7 @@ def test_infer_schema(mock_detect_filetype, filetype, format_config, raises):
             False,
             [
                 {
-                    "content": "# first level heading\n# second level heading",
+                    "content": "# first level heading\n\n## second level heading",
                     "document_key": FILE_URI,
                     "_ab_source_file_parse_error": None,
                 }
@@ -203,7 +203,7 @@ def test_infer_schema(mock_detect_filetype, filetype, format_config, raises):
             False,
             [
                 {
-                    "content": "# heading\nThis is the text\nThis is a list item\nThis is a formula",
+                    "content": "# heading\n\nThis is the text\n\n- This is a list item\n\n```\nThis is a formula\n```",
                     "document_key": FILE_URI,
                     "_ab_source_file_parse_error": None,
                 }
