@@ -78,6 +78,7 @@ python-snappy = { version = "0.7.3", optional = true }  # TODO: remove if unused
 tiktoken = { version = "0.8.0", optional = true }
 nltk = { version = ">=3.9.1", optional = true }
 unstructured = { version = ">=0.18.27,<0.19", extras = ["docx", "pdf", "pptx"], optional = true }
+onnxruntime = { version = ">=1.23,<1.24", optional = true }  # Pin below 1.24: the 1.24.x series claims >=3.10 but ships no cp310 wheels; >=1.25 requires Python >=3.11
 "unstructured.pytesseract" = { version = ">=0.3.12", optional = true }
 pyjwt = "^2.8.0"
 cryptography = ">=44.0.0,!=45.0.0,!=45.0.1"  # 45.0.0-45.0.1 had regressions (pyca/cryptography#12958); upper cap removed so >=48.0.1 (ASN.1 OOB read fix) can be installed
@@ -122,7 +123,7 @@ deptry = "^0.23.0"
 dagger-io = "0.19.0"
 
 [tool.poetry.extras]
-file-based = ["avro", "fastavro", "pyarrow", "unstructured", "pdf2image", "pdfminer.six", "unstructured.pytesseract", "pytesseract", "markdown", "python-calamine", "openpyxl", "python-snappy"]
+file-based = ["avro", "fastavro", "pyarrow", "unstructured", "onnxruntime", "pdf2image", "pdfminer.six", "unstructured.pytesseract", "pytesseract", "markdown", "python-calamine", "openpyxl", "python-snappy"]
 vector-db-based = ["langchain_community", "langchain_core", "langchain_text_splitters", "openai", "cohere", "tiktoken"]
 sql = ["sqlalchemy"]
 dev = ["pytest"]
