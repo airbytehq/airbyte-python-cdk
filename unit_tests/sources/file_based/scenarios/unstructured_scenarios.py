@@ -3,15 +3,9 @@
 #
 import base64
 
-import nltk
-
 from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 from unit_tests.sources.file_based.scenarios.file_based_source_builder import FileBasedSourceBuilder
 from unit_tests.sources.file_based.scenarios.scenario_builder import TestScenarioBuilder
-
-# import nltk data for pdf parser
-nltk.download("punkt")
-nltk.download("averaged_perceptron_tagger")
 
 json_schema = {
     "type": "object",
@@ -292,7 +286,7 @@ unstructured_invalid_file_type_discover_scenario_skip = (
                     "document_key": "a.csv",
                     "_ab_source_file_last_modified": "2023-06-05T03:54:07.000000Z",
                     "_ab_source_file_url": "a.csv",
-                    "_ab_source_file_parse_error": "Error parsing record. This could be due to a mismatch between the config's file type and the actual file type, or because the file or record is not parseable. Contact Support if you need assistance.\nfilename=a.csv message=File type FileType.CSV is not supported. Supported file types are FileType.MD, FileType.PDF, FileType.DOCX, FileType.PPTX, FileType.TXT",
+                    "_ab_source_file_parse_error": "Error parsing record. This could be due to a mismatch between the config's file type and the actual file type, or because the file or record is not parseable. Contact Support if you need assistance.\nfilename=a.csv message=File extension '.csv' is not supported. Supported extensions are .docx, .htm, .html, .md, .pdf, .pptx, .txt, .xls, .xlsx",
                 },
                 "stream": "stream1",
             }
@@ -434,7 +428,7 @@ simple_unstructured_scenario = (
             {
                 "data": {
                     "document_key": "sample.pdf",
-                    "content": "# Hello World",
+                    "content": "Hello World\n\n",
                     "_ab_source_file_last_modified": "2023-06-05T03:54:07.000000Z",
                     "_ab_source_file_url": "sample.pdf",
                 },
@@ -443,7 +437,7 @@ simple_unstructured_scenario = (
             {
                 "data": {
                     "document_key": "sample.docx",
-                    "content": "# Content",
+                    "content": "Content",
                     "_ab_source_file_last_modified": "2023-06-06T03:54:07.000000Z",
                     "_ab_source_file_url": "sample.docx",
                 },
@@ -452,7 +446,7 @@ simple_unstructured_scenario = (
             {
                 "data": {
                     "document_key": "sample.pptx",
-                    "content": "# Title",
+                    "content": "<!-- Slide number: 1 -->\n# Title",
                     "_ab_source_file_last_modified": "2023-06-07T03:54:07.000000Z",
                     "_ab_source_file_url": "sample.pptx",
                 },
@@ -482,7 +476,7 @@ corrupted_file_scenario = (
         .set_files(
             {
                 "sample.pdf": {
-                    # bytes that can't be parsed as pdf
+                    # bytes that can't be parsed as pdf - MarkItDown falls back to plain text
                     "contents": bytes("___ corrupted file ___", "utf-8"),
                     "last_modified": "2023-06-05T03:54:07.000Z",
                 },
@@ -510,7 +504,7 @@ corrupted_file_scenario = (
             {
                 "data": {
                     "document_key": "sample.pdf",
-                    "_ab_source_file_parse_error": "Error parsing record. This could be due to a mismatch between the config's file type and the actual file type, or because the file or record is not parseable. Contact Support if you need assistance.\nfilename=sample.pdf message=No /Root object! - Is this really a PDF?",
+                    "content": "___ corrupted file ___",
                     "_ab_source_file_last_modified": "2023-06-05T03:54:07.000000Z",
                     "_ab_source_file_url": "sample.pdf",
                 },
@@ -545,7 +539,7 @@ no_file_extension_unstructured_scenario = (
                     "last_modified": "2023-06-05T03:54:07.000Z",
                 },
                 "docx_without_extension": {
-                    # same file, but can't be detected via file extesion
+                    # same file, but can't be detected via file extension
                     "contents": docx_file,
                     "last_modified": "2023-06-06T03:54:07.000Z",
                 },
@@ -578,7 +572,7 @@ no_file_extension_unstructured_scenario = (
             {
                 "data": {
                     "document_key": "pdf_without_extension",
-                    "content": "# Hello World",
+                    "content": "Hello World\n\n",
                     "_ab_source_file_last_modified": "2023-06-05T03:54:07.000000Z",
                     "_ab_source_file_url": "pdf_without_extension",
                 },
@@ -587,7 +581,7 @@ no_file_extension_unstructured_scenario = (
             {
                 "data": {
                     "document_key": "docx_without_extension",
-                    "content": "# Content",
+                    "content": "Content",
                     "_ab_source_file_last_modified": "2023-06-06T03:54:07.000000Z",
                     "_ab_source_file_url": "docx_without_extension",
                 },
@@ -596,7 +590,7 @@ no_file_extension_unstructured_scenario = (
             {
                 "data": {
                     "document_key": "pptx_without_extension",
-                    "content": "# Title",
+                    "content": "<!-- Slide number: 1 -->\n# Title",
                     "_ab_source_file_last_modified": "2023-06-07T03:54:07.000000Z",
                     "_ab_source_file_url": "pptx_without_extension",
                 },

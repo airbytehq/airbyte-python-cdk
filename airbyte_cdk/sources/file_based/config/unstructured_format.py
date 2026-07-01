@@ -14,13 +14,13 @@ class LocalProcessingConfigModel(BaseModel):
 
     class Config(OneOfOptionConfig):
         title = "Local"
-        description = (
-            "Process files locally, supporting `fast` and `ocr` modes. This is the default option."
-        )
+        description = "Process files locally using MarkItDown. This is the default option."
         discriminator = "mode"
 
 
 class APIParameterConfigModel(BaseModel):
+    """Deprecated: API processing is no longer supported. Retained for config backward compatibility."""
+
     name: str = Field(
         title="Parameter name",
         description="The name of the unstructured API parameter to use",
@@ -32,6 +32,8 @@ class APIParameterConfigModel(BaseModel):
 
 
 class APIProcessingConfigModel(BaseModel):
+    """Deprecated: API processing is no longer supported. Retained for config backward compatibility."""
+
     mode: Literal["api"] = Field("api", const=True)
 
     api_key: str = Field(
@@ -39,14 +41,14 @@ class APIProcessingConfigModel(BaseModel):
         always_show=True,
         title="API Key",
         airbyte_secret=True,
-        description="The API key to use matching the environment",
+        description="Deprecated: API processing is no longer supported.",
     )
 
     api_url: str = Field(
         default="https://api.unstructured.io",
         title="API URL",
         always_show=True,
-        description="The URL of the unstructured API to use",
+        description="Deprecated: API processing is no longer supported.",
         examples=["https://api.unstructured.com"],
     )
 
@@ -54,18 +56,18 @@ class APIProcessingConfigModel(BaseModel):
         default=[],
         always_show=True,
         title="Additional URL Parameters",
-        description="List of parameters send to the API",
+        description="Deprecated: API processing is no longer supported.",
     )
 
     class Config(OneOfOptionConfig):
         title = "via API"
-        description = "Process files via an API, using the `hi_res` mode. This option is useful for increased performance and accuracy, but requires an API key and a hosted instance of unstructured."
+        description = "Deprecated: API processing is no longer supported. All processing is now done locally using MarkItDown."
         discriminator = "mode"
 
 
 class UnstructuredFormat(BaseModel):
     class Config(OneOfOptionConfig):
-        title = "Unstructured Document Format"
+        title = "Document Format"
         description = "Extract text from document formats (.pdf, .docx, .md, .pptx) and emit as one record per file."
         discriminator = "filetype"
 
@@ -87,7 +89,7 @@ class UnstructuredFormat(BaseModel):
         default="auto",
         title="Parsing Strategy",
         enum=["auto", "fast", "ocr_only", "hi_res"],
-        description="The strategy used to parse documents. `fast` extracts text directly from the document which doesn't work for all files. `ocr_only` is more reliable, but slower. `hi_res` is the most reliable, but requires an API key and a hosted instance of unstructured and can't be used with local mode. See the unstructured.io documentation for more details: https://unstructured-io.github.io/unstructured/core/partition.html#partition-pdf",
+        description="Deprecated: This field is ignored. All parsing is now handled by MarkItDown.",
     )
 
     processing: Union[
@@ -96,7 +98,7 @@ class UnstructuredFormat(BaseModel):
     ] = Field(
         default=LocalProcessingConfigModel(mode="local"),
         title="Processing",
-        description="Processing configuration",
+        description="Deprecated: All processing is now done locally using MarkItDown.",
         discriminator="mode",
         type="object",
     )
