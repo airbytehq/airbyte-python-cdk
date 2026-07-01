@@ -255,6 +255,7 @@ DEP002 = [
   "python-calamine",
   "python-snappy",
   "tiktoken",
+  "onnxruntime",  # Transitive dep of markitdown (via magika); pinned to cap at <1.24 for Python 3.10 compat
 ]
 
 # DEP003: Project should not use transitive dependencies.
