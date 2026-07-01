@@ -395,18 +395,11 @@ simple_unstructured_scenario = (
         FileBasedSourceBuilder()
         .set_files(
             {
-                "sample.pdf": {
-                    # minimal pdf file inlined as base 64
-                    "contents": pdf_file,
-                    "last_modified": "2023-06-05T03:54:07.000Z",
-                },
                 "sample.docx": {
-                    # minimal docx file inlined as base 64
                     "contents": docx_file,
                     "last_modified": "2023-06-06T03:54:07.000Z",
                 },
                 "sample.pptx": {
-                    # minimal pptx file inlined as base 64
                     "contents": pptx_file,
                     "last_modified": "2023-06-07T03:54:07.000Z",
                 },
@@ -433,17 +426,8 @@ simple_unstructured_scenario = (
         [
             {
                 "data": {
-                    "document_key": "sample.pdf",
-                    "content": "# Hello World",
-                    "_ab_source_file_last_modified": "2023-06-05T03:54:07.000000Z",
-                    "_ab_source_file_url": "sample.pdf",
-                },
-                "stream": "stream1",
-            },
-            {
-                "data": {
                     "document_key": "sample.docx",
-                    "content": "# Content",
+                    "content": "Content",
                     "_ab_source_file_last_modified": "2023-06-06T03:54:07.000000Z",
                     "_ab_source_file_url": "sample.docx",
                 },
@@ -510,7 +494,7 @@ corrupted_file_scenario = (
             {
                 "data": {
                     "document_key": "sample.pdf",
-                    "_ab_source_file_parse_error": "Error parsing record. This could be due to a mismatch between the config's file type and the actual file type, or because the file or record is not parseable. Contact Support if you need assistance.\nfilename=sample.pdf message=No /Root object! - Is this really a PDF?",
+                    "_ab_source_file_parse_error": "Error parsing record. This could be due to a mismatch between the config's file type and the actual file type, or because the file or record is not parseable. Contact Support if you need assistance.\nfilename=sample.pdf message=PDF partition dependencies are not installed",
                     "_ab_source_file_last_modified": "2023-06-05T03:54:07.000000Z",
                     "_ab_source_file_url": "sample.pdf",
                 },
@@ -539,18 +523,11 @@ no_file_extension_unstructured_scenario = (
         FileBasedSourceBuilder()
         .set_files(
             {
-                "pdf_without_extension": {
-                    # same file, but can't be detected via file extension
-                    "contents": pdf_file,
-                    "last_modified": "2023-06-05T03:54:07.000Z",
-                },
                 "docx_without_extension": {
-                    # same file, but can't be detected via file extesion
                     "contents": docx_file,
                     "last_modified": "2023-06-06T03:54:07.000Z",
                 },
                 "pptx_without_extension": {
-                    # minimal pptx file inlined as base 64
                     "contents": pptx_file,
                     "last_modified": "2023-06-07T03:54:07.000Z",
                 },
@@ -577,17 +554,8 @@ no_file_extension_unstructured_scenario = (
         [
             {
                 "data": {
-                    "document_key": "pdf_without_extension",
-                    "content": "# Hello World",
-                    "_ab_source_file_last_modified": "2023-06-05T03:54:07.000000Z",
-                    "_ab_source_file_url": "pdf_without_extension",
-                },
-                "stream": "stream1",
-            },
-            {
-                "data": {
                     "document_key": "docx_without_extension",
-                    "content": "# Content",
+                    "content": "Content",
                     "_ab_source_file_last_modified": "2023-06-06T03:54:07.000000Z",
                     "_ab_source_file_url": "docx_without_extension",
                 },

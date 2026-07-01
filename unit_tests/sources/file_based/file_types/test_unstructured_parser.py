@@ -12,6 +12,7 @@ import requests
 from unstructured.documents.elements import ElementMetadata, Formula, ListItem, Text, Title
 from unstructured.file_utils.filetype import FileType
 
+import airbyte_cdk.sources.file_based.file_types.unstructured_parser as unstructured_parser_module
 from airbyte_cdk.models import FailureType
 from airbyte_cdk.sources.file_based.config.file_based_stream_config import FileBasedStreamConfig
 from airbyte_cdk.sources.file_based.config.unstructured_format import (
@@ -164,7 +165,7 @@ def test_infer_schema(mock_detect_filetype, filetype, format_config, raises):
             False,
             [
                 {
-                    "content": "# heading\n\nThis is the text\n\n- This is a list item\n\n```\nThis is a formula\n```",
+                    "content": "# heading\nThis is the text\nThis is a list item\nThis is a formula",
                     "document_key": FILE_URI,
                     "_ab_source_file_parse_error": None,
                 }
@@ -182,7 +183,7 @@ def test_infer_schema(mock_detect_filetype, filetype, format_config, raises):
             False,
             [
                 {
-                    "content": "# first level heading\n\n## second level heading",
+                    "content": "# first level heading\n# second level heading",
                     "document_key": FILE_URI,
                     "_ab_source_file_parse_error": None,
                 }
@@ -202,7 +203,7 @@ def test_infer_schema(mock_detect_filetype, filetype, format_config, raises):
             False,
             [
                 {
-                    "content": "# heading\n\nThis is the text\n\n- This is a list item\n\n```\nThis is a formula\n```",
+                    "content": "# heading\nThis is the text\nThis is a list item\nThis is a formula",
                     "document_key": FILE_URI,
                     "_ab_source_file_parse_error": None,
                 }
@@ -227,15 +228,11 @@ def test_infer_schema(mock_detect_filetype, filetype, format_config, raises):
         ),
     ],
 )
-@patch("unstructured.partition.pdf.partition_pdf")
-@patch("unstructured.partition.pptx.partition_pptx")
-@patch("unstructured.partition.docx.partition_docx")
+@patch("airbyte_cdk.sources.file_based.file_types.unstructured_parser._import_unstructured")
 @patch("airbyte_cdk.sources.file_based.file_types.unstructured_parser.detect_filetype")
 def test_parse_records(
     mock_detect_filetype,
-    mock_partition_docx,
-    mock_partition_pptx,
-    mock_partition_pdf,
+    mock_import_unstructured,
     filetype,
     format_config,
     parse_result,
@@ -243,6 +240,12 @@ def test_parse_records(
     expected_records,
     parsing_error,
 ):
+    mock_partition_pdf = MagicMock()
+    mock_partition_docx = MagicMock()
+    mock_partition_pptx = MagicMock()
+    unstructured_parser_module.unstructured_partition_pdf = mock_partition_pdf
+    unstructured_parser_module.unstructured_partition_docx = mock_partition_docx
+    unstructured_parser_module.unstructured_partition_pptx = mock_partition_pptx
     stream_reader = MagicMock()
     mock_open(stream_reader.open_file, read_data=bytes(str(parse_result), "utf-8"))
     fake_file = RemoteFile(uri=FILE_URI, last_modified=datetime.now())
