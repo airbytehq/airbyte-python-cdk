@@ -431,7 +431,7 @@ simple_unstructured_scenario = (
             {
                 "data": {
                     "document_key": "sample.pdf",
-                    "content": "# Hello World",
+                    "content": "Hello World",
                     "_ab_source_file_last_modified": "2023-06-05T03:54:07.000000Z",
                     "_ab_source_file_url": "sample.pdf",
                 },
@@ -507,7 +507,7 @@ corrupted_file_scenario = (
             {
                 "data": {
                     "document_key": "sample.pdf",
-                    "_ab_source_file_parse_error": "Error parsing record. This could be due to a mismatch between the config's file type and the actual file type, or because the file or record is not parseable. Contact Support if you need assistance.\nfilename=sample.pdf message=No /Root object! - Is this really a PDF?",
+                    "_ab_source_file_parse_error": "Error parsing record. This could be due to a mismatch between the config's file type and the actual file type, or because the file or record is not parseable. Contact Support if you need assistance.\nfilename=sample.pdf message=Unable to get page count. Is poppler installed and in PATH?",
                     "_ab_source_file_last_modified": "2023-06-05T03:54:07.000000Z",
                     "_ab_source_file_url": "sample.pdf",
                 },
@@ -572,7 +572,7 @@ no_file_extension_unstructured_scenario = (
             {
                 "data": {
                     "document_key": "pdf_without_extension",
-                    "content": "# Hello World",
+                    "content": "Hello World",
                     "_ab_source_file_last_modified": "2023-06-05T03:54:07.000000Z",
                     "_ab_source_file_url": "pdf_without_extension",
                 },
