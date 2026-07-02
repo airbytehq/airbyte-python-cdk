@@ -6,19 +6,13 @@ import os
 import traceback
 from datetime import datetime
 from io import BytesIO, IOBase
-from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple, Union
+from typing import IO, Any, Callable, Dict, Iterable, List, Mapping, Optional, Tuple, Union, cast
 
 import backoff
 import dpath
 import nltk
 import requests
-from unstructured.file_utils.filetype import (
-    EXT_TO_FILETYPE,
-    FILETYPE_TO_MIMETYPE,
-    STR_TO_FILETYPE,
-    FileType,
-    detect_filetype,
-)
+from unstructured.file_utils.filetype import FileType, detect_filetype
 
 from airbyte_cdk.models import FailureType
 from airbyte_cdk.sources.file_based.config.file_based_stream_config import FileBasedStreamConfig
@@ -39,9 +33,9 @@ from airbyte_cdk.sources.file_based.schema_helpers import SchemaType
 from airbyte_cdk.utils import is_cloud_environment
 from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 
-unstructured_partition_pdf = None
-unstructured_partition_docx = None
-unstructured_partition_pptx = None
+unstructured_partition_pdf: Optional[Callable[..., Any]] = None
+unstructured_partition_docx: Optional[Callable[..., Any]] = None
+unstructured_partition_pptx: Optional[Callable[..., Any]] = None
 
 AIRBYTE_NLTK_DATA_DIR = "/airbyte/nltk_data"
 TMP_NLTK_DATA_DIR = "/tmp/nltk_data"
@@ -84,13 +78,13 @@ def _import_unstructured() -> None:
     global unstructured_partition_pdf
     global unstructured_partition_docx
     global unstructured_partition_pptx
+
     from unstructured.partition.docx import partition_docx
     from unstructured.partition.pdf import partition_pdf
     from unstructured.partition.pptx import partition_pptx
 
-    # separate global variables to properly propagate typing
-    unstructured_partition_pdf = partition_pdf
     unstructured_partition_docx = partition_docx
+    unstructured_partition_pdf = partition_pdf
     unstructured_partition_pptx = partition_pptx
 
 
@@ -206,15 +200,6 @@ class UnstructuredParser(FileTypeParser):
         format: UnstructuredFormat,
         logger: logging.Logger,
     ) -> str:
-        _import_unstructured()
-        if (
-            (not unstructured_partition_pdf)
-            or (not unstructured_partition_docx)
-            or (not unstructured_partition_pptx)
-        ):
-            # check whether unstructured library is actually available for better error message and to ensure proper typing (can't be None after this point)
-            raise Exception("unstructured library is not available")
-
         filetype: FileType | None = self._get_filetype(file_handle, remote_file)
 
         if filetype is None or filetype not in self._supported_file_types():
@@ -335,7 +320,7 @@ class UnstructuredParser(FileTypeParser):
 
         data = self._params_to_dict(format.parameters, strategy)
 
-        file_data = {"files": ("filename", file_handle, FILETYPE_TO_MIMETYPE[filetype])}
+        file_data = {"files": ("filename", file_handle, filetype.mime_type)}
 
         response = requests.post(
             f"{format.api_url}/general/v0/general", headers=headers, data=data, files=file_data
@@ -356,13 +341,6 @@ class UnstructuredParser(FileTypeParser):
         self, file_handle: IOBase, filetype: FileType, strategy: str, remote_file: RemoteFile
     ) -> str:
         _import_unstructured()
-        if (
-            (not unstructured_partition_pdf)
-            or (not unstructured_partition_docx)
-            or (not unstructured_partition_pptx)
-        ):
-            # check whether unstructured library is actually available for better error message and to ensure proper typing (can't be None after this point)
-            raise Exception("unstructured library is not available")
 
         file: Any = file_handle
 
@@ -371,9 +349,12 @@ class UnstructuredParser(FileTypeParser):
         file_handle.read()
         file_handle.seek(0)
 
+        assert unstructured_partition_pdf is not None
+        assert unstructured_partition_docx is not None
+        assert unstructured_partition_pptx is not None
+
         try:
             if filetype == FileType.PDF:
-                # for PDF, read the file into a BytesIO object because some code paths in pdf parsing are doing an instance check on the file object and don't work with file-like objects
                 file_handle.seek(0)
                 with BytesIO(file_handle.read()) as file:
                     file_handle.seek(0)
@@ -382,6 +363,8 @@ class UnstructuredParser(FileTypeParser):
                 elements = unstructured_partition_docx(file=file)
             elif filetype == FileType.PPTX:
                 elements = unstructured_partition_pptx(file=file)
+            else:
+                raise ValueError(f"Unsupported file type for local parsing: {filetype}")
         except Exception as e:
             raise self._create_parse_error(remote_file, str(e))
 
@@ -405,8 +388,10 @@ class UnstructuredParser(FileTypeParser):
         2. Use the file name if available
         3. Use the file content
         """
-        if remote_file.mime_type and remote_file.mime_type in STR_TO_FILETYPE:
-            return STR_TO_FILETYPE[remote_file.mime_type]
+        if remote_file.mime_type:
+            filetype_from_mime = FileType.from_mime_type(remote_file.mime_type)
+            if filetype_from_mime is not None:
+                return filetype_from_mime
 
         # set name to none, otherwise unstructured will try to get the modified date from the local file system
         if hasattr(file, "name"):
@@ -418,24 +403,26 @@ class UnstructuredParser(FileTypeParser):
         file_type: FileType | None = None
         try:
             file_type = detect_filetype(
-                filename=remote_file.uri,
+                file_path=remote_file.uri,
             )
         except Exception:
-            # Path doesn't exist locally. Try something else...
             pass
 
         if file_type and file_type != FileType.UNK:
             return file_type
 
-        type_based_on_content = detect_filetype(file=file)
+        type_based_on_content = detect_filetype(
+            file=cast(IO[bytes], file), metadata_file_path=remote_file.uri
+        )
         file.seek(0)  # detect_filetype is reading to read the file content, so we need to reset
 
         if type_based_on_content and type_based_on_content != FileType.UNK:
             return type_based_on_content
 
         extension = "." + remote_file.uri.split(".")[-1].lower()
-        if extension in EXT_TO_FILETYPE:
-            return EXT_TO_FILETYPE[extension]
+        filetype_from_ext = FileType.from_extension(extension)
+        if filetype_from_ext is not None:
+            return filetype_from_ext
 
         return None
 
@@ -450,6 +437,12 @@ class UnstructuredParser(FileTypeParser):
         return f"File type {file_type or 'None'!s} is not supported. Supported file types are {supported_file_types}"
 
     def _render_markdown(self, elements: List[Any]) -> str:
+        """Convert parsed elements to markdown.
+
+        Uses our own rendering instead of unstructured's native `elements_to_md()`
+        which does not yet support heading levels, list-item bullets, or formula
+        code-blocks.  Revisit once upstream reaches parity.
+        """
         return "\n\n".join((self._convert_to_markdown(el) for el in elements))
 
     def _convert_to_markdown(self, el: Dict[str, Any]) -> str:
