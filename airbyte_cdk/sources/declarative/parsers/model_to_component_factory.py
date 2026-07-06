@@ -408,9 +408,6 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
     QueryProperties as QueryPropertiesModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
-    QuotaStatusSource as QuotaStatusSourceModel,
-)
-from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     Rate as RateModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
@@ -464,9 +461,6 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     SubstreamPartitionRouter as SubstreamPartitionRouterModel,
-)
-from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
-    TokenQuota as TokenQuotaModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     TypesMap as TypesMapModel,
