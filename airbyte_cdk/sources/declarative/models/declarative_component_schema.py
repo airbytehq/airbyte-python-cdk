@@ -549,6 +549,120 @@ class HttpMethod(Enum):
     POST = "POST"
 
 
+class QuotaStatusSource(BaseModel):
+    type: Literal["QuotaStatusSource"]
+    url: str = Field(
+        ...,
+        description="The full URL of the quota status endpoint.",
+        examples=[
+            "https://api.github.com/rate_limit",
+            "{{ config.get('api_url', 'https://api.github.com') }}/rate_limit",
+        ],
+        title="URL",
+    )
+    http_method: Optional[HttpMethod] = Field(
+        HttpMethod.GET,
+        description="The HTTP method used to fetch the quota status.",
+        title="HTTP Method",
+    )
+    request_headers: Optional[Dict[str, str]] = Field(
+        None,
+        description="Additional headers to send with the quota status request.",
+        title="Request Headers",
+    )
+    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
+
+
+class TokenQuota(BaseModel):
+    type: Literal["TokenQuota"]
+    name: str = Field(
+        ...,
+        description="Name of the quota pool.",
+        examples=["rest", "graphql"],
+        title="Name",
+    )
+    remaining_path: List[str] = Field(
+        ...,
+        description="Path to the remaining call count for this pool in the quota status response.",
+        examples=[["resources", "core", "remaining"]],
+        title="Remaining Path",
+    )
+    reset_path: List[str] = Field(
+        ...,
+        description="Path to the quota reset timestamp for this pool in the quota status response.",
+        examples=[["resources", "core", "reset"]],
+        title="Reset Path",
+    )
+    limit_path: Optional[List[str]] = Field(
+        None,
+        description="Optional path to the total call limit for this pool in the quota status response. Used to compute the proactive throttling reserve; falls back to the initially observed remaining count when not set.",
+        examples=[["resources", "core", "limit"]],
+        title="Limit Path",
+    )
+    matchers: Optional[List[HttpRequestRegexMatcher]] = Field(
+        None,
+        description="List of matchers that classify outgoing requests into this quota pool. The first pool whose matcher matches a request is used. A pool with no matchers acts as the default pool.",
+        title="Matchers",
+    )
+    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
+
+
+class RateLimitedMultipleTokenAuthenticator(BaseModel):
+    type: Literal["RateLimitedMultipleTokenAuthenticator"]
+    tokens: Union[str, List[str]] = Field(
+        ...,
+        description="The tokens to rotate between. Either an explicit list of tokens, or a single string containing multiple tokens separated by `token_delimiter`.",
+        examples=[
+            "{{ config['credentials']['personal_access_token'] }}",
+            ["{{ config['token_1'] }}", "{{ config['token_2'] }}"],
+        ],
+        title="Tokens",
+    )
+    token_delimiter: Optional[str] = Field(
+        ",",
+        description="Delimiter used to split a single token string into multiple tokens.",
+        title="Token Delimiter",
+    )
+    auth_method: Optional[str] = Field(
+        "Bearer",
+        description="The prefix to prepend to the token in the auth header value (e.g. `Authorization: Bearer <token>`).",
+        examples=["Bearer", "token"],
+        title="Auth Method",
+    )
+    header: Optional[str] = Field(
+        "Authorization",
+        description="The name of the HTTP header in which to inject the token.",
+        title="Header Name",
+    )
+    quota_status_source: QuotaStatusSource = Field(
+        ...,
+        description="Defines where to fetch each token's current quota status. Called once per token at startup and after an exhaustion wait, not per data request.",
+        title="Quota Status Source",
+    )
+    quotas: List[TokenQuota] = Field(
+        ...,
+        description="Quota pools tracked per token. Each outgoing request is classified into the first pool whose matchers match the request; a pool with no matchers acts as the default. The `remaining_path` and `reset_path` locate each pool's values in the quota status response.\n",
+        title="Quota Pools",
+    )
+    max_wait_time: Optional[str] = Field(
+        "PT2H",
+        description="ISO 8601 duration. When all tokens are exhausted, the maximum time to wait for a quota reset before raising a transient error.",
+        examples=["PT2H", "PT30M"],
+        title="Maximum Wait Time",
+    )
+    budget_reserve_fraction: Optional[float] = Field(
+        0.1,
+        description="Fraction of each token's quota to keep in reserve. When every token drops below its reserve, requests are proactively throttled to spread the remaining calls until the quota reset. Set to 0 (along with `budget_min_reserve`) to disable throttling.",
+        title="Budget Reserve Fraction",
+    )
+    budget_min_reserve: Optional[int] = Field(
+        50,
+        description="Minimum number of calls to keep in reserve per token before proactive throttling kicks in.",
+        title="Budget Minimum Reserve",
+    )
+    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
+
+
 class Action(Enum):
     SUCCESS = "SUCCESS"
     FAIL = "FAIL"
@@ -2566,6 +2680,7 @@ class SelectiveAuthenticator(BaseModel):
             LegacySessionTokenAuthenticator,
             CustomAuthenticator,
             NoAuth,
+            RateLimitedMultipleTokenAuthenticator,
         ],
     ] = Field(
         ...,
@@ -2795,6 +2910,7 @@ class HttpRequester(BaseModelWithDeprecations):
             CustomAuthenticator,
             NoAuth,
             LegacySessionTokenAuthenticator,
+            RateLimitedMultipleTokenAuthenticator,
         ]
     ] = Field(
         None,

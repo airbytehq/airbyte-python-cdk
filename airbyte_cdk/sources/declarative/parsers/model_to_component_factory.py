@@ -65,6 +65,10 @@ from airbyte_cdk.sources.declarative.auth.jwt import JwtAlgorithm
 from airbyte_cdk.sources.declarative.auth.oauth import (
     DeclarativeSingleUseRefreshTokenOauth2Authenticator,
 )
+from airbyte_cdk.sources.declarative.auth.rate_limited_multiple_token import (
+    RateLimitedMultipleTokenAuthenticator,
+    TokenQuota,
+)
 from airbyte_cdk.sources.declarative.auth.selective_authenticator import SelectiveAuthenticator
 from airbyte_cdk.sources.declarative.auth.token import (
     ApiKeyAuthenticator,
@@ -404,7 +408,13 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
     QueryProperties as QueryPropertiesModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    QuotaStatusSource as QuotaStatusSourceModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     Rate as RateModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    RateLimitedMultipleTokenAuthenticator as RateLimitedMultipleTokenAuthenticatorModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     RecordExpander as RecordExpanderModel,
@@ -454,6 +464,9 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     SubstreamPartitionRouter as SubstreamPartitionRouterModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    TokenQuota as TokenQuotaModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     TypesMap as TypesMapModel,
@@ -715,6 +728,8 @@ class ModelToComponentFactory:
         )
         self._connector_state_manager = connector_state_manager or ConnectorStateManager()
         self._api_budget: Optional[Union[APIBudget]] = api_budget
+        # Shared instances so all streams see the same token quota counters (like api_budget)
+        self._rate_limited_authenticators: Dict[str, RateLimitedMultipleTokenAuthenticator] = {}
         self._job_tracker: JobTracker = JobTracker(max_concurrent_async_job_count or 1)
         # placeholder for deprecation warnings
         self._collected_deprecation_logs: List[ConnectorBuilderLogMessage] = []
@@ -826,6 +841,7 @@ class ModelToComponentFactory:
             UnlimitedCallRatePolicyModel: self.create_unlimited_call_rate_policy,
             RateModel: self.create_rate,
             HttpRequestRegexMatcherModel: self.create_http_request_matcher,
+            RateLimitedMultipleTokenAuthenticatorModel: self.create_rate_limited_multiple_token_authenticator,
             GroupingPartitionRouterModel: self.create_grouping_partition_router,
         }
 
@@ -4497,6 +4513,75 @@ class ModelToComponentFactory:
             headers=model.headers,
             weight=weight,
         )
+
+    def create_rate_limited_multiple_token_authenticator(
+        self,
+        model: RateLimitedMultipleTokenAuthenticatorModel,
+        config: Config,
+        **kwargs: Any,
+    ) -> RateLimitedMultipleTokenAuthenticator:
+        # Reuse the same instance for identical definitions so that all streams share
+        # the same token quota counters (similar to how api_budget is shared).
+        cache_key = model.json(sort_keys=True)
+        if cache_key in self._rate_limited_authenticators:
+            return self._rate_limited_authenticators[cache_key]
+
+        if isinstance(model.tokens, str):
+            tokens_value = InterpolatedString.create(model.tokens, parameters={}).eval(config)
+            delimiter = model.token_delimiter or ","
+            tokens = [
+                token.strip() for token in str(tokens_value).split(delimiter) if token.strip()
+            ]
+        else:
+            tokens = [
+                str(InterpolatedString.create(token, parameters={}).eval(config))
+                for token in model.tokens
+            ]
+
+        quotas = [
+            TokenQuota(
+                name=quota_model.name,
+                remaining_path=quota_model.remaining_path,
+                reset_path=quota_model.reset_path,
+                limit_path=quota_model.limit_path,
+                matchers=[
+                    self.create_http_request_matcher(matcher_model, config)
+                    for matcher_model in quota_model.matchers or []
+                ],
+            )
+            for quota_model in model.quotas
+        ]
+
+        quota_status_url = InterpolatedString.create(
+            model.quota_status_source.url, parameters={}
+        ).eval(config)
+        quota_status_headers = {
+            key: str(InterpolatedString.create(value, parameters={}).eval(config))
+            for key, value in (model.quota_status_source.request_headers or {}).items()
+        }
+
+        authenticator = RateLimitedMultipleTokenAuthenticator(
+            tokens=tokens,
+            quotas=quotas,
+            quota_status_url=quota_status_url,
+            quota_status_http_method=(
+                model.quota_status_source.http_method.value
+                if model.quota_status_source.http_method
+                else "GET"
+            ),
+            quota_status_headers=quota_status_headers,
+            auth_method=model.auth_method or "Bearer",
+            header=model.header or "Authorization",
+            max_wait_time=parse_duration(model.max_wait_time or "PT2H"),
+            budget_reserve_fraction=(
+                model.budget_reserve_fraction if model.budget_reserve_fraction is not None else 0.1
+            ),
+            budget_min_reserve=(
+                model.budget_min_reserve if model.budget_min_reserve is not None else 50
+            ),
+        )
+        self._rate_limited_authenticators[cache_key] = authenticator
+        return authenticator
 
     def set_api_budget(self, component_definition: ComponentDefinition, config: Config) -> None:
         self._api_budget = self.create_component(
