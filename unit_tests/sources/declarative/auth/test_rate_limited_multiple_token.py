@@ -136,6 +136,11 @@ def test_waits_and_reseeds_when_all_tokens_exhausted(requests_mock):
     assert mock_sleep.called
     assert request.headers["Authorization"] == "token token_1"
     assert authenticator._states["token_1"]["rest"].remaining == 4999
+    # the exhaustion wait is floored so stale reset timestamps can't busy-loop the quota endpoint
+    assert (
+        mock_sleep.call_args_list[0][0][0]
+        >= RateLimitedMultipleTokenAuthenticator.MIN_EXHAUSTION_WAIT
+    )
 
 
 def test_budget_throttling_delay_injected_when_all_tokens_below_reserve(requests_mock):
@@ -176,6 +181,34 @@ def test_thread_safety_no_lost_decrements(requests_mock):
         thread.join()
 
     assert authenticator._states["token_1"]["rest"].remaining == 5000 - calls
+
+
+def test_thread_safety_header_token_matches_decremented_token(requests_mock):
+    """Under concurrent rotation, each request must be signed with the token whose counter was decremented."""
+    seed = _quota_status_body()
+    seed["resources"]["core"]["remaining"] = 100
+    requests_mock.get(QUOTA_STATUS_URL, json=seed)
+    authenticator = _authenticator(
+        tokens=("token_1", "token_2"), budget_reserve_fraction=0, budget_min_reserve=0
+    )
+    calls = 150  # more than one token's quota, forcing rotation mid-flight
+    signed_tokens = []
+    signed_lock = threading.Lock()
+
+    def make_call():
+        request = authenticator(_prepared_request())
+        with signed_lock:
+            signed_tokens.append(request.headers["Authorization"].split()[1])
+
+    threads = [threading.Thread(target=make_call) for _ in range(calls)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+    for token in ("token_1", "token_2"):
+        used = signed_tokens.count(token)
+        assert authenticator._states[token]["rest"].remaining == 100 - used
 
 
 def test_missing_path_in_quota_status_response_raises_config_error(requests_mock):

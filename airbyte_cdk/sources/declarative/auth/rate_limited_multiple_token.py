@@ -65,6 +65,7 @@ class RateLimitedMultipleTokenAuthenticator(DeclarativeAuthenticator):
 
     HEARTBEAT_INTERVAL = 60.0  # Log every 60s during exhaustion wait
     MAX_BUDGET_DELAY = 10.0  # Cap for the per-request proactive throttling delay
+    MIN_EXHAUSTION_WAIT = 5.0  # Floor for the exhaustion wait, so stale reset timestamps can't cause a refresh busy-loop
 
     def __init__(
         self,
@@ -126,14 +127,15 @@ class RateLimitedMultipleTokenAuthenticator(DeclarativeAuthenticator):
 
     @property
     def token(self) -> str:
-        return f"{self._auth_method} {self._active_token}".strip()
+        with self._lock:
+            return f"{self._auth_method} {self._active_token}".strip()
 
     def __call__(self, request: requests.PreparedRequest) -> Any:
         """Attach the HTTP headers required to authenticate on the HTTP request"""
         self._ensure_initialized()
         quota = self._match_quota(request)
-        self._acquire_call(quota)
-        request.headers.update(self.get_auth_header())
+        token = self._acquire_call(quota)
+        request.headers[self._header] = f"{self._auth_method} {token}".strip()
         return request
 
     def _ensure_initialized(self) -> None:
@@ -152,14 +154,22 @@ class RateLimitedMultipleTokenAuthenticator(DeclarativeAuthenticator):
                     return quota
             elif default_quota is None:
                 default_quota = quota
+        if default_quota is None:
+            self._logger.debug(
+                "Request %s did not match any quota pool; falling back to '%s'. Consider defining a matcher-less default pool.",
+                request.url,
+                self._quotas[0].name,
+            )
         return default_quota or self._quotas[0]
 
-    def _acquire_call(self, quota: TokenQuota) -> None:
+    def _acquire_call(self, quota: TokenQuota) -> str:
+        """Reserve one call from the matched pool and return the token it was charged to."""
         while True:
             budget_delay: Optional[float] = None
             wait_for_reset: Optional[float] = None
             with self._lock:
-                state = self._states[self._active_token][quota.name]
+                token = self._active_token
+                state = self._states[token][quota.name]
                 if state.remaining > 0:
                     budget_delay = self._compute_budget_delay(quota)
                     state.remaining -= 1
@@ -176,7 +186,7 @@ class RateLimitedMultipleTokenAuthenticator(DeclarativeAuthenticator):
                             internal_message=f"Rate limits for all tokens (quota: {quota.name}) were reached and the next reset exceeds max_wait_time",
                             message="Rate limit is exceeded for all provided tokens.",
                         )
-                    wait_for_reset = max(min_time_to_wait, 0)
+                    wait_for_reset = max(min_time_to_wait, self.MIN_EXHAUSTION_WAIT)
                 else:
                     self._active_token = next(self._tokens_iter)
                     continue
@@ -200,7 +210,7 @@ class RateLimitedMultipleTokenAuthenticator(DeclarativeAuthenticator):
                     )
                     self._budget_logged = True
                 time.sleep(budget_delay)
-            return
+            return token
 
     def _compute_budget_delay(self, quota: TokenQuota) -> Optional[float]:
         """Compute the proactive throttling delay. Must be called while holding the lock."""
