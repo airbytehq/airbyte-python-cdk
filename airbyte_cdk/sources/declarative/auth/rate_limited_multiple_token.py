@@ -186,7 +186,10 @@ class RateLimitedMultipleTokenAuthenticator(DeclarativeAuthenticator):
                             internal_message=f"Rate limits for all tokens (quota: {quota.name}) were reached and the next reset exceeds max_wait_time",
                             message="Rate limit is exceeded for all provided tokens.",
                         )
-                    wait_for_reset = max(min_time_to_wait, self.MIN_EXHAUSTION_WAIT)
+                    wait_for_reset = min(
+                        max(min_time_to_wait, self.MIN_EXHAUSTION_WAIT),
+                        self._max_wait_time.total_seconds(),
+                    )
                 else:
                     self._active_token = next(self._tokens_iter)
                     continue
