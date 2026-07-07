@@ -1056,6 +1056,223 @@ def test_incremental_parent_state_no_incremental_dependency(
     )
 
 
+# Fresh initial sync of the ``post_comment_votes`` global-cursor substream whose parent
+# (``post_comments``) has no ``incremental_dependency`` -- i.e. the ``bank_accounts`` shape
+# from OC-12977. Every child request filters on the config ``start_date`` because the global
+# cursor is empty/unadvanced during the walk, so the exact same URLs answer both the initial
+# read and any resume-from-interim-checkpoint read.
+GLOBAL_CURSOR_RESUME_MOCK_REQUESTS = [
+    # Posts page 1
+    (
+        f"https://api.example.com/community/posts?per_page=100&start_time={START_DATE}",
+        {
+            "posts": [
+                {"id": 1, "updated_at": POST_1_UPDATED_AT},
+                {"id": 2, "updated_at": POST_2_UPDATED_AT},
+            ],
+            "next_page": f"https://api.example.com/community/posts?per_page=100&start_time={START_DATE}&page=2",
+        },
+    ),
+    # Posts page 2
+    (
+        f"https://api.example.com/community/posts?per_page=100&start_time={START_DATE}&page=2",
+        {"posts": [{"id": 3, "updated_at": POST_3_UPDATED_AT}]},
+    ),
+    # Comments for post 1 page 1
+    (
+        "https://api.example.com/community/posts/1/comments?per_page=100",
+        {
+            "comments": [
+                {"id": 9, "post_id": 1, "updated_at": COMMENT_9_OLDEST},
+                {"id": 10, "post_id": 1, "updated_at": COMMENT_10_UPDATED_AT},
+                {"id": 11, "post_id": 1, "updated_at": COMMENT_11_UPDATED_AT},
+            ],
+            "next_page": "https://api.example.com/community/posts/1/comments?per_page=100&page=2",
+        },
+    ),
+    # Comments for post 1 page 2
+    (
+        "https://api.example.com/community/posts/1/comments?per_page=100&page=2",
+        {"comments": [{"id": 12, "post_id": 1, "updated_at": COMMENT_12_UPDATED_AT}]},
+    ),
+    # Votes for comment 10 page 1
+    (
+        f"https://api.example.com/community/posts/1/comments/10/votes?per_page=100&start_time={START_DATE}",
+        {
+            "votes": [{"id": 100, "comment_id": 10, "created_at": VOTE_100_CREATED_AT}],
+            "next_page": f"https://api.example.com/community/posts/1/comments/10/votes?per_page=100&page=2&start_time={START_DATE}",
+        },
+    ),
+    # Votes for comment 10 page 2
+    (
+        f"https://api.example.com/community/posts/1/comments/10/votes?per_page=100&page=2&start_time={START_DATE}",
+        {"votes": [{"id": 101, "comment_id": 10, "created_at": VOTE_101_CREATED_AT}]},
+    ),
+    # Votes for comment 11
+    (
+        f"https://api.example.com/community/posts/1/comments/11/votes?per_page=100&start_time={START_DATE}",
+        {"votes": [{"id": 111, "comment_id": 11, "created_at": VOTE_111_CREATED_AT}]},
+    ),
+    # Votes for comment 12 (empty child partition)
+    (
+        f"https://api.example.com/community/posts/1/comments/12/votes?per_page=100&start_time={START_DATE}",
+        {"votes": []},
+    ),
+    # Comments for post 2 page 1
+    (
+        "https://api.example.com/community/posts/2/comments?per_page=100",
+        {
+            "comments": [{"id": 20, "post_id": 2, "updated_at": COMMENT_20_UPDATED_AT}],
+            "next_page": "https://api.example.com/community/posts/2/comments?per_page=100&page=2",
+        },
+    ),
+    # Comments for post 2 page 2
+    (
+        "https://api.example.com/community/posts/2/comments?per_page=100&page=2",
+        {"comments": [{"id": 21, "post_id": 2, "updated_at": COMMENT_21_UPDATED_AT}]},
+    ),
+    # Votes for comment 20
+    (
+        f"https://api.example.com/community/posts/2/comments/20/votes?per_page=100&start_time={START_DATE}",
+        {"votes": [{"id": 200, "comment_id": 20, "created_at": VOTE_200_CREATED_AT}]},
+    ),
+    # Votes for comment 21
+    (
+        f"https://api.example.com/community/posts/2/comments/21/votes?per_page=100&start_time={START_DATE}",
+        {"votes": [{"id": 210, "comment_id": 21, "created_at": VOTE_210_CREATED_AT}]},
+    ),
+    # Comments for post 3
+    (
+        "https://api.example.com/community/posts/3/comments?per_page=100",
+        {"comments": [{"id": 30, "post_id": 3, "updated_at": COMMENT_30_UPDATED_AT}]},
+    ),
+    # Votes for comment 30
+    (
+        f"https://api.example.com/community/posts/3/comments/30/votes?per_page=100&start_time={START_DATE}",
+        {"votes": [{"id": 300, "comment_id": 30, "created_at": VOTE_300_CREATED_AT_TIMESTAMP}]},
+    ),
+]
+
+GLOBAL_CURSOR_RESUME_EXPECTED_RECORDS = [
+    {
+        "comment_id": 10,
+        "comment_updated_at": COMMENT_10_UPDATED_AT,
+        "created_at": VOTE_100_CREATED_AT,
+        "id": 100,
+    },
+    {
+        "comment_id": 10,
+        "comment_updated_at": COMMENT_10_UPDATED_AT,
+        "created_at": VOTE_101_CREATED_AT,
+        "id": 101,
+    },
+    {
+        "comment_id": 11,
+        "comment_updated_at": COMMENT_11_UPDATED_AT,
+        "created_at": VOTE_111_CREATED_AT,
+        "id": 111,
+    },
+    {
+        "comment_id": 20,
+        "comment_updated_at": COMMENT_20_UPDATED_AT,
+        "created_at": VOTE_200_CREATED_AT,
+        "id": 200,
+    },
+    {
+        "comment_id": 21,
+        "comment_updated_at": COMMENT_21_UPDATED_AT,
+        "created_at": VOTE_210_CREATED_AT,
+        "id": 210,
+    },
+    {
+        "comment_id": 30,
+        "comment_updated_at": COMMENT_30_UPDATED_AT,
+        "created_at": str(VOTE_300_CREATED_AT_TIMESTAMP),
+        "id": 300,
+    },
+]
+
+
+def test_global_cursor_substream_resume_after_interruption_skips_no_records():
+    """Interrupt a global-cursor substream mid-walk, resume from every interim checkpoint, and prove no records are skipped.
+
+    Regression test for OC-12977. A ``global_substream_cursor`` substream whose parent has no
+    ``incremental_dependency`` (empty parent state -- the ``bank_accounts`` shape) now emits its
+    throttled checkpoint STATE during the walk because the empty-parent guard was removed. This
+    test proves those interim checkpoints are *safe to resume from*: for each interim STATE the
+    cursor emits, we simulate the source being killed right after it (keeping only the records
+    emitted before that STATE), then start a fresh read seeded with that STATE and assert the
+    union of pre-kill records and resume records covers the full expected set with nothing
+    skipped. Because the interim global cursor is inert until the sync finishes, resuming
+    re-reads rather than skips -- which is exactly the no-data-loss guarantee we want.
+    """
+    # Disable the 600s throttle so an interim checkpoint STATE is emitted at every close_partition,
+    # giving us many mid-walk "kill" points to resume from.
+    with patch.object(
+        ConcurrentPerPartitionCursor, "_throttle_state_message", return_value=9999999.0
+    ):
+        with requests_mock.Mocker() as m:
+            for url, response in GLOBAL_CURSOR_RESUME_MOCK_REQUESTS:
+                m.get(url, json=response)
+
+            # Fresh initial sync (no incoming state), interrupted implicitly by inspecting
+            # every interim checkpoint it emits.
+            output = _run_read(
+                SUBSTREAM_MANIFEST_WITH_GLOBAL_CURSOR_AND_NO_DEPENDENCY,
+                CONFIG,
+                STREAM_NAME,
+                None,
+            )
+
+            # Sanity: the uninterrupted run yields the full expected record set.
+            assert sorted([r.record.data for r in output.records], key=lambda x: x["id"]) == sorted(
+                GLOBAL_CURSOR_RESUME_EXPECTED_RECORDS, key=lambda x: x["id"]
+            )
+
+            # The fix must produce at least one interim checkpoint STATE during the walk
+            # (before the final state) -- otherwise there is nothing to resume from.
+            assert len(output.state_messages) >= 2, (
+                "Expected at least one interim checkpoint STATE plus the final STATE; "
+                f"got {len(output.state_messages)} state message(s)."
+            )
+
+            # Map each interim STATE to the records emitted before it (what the destination
+            # would have committed had the source been killed right after that checkpoint).
+            cumulative_records = []
+            interim_checkpoints = []
+            for message in output.records_and_state_messages:
+                if message.type.value == "RECORD":
+                    cumulative_records.append(message.record.data)
+                elif message.type.value == "STATE":
+                    interim_checkpoints.append((message.state, cumulative_records.copy()))
+
+            expected_deduped = list(
+                {orjson.dumps(r): r for r in GLOBAL_CURSOR_RESUME_EXPECTED_RECORDS}.values()
+            )
+
+            # Resume from every checkpoint except the final one (the final state is the
+            # completed sync, not an interruption).
+            for state, records_before_kill in interim_checkpoints[:-1]:
+                resume_output = _run_read(
+                    SUBSTREAM_MANIFEST_WITH_GLOBAL_CURSOR_AND_NO_DEPENDENCY,
+                    CONFIG,
+                    STREAM_NAME,
+                    [state],
+                )
+                records_after_resume = [r.record.data for r in resume_output.records]
+
+                combined = records_before_kill + records_after_resume
+                combined_deduped = list({orjson.dumps(r): r for r in combined}.values())
+
+                assert sorted(combined_deduped, key=lambda x: x["id"]) == sorted(
+                    expected_deduped, key=lambda x: x["id"]
+                ), (
+                    "Records were skipped when resuming from interim checkpoint "
+                    f"{state.state.stream.stream_state.__dict__}. "
+                    f"Expected {expected_deduped}, got {combined_deduped}."
+                )
+
+
 def run_incremental_parent_state_test(
     manifest,
     mock_requests,
