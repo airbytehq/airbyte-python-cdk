@@ -3,6 +3,7 @@
 #
 
 from dataclasses import InitVar, dataclass, field
+from enum import Enum
 from typing import Any, List, Mapping, MutableMapping, Optional
 
 from airbyte_cdk.models import (
@@ -54,7 +55,8 @@ class Spec:
         if self.documentation_url:
             obj["documentationUrl"] = self.documentation_url
         if self.advanced_auth:
-            self.advanced_auth.auth_flow_type = self.advanced_auth.auth_flow_type.value  # type: ignore # We know this is always assigned to an AuthFlow which has the auth_flow_type field
+            if isinstance(self.advanced_auth.auth_flow_type, Enum):
+                self.advanced_auth.auth_flow_type = self.advanced_auth.auth_flow_type.value  # type: ignore # We know this is always assigned to an AuthFlow which has the auth_flow_type field
             # Convert scopes_join_strategy enum to its string value (same pattern as auth_flow_type above)
             oauth_spec = getattr(self.advanced_auth, "oauth_config_specification", None)
             if oauth_spec:
@@ -62,7 +64,7 @@ class Spec:
                 if (
                     oauth_input
                     and hasattr(oauth_input, "scopes_join_strategy")
-                    and oauth_input.scopes_join_strategy is not None
+                    and isinstance(oauth_input.scopes_join_strategy, Enum)
                 ):
                     oauth_input.scopes_join_strategy = oauth_input.scopes_join_strategy.value  # type: ignore
             # Map CDK AuthFlow model to protocol AdvancedAuth model
