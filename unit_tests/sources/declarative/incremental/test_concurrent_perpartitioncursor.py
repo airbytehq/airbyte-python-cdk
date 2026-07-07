@@ -1021,7 +1021,11 @@ CONFIG = {
                 "parent_state": {},
                 "state": {"created_at": VOTE_100_CREATED_AT},
             },
-            1,
+            # Two state messages: one interim heartbeat-keepalive checkpoint emitted
+            # during the walk (previously suppressed by the empty-parent guard) plus
+            # the final state. The interim checkpoint carries the same inert global
+            # cursor, so the final state is unchanged.
+            2,
         ),
     ],
 )
@@ -3607,6 +3611,47 @@ def test_state_throttling(mocker):
     cursor._emit_state_message()
     mock_connector_manager.update_state_for_stream.assert_called_once()
     mock_repo.emit_message.assert_called_once()
+
+
+@pytest.mark.parametrize(
+    "parent_state",
+    [
+        pytest.param({}, id="empty_parent_state"),
+        pytest.param({"parent": {"updated_at": "2024-01-01"}}, id="non_empty_parent_state"),
+    ],
+)
+def test_global_cursor_emits_interim_state_even_when_parent_state_empty(mocker, parent_state):
+    """
+    Regression test for OC-12977: a global_substream_cursor stream walking a large
+    parent with mostly-empty children must still emit its throttled checkpoint STATE
+    to keep the Airbyte source heartbeat alive, even when the parent state is empty
+    (no ``incremental_dependency``). The previous empty-parent guard suppressed this
+    interim emission, causing >24h silence and a heartbeat timeout.
+    """
+    cursor = ConcurrentPerPartitionCursor(
+        cursor_factory=MagicMock(),
+        partition_router=MagicMock(),
+        stream_name="test_stream",
+        stream_namespace=None,
+        stream_state={},
+        message_repository=MagicMock(),
+        connector_state_manager=MagicMock(),
+        connector_state_converter=MagicMock(),
+        cursor_field=MagicMock(),
+    )
+
+    cursor._use_global_cursor = True
+    cursor._parent_state = parent_state
+    cursor._last_emission_time = 0
+
+    mock_time = mocker.patch("time.time")
+    # Exceed the 600s throttle so emission is not throttled.
+    mock_time.return_value = 700
+
+    cursor._emit_state_message()
+
+    cursor._connector_state_manager.update_state_for_stream.assert_called_once()
+    cursor._message_repository.emit_message.assert_called_once()
 
 
 def test_given_no_partitions_processed_when_close_partition_then_no_state_update():
