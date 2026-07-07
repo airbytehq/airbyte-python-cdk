@@ -389,9 +389,12 @@ definitions:
         description: ISO 8601 duration. When all tokens are exhausted, the maximum time to wait for a quota reset before raising a transient error.
         type: string
         default: "PT2H"
+        interpolation_context:
+          - config
         examples:
           - "PT2H"
           - "PT30M"
+          - "PT{{ config.get('max_waiting_time', 120) }}M"
       budget_reserve_fraction:
         title: Budget Reserve Fraction
         description: Fraction of each token's quota to keep in reserve. When every token drops below its reserve, requests are proactively throttled to spread the remaining calls until the quota reset. Set to 0 (along with `budget_min_reserve`) to disable throttling.

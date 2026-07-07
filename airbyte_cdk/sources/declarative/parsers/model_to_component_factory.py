@@ -4566,7 +4566,13 @@ class ModelToComponentFactory:
             quota_status_headers=quota_status_headers,
             auth_method=model.auth_method or "Bearer",
             header=model.header or "Authorization",
-            max_wait_time=parse_duration(model.max_wait_time or "PT2H"),
+            max_wait_time=parse_duration(
+                str(
+                    InterpolatedString.create(model.max_wait_time or "PT2H", parameters={}).eval(
+                        config
+                    )
+                )
+            ),
             budget_reserve_fraction=(
                 model.budget_reserve_fraction if model.budget_reserve_fraction is not None else 0.1
             ),

@@ -296,3 +296,15 @@ def test_factory_returns_shared_instance_for_identical_definitions():
     )
 
     assert first is second
+
+
+def test_factory_interpolates_max_wait_time():
+    factory = ModelToComponentFactory()
+    model = _model("{{ config['pat'] }}")
+    model.max_wait_time = "PT{{ config.get('max_waiting_time', 120) }}M"
+
+    authenticator = factory.create_rate_limited_multiple_token_authenticator(
+        model, {"pat": "token_1", "max_waiting_time": 30}
+    )
+
+    assert authenticator._max_wait_time == timedelta(minutes=30)
