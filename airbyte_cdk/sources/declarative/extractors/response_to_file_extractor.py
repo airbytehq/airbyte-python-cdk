@@ -144,7 +144,6 @@ class ResponseToFileExtractor(RecordExtractor):
                 # When preserving NA values, disable pandas' default NA parsing so strings like "NA"/"N/A" are kept as-is,
                 # and explicitly map empty cells to None. Otherwise, keep the historical behavior where pandas converts its
                 # default NA tokens (including empty cells) to NaN, which we then map to None.
-                read_kwargs = {"keep_default_na": False} if self.preserve_na_values else {}
                 na_replacements = {nan: None, "": None} if self.preserve_na_values else {nan: None}
                 chunks = pd.read_csv(
                     data,
@@ -152,7 +151,7 @@ class ResponseToFileExtractor(RecordExtractor):
                     iterator=True,
                     dialect="unix",
                     dtype=object,
-                    **read_kwargs,
+                    keep_default_na=not self.preserve_na_values,
                 )
                 for chunk in chunks:
                     chunk = chunk.replace(na_replacements).to_dict(orient="records")
