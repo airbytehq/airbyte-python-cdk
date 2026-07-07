@@ -171,8 +171,8 @@ class RateLimitedMultipleTokenAuthenticator(DeclarativeAuthenticator):
                 token = self._active_token
                 state = self._states[token][quota.name]
                 if state.remaining > 0:
-                    budget_delay = self._compute_budget_delay(quota)
                     state.remaining -= 1
+                    budget_delay = self._compute_budget_delay(quota)
                 elif all(self._states[token][quota.name].remaining <= 0 for token in self._tokens):
                     min_time_to_wait = min(
                         (
