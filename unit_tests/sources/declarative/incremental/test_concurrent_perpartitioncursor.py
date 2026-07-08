@@ -325,6 +325,29 @@ SUBSTREAM_MANIFEST_WITH_GLOBAL_CURSOR_AND_NO_DEPENDENCY["definitions"]["cursor_i
     "global_substream_cursor"
 ] = True
 
+# Single-worker (serial) variants used by the resume/no-op tests below. Pinning
+# `default_concurrency` to 1 makes the RECORD<->STATE interleaving deterministic so the resume
+# tests can reconstruct "records committed before the kill" without becoming a concurrent-ordering
+# flake. It is hardcoded rather than driven by `config['num_workers']` because the test spec sets
+# `additionalProperties: False` and rejects an extra `num_workers` config field.
+SUBSTREAM_MANIFEST_GLOBAL_CURSOR_NO_DEPENDENCY_SERIAL = deepcopy(
+    SUBSTREAM_MANIFEST_WITH_GLOBAL_CURSOR_AND_NO_DEPENDENCY
+)
+SUBSTREAM_MANIFEST_GLOBAL_CURSOR_NO_DEPENDENCY_SERIAL["concurrency_level"][
+    "default_concurrency"
+] = 1
+
+# Same global cursor, but the parent keeps `incremental_dependency: true` (the
+# `customer_balance_transactions` shape) so `_parent_state` is non-empty during the walk and the
+# empty-parent guard never fired -- used to prove the guard removal is a no-op there.
+SUBSTREAM_MANIFEST_GLOBAL_CURSOR_WITH_DEPENDENCY_SERIAL = deepcopy(SUBSTREAM_MANIFEST)
+SUBSTREAM_MANIFEST_GLOBAL_CURSOR_WITH_DEPENDENCY_SERIAL["definitions"]["cursor_incremental_sync"][
+    "global_substream_cursor"
+] = True
+SUBSTREAM_MANIFEST_GLOBAL_CURSOR_WITH_DEPENDENCY_SERIAL["concurrency_level"][
+    "default_concurrency"
+] = 1
+
 
 import orjson
 import requests_mock
@@ -1195,6 +1218,190 @@ GLOBAL_CURSOR_RESUME_EXPECTED_RECORDS = [
 ]
 
 
+# Data-last variant of the resume fixture that mirrors the real OC-12977 failure more faithfully:
+# a run of empty parents (comments with no votes) *precedes* the single data-bearing parent
+# (comment 105). Interim checkpoint STATE is therefore emitted repeatedly during the empty stretch,
+# before any record exists -- exactly the checkpoints we most need to prove are safe to resume from.
+GLOBAL_CURSOR_DATA_LAST_MOCK_REQUESTS = [
+    (
+        f"https://api.example.com/community/posts?per_page=100&start_time={START_DATE}",
+        {"posts": [{"id": 1, "updated_at": POST_1_UPDATED_AT}]},
+    ),
+    (
+        "https://api.example.com/community/posts/1/comments?per_page=100",
+        {
+            "comments": [
+                {"id": 101, "post_id": 1, "updated_at": "2024-01-20T00:00:00Z"},
+                {"id": 102, "post_id": 1, "updated_at": "2024-01-19T00:00:00Z"},
+                {"id": 103, "post_id": 1, "updated_at": "2024-01-18T00:00:00Z"},
+                {"id": 104, "post_id": 1, "updated_at": "2024-01-17T00:00:00Z"},
+                {"id": 105, "post_id": 1, "updated_at": "2024-01-25T00:00:00Z"},
+            ]
+        },
+    ),
+    # The first four parents are empty (the long silent stretch).
+    (
+        f"https://api.example.com/community/posts/1/comments/101/votes?per_page=100&start_time={START_DATE}",
+        {"votes": []},
+    ),
+    (
+        f"https://api.example.com/community/posts/1/comments/102/votes?per_page=100&start_time={START_DATE}",
+        {"votes": []},
+    ),
+    (
+        f"https://api.example.com/community/posts/1/comments/103/votes?per_page=100&start_time={START_DATE}",
+        {"votes": []},
+    ),
+    (
+        f"https://api.example.com/community/posts/1/comments/104/votes?per_page=100&start_time={START_DATE}",
+        {"votes": []},
+    ),
+    # The data-bearing parent comes LAST.
+    (
+        f"https://api.example.com/community/posts/1/comments/105/votes?per_page=100&start_time={START_DATE}",
+        {
+            "votes": [
+                {"id": 500, "comment_id": 105, "created_at": "2024-01-15T00:00:00Z"},
+                {"id": 501, "comment_id": 105, "created_at": "2024-01-16T00:00:00Z"},
+            ]
+        },
+    ),
+]
+
+GLOBAL_CURSOR_DATA_LAST_EXPECTED_RECORDS = [
+    {
+        "comment_id": 105,
+        "comment_updated_at": "2024-01-25T00:00:00Z",
+        "created_at": "2024-01-15T00:00:00Z",
+        "id": 500,
+    },
+    {
+        "comment_id": 105,
+        "comment_updated_at": "2024-01-25T00:00:00Z",
+        "created_at": "2024-01-16T00:00:00Z",
+        "id": 501,
+    },
+]
+
+
+def _record_state_sequence(output: EntrypointOutput) -> List[tuple]:
+    """Return the ordered `(kind, record-id)` sequence of RECORD/STATE messages.
+
+    Used to assert the RECORD<->STATE interleaving is deterministic across repeated runs so the
+    resume reconstruction below cannot become a concurrent-ordering flake.
+    """
+    sequence: List[tuple] = []
+    for message in output.records_and_state_messages:
+        if message.type.value == "RECORD":
+            sequence.append(("RECORD", message.record.data["id"]))
+        elif message.type.value == "STATE":
+            sequence.append(("STATE", None))
+    return sequence
+
+
+def _assert_resume_from_every_interim_checkpoint_skips_no_records(
+    manifest: Mapping[str, Any],
+    mock_requests: List[tuple],
+    expected_records: List[Mapping[str, Any]],
+) -> None:
+    """Prove every interim checkpoint of a global-cursor substream is safe to resume from.
+
+    Runs `manifest` to completion with the 600s throttle disabled (so an interim checkpoint STATE
+    is emitted at every `close_partition`), then for each interim STATE simulates a kill right after
+    it -- keeping only the records emitted before that STATE -- and a fresh resume seeded with it.
+    Asserts:
+
+    1. the RECORD<->STATE interleaving is deterministic across repeated runs (the caller pins
+       `default_concurrency` to 1, so this cannot become a concurrent-ordering flake);
+    2. the union of pre-kill and resumed records equals the full expected set with nothing skipped;
+       and
+    3. resume meaningfully contributes the tail -- for at least one checkpoint that precedes some
+       data, the resumed read returns records not already emitted before the kill, so the test
+       cannot pass trivially if all records preceded the first checkpoint.
+    """
+    with patch.object(
+        ConcurrentPerPartitionCursor, "_throttle_state_message", return_value=9999999.0
+    ):
+        with requests_mock.Mocker() as m:
+            for url, response in mock_requests:
+                m.get(url, json=response)
+
+            # Fresh initial sync (no incoming state), interrupted implicitly by inspecting
+            # every interim checkpoint it emits.
+            output = _run_read(manifest, CONFIG, STREAM_NAME, None)
+
+            # (1) Determinism: the same fixture must produce byte-identical record/state
+            # interleaving on every run, otherwise reconstructing "records committed before the
+            # kill" would be flaky under the concurrent engine.
+            rerun = _run_read(manifest, CONFIG, STREAM_NAME, None)
+            assert _record_state_sequence(output) == _record_state_sequence(rerun), (
+                "RECORD/STATE interleaving is not deterministic across runs; the resume test would "
+                "be a concurrent-ordering flake."
+            )
+            assert [r.record.data for r in output.records] == [r.record.data for r in rerun.records]
+
+            # Sanity: the uninterrupted run yields the full expected record set.
+            assert sorted([r.record.data for r in output.records], key=lambda x: x["id"]) == sorted(
+                expected_records, key=lambda x: x["id"]
+            )
+
+            # The fix must produce at least one interim checkpoint STATE during the walk
+            # (before the final state) -- otherwise there is nothing to resume from.
+            assert len(output.state_messages) >= 2, (
+                "Expected at least one interim checkpoint STATE plus the final STATE; "
+                f"got {len(output.state_messages)} state message(s)."
+            )
+
+            # Map each interim STATE to the records emitted before it (what the destination
+            # would have committed had the source been killed right after that checkpoint).
+            cumulative_records: List[Mapping[str, Any]] = []
+            interim_checkpoints = []
+            for message in output.records_and_state_messages:
+                if message.type.value == "RECORD":
+                    cumulative_records.append(message.record.data)
+                elif message.type.value == "STATE":
+                    interim_checkpoints.append((message.state, cumulative_records.copy()))
+
+            expected_deduped = list({orjson.dumps(r): r for r in expected_records}.values())
+
+            # Resume from every checkpoint except the final one (the final state is the
+            # completed sync, not an interruption).
+            resume_contributed_new_tail = False
+            for state, records_before_kill in interim_checkpoints[:-1]:
+                resume_output = _run_read(manifest, CONFIG, STREAM_NAME, [state])
+                records_after_resume = [r.record.data for r in resume_output.records]
+
+                combined = records_before_kill + records_after_resume
+                combined_deduped = list({orjson.dumps(r): r for r in combined}.values())
+
+                assert sorted(combined_deduped, key=lambda x: x["id"]) == sorted(
+                    expected_deduped, key=lambda x: x["id"]
+                ), (
+                    "Records were skipped when resuming from interim checkpoint "
+                    f"{state.state.stream.stream_state.__dict__}. "
+                    f"Expected {expected_deduped}, got {combined_deduped}."
+                )
+
+                # (3) The resume must actually supply records that were not already committed
+                # before the kill, for at least one checkpoint that precedes some data.
+                before_keys = {orjson.dumps(r) for r in records_before_kill}
+                new_from_resume = [
+                    r for r in records_after_resume if orjson.dumps(r) not in before_keys
+                ]
+                if (
+                    len(records_before_kill) < len(expected_deduped)
+                    and records_after_resume
+                    and new_from_resume
+                ):
+                    resume_contributed_new_tail = True
+
+            assert resume_contributed_new_tail, (
+                "No interim checkpoint's resume contributed records beyond those already emitted "
+                "before the kill; the test could pass trivially if all records preceded the first "
+                "checkpoint."
+            )
+
+
 def test_global_cursor_substream_resume_after_interruption_skips_no_records():
     """Interrupt a global-cursor substream mid-walk, resume from every interim checkpoint, and prove no records are skipped.
 
@@ -1208,8 +1415,40 @@ def test_global_cursor_substream_resume_after_interruption_skips_no_records():
     skipped. Because the interim global cursor is inert until the sync finishes, resuming
     re-reads rather than skips -- which is exactly the no-data-loss guarantee we want.
     """
-    # Disable the 600s throttle so an interim checkpoint STATE is emitted at every close_partition,
-    # giving us many mid-walk "kill" points to resume from.
+    _assert_resume_from_every_interim_checkpoint_skips_no_records(
+        SUBSTREAM_MANIFEST_GLOBAL_CURSOR_NO_DEPENDENCY_SERIAL,
+        GLOBAL_CURSOR_RESUME_MOCK_REQUESTS,
+        GLOBAL_CURSOR_RESUME_EXPECTED_RECORDS,
+    )
+
+
+def test_global_cursor_substream_resume_with_data_bearing_partition_last_skips_no_records():
+    """Resume is safe even when the data-bearing partition comes after a long empty-parent stretch.
+
+    This mirrors the customer failure more faithfully than the front-loaded fixture: the source
+    emits several interim checkpoint STATE messages while walking empty parents *before* any record
+    exists, then the last parent finally yields the data. Resuming from any of those early
+    (zero-record) checkpoints must still recover the full tail with nothing skipped -- proving the
+    dangerous case (checkpoints emitted during the silent stretch that precedes real data) is safe.
+    """
+    _assert_resume_from_every_interim_checkpoint_skips_no_records(
+        SUBSTREAM_MANIFEST_GLOBAL_CURSOR_NO_DEPENDENCY_SERIAL,
+        GLOBAL_CURSOR_DATA_LAST_MOCK_REQUESTS,
+        GLOBAL_CURSOR_DATA_LAST_EXPECTED_RECORDS,
+    )
+
+
+def test_guard_removal_is_a_noop_for_non_empty_parent_state():
+    """The guard removal is a complete no-op for the non-empty-parent-state (incremental_dependency) shape.
+
+    The empty-parent guard only ever fired when ``_use_global_cursor and not _parent_state``. For a
+    substream whose parent has ``incremental_dependency: true`` (the ``customer_balance_transactions``
+    shape), ``_parent_state`` is non-empty during the walk, so the guard was already bypassed. This
+    test proves removing it changes nothing there: on the same fixture, the emitted records and the
+    full sequence of STATE messages are byte-for-byte identical with the guard removed (current
+    code) vs. restored (pre-fix). This bounds the blast radius of the shared-CDK change to the
+    empty-parent case, which is the main concern for a change in shared CDK code.
+    """
     with patch.object(
         ConcurrentPerPartitionCursor, "_throttle_state_message", return_value=9999999.0
     ):
@@ -1217,62 +1456,31 @@ def test_global_cursor_substream_resume_after_interruption_skips_no_records():
             for url, response in GLOBAL_CURSOR_RESUME_MOCK_REQUESTS:
                 m.get(url, json=response)
 
-            # Fresh initial sync (no incoming state), interrupted implicitly by inspecting
-            # every interim checkpoint it emits.
-            output = _run_read(
-                SUBSTREAM_MANIFEST_WITH_GLOBAL_CURSOR_AND_NO_DEPENDENCY,
-                CONFIG,
-                STREAM_NAME,
-                None,
+            after_output = _run_read(
+                SUBSTREAM_MANIFEST_GLOBAL_CURSOR_WITH_DEPENDENCY_SERIAL, CONFIG, STREAM_NAME, None
             )
-
-            # Sanity: the uninterrupted run yields the full expected record set.
-            assert sorted([r.record.data for r in output.records], key=lambda x: x["id"]) == sorted(
-                GLOBAL_CURSOR_RESUME_EXPECTED_RECORDS, key=lambda x: x["id"]
-            )
-
-            # The fix must produce at least one interim checkpoint STATE during the walk
-            # (before the final state) -- otherwise there is nothing to resume from.
-            assert len(output.state_messages) >= 2, (
-                "Expected at least one interim checkpoint STATE plus the final STATE; "
-                f"got {len(output.state_messages)} state message(s)."
-            )
-
-            # Map each interim STATE to the records emitted before it (what the destination
-            # would have committed had the source been killed right after that checkpoint).
-            cumulative_records = []
-            interim_checkpoints = []
-            for message in output.records_and_state_messages:
-                if message.type.value == "RECORD":
-                    cumulative_records.append(message.record.data)
-                elif message.type.value == "STATE":
-                    interim_checkpoints.append((message.state, cumulative_records.copy()))
-
-            expected_deduped = list(
-                {orjson.dumps(r): r for r in GLOBAL_CURSOR_RESUME_EXPECTED_RECORDS}.values()
-            )
-
-            # Resume from every checkpoint except the final one (the final state is the
-            # completed sync, not an interruption).
-            for state, records_before_kill in interim_checkpoints[:-1]:
-                resume_output = _run_read(
-                    SUBSTREAM_MANIFEST_WITH_GLOBAL_CURSOR_AND_NO_DEPENDENCY,
+            with patch.object(
+                ConcurrentPerPartitionCursor,
+                "_emit_state_message",
+                _emit_state_message_with_guard,
+            ):
+                before_output = _run_read(
+                    SUBSTREAM_MANIFEST_GLOBAL_CURSOR_WITH_DEPENDENCY_SERIAL,
                     CONFIG,
                     STREAM_NAME,
-                    [state],
+                    None,
                 )
-                records_after_resume = [r.record.data for r in resume_output.records]
 
-                combined = records_before_kill + records_after_resume
-                combined_deduped = list({orjson.dumps(r): r for r in combined}.values())
+    assert [r.record.data for r in after_output.records] == [
+        r.record.data for r in before_output.records
+    ], "Guard removal changed emitted records for the non-empty-parent-state shape."
 
-                assert sorted(combined_deduped, key=lambda x: x["id"]) == sorted(
-                    expected_deduped, key=lambda x: x["id"]
-                ), (
-                    "Records were skipped when resuming from interim checkpoint "
-                    f"{state.state.stream.stream_state.__dict__}. "
-                    f"Expected {expected_deduped}, got {combined_deduped}."
-                )
+    after_states = [m.state.stream.stream_state.__dict__ for m in after_output.state_messages]
+    before_states = [m.state.stream.stream_state.__dict__ for m in before_output.state_messages]
+    assert after_states == before_states, (
+        "Guard removal changed emitted STATE for the non-empty-parent-state shape; the change must "
+        "be a no-op when the parent has incremental_dependency (non-empty parent state)."
+    )
 
 
 # OC-12977 / Serhii's orchestrator-overload risk: removing the empty-parent guard makes a
