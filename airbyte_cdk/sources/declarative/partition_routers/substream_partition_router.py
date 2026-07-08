@@ -256,7 +256,16 @@ class SubstreamPartitionRouter(PartitionRouter):
                         if is_last_record_in_slice:
                             parent_stream.cursor.close_partition(partition)
                             if is_last_slice:
-                                parent_stream.cursor.ensure_at_least_one_state_emitted()
+                                # ensure_at_least_one_state_emitted now returns messages directly.
+                                # On this worker thread we need to consume the returned iterator
+                                # so the cursor's internal state updates happen, but the messages
+                                # themselves are discarded — the parent cursor's close_partition()
+                                # above already emitted state through the queue. This call just
+                                # ensures internal bookkeeping is finalized.
+                                for (
+                                    _msg
+                                ) in parent_stream.cursor.ensure_at_least_one_state_emitted():
+                                    pass
 
                         if emit_slice:
                             yield StreamSlice(
