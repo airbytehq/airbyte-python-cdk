@@ -1,5 +1,7 @@
 # Copyright (c) 2024 Airbyte, Inc., all rights reserved.
 import copy
+import re
+from contextlib import nullcontext
 from copy import deepcopy
 from datetime import datetime, timedelta
 from typing import Any, List, Mapping, MutableMapping, Optional, Union
@@ -1271,6 +1273,219 @@ def test_global_cursor_substream_resume_after_interruption_skips_no_records():
                     f"{state.state.stream.stream_state.__dict__}. "
                     f"Expected {expected_deduped}, got {combined_deduped}."
                 )
+
+
+# OC-12977 / Serhii's orchestrator-overload risk: removing the empty-parent guard makes a
+# global_substream_cursor substream emit interim checkpoint STATE during a long empty-parent
+# walk. The constants + helpers below build that substream (the bank_accounts shape) walking an
+# arbitrary number of empty parents (comments whose votes are all empty) so we can measure the
+# persisted state size as the empty-parent count grows.
+MANY_EMPTY_PARENTS_UPDATED_AT = "2024-06-01T00:00:00Z"  # >= START_DATE so no parent is filtered out
+
+
+def _emit_state_message_with_guard(self, throttle: bool = True) -> None:
+    """Pre-fix ``_emit_state_message`` with the empty-parent guard restored.
+
+    Used to reproduce the pre-fix baseline so we can compare persisted state size before vs.
+    after the guard removal on the exact same fixture.
+    """
+    if throttle:
+        current_time = self._throttle_state_message()
+        if current_time is None:
+            return
+        self._last_emission_time = current_time
+        # The guard that PR #1068 removes:
+        if self._use_global_cursor and not self._parent_state:
+            return
+
+    self._connector_state_manager.update_state_for_stream(
+        self._stream_name,
+        self._stream_namespace,
+        self.state,
+    )
+    state_message = self._connector_state_manager.create_state_message(
+        self._stream_name, self._stream_namespace
+    )
+    self._message_repository.emit_message(state_message)
+
+
+def _run_global_cursor_over_empty_parents(
+    num_empty_parents, num_non_empty_parents=0, reintroduce_guard=False
+):
+    """Run the global-cursor substream over ``num_empty_parents`` empty parents.
+
+    One post fans out to ``num_non_empty_parents + num_empty_parents`` comments (the parents).
+    The first ``num_non_empty_parents`` comments each return a single vote (advancing the global
+    cursor and populating the in-memory per-partition map), and the remaining ``num_empty_parents``
+    comments return empty votes. The only thing that could grow with the empty-parent count is the
+    persisted state, which is exactly what we measure. When ``reintroduce_guard`` is True the
+    pre-fix empty-parent guard is patched back in to produce the baseline for comparison.
+    """
+    posts_response = {"posts": [{"id": 1, "updated_at": MANY_EMPTY_PARENTS_UPDATED_AT}]}
+    non_empty_ids = [1000 + i for i in range(num_non_empty_parents)]
+    empty_ids = [1000 + num_non_empty_parents + i for i in range(num_empty_parents)]
+    comments_response = {
+        "comments": [
+            {"id": cid, "post_id": 1, "updated_at": MANY_EMPTY_PARENTS_UPDATED_AT}
+            for cid in non_empty_ids + empty_ids
+        ]
+    }
+
+    guard_ctx = (
+        patch.object(
+            ConcurrentPerPartitionCursor,
+            "_emit_state_message",
+            _emit_state_message_with_guard,
+        )
+        if reintroduce_guard
+        else nullcontext()
+    )
+    with guard_ctx, requests_mock.Mocker() as m:
+        # Every empty parent's votes call (one per comment) answers empty by default.
+        m.get(re.compile(r"/votes"), json={"votes": []})
+        # The non-empty parents each return a single vote (more specific match wins).
+        for idx, cid in enumerate(non_empty_ids):
+            m.get(
+                f"https://api.example.com/community/posts/1/comments/{cid}/votes?per_page=100&start_time={START_DATE}",
+                json={
+                    "votes": [
+                        {
+                            "id": 900000 + idx,
+                            "comment_id": cid,
+                            "created_at": MANY_EMPTY_PARENTS_UPDATED_AT,
+                        }
+                    ]
+                },
+            )
+        m.get(
+            f"https://api.example.com/community/posts?per_page=100&start_time={START_DATE}",
+            json=posts_response,
+        )
+        m.get(
+            "https://api.example.com/community/posts/1/comments?per_page=100",
+            json=comments_response,
+        )
+        return _run_read(
+            SUBSTREAM_MANIFEST_WITH_GLOBAL_CURSOR_AND_NO_DEPENDENCY,
+            CONFIG,
+            STREAM_NAME,
+            None,
+        )
+
+
+def _persisted_state_size(state_message) -> int:
+    return len(orjson.dumps(state_message.state.stream.stream_state.__dict__))
+
+
+def test_removing_empty_parent_guard_keeps_state_size_flat_as_empty_parents_grow():
+    """OC-12977: prove removing the empty-parent guard does not balloon persisted state.
+
+    Serhii's flagged risk is that emitting interim checkpoint STATE for a ``global_substream_cursor``
+    substream with empty parents could grow the persisted connection state per empty parent and
+    overload the orchestrator. This test walks the same substream over a handful vs. thousands of
+    empty parents and asserts:
+
+    1. the persisted state carries a single bounded global-cursor value with **no** per-partition
+       ``states`` map -- so there is no per-parent growth vector at all;
+    2. the persisted state is byte-for-byte identical at low vs. high empty-parent counts;
+    3. the persisted state is byte-for-byte identical to the pre-fix (guard-restored) baseline;
+    4. the 600s throttle keeps the emitted-state *count* a small constant, independent of the
+       parent count (we re-emit the same small state at most ~once/600s, not once per parent); and
+    5. the in-memory per-partition retention cap is unchanged (it bounds memory, not state).
+    """
+    low, high = 5, 3000
+
+    low_output = _run_global_cursor_over_empty_parents(low)
+    high_output = _run_global_cursor_over_empty_parents(high)
+
+    # Pure empty-parent walk: no records emitted for either count.
+    assert len(low_output.records) == 0
+    assert len(high_output.records) == 0
+
+    low_final = low_output.state_messages[-1].state.stream.stream_state.__dict__
+    high_final = high_output.state_messages[-1].state.stream.stream_state.__dict__
+
+    # (1) Global mode never serializes a per-partition state map -> no per-parent growth vector.
+    assert "states" not in low_final
+    assert "states" not in high_final
+
+    # (2) Persisted state is byte-for-byte identical at low vs. high empty-parent counts.
+    assert orjson.dumps(low_final) == orjson.dumps(high_final)
+    low_size = len(orjson.dumps(low_final))
+    high_size = len(orjson.dumps(high_final))
+    assert low_size == high_size, (
+        f"Persisted state grew with empty-parent count: {low_size}B at {low} parents "
+        f"vs {high_size}B at {high} parents."
+    )
+    # Bounded: a single small global-cursor value, not kilobytes-per-parent.
+    assert high_size < 500, f"Persisted state unexpectedly large: {high_size}B"
+    # Every emitted state message (interim + final) is the same bounded size.
+    assert max(_persisted_state_size(m) for m in high_output.state_messages) < 500
+
+    # (3) Unchanged vs. the pre-fix (guard-restored) baseline on the same fixture.
+    baseline_output = _run_global_cursor_over_empty_parents(high, reintroduce_guard=True)
+    baseline_final = baseline_output.state_messages[-1].state.stream.stream_state.__dict__
+    assert orjson.dumps(high_final) == orjson.dumps(baseline_final), (
+        "Persisted final state differs from the pre-fix baseline; guard removal must not "
+        f"change state content. after={high_final} baseline={baseline_final}"
+    )
+
+    # (4) The 600s throttle keeps the emitted-state count a small constant, not per-parent.
+    assert len(high_output.state_messages) <= 3, (
+        "Expected the 600s throttle to bound state emissions to a small constant, got "
+        f"{len(high_output.state_messages)} state messages for {high} empty parents."
+    )
+    assert len(high_output.state_messages) == len(low_output.state_messages), (
+        "State-emission count scaled with empty-parent count: "
+        f"{len(low_output.state_messages)} at {low} vs {len(high_output.state_messages)} at {high}."
+    )
+
+    # (5) The in-memory per-partition retention cap is unchanged (bounds memory, not state).
+    assert ConcurrentPerPartitionCursor.DEFAULT_MAX_PARTITIONS_NUMBER == 25_000
+    assert ConcurrentPerPartitionCursor.SWITCH_TO_GLOBAL_LIMIT == 10_000
+
+
+def test_persisted_state_has_no_per_partition_entries_even_when_cursor_advances():
+    """The per-partition state map must not leak into persisted state, even with real records.
+
+    A skeptic might argue the flat state size above is only because a fully-empty walk produces
+    no cursor value. This test mixes a few non-empty parents (which advance the global cursor and
+    populate the in-memory per-partition map) among many empty parents, then proves the persisted
+    state still carries **no** ``states`` per-partition list and stays byte-for-byte identical as
+    the empty-parent count grows from a handful to thousands. This is the core guarantee behind the
+    orchestrator-overload risk: a ``global_substream_cursor`` stream serializes a single global
+    cursor value, never one entry per parent.
+    """
+    low_output = _run_global_cursor_over_empty_parents(5, num_non_empty_parents=3)
+    high_output = _run_global_cursor_over_empty_parents(3000, num_non_empty_parents=3)
+
+    # The non-empty parents produced records, so the global cursor actually advanced.
+    assert len(low_output.records) == 3
+    assert len(high_output.records) == 3
+
+    low_final = low_output.state_messages[-1].state.stream.stream_state.__dict__
+    high_final = high_output.state_messages[-1].state.stream.stream_state.__dict__
+
+    # A real global cursor value is present now...
+    assert "state" in high_final
+    # ...but there is still no per-partition state map, regardless of the empty-parent count.
+    assert "states" not in low_final
+    assert "states" not in high_final
+
+    # The persisted state is identical at 5 vs. 3000 empty parents apart from ``lookback_window``,
+    # which is a small integer derived from the sync's wall-clock duration (not the parent count).
+    # Everything else -- the single global cursor value and the empty parent_state -- is unchanged.
+    def _without_lookback(state):
+        return {k: v for k, v in state.items() if k != "lookback_window"}
+
+    assert _without_lookback(low_final) == _without_lookback(high_final), (
+        f"Persisted state (excluding lookback_window) changed with empty-parent count: "
+        f"{low_final} vs {high_final}"
+    )
+    # And the total serialized size stays flat and bounded regardless of the empty-parent count
+    # (the only possible variation is a digit or two in the wall-clock-derived lookback_window).
+    assert abs(len(orjson.dumps(low_final)) - len(orjson.dumps(high_final))) <= 3
+    assert len(orjson.dumps(high_final)) < 500
 
 
 def run_incremental_parent_state_test(
