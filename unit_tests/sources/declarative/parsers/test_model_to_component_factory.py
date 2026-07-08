@@ -5561,3 +5561,23 @@ def get_retriever(stream: Union[DeclarativeStream, DefaultStream]):
         if isinstance(stream, DeclarativeStream)
         else stream._stream_partition_generator._partition_factory._retriever
     )
+
+
+def test_create_response_to_file_extractor_preserve_na_values():
+    from airbyte_cdk.sources.declarative.extractors import ResponseToFileExtractor
+    from airbyte_cdk.sources.declarative.models import (
+        ResponseToFileExtractor as ResponseToFileExtractorModel,
+    )
+
+    factory = ModelToComponentFactory()
+
+    default_component = factory.create_response_to_file_extractor(
+        ResponseToFileExtractorModel(type="ResponseToFileExtractor")
+    )
+    assert isinstance(default_component, ResponseToFileExtractor)
+    assert default_component.preserve_na_values is False
+
+    enabled_component = factory.create_response_to_file_extractor(
+        ResponseToFileExtractorModel(type="ResponseToFileExtractor", preserve_na_values=True)
+    )
+    assert enabled_component.preserve_na_values is True
