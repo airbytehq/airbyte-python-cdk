@@ -182,6 +182,7 @@ from airbyte_cdk.sources.declarative.transformations.keys_replace_transformation
 )
 from airbyte_cdk.sources.declarative.yaml_declarative_source import YamlDeclarativeSource
 from airbyte_cdk.sources.message.repository import StateFilteringMessageRepository
+from airbyte_cdk.sources.streams import NO_CURSOR_STATE_KEY
 from airbyte_cdk.sources.streams.call_rate import HttpAPIBudget, MovingWindowCallRatePolicy
 from airbyte_cdk.sources.streams.concurrent.clamping import (
     ClampingEndProvider,
@@ -3921,6 +3922,114 @@ def test_create_concurrent_cursor_from_perpartition_cursor_runs_state_migrations
         stream.cursor._partition_router.parent_stream_configs[0].stream.cursor.state["updated_at"]
         == "2024-02-01T00:00:00.000000+0000"
     )
+
+
+def test_create_concurrent_cursor_from_perpartition_cursor_ignores_no_cursor_sentinel_child_state():
+    """A child stream that finished with no cursor value persists the NO_CURSOR_STATE_KEY sentinel.
+
+    The parent-state reconstruction fallback must not treat that sentinel as a real cursor value
+    (which would synthesize a parent state like {cursor_field: True} and crash when the parent's
+    ConcurrentCursor parses the boolean as a timestamp). Instead the parent cursor should initialize
+    from its configured start_datetime.
+    """
+    content = """
+    type: DeclarativeStream
+    primary_key: "id"
+    name: test
+    schema_loader:
+      type: InlineSchemaLoader
+      schema:
+        $schema: "http://json-schema.org/draft-07/schema"
+        type: object
+        properties:
+          id:
+            type: string
+    incremental_sync:
+      type: "DatetimeBasedCursor"
+      cursor_field: "updated_at"
+      datetime_format: "%Y-%m-%dT%H:%M:%S.%f%z"
+      start_datetime: "{{ config['start_time'] }}"
+    retriever:
+      type: SimpleRetriever
+      name: test
+      requester:
+        type: HttpRequester
+        name: "test"
+        url_base: "https://api.test.com/v3/"
+        http_method: "GET"
+        authenticator:
+          type: NoAuth
+      record_selector:
+        type: RecordSelector
+        extractor:
+          type: DpathExtractor
+          field_path: []
+      partition_router:
+        type: SubstreamPartitionRouter
+        parent_stream_configs:
+          - type: ParentStreamConfig
+            parent_key: id
+            partition_field: id
+            incremental_dependency: true
+            stream:
+              type: DeclarativeStream
+              primary_key: id
+              name: parent_stream
+              schema_loader:
+                type: InlineSchemaLoader
+                schema:
+                  $schema: "http://json-schema.org/draft-07/schema"
+                  type: object
+                  properties:
+                    id:
+                      type: string
+              incremental_sync:
+                type: "DatetimeBasedCursor"
+                cursor_field: "updated_at"
+                datetime_format: "%Y-%m-%dT%H:%M:%S.%f%z"
+                start_datetime: "{{ config['start_time'] }}"
+              retriever:
+                type: SimpleRetriever
+                requester:
+                  type: HttpRequester
+                  url_base: "https://api.test.com/v3/parent"
+                  http_method: "GET"
+                record_selector:
+                  type: RecordSelector
+                  extractor:
+                    type: DpathExtractor
+                    field_path: []
+      """
+
+    connector_state_manager = ConnectorStateManager(
+        state=[
+            AirbyteStateMessage(
+                type=AirbyteStateType.STREAM,
+                stream=AirbyteStreamState(
+                    stream_descriptor=StreamDescriptor(name="test"),
+                    stream_state=AirbyteStateBlob({NO_CURSOR_STATE_KEY: True}),
+                ),
+            )
+        ]
+    )
+    factory = ModelToComponentFactory(
+        emit_connector_builder_messages=True, connector_state_manager=connector_state_manager
+    )
+
+    # Should not raise (previously crashed with "No format ... matching True" while building the
+    # parent ConcurrentCursor from the synthesized {updated_at: True} state).
+    stream = factory.create_component(
+        model_type=DeclarativeStreamModel,
+        component_definition=YamlDeclarativeSource._parse(content),
+        config=input_config,
+    )
+
+    parent_cursor_state = stream.cursor._partition_router.parent_stream_configs[
+        0
+    ].stream.cursor.state
+    # The sentinel must not become a parent cursor value; the parent initializes from its
+    # configured start rather than from a low-water-mark derived from the child's sentinel state.
+    assert parent_cursor_state["updated_at"] == "2024-01-01T00:00:00.000000+0000"
 
 
 def test_incrementing_count_cursor_with_partition_router_raises_error():
