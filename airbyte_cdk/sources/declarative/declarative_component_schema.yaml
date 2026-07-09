@@ -2426,6 +2426,7 @@ definitions:
           - RESET_PAGINATION
           - RATE_LIMITED
           - REFRESH_TOKEN_THEN_RETRY
+          - REDUCE_PAGE_SIZE
         examples:
           - SUCCESS
           - FAIL
@@ -2434,6 +2435,7 @@ definitions:
           - RESET_PAGINATION
           - RATE_LIMITED
           - REFRESH_TOKEN_THEN_RETRY
+          - REDUCE_PAGE_SIZE
       failure_type:
         title: Failure Type
         description: Failure type of traced exception if a response matches the filter.

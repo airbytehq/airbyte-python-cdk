@@ -46,3 +46,17 @@ class PaginationStrategy:
         """
         :return: page size: The number of records to fetch in a page. Returns None if unspecified
         """
+
+    def reduce_page_size(self) -> None:
+        """Halve the current effective page size (floored at 1).
+
+        Called by `SimpleRetriever` when a `REDUCE_PAGE_SIZE` response action is received.
+        Subclasses that support dynamic page-size reduction should override this method.
+        """
+
+    def reset_page_size(self) -> None:
+        """Restore the page size to the originally configured default.
+
+        Called by `SimpleRetriever` after a successful page fetch following a reduction.
+        Subclasses that support dynamic page-size reduction should override this method.
+        """

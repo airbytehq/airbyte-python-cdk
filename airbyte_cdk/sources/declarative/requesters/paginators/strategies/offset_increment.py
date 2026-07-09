@@ -61,6 +61,8 @@ class OffsetIncrement(PaginationStrategy):
             )
         else:
             self._page_size = None
+        self._default_page_size = self._page_size
+        self._effective_page_size: Optional[int] = None
 
     @property
     def initial_token(self) -> Optional[Any]:
@@ -103,6 +105,8 @@ class OffsetIncrement(PaginationStrategy):
             return last_page_token_value + last_page_size
 
     def get_page_size(self) -> Optional[int]:
+        if self._effective_page_size is not None:
+            return self._effective_page_size
         if self._page_size:
             page_size = self._page_size.eval(self.config)
             if not isinstance(page_size, int):
@@ -110,3 +114,19 @@ class OffsetIncrement(PaginationStrategy):
             return page_size
         else:
             return None
+
+    def _get_default_page_size(self) -> Optional[int]:
+        if self._default_page_size:
+            page_size = self._default_page_size.eval(self.config)
+            if not isinstance(page_size, int):
+                raise Exception(f"{page_size} is of type {type(page_size)}. Expected {int}")
+            return page_size
+        return None
+
+    def reduce_page_size(self) -> None:
+        current = self.get_page_size()
+        if current is not None and current > 1:
+            self._effective_page_size = max(1, current // 2)
+
+    def reset_page_size(self) -> None:
+        self._effective_page_size = None

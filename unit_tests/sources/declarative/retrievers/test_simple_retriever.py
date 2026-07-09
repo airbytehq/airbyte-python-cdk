@@ -34,10 +34,16 @@ from airbyte_cdk.sources.declarative.requesters.query_properties.property_chunki
     GroupByKey,
     PropertyLimitType,
 )
-from airbyte_cdk.sources.declarative.requesters.request_option import RequestOptionType
+from airbyte_cdk.sources.declarative.requesters.request_option import (
+    RequestOption,
+    RequestOptionType,
+)
 from airbyte_cdk.sources.declarative.requesters.requester import HttpMethod, Requester
 from airbyte_cdk.sources.declarative.retrievers.pagination_tracker import PaginationTracker
 from airbyte_cdk.sources.declarative.retrievers.simple_retriever import SimpleRetriever
+from airbyte_cdk.sources.streams.http.page_size_reduction_exception import (
+    PageSizeReductionRequiredException,
+)
 from airbyte_cdk.sources.streams.http.pagination_reset_exception import (
     PaginationResetRequiredException,
 )
@@ -1421,6 +1427,156 @@ def test_given_reach_pagination_limit_after_two_pages_when_read_records_than_red
     assert requester.send_request.call_args_list[2].kwargs["next_page_token"] == {
         "next_page_token": 1
     }
+
+
+def test_given_page_size_reduction_exception_when_read_records_then_retry_same_page_with_reduced_size():
+    """Verify that `PageSizeReductionRequiredException` causes the retriever to
+    reduce the page size on the pagination strategy and retry the same page
+    (same `next_page_token`) with the halved page size in the request, then
+    reset the page size after a successful fetch.
+    """
+    strategy = CursorPaginationStrategy(
+        page_size=100, cursor_value="{{ response.next }}", config={}, parameters={}
+    )
+    paginator = DefaultPaginator(
+        pagination_strategy=strategy,
+        url_base="https://api.example.com",
+        config={},
+        parameters={},
+        page_size_option=RequestOption(
+            inject_into=RequestOptionType.request_parameter,
+            field_name="page_size",
+            parameters={},
+        ),
+    )
+
+    requester = Mock(spec=Requester)
+    # Page 1 succeeds → page 2 hits 502 (exception) → page 2 retried succeeds → no more pages
+    requester.send_request.side_effect = [
+        MagicMock(),  # page 1 response
+        PageSizeReductionRequiredException(),  # page 2 fails with 502
+        MagicMock(),  # page 2 retry with reduced page size
+    ]
+
+    record_selector = Mock(spec=HttpSelector)
+    record_selector.select_records.side_effect = [
+        [Record(data={"id": 1}, stream_name="test", associated_slice=A_STREAM_SLICE)],
+        # no select_records call for the failed request
+        [Record(data={"id": 2}, stream_name="test", associated_slice=A_STREAM_SLICE)],
+    ]
+
+    call_count = 0
+
+    def patched_next_page_token(response, last_page_size, last_record, last_page_token_value):
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            return {"next_page_token": "cursor_abc"}
+        return None  # end pagination after page 2
+
+    paginator.next_page_token = patched_next_page_token
+
+    retriever = SimpleRetriever(
+        name="test_stream",
+        primary_key="id",
+        requester=requester,
+        record_selector=record_selector,
+        paginator=paginator,
+        parameters={},
+        config={},
+    )
+
+    records = list(retriever.read_records(A_RECORD_SCHEMA, A_STREAM_SLICE))
+
+    assert len(records) == 2
+    assert requester.send_request.call_count == 3
+
+    # The first request used the original page token (None / initial) and page_size=100
+    first_call = requester.send_request.call_args_list[0].kwargs
+    assert first_call.get("next_page_token") is None
+    assert first_call["request_params"]["page_size"] == 100
+
+    # The second request (which raised the exception) used cursor_abc and page_size=100
+    second_call = requester.send_request.call_args_list[1].kwargs
+    assert second_call["next_page_token"] == {"next_page_token": "cursor_abc"}
+    assert second_call["request_params"]["page_size"] == 100
+
+    # The third request (retry) used the SAME token cursor_abc but page_size=50
+    third_call = requester.send_request.call_args_list[2].kwargs
+    assert third_call["next_page_token"] == {"next_page_token": "cursor_abc"}
+    assert third_call["request_params"]["page_size"] == 50
+
+    # After successful retry, page size should be reset to 100
+    assert strategy.get_page_size() == 100
+
+
+def test_page_size_is_halved_in_request_during_reduction():
+    """Verify that the page size in the actual request params is halved when
+    the reduction exception fires, and restored after a successful fetch.
+    """
+    strategy = CursorPaginationStrategy(
+        page_size=100, cursor_value="{{ response.next }}", config={}, parameters={}
+    )
+    paginator = DefaultPaginator(
+        pagination_strategy=strategy,
+        url_base="https://api.example.com",
+        config={},
+        parameters={},
+        page_size_option=RequestOption(
+            inject_into=RequestOptionType.request_parameter,
+            field_name="page_size",
+            parameters={},
+        ),
+    )
+
+    requester = Mock(spec=Requester)
+    observed_request_page_sizes = []
+
+    def capture_page_size_on_send(**kwargs):
+        observed_request_page_sizes.append(kwargs.get("request_params", {}).get("page_size"))
+        if len(observed_request_page_sizes) == 1:
+            return MagicMock()
+        elif len(observed_request_page_sizes) == 2:
+            raise PageSizeReductionRequiredException()
+        else:
+            return MagicMock()
+
+    requester.send_request.side_effect = capture_page_size_on_send
+
+    record_selector = Mock(spec=HttpSelector)
+    record_selector.select_records.side_effect = [
+        [Record(data={"id": 1}, stream_name="test", associated_slice=A_STREAM_SLICE)],
+        [Record(data={"id": 2}, stream_name="test", associated_slice=A_STREAM_SLICE)],
+    ]
+
+    call_count = 0
+
+    def patched_next_page_token(response, last_page_size, last_record, last_page_token_value):
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            return {"next_page_token": "cursor_abc"}
+        return None
+
+    paginator.next_page_token = patched_next_page_token
+
+    retriever = SimpleRetriever(
+        name="test_stream",
+        primary_key="id",
+        requester=requester,
+        record_selector=record_selector,
+        paginator=paginator,
+        parameters={},
+        config={},
+    )
+
+    list(retriever.read_records(A_RECORD_SCHEMA, A_STREAM_SLICE))
+
+    # Call 1: request has page_size=100 (page 1, succeeds)
+    # Call 2: request has page_size=100 (page 2, raises exception → strategy reduces to 50)
+    # Call 3: request has page_size=50  (page 2 retry with rebuilt request, succeeds → reset to 100)
+    assert observed_request_page_sizes == [100, 100, 50]
+    assert strategy.get_page_size() == 100
 
 
 def _mock_paginator():
