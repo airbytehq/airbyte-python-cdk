@@ -2,6 +2,7 @@
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
 
+import logging
 from abc import abstractmethod
 from datetime import datetime, timedelta, timezone
 from typing import Any, Callable, List, MutableMapping, Optional, Tuple
@@ -15,6 +16,8 @@ from airbyte_cdk.sources.streams.concurrent.state_converters.abstract_stream_sta
     ConcurrencyCompatibleStateType,
 )
 from airbyte_cdk.utils.datetime_helpers import AirbyteDateTime, ab_datetime_now, ab_datetime_parse
+
+logger = logging.getLogger("airbyte")
 
 
 class DateTimeStreamStateConverter(AbstractStreamStateConverter):
@@ -100,11 +103,18 @@ class DateTimeStreamStateConverter(AbstractStreamStateConverter):
         start: Optional[datetime],
     ) -> datetime:
         sync_start = start if start is not None else self.zero_value
-        prev_sync_low_water_mark = (
-            self.parse_timestamp(stream_state[cursor_field.cursor_field_key])
-            if cursor_field.cursor_field_key in stream_state
-            else None
-        )
+        prev_sync_low_water_mark = None
+        if cursor_field.cursor_field_key in stream_state:
+            saved_cursor_value = stream_state[cursor_field.cursor_field_key]
+            try:
+                prev_sync_low_water_mark = self.parse_timestamp(saved_cursor_value)
+            except ValueError as exception:
+                logger.warning(
+                    "Ignoring saved state for cursor field '%s': value %r could not be parsed as a datetime (%s). Falling back to the start date.",
+                    cursor_field.cursor_field_key,
+                    saved_cursor_value,
+                    exception,
+                )
         if prev_sync_low_water_mark and prev_sync_low_water_mark >= sync_start:
             return prev_sync_low_water_mark
         else:
