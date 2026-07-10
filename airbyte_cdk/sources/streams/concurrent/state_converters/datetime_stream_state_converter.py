@@ -106,15 +106,19 @@ class DateTimeStreamStateConverter(AbstractStreamStateConverter):
         prev_sync_low_water_mark = None
         if cursor_field.cursor_field_key in stream_state:
             saved_cursor_value = stream_state[cursor_field.cursor_field_key]
-            try:
-                prev_sync_low_water_mark = self.parse_timestamp(saved_cursor_value)
-            except ValueError as exception:
+            # Internal state bookkeeping markers (e.g. `use_global_cursor`,
+            # `__ab_no_cursor_state_message`) are booleans and can end up under the
+            # cursor field key when a substream parent cursor is built from a malformed
+            # state. A boolean is never a valid datetime cursor value, so ignore it and
+            # fall back to the start date instead of crashing the whole source at startup.
+            if isinstance(saved_cursor_value, bool):
                 logger.warning(
-                    "Ignoring saved state for cursor field '%s': value %r could not be parsed as a datetime (%s). Falling back to the start date.",
+                    "Ignoring saved state for cursor field '%s': value %r is not a valid datetime. Falling back to the start date.",
                     cursor_field.cursor_field_key,
                     saved_cursor_value,
-                    exception,
                 )
+            else:
+                prev_sync_low_water_mark = self.parse_timestamp(saved_cursor_value)
         if prev_sync_low_water_mark and prev_sync_low_water_mark >= sync_start:
             return prev_sync_low_water_mark
         else:

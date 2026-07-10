@@ -170,7 +170,7 @@ def test_concurrent_stream_state_converter_is_state_message_compatible(
             datetime(2022, 8, 22, 5, 3, 27, tzinfo=timezone.utc),
             {"created_at": True},
             datetime(2022, 8, 22, 5, 3, 27, tzinfo=timezone.utc),
-            id="customformat-converter-unparseable-boolean-state-falls-back-to-start",
+            id="customformat-converter-boolean-state-falls-back-to-start",
         ),
         pytest.param(
             CustomFormatConcurrentStreamStateConverter(datetime_format="%Y-%m-%dT%H:%M:%S.%fZ"),
@@ -179,7 +179,7 @@ def test_concurrent_stream_state_converter_is_state_message_compatible(
             CustomFormatConcurrentStreamStateConverter(
                 datetime_format="%Y-%m-%dT%H:%M:%S.%fZ"
             ).zero_value,
-            id="customformat-converter-unparseable-boolean-state-no-start-falls-back-to-zero-value",
+            id="customformat-converter-boolean-state-no-start-falls-back-to-zero-value",
         ),
     ],
 )
@@ -187,12 +187,13 @@ def test_get_sync_start(converter, start, state, expected_start):
     assert converter._get_sync_start(CursorField("created_at"), state, start) == expected_start
 
 
-def test_get_sync_start_with_unparseable_state_value_does_not_raise():
-    """Regression test for a saved cursor state value that is not a valid datetime.
+def test_get_sync_start_with_boolean_state_value_does_not_raise():
+    """Regression test for a boolean state bookkeeping marker reaching the cursor parser.
 
-    A malformed connection state (e.g. a boolean `True` reaching the datetime cursor
-    parser during cursor construction) must not crash the whole source. The converter
-    should ignore the bad value and fall back to the configured start date.
+    A malformed connection state (e.g. a boolean `True` from internal markers such as
+    `use_global_cursor` reaching the datetime cursor parser during cursor construction)
+    must not crash the whole source. The converter should ignore the bad value and fall
+    back to the configured start date.
     """
     converter = CustomFormatConcurrentStreamStateConverter(datetime_format="%Y-%m-%dT%H:%M:%S.%fZ")
     start = datetime(2022, 8, 22, 5, 3, 27, tzinfo=timezone.utc)
@@ -202,8 +203,8 @@ def test_get_sync_start_with_unparseable_state_value_does_not_raise():
     assert sync_start == start
 
 
-def test_convert_from_sequential_state_with_unparseable_state_value_does_not_raise():
-    """Regression test: `convert_from_sequential_state` must not raise on a bad cursor value."""
+def test_convert_from_sequential_state_with_boolean_state_value_does_not_raise():
+    """Regression test: `convert_from_sequential_state` must not raise on a boolean cursor value."""
     converter = CustomFormatConcurrentStreamStateConverter(datetime_format="%Y-%m-%dT%H:%M:%S.%fZ")
     start = datetime(2022, 8, 22, 5, 3, 27, tzinfo=timezone.utc)
 
