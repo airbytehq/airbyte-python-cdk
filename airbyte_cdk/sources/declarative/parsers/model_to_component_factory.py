@@ -4578,7 +4578,9 @@ class ModelToComponentFactory:
         # A union slice comes from exactly one child partition router, so request options
         # declared on children cannot be applied consistently to requests built from the
         # normalized union slices. Partition values should be consumed via interpolation
-        # (e.g. stream_partition) instead.
+        # (e.g. stream_partition) instead. Note that this validation only covers built-in
+        # router types; CustomPartitionRouter children are opaque, so any request options
+        # they implement internally cannot be detected or rejected here.
         for router in partition_routers:
             if isinstance(router, SubstreamPartitionRouter):
                 if any(

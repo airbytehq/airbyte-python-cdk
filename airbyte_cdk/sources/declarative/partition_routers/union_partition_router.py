@@ -105,7 +105,13 @@ class UnionPartitionRouter(PartitionRouter):
         return {}
 
     def get_stream_state(self) -> Optional[Mapping[str, StreamState]]:
-        """Merge the parent stream states of all child partition routers."""
+        """
+        Merge the parent stream states of all child partition routers.
+
+        States are merged with a shallow dict update, which assumes no two child routers
+        reference a parent stream with the same name. If they do, the last child's state
+        for that parent wins.
+        """
         merged_state: dict[str, StreamState] = {}
         for router in self.partition_routers:
             child_state = router.get_stream_state()

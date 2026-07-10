@@ -1409,6 +1409,185 @@ def test_concurrent_declarative_source_runs_state_migrations_provided_in_manifes
 
 
 @freezegun.freeze_time(_NOW)
+def test_read_resumes_from_legacy_state_with_union_partition_router():
+    """
+    Round-trip test: a legacy (pre-per-partition) state is migrated through
+    LegacyToPerPartitionStateMigration for a stream partitioned by a UnionPartitionRouter,
+    and the runtime per-partition state keys produced during the read match the migrated keys.
+    """
+
+    def _parent_stream(name: str) -> dict:
+        return {
+            "type": "DeclarativeStream",
+            "name": name,
+            "primary_key": "full_name",
+            "retriever": {
+                "type": "SimpleRetriever",
+                "requester": {
+                    "type": "HttpRequester",
+                    "url_base": "https://api.example.com",
+                    "path": f"/{name}",
+                    "http_method": "GET",
+                    # Explicitly disabled to avoid SQLite-backed request caching in tests.
+                    "use_cache": False,
+                },
+                "record_selector": {
+                    "type": "RecordSelector",
+                    "extractor": {"type": "DpathExtractor", "field_path": []},
+                },
+            },
+            "schema_loader": {
+                "type": "InlineSchemaLoader",
+                "schema": {"type": "object", "properties": {}},
+            },
+        }
+
+    def _substream_router(parent_stream: dict) -> dict:
+        return {
+            "type": "SubstreamPartitionRouter",
+            "parent_stream_configs": [
+                {
+                    "type": "ParentStreamConfig",
+                    "parent_key": "full_name",
+                    "partition_field": "repository",
+                    "stream": parent_stream,
+                }
+            ],
+        }
+
+    manifest = {
+        "version": "5.0.0",
+        "definitions": {},
+        "streams": [
+            _parent_stream("repositories"),
+            _parent_stream("starred"),
+            {
+                "type": "DeclarativeStream",
+                "name": "issues",
+                "primary_key": "id",
+                "retriever": {
+                    "type": "SimpleRetriever",
+                    "requester": {
+                        "type": "HttpRequester",
+                        "url_base": "https://api.example.com",
+                        "path": "/issues/{{ stream_partition['repository'] }}",
+                        "http_method": "GET",
+                    },
+                    "record_selector": {
+                        "type": "RecordSelector",
+                        "extractor": {"type": "DpathExtractor", "field_path": []},
+                    },
+                    "partition_router": {
+                        "type": "UnionPartitionRouter",
+                        "partition_field": "repository",
+                        "partition_routers": [
+                            _substream_router(_parent_stream("repositories")),
+                            _substream_router(_parent_stream("starred")),
+                        ],
+                    },
+                },
+                "incremental_sync": {
+                    "type": "DatetimeBasedCursor",
+                    "start_datetime": {
+                        "datetime": "{{ format_datetime(config['start_date'], '%Y-%m-%d') }}"
+                    },
+                    "end_datetime": {"datetime": "{{ now_utc().strftime('%Y-%m-%d') }}"},
+                    "datetime_format": "%Y-%m-%d",
+                    "cursor_datetime_formats": ["%Y-%m-%d"],
+                    "cursor_field": "updated_at",
+                },
+                "state_migrations": [{"type": "LegacyToPerPartitionStateMigration"}],
+                "schema_loader": {
+                    "type": "InlineSchemaLoader",
+                    "schema": {"type": "object", "properties": {}},
+                },
+            },
+        ],
+        "check": {"type": "CheckStream", "stream_names": ["repositories"]},
+    }
+
+    # Legacy (pre-per-partition) state format: {partition_value: {cursor_field: cursor_value}}
+    legacy_state = [
+        AirbyteStateMessage(
+            type=AirbyteStateType.STREAM,
+            stream=AirbyteStreamState(
+                stream_descriptor=StreamDescriptor(name="issues", namespace=None),
+                stream_state=AirbyteStateBlob(
+                    **{
+                        "org/repo-a": {"updated_at": "2024-08-21"},
+                        "org/repo-b": {"updated_at": "2024-08-22"},
+                    }
+                ),
+            ),
+        ),
+    ]
+
+    catalog = ConfiguredAirbyteCatalog(
+        streams=[
+            ConfiguredAirbyteStream(
+                stream=AirbyteStream(
+                    name="issues", json_schema={}, supported_sync_modes=[SyncMode.incremental]
+                ),
+                sync_mode=SyncMode.incremental,
+                destination_sync_mode=DestinationSyncMode.append,
+            ),
+        ]
+    )
+
+    source = ConcurrentDeclarativeSource(
+        source_config=manifest, config=_CONFIG, catalog=catalog, state=legacy_state
+    )
+
+    # The migrated state keys are exactly `{partition_field: partition_value}`.
+    migrated_states = source.streams(_CONFIG)[2].cursor.state.get("states")
+    assert {json.dumps(state["partition"], sort_keys=True) for state in migrated_states} == {
+        '{"repository": "org/repo-a"}',
+        '{"repository": "org/repo-b"}',
+    }
+
+    with HttpMocker() as http_mocker:
+        http_mocker.get(
+            HttpRequest("https://api.example.com/repositories"),
+            HttpResponse(
+                json.dumps([{"full_name": "org/repo-a"}, {"full_name": "org/repo-b"}]), 200
+            ),
+        )
+        http_mocker.get(
+            HttpRequest("https://api.example.com/starred"),
+            HttpResponse(
+                json.dumps([{"full_name": "org/repo-b"}, {"full_name": "org/repo-c"}]), 200
+            ),
+        )
+        for repository in ("org/repo-a", "org/repo-b", "org/repo-c"):
+            http_mocker.get(
+                HttpRequest(f"https://api.example.com/issues/{repository}"),
+                HttpResponse(
+                    json.dumps([{"id": f"{repository}-1", "updated_at": "2024-09-01"}]), 200
+                ),
+            )
+
+        messages = list(
+            source.read(logger=source.logger, config=_CONFIG, catalog=catalog, state=legacy_state)
+        )
+
+    # Deduplicated union: org/repo-b appears in both parents but is only read once.
+    issues_records = get_records_for_stream("issues", messages)
+    assert len(issues_records) == 3
+
+    # The runtime per-partition state keys match the migrated legacy keys exactly.
+    final_state = get_states_for_stream(stream_name="issues", messages=messages)[-1]
+    runtime_partitions = {
+        json.dumps(state["partition"], sort_keys=True)
+        for state in final_state.stream.stream_state.__dict__["states"]
+    }
+    assert runtime_partitions == {
+        '{"repository": "org/repo-a"}',
+        '{"repository": "org/repo-b"}',
+        '{"repository": "org/repo-c"}',
+    }
+
+
+@freezegun.freeze_time(_NOW)
 @patch(
     "airbyte_cdk.sources.streams.concurrent.state_converters.abstract_stream_state_converter.AbstractStreamStateConverter.__init__",
     mocked_init,
@@ -5479,6 +5658,236 @@ def test_apply_stream_groups_raises_on_parent_child_in_same_group_with_grouping_
 
     with pytest.raises(ValueError, match="child stream must not share a group with its parent"):
         ConcurrentDeclarativeSource._apply_stream_groups(source, [parent, child])
+
+
+def _make_child_stream_with_union_router(
+    child_name: str,
+    parent_streams: list[DefaultStream],
+    wrap_in_grouping: bool = False,
+) -> DefaultStream:
+    """Create a DefaultStream with a UnionPartitionRouter over SubstreamPartitionRouters."""
+    from airbyte_cdk.sources.declarative.incremental.concurrent_partition_cursor import (
+        ConcurrentCursorFactory,
+        ConcurrentPerPartitionCursor,
+    )
+    from airbyte_cdk.sources.declarative.partition_routers.grouping_partition_router import (
+        GroupingPartitionRouter,
+    )
+    from airbyte_cdk.sources.declarative.partition_routers.substream_partition_router import (
+        ParentStreamConfig,
+        SubstreamPartitionRouter,
+    )
+    from airbyte_cdk.sources.declarative.partition_routers.union_partition_router import (
+        UnionPartitionRouter,
+    )
+    from airbyte_cdk.sources.declarative.stream_slicers.declarative_partition_generator import (
+        DeclarativePartitionFactory,
+        StreamSlicerPartitionGenerator,
+    )
+    from airbyte_cdk.sources.streams.concurrent.cursor import FinalStateCursor
+    from airbyte_cdk.sources.streams.concurrent.state_converters.datetime_stream_state_converter import (
+        EpochValueConcurrentStreamStateConverter,
+    )
+
+    substream_routers = [
+        SubstreamPartitionRouter(
+            parent_stream_configs=[
+                ParentStreamConfig(
+                    stream=parent_stream,
+                    parent_key="id",
+                    partition_field="parent_id",
+                    config={},
+                    parameters={},
+                )
+            ],
+            config={},
+            parameters={},
+        )
+        for parent_stream in parent_streams
+    ]
+
+    union_router = UnionPartitionRouter(
+        partition_routers=substream_routers,
+        partition_field="parent_id",
+        parameters={},
+    )
+
+    stream_slicer_router = (
+        GroupingPartitionRouter(
+            group_size=10,
+            underlying_partition_router=union_router,
+            config={},
+        )
+        if wrap_in_grouping
+        else union_router
+    )
+
+    cursor_factory = ConcurrentCursorFactory(lambda *args, **kwargs: Mock())
+    message_repository = InMemoryMessageRepository()
+    state_converter = EpochValueConcurrentStreamStateConverter()
+
+    per_partition_cursor = ConcurrentPerPartitionCursor(
+        cursor_factory=cursor_factory,
+        partition_router=stream_slicer_router,
+        stream_name=child_name,
+        stream_namespace=None,
+        stream_state={},
+        message_repository=message_repository,
+        connector_state_manager=Mock(),
+        connector_state_converter=state_converter,
+        cursor_field=Mock(cursor_field_key="updated_at"),
+    )
+
+    partition_factory = Mock(spec=DeclarativePartitionFactory)
+    partition_generator = StreamSlicerPartitionGenerator(
+        partition_factory=partition_factory,
+        stream_slicer=per_partition_cursor,
+    )
+
+    cursor = FinalStateCursor(
+        stream_name=child_name, stream_namespace=None, message_repository=message_repository
+    )
+    return DefaultStream(
+        partition_generator=partition_generator,
+        name=child_name,
+        json_schema={},
+        primary_key=[],
+        cursor_field=None,
+        logger=logging.getLogger(f"test.{child_name}"),
+        cursor=cursor,
+    )
+
+
+@pytest.mark.parametrize(
+    "grouped_parent,wrap_in_grouping",
+    [
+        pytest.param("parent_a", False, id="first_union_child_parent"),
+        pytest.param("parent_b", False, id="second_union_child_parent"),
+        pytest.param("parent_a", True, id="union_nested_in_grouping"),
+    ],
+)
+def test_apply_stream_groups_raises_on_parent_child_in_same_group_with_union_router(
+    grouped_parent, wrap_in_grouping
+):
+    """Test _apply_stream_groups detects deadlock through a UnionPartitionRouter's children."""
+    parent_a = _make_default_stream("parent_a")
+    parent_b = _make_default_stream("parent_b")
+    child = _make_child_stream_with_union_router(
+        "child_stream", [parent_a, parent_b], wrap_in_grouping=wrap_in_grouping
+    )
+
+    source = Mock()
+    source._source_config = {
+        "stream_groups": {
+            "my_group": {
+                "streams": [
+                    {"name": grouped_parent, "type": "DeclarativeStream"},
+                    {"name": "child_stream", "type": "DeclarativeStream"},
+                ],
+                "action": {"type": "BlockSimultaneousSyncsAction"},
+            }
+        }
+    }
+
+    with pytest.raises(ValueError, match="child stream must not share a group with its parent"):
+        ConcurrentDeclarativeSource._apply_stream_groups(source, [parent_a, parent_b, child])
+
+
+def test_union_partition_router_parent_streams_use_cache():
+    """Parents referenced through a UnionPartitionRouter get use_cache force-enabled."""
+
+    def _stream_config(name: str) -> dict:
+        return {
+            "type": "DeclarativeStream",
+            "$parameters": {
+                "name": name,
+                "primary_key": "id",
+                "url_base": "https://api.example.com/v1/",
+            },
+            "schema_loader": {
+                "type": "InlineSchemaLoader",
+                "schema": {"type": "object", "properties": {}},
+            },
+            "retriever": {
+                "type": "SimpleRetriever",
+                "requester": {
+                    "type": "HttpRequester",
+                    "path": name,
+                },
+                "record_selector": {"extractor": {"type": "DpathExtractor", "field_path": []}},
+            },
+        }
+
+    child_stream = _stream_config("repository_stats")
+    child_stream["retriever"]["partition_router"] = {
+        "type": "UnionPartitionRouter",
+        "partition_field": "repository",
+        "partition_routers": [
+            {
+                "type": "SubstreamPartitionRouter",
+                "parent_stream_configs": [
+                    {
+                        "type": "ParentStreamConfig",
+                        "parent_key": "full_name",
+                        "partition_field": "repository",
+                        "stream": _stream_config("repositories"),
+                    }
+                ],
+            },
+            {
+                "type": "SubstreamPartitionRouter",
+                "parent_stream_configs": [
+                    {
+                        "type": "ParentStreamConfig",
+                        "parent_key": "full_name",
+                        "partition_field": "repository",
+                        "stream": _stream_config("starred_repositories"),
+                    }
+                ],
+            },
+        ],
+    }
+
+    manifest = {
+        "version": "0.29.3",
+        "definitions": {},
+        "streams": [
+            _stream_config("repositories"),
+            _stream_config("starred_repositories"),
+            child_stream,
+        ],
+        "check": {"type": "CheckStream", "stream_names": ["repositories"]},
+    }
+
+    source = ConcurrentDeclarativeSource(
+        source_config=manifest, config={}, catalog=create_catalog("repositories"), state=None
+    )
+
+    streams = source.streams({})
+    streams_by_name = {stream.name: stream for stream in streams}
+    assert set(streams_by_name) == {"repositories", "starred_repositories", "repository_stats"}
+
+    def _use_cache(stream) -> bool:
+        return stream._stream_partition_generator._partition_factory._retriever.requester.use_cache
+
+    # Both parents referenced through the union get caching enabled; the child does not.
+    assert _use_cache(streams_by_name["repositories"])
+    assert _use_cache(streams_by_name["starred_repositories"])
+    assert not _use_cache(streams_by_name["repository_stats"])
+
+    # The parent stream instances nested inside the union's substream routers are also cached.
+    union_router = streams_by_name["repository_stats"]._stream_partition_generator._stream_slicer
+    nested_parents = [
+        parent_config.stream
+        for child_router in union_router.partition_routers
+        for parent_config in child_router.parent_stream_configs
+    ]
+    assert {parent.name for parent in nested_parents} == {
+        "repositories",
+        "starred_repositories",
+    }
+    for parent in nested_parents:
+        assert _use_cache(parent)
 
 
 @pytest.mark.parametrize(
