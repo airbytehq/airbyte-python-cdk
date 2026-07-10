@@ -7,6 +7,7 @@ from airbyte_cdk.sources.declarative.migrations.state_migration import StateMigr
 from airbyte_cdk.sources.declarative.models import (
     DatetimeBasedCursor,
     SubstreamPartitionRouter,
+    UnionPartitionRouter,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import ParentStreamConfig
 
@@ -51,6 +52,11 @@ class LegacyToPerPartitionStateMigration(StateMigration):
         ).eval(self._config)
 
     def _get_partition_field(self, partition_router: SubstreamPartitionRouter) -> str:
+        # UnionPartitionRouter normalizes all its children's partitions to a single
+        # explicit partition field, so it can be read directly off the component.
+        if isinstance(partition_router, UnionPartitionRouter):
+            return partition_router.partition_field
+
         parent_stream_config = partition_router.parent_stream_configs[0]
 
         # Retrieve the partition field with a condition, as properties are returned as a dictionary for custom components.
@@ -66,11 +72,14 @@ class LegacyToPerPartitionStateMigration(StateMigration):
         if _is_already_migrated(stream_state):
             return False
 
-        # There is exactly one parent stream
-        number_of_parent_streams = len(self._partition_router.parent_stream_configs)  # type: ignore # custom partition will introduce this attribute if needed
-        if number_of_parent_streams != 1:
-            # There should be exactly one parent stream
-            return False
+        # UnionPartitionRouter has no parent_stream_configs; its partitions are already
+        # normalized to a single partition field so the parent stream check does not apply.
+        if not isinstance(self._partition_router, UnionPartitionRouter):
+            # There is exactly one parent stream
+            number_of_parent_streams = len(self._partition_router.parent_stream_configs)  # type: ignore # custom partition will introduce this attribute if needed
+            if number_of_parent_streams != 1:
+                # There should be exactly one parent stream
+                return False
         """
         The expected state format is
         "<parent_key_id>" : {

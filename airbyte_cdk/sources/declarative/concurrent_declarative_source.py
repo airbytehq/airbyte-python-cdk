@@ -82,6 +82,9 @@ from airbyte_cdk.sources.declarative.partition_routers.grouping_partition_router
 from airbyte_cdk.sources.declarative.partition_routers.substream_partition_router import (
     SubstreamPartitionRouter,
 )
+from airbyte_cdk.sources.declarative.partition_routers.union_partition_router import (
+    UnionPartitionRouter,
+)
 from airbyte_cdk.sources.declarative.resolvers import COMPONENTS_RESOLVER_TYPE_MAPPING
 from airbyte_cdk.sources.declarative.spec.spec import Spec
 from airbyte_cdk.sources.declarative.types import Config, ConnectionDefinition
@@ -461,15 +464,18 @@ class ConcurrentDeclarativeSource(Source):
             inst = stream_name_to_instance.get(stream_name)
             if not isinstance(inst, DefaultStream):
                 return ancestors
-            router = inst.get_partition_router()
-            if isinstance(router, GroupingPartitionRouter):
-                router = router.underlying_partition_router
-            if not isinstance(router, SubstreamPartitionRouter):
-                return ancestors
-            for parent_config in router.parent_stream_configs:
-                parent_name = parent_config.stream.name
-                ancestors.add(parent_name)
-                ancestors.update(_collect_all_ancestor_names(parent_name))
+            routers = [inst.get_partition_router()]
+            while routers:
+                router = routers.pop()
+                if isinstance(router, GroupingPartitionRouter):
+                    routers.append(router.underlying_partition_router)
+                elif isinstance(router, UnionPartitionRouter):
+                    routers.extend(router.partition_routers)
+                elif isinstance(router, SubstreamPartitionRouter):
+                    for parent_config in router.parent_stream_configs:
+                        parent_name = parent_config.stream.name
+                        ancestors.add(parent_name)
+                        ancestors.update(_collect_all_ancestor_names(parent_name))
             return ancestors
 
         for stream in streams:
@@ -532,14 +538,23 @@ class ConcurrentDeclarativeSource(Source):
             elif stream_config.get("retriever", {}).get("partition_router", {}):
                 partition_router = stream_config["retriever"]["partition_router"]
 
-                if isinstance(partition_router, dict) and partition_router.get(
-                    "parent_stream_configs"
-                ):
-                    update_with_cache_parent_configs(partition_router["parent_stream_configs"])
-                elif isinstance(partition_router, list):
-                    for router in partition_router:
-                        if router.get("parent_stream_configs"):
-                            update_with_cache_parent_configs(router["parent_stream_configs"])
+                routers = (
+                    list(partition_router)
+                    if isinstance(partition_router, list)
+                    else [partition_router]
+                )
+                while routers:
+                    router = routers.pop()
+                    if not isinstance(router, dict):
+                        continue
+                    if router.get("parent_stream_configs"):
+                        update_with_cache_parent_configs(router["parent_stream_configs"])
+                    # Descend into composed partition routers (e.g. UnionPartitionRouter's
+                    # partition_routers or GroupingPartitionRouter's underlying_partition_router)
+                    # so nested parent streams also get caching enabled.
+                    routers.extend(router.get("partition_routers") or [])
+                    if router.get("underlying_partition_router"):
+                        routers.append(router["underlying_partition_router"])
 
         for stream_config in stream_configs:
             if stream_config["name"] in parent_streams:

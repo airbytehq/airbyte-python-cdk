@@ -6,7 +6,7 @@ from __future__ import annotations
 from enum import Enum
 from typing import Any, Dict, List, Literal, Optional, Union
 
-from pydantic.v1 import BaseModel, Extra, Field
+from pydantic.v1 import BaseModel, Extra, Field, confloat, conint
 
 from airbyte_cdk.sources.declarative.models.base_model_with_deprecations import (
     BaseModelWithDeprecations,
@@ -16,12 +16,6 @@ from airbyte_cdk.sources.declarative.models.base_model_with_deprecations import 
 class AuthFlowType(Enum):
     oauth2_0 = "oauth2.0"
     oauth1_0 = "oauth1.0"
-
-
-class ScopesJoinStrategy(Enum):
-    space = "space"
-    comma = "comma"
-    plus = "plus"
 
 
 class BasicHttpAuthenticator(BaseModel):
@@ -57,10 +51,9 @@ class DynamicStreamCheckConfig(BaseModel):
     dynamic_stream_name: str = Field(
         ..., description="The dynamic stream name.", title="Dynamic Stream Name"
     )
-    stream_count: Optional[int] = Field(
+    stream_count: Optional[conint(ge=1)] = Field(
         None,
         description="The number of streams to attempt reading from during a check operation. If unset, all generated streams are checked. Must be a positive integer; if it exceeds the total number of available streams, all streams are checked.",
-        ge=1,
         title="Stream Count",
     )
 
@@ -98,17 +91,16 @@ class ConcurrencyLevel(BaseModel):
 
 class ConstantBackoffStrategy(BaseModel):
     type: Literal["ConstantBackoffStrategy"]
-    backoff_time_in_seconds: Union[float, str] = Field(
+    backoff_time_in_seconds: Union[confloat(ge=0.0), str] = Field(
         ...,
         description="Backoff time in seconds.",
         examples=[30, 30.5, "{{ config['backoff_time'] }}"],
         title="Backoff Time",
     )
-    jitter_range_in_seconds: Optional[float] = Field(
+    jitter_range_in_seconds: Optional[confloat(ge=0.0)] = Field(
         None,
         description="Optional additive jitter range in seconds. When set, the backoff time is uniformly distributed between backoff_time_in_seconds and backoff_time_in_seconds + (jitter_range_in_seconds * 2), so jitter only increases the base backoff.",
         examples=[15],
-        ge=0,
         title="Jitter Range",
     )
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
@@ -496,7 +488,7 @@ class HttpRequestRegexMatcher(BaseModel):
     )
     weight: Optional[Union[int, str]] = Field(
         None,
-        description="The weight of a request matching this matcher when acquiring a call from the rate limiter. Different endpoints can consume different amounts from a shared budget by specifying different weights. If not set, each request counts as 1.",
+        description="The weight of a request matching this matcher when acquiring a call from the rate limiter. Different endpoints can consume different amounts from a shared budget by specifying different weights. If not set, each request counts as 1.\n",
         title="Weight",
     )
 
@@ -516,6 +508,32 @@ class OnNoRecords(Enum):
     emit_parent = "emit_parent"
 
 
+class RecordExpander(BaseModel):
+    type: Literal["RecordExpander"]
+    expand_records_from_field: List[str] = Field(
+        ...,
+        description="Path to a nested array field within each record. Items from this array will be extracted and emitted as separate records. Supports wildcards (*) for matching multiple arrays.",
+        examples=[
+            ["lines", "data"],
+            ["items"],
+            ["nested", "array"],
+            ["sections", "*", "items"],
+        ],
+        title="Expand Records From Field",
+    )
+    remain_original_record: Optional[bool] = Field(
+        False,
+        description='If true, each expanded record will include the original parent record in an "original_record" field. Defaults to false.',
+        title="Remain Original Record",
+    )
+    on_no_records: Optional[OnNoRecords] = Field(
+        OnNoRecords.skip,
+        description='Behavior when the expansion path is missing, not a list, or an empty list. "skip" (default) emits nothing. "emit_parent" emits the original parent record unchanged.',
+        title="On No Records",
+    )
+    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
+
+
 class ExponentialBackoffStrategy(BaseModel):
     type: Literal["ExponentialBackoffStrategy"]
     factor: Optional[Union[float, str]] = Field(
@@ -524,11 +542,10 @@ class ExponentialBackoffStrategy(BaseModel):
         examples=[5, 5.5, "10"],
         title="Factor",
     )
-    jitter_range_in_seconds: Optional[float] = Field(
+    jitter_range_in_seconds: Optional[confloat(ge=0.0)] = Field(
         None,
         description="Optional additive jitter range in seconds. When set, the backoff time is uniformly distributed between computed_backoff and computed_backoff + (jitter_range_in_seconds * 2), so jitter only increases the computed backoff.",
         examples=[2],
-        ge=0,
         title="Jitter Range",
     )
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
@@ -683,12 +700,13 @@ class JsonItemsDecoder(BaseModel):
     type: Literal["JsonItemsDecoder"]
     items_path: str = Field(
         ...,
-        description="Dot-separated path to the JSON array whose elements should be yielded as records. Uses `ijson` path syntax (e.g. `data.users`), not JSONPath syntax \u2014 do not include leading `$.` or trailing `[*]`.",
+        description="Dot-separated path to the JSON array whose elements should be yielded as records. Uses `ijson` path syntax (e.g. `data.users`), not JSONPath syntax — do not include leading `$.` or trailing `[*]`.",
+        examples=["dataByDepartmentAndSearchTerm", "dataByAsin", "data.users"],
         title="Items Path",
     )
     encoding: Optional[str] = Field(
         "utf-8",
-        description="The character encoding of the JSON data. Defaults to UTF-8.",
+        description="Text encoding used to decode the streamed bytes before JSON parsing.",
         title="Encoding",
     )
 
@@ -851,22 +869,32 @@ class NoPagination(BaseModel):
     type: Literal["NoPagination"]
 
 
+class Scope(BaseModel):
+    class Config:
+        extra = Extra.allow
+
+    scope: str = Field(..., description="The OAuth scope string to request from the provider.")
+
+
+class OptionalScope(BaseModel):
+    class Config:
+        extra = Extra.allow
+
+    scope: str = Field(..., description="The OAuth scope string to request from the provider.")
+
+
+class ScopesJoinStrategy(Enum):
+    space = "space"
+    comma = "comma"
+    plus = "plus"
+
+
 class State(BaseModel):
     class Config:
         extra = Extra.allow
 
     min: int
     max: int
-
-
-class OAuthScope(BaseModel):
-    class Config:
-        extra = Extra.allow
-
-    scope: str = Field(
-        ...,
-        description="The OAuth scope string to request from the provider.",
-    )
 
 
 class OauthConnectorInputSpecification(BaseModel):
@@ -888,17 +916,13 @@ class OauthConnectorInputSpecification(BaseModel):
         examples=["user:read user:read_orders workspaces:read"],
         title="Scopes",
     )
-    # NOTE: scopes, optional_scopes, and scopes_join_strategy are processed by the
-    # platform OAuth handler (DeclarativeOAuthSpecHandler.kt), not by the CDK runtime.
-    # The CDK schema defines the manifest contract; the platform reads these fields
-    # during the OAuth consent flow to build the authorization URL.
-    scopes: Optional[List[OAuthScope]] = Field(
+    scopes: Optional[List[Scope]] = Field(
         None,
         description="List of OAuth scope objects. When present, takes precedence over the `scope` string property.\nThe scope values are joined using the `scopes_join_strategy` (default: space) before being\nsent to the OAuth provider.",
         examples=[[{"scope": "user:read"}, {"scope": "user:write"}]],
         title="Scopes",
     )
-    optional_scopes: Optional[List[OAuthScope]] = Field(
+    optional_scopes: Optional[List[OptionalScope]] = Field(
         None,
         description="Optional OAuth scope objects that may or may not be granted.",
         examples=[[{"scope": "admin:read"}]],
@@ -1271,7 +1295,14 @@ class AsyncJobStatusMap(BaseModel):
     completed: List[str]
     failed: List[str]
     timeout: List[str]
-    skipped: Optional[List[str]] = None
+    skipped: Optional[List[str]] = Field(
+        None,
+        description="Statuses that indicate the job was skipped because there is no data to return. Jobs with these statuses will not be retried and no records will be fetched.",
+    )
+
+
+class BlockSimultaneousSyncsAction(BaseModel):
+    type: Literal["BlockSimultaneousSyncsAction"]
 
 
 class ValueType(Enum):
@@ -2118,28 +2149,23 @@ class DefaultPaginator(BaseModel):
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
 
-class RecordExpander(BaseModel):
-    type: Literal["RecordExpander"]
-    expand_records_from_field: List[str] = Field(
+class DpathExtractor(BaseModel):
+    type: Literal["DpathExtractor"]
+    field_path: List[str] = Field(
         ...,
-        description="Path to a nested array field within each record. Items from this array will be extracted and emitted as separate records. Supports wildcards (*) for matching multiple arrays.",
+        description='List of potentially nested fields describing the full path of the field to extract. Use "*" to extract all values from an array. See more info in the [docs](https://docs.airbyte.com/connector-development/config-based/understanding-the-yaml-file/record-selector).',
         examples=[
-            ["lines", "data"],
-            ["items"],
-            ["nested", "array"],
-            ["sections", "*", "items"],
+            ["data"],
+            ["data", "records"],
+            ["data", "{{ parameters.name }}"],
+            ["data", "*", "record"],
         ],
-        title="Expand Records From Field",
+        title="Field Path",
     )
-    remain_original_record: Optional[bool] = Field(
-        False,
-        description='If true, each expanded record will include the original parent record in an "original_record" field. Defaults to false.',
-        title="Remain Original Record",
-    )
-    on_no_records: Optional[OnNoRecords] = Field(
-        OnNoRecords.skip,
-        description='Behavior when the expansion path is missing, not a list, or an empty list. "skip" (default) emits nothing. "emit_parent" emits the original parent record unchanged.',
-        title="On No Records",
+    record_expander: Optional[RecordExpander] = Field(
+        None,
+        description="Optional component to expand records by extracting items from nested array fields.",
+        title="Record Expander",
     )
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
@@ -2208,6 +2234,27 @@ class ListPartitionRouter(BaseModel):
         None,
         description="A request option describing where the list value should be injected into and under what field name if applicable.",
         title="Inject Partition Value Into Outgoing HTTP Request",
+    )
+    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
+
+
+class RecordSelector(BaseModel):
+    type: Literal["RecordSelector"]
+    extractor: Union[DpathExtractor, CustomRecordExtractor]
+    record_filter: Optional[Union[RecordFilter, CustomRecordFilter]] = Field(
+        None,
+        description="Responsible for filtering records to be emitted by the Source.",
+        title="Record Filter",
+    )
+    schema_normalization: Optional[Union[SchemaNormalization, CustomSchemaNormalization]] = Field(
+        None,
+        description="Responsible for normalization according to the schema.",
+        title="Schema Normalization",
+    )
+    transform_before_filtering: Optional[bool] = Field(
+        None,
+        description="If true, transformation will be applied before record filtering.",
+        title="Transform Before Filtering",
     )
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
@@ -2332,27 +2379,6 @@ class HTTPAPIBudget(BaseModel):
     )
 
 
-class DpathExtractor(BaseModel):
-    type: Literal["DpathExtractor"]
-    field_path: List[str] = Field(
-        ...,
-        description='List of potentially nested fields describing the full path of the field to extract. Use "*" to extract all values from an array. See more info in the [docs](https://docs.airbyte.com/connector-development/config-based/understanding-the-yaml-file/record-selector).',
-        examples=[
-            ["data"],
-            ["data", "records"],
-            ["data", "{{ parameters.name }}"],
-            ["data", "*", "record"],
-        ],
-        title="Field Path",
-    )
-    record_expander: Optional[RecordExpander] = Field(
-        None,
-        description="Optional component to expand records by extracting items from nested array fields.",
-        title="Record Expander",
-    )
-    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
-
-
 class ZipfileDecoder(BaseModel):
     class Config:
         extra = Extra.allow
@@ -2363,27 +2389,6 @@ class ZipfileDecoder(BaseModel):
         description="Parser to parse the decompressed data from the zipfile(s).",
         title="Parser",
     )
-
-
-class RecordSelector(BaseModel):
-    type: Literal["RecordSelector"]
-    extractor: Union[DpathExtractor, CustomRecordExtractor]
-    record_filter: Optional[Union[RecordFilter, CustomRecordFilter]] = Field(
-        None,
-        description="Responsible for filtering records to be emitted by the Source.",
-        title="Record Filter",
-    )
-    schema_normalization: Optional[Union[SchemaNormalization, CustomSchemaNormalization]] = Field(
-        None,
-        description="Responsible for normalization according to the schema.",
-        title="Schema Normalization",
-    )
-    transform_before_filtering: Optional[bool] = Field(
-        None,
-        description="If true, transformation will be applied before record filtering.",
-        title="Transform Before Filtering",
-    )
-    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
 
 class ConfigMigration(BaseModel):
@@ -2478,7 +2483,7 @@ class DeclarativeSource1(BaseModel):
     api_budget: Optional[HTTPAPIBudget] = None
     stream_groups: Optional[Dict[str, StreamGroup]] = Field(
         None,
-        description="Groups of streams that share a common resource and should not be read simultaneously. Each group defines a set of stream references and an action that controls how concurrent reads are managed. Only applies to ConcurrentDeclarativeSource.",
+        description="Groups of streams that share a common resource and should not be read simultaneously. Each group defines a set of stream references and an action that controls how concurrent reads are managed. Only applies to ConcurrentDeclarativeSource.\n",
         title="Stream Groups",
     )
     max_concurrent_async_job_count: Optional[Union[int, str]] = Field(
@@ -2518,7 +2523,7 @@ class DeclarativeSource2(BaseModel):
     api_budget: Optional[HTTPAPIBudget] = None
     stream_groups: Optional[Dict[str, StreamGroup]] = Field(
         None,
-        description="Groups of streams that share a common resource and should not be read simultaneously. Each group defines a set of stream references and an action that controls how concurrent reads are managed. Only applies to ConcurrentDeclarativeSource.",
+        description="Groups of streams that share a common resource and should not be read simultaneously. Each group defines a set of stream references and an action that controls how concurrent reads are managed. Only applies to ConcurrentDeclarativeSource.\n",
         title="Stream Groups",
     )
     max_concurrent_async_job_count: Optional[Union[int, str]] = Field(
@@ -3014,7 +3019,7 @@ class StateDelegatingStream(BaseModel):
     )
     api_retention_period: Optional[str] = Field(
         None,
-        description="The data retention period of the incremental API (ISO8601 duration). If the cursor value is older than this retention period, the connector will automatically fall back to a full refresh to avoid data loss.\nThis is useful for APIs like Stripe Events API which only retain data for 30 days.\n  * **PT1H**: 1 hour\n  * **P1D**: 1 day\n  * **P1W**: 1 week\n  * **P1M**: 1 month\n  * **P1Y**: 1 year\n  * **P30D**: 30 days\n",
+        description="The data retention period of the incremental API (ISO8601 duration). If the cursor value is older than this retention period, the connector will automatically fall back to a full refresh to avoid data loss.\nThis is useful for APIs like Stripe Events API which only retain data for 30 days.\n* **PT1H**: 1 hour\n* **P1D**: 1 day\n* **P1W**: 1 week\n* **P1M**: 1 month\n* **P1Y**: 1 year\n* **P30D**: 30 days\n",
         examples=["P30D", "P90D", "P1Y"],
         title="API Retention Period",
     )
@@ -3065,12 +3070,14 @@ class SimpleRetriever(BaseModel):
             SubstreamPartitionRouter,
             ListPartitionRouter,
             GroupingPartitionRouter,
+            UnionPartitionRouter,
             CustomPartitionRouter,
             List[
                 Union[
                     SubstreamPartitionRouter,
                     ListPartitionRouter,
                     GroupingPartitionRouter,
+                    UnionPartitionRouter,
                     CustomPartitionRouter,
                 ]
             ],
@@ -3114,10 +3121,9 @@ class AsyncRetriever(BaseModel):
         None,
         description="The time in minutes after which the single Async Job should be considered as Timed Out.",
     )
-    failed_retry_wait_time_in_seconds: Optional[Union[int, str]] = Field(
+    failed_retry_wait_time_in_seconds: Optional[Union[conint(ge=1), str]] = Field(
         None,
         description="Time in seconds to wait before retrying a failed async job. Only applies to jobs that ran on the API side and reported a FAILED status (e.g. report generation failed due to a cooldown). Creation failures (HTTP errors when starting a job, such as 429s) and TIMED_OUT jobs are retried immediately and are not affected by this setting. When set, the orchestrator defers retry of real failed jobs until the wait time has elapsed, without blocking other jobs.",
-        ge=1,
     )
     download_target_requester: Optional[Union[HttpRequester, CustomRequester]] = Field(
         None,
@@ -3144,12 +3150,14 @@ class AsyncRetriever(BaseModel):
             ListPartitionRouter,
             SubstreamPartitionRouter,
             GroupingPartitionRouter,
+            UnionPartitionRouter,
             CustomPartitionRouter,
             List[
                 Union[
                     ListPartitionRouter,
                     SubstreamPartitionRouter,
                     GroupingPartitionRouter,
+                    UnionPartitionRouter,
                     CustomPartitionRouter,
                 ]
             ],
@@ -3196,20 +3204,14 @@ class AsyncRetriever(BaseModel):
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
 
-class BlockSimultaneousSyncsAction(BaseModel):
-    type: Literal["BlockSimultaneousSyncsAction"]
-
-
 class StreamGroup(BaseModel):
-    streams: List[str] = Field(
+    streams: List[DeclarativeStream] = Field(
         ...,
-        description='List of references to streams that belong to this group. Use JSON references to stream definitions (e.g., "#/definitions/my_stream").',
+        description="List of references to streams that belong to this group.\n",
         title="Streams",
     )
     action: BlockSimultaneousSyncsAction = Field(
-        ...,
-        description="The action to apply to streams in this group.",
-        title="Action",
+        ..., description="The action to apply to streams in this group.", title="Action"
     )
 
 
@@ -3242,6 +3244,29 @@ class GroupingPartitionRouter(BaseModel):
         True,
         description="If true, ensures that partitions are unique within each group by removing duplicates based on the partition key.",
         title="Deduplicate Partitions",
+    )
+    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
+
+
+class UnionPartitionRouter(BaseModel):
+    type: Literal["UnionPartitionRouter"]
+    partition_field: str = Field(
+        ...,
+        description="The single partition key that all child partition routers' slices are normalized to. Each child router must emit this key in its partitions.",
+        examples=["repository"],
+        title="Partition Field",
+    )
+    partition_routers: List[
+        Union[
+            ListPartitionRouter,
+            SubstreamPartitionRouter,
+            UnionPartitionRouter,
+            CustomPartitionRouter,
+        ]
+    ] = Field(
+        ...,
+        description="The child partition routers whose partitions are unioned. Request options are not supported on child partition routers; partition values should be consumed via interpolation (e.g. `stream_partition`).",
+        title="Partition Routers",
     )
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 

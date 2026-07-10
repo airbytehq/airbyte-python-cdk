@@ -14,9 +14,11 @@ from airbyte_cdk.sources.declarative.models import (
     CustomRetriever,
     DatetimeBasedCursor,
     DeclarativeStream,
+    ListPartitionRouter,
     ParentStreamConfig,
     SimpleRetriever,
     SubstreamPartitionRouter,
+    UnionPartitionRouter,
 )
 from airbyte_cdk.sources.declarative.models import (
     LegacyToPerPartitionStateMigration as LegacyToPerPartitionStateMigrationModel,
@@ -273,6 +275,71 @@ def _migrator_with_multiple_parent_streams():
     )
     config = {}
     parameters = {}
+    return LegacyToPerPartitionStateMigration(partition_router, cursor, config, parameters)
+
+
+def test_migrate_a_valid_legacy_state_to_per_partition_with_union_partition_router():
+    input_state = {
+        "org/a": {"last_changed": "2022-12-27T08:34:39+00:00"},
+        "org/b": {"last_changed": "2022-12-27T08:35:39+00:00"},
+    }
+
+    migrator = _union_migrator()
+
+    assert migrator.should_migrate(input_state)
+
+    expected_state = {
+        "states": [
+            {
+                "partition": {"repository": "org/a"},
+                "cursor": {"last_changed": "2022-12-27T08:34:39+00:00"},
+            },
+            {
+                "partition": {"repository": "org/b"},
+                "cursor": {"last_changed": "2022-12-27T08:35:39+00:00"},
+            },
+        ]
+    }
+
+    assert migrator.migrate(input_state) == expected_state
+
+
+def _union_migrator():
+    partition_router = UnionPartitionRouter(
+        type="UnionPartitionRouter",
+        partition_field="repository",
+        partition_routers=[
+            SubstreamPartitionRouter(
+                type="SubstreamPartitionRouter",
+                parent_stream_configs=[
+                    ParentStreamConfig(
+                        type="ParentStreamConfig",
+                        parent_key="full_name",
+                        partition_field="repository",
+                        stream=DeclarativeStream(
+                            type="DeclarativeStream",
+                            retriever=CustomRetriever(
+                                type="CustomRetriever", class_name="a_class_name"
+                            ),
+                        ),
+                    )
+                ],
+            ),
+            ListPartitionRouter(
+                type="ListPartitionRouter",
+                cursor_field="repository",
+                values=["org/a", "org/b"],
+            ),
+        ],
+    )
+    cursor = DatetimeBasedCursor(
+        type="DatetimeBasedCursor",
+        cursor_field="{{ parameters['cursor_field'] }}",
+        datetime_format="%Y-%m-%dT%H:%M:%S.%fZ",
+        start_datetime="1970-01-01T00:00:00.0Z",
+    )
+    config = {}
+    parameters = {"cursor_field": "last_changed"}
     return LegacyToPerPartitionStateMigration(partition_router, cursor, config, parameters)
 
 

@@ -4002,6 +4002,7 @@ definitions:
           - "$ref": "#/definitions/SubstreamPartitionRouter"
           - "$ref": "#/definitions/ListPartitionRouter"
           - "$ref": "#/definitions/GroupingPartitionRouter"
+          - "$ref": "#/definitions/UnionPartitionRouter"
           - "$ref": "#/definitions/CustomPartitionRouter"
           - type: array
             title: Multiple Partition Routers
@@ -4010,6 +4011,7 @@ definitions:
                 - "$ref": "#/definitions/SubstreamPartitionRouter"
                 - "$ref": "#/definitions/ListPartitionRouter"
                 - "$ref": "#/definitions/GroupingPartitionRouter"
+                - "$ref": "#/definitions/UnionPartitionRouter"
                 - "$ref": "#/definitions/CustomPartitionRouter"
       $parameters:
         type: object
@@ -4212,6 +4214,7 @@ definitions:
           - "$ref": "#/definitions/ListPartitionRouter"
           - "$ref": "#/definitions/SubstreamPartitionRouter"
           - "$ref": "#/definitions/GroupingPartitionRouter"
+          - "$ref": "#/definitions/UnionPartitionRouter"
           - "$ref": "#/definitions/CustomPartitionRouter"
           - type: array
             items:
@@ -4219,6 +4222,7 @@ definitions:
                 - "$ref": "#/definitions/ListPartitionRouter"
                 - "$ref": "#/definitions/SubstreamPartitionRouter"
                 - "$ref": "#/definitions/GroupingPartitionRouter"
+                - "$ref": "#/definitions/UnionPartitionRouter"
                 - "$ref": "#/definitions/CustomPartitionRouter"
       decoder:
         title: HTTP Response Format
@@ -4472,6 +4476,43 @@ definitions:
         description: If true, ensures that partitions are unique within each group by removing duplicates based on the partition key.
         type: boolean
         default: true
+      $parameters:
+        type: object
+        additionalProperties: true
+  UnionPartitionRouter:
+    title: Union Partition Router
+    description: >
+      A partition router that yields the deduplicated union of the partitions produced by its child
+      partition routers. Every emitted partition is normalized to a single key defined by `partition_field`;
+      any other partition keys coming from a child router (such as a SubstreamPartitionRouter's `parent_slice`)
+      are moved into the slice's extra fields. The first occurrence of a partition value wins and later
+      duplicates are skipped.
+    type: object
+    required:
+      - type
+      - partition_field
+      - partition_routers
+    properties:
+      type:
+        type: string
+        enum: [UnionPartitionRouter]
+      partition_field:
+        title: Partition Field
+        description: The single partition key that all child partition routers' slices are normalized to. Each child router must emit this key in its partitions.
+        type: string
+        examples:
+          - "repository"
+      partition_routers:
+        title: Partition Routers
+        description: The child partition routers whose partitions are unioned. Request options are not supported on child partition routers; partition values should be consumed via interpolation (e.g. `stream_partition`).
+        type: array
+        minItems: 2
+        items:
+          anyOf:
+            - "$ref": "#/definitions/ListPartitionRouter"
+            - "$ref": "#/definitions/SubstreamPartitionRouter"
+            - "$ref": "#/definitions/UnionPartitionRouter"
+            - "$ref": "#/definitions/CustomPartitionRouter"
       $parameters:
         type: object
         additionalProperties: true
