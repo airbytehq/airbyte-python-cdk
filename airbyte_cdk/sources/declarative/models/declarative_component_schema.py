@@ -3181,12 +3181,14 @@ class SimpleRetriever(BaseModel):
             SubstreamPartitionRouter,
             ListPartitionRouter,
             GroupingPartitionRouter,
+            UnionPartitionRouter,
             CustomPartitionRouter,
             List[
                 Union[
                     SubstreamPartitionRouter,
                     ListPartitionRouter,
                     GroupingPartitionRouter,
+                    UnionPartitionRouter,
                     CustomPartitionRouter,
                 ]
             ],
@@ -3260,12 +3262,14 @@ class AsyncRetriever(BaseModel):
             ListPartitionRouter,
             SubstreamPartitionRouter,
             GroupingPartitionRouter,
+            UnionPartitionRouter,
             CustomPartitionRouter,
             List[
                 Union[
                     ListPartitionRouter,
                     SubstreamPartitionRouter,
                     GroupingPartitionRouter,
+                    UnionPartitionRouter,
                     CustomPartitionRouter,
                 ]
             ],
@@ -3362,6 +3366,29 @@ class GroupingPartitionRouter(BaseModel):
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
 
+class UnionPartitionRouter(BaseModel):
+    type: Literal["UnionPartitionRouter"]
+    partition_field: str = Field(
+        ...,
+        description="The single partition key that all child partition routers' slices are normalized to. Each child router must emit this key in its partitions.",
+        examples=["repository"],
+        title="Partition Field",
+    )
+    partition_routers: List[
+        Union[
+            ListPartitionRouter,
+            SubstreamPartitionRouter,
+            UnionPartitionRouter,
+            CustomPartitionRouter,
+        ]
+    ] = Field(
+        ...,
+        description="The child partition routers whose partitions are unioned. Request options are not supported on child partition routers; partition values should be consumed via interpolation (e.g. `stream_partition`).",
+        title="Partition Routers",
+    )
+    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
+
+
 class HttpComponentsResolver(BaseModel):
     type: Literal["HttpComponentsResolver"]
     retriever: Union[SimpleRetriever, AsyncRetriever, CustomRetriever] = Field(
@@ -3411,3 +3438,4 @@ ParentStreamConfig.update_forward_refs()
 PropertiesFromEndpoint.update_forward_refs()
 SimpleRetriever.update_forward_refs()
 AsyncRetriever.update_forward_refs()
+UnionPartitionRouter.update_forward_refs()

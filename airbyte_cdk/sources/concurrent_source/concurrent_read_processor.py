@@ -19,6 +19,9 @@ from airbyte_cdk.sources.declarative.partition_routers.grouping_partition_router
 from airbyte_cdk.sources.declarative.partition_routers.substream_partition_router import (
     SubstreamPartitionRouter,
 )
+from airbyte_cdk.sources.declarative.partition_routers.union_partition_router import (
+    UnionPartitionRouter,
+)
 from airbyte_cdk.sources.message import MessageRepository
 from airbyte_cdk.sources.streams.concurrent.abstract_stream import AbstractStream
 from airbyte_cdk.sources.streams.concurrent.default_stream import DefaultStream
@@ -438,14 +441,18 @@ class ConcurrentReadProcessor:
         partition_router = (
             stream.get_partition_router() if isinstance(stream, DefaultStream) else None
         )
-        if isinstance(partition_router, GroupingPartitionRouter):
-            partition_router = partition_router.underlying_partition_router
-
-        if isinstance(partition_router, SubstreamPartitionRouter):
-            for parent_config in partition_router.parent_stream_configs:
-                parent_name = parent_config.stream.name
-                parent_names.add(parent_name)
-                parent_names.update(self._collect_all_parent_stream_names(parent_name))
+        routers = [partition_router] if partition_router else []
+        while routers:
+            router = routers.pop()
+            if isinstance(router, GroupingPartitionRouter):
+                routers.append(router.underlying_partition_router)
+            elif isinstance(router, UnionPartitionRouter):
+                routers.extend(router.partition_routers)
+            elif isinstance(router, SubstreamPartitionRouter):
+                for parent_config in router.parent_stream_configs:
+                    parent_name = parent_config.stream.name
+                    parent_names.add(parent_name)
+                    parent_names.update(self._collect_all_parent_stream_names(parent_name))
 
         return parent_names
 
