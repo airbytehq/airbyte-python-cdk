@@ -2160,6 +2160,11 @@ definitions:
       type:
         type: string
         enum: [ResponseToFileExtractor]
+      preserve_na_values:
+        title: Preserve NA Values
+        description: When enabled, string values such as "NA", "N/A", "NULL", "None" and "NaN" are kept as-is instead of being interpreted as missing and converted to null. Empty cells are still treated as null. Defaults to false to preserve historical behavior.
+        type: boolean
+        default: false
       $parameters:
         type: object
         additionalProperties: true

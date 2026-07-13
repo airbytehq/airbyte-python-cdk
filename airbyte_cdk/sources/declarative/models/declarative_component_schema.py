@@ -503,6 +503,11 @@ class HttpRequestRegexMatcher(BaseModel):
 
 class ResponseToFileExtractor(BaseModel):
     type: Literal["ResponseToFileExtractor"]
+    preserve_na_values: Optional[bool] = Field(
+        False,
+        description='When enabled, string values such as "NA", "N/A", "NULL", "None" and "NaN" are kept as-is instead of being interpreted as missing and converted to null. Empty cells are still treated as null. Defaults to false to preserve historical behavior.',
+        title="Preserve NA Values",
+    )
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
 
