@@ -4,6 +4,10 @@ Newer updates can be found here: [GitHub Release Notes](https://github.com/airby
 
 # Changelog
 
+## Unreleased
+
+File-based Excel streams can now select a specific worksheet or read every worksheet in a workbook.
+
 ## 6.5.2
 
 bugfix: Ensure that streams with partition router are not executed concurrently
