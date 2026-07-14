@@ -298,6 +298,21 @@ def test_factory_returns_shared_instance_for_identical_definitions():
     assert first is second
 
 
+def test_factory_returns_shared_instance_when_only_parameters_differ():
+    factory = ModelToComponentFactory()
+    config = {"pat": "token_1,token_2"}
+
+    first_model = _model("{{ config['pat'] }}")
+    first_model.parameters = {"name": "stream_a"}
+    second_model = _model("{{ config['pat'] }}")
+    second_model.parameters = {"name": "stream_b"}
+
+    first = factory.create_rate_limited_multiple_token_authenticator(first_model, config)
+    second = factory.create_rate_limited_multiple_token_authenticator(second_model, config)
+
+    assert first is second
+
+
 def test_factory_interpolates_max_wait_time():
     factory = ModelToComponentFactory()
     model = _model("{{ config['pat'] }}")

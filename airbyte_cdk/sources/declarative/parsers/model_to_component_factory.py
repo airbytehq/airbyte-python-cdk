@@ -4519,7 +4519,9 @@ class ModelToComponentFactory:
     ) -> RateLimitedMultipleTokenAuthenticator:
         # Reuse the same instance for identical definitions so that all streams share
         # the same token quota counters (similar to how api_budget is shared).
-        cache_key = model.json(sort_keys=True)
+        # `$parameters` are excluded since they are propagated automatically and can
+        # differ per stream even when the authenticator definition is identical.
+        cache_key = model.json(exclude={"parameters"}, sort_keys=True)
         if cache_key in self._rate_limited_authenticators:
             return self._rate_limited_authenticators[cache_key]
 
