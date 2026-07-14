@@ -652,7 +652,7 @@ class RateLimitedMultipleTokenAuthenticator(BaseModel):
     max_wait_time: Optional[str] = Field(
         "PT2H",
         description="ISO 8601 duration. When all tokens are exhausted, the maximum time to wait for a quota reset before raising a transient error.",
-        examples=["PT2H", "PT30M"],
+        examples=["PT2H", "PT30M", "PT{{ config.get('max_waiting_time', 120) }}M"],
         title="Maximum Wait Time",
     )
     budget_reserve_fraction: Optional[float] = Field(
