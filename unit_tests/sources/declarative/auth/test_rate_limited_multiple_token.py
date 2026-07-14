@@ -17,6 +17,9 @@ from airbyte_cdk.sources.declarative.auth.rate_limited_multiple_token import (
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     RateLimitedMultipleTokenAuthenticator as RateLimitedMultipleTokenAuthenticatorModel,
 )
+from airbyte_cdk.sources.declarative.parsers.manifest_component_transformer import (
+    ManifestComponentTransformer,
+)
 from airbyte_cdk.sources.declarative.parsers.model_to_component_factory import (
     ModelToComponentFactory,
 )
@@ -232,6 +235,36 @@ def test_no_tokens_raises_config_error():
         )
 
 
+def test_no_quotas_raises_config_error():
+    with pytest.raises(AirbyteTracedException, match="Quota pool configuration is missing"):
+        RateLimitedMultipleTokenAuthenticator(
+            tokens=["token_1"], quotas=[], quota_status_url=QUOTA_STATUS_URL
+        )
+
+
+def test_raises_after_cumulative_max_wait_time(requests_mock):
+    """A quota status that keeps reporting zero remaining with a stale reset must not loop forever."""
+    requests_mock.get(
+        QUOTA_STATUS_URL,
+        json=lambda request, context: _quota_status_body(rest_remaining=0, reset_in_seconds=-10),
+    )
+    authenticator = _authenticator(max_wait_time=timedelta(seconds=30))
+    clock = {"now": 0.0}
+
+    def fake_sleep(seconds):
+        clock["now"] += seconds
+
+    with (
+        patch("time.sleep", side_effect=fake_sleep),
+        patch("time.monotonic", side_effect=lambda: clock["now"]),
+    ):
+        with pytest.raises(AirbyteTracedException, match="Rate limit is exceeded"):
+            authenticator(_prepared_request())
+
+    # total time waited never exceeds the configured max_wait_time
+    assert clock["now"] <= 30
+
+
 def _model(tokens):
     return RateLimitedMultipleTokenAuthenticatorModel.parse_obj(
         {
@@ -317,6 +350,50 @@ def test_factory_returns_shared_instance_when_only_parameters_differ():
     second = factory.create_rate_limited_multiple_token_authenticator(second_model, config)
 
     assert first is second
+
+
+def test_factory_returns_shared_instance_when_propagated_parameters_differ():
+    """Streams with identical authenticator definitions but different propagated `$parameters` must share one instance."""
+    factory = ModelToComponentFactory()
+    config = {"pat": "token_1,token_2"}
+    transformer = ManifestComponentTransformer()
+
+    def _propagated_model(stream_name):
+        propagated = transformer.propagate_types_and_parameters(
+            "authenticator",
+            _model("{{ config['pat'] }}").dict(exclude_none=True, by_alias=True),
+            {"name": stream_name, "primary_key": "id"},
+        )
+        return RateLimitedMultipleTokenAuthenticatorModel.parse_obj(propagated)
+
+    first_model = _propagated_model("stream_a")
+    second_model = _propagated_model("stream_b")
+    assert first_model.parameters != second_model.parameters
+
+    first = factory.create_rate_limited_multiple_token_authenticator(first_model, config)
+    second = factory.create_rate_limited_multiple_token_authenticator(second_model, config)
+
+    assert first is second
+
+
+def test_factory_filters_empty_list_tokens():
+    factory = ModelToComponentFactory()
+    model = _model(["{{ config['token_a'] }}", "{{ config['token_b'] }}", " "])
+
+    authenticator = factory.create_rate_limited_multiple_token_authenticator(
+        model, {"token_a": "token_1", "token_b": ""}
+    )
+
+    assert authenticator._tokens == ["token_1"]
+
+
+def test_factory_rejects_calendar_unit_max_wait_time():
+    factory = ModelToComponentFactory()
+    model = _model("{{ config['pat'] }}")
+    model.max_wait_time = "P1M"
+
+    with pytest.raises(ValueError, match="calendar-unit"):
+        factory.create_rate_limited_multiple_token_authenticator(model, {"pat": "token_1"})
 
 
 def test_factory_interpolates_max_wait_time():

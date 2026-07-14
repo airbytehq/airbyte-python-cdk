@@ -483,7 +483,7 @@ definitions:
           - ["resources", "core", "reset"]
       limit_path:
         title: Limit Path
-        description: Optional path to the total call limit for this pool in the quota status response. Used to compute the proactive throttling reserve; falls back to the initially observed remaining count when not set.
+        description: Optional path to the total call limit for this pool in the quota status response. Used to compute the proactive throttling reserve; falls back to the initially observed remaining count when not set. Setting it on every pool is recommended so the reserve does not shrink when a sync starts with the pool already partially consumed.
         type: array
         items:
           type: string

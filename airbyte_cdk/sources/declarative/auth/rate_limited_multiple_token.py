@@ -87,8 +87,10 @@ class RateLimitedMultipleTokenAuthenticator(DeclarativeAuthenticator):
                 message="Authentication tokens are missing from the configuration.",
             )
         if not quotas:
-            raise ValueError(
-                "RateLimitedMultipleTokenAuthenticator requires at least one quota pool"
+            raise AirbyteTracedException(
+                failure_type=FailureType.config_error,
+                internal_message="RateLimitedMultipleTokenAuthenticator requires at least one quota pool",
+                message="Quota pool configuration is missing.",
             )
         self._logger = logging.getLogger("airbyte")
         self._tokens = list(tokens)
@@ -106,6 +108,7 @@ class RateLimitedMultipleTokenAuthenticator(DeclarativeAuthenticator):
         self._refresh_lock = threading.Lock()
         self._initialized = False
         self._budget_logged = False
+        self._unmatched_logged = False
         self._states: dict[str, dict[str, _QuotaState]] = {}
         self._token_to_http_client: Mapping[str, HttpClient] = {
             token: HttpClient(
@@ -155,15 +158,22 @@ class RateLimitedMultipleTokenAuthenticator(DeclarativeAuthenticator):
             elif default_quota is None:
                 default_quota = quota
         if default_quota is None:
-            self._logger.debug(
-                "Request %s did not match any quota pool; falling back to '%s'. Consider defining a matcher-less default pool.",
-                request.url,
-                self._quotas[0].name,
-            )
+            if not self._unmatched_logged:
+                self._logger.warning(
+                    "Request %s did not match any quota pool; falling back to '%s'. Consider defining a matcher-less default pool.",
+                    request.url,
+                    self._quotas[0].name,
+                )
+                self._unmatched_logged = True
         return default_quota or self._quotas[0]
 
     def _acquire_call(self, quota: TokenQuota) -> str:
-        """Reserve one call from the matched pool and return the token it was charged to."""
+        """Reserve one call from the matched pool and return the token it was charged to.
+
+        `max_wait_time` bounds the *total* time spent waiting across all refresh attempts of a
+        single exhaustion episode, so stale reset timestamps cannot cause an endless reseed loop.
+        """
+        exhaustion_deadline: Optional[float] = None
         while True:
             budget_delay: Optional[float] = None
             wait_for_reset: Optional[float] = None
@@ -174,13 +184,17 @@ class RateLimitedMultipleTokenAuthenticator(DeclarativeAuthenticator):
                     state.remaining -= 1
                     budget_delay = self._compute_budget_delay(quota)
                 elif all(self._states[token][quota.name].remaining <= 0 for token in self._tokens):
+                    now = time.monotonic()
+                    if exhaustion_deadline is None:
+                        exhaustion_deadline = now + self._max_wait_time.total_seconds()
+                    remaining_budget = exhaustion_deadline - now
                     min_time_to_wait = min(
                         (
                             self._states[token][quota.name].reset_at - ab_datetime_now()
                         ).total_seconds()
                         for token in self._tokens
                     )
-                    if min_time_to_wait >= self._max_wait_time.total_seconds():
+                    if remaining_budget <= 0 or min_time_to_wait >= remaining_budget:
                         raise AirbyteTracedException(
                             failure_type=FailureType.transient_error,
                             internal_message=f"Rate limits for all tokens (quota: {quota.name}) were reached and the next reset exceeds max_wait_time",
@@ -188,7 +202,7 @@ class RateLimitedMultipleTokenAuthenticator(DeclarativeAuthenticator):
                         )
                     wait_for_reset = min(
                         max(min_time_to_wait, self.MIN_EXHAUSTION_WAIT),
-                        self._max_wait_time.total_seconds(),
+                        remaining_budget,
                     )
                 else:
                     self._active_token = next(self._tokens_iter)

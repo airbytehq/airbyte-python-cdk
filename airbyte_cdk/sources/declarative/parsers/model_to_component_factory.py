@@ -7,6 +7,7 @@ from __future__ import annotations
 import datetime
 import importlib
 import inspect
+import json
 import logging
 import re
 from functools import partial
@@ -707,6 +708,9 @@ class ModelToComponentFactory:
         max_concurrent_async_job_count: Optional[int] = None,
         configured_catalog: Optional[ConfiguredAirbyteCatalog] = None,
         api_budget: Optional[APIBudget] = None,
+        rate_limited_authenticators: Optional[
+            Dict[str, RateLimitedMultipleTokenAuthenticator]
+        ] = None,
     ):
         self._init_mappings()
         self._limit_pages_fetched_per_slice = limit_pages_fetched_per_slice
@@ -723,7 +727,9 @@ class ModelToComponentFactory:
         self._connector_state_manager = connector_state_manager or ConnectorStateManager()
         self._api_budget: Optional[Union[APIBudget]] = api_budget
         # Shared instances so all streams see the same token quota counters (like api_budget)
-        self._rate_limited_authenticators: Dict[str, RateLimitedMultipleTokenAuthenticator] = {}
+        self._rate_limited_authenticators: Dict[str, RateLimitedMultipleTokenAuthenticator] = (
+            rate_limited_authenticators if rate_limited_authenticators is not None else {}
+        )
         self._job_tracker: JobTracker = JobTracker(max_concurrent_async_job_count or 1)
         # placeholder for deprecation warnings
         self._collected_deprecation_logs: List[ConnectorBuilderLogMessage] = []
@@ -4141,10 +4147,10 @@ class ModelToComponentFactory:
                 ),
             ),
             api_budget=self._api_budget,
+            # Share the authenticator registry so parent and child streams draw from the
+            # same token quota counters
+            rate_limited_authenticators=self._rate_limited_authenticators,
         )
-        # Share the authenticator registry so parent and child streams draw from the
-        # same token quota counters
-        substream_factory._rate_limited_authenticators = self._rate_limited_authenticators
 
         return substream_factory.create_parent_stream_config(
             model=model, config=config, stream_name=stream_name, **kwargs
@@ -4520,14 +4526,6 @@ class ModelToComponentFactory:
         config: Config,
         **kwargs: Any,
     ) -> RateLimitedMultipleTokenAuthenticator:
-        # Reuse the same instance for identical definitions so that all streams share
-        # the same token quota counters (similar to how api_budget is shared).
-        # `$parameters` are excluded since they are propagated automatically and can
-        # differ per stream even when the authenticator definition is identical.
-        cache_key = model.json(exclude={"parameters"}, sort_keys=True)
-        if cache_key in self._rate_limited_authenticators:
-            return self._rate_limited_authenticators[cache_key]
-
         if isinstance(model.tokens, str):
             tokens_value = InterpolatedString.create(model.tokens, parameters={}).eval(config)
             delimiter = model.token_delimiter or ","
@@ -4536,9 +4534,88 @@ class ModelToComponentFactory:
             ]
         else:
             tokens = [
-                str(InterpolatedString.create(token, parameters={}).eval(config))
+                token_value
                 for token in model.tokens
+                if (
+                    token_value := str(
+                        InterpolatedString.create(token, parameters={}).eval(config)
+                    ).strip()
+                )
             ]
+
+        quota_specs = [
+            {
+                "name": quota_model.name,
+                "remaining_path": quota_model.remaining_path,
+                "reset_path": quota_model.reset_path,
+                "limit_path": quota_model.limit_path,
+                "matchers": [
+                    {
+                        "method": matcher_model.method,
+                        "url_base": matcher_model.url_base,
+                        "url_path_pattern": matcher_model.url_path_pattern,
+                        "params": matcher_model.params,
+                        "headers": matcher_model.headers,
+                        "weight": matcher_model.weight,
+                    }
+                    for matcher_model in quota_model.matchers or []
+                ],
+            }
+            for quota_model in model.quotas
+        ]
+
+        quota_status_url = str(
+            InterpolatedString.create(model.quota_status_source.url, parameters={}).eval(config)
+        )
+        quota_status_http_method = (
+            model.quota_status_source.http_method.value
+            if model.quota_status_source.http_method
+            else "GET"
+        )
+        quota_status_headers = {
+            key: str(InterpolatedString.create(value, parameters={}).eval(config))
+            for key, value in (model.quota_status_source.request_headers or {}).items()
+        }
+        auth_method = model.auth_method or "Bearer"
+        header = model.header or "Authorization"
+        max_wait_time_str = str(
+            InterpolatedString.create(model.max_wait_time or "PT2H", parameters={}).eval(config)
+        )
+        max_wait_time = parse_duration(max_wait_time_str)
+        if not isinstance(max_wait_time, datetime.timedelta):
+            raise ValueError(
+                f"max_wait_time must be a fixed-length ISO 8601 duration (e.g. 'PT2H'); "
+                f"calendar-unit durations like '{max_wait_time_str}' are not supported"
+            )
+        budget_reserve_fraction = (
+            model.budget_reserve_fraction if model.budget_reserve_fraction is not None else 0.1
+        )
+        budget_min_reserve = (
+            model.budget_min_reserve if model.budget_min_reserve is not None else 50
+        )
+
+        # Reuse the same instance for identical definitions so that all streams share the
+        # same token quota counters (similar to how api_budget is shared). The key is built
+        # from the resolved constructor arguments rather than the raw model so that
+        # stream-specific `$parameters` propagated onto the model (and its nested components)
+        # cannot break instance sharing.
+        cache_key = json.dumps(
+            {
+                "tokens": tokens,
+                "quotas": quota_specs,
+                "quota_status_url": quota_status_url,
+                "quota_status_http_method": quota_status_http_method,
+                "quota_status_headers": quota_status_headers,
+                "auth_method": auth_method,
+                "header": header,
+                "max_wait_time": max_wait_time.total_seconds(),
+                "budget_reserve_fraction": budget_reserve_fraction,
+                "budget_min_reserve": budget_min_reserve,
+            },
+            sort_keys=True,
+        )
+        if cache_key in self._rate_limited_authenticators:
+            return self._rate_limited_authenticators[cache_key]
 
         quotas = [
             TokenQuota(
@@ -4554,39 +4631,17 @@ class ModelToComponentFactory:
             for quota_model in model.quotas
         ]
 
-        quota_status_url = InterpolatedString.create(
-            model.quota_status_source.url, parameters={}
-        ).eval(config)
-        quota_status_headers = {
-            key: str(InterpolatedString.create(value, parameters={}).eval(config))
-            for key, value in (model.quota_status_source.request_headers or {}).items()
-        }
-
         authenticator = RateLimitedMultipleTokenAuthenticator(
             tokens=tokens,
             quotas=quotas,
             quota_status_url=quota_status_url,
-            quota_status_http_method=(
-                model.quota_status_source.http_method.value
-                if model.quota_status_source.http_method
-                else "GET"
-            ),
+            quota_status_http_method=quota_status_http_method,
             quota_status_headers=quota_status_headers,
-            auth_method=model.auth_method or "Bearer",
-            header=model.header or "Authorization",
-            max_wait_time=parse_duration(
-                str(
-                    InterpolatedString.create(model.max_wait_time or "PT2H", parameters={}).eval(
-                        config
-                    )
-                )
-            ),
-            budget_reserve_fraction=(
-                model.budget_reserve_fraction if model.budget_reserve_fraction is not None else 0.1
-            ),
-            budget_min_reserve=(
-                model.budget_min_reserve if model.budget_min_reserve is not None else 50
-            ),
+            auth_method=auth_method,
+            header=header,
+            max_wait_time=max_wait_time,
+            budget_reserve_fraction=budget_reserve_fraction,
+            budget_min_reserve=budget_min_reserve,
         )
         self._rate_limited_authenticators[cache_key] = authenticator
         return authenticator
