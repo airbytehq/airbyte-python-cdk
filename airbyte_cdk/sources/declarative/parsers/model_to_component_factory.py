@@ -4142,6 +4142,9 @@ class ModelToComponentFactory:
             ),
             api_budget=self._api_budget,
         )
+        # Share the authenticator registry so parent and child streams draw from the
+        # same token quota counters
+        substream_factory._rate_limited_authenticators = self._rate_limited_authenticators
 
         return substream_factory.create_parent_stream_config(
             model=model, config=config, stream_name=stream_name, **kwargs

@@ -193,12 +193,17 @@ def test_thread_safety_header_token_matches_decremented_token(requests_mock):
     )
     calls = 150  # more than one token's quota, forcing rotation mid-flight
     signed_tokens = []
+    worker_exceptions = []
     signed_lock = threading.Lock()
 
     def make_call():
-        request = authenticator(_prepared_request())
-        with signed_lock:
-            signed_tokens.append(request.headers["Authorization"].split()[1])
+        try:
+            request = authenticator(_prepared_request())
+            with signed_lock:
+                signed_tokens.append(request.headers["Authorization"].split()[1])
+        except Exception as exc:
+            with signed_lock:
+                worker_exceptions.append(exc)
 
     threads = [threading.Thread(target=make_call) for _ in range(calls)]
     for thread in threads:
@@ -206,6 +211,7 @@ def test_thread_safety_header_token_matches_decremented_token(requests_mock):
     for thread in threads:
         thread.join()
 
+    assert worker_exceptions == []
     for token in ("token_1", "token_2"):
         used = signed_tokens.count(token)
         assert authenticator._states[token]["rest"].remaining == 100 - used
