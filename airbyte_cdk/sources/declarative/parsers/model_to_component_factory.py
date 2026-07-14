@@ -3032,10 +3032,23 @@ class ModelToComponentFactory:
             parameters=model.parameters or {},
         )
 
-    @staticmethod
     def create_page_increment(
-        model: PageIncrementModel, config: Config, **kwargs: Any
+        self,
+        model: PageIncrementModel,
+        config: Config,
+        decoder: Optional[Decoder] = None,
+        extractor_model: Optional[Union[CustomRecordExtractorModel, DpathExtractorModel]] = None,
+        **kwargs: Any,
     ) -> PageIncrement:
+        # Like OffsetIncrement, we instantiate a separate extractor with identical behavior to the
+        # RecordSelector's so the strategy can count the raw records in the response. This ensures
+        # pagination is driven by the API's page size, not the post-filter record count.
+        extractor = (
+            self._create_component_from_model(model=extractor_model, config=config, decoder=decoder)
+            if extractor_model
+            else None
+        )
+
         # Pydantic v1 Union type coercion can convert int to string depending on Union order.
         # If page_size is a string that represents an integer (not an interpolation), convert it back.
         page_size = model.page_size
@@ -3047,6 +3060,7 @@ class ModelToComponentFactory:
             config=config,
             start_from_page=model.start_from_page or 0,
             inject_on_first_request=model.inject_on_first_request or False,
+            extractor=extractor,
             parameters=model.parameters or {},
         )
 
