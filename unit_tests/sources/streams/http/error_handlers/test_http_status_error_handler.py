@@ -82,6 +82,101 @@ def test_given_requests_exception_returns_retry_action_as_transient_error():
     assert error_resolution.failure_type
 
 
+@pytest.mark.parametrize(
+    "exception_instance, expected_action, expected_failure_type",
+    [
+        pytest.param(
+            requests.ConnectionError("Connection aborted"),
+            ResponseAction.RETRY,
+            FailureType.transient_error,
+            id="connection_error_subclass_of_request_exception",
+        ),
+        pytest.param(
+            requests.exceptions.ChunkedEncodingError("IncompleteRead"),
+            ResponseAction.RETRY,
+            FailureType.transient_error,
+            id="chunked_encoding_error_subclass_of_request_exception",
+        ),
+        pytest.param(
+            requests.exceptions.ReadTimeout("Read timed out"),
+            ResponseAction.RETRY,
+            FailureType.transient_error,
+            id="read_timeout_subclass_of_request_exception",
+        ),
+        pytest.param(
+            requests.exceptions.ConnectTimeout("Connection timed out"),
+            ResponseAction.RETRY,
+            FailureType.transient_error,
+            id="connect_timeout_subclass_of_request_exception",
+        ),
+    ],
+)
+def test_given_request_exception_subclass_uses_isinstance_fallback(
+    exception_instance, expected_action, expected_failure_type
+):
+    error_resolution = HttpStatusErrorHandler(logger).interpret_response(exception_instance)
+
+    assert error_resolution.response_action == expected_action
+    assert error_resolution.failure_type == expected_failure_type
+
+
+def test_given_custom_exception_mapping_isinstance_fallback_matches_subclass():
+    """Verify isinstance fallback works with custom error mappings too."""
+
+    class CustomBaseError(Exception):
+        pass
+
+    class CustomSubError(CustomBaseError):
+        pass
+
+    custom_mapping = {
+        CustomBaseError: ErrorResolution(
+            response_action=ResponseAction.FAIL,
+            failure_type=FailureType.config_error,
+            error_message="Custom base error matched.",
+        ),
+    }
+
+    error_resolution = HttpStatusErrorHandler(logger, custom_mapping).interpret_response(
+        CustomSubError("a sub-error")
+    )
+
+    assert error_resolution.response_action == ResponseAction.FAIL
+    assert error_resolution.failure_type == FailureType.config_error
+    assert error_resolution.error_message == "Custom base error matched."
+
+
+def test_exact_class_match_takes_precedence_over_isinstance_fallback():
+    """Verify exact class match is preferred over isinstance-based parent match."""
+
+    class ParentError(Exception):
+        pass
+
+    class ChildError(ParentError):
+        pass
+
+    custom_mapping = {
+        ParentError: ErrorResolution(
+            response_action=ResponseAction.RETRY,
+            failure_type=FailureType.transient_error,
+            error_message="Parent matched.",
+        ),
+        ChildError: ErrorResolution(
+            response_action=ResponseAction.FAIL,
+            failure_type=FailureType.config_error,
+            error_message="Child matched.",
+        ),
+    }
+
+    error_resolution = HttpStatusErrorHandler(logger, custom_mapping).interpret_response(
+        ChildError("child")
+    )
+
+    assert error_resolution.response_action == ResponseAction.FAIL
+    assert error_resolution.failure_type == FailureType.config_error
+    assert error_resolution.error_message == "Child matched."
+
+
 def test_given_unmapped_exception_returns_retry_action_as_system_error():
     error_resolution = HttpStatusErrorHandler(logger).interpret_response(Exception())
 
