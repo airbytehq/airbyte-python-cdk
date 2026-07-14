@@ -33,6 +33,7 @@ from airbyte_cdk.sources.file_based.schema_helpers import SchemaType
 
 class ExcelParser(FileTypeParser):
     ENCODING = None
+    ALL_SHEETS = "*"
 
     def check_config(self, config: FileBasedStreamConfig) -> Tuple[bool, Optional[str]]:
         """
@@ -62,18 +63,20 @@ class ExcelParser(FileTypeParser):
 
         # Validate the format of the config
         self.validate_format(config.format, logger)
+        excel_format = config.format
+        if not isinstance(excel_format, ExcelFormat):
+            raise ConfigValidationError(FileBasedSourceError.CONFIG_VALIDATION_ERROR)
 
         fields: Dict[str, str] = {}
 
         with stream_reader.open_file(file, self.file_read_mode, self.ENCODING, logger) as fp:
-            df = self.open_and_parse_file(fp, logger, file)
-            for column, df_type in df.dtypes.items():
-                # Choose the broadest data type if the column's data type differs in dataframes
-                prev_frame_column_type = fields.get(column)  # type: ignore [call-overload]
-                fields[column] = self.dtype_to_json_type(  # type: ignore [index]
-                    prev_frame_column_type,
-                    df_type,
-                )
+            for df in self._parse_excel_file(fp, excel_format, logger, file).values():
+                for column, df_type in df.dtypes.items():
+                    prev_frame_column_type = fields.get(column)  # type: ignore [call-overload]
+                    fields[column] = self.dtype_to_json_type(  # type: ignore [index]
+                        prev_frame_column_type,
+                        df_type,
+                    )
 
         schema = {
             field: (
@@ -109,18 +112,19 @@ class ExcelParser(FileTypeParser):
 
         # Validate the format of the config
         self.validate_format(config.format, logger)
+        excel_format = config.format
+        if not isinstance(excel_format, ExcelFormat):
+            raise ConfigValidationError(FileBasedSourceError.CONFIG_VALIDATION_ERROR)
 
         try:
             # Open and parse the file using the stream reader
             with stream_reader.open_file(file, self.file_read_mode, self.ENCODING, logger) as fp:
-                df = self.open_and_parse_file(fp, logger, file)
-                # Yield records as dictionaries
-                # DataFrame.to_dict() method returns datetime values in pandas.Timestamp values, which are not serializable by orjson
-                # DataFrame.to_json() returns string with datetime values serialized to iso8601 with microseconds to align with pydantic behavior
-                # see PR description: https://github.com/airbytehq/airbyte/pull/44444/
-                yield from orjson.loads(
-                    df.to_json(orient="records", date_format="iso", date_unit="us")
-                )
+                for df in self._parse_excel_file(fp, excel_format, logger, file).values():
+                    # DataFrame.to_dict() returns pandas.Timestamp values not serializable by orjson.
+                    # DataFrame.to_json() serializes datetimes to iso8601 with microseconds.
+                    yield from orjson.loads(
+                        df.to_json(orient="records", date_format="iso", date_unit="us")
+                    )
 
         except Exception as exc:
             # Raise a RecordParseError if any exception occurs during parsing
@@ -187,7 +191,8 @@ class ExcelParser(FileTypeParser):
         fp: Union[IOBase, str, Path],
         logger: logging.Logger,
         file: RemoteFile,
-    ) -> pd.DataFrame:
+        sheet_name: Union[int, str, None] = 0,
+    ) -> Union[pd.DataFrame, Dict[Union[int, str], pd.DataFrame]]:
         """Opens and parses Excel file using Calamine engine.
 
         Args:
@@ -202,7 +207,7 @@ class ExcelParser(FileTypeParser):
             ExcelCalamineParsingError: If Calamine fails to parse the file.
         """
         try:
-            return pd.ExcelFile(fp, engine="calamine").parse()  # type: ignore [arg-type, call-overload, no-any-return]
+            return pd.ExcelFile(fp, engine="calamine").parse(sheet_name=sheet_name)  # type: ignore [arg-type, call-overload, no-any-return]
         except BaseException as exc:
             # Calamine engine raises PanicException(child of BaseException) if Calamine fails to parse the file.
             # Checking if ValueError in exception arg to know if it was actually an error during parsing due to invalid values in cells.
@@ -222,7 +227,8 @@ class ExcelParser(FileTypeParser):
         fp: Union[IOBase, str, Path],
         logger: logging.Logger,
         file: RemoteFile,
-    ) -> pd.DataFrame:
+        sheet_name: Union[int, str, None] = 0,
+    ) -> Union[pd.DataFrame, Dict[Union[int, str], pd.DataFrame]]:
         """Opens and parses Excel file using Openpyxl engine.
 
         Args:
@@ -245,19 +251,20 @@ class ExcelParser(FileTypeParser):
 
         with warnings.catch_warnings(record=True) as warning_records:
             warnings.simplefilter("always")
-            df = pd.ExcelFile(fp, engine="openpyxl").parse()  # type: ignore [arg-type, call-overload]
+            dfs = pd.ExcelFile(fp, engine="openpyxl").parse(sheet_name=sheet_name)  # type: ignore [arg-type, call-overload]
 
         for warning in warning_records:
             logger.warning(f"Openpyxl warning for {file.file_uri_for_logging}: {warning.message}")
 
-        return df  # type: ignore [no-any-return]
+        return dfs  # type: ignore [no-any-return]
 
     def open_and_parse_file(
         self,
         fp: Union[IOBase, str, Path],
         logger: logging.Logger,
         file: RemoteFile,
-    ) -> pd.DataFrame:
+        sheet_name: Union[int, str, None] = 0,
+    ) -> Union[pd.DataFrame, Dict[Union[int, str], pd.DataFrame]]:
         """Opens and parses the Excel file with Calamine-first and Openpyxl fallback.
 
         Args:
@@ -269,6 +276,29 @@ class ExcelParser(FileTypeParser):
             pd.DataFrame: Parsed data from the Excel file.
         """
         try:
-            return self._open_and_parse_file_with_calamine(fp, logger, file)
+            return self._open_and_parse_file_with_calamine(fp, logger, file, sheet_name)
         except ExcelCalamineParsingError:
-            return self._open_and_parse_file_with_openpyxl(fp, logger, file)
+            return self._open_and_parse_file_with_openpyxl(fp, logger, file, sheet_name)
+
+    def _parse_excel_file(
+        self,
+        fp: Union[IOBase, str, Path],
+        excel_format: ExcelFormat,
+        logger: logging.Logger,
+        file: RemoteFile,
+    ) -> Dict[Union[int, str], pd.DataFrame]:
+        """Parses an Excel file and returns a dict of sheet name → DataFrame."""
+        sheet_name = self._resolve_sheet_name(excel_format)
+        parsed = self.open_and_parse_file(fp, logger, file, sheet_name)
+        if isinstance(parsed, pd.DataFrame):
+            return {excel_format.sheet_name: parsed}
+        return parsed
+
+    def _resolve_sheet_name(self, excel_format: ExcelFormat) -> Union[int, str, None]:
+        """Converts the string config value to a pandas-compatible `sheet_name` argument."""
+        value = excel_format.sheet_name
+        if value == self.ALL_SHEETS:
+            return None
+        if value.isdecimal():
+            return int(value)
+        return value
