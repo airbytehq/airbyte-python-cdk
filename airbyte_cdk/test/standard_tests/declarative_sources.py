@@ -6,6 +6,7 @@ from typing import Any, cast
 import yaml
 from boltons.typeutils import classproperty
 
+from airbyte_cdk.models import ConfiguredAirbyteCatalog
 from airbyte_cdk.sources.declarative.concurrent_declarative_source import (
     ConcurrentDeclarativeSource,
 )
@@ -65,6 +66,7 @@ class DeclarativeSourceTestSuite(SourceTestSuiteBase):
     def create_connector(
         cls,
         scenario: ConnectorTestScenario | None,
+        catalog: ConfiguredAirbyteCatalog | None = None,
     ) -> IConnector:
         """Create a connector scenario for the test suite.
 
