@@ -106,11 +106,12 @@ class DateTimeStreamStateConverter(AbstractStreamStateConverter):
         prev_sync_low_water_mark = None
         if cursor_field.cursor_field_key in stream_state:
             saved_cursor_value = stream_state[cursor_field.cursor_field_key]
-            # Internal state bookkeeping markers (e.g. `use_global_cursor`,
-            # `__ab_no_cursor_state_message`) are booleans and can end up under the
-            # cursor field key when a substream parent cursor is built from a malformed
-            # state. A boolean is never a valid datetime cursor value, so ignore it and
-            # fall back to the start date instead of crashing the whole source at startup.
+            # Defense-in-depth guard. The primary/root fix for the boolean leaking into
+            # here lives in `ModelToComponentFactory._instantiate_parent_stream_state_manager`,
+            # which no longer re-keys the `__ab_no_cursor_state_message` sentinel as a cursor
+            # value. This guard is kept as a backstop: a boolean is never a valid datetime
+            # cursor value, so ignore it and fall back to the start date instead of crashing
+            # the whole source at startup (see airbytehq/oncall#13084).
             if isinstance(saved_cursor_value, bool):
                 logger.warning(
                     "Ignoring saved state for cursor field '%s': value %r is not a valid datetime. Falling back to the start date.",
