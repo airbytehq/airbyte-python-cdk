@@ -28,6 +28,9 @@ from airbyte_cdk.utils import AirbyteTracedException
 
 logger = logging.getLogger("airbyte")
 
+# Leading bytes that identify a gzip stream (RFC 1952).
+GZIP_MAGIC_NUMBER = b"\x1f\x8b"
+
 
 @dataclass
 class GzipParser(Parser):
@@ -38,14 +41,26 @@ class GzipParser(Parser):
         Decompress gzipped bytes and pass decompressed data to the inner parser.
 
         IMPORTANT:
-            - If the data is not gzipped, reset the pointer and pass the data to the inner parser as is.
+            - If the data is not gzipped, pass the data to the inner parser as is.
 
         Note:
             - The data is not decoded by default.
         """
 
-        with gzip.GzipFile(fileobj=data, mode="rb") as gzipobj:
-            yield from self.inner_parser.parse(gzipobj)
+        # Wrap in a BufferedReader so we can peek at the leading bytes without
+        # consuming them. This lets nested/fallback gzip parsers gracefully handle
+        # payloads that are not actually gzip-compressed (e.g. a response that
+        # intermittently arrives with fewer gzip layers than the decoder expects)
+        # instead of raising BadGzipFile.
+        buffered_data = data if isinstance(data, io.BufferedReader) else io.BufferedReader(data)  # type: ignore[arg-type]
+        if (
+            buffered_data.peek(len(GZIP_MAGIC_NUMBER))[: len(GZIP_MAGIC_NUMBER)]
+            == GZIP_MAGIC_NUMBER
+        ):
+            with gzip.GzipFile(fileobj=buffered_data, mode="rb") as gzipobj:
+                yield from self.inner_parser.parse(gzipobj)
+        else:
+            yield from self.inner_parser.parse(buffered_data)
 
 
 @dataclass
