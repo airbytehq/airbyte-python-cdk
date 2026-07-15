@@ -7,6 +7,7 @@ from typing import Any, Mapping, Optional, Union
 
 import requests
 
+from airbyte_cdk.sources.declarative.extractors.record_extractor import RecordExtractor
 from airbyte_cdk.sources.declarative.interpolation import InterpolatedString
 from airbyte_cdk.sources.declarative.requesters.paginators.strategies.pagination_strategy import (
     PaginationStrategy,
@@ -29,6 +30,7 @@ class PageIncrement(PaginationStrategy):
     parameters: InitVar[Mapping[str, Any]]
     start_from_page: int = 0
     inject_on_first_request: bool = False
+    extractor: Optional[RecordExtractor] = None
 
     def __post_init__(self, parameters: Mapping[str, Any]) -> None:
         if isinstance(self.page_size, int) or (self.page_size is None):
@@ -52,6 +54,12 @@ class PageIncrement(PaginationStrategy):
         last_record: Optional[Record],
         last_page_token_value: Optional[Any],
     ) -> Optional[Any]:
+        if self.extractor:
+            # The record count is dependent on the records returned from the response which may not always
+            # align with the size of pages emitted. For example, a record filter can reduce the number of
+            # records observed below the page size even though the API returned a full page.
+            last_page_size = len(list(self.extractor.extract_records(response=response)))
+
         # Stop paginating when there are fewer records than the page size or the current page has no records
         if (self._page_size and last_page_size < self._page_size) or last_page_size == 0:
             return None
