@@ -1791,9 +1791,9 @@ class ModelToComponentFactory:
                 self._UNSUPPORTED_DECODER_ERROR.format(decoder_type=type(inner_decoder))
             )
 
-        # Like OffsetIncrement, we instantiate a separate extractor with identical behavior to the
-        # RecordSelector's so the strategy can count the raw records in the response, keeping
-        # `last_page_size` in stop_condition/cursor_value interpolation pre-record-filter.
+        # Like OffsetIncrement and PageIncrement, we instantiate a separate extractor with identical
+        # behavior to the RecordSelector's so the strategy can count the raw records in the response,
+        # keeping `last_page_size` in stop_condition/cursor_value interpolation pre-record-filter.
         extractor = (
             self._create_component_from_model(
                 model=extractor_model, config=config, decoder=decoder_to_use
