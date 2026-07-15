@@ -1149,7 +1149,7 @@ class ModelToComponentFactory:
             ),
         ):
             raise ValueError(
-                f"LegacyToPerPartitionStateMigrations can only be applied on a SimpleRetriever with a Substream partition router. Got {type(partition_router)}"
+                f"LegacyToPerPartitionStateMigrations can only be applied on a SimpleRetriever with a SubstreamPartitionRouter, UnionPartitionRouter or CustomPartitionRouter. Got {type(partition_router)}"
             )
         if not isinstance(partition_router, UnionPartitionRouterModel) and not hasattr(
             partition_router, "parent_stream_configs"
@@ -4574,6 +4574,35 @@ class ModelToComponentFactory:
             )
             for child in model.partition_routers
         ]
+
+        # Fail fast at build time when a built-in child router is statically known to emit a
+        # partition field different from the union's. CustomPartitionRouter children are opaque
+        # and can only be validated at runtime.
+        for child_model in model.partition_routers:
+            child_partition_fields: List[str] = []
+            if isinstance(child_model, ListPartitionRouterModel):
+                child_partition_fields.append(
+                    InterpolatedString.create(
+                        child_model.cursor_field, parameters=child_model.parameters or {}
+                    ).eval(config)
+                )
+            elif isinstance(child_model, SubstreamPartitionRouterModel):
+                for parent_stream_config in child_model.parent_stream_configs:
+                    child_partition_fields.append(
+                        InterpolatedString.create(
+                            parent_stream_config.partition_field,
+                            parameters=child_model.parameters or {},
+                        ).eval(config)
+                    )
+            elif isinstance(child_model, UnionPartitionRouterModel):
+                child_partition_fields.append(child_model.partition_field)
+            for child_partition_field in child_partition_fields:
+                if child_partition_field != model.partition_field:
+                    raise ValueError(
+                        f"UnionPartitionRouter expects all child partition routers to emit the "
+                        f"partition field '{model.partition_field}', but a "
+                        f"{child_model.type} child emits '{child_partition_field}'."
+                    )
 
         # A union slice comes from exactly one child partition router, so request options
         # declared on children cannot be applied consistently to requests built from the

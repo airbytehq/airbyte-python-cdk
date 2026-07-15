@@ -156,7 +156,7 @@ def test_nested_union_partition_router():
 @pytest.mark.parametrize(
     "child_states, expected_state",
     [
-        pytest.param([None, None], None, id="all_children_without_state"),
+        pytest.param([None, None], {}, id="all_children_without_state"),
         pytest.param(
             [{"parent_a": {"updated_at": "2024-01-01"}}, None],
             {"parent_a": {"updated_at": "2024-01-01"}},
@@ -183,6 +183,38 @@ def test_get_stream_state_merges_children_states(child_states, expected_state):
     )
 
     assert router.get_stream_state() == expected_state
+
+
+def test_unhashable_partition_value_raises_value_error():
+    router = UnionPartitionRouter(
+        partition_routers=[
+            _StaticPartitionRouter(
+                [StreamSlice(partition={"repository": ["org/a"]}, cursor_slice={})]
+            )
+        ],
+        partition_field="repository",
+        parameters={},
+    )
+
+    with pytest.raises(ValueError, match="hashable"):
+        list(router.stream_slices())
+
+
+def test_get_stream_state_warns_on_parent_stream_name_collision(caplog):
+    router = UnionPartitionRouter(
+        partition_routers=[
+            _StaticPartitionRouter([], state={"parent_a": {"updated_at": "2024-01-01"}}),
+            _StaticPartitionRouter([], state={"parent_a": {"updated_at": "2024-02-01"}}),
+        ],
+        partition_field="repository",
+        parameters={},
+    )
+
+    with caplog.at_level("WARNING", logger="airbyte"):
+        state = router.get_stream_state()
+
+    assert state == {"parent_a": {"updated_at": "2024-02-01"}}
+    assert any("parent_a" in record.message for record in caplog.records)
 
 
 def test_request_options_are_empty():

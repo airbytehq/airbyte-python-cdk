@@ -359,7 +359,7 @@ def _union_migrator():
             None,
             False,
             ValueError,
-            "LegacyToPerPartitionStateMigrations can only be applied on a SimpleRetriever with a Substream partition router. Got <class 'NoneType'>",
+            "LegacyToPerPartitionStateMigrations can only be applied on a SimpleRetriever with a SubstreamPartitionRouter, UnionPartitionRouter or CustomPartitionRouter. Got <class 'NoneType'>",
         ),
         (
             SimpleRetriever,

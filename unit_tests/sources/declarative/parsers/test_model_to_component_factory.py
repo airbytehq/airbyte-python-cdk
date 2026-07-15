@@ -4815,6 +4815,77 @@ def test_create_union_partition_router_with_request_option(child_router_manifest
         )
 
 
+@pytest.mark.parametrize(
+    "child_router_manifest, mismatched_field",
+    [
+        pytest.param(
+            """
+        - type: SubstreamPartitionRouter
+          parent_stream_configs:
+            - stream: "#/stream_A"
+              parent_key: full_name
+              partition_field: repo
+""",
+            "repo",
+            id="substream_child_with_mismatched_partition_field",
+        ),
+        pytest.param(
+            """
+        - type: ListPartitionRouter
+          cursor_field: repo
+          values: ["org/a"]
+""",
+            "repo",
+            id="list_child_with_mismatched_cursor_field",
+        ),
+    ],
+)
+def test_create_union_partition_router_with_mismatched_partition_field(
+    child_router_manifest, mismatched_field
+):
+    content = f"""
+    schema_loader:
+      file_path: "./source_example/schemas/{{{{ parameters['name'] }}}}.yaml"
+      name: "{{{{ parameters['stream_name'] }}}}"
+    retriever:
+      requester:
+        type: "HttpRequester"
+        path: "example"
+      record_selector:
+        extractor:
+          field_path: []
+    stream_A:
+      type: DeclarativeStream
+      name: "A"
+      primary_key: "id"
+      $parameters:
+        retriever: "#/retriever"
+        url_base: "https://airbyte.io"
+        schema_loader: "#/schema_loader"
+    partition_router:
+      type: UnionPartitionRouter
+      partition_field: repository
+      partition_routers:
+{child_router_manifest}
+        - type: ListPartitionRouter
+          cursor_field: repository
+          values: ["org/b"]
+    """
+    parsed_manifest = YamlDeclarativeSource._parse(content)
+    resolved_manifest = resolver.preprocess_manifest(parsed_manifest)
+    partition_router_manifest = transformer.propagate_types_and_parameters(
+        "", resolved_manifest["partition_router"], {}
+    )
+
+    with pytest.raises(ValueError, match=f"emits '{mismatched_field}'"):
+        factory.create_component(
+            model_type=UnionPartitionRouterModel,
+            component_definition=partition_router_manifest,
+            config=input_config,
+            stream_name="child_stream",
+        )
+
+
 def test_simple_retriever_with_query_properties():
     content = """
     selector:

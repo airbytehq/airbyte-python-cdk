@@ -2,11 +2,14 @@
 # Copyright (c) 2026 Airbyte, Inc., all rights reserved.
 #
 
+import logging
 from dataclasses import InitVar, dataclass
 from typing import Any, Iterable, List, Mapping, Optional
 
 from airbyte_cdk.sources.declarative.partition_routers.partition_router import PartitionRouter
 from airbyte_cdk.sources.types import StreamSlice, StreamState
+
+logger = logging.getLogger("airbyte")
 
 
 @dataclass
@@ -51,9 +54,15 @@ class UnionPartitionRouter(PartitionRouter):
                         f"partition field '{self.partition_field}'. Got {stream_slice.partition}"
                     )
                 value = stream_slice.partition[self.partition_field]
-                if value in seen:
-                    continue
-                seen.add(value)
+                try:
+                    if value in seen:
+                        continue
+                    seen.add(value)
+                except TypeError as exception:
+                    raise ValueError(
+                        f"UnionPartitionRouter can only deduplicate hashable partition values. "
+                        f"Got unhashable value {value!r} for partition field '{self.partition_field}'."
+                    ) from exception
                 carried_over_fields = {
                     key: field_value
                     for key, field_value in stream_slice.partition.items()
@@ -110,11 +119,18 @@ class UnionPartitionRouter(PartitionRouter):
 
         States are merged with a shallow dict update, which assumes no two child routers
         reference a parent stream with the same name. If they do, the last child's state
-        for that parent wins.
+        for that parent wins and a warning is logged.
         """
         merged_state: dict[str, StreamState] = {}
         for router in self.partition_routers:
             child_state = router.get_stream_state()
             if child_state:
+                colliding_keys = merged_state.keys() & child_state.keys()
+                if colliding_keys:
+                    logger.warning(
+                        f"UnionPartitionRouter child routers reference the same parent stream(s) "
+                        f"{sorted(colliding_keys)}; the last child's state for each colliding parent "
+                        f"stream overwrites the previous one."
+                    )
                 merged_state.update(child_state)
-        return merged_state or None
+        return merged_state
