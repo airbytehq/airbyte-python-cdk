@@ -47,21 +47,22 @@ class LegacyToPerPartitionStateMigration(StateMigration):
         self._cursor = cursor
         self._config = config
         self._parameters = parameters
-        if isinstance(partition_router, UnionPartitionRouter):
-            # UnionPartitionRouter treats partition_field as a plain string (it is never
-            # interpolated at runtime), so the migration must not interpolate it either.
-            self._partition_key_field = partition_router.partition_field
-        else:
-            self._partition_key_field = InterpolatedString.create(
-                self._get_partition_field(partition_router), parameters=self._parameters
-            ).eval(self._config)
+        self._partition_key_field = InterpolatedString.create(
+            self._get_partition_field(partition_router), parameters=self._parameters
+        ).eval(self._config)
         self._cursor_field = InterpolatedString.create(
             self._cursor.cursor_field, parameters=self._parameters
         ).eval(self._config)
 
     def _get_partition_field(
-        self, partition_router: Union[SubstreamPartitionRouter, CustomPartitionRouter]
+        self,
+        partition_router: Union[
+            SubstreamPartitionRouter, UnionPartitionRouter, CustomPartitionRouter
+        ],
     ) -> str:
+        if isinstance(partition_router, UnionPartitionRouter):
+            return partition_router.partition_field
+
         parent_stream_config = partition_router.parent_stream_configs[0]  # type: ignore # custom partition routers are expected to expose parent_stream_configs
 
         # Retrieve the partition field with a condition, as properties are returned as a dictionary for custom components.

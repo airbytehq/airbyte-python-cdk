@@ -4575,6 +4575,12 @@ class ModelToComponentFactory:
             for child in model.partition_routers
         ]
 
+        # partition_field depends only on config/parameters, so it is evaluated once at build
+        # time; the runtime component always receives a plain string.
+        partition_field = InterpolatedString.create(
+            model.partition_field, parameters=model.parameters or {}
+        ).eval(config)
+
         # Fail fast at build time when a built-in child router is statically known to emit a
         # partition field different from the union's. CustomPartitionRouter children are opaque
         # and can only be validated at runtime.
@@ -4595,12 +4601,16 @@ class ModelToComponentFactory:
                         ).eval(config)
                     )
             elif isinstance(child_model, UnionPartitionRouterModel):
-                child_partition_fields.append(child_model.partition_field)
+                child_partition_fields.append(
+                    InterpolatedString.create(
+                        child_model.partition_field, parameters=child_model.parameters or {}
+                    ).eval(config)
+                )
             for child_partition_field in child_partition_fields:
-                if child_partition_field != model.partition_field:
+                if child_partition_field != partition_field:
                     raise ValueError(
                         f"UnionPartitionRouter expects all child partition routers to emit the "
-                        f"partition field '{model.partition_field}', but a "
+                        f"partition field '{partition_field}', but a "
                         f"{child_model.type} child emits '{child_partition_field}'."
                     )
 
@@ -4621,7 +4631,7 @@ class ModelToComponentFactory:
 
         return UnionPartitionRouter(
             partition_routers=partition_routers,
-            partition_field=model.partition_field,
+            partition_field=partition_field,
             parameters=model.parameters or {},
         )
 

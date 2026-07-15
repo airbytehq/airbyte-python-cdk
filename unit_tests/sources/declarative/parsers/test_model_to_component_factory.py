@@ -4740,6 +4740,36 @@ def test_create_union_partition_router():
     assert parent_stream_configs[0].partition_field.eval({}) == "repository"
 
 
+def test_create_union_partition_router_with_interpolated_partition_field():
+    content = """
+    partition_router:
+      type: UnionPartitionRouter
+      partition_field: "{{ config['union_partition_field'] }}"
+      partition_routers:
+        - type: ListPartitionRouter
+          cursor_field: "{{ config['union_partition_field'] }}"
+          values: ["org/a"]
+        - type: ListPartitionRouter
+          cursor_field: repository
+          values: ["org/b"]
+    """
+    parsed_manifest = YamlDeclarativeSource._parse(content)
+    resolved_manifest = resolver.preprocess_manifest(parsed_manifest)
+    partition_router_manifest = transformer.propagate_types_and_parameters(
+        "", resolved_manifest["partition_router"], {}
+    )
+
+    partition_router = factory.create_component(
+        model_type=UnionPartitionRouterModel,
+        component_definition=partition_router_manifest,
+        config={**input_config, "union_partition_field": "repository"},
+        stream_name="child_stream",
+    )
+
+    assert isinstance(partition_router, UnionPartitionRouter)
+    assert partition_router.partition_field == "repository"
+
+
 @pytest.mark.parametrize(
     "child_router_manifest",
     [

@@ -4498,10 +4498,14 @@ definitions:
         enum: [UnionPartitionRouter]
       partition_field:
         title: Partition Field
-        description: The single partition key that all child partition routers' slices are normalized to. Each child router must emit this key in its partitions.
+        description: The single partition key that all child partition routers' slices are normalized to. Each child router must emit this key in its partitions. Interpolation is evaluated once when the connector is built, using the connector config and $parameters.
         type: string
+        interpolation_context:
+          - config
+          - parameters
         examples:
           - "repository"
+          - "{{ config['partition_field'] }}"
       partition_routers:
         title: Partition Routers
         description: The child partition routers whose partitions are unioned. Request options are not supported on child partition routers; partition values should be consumed via interpolation (e.g. `stream_partition`).

@@ -3254,8 +3254,8 @@ class UnionPartitionRouter(BaseModel):
     type: Literal["UnionPartitionRouter"]
     partition_field: str = Field(
         ...,
-        description="The single partition key that all child partition routers' slices are normalized to. Each child router must emit this key in its partitions.",
-        examples=["repository"],
+        description="The single partition key that all child partition routers' slices are normalized to. Each child router must emit this key in its partitions. Interpolation is evaluated once when the connector is built, using the connector config and $parameters.",
+        examples=["repository", "{{ config['partition_field'] }}"],
         title="Partition Field",
     )
     partition_routers: List[
