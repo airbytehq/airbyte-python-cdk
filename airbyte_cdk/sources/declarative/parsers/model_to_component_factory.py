@@ -666,6 +666,7 @@ from airbyte_cdk.sources.streams.concurrent.state_converters.datetime_stream_sta
 from airbyte_cdk.sources.streams.concurrent.state_converters.incrementing_count_stream_state_converter import (
     IncrementingCountStreamStateConverter,
 )
+from airbyte_cdk.sources.streams.core import NO_CURSOR_STATE_KEY
 from airbyte_cdk.sources.streams.http.error_handlers.response_models import ResponseAction
 from airbyte_cdk.sources.types import Config
 from airbyte_cdk.sources.utils.transform import TransformConfig, TypeTransformer
@@ -4178,7 +4179,14 @@ class ModelToComponentFactory:
                 )
 
                 if not extracted_parent_state and not isinstance(extracted_parent_state, dict):
-                    cursor_values = child_state.values()
+                    # Exclude the no-cursor sentinel (persisted by a child stream that
+                    # completed without a cursor value, e.g. {NO_CURSOR_STATE_KEY: True}).
+                    # Treating it as a real cursor value would synthesize a bogus parent
+                    # state like {cursor_field: True} and later crash when the parent's
+                    # ConcurrentCursor tries to parse the boolean as a timestamp.
+                    cursor_values = [
+                        value for key, value in child_state.items() if key != NO_CURSOR_STATE_KEY
+                    ]
                     if cursor_values and len(cursor_values) == 1:
                         incremental_sync_model: Union[
                             DatetimeBasedCursorModel,
