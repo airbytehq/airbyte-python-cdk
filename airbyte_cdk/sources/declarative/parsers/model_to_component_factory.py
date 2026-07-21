@@ -666,6 +666,7 @@ from airbyte_cdk.sources.streams.concurrent.state_converters.datetime_stream_sta
 from airbyte_cdk.sources.streams.concurrent.state_converters.incrementing_count_stream_state_converter import (
     IncrementingCountStreamStateConverter,
 )
+from airbyte_cdk.sources.streams.core import NO_CURSOR_STATE_KEY
 from airbyte_cdk.sources.streams.http.error_handlers.response_models import ResponseAction
 from airbyte_cdk.sources.types import Config
 from airbyte_cdk.sources.utils.transform import TransformConfig, TypeTransformer
@@ -4178,6 +4179,14 @@ class ModelToComponentFactory:
                 )
 
                 if not extracted_parent_state and not isinstance(extracted_parent_state, dict):
+                    # The no-cursor sentinel (`{NO_CURSOR_STATE_KEY: True}`) is written by
+                    # streams that completed without a cursor value (e.g. HubSpot's
+                    # `associations_*` streams). It is bookkeeping, not a cursor value, so it
+                    # must not be re-keyed as `{cursor_field: True}` — doing so feeds a boolean
+                    # into the datetime cursor parser and crashes the whole source at startup
+                    # (see airbytehq/oncall#13084). Start the parent cleanly instead.
+                    if set(child_state.keys()) == {NO_CURSOR_STATE_KEY}:
+                        return ConnectorStateManager([])
                     cursor_values = child_state.values()
                     if cursor_values and len(cursor_values) == 1:
                         incremental_sync_model: Union[

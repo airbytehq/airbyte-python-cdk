@@ -82,6 +82,7 @@ from airbyte_cdk.sources.declarative.models import HttpRequester as HttpRequeste
 from airbyte_cdk.sources.declarative.models import JwtAuthenticator as JwtAuthenticatorModel
 from airbyte_cdk.sources.declarative.models import ListPartitionRouter as ListPartitionRouterModel
 from airbyte_cdk.sources.declarative.models import OAuthAuthenticator as OAuthAuthenticatorModel
+from airbyte_cdk.sources.declarative.models import ParentStreamConfig as ParentStreamConfigModel
 from airbyte_cdk.sources.declarative.models import PropertyChunking as PropertyChunkingModel
 from airbyte_cdk.sources.declarative.models import RecordSelector as RecordSelectorModel
 from airbyte_cdk.sources.declarative.models import SimpleRetriever as SimpleRetrieverModel
@@ -3921,6 +3922,68 @@ def test_create_concurrent_cursor_from_perpartition_cursor_runs_state_migrations
         stream.cursor._partition_router.parent_stream_configs[0].stream.cursor.state["updated_at"]
         == "2024-02-01T00:00:00.000000+0000"
     )
+
+
+def test_instantiate_parent_stream_state_manager_ignores_no_cursor_sentinel():
+    """Regression test for airbytehq/oncall#13084.
+
+    A child stream that completed without a cursor value saves the sentinel state
+    `{"__ab_no_cursor_state_message": True}`. When the parent has
+    `incremental_dependency: true`, the factory used to re-key that boolean sentinel as
+    `{cursor_field: True}`, which fed a boolean into the datetime cursor parser and crashed
+    the whole source at startup with `ValueError: No format ... matching True`. The parent
+    state must instead be empty so the parent starts cleanly from its configured start date.
+    """
+    parent_stream_config_model = ParentStreamConfigModel.parse_obj(
+        {
+            "type": "ParentStreamConfig",
+            "parent_key": "id",
+            "partition_field": "id",
+            "incremental_dependency": True,
+            "stream": {
+                "type": "DeclarativeStream",
+                "name": "parent_stream",
+                "primary_key": "id",
+                "schema_loader": {
+                    "type": "InlineSchemaLoader",
+                    "schema": {
+                        "$schema": "http://json-schema.org/draft-07/schema",
+                        "type": "object",
+                        "properties": {"id": {"type": "string"}},
+                    },
+                },
+                "incremental_sync": {
+                    "type": "DatetimeBasedCursor",
+                    "cursor_field": "updated_at",
+                    "datetime_format": "%Y-%m-%dT%H:%M:%S.%f%z",
+                    "start_datetime": "{{ config['start_time'] }}",
+                },
+                "retriever": {
+                    "type": "SimpleRetriever",
+                    "requester": {
+                        "type": "HttpRequester",
+                        "url_base": "https://api.test.com/v3/parent",
+                        "http_method": "GET",
+                    },
+                    "record_selector": {
+                        "type": "RecordSelector",
+                        "extractor": {"type": "DpathExtractor", "field_path": []},
+                    },
+                },
+            },
+        }
+    )
+
+    factory = ModelToComponentFactory()
+
+    # Previously raised `ValueError: No format ... matching True`.
+    state_manager = factory._instantiate_parent_stream_state_manager(
+        child_state={"__ab_no_cursor_state_message": True},
+        config=input_config,
+        model=parent_stream_config_model,
+    )
+
+    assert state_manager.get_stream_state("parent_stream", None) == {}
 
 
 def test_incrementing_count_cursor_with_partition_router_raises_error():
