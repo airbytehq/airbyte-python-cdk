@@ -1,5 +1,7 @@
 # Copyright (c) 2024 Airbyte, Inc., all rights reserved.
 import copy
+import re
+from contextlib import nullcontext
 from copy import deepcopy
 from datetime import datetime, timedelta
 from typing import Any, List, Mapping, MutableMapping, Optional, Union
@@ -322,6 +324,29 @@ SUBSTREAM_MANIFEST_WITH_GLOBAL_CURSOR_AND_NO_DEPENDENCY["definitions"]["post_com
 SUBSTREAM_MANIFEST_WITH_GLOBAL_CURSOR_AND_NO_DEPENDENCY["definitions"]["cursor_incremental_sync"][
     "global_substream_cursor"
 ] = True
+
+# Single-worker (serial) variants used by the resume/no-op tests below. Pinning
+# `default_concurrency` to 1 makes the RECORD<->STATE interleaving deterministic so the resume
+# tests can reconstruct "records committed before the kill" without becoming a concurrent-ordering
+# flake. It is hardcoded rather than driven by `config['num_workers']` because the test spec sets
+# `additionalProperties: False` and rejects an extra `num_workers` config field.
+SUBSTREAM_MANIFEST_GLOBAL_CURSOR_NO_DEPENDENCY_SERIAL = deepcopy(
+    SUBSTREAM_MANIFEST_WITH_GLOBAL_CURSOR_AND_NO_DEPENDENCY
+)
+SUBSTREAM_MANIFEST_GLOBAL_CURSOR_NO_DEPENDENCY_SERIAL["concurrency_level"][
+    "default_concurrency"
+] = 1
+
+# Same global cursor, but the parent keeps `incremental_dependency: true` (the
+# `customer_balance_transactions` shape) so `_parent_state` is non-empty during the walk and the
+# empty-parent guard never fired -- used to prove the guard removal is a no-op there.
+SUBSTREAM_MANIFEST_GLOBAL_CURSOR_WITH_DEPENDENCY_SERIAL = deepcopy(SUBSTREAM_MANIFEST)
+SUBSTREAM_MANIFEST_GLOBAL_CURSOR_WITH_DEPENDENCY_SERIAL["definitions"]["cursor_incremental_sync"][
+    "global_substream_cursor"
+] = True
+SUBSTREAM_MANIFEST_GLOBAL_CURSOR_WITH_DEPENDENCY_SERIAL["concurrency_level"][
+    "default_concurrency"
+] = 1
 
 
 import orjson
@@ -1021,7 +1046,11 @@ CONFIG = {
                 "parent_state": {},
                 "state": {"created_at": VOTE_100_CREATED_AT},
             },
-            1,
+            # Two state messages: one interim heartbeat-keepalive checkpoint emitted
+            # during the walk (previously suppressed by the empty-parent guard) plus
+            # the final state. The interim checkpoint carries the same inert global
+            # cursor, so the final state is unchanged.
+            2,
         ),
     ],
 )
@@ -1050,6 +1079,621 @@ def test_incremental_parent_state_no_incremental_dependency(
         expected_state,
         state_count=state_count,
     )
+
+
+# Fresh initial sync of the ``post_comment_votes`` global-cursor substream whose parent
+# (``post_comments``) has no ``incremental_dependency`` -- i.e. the ``bank_accounts`` shape
+# from OC-12977. Every child request filters on the config ``start_date`` because the global
+# cursor is empty/unadvanced during the walk, so the exact same URLs answer both the initial
+# read and any resume-from-interim-checkpoint read.
+GLOBAL_CURSOR_RESUME_MOCK_REQUESTS = [
+    # Posts page 1
+    (
+        f"https://api.example.com/community/posts?per_page=100&start_time={START_DATE}",
+        {
+            "posts": [
+                {"id": 1, "updated_at": POST_1_UPDATED_AT},
+                {"id": 2, "updated_at": POST_2_UPDATED_AT},
+            ],
+            "next_page": f"https://api.example.com/community/posts?per_page=100&start_time={START_DATE}&page=2",
+        },
+    ),
+    # Posts page 2
+    (
+        f"https://api.example.com/community/posts?per_page=100&start_time={START_DATE}&page=2",
+        {"posts": [{"id": 3, "updated_at": POST_3_UPDATED_AT}]},
+    ),
+    # Comments for post 1 page 1
+    (
+        "https://api.example.com/community/posts/1/comments?per_page=100",
+        {
+            "comments": [
+                {"id": 9, "post_id": 1, "updated_at": COMMENT_9_OLDEST},
+                {"id": 10, "post_id": 1, "updated_at": COMMENT_10_UPDATED_AT},
+                {"id": 11, "post_id": 1, "updated_at": COMMENT_11_UPDATED_AT},
+            ],
+            "next_page": "https://api.example.com/community/posts/1/comments?per_page=100&page=2",
+        },
+    ),
+    # Comments for post 1 page 2
+    (
+        "https://api.example.com/community/posts/1/comments?per_page=100&page=2",
+        {"comments": [{"id": 12, "post_id": 1, "updated_at": COMMENT_12_UPDATED_AT}]},
+    ),
+    # Votes for comment 10 page 1
+    (
+        f"https://api.example.com/community/posts/1/comments/10/votes?per_page=100&start_time={START_DATE}",
+        {
+            "votes": [{"id": 100, "comment_id": 10, "created_at": VOTE_100_CREATED_AT}],
+            "next_page": f"https://api.example.com/community/posts/1/comments/10/votes?per_page=100&page=2&start_time={START_DATE}",
+        },
+    ),
+    # Votes for comment 10 page 2
+    (
+        f"https://api.example.com/community/posts/1/comments/10/votes?per_page=100&page=2&start_time={START_DATE}",
+        {"votes": [{"id": 101, "comment_id": 10, "created_at": VOTE_101_CREATED_AT}]},
+    ),
+    # Votes for comment 11
+    (
+        f"https://api.example.com/community/posts/1/comments/11/votes?per_page=100&start_time={START_DATE}",
+        {"votes": [{"id": 111, "comment_id": 11, "created_at": VOTE_111_CREATED_AT}]},
+    ),
+    # Votes for comment 12 (empty child partition)
+    (
+        f"https://api.example.com/community/posts/1/comments/12/votes?per_page=100&start_time={START_DATE}",
+        {"votes": []},
+    ),
+    # Comments for post 2 page 1
+    (
+        "https://api.example.com/community/posts/2/comments?per_page=100",
+        {
+            "comments": [{"id": 20, "post_id": 2, "updated_at": COMMENT_20_UPDATED_AT}],
+            "next_page": "https://api.example.com/community/posts/2/comments?per_page=100&page=2",
+        },
+    ),
+    # Comments for post 2 page 2
+    (
+        "https://api.example.com/community/posts/2/comments?per_page=100&page=2",
+        {"comments": [{"id": 21, "post_id": 2, "updated_at": COMMENT_21_UPDATED_AT}]},
+    ),
+    # Votes for comment 20
+    (
+        f"https://api.example.com/community/posts/2/comments/20/votes?per_page=100&start_time={START_DATE}",
+        {"votes": [{"id": 200, "comment_id": 20, "created_at": VOTE_200_CREATED_AT}]},
+    ),
+    # Votes for comment 21
+    (
+        f"https://api.example.com/community/posts/2/comments/21/votes?per_page=100&start_time={START_DATE}",
+        {"votes": [{"id": 210, "comment_id": 21, "created_at": VOTE_210_CREATED_AT}]},
+    ),
+    # Comments for post 3
+    (
+        "https://api.example.com/community/posts/3/comments?per_page=100",
+        {"comments": [{"id": 30, "post_id": 3, "updated_at": COMMENT_30_UPDATED_AT}]},
+    ),
+    # Votes for comment 30
+    (
+        f"https://api.example.com/community/posts/3/comments/30/votes?per_page=100&start_time={START_DATE}",
+        {"votes": [{"id": 300, "comment_id": 30, "created_at": VOTE_300_CREATED_AT_TIMESTAMP}]},
+    ),
+]
+
+GLOBAL_CURSOR_RESUME_EXPECTED_RECORDS = [
+    {
+        "comment_id": 10,
+        "comment_updated_at": COMMENT_10_UPDATED_AT,
+        "created_at": VOTE_100_CREATED_AT,
+        "id": 100,
+    },
+    {
+        "comment_id": 10,
+        "comment_updated_at": COMMENT_10_UPDATED_AT,
+        "created_at": VOTE_101_CREATED_AT,
+        "id": 101,
+    },
+    {
+        "comment_id": 11,
+        "comment_updated_at": COMMENT_11_UPDATED_AT,
+        "created_at": VOTE_111_CREATED_AT,
+        "id": 111,
+    },
+    {
+        "comment_id": 20,
+        "comment_updated_at": COMMENT_20_UPDATED_AT,
+        "created_at": VOTE_200_CREATED_AT,
+        "id": 200,
+    },
+    {
+        "comment_id": 21,
+        "comment_updated_at": COMMENT_21_UPDATED_AT,
+        "created_at": VOTE_210_CREATED_AT,
+        "id": 210,
+    },
+    {
+        "comment_id": 30,
+        "comment_updated_at": COMMENT_30_UPDATED_AT,
+        "created_at": str(VOTE_300_CREATED_AT_TIMESTAMP),
+        "id": 300,
+    },
+]
+
+
+# Data-last variant of the resume fixture that mirrors the real OC-12977 failure more faithfully:
+# a run of empty parents (comments with no votes) *precedes* the single data-bearing parent
+# (comment 105). Interim checkpoint STATE is therefore emitted repeatedly during the empty stretch,
+# before any record exists -- exactly the checkpoints we most need to prove are safe to resume from.
+GLOBAL_CURSOR_DATA_LAST_MOCK_REQUESTS = [
+    (
+        f"https://api.example.com/community/posts?per_page=100&start_time={START_DATE}",
+        {"posts": [{"id": 1, "updated_at": POST_1_UPDATED_AT}]},
+    ),
+    (
+        "https://api.example.com/community/posts/1/comments?per_page=100",
+        {
+            "comments": [
+                {"id": 101, "post_id": 1, "updated_at": "2024-01-20T00:00:00Z"},
+                {"id": 102, "post_id": 1, "updated_at": "2024-01-19T00:00:00Z"},
+                {"id": 103, "post_id": 1, "updated_at": "2024-01-18T00:00:00Z"},
+                {"id": 104, "post_id": 1, "updated_at": "2024-01-17T00:00:00Z"},
+                {"id": 105, "post_id": 1, "updated_at": "2024-01-25T00:00:00Z"},
+            ]
+        },
+    ),
+    # The first four parents are empty (the long silent stretch).
+    (
+        f"https://api.example.com/community/posts/1/comments/101/votes?per_page=100&start_time={START_DATE}",
+        {"votes": []},
+    ),
+    (
+        f"https://api.example.com/community/posts/1/comments/102/votes?per_page=100&start_time={START_DATE}",
+        {"votes": []},
+    ),
+    (
+        f"https://api.example.com/community/posts/1/comments/103/votes?per_page=100&start_time={START_DATE}",
+        {"votes": []},
+    ),
+    (
+        f"https://api.example.com/community/posts/1/comments/104/votes?per_page=100&start_time={START_DATE}",
+        {"votes": []},
+    ),
+    # The data-bearing parent comes LAST.
+    (
+        f"https://api.example.com/community/posts/1/comments/105/votes?per_page=100&start_time={START_DATE}",
+        {
+            "votes": [
+                {"id": 500, "comment_id": 105, "created_at": "2024-01-15T00:00:00Z"},
+                {"id": 501, "comment_id": 105, "created_at": "2024-01-16T00:00:00Z"},
+            ]
+        },
+    ),
+]
+
+GLOBAL_CURSOR_DATA_LAST_EXPECTED_RECORDS = [
+    {
+        "comment_id": 105,
+        "comment_updated_at": "2024-01-25T00:00:00Z",
+        "created_at": "2024-01-15T00:00:00Z",
+        "id": 500,
+    },
+    {
+        "comment_id": 105,
+        "comment_updated_at": "2024-01-25T00:00:00Z",
+        "created_at": "2024-01-16T00:00:00Z",
+        "id": 501,
+    },
+]
+
+
+def _record_state_sequence(output: EntrypointOutput) -> List[tuple]:
+    """Return the ordered `(kind, record-id)` sequence of RECORD/STATE messages.
+
+    Used to assert the RECORD<->STATE interleaving is deterministic across repeated runs so the
+    resume reconstruction below cannot become a concurrent-ordering flake.
+    """
+    sequence: List[tuple] = []
+    for message in output.records_and_state_messages:
+        if message.type.value == "RECORD":
+            sequence.append(("RECORD", message.record.data["id"]))
+        elif message.type.value == "STATE":
+            sequence.append(("STATE", None))
+    return sequence
+
+
+def _assert_resume_from_every_interim_checkpoint_skips_no_records(
+    manifest: Mapping[str, Any],
+    mock_requests: List[tuple],
+    expected_records: List[Mapping[str, Any]],
+) -> None:
+    """Prove every interim checkpoint of a global-cursor substream is safe to resume from.
+
+    Runs `manifest` to completion with the 600s throttle disabled (so an interim checkpoint STATE
+    is emitted at every `close_partition`), then for each interim STATE simulates a kill right after
+    it -- keeping only the records emitted before that STATE -- and a fresh resume seeded with it.
+    Asserts:
+
+    1. the RECORD<->STATE interleaving is deterministic across repeated runs (the caller pins
+       `default_concurrency` to 1, so this cannot become a concurrent-ordering flake);
+    2. the union of pre-kill and resumed records equals the full expected set with nothing skipped;
+       and
+    3. resume meaningfully contributes the tail -- for at least one checkpoint that precedes some
+       data, the resumed read returns records not already emitted before the kill, so the test
+       cannot pass trivially if all records preceded the first checkpoint.
+    """
+    with patch.object(
+        ConcurrentPerPartitionCursor, "_throttle_state_message", return_value=9999999.0
+    ):
+        with requests_mock.Mocker() as m:
+            for url, response in mock_requests:
+                m.get(url, json=response)
+
+            # Fresh initial sync (no incoming state), interrupted implicitly by inspecting
+            # every interim checkpoint it emits.
+            output = _run_read(manifest, CONFIG, STREAM_NAME, None)
+
+            # (1) Determinism: the same fixture must produce byte-identical record/state
+            # interleaving on every run, otherwise reconstructing "records committed before the
+            # kill" would be flaky under the concurrent engine.
+            rerun = _run_read(manifest, CONFIG, STREAM_NAME, None)
+            assert _record_state_sequence(output) == _record_state_sequence(rerun), (
+                "RECORD/STATE interleaving is not deterministic across runs; the resume test would "
+                "be a concurrent-ordering flake."
+            )
+            assert [r.record.data for r in output.records] == [r.record.data for r in rerun.records]
+
+            # Sanity: the uninterrupted run yields the full expected record set.
+            assert sorted([r.record.data for r in output.records], key=lambda x: x["id"]) == sorted(
+                expected_records, key=lambda x: x["id"]
+            )
+
+            # The fix must produce at least one interim checkpoint STATE during the walk
+            # (before the final state) -- otherwise there is nothing to resume from.
+            assert len(output.state_messages) >= 2, (
+                "Expected at least one interim checkpoint STATE plus the final STATE; "
+                f"got {len(output.state_messages)} state message(s)."
+            )
+
+            # Map each interim STATE to the records emitted before it (what the destination
+            # would have committed had the source been killed right after that checkpoint).
+            cumulative_records: List[Mapping[str, Any]] = []
+            interim_checkpoints = []
+            for message in output.records_and_state_messages:
+                if message.type.value == "RECORD":
+                    cumulative_records.append(message.record.data)
+                elif message.type.value == "STATE":
+                    interim_checkpoints.append((message.state, cumulative_records.copy()))
+
+            expected_deduped = list({orjson.dumps(r): r for r in expected_records}.values())
+
+            # Resume from every checkpoint except the final one (the final state is the
+            # completed sync, not an interruption).
+            resume_contributed_new_tail = False
+            for state, records_before_kill in interim_checkpoints[:-1]:
+                resume_output = _run_read(manifest, CONFIG, STREAM_NAME, [state])
+                records_after_resume = [r.record.data for r in resume_output.records]
+
+                combined = records_before_kill + records_after_resume
+                combined_deduped = list({orjson.dumps(r): r for r in combined}.values())
+
+                assert sorted(combined_deduped, key=lambda x: x["id"]) == sorted(
+                    expected_deduped, key=lambda x: x["id"]
+                ), (
+                    "Records were skipped when resuming from interim checkpoint "
+                    f"{state.state.stream.stream_state.__dict__}. "
+                    f"Expected {expected_deduped}, got {combined_deduped}."
+                )
+
+                # (3) The resume must actually supply records that were not already committed
+                # before the kill, for at least one checkpoint that precedes some data.
+                before_keys = {orjson.dumps(r) for r in records_before_kill}
+                new_from_resume = [
+                    r for r in records_after_resume if orjson.dumps(r) not in before_keys
+                ]
+                if (
+                    len(records_before_kill) < len(expected_deduped)
+                    and records_after_resume
+                    and new_from_resume
+                ):
+                    resume_contributed_new_tail = True
+
+            assert resume_contributed_new_tail, (
+                "No interim checkpoint's resume contributed records beyond those already emitted "
+                "before the kill; the test could pass trivially if all records preceded the first "
+                "checkpoint."
+            )
+
+
+def test_global_cursor_substream_resume_after_interruption_skips_no_records():
+    """Interrupt a global-cursor substream mid-walk, resume from every interim checkpoint, and prove no records are skipped.
+
+    Regression test for OC-12977. A ``global_substream_cursor`` substream whose parent has no
+    ``incremental_dependency`` (empty parent state -- the ``bank_accounts`` shape) now emits its
+    throttled checkpoint STATE during the walk because the empty-parent guard was removed. This
+    test proves those interim checkpoints are *safe to resume from*: for each interim STATE the
+    cursor emits, we simulate the source being killed right after it (keeping only the records
+    emitted before that STATE), then start a fresh read seeded with that STATE and assert the
+    union of pre-kill records and resume records covers the full expected set with nothing
+    skipped. Because the interim global cursor is inert until the sync finishes, resuming
+    re-reads rather than skips -- which is exactly the no-data-loss guarantee we want.
+    """
+    _assert_resume_from_every_interim_checkpoint_skips_no_records(
+        SUBSTREAM_MANIFEST_GLOBAL_CURSOR_NO_DEPENDENCY_SERIAL,
+        GLOBAL_CURSOR_RESUME_MOCK_REQUESTS,
+        GLOBAL_CURSOR_RESUME_EXPECTED_RECORDS,
+    )
+
+
+def test_global_cursor_substream_resume_with_data_bearing_partition_last_skips_no_records():
+    """Resume is safe even when the data-bearing partition comes after a long empty-parent stretch.
+
+    This mirrors the customer failure more faithfully than the front-loaded fixture: the source
+    emits several interim checkpoint STATE messages while walking empty parents *before* any record
+    exists, then the last parent finally yields the data. Resuming from any of those early
+    (zero-record) checkpoints must still recover the full tail with nothing skipped -- proving the
+    dangerous case (checkpoints emitted during the silent stretch that precedes real data) is safe.
+    """
+    _assert_resume_from_every_interim_checkpoint_skips_no_records(
+        SUBSTREAM_MANIFEST_GLOBAL_CURSOR_NO_DEPENDENCY_SERIAL,
+        GLOBAL_CURSOR_DATA_LAST_MOCK_REQUESTS,
+        GLOBAL_CURSOR_DATA_LAST_EXPECTED_RECORDS,
+    )
+
+
+def test_guard_removal_is_a_noop_for_non_empty_parent_state():
+    """The guard removal is a complete no-op for the non-empty-parent-state (incremental_dependency) shape.
+
+    The empty-parent guard only ever fired when ``_use_global_cursor and not _parent_state``. For a
+    substream whose parent has ``incremental_dependency: true`` (the ``customer_balance_transactions``
+    shape), ``_parent_state`` is non-empty during the walk, so the guard was already bypassed. This
+    test proves removing it changes nothing there: on the same fixture, the emitted records and the
+    full sequence of STATE messages are byte-for-byte identical with the guard removed (current
+    code) vs. restored (pre-fix). This bounds the blast radius of the shared-CDK change to the
+    empty-parent case, which is the main concern for a change in shared CDK code.
+    """
+    with patch.object(
+        ConcurrentPerPartitionCursor, "_throttle_state_message", return_value=9999999.0
+    ):
+        with requests_mock.Mocker() as m:
+            for url, response in GLOBAL_CURSOR_RESUME_MOCK_REQUESTS:
+                m.get(url, json=response)
+
+            after_output = _run_read(
+                SUBSTREAM_MANIFEST_GLOBAL_CURSOR_WITH_DEPENDENCY_SERIAL, CONFIG, STREAM_NAME, None
+            )
+            with patch.object(
+                ConcurrentPerPartitionCursor,
+                "_emit_state_message",
+                _emit_state_message_with_guard,
+            ):
+                before_output = _run_read(
+                    SUBSTREAM_MANIFEST_GLOBAL_CURSOR_WITH_DEPENDENCY_SERIAL,
+                    CONFIG,
+                    STREAM_NAME,
+                    None,
+                )
+
+    assert [r.record.data for r in after_output.records] == [
+        r.record.data for r in before_output.records
+    ], "Guard removal changed emitted records for the non-empty-parent-state shape."
+
+    after_states = [m.state.stream.stream_state.__dict__ for m in after_output.state_messages]
+    before_states = [m.state.stream.stream_state.__dict__ for m in before_output.state_messages]
+    assert after_states == before_states, (
+        "Guard removal changed emitted STATE for the non-empty-parent-state shape; the change must "
+        "be a no-op when the parent has incremental_dependency (non-empty parent state)."
+    )
+
+
+# OC-12977 / Serhii's orchestrator-overload risk: removing the empty-parent guard makes a
+# global_substream_cursor substream emit interim checkpoint STATE during a long empty-parent
+# walk. The constants + helpers below build that substream (the bank_accounts shape) walking an
+# arbitrary number of empty parents (comments whose votes are all empty) so we can measure the
+# persisted state size as the empty-parent count grows.
+MANY_EMPTY_PARENTS_UPDATED_AT = "2024-06-01T00:00:00Z"  # >= START_DATE so no parent is filtered out
+
+
+def _emit_state_message_with_guard(self, throttle: bool = True) -> None:
+    """Pre-fix ``_emit_state_message`` with the empty-parent guard restored.
+
+    Used to reproduce the pre-fix baseline so we can compare persisted state size before vs.
+    after the guard removal on the exact same fixture.
+    """
+    if throttle:
+        current_time = self._throttle_state_message()
+        if current_time is None:
+            return
+        self._last_emission_time = current_time
+        # The guard that PR #1068 removes:
+        if self._use_global_cursor and not self._parent_state:
+            return
+
+    self._connector_state_manager.update_state_for_stream(
+        self._stream_name,
+        self._stream_namespace,
+        self.state,
+    )
+    state_message = self._connector_state_manager.create_state_message(
+        self._stream_name, self._stream_namespace
+    )
+    self._message_repository.emit_message(state_message)
+
+
+def _run_global_cursor_over_empty_parents(
+    num_empty_parents, num_non_empty_parents=0, reintroduce_guard=False
+):
+    """Run the global-cursor substream over ``num_empty_parents`` empty parents.
+
+    One post fans out to ``num_non_empty_parents + num_empty_parents`` comments (the parents).
+    The first ``num_non_empty_parents`` comments each return a single vote (advancing the global
+    cursor and populating the in-memory per-partition map), and the remaining ``num_empty_parents``
+    comments return empty votes. The only thing that could grow with the empty-parent count is the
+    persisted state, which is exactly what we measure. When ``reintroduce_guard`` is True the
+    pre-fix empty-parent guard is patched back in to produce the baseline for comparison.
+    """
+    posts_response = {"posts": [{"id": 1, "updated_at": MANY_EMPTY_PARENTS_UPDATED_AT}]}
+    non_empty_ids = [1000 + i for i in range(num_non_empty_parents)]
+    empty_ids = [1000 + num_non_empty_parents + i for i in range(num_empty_parents)]
+    comments_response = {
+        "comments": [
+            {"id": cid, "post_id": 1, "updated_at": MANY_EMPTY_PARENTS_UPDATED_AT}
+            for cid in non_empty_ids + empty_ids
+        ]
+    }
+
+    guard_ctx = (
+        patch.object(
+            ConcurrentPerPartitionCursor,
+            "_emit_state_message",
+            _emit_state_message_with_guard,
+        )
+        if reintroduce_guard
+        else nullcontext()
+    )
+    with guard_ctx, requests_mock.Mocker() as m:
+        # Every empty parent's votes call (one per comment) answers empty by default.
+        m.get(re.compile(r"/votes"), json={"votes": []})
+        # The non-empty parents each return a single vote (more specific match wins).
+        for idx, cid in enumerate(non_empty_ids):
+            m.get(
+                f"https://api.example.com/community/posts/1/comments/{cid}/votes?per_page=100&start_time={START_DATE}",
+                json={
+                    "votes": [
+                        {
+                            "id": 900000 + idx,
+                            "comment_id": cid,
+                            "created_at": MANY_EMPTY_PARENTS_UPDATED_AT,
+                        }
+                    ]
+                },
+            )
+        m.get(
+            f"https://api.example.com/community/posts?per_page=100&start_time={START_DATE}",
+            json=posts_response,
+        )
+        m.get(
+            "https://api.example.com/community/posts/1/comments?per_page=100",
+            json=comments_response,
+        )
+        return _run_read(
+            SUBSTREAM_MANIFEST_WITH_GLOBAL_CURSOR_AND_NO_DEPENDENCY,
+            CONFIG,
+            STREAM_NAME,
+            None,
+        )
+
+
+def _persisted_state_size(state_message) -> int:
+    return len(orjson.dumps(state_message.state.stream.stream_state.__dict__))
+
+
+def test_removing_empty_parent_guard_keeps_state_size_flat_as_empty_parents_grow():
+    """OC-12977: prove removing the empty-parent guard does not balloon persisted state.
+
+    Serhii's flagged risk is that emitting interim checkpoint STATE for a ``global_substream_cursor``
+    substream with empty parents could grow the persisted connection state per empty parent and
+    overload the orchestrator. This test walks the same substream over a handful vs. thousands of
+    empty parents and asserts:
+
+    1. the persisted state carries a single bounded global-cursor value with **no** per-partition
+       ``states`` map -- so there is no per-parent growth vector at all;
+    2. the persisted state is byte-for-byte identical at low vs. high empty-parent counts;
+    3. the persisted state is byte-for-byte identical to the pre-fix (guard-restored) baseline;
+    4. the 600s throttle keeps the emitted-state *count* a small constant, independent of the
+       parent count (we re-emit the same small state at most ~once/600s, not once per parent); and
+    5. the in-memory per-partition retention cap is unchanged (it bounds memory, not state).
+    """
+    low, high = 5, 3000
+
+    low_output = _run_global_cursor_over_empty_parents(low)
+    high_output = _run_global_cursor_over_empty_parents(high)
+
+    # Pure empty-parent walk: no records emitted for either count.
+    assert len(low_output.records) == 0
+    assert len(high_output.records) == 0
+
+    low_final = low_output.state_messages[-1].state.stream.stream_state.__dict__
+    high_final = high_output.state_messages[-1].state.stream.stream_state.__dict__
+
+    # (1) Global mode never serializes a per-partition state map -> no per-parent growth vector.
+    assert "states" not in low_final
+    assert "states" not in high_final
+
+    # (2) Persisted state is byte-for-byte identical at low vs. high empty-parent counts.
+    assert orjson.dumps(low_final) == orjson.dumps(high_final)
+    low_size = len(orjson.dumps(low_final))
+    high_size = len(orjson.dumps(high_final))
+    assert low_size == high_size, (
+        f"Persisted state grew with empty-parent count: {low_size}B at {low} parents "
+        f"vs {high_size}B at {high} parents."
+    )
+    # Bounded: a single small global-cursor value, not kilobytes-per-parent.
+    assert high_size < 500, f"Persisted state unexpectedly large: {high_size}B"
+    # Every emitted state message (interim + final) is the same bounded size.
+    assert max(_persisted_state_size(m) for m in high_output.state_messages) < 500
+
+    # (3) Unchanged vs. the pre-fix (guard-restored) baseline on the same fixture.
+    baseline_output = _run_global_cursor_over_empty_parents(high, reintroduce_guard=True)
+    baseline_final = baseline_output.state_messages[-1].state.stream.stream_state.__dict__
+    assert orjson.dumps(high_final) == orjson.dumps(baseline_final), (
+        "Persisted final state differs from the pre-fix baseline; guard removal must not "
+        f"change state content. after={high_final} baseline={baseline_final}"
+    )
+
+    # (4) The 600s throttle keeps the emitted-state count a small constant, not per-parent.
+    assert len(high_output.state_messages) <= 3, (
+        "Expected the 600s throttle to bound state emissions to a small constant, got "
+        f"{len(high_output.state_messages)} state messages for {high} empty parents."
+    )
+    assert len(high_output.state_messages) == len(low_output.state_messages), (
+        "State-emission count scaled with empty-parent count: "
+        f"{len(low_output.state_messages)} at {low} vs {len(high_output.state_messages)} at {high}."
+    )
+
+    # (5) The in-memory per-partition retention cap is unchanged (bounds memory, not state).
+    assert ConcurrentPerPartitionCursor.DEFAULT_MAX_PARTITIONS_NUMBER == 25_000
+    assert ConcurrentPerPartitionCursor.SWITCH_TO_GLOBAL_LIMIT == 10_000
+
+
+def test_persisted_state_has_no_per_partition_entries_even_when_cursor_advances():
+    """The per-partition state map must not leak into persisted state, even with real records.
+
+    A skeptic might argue the flat state size above is only because a fully-empty walk produces
+    no cursor value. This test mixes a few non-empty parents (which advance the global cursor and
+    populate the in-memory per-partition map) among many empty parents, then proves the persisted
+    state still carries **no** ``states`` per-partition list and stays byte-for-byte identical as
+    the empty-parent count grows from a handful to thousands. This is the core guarantee behind the
+    orchestrator-overload risk: a ``global_substream_cursor`` stream serializes a single global
+    cursor value, never one entry per parent.
+    """
+    low_output = _run_global_cursor_over_empty_parents(5, num_non_empty_parents=3)
+    high_output = _run_global_cursor_over_empty_parents(3000, num_non_empty_parents=3)
+
+    # The non-empty parents produced records, so the global cursor actually advanced.
+    assert len(low_output.records) == 3
+    assert len(high_output.records) == 3
+
+    low_final = low_output.state_messages[-1].state.stream.stream_state.__dict__
+    high_final = high_output.state_messages[-1].state.stream.stream_state.__dict__
+
+    # A real global cursor value is present now...
+    assert "state" in high_final
+    # ...but there is still no per-partition state map, regardless of the empty-parent count.
+    assert "states" not in low_final
+    assert "states" not in high_final
+
+    # The persisted state is identical at 5 vs. 3000 empty parents apart from ``lookback_window``,
+    # which is a small integer derived from the sync's wall-clock duration (not the parent count).
+    # Everything else -- the single global cursor value and the empty parent_state -- is unchanged.
+    def _without_lookback(state):
+        return {k: v for k, v in state.items() if k != "lookback_window"}
+
+    assert _without_lookback(low_final) == _without_lookback(high_final), (
+        f"Persisted state (excluding lookback_window) changed with empty-parent count: "
+        f"{low_final} vs {high_final}"
+    )
+    # And the total serialized size stays flat and bounded regardless of the empty-parent count
+    # (the only possible variation is a digit or two in the wall-clock-derived lookback_window).
+    assert abs(len(orjson.dumps(low_final)) - len(orjson.dumps(high_final))) <= 3
+    assert len(orjson.dumps(high_final)) < 500
 
 
 def run_incremental_parent_state_test(
@@ -3607,6 +4251,47 @@ def test_state_throttling(mocker):
     cursor._emit_state_message()
     mock_connector_manager.update_state_for_stream.assert_called_once()
     mock_repo.emit_message.assert_called_once()
+
+
+@pytest.mark.parametrize(
+    "parent_state",
+    [
+        pytest.param({}, id="empty_parent_state"),
+        pytest.param({"parent": {"updated_at": "2024-01-01"}}, id="non_empty_parent_state"),
+    ],
+)
+def test_global_cursor_emits_interim_state_even_when_parent_state_empty(mocker, parent_state):
+    """
+    Regression test for OC-12977: a global_substream_cursor stream walking a large
+    parent with mostly-empty children must still emit its throttled checkpoint STATE
+    to keep the Airbyte source heartbeat alive, even when the parent state is empty
+    (no ``incremental_dependency``). The previous empty-parent guard suppressed this
+    interim emission, causing >24h silence and a heartbeat timeout.
+    """
+    cursor = ConcurrentPerPartitionCursor(
+        cursor_factory=MagicMock(),
+        partition_router=MagicMock(),
+        stream_name="test_stream",
+        stream_namespace=None,
+        stream_state={},
+        message_repository=MagicMock(),
+        connector_state_manager=MagicMock(),
+        connector_state_converter=MagicMock(),
+        cursor_field=MagicMock(),
+    )
+
+    cursor._use_global_cursor = True
+    cursor._parent_state = parent_state
+    cursor._last_emission_time = 0
+
+    mock_time = mocker.patch("time.time")
+    # Exceed the 600s throttle so emission is not throttled.
+    mock_time.return_value = 700
+
+    cursor._emit_state_message()
+
+    cursor._connector_state_manager.update_state_for_stream.assert_called_once()
+    cursor._message_repository.emit_message.assert_called_once()
 
 
 def test_given_no_partitions_processed_when_close_partition_then_no_state_update():
