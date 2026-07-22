@@ -8,6 +8,7 @@ import pytest
 import requests
 
 from airbyte_cdk.sources.declarative.decoders.json_decoder import JsonDecoder
+from airbyte_cdk.sources.declarative.extractors import DpathExtractor
 from airbyte_cdk.sources.declarative.interpolation.interpolated_boolean import InterpolatedBoolean
 from airbyte_cdk.sources.declarative.requesters.paginators.strategies.cursor_pagination_strategy import (
     CursorPaginationStrategy,
@@ -85,6 +86,77 @@ def test_cursor_pagination_strategy(template_string, stop_condition, expected_to
     token = strategy.next_page_token(response, 1, last_record)
     assert expected_token == token
     assert page_size == strategy.get_page_size()
+
+
+@pytest.mark.parametrize(
+    "response_results, last_page_size, expected_next_page_token",
+    [
+        pytest.param(
+            [{"id": 1}, {"id": 2}],
+            0,
+            "next_token",
+            id="test_full_page_continues_even_if_all_records_filtered",
+        ),
+        pytest.param(
+            [{"id": 1}, {"id": 2}],
+            1,
+            "next_token",
+            id="test_full_page_continues_even_if_some_records_filtered",
+        ),
+        pytest.param(
+            [{"id": 1}],
+            1,
+            None,
+            id="test_partial_page_stops_pagination",
+        ),
+        pytest.param(
+            [],
+            0,
+            None,
+            id="test_empty_page_stops_pagination",
+        ),
+    ],
+)
+def test_cursor_pagination_strategy_with_extractor(
+    response_results, last_page_size, expected_next_page_token
+):
+    extractor = DpathExtractor(field_path=["results"], parameters={}, config={})
+    strategy = CursorPaginationStrategy(
+        page_size=2,
+        cursor_value="{{ response.next_token }}",
+        stop_condition="{{ last_page_size < 2 }}",
+        extractor=extractor,
+        config={},
+        parameters={},
+    )
+
+    response = requests.Response()
+    response._content = json.dumps(
+        {"results": response_results, "next_token": "next_token"}
+    ).encode("utf-8")
+    last_record = (
+        Record(data=response_results[-1], stream_name="stream_name") if response_results else None
+    )
+
+    next_page_token = strategy.next_page_token(response, last_page_size, last_record)
+    assert expected_next_page_token == next_page_token
+
+
+def test_cursor_pagination_strategy_with_extractor_interpolates_raw_count_in_cursor_value():
+    extractor = DpathExtractor(field_path=["results"], parameters={}, config={})
+    strategy = CursorPaginationStrategy(
+        page_size=2,
+        cursor_value="{{ last_page_size }}",
+        extractor=extractor,
+        config={},
+        parameters={},
+    )
+
+    response = requests.Response()
+    response._content = json.dumps({"results": [{"id": 1}, {"id": 2}]}).encode("utf-8")
+
+    next_page_token = strategy.next_page_token(response, 0, None)
+    assert next_page_token == 2
 
 
 def test_last_record_points_to_the_last_item_in_last_records_array():

@@ -1775,7 +1775,12 @@ class ModelToComponentFactory:
             raise ValueError("jitter_range_in_seconds must be greater than or equal to 0")
 
     def create_cursor_pagination(
-        self, model: CursorPaginationModel, config: Config, decoder: Decoder, **kwargs: Any
+        self,
+        model: CursorPaginationModel,
+        config: Config,
+        decoder: Decoder,
+        extractor_model: Optional[Union[CustomRecordExtractorModel, DpathExtractorModel]] = None,
+        **kwargs: Any,
     ) -> CursorPaginationStrategy:
         if isinstance(decoder, PaginationDecoderDecorator):
             inner_decoder = decoder.decoder
@@ -1790,6 +1795,17 @@ class ModelToComponentFactory:
                 self._UNSUPPORTED_DECODER_ERROR.format(decoder_type=type(inner_decoder))
             )
 
+        # Like OffsetIncrement and PageIncrement, we instantiate a separate extractor with identical
+        # behavior to the RecordSelector's so the strategy can count the raw records in the response,
+        # keeping `last_page_size` in stop_condition/cursor_value interpolation pre-record-filter.
+        extractor = (
+            self._create_component_from_model(
+                model=extractor_model, config=config, decoder=decoder_to_use
+            )
+            if extractor_model
+            else None
+        )
+
         # Pydantic v1 Union type coercion can convert int to string depending on Union order.
         # If page_size is a string that represents an integer (not an interpolation), convert it back.
         page_size = model.page_size
@@ -1799,6 +1815,7 @@ class ModelToComponentFactory:
         return CursorPaginationStrategy(
             cursor_value=model.cursor_value,
             decoder=decoder_to_use,
+            extractor=extractor,
             page_size=page_size,
             stop_condition=model.stop_condition,
             config=config,

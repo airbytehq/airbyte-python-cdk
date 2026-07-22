@@ -63,6 +63,7 @@ from airbyte_cdk.sources.declarative.models import (
     CompositeErrorHandler as CompositeErrorHandlerModel,
 )
 from airbyte_cdk.sources.declarative.models import ConcurrencyLevel as ConcurrencyLevelModel
+from airbyte_cdk.sources.declarative.models import CursorPagination as CursorPaginationModel
 from airbyte_cdk.sources.declarative.models import CustomErrorHandler as CustomErrorHandlerModel
 from airbyte_cdk.sources.declarative.models import (
     CustomPartitionRouter as CustomPartitionRouterModel,
@@ -2322,7 +2323,7 @@ def test_create_default_paginator():
         component_definition=paginator_manifest,
         config=input_config,
         url_base="https://airbyte.io",
-        extractor_model=DpathExtractor(field_path=["results"], config=input_config, parameters={}),
+        extractor_model=DpathExtractorModel(type="DpathExtractor", field_path=["results"]),
         decoder=JsonDecoder(parameters={}),
     )
 
@@ -2332,6 +2333,8 @@ def test_create_default_paginator():
     assert isinstance(paginator.pagination_strategy, CursorPaginationStrategy)
     assert paginator.pagination_strategy.page_size == 50
     assert paginator.pagination_strategy._cursor_value.string == "{{ response._metadata.next }}"
+    assert isinstance(paginator.pagination_strategy.extractor, DpathExtractor)
+    assert paginator.pagination_strategy.extractor.field_path == ["results"]
 
     assert isinstance(paginator.page_size_option, RequestOption)
     assert paginator.page_size_option.inject_into == RequestOptionType.request_parameter
@@ -3224,6 +3227,30 @@ def test_create_offset_increment():
 
     assert strategy.page_size == expected_strategy.page_size
     assert strategy.inject_on_first_request == expected_strategy.inject_on_first_request
+    assert strategy.config == input_config
+
+    assert isinstance(strategy.extractor, DpathExtractor)
+    assert strategy.extractor.field_path == expected_extractor.field_path
+
+
+def test_create_cursor_pagination():
+    model = CursorPaginationModel(
+        type="CursorPagination",
+        cursor_value="{{ response.next_token }}",
+        stop_condition="{{ last_page_size < 2 }}",
+        page_size=2,
+    )
+
+    expected_extractor = DpathExtractor(field_path=["results"], config=input_config, parameters={})
+    extractor_model = DpathExtractorModel(
+        type="DpathExtractor", field_path=expected_extractor.field_path
+    )
+
+    strategy = factory.create_cursor_pagination(
+        model, input_config, extractor_model=extractor_model, decoder=JsonDecoder(parameters={})
+    )
+
+    assert strategy.get_page_size() == 2
     assert strategy.config == input_config
 
     assert isinstance(strategy.extractor, DpathExtractor)
