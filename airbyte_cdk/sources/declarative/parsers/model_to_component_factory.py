@@ -459,6 +459,9 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
     TypesMap as TypesMapModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    UnionPartitionRouter as UnionPartitionRouterModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     UnlimitedCallRatePolicy as UnlimitedCallRatePolicyModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
@@ -488,6 +491,7 @@ from airbyte_cdk.sources.declarative.partition_routers import (
     PartitionRouter,
     SinglePartitionRouter,
     SubstreamPartitionRouter,
+    UnionPartitionRouter,
 )
 from airbyte_cdk.sources.declarative.partition_routers.async_job_partition_router import (
     AsyncJobPartitionRouter,
@@ -831,6 +835,7 @@ class ModelToComponentFactory:
             RateModel: self.create_rate,
             HttpRequestRegexMatcherModel: self.create_http_request_matcher,
             GroupingPartitionRouterModel: self.create_grouping_partition_router,
+            UnionPartitionRouterModel: self.create_union_partition_router,
         }
 
         # Needed for the case where we need to perform a second parse on the fields of a custom component
@@ -1140,12 +1145,19 @@ class ModelToComponentFactory:
             )
         partition_router = retriever.partition_router
         if not isinstance(
-            partition_router, (SubstreamPartitionRouterModel, CustomPartitionRouterModel)
+            partition_router,
+            (
+                SubstreamPartitionRouterModel,
+                CustomPartitionRouterModel,
+                UnionPartitionRouterModel,
+            ),
         ):
             raise ValueError(
-                f"LegacyToPerPartitionStateMigrations can only be applied on a SimpleRetriever with a Substream partition router. Got {type(partition_router)}"
+                f"LegacyToPerPartitionStateMigrations can only be applied on a SimpleRetriever with a SubstreamPartitionRouter, UnionPartitionRouter or CustomPartitionRouter. Got {type(partition_router)}"
             )
-        if not hasattr(partition_router, "parent_stream_configs"):
+        if not isinstance(partition_router, UnionPartitionRouterModel) and not hasattr(
+            partition_router, "parent_stream_configs"
+        ):
             raise ValueError(
                 "LegacyToPerPartitionStateMigrations can only be applied with a parent stream configuration."
             )
@@ -4569,6 +4581,84 @@ class ModelToComponentFactory:
             underlying_partition_router=underlying_router,
             deduplicate=model.deduplicate if model.deduplicate is not None else True,
             config=config,
+        )
+
+    def create_union_partition_router(
+        self,
+        model: UnionPartitionRouterModel,
+        config: Config,
+        *,
+        stream_name: str,
+        **kwargs: Any,
+    ) -> UnionPartitionRouter:
+        partition_routers = [
+            self._create_component_from_model(
+                model=child,
+                config=config,
+                stream_name=stream_name,
+                **kwargs,
+            )
+            for child in model.partition_routers
+        ]
+
+        # partition_field depends only on config/parameters, so it is evaluated once at build
+        # time; the runtime component always receives a plain string.
+        partition_field = InterpolatedString.create(
+            model.partition_field, parameters=model.parameters or {}
+        ).eval(config)
+
+        # Fail fast at build time when a built-in child router is statically known to emit a
+        # partition field different from the union's. CustomPartitionRouter children are opaque
+        # and can only be validated at runtime.
+        for child_model in model.partition_routers:
+            child_partition_fields: List[str] = []
+            if isinstance(child_model, ListPartitionRouterModel):
+                child_partition_fields.append(
+                    InterpolatedString.create(
+                        child_model.cursor_field, parameters=child_model.parameters or {}
+                    ).eval(config)
+                )
+            elif isinstance(child_model, SubstreamPartitionRouterModel):
+                for parent_stream_config in child_model.parent_stream_configs:
+                    child_partition_fields.append(
+                        InterpolatedString.create(
+                            parent_stream_config.partition_field,
+                            parameters=child_model.parameters or {},
+                        ).eval(config)
+                    )
+            elif isinstance(child_model, UnionPartitionRouterModel):
+                child_partition_fields.append(
+                    InterpolatedString.create(
+                        child_model.partition_field, parameters=child_model.parameters or {}
+                    ).eval(config)
+                )
+            for child_partition_field in child_partition_fields:
+                if child_partition_field != partition_field:
+                    raise ValueError(
+                        f"UnionPartitionRouter expects all child partition routers to emit the "
+                        f"partition field '{partition_field}', but a "
+                        f"{child_model.type} child emits '{child_partition_field}'."
+                    )
+
+        # A union slice comes from exactly one child partition router, so request options
+        # declared on children cannot be applied consistently to requests built from the
+        # normalized union slices. Partition values should be consumed via interpolation
+        # (e.g. stream_partition) instead. Note that this validation only covers built-in
+        # router types; CustomPartitionRouter children are opaque, so any request options
+        # they implement internally cannot be detected or rejected here.
+        for router in partition_routers:
+            if isinstance(router, SubstreamPartitionRouter):
+                if any(
+                    parent_config.request_option for parent_config in router.parent_stream_configs
+                ):
+                    raise ValueError("Request options are not supported for UnionPartitionRouter.")
+            if isinstance(router, ListPartitionRouter) and router.request_option:
+                raise ValueError("Request options are not supported for UnionPartitionRouter.")
+
+        return UnionPartitionRouter(
+            partition_routers=partition_routers,
+            partition_field=partition_field,
+            parameters=model.parameters or {},
         )
 
     def _ensure_query_properties_to_model(
