@@ -3,6 +3,7 @@
 #
 
 from dataclasses import InitVar, dataclass, field
+from enum import Enum
 from typing import Any, List, Mapping, MutableMapping, Optional
 
 from airbyte_cdk.models import (
@@ -54,19 +55,17 @@ class Spec:
         if self.documentation_url:
             obj["documentationUrl"] = self.documentation_url
         if self.advanced_auth:
-            self.advanced_auth.auth_flow_type = self.advanced_auth.auth_flow_type.value  # type: ignore # We know this is always assigned to an AuthFlow which has the auth_flow_type field
-            # Convert scopes_join_strategy enum to its string value (same pattern as auth_flow_type above)
-            oauth_spec = getattr(self.advanced_auth, "oauth_config_specification", None)
-            if oauth_spec:
-                oauth_input = getattr(oauth_spec, "oauth_connector_input_specification", None)
-                if (
-                    oauth_input
-                    and hasattr(oauth_input, "scopes_join_strategy")
-                    and oauth_input.scopes_join_strategy is not None
-                ):
-                    oauth_input.scopes_join_strategy = oauth_input.scopes_join_strategy.value  # type: ignore
+            # Serialize to a dict and normalize enum values there so the typed model is
+            # never mutated and repeated calls produce the same result
+            advanced_auth = self.advanced_auth.dict()
+            if isinstance(advanced_auth.get("auth_flow_type"), Enum):
+                advanced_auth["auth_flow_type"] = advanced_auth["auth_flow_type"].value
+            oauth_spec = advanced_auth.get("oauth_config_specification") or {}
+            oauth_input = oauth_spec.get("oauth_connector_input_specification") or {}
+            if isinstance(oauth_input.get("scopes_join_strategy"), Enum):
+                oauth_input["scopes_join_strategy"] = oauth_input["scopes_join_strategy"].value
             # Map CDK AuthFlow model to protocol AdvancedAuth model
-            obj["advanced_auth"] = self.advanced_auth.dict()
+            obj["advanced_auth"] = advanced_auth
 
         # We remap these keys to camel case because that's the existing format expected by the rest of the platform
         return ConnectorSpecificationSerializer.load(obj)

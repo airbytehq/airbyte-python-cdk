@@ -312,11 +312,189 @@ definitions:
             - "$ref": "#/definitions/LegacySessionTokenAuthenticator"
             - "$ref": "#/definitions/CustomAuthenticator"
             - "$ref": "#/definitions/NoAuth"
+            - "$ref": "#/definitions/RateLimitedMultipleTokenAuthenticator"
         examples:
           - authenticators:
               token: "#/definitions/ApiKeyAuthenticator"
               oauth: "#/definitions/OAuthAuthenticator"
               jwt: "#/definitions/JwtAuthenticator"
+      $parameters:
+        type: object
+        additionalProperties: true
+  RateLimitedMultipleTokenAuthenticator:
+    title: Rate Limited Multiple Token Authenticator
+    description: >
+      Authenticator that rotates between multiple interchangeable tokens, tracking each token's remaining
+      call quota. Outgoing requests are classified into quota pools using request matchers. When the active
+      token's quota for the matched pool is exhausted, the authenticator rotates to the next token. When all
+      tokens are exhausted, it waits until the earliest quota reset (bounded by `max_wait_time`) before
+      resuming. Quota counters are seeded per token from `quota_status_source` at startup and refreshed after
+      an exhaustion wait.
+    type: object
+    required:
+      - type
+      - tokens
+      - quota_status_source
+      - quotas
+    properties:
+      type:
+        type: string
+        enum: [RateLimitedMultipleTokenAuthenticator]
+      tokens:
+        title: Tokens
+        description: The tokens to rotate between. Either an explicit list of tokens, or a single string containing multiple tokens separated by `token_delimiter`.
+        anyOf:
+          - type: string
+          - type: array
+            items:
+              type: string
+        interpolation_context:
+          - config
+        examples:
+          - "{{ config['credentials']['personal_access_token'] }}"
+          - ["{{ config['token_1'] }}", "{{ config['token_2'] }}"]
+      token_delimiter:
+        title: Token Delimiter
+        description: Delimiter used to split a single token string into multiple tokens.
+        type: string
+        default: ","
+      auth_method:
+        title: Auth Method
+        description: "The prefix to prepend to the token in the auth header value (e.g. `Authorization: Bearer <token>`)."
+        type: string
+        default: "Bearer"
+        examples:
+          - "Bearer"
+          - "token"
+      header:
+        title: Header Name
+        description: The name of the HTTP header in which to inject the token.
+        type: string
+        default: "Authorization"
+      quota_status_source:
+        title: Quota Status Source
+        description: Defines where to fetch each token's current quota status. Called once per token at startup and after an exhaustion wait, not per data request.
+        "$ref": "#/definitions/QuotaStatusSource"
+      quotas:
+        title: Quota Pools
+        description: >
+          Quota pools tracked per token. Each outgoing request is classified into the first pool whose
+          matchers match the request; a pool with no matchers acts as the default. The `remaining_path` and
+          `reset_path` locate each pool's values in the quota status response.
+        type: array
+        items:
+          "$ref": "#/definitions/TokenQuota"
+      max_wait_time:
+        title: Maximum Wait Time
+        description: ISO 8601 duration. When all tokens are exhausted, the maximum time to wait for a quota reset before raising a transient error.
+        type: string
+        default: "PT2H"
+        interpolation_context:
+          - config
+        examples:
+          - "PT2H"
+          - "PT30M"
+          - "PT{{ config.get('max_waiting_time', 120) }}M"
+      budget_reserve_fraction:
+        title: Budget Reserve Fraction
+        description: Fraction of each token's quota to keep in reserve. When every token drops below its reserve, requests are proactively throttled to spread the remaining calls until the quota reset. Set to 0 (along with `budget_min_reserve`) to disable throttling.
+        type: number
+        default: 0.1
+      budget_min_reserve:
+        title: Budget Minimum Reserve
+        description: Minimum number of calls to keep in reserve per token before proactive throttling kicks in.
+        type: integer
+        default: 50
+      $parameters:
+        type: object
+        additionalProperties: true
+  QuotaStatusSource:
+    title: Quota Status Source
+    description: Describes the endpoint from which a token's current rate limit quota status can be fetched.
+    type: object
+    required:
+      - type
+      - url
+    properties:
+      type:
+        type: string
+        enum: [QuotaStatusSource]
+      url:
+        title: URL
+        description: The full URL of the quota status endpoint.
+        type: string
+        interpolation_context:
+          - config
+        examples:
+          - "https://api.github.com/rate_limit"
+          - "{{ config.get('api_url', 'https://api.github.com') }}/rate_limit"
+      http_method:
+        title: HTTP Method
+        description: The HTTP method used to fetch the quota status.
+        type: string
+        enum:
+          - GET
+          - POST
+        default: GET
+      request_headers:
+        title: Request Headers
+        description: Additional headers to send with the quota status request.
+        type: object
+        additionalProperties:
+          type: string
+      $parameters:
+        type: object
+        additionalProperties: true
+  TokenQuota:
+    title: Token Quota
+    description: A named per-token quota pool with matchers that classify outgoing requests into the pool.
+    type: object
+    required:
+      - type
+      - name
+      - remaining_path
+      - reset_path
+    properties:
+      type:
+        type: string
+        enum: [TokenQuota]
+      name:
+        title: Name
+        description: Name of the quota pool.
+        type: string
+        examples:
+          - "rest"
+          - "graphql"
+      remaining_path:
+        title: Remaining Path
+        description: Path to the remaining call count for this pool in the quota status response.
+        type: array
+        items:
+          type: string
+        examples:
+          - ["resources", "core", "remaining"]
+      reset_path:
+        title: Reset Path
+        description: Path to the quota reset timestamp for this pool in the quota status response.
+        type: array
+        items:
+          type: string
+        examples:
+          - ["resources", "core", "reset"]
+      limit_path:
+        title: Limit Path
+        description: Optional path to the total call limit for this pool in the quota status response. Used to compute the proactive throttling reserve; falls back to the initially observed remaining count when not set. Setting it on every pool is recommended so the reserve does not shrink when a sync starts with the pool already partially consumed.
+        type: array
+        items:
+          type: string
+        examples:
+          - ["resources", "core", "limit"]
+      matchers:
+        title: Matchers
+        description: List of matchers that classify outgoing requests into this quota pool. The first pool whose matcher matches a request is used. A pool with no matchers acts as the default pool.
+        type: array
+        items:
+          "$ref": "#/definitions/HttpRequestRegexMatcher"
       $parameters:
         type: object
         additionalProperties: true
@@ -2282,6 +2460,7 @@ definitions:
           - "$ref": "#/definitions/CustomAuthenticator"
           - "$ref": "#/definitions/NoAuth"
           - "$ref": "#/definitions/LegacySessionTokenAuthenticator"
+          - "$ref": "#/definitions/RateLimitedMultipleTokenAuthenticator"
       fetch_properties_from_endpoint:
         deprecated: true
         deprecation_message: "Use `query_properties` field instead."
