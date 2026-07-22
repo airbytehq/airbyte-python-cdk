@@ -2538,6 +2538,13 @@ def test_create_custom_component_requires_custom_code_enabled(class_name, monkey
     """
     monkeypatch.delenv(ENV_VAR_ALLOW_CUSTOM_CODE, raising=False)
 
+    def _fail_if_resolved(*args, **kwargs):
+        raise AssertionError(
+            "`class_name` must not be resolved or imported when custom code is disabled"
+        )
+
+    monkeypatch.setattr(factory, "_get_class_from_fully_qualified_class_name", _fail_if_resolved)
+
     manifest = {
         "type": "CustomErrorHandler",
         "class_name": class_name,
