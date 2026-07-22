@@ -477,6 +477,10 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     ZipfileDecoder as ZipfileDecoderModel,
 )
+from airbyte_cdk.sources.declarative.parsers.custom_code_compiler import (
+    AirbyteCustomCodeNotPermittedError,
+    custom_code_execution_permitted,
+)
 from airbyte_cdk.sources.declarative.partition_routers import (
     CartesianProductStreamSlicer,
     GroupingPartitionRouter,
@@ -1809,6 +1813,14 @@ class ModelToComponentFactory:
         :param config: The custom defined connector config
         :return: The declarative component built from the Pydantic model to be used at runtime
         """
+        # Instantiating a custom component means importing and executing arbitrary code referenced
+        # by `class_name`. This is only permitted when custom code execution is explicitly enabled,
+        # mirroring the gate applied to injected `components.py` code. Without this check, a manifest
+        # could point `class_name` at any importable callable and have it invoked, bypassing the
+        # `AIRBYTE_ENABLE_UNSAFE_CODE` protection.
+        if not custom_code_execution_permitted():
+            raise AirbyteCustomCodeNotPermittedError
+
         custom_component_class = self._get_class_from_fully_qualified_class_name(model.class_name)
         component_fields = get_type_hints(custom_component_class)
         model_args = model.dict()
