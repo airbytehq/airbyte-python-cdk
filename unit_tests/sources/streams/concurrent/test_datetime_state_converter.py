@@ -2,7 +2,7 @@
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
@@ -406,3 +406,52 @@ def test_given_when_parse_timestamp_then_eventually_fallback_on_output_format():
     parsed_datetime = converter.parse_timestamp("2024-01-01T02:00:00")
 
     assert parsed_datetime == datetime(2024, 1, 1, 2, 0, 0, tzinfo=timezone.utc)
+
+
+@pytest.mark.parametrize(
+    "converter,timestamp,expected_output",
+    [
+        pytest.param(
+            CustomFormatConcurrentStreamStateConverter(datetime_format="%Y-%m-%dT%H:%M:%SZ"),
+            datetime(2026, 7, 23, 21, 59, 38, tzinfo=timezone(timedelta(hours=5, minutes=30))),
+            "2026-07-23T16:29:38Z",
+            id="custom-format-positive-offset-normalized-to-utc",
+        ),
+        pytest.param(
+            CustomFormatConcurrentStreamStateConverter(datetime_format="%Y-%m-%dT%H:%M:%SZ"),
+            datetime(2026, 7, 23, 12, 1, 25, tzinfo=timezone(timedelta(hours=-5))),
+            "2026-07-23T17:01:25Z",
+            id="custom-format-negative-offset-normalized-to-utc",
+        ),
+        pytest.param(
+            CustomFormatConcurrentStreamStateConverter(datetime_format="%Y-%m-%dT%H:%M:%SZ"),
+            datetime(2026, 7, 23, 16, 29, 38, tzinfo=timezone.utc),
+            "2026-07-23T16:29:38Z",
+            id="custom-format-utc-unchanged",
+        ),
+        pytest.param(
+            CustomFormatConcurrentStreamStateConverter(datetime_format="%Y-%m-%dT%H:%M:%SZ"),
+            datetime(2026, 7, 23, 16, 29, 38),
+            "2026-07-23T16:29:38Z",
+            id="custom-format-naive-treated-as-utc",
+        ),
+        pytest.param(
+            IsoMillisConcurrentStreamStateConverter(),
+            datetime(2026, 7, 23, 21, 59, 38, tzinfo=timezone(timedelta(hours=5, minutes=30))),
+            "2026-07-23T16:29:38.000Z",
+            id="iso-millis-positive-offset-normalized-to-utc",
+        ),
+        pytest.param(
+            IsoMillisConcurrentStreamStateConverter(),
+            datetime(2026, 7, 23, 16, 29, 38),
+            "2026-07-23T16:29:38.000Z",
+            id="iso-millis-naive-treated-as-utc",
+        ),
+    ],
+)
+def test_output_format_normalizes_offset_aware_datetime_to_utc(
+    converter, timestamp, expected_output
+):
+    """A cursor value carrying a non-UTC offset must be serialized as its absolute UTC
+    instant, not its local wall clock relabeled with `Z`."""
+    assert converter.output_format(timestamp) == expected_output
