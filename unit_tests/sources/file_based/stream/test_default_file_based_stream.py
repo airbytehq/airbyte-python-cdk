@@ -348,10 +348,17 @@ class DefaultFileBasedStreamFileTransferTest(unittest.TestCase):
 
     def test_when_read_records_from_slice_then_return_records(self) -> None:
         """Verify that we have the new file method and data is empty"""
-        with mock.patch.object(
-            FileTransfer,
-            "upload",
-            return_value=[(self._A_FILE_RECORD_DATA, self._A_FILE_REFERENCE_MESSAGE)],
+        with (
+            mock.patch.object(
+                FileTransfer,
+                "__init__",
+                return_value=None,
+            ),
+            mock.patch.object(
+                FileTransfer,
+                "upload",
+                return_value=[(self._A_FILE_RECORD_DATA, self._A_FILE_REFERENCE_MESSAGE)],
+            ),
         ):
             remote_file = RemoteFile(uri="uri", last_modified=self._NOW)
             messages = list(self._stream.read_records_from_slice({"files": [remote_file]}))

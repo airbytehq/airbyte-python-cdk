@@ -69,7 +69,7 @@ class DefaultFileBasedStream(AbstractFileBasedStream, IncrementalMixin):
     airbyte_columns = [ab_last_mod_col, ab_file_name_col]
     use_file_transfer = False
     preserve_directory_structure = True
-    _file_transfer = FileTransfer()
+    _file_transfer: Optional[FileTransfer] = None
 
     def __init__(self, **kwargs: Any):
         if self.FILE_TRANSFER_KW in kwargs:
@@ -164,7 +164,10 @@ class DefaultFileBasedStream(AbstractFileBasedStream, IncrementalMixin):
 
             try:
                 if self.use_file_transfer:
-                    for file_record_data, file_reference in self._file_transfer.upload(
+                    if self._file_transfer is None:
+                        self._file_transfer = FileTransfer()
+                    file_transfer = self._file_transfer
+                    for file_record_data, file_reference in file_transfer.upload(
                         file=file, stream_reader=self.stream_reader, logger=self.logger
                     ):
                         yield stream_data_to_airbyte_message(
