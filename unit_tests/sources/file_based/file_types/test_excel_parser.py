@@ -3,6 +3,7 @@
 #
 
 
+import asyncio
 import datetime
 import warnings
 from io import BytesIO
@@ -139,6 +140,94 @@ def test_file_read_error(mock_stream_reader, mock_logger, file_config, remote_fi
                 )
 
 
+@pytest.mark.parametrize(
+    "sheet_name,expected_records",
+    [
+        pytest.param(
+            "0",
+            [
+                {"sheet": "first", "value": 1},
+            ],
+            id="default_first_sheet",
+        ),
+        pytest.param(
+            "Second",
+            [
+                {"sheet": "second", "value": 2},
+            ],
+            id="sheet_by_name",
+        ),
+        pytest.param(
+            "*",
+            [
+                {"sheet": "first", "value": 1},
+                {"sheet": "second", "value": 2},
+            ],
+            id="all_sheets",
+        ),
+    ],
+)
+def test_parse_records_selects_configured_sheet(sheet_name, expected_records, remote_file):
+    parser = ExcelParser()
+    excel_bytes = BytesIO()
+    with pd.ExcelWriter(excel_bytes, engine="xlsxwriter") as writer:
+        pd.DataFrame({"sheet": ["first"], "value": [1]}).to_excel(
+            writer, index=False, sheet_name="First"
+        )
+        pd.DataFrame({"sheet": ["second"], "value": [2]}).to_excel(
+            writer, index=False, sheet_name="Second"
+        )
+    excel_bytes.seek(0)
+
+    stream_reader = MagicMock(spec=AbstractFileBasedStreamReader)
+    stream_reader.open_file.return_value = BytesIO(excel_bytes.read())
+
+    records = list(
+        parser.parse_records(
+            FileBasedStreamConfig(name="test_stream", format=ExcelFormat(sheet_name=sheet_name)),
+            remote_file,
+            stream_reader,
+            MagicMock(),
+        )
+    )
+
+    assert records == expected_records
+
+
+def test_infer_schema_combines_configured_excel_sheets(remote_file):
+    parser = ExcelParser()
+    excel_bytes = BytesIO()
+    with pd.ExcelWriter(excel_bytes, engine="xlsxwriter") as writer:
+        pd.DataFrame({"first_sheet_column": ["first"]}).to_excel(
+            writer, index=False, sheet_name="First"
+        )
+        pd.DataFrame({"second_sheet_column": [2]}).to_excel(
+            writer, index=False, sheet_name="Second"
+        )
+    excel_bytes.seek(0)
+
+    stream_reader = MagicMock(spec=AbstractFileBasedStreamReader)
+    stream_reader.open_file.return_value = BytesIO(excel_bytes.read())
+
+    event_loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(event_loop)
+    schema = event_loop.run_until_complete(
+        parser.infer_schema(
+            FileBasedStreamConfig(name="test_stream", format=ExcelFormat(sheet_name="*")),
+            remote_file,
+            stream_reader,
+            MagicMock(),
+        )
+    )
+    event_loop.close()
+    asyncio.set_event_loop(asyncio.new_event_loop())
+
+    assert schema == {
+        "first_sheet_column": {"type": "string"},
+        "second_sheet_column": {"type": "number"},
+    }
+
+
 class FakePanic(BaseException):
     """Simulates the PyO3 PanicException which does not inherit from Exception."""
 
@@ -152,7 +241,7 @@ def test_open_and_parse_file_falls_back_to_openpyxl(mock_logger):
 
     calamine_excel_file = MagicMock()
 
-    def calamine_parse_side_effect():
+    def calamine_parse_side_effect(**kwargs):
         raise FakePanic(
             "failed to construct date: PyErr { type: <class 'ValueError'>, value: ValueError('year 20225 is out of range'), traceback: None }"
         )
@@ -161,7 +250,7 @@ def test_open_and_parse_file_falls_back_to_openpyxl(mock_logger):
 
     openpyxl_excel_file = MagicMock()
 
-    def openpyxl_parse_side_effect():
+    def openpyxl_parse_side_effect(**kwargs):
         warnings.warn("Cell A146 has invalid date", UserWarning)
         return fallback_df
 
@@ -238,3 +327,4 @@ def test_openpyxl_logs_info_when_seek_fails(mock_logger, remote_file, exc_cls):
     assert "Could not rewind stream" in msg
     assert remote_file.file_uri_for_logging in msg
     mock_excel.assert_called_once_with(fp, engine="openpyxl")
+    openpyxl_excel_file.parse.assert_called_once_with(sheet_name=0)

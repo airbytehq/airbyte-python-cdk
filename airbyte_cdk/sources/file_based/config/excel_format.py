@@ -16,3 +16,8 @@ class ExcelFormat(BaseModel):
         "excel",
         const=True,
     )
+    sheet_name: str = Field(
+        default="0",
+        title="Sheet Name",
+        description='The Excel worksheet to read. Use a sheet name, a zero-indexed sheet position like "0", or "*" to read all sheets.',
+    )
