@@ -27,6 +27,9 @@ from airbyte_cdk.models import (
 from airbyte_cdk.models.connector_metadata import MetadataFile
 from airbyte_cdk.test.entrypoint_wrapper import EntrypointOutput
 from airbyte_cdk.test.models import ConnectorTestScenario
+from airbyte_cdk.test.standard_tests.scenario_loader import (
+    load_metadata_smoke_test_scenarios,
+)
 from airbyte_cdk.utils.connector_paths import (
     ACCEPTANCE_TEST_CONFIG,
     find_connector_root,
@@ -122,9 +125,25 @@ class DockerConnectorTestSuite:
     ) -> list[ConnectorTestScenario]:
         """Get acceptance tests for a given category.
 
+        Scenarios are sourced from two files, in this order:
+
+        1. `acceptance-test-config.yml` (CAT-style scenarios), parsed as today.
+        2. `metadata.yaml` `connectorTestSuitesOptions[].suite == 'smokeTests'`,
+           with `${secret-ref:...}` and `${relative-date:...}` sigils resolved.
+
+        Smoke-test scenarios are additive; CAT-style scenarios are unchanged
+        for any connector that has not opted into the metadata.yaml dialect.
+
         This has to be a separate function because pytest does not allow
         parametrization of fixtures with arguments from the test class itself.
         """
+        cat_scenarios = cls._get_acceptance_test_scenarios()
+        smoke_scenarios = cls._get_smoke_test_scenarios()
+        return cat_scenarios + smoke_scenarios
+
+    @classmethod
+    def _get_acceptance_test_scenarios(cls) -> list[ConnectorTestScenario]:
+        """Load CAT-style scenarios from `acceptance-test-config.yml`."""
         try:
             all_tests_config = cls.acceptance_test_config
         except FileNotFoundError as e:
@@ -158,9 +177,17 @@ class DockerConnectorTestSuite:
 
                 test_scenarios.append(scenario)
 
-        deduped_test_scenarios = cls._dedup_scenarios(test_scenarios)
+        return cls._dedup_scenarios(test_scenarios)
 
-        return deduped_test_scenarios
+    @classmethod
+    def _get_smoke_test_scenarios(cls) -> list[ConnectorTestScenario]:
+        """Load smoke-test scenarios declared in `metadata.yaml`, if any."""
+        connector_root = cls.get_connector_root_dir()
+        metadata_path = connector_root / "metadata.yaml"
+        return load_metadata_smoke_test_scenarios(
+            metadata_path=metadata_path,
+            connector_root=connector_root,
+        )
 
     @pytest.mark.skipif(
         shutil.which("docker") is None,
