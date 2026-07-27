@@ -42,4 +42,5 @@ USER airbyte:airbyte
 
 EXPOSE 8080
 
-CMD ["uvicorn", "airbyte_cdk.manifest_server.app:app", "--host", "0.0.0.0", "--port", "8080"]
+# `::` binds dual-stack (IPv4 + IPv6); `0.0.0.0` is IPv4-only.
+CMD ["uvicorn", "airbyte_cdk.manifest_server.app:app", "--host", "::", "--port", "8080"]
