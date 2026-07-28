@@ -76,6 +76,24 @@ def test(test_name, path, expected_value):
             id="static_none_string",
         ),
         pytest.param(
+            {"value": '{"field": "updated_at", "order": "ascending"}'},
+            "value",
+            {"field": "updated_at", "order": "ascending"},
+            id="static_structured_dict",
+        ),
+        pytest.param(
+            {"value": "[1, 2, 3]"},
+            "value",
+            [1, 2, 3],
+            id="static_structured_list",
+        ),
+        pytest.param(
+            {"sort": '{"field": "updated_at", "order": "ascending"}'},
+            "sort",
+            {"field": "updated_at", "order": "ascending"},
+            id="static_intercom_sort_json",
+        ),
+        pytest.param(
             {"478": "value"},
             "478",
             "value",
