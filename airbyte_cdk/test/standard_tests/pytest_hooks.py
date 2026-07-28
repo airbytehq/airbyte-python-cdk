@@ -25,6 +25,18 @@ def connector_image_override(request: pytest.FixtureRequest) -> str | None:
 
 
 @pytest.fixture
+def connector_base_image_override(request: pytest.FixtureRequest) -> str | None:
+    """Return the value of --base-image, or None if not set.
+
+    When set, the connector image is built `FROM` this base image instead of the
+    `baseImage` declared in metadata.yaml. This lets the image tests exercise a
+    locally-built `source-declarative-manifest` image (e.g. one built from the current
+    CDK branch) rather than the published base image's CDK.
+    """
+    return cast(str | None, request.config.getoption("--base-image"))
+
+
+@pytest.fixture
 def read_from_streams(
     request: pytest.FixtureRequest,
 ) -> Literal["all", "none", "default"] | list[str]:
@@ -115,6 +127,16 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         action="store",
         default=None,
         help="Use this pre-built connector Docker image instead of building one.",
+    )
+    parser.addoption(
+        "--base-image",
+        action="store",
+        default=None,
+        help=(
+            "Build the connector image `FROM` this base image instead of the `baseImage` "
+            "declared in metadata.yaml. Useful for testing against a locally-built "
+            "`source-declarative-manifest` image built from the current CDK branch."
+        ),
     )
     parser.addoption(
         "--read-from-streams",

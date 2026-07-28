@@ -209,3 +209,73 @@ jobs:
           POETRY_DYNAMIC_VERSIONING_BYPASS: "0.0.0"
         run: |
           poetry run airbyte-cdk image test ${{ matrix.connector }}
+
+  # Regression guard for https://github.com/airbytehq/airbyte-python-cdk/issues/1082:
+  # builds a `source-declarative-manifest` image FROM the current branch, then builds a bundled
+  # manifest-only connector (bundled `manifest.yaml` + `components.py`) FROM that image and runs
+  # `check`/`spec` inside the container with `AIRBYTE_ENABLE_UNSAFE_CODE` unset (the Cloud
+  # default). Unlike the matrix job above, this exercises the branch's CDK inside the connector
+  # image instead of the connector's already-published base image, so a regression that rejects
+  # trusted bundled custom components is caught before a CDK release. Uses an in-repo pokeapi
+  # fixture so it needs no connector secrets.
+  bundled_custom_components_image_test:
+    needs: cdk_changes
+    name: Bundled Custom Components Image Test
+    if: needs.cdk_changes.outputs['src'] == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Checkout CDK
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # Build the Python package to create the wheel files needed for the SDM Docker build.
+      - name: Build Python Package
+        uses: hynek/build-and-inspect-python-package@v2
+        env:
+          POETRY_DYNAMIC_VERSIONING_BYPASS: "0.0.0dev0"
+
+      - name: Copy wheel files to dist directory
+        run: |
+          mkdir -p dist
+          cp /tmp/baipp/dist/*.whl dist/
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # Build the source-declarative-manifest image FROM the current branch and load it into the
+      # local Docker image store so the connector image can be built `FROM` it.
+      - name: Build SDM image from current branch
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          load: true
+          push: false
+          tags: airbyte/source-declarative-manifest:dev
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Set up Poetry
+        uses: snok/install-poetry@v1
+        with:
+          version: "2.0.1"
+
+      - name: Install CDK with Poetry
+        run: |
+          poetry install --all-extras
+
+      # `AIRBYTE_ENABLE_UNSAFE_CODE` is intentionally NOT set here so the in-container `check`
+      # runs under the Cloud default. `--no-creds` is safe because the pokeapi fixture ships a
+      # local `valid_config.yaml` and needs no external secrets.
+      - name: Run bundled custom components image test (branch SDM base image)
+        env:
+          POETRY_DYNAMIC_VERSIONING_BYPASS: "0.0.0"
+        run: |
+          poetry run airbyte-cdk image test \
+            unit_tests/resources/source_pokeapi_w_components_py \
+            --base-image airbyte/source-declarative-manifest:dev \
+            --no-creds

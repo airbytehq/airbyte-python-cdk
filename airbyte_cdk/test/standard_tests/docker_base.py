@@ -22,6 +22,7 @@ from airbyte_cdk.models import (
     ConfiguredAirbyteCatalog,
     ConfiguredAirbyteStream,
     DestinationSyncMode,
+    Status,
     SyncMode,
 )
 from airbyte_cdk.models.connector_metadata import MetadataFile
@@ -170,6 +171,7 @@ class DockerConnectorTestSuite:
     def test_docker_image_build_and_spec(
         self,
         connector_image_override: str | None,
+        connector_base_image_override: str | None,
     ) -> None:
         """Run `docker_image` acceptance tests."""
         connector_root = self.get_connector_root_dir().absolute()
@@ -184,6 +186,7 @@ class DockerConnectorTestSuite:
                 metadata=metadata,
                 tag=tag,
                 no_verify=False,
+                base_image_override=connector_base_image_override,
             )
 
         _ = run_docker_airbyte_command(
@@ -206,6 +209,7 @@ class DockerConnectorTestSuite:
         self,
         scenario: ConnectorTestScenario,
         connector_image_override: str | None,
+        connector_base_image_override: str | None,
     ) -> None:
         """Run `docker_image` acceptance tests.
 
@@ -231,13 +235,14 @@ class DockerConnectorTestSuite:
                 metadata=metadata,
                 tag=tag,
                 no_verify=False,
+                base_image_override=connector_base_image_override,
             )
 
         container_config_path = "/secrets/config.json"
         with scenario.with_temp_config_file(
             connector_root=connector_root,
         ) as temp_config_file:
-            _ = run_docker_airbyte_command(
+            check_result = run_docker_airbyte_command(
                 [
                     "docker",
                     "run",
@@ -252,6 +257,25 @@ class DockerConnectorTestSuite:
                 raise_if_errors=True,
             )
 
+        # A failing `check` reports `status: FAILED` in a `CONNECTION_STATUS` message and still
+        # exits 0, so `raise_if_errors` alone does not catch it. We therefore assert the reported
+        # status explicitly. This makes the image test exercise the connector's actual `check`
+        # outcome inside the container (e.g. it fails if bundled custom components are rejected by
+        # the CDK baked into the base image).
+        connection_statuses = [
+            message.connectionStatus
+            for message in check_result.connection_status_messages
+            if message.connectionStatus is not None
+        ]
+        assert connection_statuses, (
+            f"`check` for connector '{connector_root.name}' emitted no CONNECTION_STATUS message. "
+            f"Logs: {check_result.logs}"
+        )
+        assert connection_statuses[-1].status == Status.SUCCEEDED, (
+            f"`check` for connector '{connector_root.name}' did not succeed: "
+            f"{connection_statuses[-1]}"
+        )
+
     @pytest.mark.skipif(
         shutil.which("docker") is None,
         reason="docker CLI not found in PATH, skipping docker image tests",
@@ -261,6 +285,7 @@ class DockerConnectorTestSuite:
         self,
         scenario: ConnectorTestScenario,
         connector_image_override: str | None,
+        connector_base_image_override: str | None,
         read_from_streams: Literal["all", "none", "default"] | list[str],
         read_scenarios: Literal["all", "none", "default"] | list[str],
     ) -> None:
@@ -315,6 +340,7 @@ class DockerConnectorTestSuite:
                 metadata=metadata,
                 tag=tag,
                 no_verify=False,
+                base_image_override=connector_base_image_override,
             )
 
         container_config_path = "/secrets/config.json"
