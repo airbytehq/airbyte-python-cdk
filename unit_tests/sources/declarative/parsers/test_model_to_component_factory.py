@@ -2578,6 +2578,34 @@ def test_create_custom_component_permitted_for_bundled_manifest(monkeypatch):
     assert isinstance(component, TestingSomeComponent)
 
 
+def test_create_custom_component_requires_custom_code_enabled_when_untrusted(monkeypatch):
+    """A caller-supplied manifest must honor the gate even when it never passes through the config.
+
+    The manifest server receives the manifest as a request payload rather than through the
+    config, so its untrusted provenance is signalled by `custom_components_trusted=False`.
+    """
+    monkeypatch.delenv(ENV_VAR_ALLOW_CUSTOM_CODE, raising=False)
+
+    untrusted_factory = ModelToComponentFactory(custom_components_trusted=False)
+
+    def _fail_if_resolved(*args, **kwargs):
+        raise AssertionError(
+            "`class_name` must not be resolved or imported when custom code is disabled"
+        )
+
+    monkeypatch.setattr(
+        untrusted_factory, "_get_class_from_fully_qualified_class_name", _fail_if_resolved
+    )
+
+    manifest = {
+        "type": "CustomErrorHandler",
+        "class_name": "unit_tests.sources.declarative.parsers.testing_components.TestingSomeComponent",
+    }
+
+    with pytest.raises(AirbyteCustomCodeNotPermittedError):
+        untrusted_factory.create_component(CustomErrorHandlerModel, manifest, input_config)
+
+
 def test_custom_components_do_not_contain_extra_fields():
     custom_substream_partition_router_manifest = {
         "type": "CustomPartitionRouter",

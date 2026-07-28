@@ -705,8 +705,10 @@ class ModelToComponentFactory:
         max_concurrent_async_job_count: Optional[int] = None,
         configured_catalog: Optional[ConfiguredAirbyteCatalog] = None,
         api_budget: Optional[APIBudget] = None,
+        custom_components_trusted: bool = True,
     ):
         self._init_mappings()
+        self._custom_components_trusted = custom_components_trusted
         self._limit_pages_fetched_per_slice = limit_pages_fetched_per_slice
         self._limit_slices_fetched = limit_slices_fetched
         self._emit_connector_builder_messages = emit_connector_builder_messages
@@ -1815,11 +1817,15 @@ class ModelToComponentFactory:
         :return: The declarative component built from the Pydantic model to be used at runtime
         """
         # Instantiating a custom component means importing and executing arbitrary code referenced
-        # by `class_name`. When the manifest itself comes from the config, it is untrusted input and
-        # could point `class_name` at any importable callable, so it honors the same
-        # `AIRBYTE_ENABLE_UNSAFE_CODE` gate as injected `components.py` code. Manifests bundled in a
-        # published connector image are trusted and may always use their bundled custom components.
-        if config.get(INJECTED_MANIFEST) and not custom_code_execution_permitted():
+        # by `class_name`. Manifests supplied by a caller, whether through the config or directly to
+        # the manifest server, are untrusted input and could point `class_name` at any importable
+        # callable, so they honor the same `AIRBYTE_ENABLE_UNSAFE_CODE` gate as injected
+        # `components.py` code. Manifests bundled in a published connector image are trusted and may
+        # always use their bundled custom components.
+        manifest_is_untrusted = not self._custom_components_trusted or bool(
+            config.get(INJECTED_MANIFEST)
+        )
+        if manifest_is_untrusted and not custom_code_execution_permitted():
             raise AirbyteCustomCodeNotPermittedError
 
         custom_component_class = self._get_class_from_fully_qualified_class_name(model.class_name)
@@ -4141,6 +4147,7 @@ class ModelToComponentFactory:
         )
 
         substream_factory = ModelToComponentFactory(
+            custom_components_trusted=self._custom_components_trusted,
             connector_state_manager=connector_state_manager,
             limit_pages_fetched_per_slice=self._limit_pages_fetched_per_slice,
             limit_slices_fetched=self._limit_slices_fetched,
