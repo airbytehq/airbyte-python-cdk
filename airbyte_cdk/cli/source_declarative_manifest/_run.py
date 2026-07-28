@@ -212,6 +212,10 @@ def create_declarative_source(
             state=state,
             source_config=cast(dict[str, Any], config["__injected_declarative_manifest"]),
             config_path=parsed_args.config if hasattr(parsed_args, "config") else None,
+            # The manifest is supplied by the caller (via config or --manifest-path) rather than
+            # bundled in a connector image, so any custom components it references are untrusted
+            # code. Bundled manifest-only connectors take the local-manifest path instead.
+            custom_components_trusted=False,
         )
     except Exception as error:
         print(
