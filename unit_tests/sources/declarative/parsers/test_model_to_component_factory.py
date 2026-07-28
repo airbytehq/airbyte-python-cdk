@@ -109,6 +109,7 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
 )
 from airbyte_cdk.sources.declarative.parsers.custom_code_compiler import (
     ENV_VAR_ALLOW_CUSTOM_CODE,
+    INJECTED_MANIFEST,
     AirbyteCustomCodeNotPermittedError,
 )
 from airbyte_cdk.sources.declarative.parsers.manifest_component_transformer import (
@@ -2527,14 +2528,14 @@ def test_create_custom_components(manifest, field_name, expected_value, expected
     ],
 )
 def test_create_custom_component_requires_custom_code_enabled(class_name, monkeypatch):
-    """A `Custom*` component must not be instantiated unless custom code execution is
-    explicitly enabled via `AIRBYTE_ENABLE_UNSAFE_CODE`.
+    """A `Custom*` component declared by a config-injected manifest must not be instantiated
+    unless custom code execution is explicitly enabled via `AIRBYTE_ENABLE_UNSAFE_CODE`.
 
-    Resolving and instantiating a component's `class_name` executes arbitrary
-    importable code, so it must honor the same gate as injected `components.py` code.
-    The gate must fire regardless of whether `class_name` points at a bundled custom
-    component or at an arbitrary importable callable, and it must fire before the
-    referenced module is imported.
+    A manifest provided through the config is untrusted input, and resolving its
+    `class_name` executes arbitrary importable code, so it must honor the same gate as
+    injected `components.py` code. The gate must fire regardless of whether `class_name`
+    points at a bundled custom component or at an arbitrary importable callable, and it
+    must fire before the referenced module is imported.
     """
     monkeypatch.delenv(ENV_VAR_ALLOW_CUSTOM_CODE, raising=False)
 
@@ -2551,7 +2552,30 @@ def test_create_custom_component_requires_custom_code_enabled(class_name, monkey
     }
 
     with pytest.raises(AirbyteCustomCodeNotPermittedError):
-        factory.create_component(CustomErrorHandlerModel, manifest, input_config)
+        factory.create_component(
+            CustomErrorHandlerModel,
+            manifest,
+            {**input_config, INJECTED_MANIFEST: {"type": "DeclarativeSource"}},
+        )
+
+
+def test_create_custom_component_permitted_for_bundled_manifest(monkeypatch):
+    """A manifest bundled in a connector image may use its bundled custom components.
+
+    Published manifest-only connectors ship their own `manifest.yaml` and `components.py`
+    inside a trusted image, so their `Custom*` components must keep working in environments
+    that do not set `AIRBYTE_ENABLE_UNSAFE_CODE`, such as Airbyte Cloud.
+    """
+    monkeypatch.delenv(ENV_VAR_ALLOW_CUSTOM_CODE, raising=False)
+
+    manifest = {
+        "type": "CustomErrorHandler",
+        "class_name": "unit_tests.sources.declarative.parsers.testing_components.TestingSomeComponent",
+    }
+
+    component = factory.create_component(CustomErrorHandlerModel, manifest, input_config)
+
+    assert isinstance(component, TestingSomeComponent)
 
 
 def test_custom_components_do_not_contain_extra_fields():

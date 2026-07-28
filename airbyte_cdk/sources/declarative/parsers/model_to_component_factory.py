@@ -478,6 +478,7 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
     ZipfileDecoder as ZipfileDecoderModel,
 )
 from airbyte_cdk.sources.declarative.parsers.custom_code_compiler import (
+    INJECTED_MANIFEST,
     AirbyteCustomCodeNotPermittedError,
     custom_code_execution_permitted,
 )
@@ -1814,11 +1815,11 @@ class ModelToComponentFactory:
         :return: The declarative component built from the Pydantic model to be used at runtime
         """
         # Instantiating a custom component means importing and executing arbitrary code referenced
-        # by `class_name`. This is only permitted when custom code execution is explicitly enabled,
-        # mirroring the gate applied to injected `components.py` code. Without this check, a manifest
-        # could point `class_name` at any importable callable and have it invoked, bypassing the
-        # `AIRBYTE_ENABLE_UNSAFE_CODE` protection.
-        if not custom_code_execution_permitted():
+        # by `class_name`. When the manifest itself comes from the config, it is untrusted input and
+        # could point `class_name` at any importable callable, so it honors the same
+        # `AIRBYTE_ENABLE_UNSAFE_CODE` gate as injected `components.py` code. Manifests bundled in a
+        # published connector image are trusted and may always use their bundled custom components.
+        if config.get(INJECTED_MANIFEST) and not custom_code_execution_permitted():
             raise AirbyteCustomCodeNotPermittedError
 
         custom_component_class = self._get_class_from_fully_qualified_class_name(model.class_name)
