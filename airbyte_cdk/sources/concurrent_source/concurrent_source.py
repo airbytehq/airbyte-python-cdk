@@ -201,29 +201,32 @@ class ConcurrentSource:
             except Empty:
                 now = time.monotonic()
                 if now - last_progress >= self._timeout_seconds:
-                    in_flight_description = (
-                        concurrent_stream_processor.get_in_flight_streams_description()
-                    )
                     if now - last_warning >= self._timeout_seconds:
+                        in_flight_description = (
+                            concurrent_stream_processor.get_in_flight_streams_description()
+                        )
                         self._logger.warning(
                             "No queue progress for %s seconds. %s",
                             self._timeout_seconds,
                             in_flight_description,
                         )
                         last_warning = now
-                    if (
-                        self._no_progress_timeout_seconds is not None
-                        and now - last_progress >= self._no_progress_timeout_seconds
-                    ):
-                        self._threadpool.shutdown()
-                        raise AirbyteTracedException(
-                            message=f"Source made no progress for {self._no_progress_timeout_seconds} seconds and was stopped.",
-                            internal_message=(
-                                f"No queue progress for {self._no_progress_timeout_seconds} seconds. "
-                                f"{in_flight_description}"
-                            ),
-                            failure_type=FailureType.system_error,
-                        )
+                if (
+                    self._no_progress_timeout_seconds is not None
+                    and now - last_progress >= self._no_progress_timeout_seconds
+                ):
+                    in_flight_description = (
+                        concurrent_stream_processor.get_in_flight_streams_description()
+                    )
+                    self._threadpool.shutdown()
+                    raise AirbyteTracedException(
+                        message=f"Source made no progress for {self._no_progress_timeout_seconds} seconds and was stopped.",
+                        internal_message=(
+                            f"No queue progress for {self._no_progress_timeout_seconds} seconds. "
+                            f"{in_flight_description}"
+                        ),
+                        failure_type=FailureType.system_error,
+                    )
                 continue
             last_progress = time.monotonic()
             if not airbyte_message_or_record_or_exception:

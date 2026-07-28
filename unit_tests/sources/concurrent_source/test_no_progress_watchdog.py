@@ -3,7 +3,7 @@
 #
 
 import logging
-from queue import Empty, Queue
+from queue import Empty
 from unittest.mock import Mock
 
 import pytest
@@ -15,6 +15,17 @@ from airbyte_cdk.sources.concurrent_source.thread_pool_manager import ThreadPool
 from airbyte_cdk.sources.message import InMemoryMessageRepository
 from airbyte_cdk.sources.utils.slice_logger import DebugSliceLogger
 from airbyte_cdk.utils import AirbyteTracedException
+
+
+class _FakeClock:
+    def __init__(self, step: int = 1) -> None:
+        self._now = 0
+        self._step = step
+
+    def __call__(self) -> int:
+        now = self._now
+        self._now += self._step
+        return now
 
 
 def _message() -> AirbyteMessage:
@@ -31,7 +42,7 @@ def _source(queue, **kwargs) -> ConcurrentSource:
         slice_logger=DebugSliceLogger(),
         queue=queue,
         message_repository=InMemoryMessageRepository(),
-        timeout_seconds=0.05,
+        timeout_seconds=1,
         **kwargs,
     )
 
@@ -53,7 +64,7 @@ def test_stalled_queue_logs_warning_without_raising(monkeypatch) -> None:
     source = _source(queue)
     monkeypatch.setattr(
         "airbyte_cdk.sources.concurrent_source.concurrent_source.time.monotonic",
-        Mock(side_effect=[0, 0.06, 0.12, 0.12]),
+        _FakeClock(),
     )
 
     assert list(source._consume_from_queue(queue, processor))
@@ -67,7 +78,7 @@ def test_stalled_queue_raises_with_constructor_timeout(monkeypatch) -> None:
     processor = _processor()
     monkeypatch.setattr(
         "airbyte_cdk.sources.concurrent_source.concurrent_source.time.monotonic",
-        Mock(side_effect=[0, 1]),
+        _FakeClock(),
     )
 
     with pytest.raises(AirbyteTracedException) as exc_info:
@@ -86,7 +97,7 @@ def test_stalled_queue_raises_with_environment_timeout(monkeypatch) -> None:
     processor = _processor()
     monkeypatch.setattr(
         "airbyte_cdk.sources.concurrent_source.concurrent_source.time.monotonic",
-        Mock(side_effect=[0, 1]),
+        _FakeClock(),
     )
 
     with pytest.raises(AirbyteTracedException) as exc_info:
@@ -96,26 +107,27 @@ def test_stalled_queue_raises_with_environment_timeout(monkeypatch) -> None:
     assert exc_info.value.failure_type == FailureType.system_error
 
 
-def test_normal_read_and_slow_progressing_read_complete() -> None:
-    queue = Queue()
-    queue.put(_message())
+def test_normal_read_completes_unchanged() -> None:
+    queue = Mock()
+    queue.get.return_value = _message()
+    queue.empty.return_value = True
     processor = _processor()
-    source = _source(queue, no_progress_timeout_seconds=1)
+    source = _source(queue, no_progress_timeout_seconds=2)
 
     assert list(source._consume_from_queue(queue, processor))
 
+
+def test_slow_progressing_read_does_not_trip_watchdog(monkeypatch) -> None:
     queue = Mock()
     queue.get.side_effect = [_message(), Empty, _message()]
     queue.empty.side_effect = [True, True]
     processor = _processor()
     processor.is_done.side_effect = [False, True]
-    source = _source(queue, no_progress_timeout_seconds=1)
-    source._logger = Mock(spec=logging.Logger)
+    source = _source(queue, no_progress_timeout_seconds=2)
 
-    with pytest.MonkeyPatch.context() as monkeypatch:
-        monkeypatch.setattr(
-            "airbyte_cdk.sources.concurrent_source.concurrent_source.time.monotonic",
-            Mock(side_effect=[0, 0, 0.06, 0.06]),
-        )
-        assert len(list(source._consume_from_queue(queue, processor))) == 2
+    monkeypatch.setattr(
+        "airbyte_cdk.sources.concurrent_source.concurrent_source.time.monotonic",
+        _FakeClock(),
+    )
+    assert len(list(source._consume_from_queue(queue, processor))) == 2
     source._threadpool.shutdown.assert_not_called()
