@@ -52,3 +52,58 @@ def test(test_name, path, expected_value):
     interpolated = mapping.eval(config, **{"kwargs": kwargs})
 
     assert dpath.get(interpolated, path) == expected_value
+
+
+@pytest.mark.parametrize(
+    "mapping, path, expected_value",
+    [
+        pytest.param(
+            {"clientId": "478"},
+            "clientId",
+            "478",
+            id="static_digit_only_string",
+        ),
+        pytest.param(
+            {"value": "0012"},
+            "value",
+            "0012",
+            id="static_leading_zero_string",
+        ),
+        pytest.param(
+            {"value": "None"},
+            "value",
+            "None",
+            id="static_none_string",
+        ),
+        pytest.param(
+            {"478": "value"},
+            "478",
+            "value",
+            id="static_digit_only_key",
+        ),
+        pytest.param(
+            {"nested": {"clientId": "478"}},
+            "nested/clientId",
+            "478",
+            id="static_string_nested_in_dict",
+        ),
+        pytest.param(
+            {"nested": {"values": ["478", "0012", "None"]}},
+            "nested/values",
+            ["478", "0012", "None"],
+            id="static_strings_nested_in_list",
+        ),
+        pytest.param(
+            {"value": "{{ 1 + 1 }}"},
+            "value",
+            2,
+            id="jinja_value_still_coerces",
+        ),
+    ],
+)
+def test_static_strings_are_preserved_and_jinja_values_are_interpolated(
+    mapping, path, expected_value
+):
+    interpolated = InterpolatedNestedMapping(mapping=mapping, parameters={}).eval({})
+
+    assert dpath.get(interpolated, path) == expected_value
