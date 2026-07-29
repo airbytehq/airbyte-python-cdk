@@ -1,6 +1,7 @@
 # Copyright (c) 2025 Airbyte, Inc., all rights reserved.
 """Tests for `build_connector_image` in `airbyte_cdk.utils.docker`."""
 
+import shutil
 from pathlib import Path
 
 import pytest
@@ -28,10 +29,21 @@ POKEAPI_FIXTURE_DIR = Path(__file__).parent.parent / "resources" / "source_pokea
 )
 def test_build_connector_image_base_image_override(
     monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
     base_image_override: str | None,
     expected_base_image: str,
 ) -> None:
-    connector_directory = POKEAPI_FIXTURE_DIR
+    # Copy the fixture so the Dockerfile templates that `build_connector_image` writes into
+    # `<connector>/build/docker/` land in a temp dir instead of the checked-in fixture, and stub
+    # template resolution, which otherwise falls back to downloading templates from GitHub when
+    # no airbyte monorepo checkout is present.
+    connector_directory = tmp_path / POKEAPI_FIXTURE_DIR.name
+    shutil.copytree(POKEAPI_FIXTURE_DIR, connector_directory)
+    monkeypatch.setattr(
+        docker,
+        "get_dockerfile_templates",
+        lambda *, metadata, connector_directory: ("FROM ${BASE_IMAGE}\n", ""),
+    )
     metadata = MetadataFile.from_file(connector_directory / "metadata.yaml")
 
     captured_build_args: list[dict[str, str | None]] = []

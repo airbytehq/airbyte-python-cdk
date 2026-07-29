@@ -271,10 +271,13 @@ class DockerConnectorTestSuite:
             f"`check` for connector '{connector_root.absolute().name}' emitted no CONNECTION_STATUS message. "
             f"Logs: {check_result.logs}"
         )
-        assert connection_statuses[-1].status == Status.SUCCEEDED, (
-            f"`check` for connector '{connector_root.absolute().name}' did not succeed: "
-            f"{connection_statuses[-1]}"
-        )
+        # Scenarios with no declared status map to ALLOW_ANY, whose contract is that either
+        # outcome passes - only assert SUCCEEDED when the scenario explicitly expects success.
+        if scenario.expected_outcome.expect_success():
+            assert connection_statuses[-1].status == Status.SUCCEEDED, (
+                f"`check` for connector '{connector_root.absolute().name}' did not succeed: "
+                f"{connection_statuses[-1]}"
+            )
 
     @pytest.mark.skipif(
         shutil.which("docker") is None,
