@@ -48,7 +48,9 @@ def image_cli_group() -> None:
     help=(
         "Optional. Build the connector `FROM` this base image instead of the `baseImage` "
         "declared in metadata.yaml. Useful for testing a connector against a locally-built "
-        "`source-declarative-manifest` image (e.g. built from the current CDK branch)."
+        "`source-declarative-manifest` image (e.g. built from the current CDK branch). "
+        "The image must be visible to your default buildx builder; locally-built images "
+        "are only resolved by the default `docker` driver, not `docker-container` builders."
     ),
 )
 def build(
@@ -124,7 +126,9 @@ def build(
         "Optional. When building the image to test, build it `FROM` this base image instead of "
         "the `baseImage` declared in metadata.yaml. Useful for testing a manifest-only connector "
         "against a locally-built `source-declarative-manifest` image (e.g. built from the current "
-        "CDK branch). Ignored when `--image` is provided."
+        "CDK branch). The image must be visible to your default buildx builder; locally-built "
+        "images are only resolved by the default `docker` driver, not `docker-container` "
+        "builders. Ignored when `--image` is provided."
     ),
 )
 def image_test(  # "image test" command

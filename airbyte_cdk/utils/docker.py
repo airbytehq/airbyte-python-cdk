@@ -169,7 +169,9 @@ def build_connector_image(
             declared in `metadata.yaml`. This lets CI build a connector on top of a
             locally-built `source-declarative-manifest` image (e.g. one built from the current
             branch) so the image tests exercise the branch's CDK rather than the published base
-            image's CDK.
+            image's CDK. The image must be visible to the default buildx builder: locally-built
+            images are only resolved by the default `docker` driver, not by `docker-container`
+            builders (which would instead attempt to pull the image from the registry).
 
     Raises:
         ValueError: If the connector build options are not defined in metadata.yaml.
