@@ -268,11 +268,11 @@ class DockerConnectorTestSuite:
             if message.connectionStatus is not None
         ]
         assert connection_statuses, (
-            f"`check` for connector '{connector_root.name}' emitted no CONNECTION_STATUS message. "
+            f"`check` for connector '{connector_root.absolute().name}' emitted no CONNECTION_STATUS message. "
             f"Logs: {check_result.logs}"
         )
         assert connection_statuses[-1].status == Status.SUCCEEDED, (
-            f"`check` for connector '{connector_root.name}' did not succeed: "
+            f"`check` for connector '{connector_root.absolute().name}' did not succeed: "
             f"{connection_statuses[-1]}"
         )
 
