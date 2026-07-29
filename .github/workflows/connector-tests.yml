@@ -192,15 +192,6 @@ jobs:
         run: |
           poetry run airbyte-cdk connector test
 
-      - name: Run FAST Standard Tests [Manifest-Only Connectors]
-        if: env.CONNECTOR_LANGUAGE == 'manifest-only'
-        working-directory: airbyte-python-cdk
-        env:
-          GCP_GSM_CREDENTIALS: ${{ secrets.GCP_GSM_CREDENTIALS }}
-          POETRY_DYNAMIC_VERSIONING_BYPASS: "0.0.0"
-        run: |
-          poetry run airbyte-cdk connector test ${{ matrix.connector }}
-
       # Manifest-only connector images are built `FROM` the published `source-declarative-manifest`
       # base image declared in metadata.yaml, so by default the container tests exercise the
       # already-released CDK instead of this branch's CDK. Build an SDM image from the current
@@ -216,6 +207,21 @@ jobs:
         run: |
           poetry build -f wheel
           docker build -t airbyte/source-declarative-manifest:dev .
+
+      # The FAST standard test suite also collects the docker image tests, so pass the
+      # branch-built SDM base image here too. Otherwise those tests build the connector image
+      # `FROM` the published metadata base image (running the released CDK instead of this
+      # branch's), and the later `image test` step can't reuse its layers.
+      - name: Run FAST Standard Tests [Manifest-Only Connectors]
+        if: env.CONNECTOR_LANGUAGE == 'manifest-only'
+        working-directory: airbyte-python-cdk
+        env:
+          GCP_GSM_CREDENTIALS: ${{ secrets.GCP_GSM_CREDENTIALS }}
+          POETRY_DYNAMIC_VERSIONING_BYPASS: "0.0.0"
+        run: |
+          poetry run airbyte-cdk connector test ${{ matrix.connector }} \
+            --pytest-arg=--base-image \
+            --pytest-arg=airbyte/source-declarative-manifest:dev
 
       - name: Container Build and Test [All Connectors]
         if: steps.no_changes.outputs.status != 'cancelled'
