@@ -27,7 +27,7 @@ from airbyte_cdk.models import (
 )
 from airbyte_cdk.models.connector_metadata import MetadataFile
 from airbyte_cdk.test.entrypoint_wrapper import EntrypointOutput
-from airbyte_cdk.test.models import ConnectorTestScenario
+from airbyte_cdk.test.models import ConnectorTestScenario, ExpectedOutcome
 from airbyte_cdk.utils.connector_paths import (
     ACCEPTANCE_TEST_CONFIG,
     find_connector_root,
@@ -36,6 +36,44 @@ from airbyte_cdk.utils.docker import (
     build_connector_image,
     run_docker_airbyte_command,
 )
+
+
+def _assert_check_outcome(
+    *,
+    check_result: EntrypointOutput,
+    expected_outcome: ExpectedOutcome,
+    connector_name: str,
+) -> None:
+    """Assert that the reported CONNECTION_STATUS matches the scenario's expected outcome.
+
+    A failing `check` reports `status: FAILED` in a `CONNECTION_STATUS` message and still
+    exits 0, so exit-code checks alone do not catch it. We therefore assert the reported
+    status explicitly, in both directions:
+    - A scenario expecting success must report `SUCCEEDED`.
+    - A scenario expecting failure must not report `SUCCEEDED` (a graceful `FAILED` status
+      or an uncaught error with no status message both count as the expected failure).
+    - `ALLOW_ANY` scenarios accept either outcome.
+    """
+    connection_statuses = [
+        message.connectionStatus
+        for message in check_result.connection_status_messages
+        if message.connectionStatus is not None
+    ]
+    if expected_outcome.expect_exception():
+        assert not connection_statuses or connection_statuses[-1].status != Status.SUCCEEDED, (
+            f"`check` for connector '{connector_name}' was expected to fail, but reported: "
+            f"{connection_statuses[-1]}"
+        )
+        return
+
+    assert connection_statuses, (
+        f"`check` for connector '{connector_name}' emitted no CONNECTION_STATUS message. "
+        f"Logs: {check_result.logs}"
+    )
+    if expected_outcome.expect_success():
+        assert connection_statuses[-1].status == Status.SUCCEEDED, (
+            f"`check` for connector '{connector_name}' did not succeed: {connection_statuses[-1]}"
+        )
 
 
 class DockerConnectorTestSuite:
@@ -220,9 +258,6 @@ class DockerConnectorTestSuite:
           - In the rare case that image caches need to be cleared, please clear
             the local docker image cache using `docker image prune -a` command.
         """
-        if scenario.expected_outcome.expect_exception():
-            pytest.skip("Skipping test_docker_image_build_and_check (expected to fail).")
-
         tag = "dev-latest"
         connector_root = self.get_connector_root_dir()
         metadata = MetadataFile.from_file(connector_root / "metadata.yaml")
@@ -254,30 +289,20 @@ class DockerConnectorTestSuite:
                     "--config",
                     container_config_path,
                 ],
-                raise_if_errors=True,
+                # For expected-failure scenarios, a non-zero exit or trace error is an
+                # acceptable way for `check` to fail; don't raise before we assert on it.
+                raise_if_errors=not scenario.expected_outcome.expect_exception(),
             )
 
-        # A failing `check` reports `status: FAILED` in a `CONNECTION_STATUS` message and still
-        # exits 0, so `raise_if_errors` alone does not catch it. We therefore assert the reported
-        # status explicitly. This makes the image test exercise the connector's actual `check`
-        # outcome inside the container (e.g. it fails if bundled custom components are rejected by
-        # the CDK baked into the base image).
-        connection_statuses = [
-            message.connectionStatus
-            for message in check_result.connection_status_messages
-            if message.connectionStatus is not None
-        ]
-        assert connection_statuses, (
-            f"`check` for connector '{connector_root.absolute().name}' emitted no CONNECTION_STATUS message. "
-            f"Logs: {check_result.logs}"
+        # This makes the image test exercise the connector's actual `check` outcome inside the
+        # container, in both directions (e.g. it fails if bundled custom components are rejected
+        # by the CDK baked into the base image, and it fails if a `check` that is expected to
+        # fail starts succeeding).
+        _assert_check_outcome(
+            check_result=check_result,
+            expected_outcome=scenario.expected_outcome,
+            connector_name=connector_root.absolute().name,
         )
-        # Scenarios with no declared status map to ALLOW_ANY, whose contract is that either
-        # outcome passes - only assert SUCCEEDED when the scenario explicitly expects success.
-        if scenario.expected_outcome.expect_success():
-            assert connection_statuses[-1].status == Status.SUCCEEDED, (
-                f"`check` for connector '{connector_root.absolute().name}' did not succeed: "
-                f"{connection_statuses[-1]}"
-            )
 
     @pytest.mark.skipif(
         shutil.which("docker") is None,
