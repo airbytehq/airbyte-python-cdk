@@ -149,3 +149,6 @@ jobs:
           # re-expanded as a GitHub expression.
           payload-file-path: ${{ steps.payload.outputs.file }}
           errors: true
+
+# Temporary scaffolding for verifying the retargeted notification end to end.
+# Remove before merging -- this PR exists only to trigger a notification.
