@@ -1,7 +1,7 @@
 name: Slack PR Notification
 
 # Posts a message to the configured Slack channel whenever a PR is opened, or
-# when a draft is marked ready for review, mentioning the configured Slack user.
+# when a draft is marked ready for review, mentioning the configured user group.
 #
 # Uses `pull_request_target` rather than `pull_request` so that the Slack bot
 # token resolves for PRs from forks -- `pull_request` workflows triggered by a
@@ -27,9 +27,9 @@ on:
 
 env:
   # Destination channel for PR notifications.
-  SLACK_CHANNEL_ID: C0B89MR7YRK
-  # Slack user mentioned in each notification.
-  SLACK_USER_ID: U063M9WHWTU
+  SLACK_CHANNEL_ID: C0BHDAPNPCY
+  # Slack user group mentioned in each notification.
+  SLACK_GROUP_ID: S077U1TH43D
 
 jobs:
   notify-slack:
@@ -80,7 +80,7 @@ jobs:
           jq -n \
             --arg headline "$HEADLINE" \
             --arg channel "$SLACK_CHANNEL_ID" \
-            --arg user_id "$SLACK_USER_ID" \
+            --arg group_id "$SLACK_GROUP_ID" \
             --arg repo "$GITHUB_REPOSITORY" \
             --arg number "$PR_NUMBER" \
             --arg title "$PR_TITLE" \
@@ -97,7 +97,7 @@ jobs:
             def esc: gsub("&"; "&amp;") | gsub("<"; "&lt;") | gsub(">"; "&gt;");
             {
               channel: $channel,
-              text: "<@\($user_id)> \($headline): #\($number) \($title | esc)",
+              text: "<!subteam^\($group_id)> \($headline): #\($number) \($title | esc)",
               unfurl_links: false,
               unfurl_media: false,
               blocks: [
@@ -105,7 +105,7 @@ jobs:
                   type: "section",
                   text: {
                     type: "mrkdwn",
-                    text: "<@\($user_id)> *\($headline)* in `\($repo)`"
+                    text: "<!subteam^\($group_id)> *\($headline)* in `\($repo)`"
                   }
                 },
                 {
