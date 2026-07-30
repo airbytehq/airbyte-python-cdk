@@ -1,7 +1,7 @@
 name: Slack PR Notification
 
-# Posts a message to #agent-patrick-nilan whenever a PR is opened (or a draft
-# is marked ready for review) and tags @patrick.nilan.
+# Posts a message to the configured Slack channel whenever a PR is opened, or
+# when a draft is marked ready for review, mentioning the configured Slack user.
 #
 # Uses `pull_request_target` rather than `pull_request` so that the Slack bot
 # token resolves for PRs from forks -- `pull_request` workflows triggered by a
@@ -26,15 +26,14 @@ on:
       # - synchronize
 
 env:
-  # Channel: #agent-patrick-nilan
-  # Link (internal): https://airbytehq-team.slack.com/archives/C0B89MR7YRK
+  # Destination channel for PR notifications.
   SLACK_CHANNEL_ID: C0B89MR7YRK
-  # User: @patrick.nilan
+  # Slack user mentioned in each notification.
   SLACK_USER_ID: U063M9WHWTU
 
 jobs:
   notify-slack:
-    name: Post New PR to #agent-patrick-nilan
+    name: Post New PR to Slack
     # Draft PRs stay quiet until their author flips them to ready for review.
     if: github.event.pull_request.draft == false
     runs-on: ubuntu-24.04
@@ -133,7 +132,7 @@ jobs:
             ' | tee "$PAYLOAD_FILE"
           echo "file=$PAYLOAD_FILE" | tee -a "$GITHUB_OUTPUT"
 
-      - name: Post to Slack channel agent-patrick-nilan
+      - name: Post to Slack channel
         # Pinned to an immutable SHA rather than a tag: this workflow runs on
         # `pull_request_target` with a Slack bot token in scope, so a retagged
         # release must not be able to execute with that secret. Same pattern as
