@@ -22,11 +22,12 @@ from airbyte_cdk.models import (
     ConfiguredAirbyteCatalog,
     ConfiguredAirbyteStream,
     DestinationSyncMode,
+    Status,
     SyncMode,
 )
 from airbyte_cdk.models.connector_metadata import MetadataFile
 from airbyte_cdk.test.entrypoint_wrapper import EntrypointOutput
-from airbyte_cdk.test.models import ConnectorTestScenario
+from airbyte_cdk.test.models import ConnectorTestScenario, ExpectedOutcome
 from airbyte_cdk.utils.connector_paths import (
     ACCEPTANCE_TEST_CONFIG,
     find_connector_root,
@@ -35,6 +36,44 @@ from airbyte_cdk.utils.docker import (
     build_connector_image,
     run_docker_airbyte_command,
 )
+
+
+def _assert_check_outcome(
+    *,
+    check_result: EntrypointOutput,
+    expected_outcome: ExpectedOutcome,
+    connector_name: str,
+) -> None:
+    """Assert that the reported CONNECTION_STATUS matches the scenario's expected outcome.
+
+    A failing `check` reports `status: FAILED` in a `CONNECTION_STATUS` message and still
+    exits 0, so exit-code checks alone do not catch it. We therefore assert the reported
+    status explicitly, in both directions:
+    - A scenario expecting success must report `SUCCEEDED`.
+    - A scenario expecting failure must not report `SUCCEEDED` (a graceful `FAILED` status
+      or an uncaught error with no status message both count as the expected failure).
+    - `ALLOW_ANY` scenarios accept either outcome.
+    """
+    connection_statuses = [
+        message.connectionStatus
+        for message in check_result.connection_status_messages
+        if message.connectionStatus is not None
+    ]
+    if expected_outcome.expect_exception():
+        assert not connection_statuses or connection_statuses[-1].status != Status.SUCCEEDED, (
+            f"`check` for connector '{connector_name}' was expected to fail, but reported: "
+            f"{connection_statuses[-1]}"
+        )
+        return
+
+    assert connection_statuses, (
+        f"`check` for connector '{connector_name}' emitted no CONNECTION_STATUS message. "
+        f"Logs: {check_result.logs}"
+    )
+    if expected_outcome.expect_success():
+        assert connection_statuses[-1].status == Status.SUCCEEDED, (
+            f"`check` for connector '{connector_name}' did not succeed: {connection_statuses[-1]}"
+        )
 
 
 class DockerConnectorTestSuite:
@@ -94,6 +133,9 @@ class DockerConnectorTestSuite:
         take the union of any defined empty_streams, to have high confidence that runnning a read with the
         config will not error on the lack of data in the empty streams or lack of permissions to read them.
 
+        We also carry over any explicitly declared `status`. Only the `connection` section declares one,
+        so without this an entry from another section (e.g. `spec`) would win and silently downgrade the
+        scenario to `ALLOW_ANY`, which accepts a failing `check`.
         """
         deduped_scenarios: list[ConnectorTestScenario] = []
 
@@ -105,8 +147,21 @@ class DockerConnectorTestSuite:
                     all_empty_streams = (existing_scenario.empty_streams or []) + (
                         scenario.empty_streams or []
                     )
+                    if (
+                        existing_scenario.status is not None
+                        and scenario.status is not None
+                        and existing_scenario.status != scenario.status
+                    ):
+                        raise ValueError(
+                            f"Conflicting expected statuses declared for config "
+                            f"'{scenario.config_path}': '{existing_scenario.status}' and "
+                            f"'{scenario.status}'."
+                        )
                     merged_scenario = existing_scenario.model_copy(
-                        update={"empty_streams": list(set(all_empty_streams))}
+                        update={
+                            "empty_streams": list(set(all_empty_streams)),
+                            "status": existing_scenario.status or scenario.status,
+                        }
                     )
                     deduped_scenarios.remove(existing_scenario)
                     deduped_scenarios.append(merged_scenario)
@@ -170,6 +225,7 @@ class DockerConnectorTestSuite:
     def test_docker_image_build_and_spec(
         self,
         connector_image_override: str | None,
+        connector_base_image_override: str | None,
     ) -> None:
         """Run `docker_image` acceptance tests."""
         connector_root = self.get_connector_root_dir().absolute()
@@ -184,6 +240,7 @@ class DockerConnectorTestSuite:
                 metadata=metadata,
                 tag=tag,
                 no_verify=False,
+                base_image_override=connector_base_image_override,
             )
 
         _ = run_docker_airbyte_command(
@@ -206,6 +263,7 @@ class DockerConnectorTestSuite:
         self,
         scenario: ConnectorTestScenario,
         connector_image_override: str | None,
+        connector_base_image_override: str | None,
     ) -> None:
         """Run `docker_image` acceptance tests.
 
@@ -216,9 +274,6 @@ class DockerConnectorTestSuite:
           - In the rare case that image caches need to be cleared, please clear
             the local docker image cache using `docker image prune -a` command.
         """
-        if scenario.expected_outcome.expect_exception():
-            pytest.skip("Skipping test_docker_image_build_and_check (expected to fail).")
-
         tag = "dev-latest"
         connector_root = self.get_connector_root_dir()
         metadata = MetadataFile.from_file(connector_root / "metadata.yaml")
@@ -231,13 +286,14 @@ class DockerConnectorTestSuite:
                 metadata=metadata,
                 tag=tag,
                 no_verify=False,
+                base_image_override=connector_base_image_override,
             )
 
         container_config_path = "/secrets/config.json"
         with scenario.with_temp_config_file(
             connector_root=connector_root,
         ) as temp_config_file:
-            _ = run_docker_airbyte_command(
+            check_result = run_docker_airbyte_command(
                 [
                     "docker",
                     "run",
@@ -249,8 +305,20 @@ class DockerConnectorTestSuite:
                     "--config",
                     container_config_path,
                 ],
-                raise_if_errors=True,
+                # For expected-failure scenarios, a non-zero exit or trace error is an
+                # acceptable way for `check` to fail; don't raise before we assert on it.
+                raise_if_errors=not scenario.expected_outcome.expect_exception(),
             )
+
+        # This makes the image test exercise the connector's actual `check` outcome inside the
+        # container, in both directions (e.g. it fails if bundled custom components are rejected
+        # by the CDK baked into the base image, and it fails if a `check` that is expected to
+        # fail starts succeeding).
+        _assert_check_outcome(
+            check_result=check_result,
+            expected_outcome=scenario.expected_outcome,
+            connector_name=connector_root.absolute().name,
+        )
 
     @pytest.mark.skipif(
         shutil.which("docker") is None,
@@ -261,6 +329,7 @@ class DockerConnectorTestSuite:
         self,
         scenario: ConnectorTestScenario,
         connector_image_override: str | None,
+        connector_base_image_override: str | None,
         read_from_streams: Literal["all", "none", "default"] | list[str],
         read_scenarios: Literal["all", "none", "default"] | list[str],
     ) -> None:
@@ -315,6 +384,7 @@ class DockerConnectorTestSuite:
                 metadata=metadata,
                 tag=tag,
                 no_verify=False,
+                base_image_override=connector_base_image_override,
             )
 
         container_config_path = "/secrets/config.json"
