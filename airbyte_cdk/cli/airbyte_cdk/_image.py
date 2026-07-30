@@ -43,7 +43,8 @@ def image_cli_group() -> None:
     help="Optional. Override the Dockerfile used for building the image.",
 )
 @click.option(
-    "--base-image",
+    "--connector-base-image",
+    "base_image",
     default=None,
     help=(
         "Optional. Build the connector `FROM` this base image instead of the `baseImage` "
@@ -120,7 +121,8 @@ def build(
     help="Skip tests that require credentials (marked with 'requires_creds').",
 )
 @click.option(
-    "--base-image",
+    "--connector-base-image",
+    "base_image",
     default=None,
     help=(
         "Optional. When building the image to test, build it `FROM` this base image instead of "

@@ -196,7 +196,7 @@ jobs:
       # base image declared in metadata.yaml, so by default the container tests exercise the
       # already-released CDK instead of this branch's CDK. Build an SDM image from the current
       # branch (with a plain `docker build` so it lands in the local image store, where the
-      # connector image build can resolve it as its `FROM` base) and use it via `--base-image`.
+      # connector image build can resolve it as its `FROM` base) and use it via `--connector-base-image`.
       # Python connectors don't need this: the "Bump to Dev Branch CDK" step pins the connector's
       # CDK dependency to this branch, which the container image build then installs.
       - name: Build SDM image from current branch [Manifest-Only Connectors]
@@ -232,7 +232,7 @@ jobs:
         run: |
           if [ "$CONNECTOR_LANGUAGE" = "manifest-only" ]; then
             poetry run airbyte-cdk image test ${{ matrix.connector }} \
-              --base-image airbyte/source-declarative-manifest:dev
+              --connector-base-image airbyte/source-declarative-manifest:dev
           else
             poetry run airbyte-cdk image test ${{ matrix.connector }}
           fi

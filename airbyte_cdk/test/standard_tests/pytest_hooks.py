@@ -17,6 +17,8 @@ from typing import Literal, cast
 
 import pytest
 
+from airbyte_cdk.test.models.scenario import ConnectorTestScenario
+
 
 @pytest.fixture
 def connector_image_override(request: pytest.FixtureRequest) -> str | None:
@@ -209,5 +211,24 @@ def pytest_generate_tests(metafunc: pytest.Metafunc) -> None:
         metafunc.parametrize(
             "scenario",
             parametrized_scenarios,
-            ids=[str(scenario) for scenario in scenarios],
+            ids=_scenario_test_ids(scenarios),
         )
+
+
+def _scenario_test_ids(scenarios: list[ConnectorTestScenario]) -> list[str]:
+    """Return unique, human-readable pytest IDs for the given scenarios.
+
+    Scenario IDs are derived from the config file stem, so configs in different directories
+    (e.g. `integration_tests/config.json` and `secrets/config.json`) collide. Where they do,
+    we qualify the ID with the config's parent directory so failures name the config that
+    failed. Note this only affects the displayed test ID, not `ConnectorTestScenario.id`,
+    which scenario selection (`--read-scenarios`) matches against.
+    """
+    labels = [str(scenario) for scenario in scenarios]
+    duplicated = {label for label in labels if labels.count(label) > 1}
+    return [
+        f"{scenario.config_path.parent.name}/{label}"
+        if label in duplicated and scenario.config_path is not None
+        else label
+        for scenario, label in zip(scenarios, labels)
+    ]

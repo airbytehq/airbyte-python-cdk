@@ -133,6 +133,9 @@ class DockerConnectorTestSuite:
         take the union of any defined empty_streams, to have high confidence that runnning a read with the
         config will not error on the lack of data in the empty streams or lack of permissions to read them.
 
+        We also carry over any explicitly declared `status`. Only the `connection` section declares one,
+        so without this an entry from another section (e.g. `spec`) would win and silently downgrade the
+        scenario to `ALLOW_ANY`, which accepts a failing `check`.
         """
         deduped_scenarios: list[ConnectorTestScenario] = []
 
@@ -144,8 +147,21 @@ class DockerConnectorTestSuite:
                     all_empty_streams = (existing_scenario.empty_streams or []) + (
                         scenario.empty_streams or []
                     )
+                    if (
+                        existing_scenario.status is not None
+                        and scenario.status is not None
+                        and existing_scenario.status != scenario.status
+                    ):
+                        raise ValueError(
+                            f"Conflicting expected statuses declared for config "
+                            f"'{scenario.config_path}': '{existing_scenario.status}' and "
+                            f"'{scenario.status}'."
+                        )
                     merged_scenario = existing_scenario.model_copy(
-                        update={"empty_streams": list(set(all_empty_streams))}
+                        update={
+                            "empty_streams": list(set(all_empty_streams)),
+                            "status": existing_scenario.status or scenario.status,
+                        }
                     )
                     deduped_scenarios.remove(existing_scenario)
                     deduped_scenarios.append(merged_scenario)
