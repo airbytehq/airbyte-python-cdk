@@ -53,12 +53,19 @@ jobs:
         id: headline-ready
         run: echo "text=Pull request ready for review" | tee -a "$GITHUB_OUTPUT"
 
+      # Keeps the documented `synchronize` testing toggle -- and any event type
+      # added later -- from posting a message with an empty headline.
+      - name: Resolve headline (other events)
+        if: github.event.action != 'opened' && github.event.action != 'ready_for_review'
+        id: headline-other
+        run: echo "text=Pull request updated" | tee -a "$GITHUB_OUTPUT"
+
       # ---------- Build and send ----------
 
       - name: Build Slack payload
         id: payload
         env:
-          HEADLINE: ${{ steps.headline-opened.outputs.text || steps.headline-ready.outputs.text }}
+          HEADLINE: ${{ steps.headline-opened.outputs.text || steps.headline-ready.outputs.text || steps.headline-other.outputs.text }}
           PAYLOAD_FILE: ${{ runner.temp }}/slack-payload.json
           PR_NUMBER: ${{ github.event.pull_request.number }}
           PR_TITLE: ${{ github.event.pull_request.title }}
@@ -127,7 +134,11 @@ jobs:
           echo "file=$PAYLOAD_FILE" | tee -a "$GITHUB_OUTPUT"
 
       - name: Post to Slack channel agent-patrick-nilan
-        uses: slackapi/slack-github-action@v4.0.0
+        # Pinned to an immutable SHA rather than a tag: this workflow runs on
+        # `pull_request_target` with a Slack bot token in scope, so a retagged
+        # release must not be able to execute with that secret. Same pattern as
+        # `label-community-prs.yml`, the repo's other `pull_request_target` job.
+        uses: slackapi/slack-github-action@dcb1066f776dd043e64d0e8ba94ca15cc7e1875d # v4.0.0
         # Slack being down, or the bot being removed from the channel, must
         # never turn a contributor's PR checks red. The step still surfaces as
         # a warning in the Actions UI thanks to `errors: true`.
