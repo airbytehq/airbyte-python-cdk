@@ -9,14 +9,25 @@ name: Label Community Issues
 #   MEMBER / OWNER  -> inside the org  -> no label
 #   anything else   -> outside the org -> "community"
 #
-# Bots are excluded via `user.type`. This matters more than it looks: 29 of the 83
-# issues in this repo were opened by bots (Devin, CodeRabbit), and every one of them
-# reports `author_association: CONTRIBUTOR`. Without the bot check they would all be
-# mislabeled as community contributions.
+# Automation accounts are excluded by an explicit allowlist rather than by
+# `user.type != 'Bot'`, which is wrong in both directions:
 #
-# `author_association` reflects org membership at the moment the event fires, so the
-# label is a snapshot. Someone who files an issue and later leaves the org keeps
-# whatever label they had, which is the intended behavior.
+#   - Too broad.  It would exclude ANY app bot, including one that files issues on
+#     behalf of community members. No such relay bot exists today, but if one is
+#     ever installed, a type check would silently drop the label. An allowlist
+#     instead labels the unknown bot's issues `community` — wrong, but visible, and
+#     fixed by adding one line here.
+#   - Too narrow. `airbyteio` and `octavia-squidington-iii` are Airbyte machine
+#     accounts of type User, not Bot. A type check would label their issues
+#     `community`.
+#
+# The list below mirrors the denylist in airbytehq/workflow-actions -> src/community.ts
+# (which drives the same labeling in airbytehq/airbyte), plus `coderabbitai[bot]`,
+# which files issues here and is absent from that list.
+#
+# Bots that have actually opened issues in this repo: devin-ai-integration (21) and
+# coderabbitai (8), out of 83 total. Both are Airbyte-installed tooling producing
+# internal engineering issues.
 
 on:
   issues:
@@ -27,9 +38,11 @@ on:
 jobs:
   label-community-issue:
     name: Add "community" Label to Issue
-    # Skip bots, and skip anyone inside the airbytehq organization.
+    # Skip known Airbyte automation, and skip anyone inside the airbytehq org.
+    # An automation account not listed here is treated as a community author on
+    # purpose, so the gap shows up in triage rather than disappearing.
     if: >
-      github.event.issue.user.type != 'Bot' &&
+      !contains(fromJSON('["devin-ai-integration[bot]", "coderabbitai[bot]", "github-actions[bot]", "dependabot[bot]", "octavia-bot[bot]", "octavia-bot-admin[bot]", "octavia-bot-hoard[bot]", "speakeasybot[bot]", "airbyte-slash-dispatch-bot[bot]", "octavia-squidington-iii", "airbyteio"]'), github.event.issue.user.login) &&
       !contains(fromJSON('["MEMBER", "OWNER"]'), github.event.issue.author_association)
     runs-on: ubuntu-24.04
     permissions:
