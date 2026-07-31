@@ -481,4 +481,7 @@ class HttpRequester(Requester):
             exit_on_rate_limit=self._exit_on_rate_limit,
         )
 
+        if response is not None and hasattr(self._authenticator, "on_http_response"):
+            self._authenticator.on_http_response(response)
+
         return response
