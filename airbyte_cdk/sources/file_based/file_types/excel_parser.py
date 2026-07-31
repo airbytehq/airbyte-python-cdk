@@ -34,6 +34,7 @@ from airbyte_cdk.sources.file_based.schema_helpers import SchemaType
 class ExcelParser(FileTypeParser):
     ENCODING = None
     ALL_SHEETS = "*"
+    ab_sheet_name_col = "_ab_source_sheet_name"
 
     def check_config(self, config: FileBasedStreamConfig) -> Tuple[bool, Optional[str]]:
         """
@@ -78,6 +79,9 @@ class ExcelParser(FileTypeParser):
                         df_type,
                     )
 
+        if self._reads_all_sheets(excel_format):
+            fields[self.ab_sheet_name_col] = "string"
+
         schema = {
             field: (
                 {"type": "string", "format": "date-time"}
@@ -116,16 +120,25 @@ class ExcelParser(FileTypeParser):
         if not isinstance(excel_format, ExcelFormat):
             raise ConfigValidationError(FileBasedSourceError.CONFIG_VALIDATION_ERROR)
 
+        include_sheet_name = self._reads_all_sheets(excel_format)
+
         try:
             # Open and parse the file using the stream reader
             with stream_reader.open_file(file, self.file_read_mode, self.ENCODING, logger) as fp:
-                for df in self._parse_excel_file(fp, excel_format, logger, file).values():
+                for sheet, df in self._parse_excel_file(fp, excel_format, logger, file).items():
                     # DataFrame.to_dict() returns pandas.Timestamp values not serializable by orjson.
                     # DataFrame.to_json() serializes datetimes to iso8601 with microseconds.
-                    yield from orjson.loads(
+                    records = orjson.loads(
                         df.to_json(orient="records", date_format="iso", date_unit="us")
                     )
+                    if include_sheet_name:
+                        for record in records:
+                            record[self.ab_sheet_name_col] = sheet
+                    yield from records
 
+        except ConfigValidationError:
+            # A missing worksheet is a configuration problem, not an unparseable record.
+            raise
         except Exception as exc:
             # Raise a RecordParseError if any exception occurs during parsing
             raise RecordParseError(
@@ -287,18 +300,58 @@ class ExcelParser(FileTypeParser):
         logger: logging.Logger,
         file: RemoteFile,
     ) -> Dict[Union[int, str], pd.DataFrame]:
-        """Parses an Excel file and returns a dict of sheet name → DataFrame."""
+        """Parses an Excel file and returns a mapping of worksheet name to DataFrame.
+
+        When reading every worksheet, pandas keys the mapping by the real worksheet names in
+        workbook order. When reading a single worksheet it returns a bare DataFrame, which we
+        wrap so callers always see the same shape.
+        """
         sheet_name = self._resolve_sheet_name(excel_format)
-        parsed = self.open_and_parse_file(fp, logger, file, sheet_name)
+        try:
+            parsed = self.open_and_parse_file(fp, logger, file, sheet_name)
+        except ValueError as exc:
+            # pandas raises ValueError("Worksheet named 'x' not found") for both engines.
+            if "not found" not in str(exc):
+                raise
+            raise ConfigValidationError(
+                f"Worksheet {excel_format.sheet_name!r} was not found in the workbook. "
+                f"{self._describe_available_sheets(fp, logger)}"
+                "Worksheet names are case-sensitive. "
+                f'Set the "Sheet Name" option to an exact worksheet name, or to "*" to read '
+                "every worksheet.",
+                filename=file.uri,
+            ) from exc
         if isinstance(parsed, pd.DataFrame):
-            return {excel_format.sheet_name: parsed}
+            return {sheet_name if isinstance(sheet_name, str) else 0: parsed}
         return parsed
 
     def _resolve_sheet_name(self, excel_format: ExcelFormat) -> Union[int, str, None]:
-        """Converts the string config value to a pandas-compatible `sheet_name` argument."""
+        """Converts the config value to a pandas-compatible `sheet_name` argument.
+
+        Unset means the first worksheet, which is the behavior that predates this option.
+        `*` means every worksheet; pandas spells that `None`. Any other value is used as a
+        literal worksheet name -- notably, a numeric-looking name like "2026" stays a name
+        rather than becoming a positional index.
+        """
         value = excel_format.sheet_name
+        if value is None:
+            return 0
         if value == self.ALL_SHEETS:
             return None
-        if value.isdecimal():
-            return int(value)
         return value
+
+    def _reads_all_sheets(self, excel_format: ExcelFormat) -> bool:
+        """Whether the config selects every worksheet in the workbook."""
+        return excel_format.sheet_name == self.ALL_SHEETS
+
+    @staticmethod
+    def _describe_available_sheets(fp: Union[IOBase, str, Path], logger: logging.Logger) -> str:
+        """Best-effort listing of the worksheets present, for the not-found error message."""
+        try:
+            if hasattr(fp, "seek"):
+                fp.seek(0)  # type: ignore [union-attr]
+            names = pd.ExcelFile(fp, engine="calamine").sheet_names  # type: ignore [arg-type]
+        except BaseException as exc:
+            logger.info(f"Could not list worksheets for the error message: {exc}")
+            return ""
+        return f"Available worksheets: {', '.join(repr(str(n)) for n in names)}. "

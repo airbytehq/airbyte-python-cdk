@@ -475,8 +475,8 @@ single_csv_scenario: TestScenario[InMemoryFilesSource] = (
                                                 },
                                                 "sheet_name": {
                                                     "title": "Sheet Name",
-                                                    "description": 'The Excel worksheet to read. Use a sheet name, a zero-indexed position like "0", or "*" to read all sheets.',
-                                                    "default": "0",
+                                                    "description": 'The worksheet to read from each workbook. Leave empty to read only the first worksheet. Enter an exact worksheet name to read that worksheet, or "*" to read every worksheet in the workbook. Worksheet names are case-sensitive.',
+                                                    "examples": ["Sheet1", "*"],
                                                     "type": "string",
                                                 },
                                             },

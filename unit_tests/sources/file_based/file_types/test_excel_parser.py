@@ -7,6 +7,7 @@ import asyncio
 import datetime
 import warnings
 from io import BytesIO
+from typing import Any, Dict, List
 from unittest.mock import MagicMock, Mock, mock_open, patch
 
 import pandas as pd
@@ -242,17 +243,26 @@ def test_openpyxl_logs_info_when_seek_fails(mock_logger, remote_file, exc_cls):
     openpyxl_excel_file.parse.assert_called_once_with(sheet_name=0)
 
 
-def _make_multisheet_excel_bytes() -> bytes:
-    """Creates an in-memory Excel workbook with two sheets for testing."""
+SHEET_NAME_COL = ExcelParser.ab_sheet_name_col
+
+
+def _make_excel_bytes(sheets: Dict[str, pd.DataFrame]) -> bytes:
+    """Creates an in-memory Excel workbook from a mapping of worksheet name to frame."""
     buf = BytesIO()
     with pd.ExcelWriter(buf, engine="xlsxwriter") as writer:
-        pd.DataFrame({"col_a": ["first"], "shared": [1]}).to_excel(
-            writer, index=False, sheet_name="First"
-        )
-        pd.DataFrame({"col_b": [2.5], "shared": [2]}).to_excel(
-            writer, index=False, sheet_name="Second"
-        )
+        for name, frame in sheets.items():
+            frame.to_excel(writer, index=False, sheet_name=name)
     return buf.getvalue()
+
+
+def _make_multisheet_excel_bytes() -> bytes:
+    """Creates an in-memory Excel workbook with two sheets for testing."""
+    return _make_excel_bytes(
+        {
+            "First": pd.DataFrame({"col_a": ["first"], "shared": [1]}),
+            "Second": pd.DataFrame({"col_b": [2.5], "shared": [2]}),
+        }
+    )
 
 
 def _stream_reader_for(excel_bytes: bytes) -> MagicMock:
@@ -261,77 +271,91 @@ def _stream_reader_for(excel_bytes: bytes) -> MagicMock:
     return reader
 
 
+def _parse(excel_bytes: bytes, remote_file, **format_kwargs) -> List[Dict[str, Any]]:
+    parser = ExcelParser()
+    config = FileBasedStreamConfig(name="test_stream", format=ExcelFormat(**format_kwargs))
+    return list(
+        parser.parse_records(config, remote_file, _stream_reader_for(excel_bytes), MagicMock())
+    )
+
+
+def _infer(excel_bytes: bytes, remote_file, **format_kwargs) -> Dict[str, Any]:
+    parser = ExcelParser()
+    config = FileBasedStreamConfig(name="test_stream", format=ExcelFormat(**format_kwargs))
+    loop = asyncio.new_event_loop()
+    try:
+        return loop.run_until_complete(
+            parser.infer_schema(config, remote_file, _stream_reader_for(excel_bytes), MagicMock())
+        )
+    finally:
+        loop.close()
+
+
 @pytest.mark.parametrize(
-    "sheet_name,expected_records",
+    "format_kwargs,expected_records",
     [
         pytest.param(
-            "0",
+            {},
             [{"col_a": "first", "shared": 1}],
-            id="default_first_sheet",
+            id="unset_reads_first_sheet",
         ),
         pytest.param(
-            "Second",
+            {"sheet_name": "Second"},
             [{"col_b": 2.5, "shared": 2}],
             id="sheet_by_name",
         ),
         pytest.param(
-            "*",
-            [{"col_a": "first", "shared": 1}, {"col_b": 2.5, "shared": 2}],
-            id="all_sheets",
+            {"sheet_name": "*"},
+            [
+                {"col_a": "first", "shared": 1, SHEET_NAME_COL: "First"},
+                {"col_b": 2.5, "shared": 2, SHEET_NAME_COL: "Second"},
+            ],
+            id="all_sheets_tagged_with_origin",
         ),
     ],
 )
-def test_parse_records_selects_configured_sheet(sheet_name, expected_records, remote_file):
-    parser = ExcelParser()
-    config = FileBasedStreamConfig(name="test_stream", format=ExcelFormat(sheet_name=sheet_name))
-    reader = _stream_reader_for(_make_multisheet_excel_bytes())
+def test_parse_records_selects_configured_sheet(format_kwargs, expected_records, remote_file):
+    assert _parse(_make_multisheet_excel_bytes(), remote_file, **format_kwargs) == expected_records
 
-    records = list(parser.parse_records(config, remote_file, reader, MagicMock()))
 
-    assert records == expected_records
+def test_parse_records_without_sheet_name_adds_no_provenance(remote_file):
+    """The pre-existing single-sheet contract must be byte-for-byte unchanged."""
+    records = _parse(_make_multisheet_excel_bytes(), remote_file)
+
+    assert all(SHEET_NAME_COL not in record for record in records)
 
 
 @pytest.mark.parametrize(
-    "sheet_name,expected_schema",
+    "format_kwargs,expected_schema",
     [
         pytest.param(
-            "0",
+            {},
             {"col_a": {"type": "string"}, "shared": {"type": "number"}},
             id="first_sheet_schema",
         ),
         pytest.param(
-            "*",
+            {"sheet_name": "*"},
             {
                 "col_a": {"type": "string"},
                 "col_b": {"type": "number"},
                 "shared": {"type": "number"},
+                SHEET_NAME_COL: {"type": "string"},
             },
             id="all_sheets_merged_schema",
         ),
     ],
 )
-def test_infer_schema_with_sheet_selection(sheet_name, expected_schema, remote_file):
-    parser = ExcelParser()
-    config = FileBasedStreamConfig(name="test_stream", format=ExcelFormat(sheet_name=sheet_name))
-    reader = _stream_reader_for(_make_multisheet_excel_bytes())
-
-    loop = asyncio.new_event_loop()
-    try:
-        schema = loop.run_until_complete(
-            parser.infer_schema(config, remote_file, reader, MagicMock())
-        )
-    finally:
-        loop.close()
-
-    assert schema == expected_schema
+def test_infer_schema_with_sheet_selection(format_kwargs, expected_schema, remote_file):
+    assert _infer(_make_multisheet_excel_bytes(), remote_file, **format_kwargs) == expected_schema
 
 
 @pytest.mark.parametrize(
     "config_value,expected",
     [
-        pytest.param("0", 0, id="zero_index"),
-        pytest.param("1", 1, id="numeric_index"),
+        pytest.param(None, 0, id="unset_means_first_sheet"),
         pytest.param("MySheet", "MySheet", id="named_sheet"),
+        pytest.param("2026", "2026", id="numeric_name_stays_a_name"),
+        pytest.param("0", "0", id="zero_is_a_name_not_an_index"),
         pytest.param("*", None, id="all_sheets"),
     ],
 )
@@ -339,3 +363,66 @@ def test_resolve_sheet_name(config_value, expected):
     parser = ExcelParser()
     fmt = ExcelFormat(sheet_name=config_value)
     assert parser._resolve_sheet_name(fmt) == expected
+
+
+def test_parse_records_reads_worksheet_with_numeric_name(remote_file):
+    """Worksheets named for fiscal years must resolve by name, not by position."""
+    excel_bytes = _make_excel_bytes(
+        {
+            "2026": pd.DataFrame({"month": ["Jan"], "total": [10]}),
+            "2025": pd.DataFrame({"month": ["Feb"], "total": [8]}),
+        }
+    )
+
+    assert _parse(excel_bytes, remote_file, sheet_name="2026") == [{"month": "Jan", "total": 10}]
+    assert _parse(excel_bytes, remote_file, sheet_name="2025") == [{"month": "Feb", "total": 8}]
+
+
+def test_parse_records_preserves_workbook_sheet_order(remote_file):
+    excel_bytes = _make_excel_bytes(
+        {
+            "Alpha": pd.DataFrame({"v": [1, 2]}),
+            "Beta": pd.DataFrame({"v": [3]}),
+            "Gamma": pd.DataFrame({"v": [4]}),
+        }
+    )
+
+    records = _parse(excel_bytes, remote_file, sheet_name="*")
+
+    assert [record[SHEET_NAME_COL] for record in records] == [
+        "Alpha",
+        "Alpha",
+        "Beta",
+        "Gamma",
+    ]
+
+
+def test_all_sheets_on_single_sheet_workbook(remote_file):
+    excel_bytes = _make_excel_bytes({"Only": pd.DataFrame({"a": [1]})})
+
+    assert _parse(excel_bytes, remote_file, sheet_name="*") == [{"a": 1, SHEET_NAME_COL: "Only"}]
+
+
+@pytest.mark.parametrize(
+    "sheet_name",
+    [
+        pytest.param("Missing", id="absent_worksheet"),
+        pytest.param("first", id="wrong_case"),
+    ],
+)
+def test_missing_worksheet_raises_config_error(sheet_name, remote_file):
+    """A bad worksheet name is a config mistake and must not be reported as a parse failure."""
+    with pytest.raises(ConfigValidationError) as exc_info:
+        _parse(_make_multisheet_excel_bytes(), remote_file, sheet_name=sheet_name)
+
+    message = str(exc_info.value)
+    assert repr(sheet_name) in message
+    assert "'First'" in message and "'Second'" in message
+    assert "case-sensitive" in message
+    assert "mismatch between the config's file type" not in message
+
+
+def test_unparseable_file_still_raises_record_parse_error(remote_file):
+    """Narrowing the error handling must not mask genuinely corrupt files."""
+    with pytest.raises(RecordParseError):
+        _parse(b"this is not an excel file at all", remote_file)
