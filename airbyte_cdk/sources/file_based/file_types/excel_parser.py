@@ -351,7 +351,7 @@ class ExcelParser(FileTypeParser):
             if hasattr(fp, "seek"):
                 fp.seek(0)  # type: ignore [union-attr]
             names = pd.ExcelFile(fp, engine="calamine").sheet_names  # type: ignore [arg-type]
-        except BaseException as exc:
+        except Exception as exc:
             logger.info(f"Could not list worksheets for the error message: {exc}")
             return ""
         return f"Available worksheets: {', '.join(repr(str(n)) for n in names)}. "
