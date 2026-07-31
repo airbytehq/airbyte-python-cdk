@@ -22,7 +22,7 @@ permissions:
 
 jobs:
   check-permissions:
-    name: Resolve Input Variables
+    name: Check Author Permissions
     runs-on: ubuntu-24.04
     steps:
       - name: Authenticate as GitHub App
@@ -39,23 +39,40 @@ jobs:
         env:
           GH_TOKEN: ${{ steps.get-app-token.outputs.token }}
           AUTHOR: ${{ github.event.issue.user.login }}
+          REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
 
           echo "Checking permissions for user: $AUTHOR"
 
-          PERMISSION=$(gh api repos/${{ github.repository }}/collaborators/$AUTHOR/permission \
-            --jq '.permission' 2>/dev/null || echo "none")
+          # A 404 is the expected answer for a non-collaborator. Every other
+          # failure -- rate limit, 5xx, expired token -- must NOT be mistaken for
+          # one: that would classify a maintainer as a community member and start
+          # a Devin session that can file a P2 issue in airbytehq/oncall. Fail the
+          # job instead, so the problem is visible rather than silently wrong.
+          ERR="$RUNNER_TEMP/permission-error.txt"
+          STATUS=0
+          PERMISSION=$(gh api "repos/$REPO/collaborators/$AUTHOR/permission" --jq '.permission' 2>"$ERR") || STATUS=$?
+
+          if [[ "$STATUS" -ne 0 ]]; then
+            if grep -q "HTTP 404" "$ERR"; then
+              PERMISSION="none"
+            else
+              echo "::error::Permission lookup for $AUTHOR failed; refusing to guess."
+              cat "$ERR" >&2
+              exit 1
+            fi
+          fi
 
           echo "User permission level: $PERMISSION"
 
           # Users with write, maintain, or admin access are NOT community members
           if [[ "$PERMISSION" == "admin" || "$PERMISSION" == "maintain" || "$PERMISSION" == "write" ]]; then
             echo "User has write access - skipping AI triage"
-            echo "is-community-member=false" >> $GITHUB_OUTPUT
+            echo "is-community-member=false" >> "$GITHUB_OUTPUT"
           else
             echo "User is a community member - triggering AI triage"
-            echo "is-community-member=true" >> $GITHUB_OUTPUT
+            echo "is-community-member=true" >> "$GITHUB_OUTPUT"
           fi
     outputs:
       is-community-member: ${{ steps.check-access.outputs.is-community-member }}
@@ -92,7 +109,7 @@ jobs:
             - Suggest relevant documentation or workarounds
             - Flag this for internal visibility
 
-            **Note:** Community issues are reviewed on a best-effort basis and do not have a guaranteed response time. To help us act on a suspected bug, please include a reproducing manifest or code snippet, the full stack trace, and the CDK version where you first saw the behavior.
+            **Note:** Community issues are reviewed on a best-effort basis and do not have a guaranteed response time. To help us act on a suspected bug, please include at least one of: a reproducing manifest or code snippet, the full stack trace or error message, or the CDK version where the behavior changed. More detail is always welcome.
 
             For additional help:
             - Join the [Airbyte Community Slack](https://slack.airbyte.com) to connect with other users and community members
