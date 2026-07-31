@@ -1,33 +1,37 @@
 name: Label Community Issues
 
-# This workflow adds the "community" label to issues opened by people outside the
-# airbytehq organization. It is the issue-side counterpart to
-# label-community-prs.yml, which does the same for PRs from forks.
+# This workflow adds the "community" label to issues opened by anyone outside
+# Airbyte. It is the issue-side counterpart to label-community-prs.yml, which does
+# the same for PRs from forks.
 #
-# The signal is `author_association`, which GitHub computes per event against live
-# org membership:
-#   MEMBER / OWNER  -> inside the org  -> no label
-#   anything else   -> outside the org -> "community"
+# The rule:
+#   airbytehq org member        -> no label
+#   bot installed by airbytehq  -> no label
+#   everyone else               -> "community"
 #
-# Automation accounts are excluded by an explicit allowlist rather than by
-# `user.type != 'Bot'`, which is wrong in both directions:
+# Both exclusions are exact, and neither needs a maintained list:
 #
-#   - Too broad.  It would exclude ANY app bot, including one that files issues on
-#     behalf of community members. No such relay bot exists today, but if one is
-#     ever installed, a type check would silently drop the label. An allowlist
-#     instead labels the unknown bot's issues `community` — wrong, but visible, and
-#     fixed by adding one line here.
-#   - Too narrow. `airbyteio` and `octavia-squidington-iii` are Airbyte machine
-#     accounts of type User, not Bot. A type check would label their issues
-#     `community`.
+# 1. Org membership. `author_association` is computed by GitHub per event against
+#    live org membership, including private memberships, and arrives in the webhook
+#    payload — no API call, no token scope. MEMBER and OWNER mean the author is
+#    inside the org. This also covers Airbyte's machine *user* accounts
+#    (`airbyteio`, `octavia-squidington-iii`), which are org members and whose
+#    issues report MEMBER.
 #
-# The list below mirrors the denylist in airbytehq/workflow-actions -> src/community.ts
-# (which drives the same labeling in airbytehq/airbyte), plus `coderabbitai[bot]`,
-# which files issues here and is absent from that list.
+# 2. Installed apps. A `type: Bot` account is a GitHub App identity, and a GitHub
+#    App can only act on repositories where it is installed. Installing an app on an
+#    airbytehq repo requires an airbytehq admin. So every Bot-authored issue in this
+#    repo is, by construction, from an app Airbyte installed — there is no way for an
+#    outside app to open one. An allowlist would be both unnecessary and unreliable:
+#    airbytehq has 78 apps installed org-wide, and any hand-maintained subset would
+#    drift.
 #
-# Bots that have actually opened issues in this repo: devin-ai-integration (21) and
-# coderabbitai (8), out of 83 total. Both are Airbyte-installed tooling producing
-# internal engineering issues.
+# `author_association` is evaluated when the event fires, so the label is a snapshot.
+# Someone who files an issue and later leaves the org keeps the label they had.
+#
+# Note on COLLABORATOR: an outside collaborator is someone granted direct access to
+# this repo without being an org member. They are outside the org, so by the rule
+# above they get the label. This repo currently has zero outside collaborators.
 
 on:
   issues:
@@ -38,11 +42,9 @@ on:
 jobs:
   label-community-issue:
     name: Add "community" Label to Issue
-    # Skip known Airbyte automation, and skip anyone inside the airbytehq org.
-    # An automation account not listed here is treated as a community author on
-    # purpose, so the gap shows up in triage rather than disappearing.
+    # Skip airbytehq org members, and skip apps installed by airbytehq.
     if: >
-      !contains(fromJSON('["devin-ai-integration[bot]", "coderabbitai[bot]", "github-actions[bot]", "dependabot[bot]", "octavia-bot[bot]", "octavia-bot-admin[bot]", "octavia-bot-hoard[bot]", "speakeasybot[bot]", "airbyte-slash-dispatch-bot[bot]", "octavia-squidington-iii", "airbyteio"]'), github.event.issue.user.login) &&
+      github.event.issue.user.type != 'Bot' &&
       !contains(fromJSON('["MEMBER", "OWNER"]'), github.event.issue.author_association)
     runs-on: ubuntu-24.04
     permissions:
