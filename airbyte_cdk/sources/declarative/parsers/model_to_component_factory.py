@@ -97,6 +97,7 @@ from airbyte_cdk.sources.declarative.decoders.composite_raw_decoder import (
     CompositeRawDecoder,
     CsvParser,
     GzipParser,
+    JsonItemsParser,
     JsonLineParser,
     JsonParser,
     Parser,
@@ -322,6 +323,9 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
     JsonFileSchemaLoader as JsonFileSchemaLoaderModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    JsonItemsDecoder as JsonItemsDecoderModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     JsonlDecoder as JsonlDecoderModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
@@ -472,6 +476,11 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     ZipfileDecoder as ZipfileDecoderModel,
+)
+from airbyte_cdk.sources.declarative.parsers.custom_code_compiler import (
+    INJECTED_MANIFEST,
+    AirbyteCustomCodeNotPermittedError,
+    custom_code_execution_permitted,
 )
 from airbyte_cdk.sources.declarative.partition_routers import (
     CartesianProductStreamSlicer,
@@ -696,8 +705,10 @@ class ModelToComponentFactory:
         max_concurrent_async_job_count: Optional[int] = None,
         configured_catalog: Optional[ConfiguredAirbyteCatalog] = None,
         api_budget: Optional[APIBudget] = None,
+        custom_components_trusted: bool = True,
     ):
         self._init_mappings()
+        self._custom_components_trusted = custom_components_trusted
         self._limit_pages_fetched_per_slice = limit_pages_fetched_per_slice
         self._limit_slices_fetched = limit_slices_fetched
         self._emit_connector_builder_messages = emit_connector_builder_messages
@@ -763,6 +774,7 @@ class ModelToComponentFactory:
             HttpResponseFilterModel: self.create_http_response_filter,
             InlineSchemaLoaderModel: self.create_inline_schema_loader,
             JsonDecoderModel: self.create_json_decoder,
+            JsonItemsDecoderModel: self.create_json_items_decoder,
             JsonlDecoderModel: self.create_jsonl_decoder,
             JsonSchemaPropertySelectorModel: self.create_json_schema_property_selector,
             GzipDecoderModel: self.create_gzip_decoder,
@@ -1804,6 +1816,18 @@ class ModelToComponentFactory:
         :param config: The custom defined connector config
         :return: The declarative component built from the Pydantic model to be used at runtime
         """
+        # Instantiating a custom component means importing and executing arbitrary code referenced
+        # by `class_name`. Manifests supplied by a caller, whether through the config or directly to
+        # the manifest server, are untrusted input and could point `class_name` at any importable
+        # callable, so they honor the same `AIRBYTE_ENABLE_UNSAFE_CODE` gate as injected
+        # `components.py` code. Manifests bundled in a published connector image are trusted and may
+        # always use their bundled custom components.
+        manifest_is_untrusted = not self._custom_components_trusted or bool(
+            config.get(INJECTED_MANIFEST)
+        )
+        if manifest_is_untrusted and not custom_code_execution_permitted():
+            raise AirbyteCustomCodeNotPermittedError
+
         custom_component_class = self._get_class_from_fully_qualified_class_name(model.class_name)
         component_fields = get_type_hints(custom_component_class)
         model_args = model.dict()
@@ -2433,7 +2457,10 @@ class ModelToComponentFactory:
         model: ResponseToFileExtractorModel,
         **kwargs: Any,
     ) -> ResponseToFileExtractor:
-        return ResponseToFileExtractor(parameters=model.parameters or {})
+        return ResponseToFileExtractor(
+            parameters=model.parameters or {},
+            preserve_na_values=model.preserve_na_values or False,
+        )
 
     @staticmethod
     def create_exponential_backoff_strategy(
@@ -2671,6 +2698,14 @@ class ModelToComponentFactory:
             stream_response=False if self._emit_connector_builder_messages else True,
         )
 
+    def create_json_items_decoder(
+        self, model: JsonItemsDecoderModel, config: Config, **kwargs: Any
+    ) -> Decoder:
+        return CompositeRawDecoder(
+            parser=ModelToComponentFactory._get_parser(model, config),
+            stream_response=False if self._emit_connector_builder_messages else True,
+        )
+
     def create_gzip_decoder(
         self, model: GzipDecoderModel, config: Config, **kwargs: Any
     ) -> Decoder:
@@ -2719,6 +2754,11 @@ class ModelToComponentFactory:
         if isinstance(model, JsonDecoderModel):
             # Note that the logic is a bit different from the JsonDecoder as there is some legacy that is maintained to return {} on error cases
             return JsonParser()
+        elif isinstance(model, JsonItemsDecoderModel):
+            return JsonItemsParser(
+                items_path=model.items_path,
+                encoding=model.encoding,
+            )
         elif isinstance(model, JsonlDecoderModel):
             return JsonLineParser()
         elif isinstance(model, CsvDecoderModel):
@@ -3011,10 +3051,23 @@ class ModelToComponentFactory:
             parameters=model.parameters or {},
         )
 
-    @staticmethod
     def create_page_increment(
-        model: PageIncrementModel, config: Config, **kwargs: Any
+        self,
+        model: PageIncrementModel,
+        config: Config,
+        decoder: Optional[Decoder] = None,
+        extractor_model: Optional[Union[CustomRecordExtractorModel, DpathExtractorModel]] = None,
+        **kwargs: Any,
     ) -> PageIncrement:
+        # Like OffsetIncrement, we instantiate a separate extractor with identical behavior to the
+        # RecordSelector's so the strategy can count the raw records in the response. This ensures
+        # pagination is driven by the API's page size, not the post-filter record count.
+        extractor = (
+            self._create_component_from_model(model=extractor_model, config=config, decoder=decoder)
+            if extractor_model
+            else None
+        )
+
         # Pydantic v1 Union type coercion can convert int to string depending on Union order.
         # If page_size is a string that represents an integer (not an interpolation), convert it back.
         page_size = model.page_size
@@ -3026,6 +3079,7 @@ class ModelToComponentFactory:
             config=config,
             start_from_page=model.start_from_page or 0,
             inject_on_first_request=model.inject_on_first_request or False,
+            extractor=extractor,
             parameters=model.parameters or {},
         )
 
@@ -4093,6 +4147,7 @@ class ModelToComponentFactory:
         )
 
         substream_factory = ModelToComponentFactory(
+            custom_components_trusted=self._custom_components_trusted,
             connector_state_manager=connector_state_manager,
             limit_pages_fetched_per_slice=self._limit_pages_fetched_per_slice,
             limit_slices_fetched=self._limit_slices_fetched,

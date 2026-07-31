@@ -503,6 +503,11 @@ class HttpRequestRegexMatcher(BaseModel):
 
 class ResponseToFileExtractor(BaseModel):
     type: Literal["ResponseToFileExtractor"]
+    preserve_na_values: Optional[bool] = Field(
+        False,
+        description='When enabled, string values such as "NA", "N/A", "NULL", "None" and "NaN" are kept as-is instead of being interpreted as missing and converted to null. Empty cells are still treated as null. Defaults to false to preserve historical behavior.',
+        title="Preserve NA Values",
+    )
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
 
@@ -672,6 +677,20 @@ class JsonFileSchemaLoader(BaseModel):
 
 class JsonDecoder(BaseModel):
     type: Literal["JsonDecoder"]
+
+
+class JsonItemsDecoder(BaseModel):
+    type: Literal["JsonItemsDecoder"]
+    items_path: str = Field(
+        ...,
+        description="Dot-separated path to the JSON array whose elements should be yielded as records. Uses `ijson` path syntax (e.g. `data.users`), not JSONPath syntax \u2014 do not include leading `$.` or trailing `[*]`.",
+        title="Items Path",
+    )
+    encoding: Optional[str] = Field(
+        "utf-8",
+        description="The character encoding of the JSON data. Defaults to UTF-8.",
+        title="Encoding",
+    )
 
 
 class JsonlDecoder(BaseModel):
@@ -2201,7 +2220,7 @@ class PaginationReset(BaseModel):
 
 class GzipDecoder(BaseModel):
     type: Literal["GzipDecoder"]
-    decoder: Union[CsvDecoder, GzipDecoder, JsonDecoder, JsonlDecoder]
+    decoder: Union[CsvDecoder, GzipDecoder, JsonDecoder, JsonItemsDecoder, JsonlDecoder]
 
 
 class RequestBodyGraphQL(BaseModel):
@@ -2339,7 +2358,7 @@ class ZipfileDecoder(BaseModel):
         extra = Extra.allow
 
     type: Literal["ZipfileDecoder"]
-    decoder: Union[CsvDecoder, GzipDecoder, JsonDecoder, JsonlDecoder] = Field(
+    decoder: Union[CsvDecoder, GzipDecoder, JsonDecoder, JsonItemsDecoder, JsonlDecoder] = Field(
         ...,
         description="Parser to parse the decompressed data from the zipfile(s).",
         title="Parser",
@@ -3011,6 +3030,7 @@ class SimpleRetriever(BaseModel):
     decoder: Optional[
         Union[
             JsonDecoder,
+            JsonItemsDecoder,
             XmlDecoder,
             CsvDecoder,
             JsonlDecoder,
@@ -3144,6 +3164,7 @@ class AsyncRetriever(BaseModel):
             CsvDecoder,
             GzipDecoder,
             JsonDecoder,
+            JsonItemsDecoder,
             JsonlDecoder,
             IterableDecoder,
             XmlDecoder,
@@ -3160,6 +3181,7 @@ class AsyncRetriever(BaseModel):
             CsvDecoder,
             GzipDecoder,
             JsonDecoder,
+            JsonItemsDecoder,
             JsonlDecoder,
             IterableDecoder,
             XmlDecoder,
