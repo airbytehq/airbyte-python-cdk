@@ -2,6 +2,7 @@
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
 import json
+import logging
 from copy import deepcopy
 
 # mypy: ignore-errors
@@ -5678,3 +5679,108 @@ def test_create_response_to_file_extractor_preserve_na_values():
         ResponseToFileExtractorModel(type="ResponseToFileExtractor", preserve_na_values=True)
     )
     assert enabled_component.preserve_na_values is True
+
+
+def _stream_definition_with_incremental_dependency_parent(
+    child_has_incremental_sync: bool,
+) -> dict:
+    incremental_sync = {
+        "type": "DatetimeBasedCursor",
+        "cursor_field": "updated_at",
+        "datetime_format": "%Y-%m-%dT%H:%M:%SZ",
+        "cursor_datetime_formats": ["%Y-%m-%dT%H:%M:%SZ"],
+        "start_datetime": {
+            "type": "MinMaxDatetime",
+            "datetime": "2024-01-01T00:00:00Z",
+            "datetime_format": "%Y-%m-%dT%H:%M:%SZ",
+        },
+    }
+    parent_stream = {
+        "type": "DeclarativeStream",
+        "name": "parents",
+        "primary_key": ["id"],
+        "schema_loader": {
+            "type": "InlineSchemaLoader",
+            "schema": {"type": "object", "properties": {}},
+        },
+        "retriever": {
+            "type": "SimpleRetriever",
+            "requester": {
+                "type": "HttpRequester",
+                "url_base": "https://api.example.com",
+                "path": "/parents",
+                "http_method": "GET",
+            },
+            "record_selector": {
+                "type": "RecordSelector",
+                "extractor": {"type": "DpathExtractor", "field_path": []},
+            },
+        },
+        "incremental_sync": incremental_sync,
+    }
+    child_stream = {
+        "type": "DeclarativeStream",
+        "name": "children",
+        "primary_key": ["id"],
+        "schema_loader": {
+            "type": "InlineSchemaLoader",
+            "schema": {"type": "object", "properties": {}},
+        },
+        "retriever": {
+            "type": "SimpleRetriever",
+            "requester": {
+                "type": "HttpRequester",
+                "url_base": "https://api.example.com",
+                "path": "/parents/{{ stream_partition.parent_id }}/children",
+                "http_method": "GET",
+            },
+            "record_selector": {
+                "type": "RecordSelector",
+                "extractor": {"type": "DpathExtractor", "field_path": []},
+            },
+            "partition_router": {
+                "type": "SubstreamPartitionRouter",
+                "parent_stream_configs": [
+                    {
+                        "type": "ParentStreamConfig",
+                        "stream": parent_stream,
+                        "parent_key": "id",
+                        "partition_field": "parent_id",
+                        "incremental_dependency": True,
+                    }
+                ],
+            },
+        },
+    }
+    if child_has_incremental_sync:
+        child_stream["incremental_sync"] = incremental_sync
+    return child_stream
+
+
+@pytest.mark.parametrize(
+    "child_has_incremental_sync, expected_warning",
+    [
+        pytest.param(False, True, id="full_refresh_child_warns"),
+        pytest.param(True, False, id="incremental_child_does_not_warn"),
+    ],
+)
+def test_incremental_dependency_without_incremental_sync_warns(
+    caplog, child_has_incremental_sync, expected_warning
+):
+    stream_definition = _stream_definition_with_incremental_dependency_parent(
+        child_has_incremental_sync
+    )
+
+    with caplog.at_level(logging.WARNING, logger="airbyte.model_to_component_factory"):
+        stream = factory.create_component(
+            model_type=DeclarativeStreamModel,
+            component_definition=stream_definition,
+            config=input_config,
+        )
+
+    assert isinstance(stream, DefaultStream)
+    warning_emitted = any(
+        "`incremental_dependency: true`" in record.message and "children" in record.message
+        for record in caplog.records
+    )
+    assert warning_emitted == expected_warning
