@@ -6,7 +6,7 @@ import logging
 import warnings
 from io import IOBase
 from pathlib import Path
-from typing import Any, Dict, Iterable, Mapping, Optional, Tuple, Union
+from typing import Any, Callable, Dict, Iterable, Iterator, Mapping, Optional, Tuple, Union
 
 import orjson
 import pandas as pd
@@ -71,7 +71,7 @@ class ExcelParser(FileTypeParser):
         fields: Dict[str, str] = {}
 
         with stream_reader.open_file(file, self.file_read_mode, self.ENCODING, logger) as fp:
-            for df in self._parse_excel_file(fp, excel_format, logger, file).values():
+            for _, df in self._iter_worksheets(fp, excel_format, logger, file):
                 for column, df_type in df.dtypes.items():
                     prev_frame_column_type = fields.get(column)  # type: ignore [call-overload]
                     fields[column] = self.dtype_to_json_type(  # type: ignore [index]
@@ -125,7 +125,7 @@ class ExcelParser(FileTypeParser):
         try:
             # Open and parse the file using the stream reader
             with stream_reader.open_file(file, self.file_read_mode, self.ENCODING, logger) as fp:
-                for sheet, df in self._parse_excel_file(fp, excel_format, logger, file).items():
+                for sheet, df in self._iter_worksheets(fp, excel_format, logger, file):
                     # DataFrame.to_dict() returns pandas.Timestamp values not serializable by orjson.
                     # DataFrame.to_json() serializes datetimes to iso8601 with microseconds.
                     records = orjson.loads(
@@ -252,6 +252,16 @@ class ExcelParser(FileTypeParser):
         Returns:
             pd.DataFrame: Parsed data from the Excel file.
         """
+        self._rewind(fp, logger, file)
+        return self._with_openpyxl_warnings_logged(  # type: ignore [no-any-return]
+            lambda: pd.ExcelFile(fp, engine="openpyxl").parse(sheet_name=sheet_name),  # type: ignore [arg-type, call-overload]
+            logger,
+            file,
+        )
+
+    @staticmethod
+    def _rewind(fp: Union[IOBase, str, Path], logger: logging.Logger, file: RemoteFile) -> None:
+        """Rewinds the stream before handing it to a second engine, where possible."""
         # Some file-like objects are not seekable.
         if hasattr(fp, "seek"):
             try:
@@ -262,14 +272,19 @@ class ExcelParser(FileTypeParser):
                     f"proceeding with openpyxl from current position: {exc}"
                 )
 
+    @staticmethod
+    def _with_openpyxl_warnings_logged(
+        call: Callable[[], Any], logger: logging.Logger, file: RemoteFile
+    ) -> Any:
+        """Runs an openpyxl call, surfacing the warnings it raises as log lines."""
         with warnings.catch_warnings(record=True) as warning_records:
             warnings.simplefilter("always")
-            dfs = pd.ExcelFile(fp, engine="openpyxl").parse(sheet_name=sheet_name)  # type: ignore [arg-type, call-overload]
+            result = call()
 
         for warning in warning_records:
             logger.warning(f"Openpyxl warning for {file.file_uri_for_logging}: {warning.message}")
 
-        return dfs  # type: ignore [no-any-return]
+        return result
 
     def open_and_parse_file(
         self,
@@ -293,20 +308,34 @@ class ExcelParser(FileTypeParser):
         except ExcelCalamineParsingError:
             return self._open_and_parse_file_with_openpyxl(fp, logger, file, sheet_name)
 
-    def _parse_excel_file(
+    def _iter_worksheets(
         self,
         fp: Union[IOBase, str, Path],
         excel_format: ExcelFormat,
         logger: logging.Logger,
         file: RemoteFile,
-    ) -> Dict[Union[int, str], pd.DataFrame]:
-        """Parses an Excel file and returns a mapping of worksheet name to DataFrame.
+    ) -> Iterator[Tuple[Union[int, str], pd.DataFrame]]:
+        """Yields (worksheet name, frame), one worksheet at a time.
 
-        When reading every worksheet, pandas keys the mapping by the real worksheet names in
-        workbook order. When reading a single worksheet it returns a bare DataFrame, which we
-        wrap so callers always see the same shape.
+        Callers always see the same shape whether one worksheet or all of them were
+        selected, and the frames arrive lazily so a caller that streams records can let
+        each one go before the next is parsed.
         """
         sheet_name = self._resolve_sheet_name(excel_format)
+        if sheet_name is not None:
+            yield self._parse_one_worksheet(fp, excel_format, sheet_name, logger, file)
+            return
+        yield from self._iter_every_worksheet(fp, logger, file)
+
+    def _parse_one_worksheet(
+        self,
+        fp: Union[IOBase, str, Path],
+        excel_format: ExcelFormat,
+        sheet_name: Union[int, str],
+        logger: logging.Logger,
+        file: RemoteFile,
+    ) -> Tuple[Union[int, str], pd.DataFrame]:
+        """Parses the single worksheet the config selected."""
         try:
             parsed = self.open_and_parse_file(fp, logger, file, sheet_name)
         except ValueError as exc:
@@ -321,9 +350,82 @@ class ExcelParser(FileTypeParser):
                 "every worksheet.",
                 filename=file.uri,
             ) from exc
-        if isinstance(parsed, pd.DataFrame):
-            return {sheet_name if isinstance(sheet_name, str) else 0: parsed}
-        return parsed
+        return (sheet_name if isinstance(sheet_name, str) else 0), parsed  # type: ignore [return-value]
+
+    def _iter_every_worksheet(
+        self,
+        fp: Union[IOBase, str, Path],
+        logger: logging.Logger,
+        file: RemoteFile,
+    ) -> Iterator[Tuple[Union[int, str], pd.DataFrame]]:
+        """Parses each worksheet in turn so only one frame is held at a time.
+
+        Asking pandas for every worksheet at once (`sheet_name=None`) materializes one
+        frame per worksheet up front, so peak memory tracks the whole workbook rather
+        than its largest sheet.
+
+        The engine fallback only covers the first worksheet. Once an earlier worksheet's
+        records are downstream, re-reading the workbook with openpyxl would emit them a
+        second time, so a later failure is left to propagate. The stream logs it and
+        retries the file on the next sync, which is how every other streaming parser
+        already behaves on a mid-file error.
+        """
+        try:
+            yield from self._iter_worksheets_with_calamine(fp, logger, file)
+            return
+        except ExcelCalamineParsingError:
+            pass
+        yield from self._iter_worksheets_with_openpyxl(fp, logger, file)
+
+    def _iter_worksheets_with_calamine(
+        self,
+        fp: Union[IOBase, str, Path],
+        logger: logging.Logger,
+        file: RemoteFile,
+    ) -> Iterator[Tuple[Union[int, str], pd.DataFrame]]:
+        """Walks the workbook with Calamine, holding the handle open across worksheets."""
+        workbook = pd.ExcelFile(fp, engine="calamine")  # type: ignore [arg-type]
+        emitted = False
+        for name in workbook.sheet_names:
+            try:
+                df = workbook.parse(sheet_name=name)
+            except BaseException as exc:
+                # Calamine raises PanicException (a BaseException) on a cell it cannot
+                # read. Falling back is only safe while nothing has been emitted yet.
+                if not emitted and "ValueError" in str(exc):
+                    logger.warning(
+                        f"Calamine parsing failed for {file.file_uri_for_logging}, falling back to openpyxl: {exc}"
+                    )
+                    raise ExcelCalamineParsingError(
+                        f"Calamine engine failed to parse {file.file_uri_for_logging}",
+                        filename=file.uri,
+                    ) from exc
+                raise
+            emitted = True
+            yield name, df
+
+    def _iter_worksheets_with_openpyxl(
+        self,
+        fp: Union[IOBase, str, Path],
+        logger: logging.Logger,
+        file: RemoteFile,
+    ) -> Iterator[Tuple[Union[int, str], pd.DataFrame]]:
+        """Walks the workbook with Openpyxl, holding the handle open across worksheets."""
+        self._rewind(fp, logger, file)
+        workbook = self._with_openpyxl_warnings_logged(
+            lambda: pd.ExcelFile(fp, engine="openpyxl"),  # type: ignore [arg-type]
+            logger,
+            file,
+        )
+        for name in workbook.sheet_names:
+            yield (
+                name,
+                self._with_openpyxl_warnings_logged(
+                    lambda sheet=name: workbook.parse(sheet_name=sheet),  # type: ignore [misc]
+                    logger,
+                    file,
+                ),
+            )
 
     def _resolve_sheet_name(self, excel_format: ExcelFormat) -> Union[int, str, None]:
         """Converts the config value to a pandas-compatible `sheet_name` argument.

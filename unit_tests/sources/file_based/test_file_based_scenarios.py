@@ -91,6 +91,9 @@ from unit_tests.sources.file_based.scenarios.csv_scenarios import (
 )
 from unit_tests.sources.file_based.scenarios.excel_scenarios import (
     excel_all_types_scenario,
+    multi_sheet_excel_all_scenario,
+    multi_sheet_excel_default_scenario,
+    multi_sheet_excel_named_scenario,
     multiple_excel_combine_schema_scenario,
     multiple_streams_excel_scenario,
     single_excel_scenario,
@@ -249,6 +252,9 @@ discover_success_scenarios = [
     multiple_streams_avro_scenario,
     avro_file_with_double_as_number_scenario,
     excel_all_types_scenario,
+    multi_sheet_excel_all_scenario,
+    multi_sheet_excel_default_scenario,
+    multi_sheet_excel_named_scenario,
     multiple_excel_combine_schema_scenario,
     multiple_streams_excel_scenario,
     single_excel_scenario,

@@ -426,3 +426,54 @@ def test_unparseable_file_still_raises_record_parse_error(remote_file):
     """Narrowing the error handling must not mask genuinely corrupt files."""
     with pytest.raises(RecordParseError):
         _parse(b"this is not an excel file at all", remote_file)
+
+
+def _spy_on_sheet_parsing(monkeypatch) -> List[Any]:
+    """Records the sheet_name argument of every pandas parse call, in order."""
+    parsed: List[Any] = []
+    original = pd.ExcelFile.parse
+
+    def spy(self, *args, **kwargs):
+        parsed.append(kwargs.get("sheet_name", args[0] if args else None))
+        return original(self, *args, **kwargs)
+
+    monkeypatch.setattr(pd.ExcelFile, "parse", spy)
+    return parsed
+
+
+def test_all_sheets_parses_worksheets_lazily(remote_file, monkeypatch):
+    """Worksheets are parsed on demand.
+
+    Asking pandas for every worksheet at once builds one frame per worksheet before a
+    single record is emitted, so peak memory tracks the whole workbook. Parsing lazily
+    keeps it at one worksheet regardless of how many the workbook holds.
+    """
+    excel_bytes = _make_excel_bytes(
+        {
+            "A": pd.DataFrame({"v": [1]}),
+            "B": pd.DataFrame({"v": [2]}),
+            "C": pd.DataFrame({"v": [3]}),
+        }
+    )
+    parsed = _spy_on_sheet_parsing(monkeypatch)
+    parser = ExcelParser()
+    config = FileBasedStreamConfig(name="test_stream", format=ExcelFormat(sheet_name="*"))
+    stream = parser.parse_records(config, remote_file, _stream_reader_for(excel_bytes), MagicMock())
+
+    next(stream)
+    assert parsed == ["A"], "later worksheets must not be parsed before they are requested"
+
+    assert list(stream) == [
+        {"v": 2, SHEET_NAME_COL: "B"},
+        {"v": 3, SHEET_NAME_COL: "C"},
+    ]
+    assert parsed == ["A", "B", "C"]
+
+
+def test_single_sheet_parses_only_the_selected_worksheet(monkeypatch, remote_file):
+    """Selecting one worksheet must not walk the rest of the workbook."""
+    parsed = _spy_on_sheet_parsing(monkeypatch)
+
+    _parse(_make_multisheet_excel_bytes(), remote_file, sheet_name="Second")
+
+    assert parsed == ["Second"]
