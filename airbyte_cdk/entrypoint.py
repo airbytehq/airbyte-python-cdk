@@ -49,6 +49,7 @@ logger = init_logger("airbyte")
 VALID_URL_SCHEMES = ["https"]
 CLOUD_DEPLOYMENT_MODE = "cloud"
 _HAS_LOGGED_FOR_SERIALIZATION_ERROR = False
+_RESOLVED_HOSTNAMES: set[str] = set()
 
 
 class AirbyteEntrypoint(object):
@@ -430,10 +431,7 @@ def _init_internal_request_filter() -> None:
                     message="Invalid URL endpoint: The endpoint that data is being requested from belongs to a private network. Source connectors only support requesting data from public API endpoints.",
                 )
         except socket.gaierror as exception:
-            error_code = exception.errno
-            if error_code is None and exception.args:
-                error_code = exception.args[0]
-            if error_code == getattr(socket, "EAI_AGAIN", -3):
+            if parsed_url.hostname in _RESOLVED_HOSTNAMES:
                 raise AirbyteTracedException(
                     internal_message=f"DNS resolution failed for hostname {parsed_url.hostname!r}: {exception}",
                     failure_type=FailureType.transient_error,
@@ -455,6 +453,7 @@ def _is_private_url(hostname: str, port: int) -> bool:
     Helper method that checks if any of the IP addresses associated with a hostname belong to a private network.
     """
     address_info_entries = socket.getaddrinfo(hostname, port)
+    _RESOLVED_HOSTNAMES.add(hostname)
     for entry in address_info_entries:
         # getaddrinfo() returns entries in the form of a 5-tuple where the IP is stored as the sockaddr. For IPv4 this
         # is a 2-tuple and for IPv6 it is a 4-tuple, but the address is always the first value of the tuple at 0.

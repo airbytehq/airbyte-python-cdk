@@ -121,11 +121,16 @@ def test_airbyte_entrypoint_init(mocker):
 @pytest.fixture
 def internal_request_filter():
     original_send = requests.Session.send
+    original_resolved_hostnames = entrypoint_module._RESOLVED_HOSTNAMES
     send_mock = MagicMock()
     requests.Session.send = send_mock
+    entrypoint_module._RESOLVED_HOSTNAMES = set()
     entrypoint_module._init_internal_request_filter()
-    yield send_mock
-    requests.Session.send = original_send
+    try:
+        yield send_mock
+    finally:
+        requests.Session.send = original_send
+        entrypoint_module._RESOLVED_HOSTNAMES = original_resolved_hostnames
 
 
 def test_internal_request_filter_transient_dns_failure(internal_request_filter, mocker):
@@ -135,8 +140,16 @@ def test_internal_request_filter_transient_dns_failure(internal_request_filter, 
     mocker.patch.object(
         socket,
         "getaddrinfo",
-        side_effect=socket.gaierror(socket.EAI_AGAIN, "Temporary failure in name resolution"),
+        side_effect=[
+            [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("157.240.241.17", 443))],
+            socket.gaierror(
+                getattr(socket, "EAI_AGAIN", -3), "Temporary failure in name resolution"
+            ),
+        ],
     )
+
+    requests.Session().send(request)
+    assert hostname in entrypoint_module._RESOLVED_HOSTNAMES
 
     with pytest.raises(AirbyteTracedException) as exc_info:
         requests.Session().send(request)
@@ -149,15 +162,17 @@ def test_internal_request_filter_transient_dns_failure(internal_request_filter, 
     assert token not in (exception.internal_message or "")
 
 
-def test_internal_request_filter_non_transient_dns_failure(internal_request_filter, mocker):
-    hostname = "graph.facebook.com"
-    request = requests.Request(
-        "GET", f"https://{hostname}/endpoint?access_token=secret-token"
-    ).prepare()
+def test_internal_request_filter_unresolved_hostname_keeps_invalid_url(
+    internal_request_filter, mocker
+):
+    hostname = "domainwithoutextension"
+    request = requests.Request("GET", f"https://{hostname}/endpoint").prepare()
     mocker.patch.object(
         socket,
         "getaddrinfo",
-        side_effect=socket.gaierror(socket.EAI_NONAME, "Name or service not known"),
+        side_effect=socket.gaierror(
+            getattr(socket, "EAI_AGAIN", -3), "Temporary failure in name resolution"
+        ),
     )
 
     with pytest.raises(requests.exceptions.InvalidURL):
