@@ -430,6 +430,16 @@ def _init_internal_request_filter() -> None:
                     message="Invalid URL endpoint: The endpoint that data is being requested from belongs to a private network. Source connectors only support requesting data from public API endpoints.",
                 )
         except socket.gaierror as exception:
+            error_code = exception.errno
+            if error_code is None and exception.args:
+                error_code = exception.args[0]
+            if error_code == getattr(socket, "EAI_AGAIN", -3):
+                raise AirbyteTracedException(
+                    internal_message=f"DNS resolution failed for hostname {parsed_url.hostname!r}: {exception}",
+                    failure_type=FailureType.transient_error,
+                    message=f"DNS resolution temporarily failed for hostname {parsed_url.hostname!r}.",
+                    exception=exception,
+                )
             # This is a special case where the developer specifies an IP address string that is not formatted correctly like trailing
             # whitespace which will fail the socket IP lookup. This only happens when using IP addresses and not text hostnames.
             # Knowing that this is a request using the requests library, we will mock the exception without calling the lib

@@ -3,6 +3,7 @@
 #
 
 import os
+import socket
 from argparse import Namespace
 from collections import defaultdict
 from copy import deepcopy
@@ -115,6 +116,80 @@ def test_airbyte_entrypoint_init(mocker):
     entrypoint_module.init_uncaught_exception_handler.assert_called_once_with(
         entrypoint_module.logger
     )
+
+
+@pytest.fixture
+def internal_request_filter():
+    original_send = requests.Session.send
+    send_mock = MagicMock()
+    requests.Session.send = send_mock
+    entrypoint_module._init_internal_request_filter()
+    yield send_mock
+    requests.Session.send = original_send
+
+
+def test_internal_request_filter_transient_dns_failure(internal_request_filter, mocker):
+    hostname = "graph.facebook.com"
+    token = "secret-token"
+    request = requests.Request("GET", f"https://{hostname}/endpoint?access_token={token}").prepare()
+    mocker.patch.object(
+        socket,
+        "getaddrinfo",
+        side_effect=socket.gaierror(socket.EAI_AGAIN, "Temporary failure in name resolution"),
+    )
+
+    with pytest.raises(AirbyteTracedException) as exc_info:
+        requests.Session().send(request)
+
+    exception = exc_info.value
+    assert exception.failure_type == FailureType.transient_error
+    assert hostname in exception.message
+    assert "DNS resolution temporarily failed" in exception.message
+    assert token not in (exception.message or "")
+    assert token not in (exception.internal_message or "")
+
+
+def test_internal_request_filter_non_transient_dns_failure(internal_request_filter, mocker):
+    hostname = "graph.facebook.com"
+    request = requests.Request(
+        "GET", f"https://{hostname}/endpoint?access_token=secret-token"
+    ).prepare()
+    mocker.patch.object(
+        socket,
+        "getaddrinfo",
+        side_effect=socket.gaierror(socket.EAI_NONAME, "Name or service not known"),
+    )
+
+    with pytest.raises(requests.exceptions.InvalidURL):
+        requests.Session().send(request)
+
+
+def test_internal_request_filter_private_ip(internal_request_filter, mocker):
+    request = requests.Request("GET", "https://127.0.0.1/endpoint").prepare()
+    mocker.patch.object(
+        socket,
+        "getaddrinfo",
+        return_value=[(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("127.0.0.1", 443))],
+    )
+
+    with pytest.raises(AirbyteTracedException) as exc_info:
+        requests.Session().send(request)
+
+    assert exc_info.value.failure_type == FailureType.config_error
+
+
+def test_internal_request_filter_public_ip_passes_through(internal_request_filter, mocker):
+    request = requests.Request("GET", "https://graph.facebook.com/endpoint").prepare()
+    mocker.patch.object(
+        socket,
+        "getaddrinfo",
+        return_value=[(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("157.240.241.17", 443))],
+    )
+
+    requests.Session().send(request)
+
+    assert internal_request_filter.call_count == 1
+    assert internal_request_filter.call_args.args[1] == request
 
 
 @pytest.mark.parametrize(
