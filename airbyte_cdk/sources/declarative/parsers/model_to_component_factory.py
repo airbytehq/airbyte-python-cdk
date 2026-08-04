@@ -485,6 +485,11 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     ZipfileDecoder as ZipfileDecoderModel,
 )
+from airbyte_cdk.sources.declarative.parsers.custom_code_compiler import (
+    INJECTED_MANIFEST,
+    AirbyteCustomCodeNotPermittedError,
+    custom_code_execution_permitted,
+)
 from airbyte_cdk.sources.declarative.partition_routers import (
     CartesianProductStreamSlicer,
     GroupingPartitionRouter,
@@ -711,8 +716,10 @@ class ModelToComponentFactory:
         rate_limited_authenticators: Optional[
             Dict[str, RateLimitedMultipleTokenAuthenticator]
         ] = None,
+        custom_components_trusted: bool = True,
     ):
         self._init_mappings()
+        self._custom_components_trusted = custom_components_trusted
         self._limit_pages_fetched_per_slice = limit_pages_fetched_per_slice
         self._limit_slices_fetched = limit_slices_fetched
         self._emit_connector_builder_messages = emit_connector_builder_messages
@@ -1825,6 +1832,18 @@ class ModelToComponentFactory:
         :param config: The custom defined connector config
         :return: The declarative component built from the Pydantic model to be used at runtime
         """
+        # Instantiating a custom component means importing and executing arbitrary code referenced
+        # by `class_name`. Manifests supplied by a caller, whether through the config or directly to
+        # the manifest server, are untrusted input and could point `class_name` at any importable
+        # callable, so they honor the same `AIRBYTE_ENABLE_UNSAFE_CODE` gate as injected
+        # `components.py` code. Manifests bundled in a published connector image are trusted and may
+        # always use their bundled custom components.
+        manifest_is_untrusted = not self._custom_components_trusted or bool(
+            config.get(INJECTED_MANIFEST)
+        )
+        if manifest_is_untrusted and not custom_code_execution_permitted():
+            raise AirbyteCustomCodeNotPermittedError
+
         custom_component_class = self._get_class_from_fully_qualified_class_name(model.class_name)
         component_fields = get_type_hints(custom_component_class)
         model_args = model.dict()
@@ -3048,10 +3067,23 @@ class ModelToComponentFactory:
             parameters=model.parameters or {},
         )
 
-    @staticmethod
     def create_page_increment(
-        model: PageIncrementModel, config: Config, **kwargs: Any
+        self,
+        model: PageIncrementModel,
+        config: Config,
+        decoder: Optional[Decoder] = None,
+        extractor_model: Optional[Union[CustomRecordExtractorModel, DpathExtractorModel]] = None,
+        **kwargs: Any,
     ) -> PageIncrement:
+        # Like OffsetIncrement, we instantiate a separate extractor with identical behavior to the
+        # RecordSelector's so the strategy can count the raw records in the response. This ensures
+        # pagination is driven by the API's page size, not the post-filter record count.
+        extractor = (
+            self._create_component_from_model(model=extractor_model, config=config, decoder=decoder)
+            if extractor_model
+            else None
+        )
+
         # Pydantic v1 Union type coercion can convert int to string depending on Union order.
         # If page_size is a string that represents an integer (not an interpolation), convert it back.
         page_size = model.page_size
@@ -3063,6 +3095,7 @@ class ModelToComponentFactory:
             config=config,
             start_from_page=model.start_from_page or 0,
             inject_on_first_request=model.inject_on_first_request or False,
+            extractor=extractor,
             parameters=model.parameters or {},
         )
 
@@ -4130,6 +4163,7 @@ class ModelToComponentFactory:
         )
 
         substream_factory = ModelToComponentFactory(
+            custom_components_trusted=self._custom_components_trusted,
             connector_state_manager=connector_state_manager,
             limit_pages_fetched_per_slice=self._limit_pages_fetched_per_slice,
             limit_slices_fetched=self._limit_slices_fetched,

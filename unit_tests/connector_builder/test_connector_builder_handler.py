@@ -56,6 +56,10 @@ from airbyte_cdk.sources.declarative.concurrent_declarative_source import (
     ConcurrentDeclarativeSource,
     TestLimits,
 )
+from airbyte_cdk.sources.declarative.parsers.custom_code_compiler import (
+    ENV_VAR_ALLOW_CUSTOM_CODE,
+    AirbyteCustomCodeNotPermittedError,
+)
 from airbyte_cdk.sources.declarative.retrievers.simple_retriever import SimpleRetriever
 from airbyte_cdk.sources.declarative.stream_slicers import StreamSlicerTestReadDecorator
 from airbyte_cdk.sources.streams.concurrent.default_stream import DefaultStream
@@ -1029,6 +1033,117 @@ def test_create_source():
     assert source._constructor._limit_pages_fetched_per_slice == limits.max_pages_per_slice
     assert source._constructor._limit_slices_fetched == limits.max_slices
     assert source._constructor._disable_cache
+
+
+def test_create_source_marks_manifest_untrusted():
+    """A Connector Builder manifest is caller-supplied, so its factory must be untrusted.
+
+    This is the invariant that gates custom-component execution independently of the config
+    contents, so it cannot be defeated by a manifest that manipulates its own config.
+    """
+    source = create_source(
+        config={"__injected_declarative_manifest": MANIFEST}, limits=None, catalog=None, state=None
+    )
+
+    assert source._constructor._custom_components_trusted is False
+
+
+_GATE_BYPASS_STREAM = {
+    "type": "DeclarativeStream",
+    "name": "s",
+    "retriever": {
+        "type": "SimpleRetriever",
+        "requester": {
+            "type": "HttpRequester",
+            "url_base": "https://example.com",
+            "path": "/",
+        },
+        "record_selector": {
+            "type": "RecordSelector",
+            "extractor": {
+                "type": "CustomRecordExtractor",
+                "class_name": "not_a_real_module.NotAThing",
+            },
+        },
+    },
+    "schema_loader": {
+        "type": "InlineSchemaLoader",
+        "schema": {"type": "object", "properties": {}},
+    },
+}
+
+
+def test_spec_level_custom_component_is_gated(monkeypatch):
+    """A `Custom*` component in `spec.config_normalization_rules` must honor the gate.
+
+    The spec component is built with an empty config, so the config-key provenance signal is
+    absent there; the untrusted-factory flag is what keeps the gate active. A non-existent
+    `class_name` proves the gate fires *before* the class is resolved (otherwise the failure
+    would be a class-resolution `ValueError`, not `AirbyteCustomCodeNotPermittedError`).
+    """
+    monkeypatch.delenv(ENV_VAR_ALLOW_CUSTOM_CODE, raising=False)
+    manifest = {
+        "type": "DeclarativeSource",
+        "version": "6.0.0",
+        "check": {"type": "CheckStream", "stream_names": ["s"]},
+        "spec": {
+            "type": "Spec",
+            "connection_specification": {"type": "object", "properties": {}},
+            "config_normalization_rules": {
+                "type": "ConfigNormalizationRules",
+                "transformations": [
+                    {
+                        "type": "CustomConfigTransformation",
+                        "class_name": "not_a_real_module.NotAThing",
+                    }
+                ],
+            },
+        },
+        "streams": [_GATE_BYPASS_STREAM],
+    }
+
+    with pytest.raises(AirbyteCustomCodeNotPermittedError):
+        create_source(
+            config={"__injected_declarative_manifest": manifest},
+            limits=None,
+            catalog=None,
+            state=None,
+        )
+
+
+def test_config_strip_does_not_bypass_custom_code_gate(monkeypatch):
+    """A manifest that strips its own provenance key must not escape the gate.
+
+    A plain `ConfigRemoveFields` removing `__injected_declarative_manifest` runs before streams
+    are built, defeating the config-key signal. The untrusted-factory flag does not live in the
+    config, so a stream-level `Custom*` component stays gated.
+    """
+    monkeypatch.delenv(ENV_VAR_ALLOW_CUSTOM_CODE, raising=False)
+    manifest = {
+        "type": "DeclarativeSource",
+        "version": "6.0.0",
+        "check": {"type": "CheckStream", "stream_names": ["s"]},
+        "spec": {
+            "type": "Spec",
+            "connection_specification": {"type": "object", "properties": {}},
+            "config_normalization_rules": {
+                "type": "ConfigNormalizationRules",
+                "transformations": [
+                    {
+                        "type": "ConfigRemoveFields",
+                        "field_pointers": [["__injected_declarative_manifest"]],
+                    }
+                ],
+            },
+        },
+        "streams": [_GATE_BYPASS_STREAM],
+    }
+    config = {"__injected_declarative_manifest": manifest}
+
+    source = create_source(config=config, limits=None, catalog=None, state=None)
+
+    with pytest.raises(AirbyteCustomCodeNotPermittedError):
+        source.streams(config)
 
 
 def request_log_message(request: dict) -> AirbyteMessage:
