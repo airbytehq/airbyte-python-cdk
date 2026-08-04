@@ -7,13 +7,17 @@ import importlib
 import ipaddress
 import json
 import logging
+import os
 import os.path
 import socket
 import sys
 import tempfile
+import threading
+import time
+import traceback
 from collections import defaultdict
 from functools import wraps
-from typing import Any, DefaultDict, Iterable, List, Mapping, Optional
+from typing import Any, Callable, DefaultDict, Iterable, List, Mapping, Optional
 from urllib.parse import urlparse
 
 import orjson
@@ -49,6 +53,144 @@ logger = init_logger("airbyte")
 VALID_URL_SCHEMES = ["https"]
 CLOUD_DEPLOYMENT_MODE = "cloud"
 _HAS_LOGGED_FOR_SERIALIZATION_ERROR = False
+
+
+class _DeadlockDiagnostics:
+    def __init__(
+        self,
+        *,
+        interval_seconds: float = 30.0,
+        stall_interval_count: int = 3,
+        dump_repeat_interval_count: int = 10,
+        time_fn: Callable[[], float] = time.monotonic,
+        write_fn: Callable[[bytes], None] | None = None,
+    ) -> None:
+        self._interval_seconds = interval_seconds
+        self._stall_interval_count = stall_interval_count
+        self._dump_repeat_interval_count = dump_repeat_interval_count
+        self._time_fn = time_fn
+        self._write_fn = write_fn or self._write_to_stderr
+        self._stop = threading.Event()
+        self._lock = threading.Lock()
+        self._thread: threading.Thread | None = None
+        self._start_time = self._time_fn()
+        self._messages_written = 0
+        self._bytes_written = 0
+        self._print_blocked = False
+        self._print_blocked_since = 0.0
+        self._last_messages_written = 0
+        self._stall_count = 0
+
+    def start(self) -> None:
+        self._thread = threading.Thread(
+            target=self._run,
+            name="airbyte-deadlock-diagnostics",
+            daemon=True,
+        )
+        self._thread.start()
+
+    def stop(self) -> None:
+        self._stop.set()
+
+    def mark_print_started(self) -> None:
+        with self._lock:
+            self._print_blocked = True
+            self._print_blocked_since = self._time_fn()
+
+    def mark_print_finished(self) -> None:
+        with self._lock:
+            self._print_blocked = False
+
+    def record_message(self, data: str) -> None:
+        with self._lock:
+            self._messages_written += 1
+            self._bytes_written += len(data.encode())
+
+    def emit_heartbeat(self) -> None:
+        now = self._time_fn()
+        with self._lock:
+            messages_written = self._messages_written
+            bytes_written = self._bytes_written
+            print_blocked = self._print_blocked
+            print_blocked_since = self._print_blocked_since
+
+            if messages_written == self._last_messages_written and messages_written > 0:
+                self._stall_count += 1
+            else:
+                self._stall_count = 0
+            self._last_messages_written = messages_written
+            stall_count = self._stall_count
+
+        line = self._heartbeat_line(
+            now,
+            messages_written,
+            bytes_written,
+            print_blocked,
+            print_blocked_since,
+        )
+        if self._should_dump_threads(stall_count):
+            line += self._thread_dump()
+
+        try:
+            self._write_fn(line.encode())
+        except OSError:
+            return
+
+    def _run(self) -> None:
+        while not self._stop.wait(timeout=self._interval_seconds):
+            self.emit_heartbeat()
+
+    def _heartbeat_line(
+        self,
+        now: float,
+        messages_written: int,
+        bytes_written: int,
+        print_blocked: bool,
+        print_blocked_since: float,
+    ) -> str:
+        blocked = "YES" if print_blocked else "NO"
+        blocked_duration = (
+            f" blocked_since={now - print_blocked_since:.0f}s" if print_blocked else ""
+        )
+        return (
+            f"STDOUT_HEARTBEAT: t={now - self._start_time:.0f}s "
+            f"msgs={messages_written} bytes={bytes_written} "
+            f"print_blocked={blocked}{blocked_duration}"
+            f"{self._queue_stats()}\n"
+        )
+
+    def _queue_stats(self) -> str:
+        from airbyte_cdk.sources.concurrent_source.queue_registry import get_queue
+
+        queue = get_queue()
+        if queue is None:
+            return ""
+
+        try:
+            return f" queue_size={queue.qsize()} queue_full={queue.full()}"
+        except NotImplementedError:
+            return ""
+
+    def _should_dump_threads(self, stall_count: int) -> bool:
+        if stall_count == self._stall_interval_count:
+            return True
+        return (
+            stall_count > self._stall_interval_count
+            and (stall_count - self._stall_interval_count) % self._dump_repeat_interval_count == 0
+        )
+
+    def _thread_dump(self) -> str:
+        thread_names = {thread.ident: thread.name for thread in threading.enumerate()}
+        lines = ["=== THREAD DUMP (stall detected) ===\n"]
+        for thread_id, frame in sys._current_frames().items():
+            lines.append(f"\nThread {thread_names.get(thread_id, 'unknown')} ({thread_id}):\n")
+            lines.extend(traceback.format_stack(frame))
+        lines.append("=== END THREAD DUMP ===\n")
+        return "".join(lines)
+
+    @staticmethod
+    def _write_to_stderr(data: bytes) -> None:
+        os.write(2, data)
 
 
 class AirbyteEntrypoint(object):
@@ -391,13 +533,25 @@ class AirbyteEntrypoint(object):
 def launch(source: Source, args: List[str]) -> None:
     source_entrypoint = AirbyteEntrypoint(source)
     parsed_args = source_entrypoint.parse_args(args)
+    diagnostics = _DeadlockDiagnostics()
+    diagnostics.start()
+
     # temporarily removes the PrintBuffer because we're seeing weird print behavior for concurrent syncs
     # Refer to: https://github.com/airbytehq/oncall/issues/6235
-    with PRINT_BUFFER:
-        for message in source_entrypoint.run(parsed_args):
-            # simply printing is creating issues for concurrent CDK as Python uses different two instructions to print: one for the message and
-            # the other for the break line. Adding `\n` to the message ensure that both are printed at the same time
-            print(f"{message}\n", end="")
+    try:
+        with PRINT_BUFFER:
+            for message in source_entrypoint.run(parsed_args):
+                # simply printing is creating issues for concurrent CDK as Python uses different two instructions to print: one for the message and
+                # the other for the break line. Adding `\n` to the message ensure that both are printed at the same time
+                data = f"{message}\n"
+                diagnostics.mark_print_started()
+                try:
+                    print(data, end="")
+                finally:
+                    diagnostics.mark_print_finished()
+                diagnostics.record_message(data)
+    finally:
+        diagnostics.stop()
 
 
 def _init_internal_request_filter() -> None:
