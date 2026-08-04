@@ -9,6 +9,7 @@ from unittest.mock import patch
 
 import pytest
 import requests
+from pydantic.v1 import ValidationError
 
 from airbyte_cdk.sources.declarative.auth.rate_limited_multiple_token import (
     RateLimitedMultipleTokenAuthenticator,
@@ -239,6 +240,21 @@ def test_no_quotas_raises_config_error():
     with pytest.raises(AirbyteTracedException, match="Quota pool configuration is missing"):
         RateLimitedMultipleTokenAuthenticator(
             tokens=["token_1"], quotas=[], quota_status_url=QUOTA_STATUS_URL
+        )
+
+
+def test_model_rejects_empty_quotas():
+    with pytest.raises(ValidationError, match="quotas"):
+        RateLimitedMultipleTokenAuthenticatorModel.parse_obj(
+            {
+                "type": "RateLimitedMultipleTokenAuthenticator",
+                "tokens": ["token_1"],
+                "quota_status_source": {
+                    "type": "QuotaStatusSource",
+                    "url": "https://api.example.com/rate_limit",
+                },
+                "quotas": [],
+            }
         )
 
 

@@ -346,6 +346,7 @@ definitions:
         anyOf:
           - type: string
           - type: array
+            minItems: 1
             items:
               type: string
         interpolation_context:
@@ -382,6 +383,7 @@ definitions:
           matchers match the request; a pool with no matchers acts as the default. The `remaining_path` and
           `reset_path` locate each pool's values in the quota status response.
         type: array
+        minItems: 1
         items:
           "$ref": "#/definitions/TokenQuota"
       max_wait_time:

@@ -271,6 +271,12 @@ class RateLimitedMultipleTokenAuthenticator(DeclarativeAuthenticator):
                 self._seed_all_tokens()
 
     def _seed_all_tokens(self) -> None:
+        # The wholesale swap intentionally discards local decrements made by concurrent threads
+        # between the fetch and the swap: the server response is the closest thing to truth, and
+        # merging local decrements on top of it would double-count the calls the server has
+        # already observed. The worst case is a slight overcount of `remaining` (requests that
+        # were in flight during the fetch), which at most causes a few 429s near the quota
+        # boundary that the stream-level error handler absorbs.
         states = {token: self._fetch_quota_states(token) for token in self._tokens}
         with self._lock:
             self._states = states

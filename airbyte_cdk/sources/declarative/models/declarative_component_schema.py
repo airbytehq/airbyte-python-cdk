@@ -647,6 +647,7 @@ class RateLimitedMultipleTokenAuthenticator(BaseModel):
     quotas: List[TokenQuota] = Field(
         ...,
         description="Quota pools tracked per token. Each outgoing request is classified into the first pool whose matchers match the request; a pool with no matchers acts as the default. The `remaining_path` and `reset_path` locate each pool's values in the quota status response.\n",
+        min_items=1,
         title="Quota Pools",
     )
     max_wait_time: Optional[str] = Field(
