@@ -175,4 +175,3 @@ This requires the `ddtrace` dependency, which is included in the `manifest-serve
 # Run with Datadog tracing enabled
 DD_ENABLED=true manifest-server start
 ```
-
