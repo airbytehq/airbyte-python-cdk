@@ -415,7 +415,7 @@ class FixedWindowCallRatePolicy(BaseCallRatePolicy):
 
     def _update_current_window(self) -> None:
         now = datetime.datetime.now()
-        if now > self._next_reset_ts:
+        while now > self._next_reset_ts:
             logger.debug("started new window, %s calls available now", self._call_limit)
             self._next_reset_ts = self._next_reset_ts + self._offset
             self._calls_num = 0
@@ -646,6 +646,14 @@ class APIBudget(AbstractAPIBudget):
                         f"Policy {policy} reached call limit for endpoint {endpoint} ({exc.rate}). "
                         f"Sleeping for {time_to_wait} on attempt {attempt}."
                     )
+                    max_sleep = timedelta(seconds=600)
+                    if time_to_wait > max_sleep:
+                        logger.warning(
+                            "Rate limit wait time %s exceeds maximum of %s. Capping to maximum.",
+                            time_to_wait,
+                            max_sleep,
+                        )
+                        time_to_wait = max_sleep
                     time.sleep(time_to_wait.total_seconds())
                 else:
                     logger.debug(
@@ -700,6 +708,12 @@ class HttpAPIBudget(APIBudget):
             return datetime.datetime.fromtimestamp(
                 int(response.headers[self._ratelimit_reset_header])
             )
+        retry_after = response.headers.get("retry-after")
+        if retry_after is not None:
+            try:
+                return datetime.datetime.now() + datetime.timedelta(seconds=int(retry_after))
+            except (ValueError, OverflowError):
+                logger.warning("Could not parse retry-after header value: %s", retry_after)
         return None
 
     def get_calls_left_from_response(self, response: requests.Response) -> Optional[int]:
