@@ -29,6 +29,9 @@ from airbyte_cdk.sources.concurrent_source.partition_generation_completed_sentin
 )
 from airbyte_cdk.sources.concurrent_source.stream_thread_exception import StreamThreadException
 from airbyte_cdk.sources.concurrent_source.thread_pool_manager import ThreadPoolManager
+from airbyte_cdk.sources.declarative.partition_routers.cartesian_product_stream_slicer import (
+    CartesianProductStreamSlicer,
+)
 from airbyte_cdk.sources.declarative.partition_routers.grouping_partition_router import (
     GroupingPartitionRouter,
 )
@@ -1651,13 +1654,14 @@ def test_collect_parent_stream_names_unwraps_grouping_partition_router():
 
 
 @pytest.mark.parametrize(
-    "wrap_in_grouping",
+    "wrapper",
     [
-        pytest.param(False, id="union_router"),
-        pytest.param(True, id="union_nested_in_grouping_router"),
+        pytest.param(None, id="union_router"),
+        pytest.param("grouping", id="union_nested_in_grouping_router"),
+        pytest.param("cartesian", id="union_nested_in_cartesian_product_slicer"),
     ],
 )
-def test_collect_parent_stream_names_unwraps_union_partition_router(wrap_in_grouping):
+def test_collect_parent_stream_names_unwraps_union_partition_router(wrapper):
     """Test _collect_all_parent_stream_names collects parents from all UnionPartitionRouter children."""
     partition_enqueuer = Mock(spec=PartitionEnqueuer)
     thread_pool_manager = Mock(spec=ThreadPoolManager)
@@ -1690,10 +1694,14 @@ def test_collect_parent_stream_names_unwraps_union_partition_router(wrap_in_grou
     union_router = Mock(spec=UnionPartitionRouter)
     union_router.partition_routers = substream_routers
 
-    if wrap_in_grouping:
+    if wrapper == "grouping":
         grouping_router = Mock(spec=GroupingPartitionRouter)
         grouping_router.underlying_partition_router = union_router
         child_stream.get_partition_router.return_value = grouping_router
+    elif wrapper == "cartesian":
+        cartesian_slicer = Mock(spec=CartesianProductStreamSlicer)
+        cartesian_slicer.stream_slicers = [union_router]
+        child_stream.get_partition_router.return_value = cartesian_slicer
     else:
         child_stream.get_partition_router.return_value = union_router
 

@@ -4489,7 +4489,9 @@ definitions:
       are moved into the slice's extra fields. The first occurrence of a partition value wins and later
       duplicates are skipped. Partition values must be hashable; deduplication holds every distinct value
       in memory for the duration of the sync, and the resulting partition count is the deduplicated sum
-      of the child routers' partition counts, which affects per-partition state size.
+      of the child routers' partition counts, which affects per-partition state size. Because child routers
+      must emit scalar partition values, GroupingPartitionRouter (which emits list-valued partitions)
+      cannot be used as a child.
     type: object
     required:
       - type
