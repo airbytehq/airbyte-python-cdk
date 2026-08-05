@@ -43,11 +43,16 @@ def state_emission_is_due(
     exactly N seconds after the previous one is due.
 
     `last_emitted_at is None` means nothing has been emitted yet, so the first
-    emission is always due regardless of the clock's absolute value. A
-    `throttle_seconds <= 0` never suppresses, which degrades to the historical
-    unthrottled behaviour rather than erroring.
+    emission is always due regardless of the clock's absolute value.
+
+    A `throttle_seconds <= 0` never suppresses, degrading to the historical
+    unthrottled behaviour rather than erroring. That is checked before any
+    arithmetic: `ConcurrentPerPartitionCursor` measures with wall-clock
+    `time.time()`, which can step backwards, and a negative elapsed time would
+    otherwise fail the comparison and suppress an emission the caller asked to
+    never throttle.
     """
-    if last_emitted_at is None:
+    if last_emitted_at is None or throttle_seconds <= 0:
         return True
     return now - last_emitted_at >= throttle_seconds
 

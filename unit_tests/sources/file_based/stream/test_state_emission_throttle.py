@@ -82,7 +82,14 @@ def test_connector_subclass_cannot_bypass_the_throttle() -> None:
 
 
 def test_permissions_stream_is_throttled_too() -> None:
-    """The permissions transfer path is on the same legacy emission path."""
+    """The permissions transfer path is on the same legacy emission path.
+
+    Asserts the constructed reader, not just the class attribute: an override of
+    `_get_checkpoint_reader` on this subclass would leave the attribute intact
+    while removing the throttle entirely.
+    """
+    stream = _stream(PermissionsFileBasedStream, stream_permissions_reader=MagicMock())
+    assert isinstance(_reader(stream), ThrottledCheckpointReader)
     assert (
         PermissionsFileBasedStream.state_emission_throttle_seconds
         == DEFAULT_STATE_EMISSION_THROTTLE_SECONDS

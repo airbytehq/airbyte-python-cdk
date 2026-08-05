@@ -184,6 +184,30 @@ def test_default_throttle_is_the_shared_constant() -> None:
         pytest.param(1000.0, 1600.1, 600.0, True, "past the window", id="past"),
         pytest.param(1000.0, 1000.0, 0.0, True, "zero never suppresses", id="zero_fails_open"),
         pytest.param(1000.0, 1000.0, -5.0, True, "negative never suppresses", id="negative"),
+        # Wall-clock rollback (NTP correction) makes elapsed time negative.
+        # `ConcurrentPerPartitionCursor` measures with `time.time()`, so this is
+        # reachable. A non-positive window must still never suppress, which means
+        # the check has to come before the arithmetic.
+        pytest.param(
+            1000.0, 990.0, 0.0, True, "zero, clock stepped backwards", id="zero_clock_rollback"
+        ),
+        pytest.param(
+            1000.0,
+            990.0,
+            -5.0,
+            True,
+            "negative, clock stepped backwards",
+            id="negative_clock_rollback",
+        ),
+        pytest.param(
+            1000.0,
+            990.0,
+            600.0,
+            False,
+            "a positive window still suppresses under rollback — the window has "
+            "genuinely not elapsed",
+            id="positive_clock_rollback",
+        ),
         # A cold start expressed as 0.0 rather than None: ConcurrentPerPartitionCursor
         # initialises `_last_emission_time = 0.0` and compares against wall-clock
         # `time.time()`, so the first emission must still be due.
