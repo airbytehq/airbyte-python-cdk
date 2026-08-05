@@ -5664,15 +5664,21 @@ def test_apply_stream_groups_raises_on_parent_child_in_same_group_with_grouping_
 def _make_child_stream_with_union_router(
     child_name: str,
     parent_streams: list[DefaultStream],
-    wrap_in_grouping: bool = False,
+    wrapper: str | None = None,
 ) -> DefaultStream:
     """Create a DefaultStream with a UnionPartitionRouter over SubstreamPartitionRouters."""
     from airbyte_cdk.sources.declarative.incremental.concurrent_partition_cursor import (
         ConcurrentCursorFactory,
         ConcurrentPerPartitionCursor,
     )
+    from airbyte_cdk.sources.declarative.partition_routers.cartesian_product_stream_slicer import (
+        CartesianProductStreamSlicer,
+    )
     from airbyte_cdk.sources.declarative.partition_routers.grouping_partition_router import (
         GroupingPartitionRouter,
+    )
+    from airbyte_cdk.sources.declarative.partition_routers.list_partition_router import (
+        ListPartitionRouter,
     )
     from airbyte_cdk.sources.declarative.partition_routers.substream_partition_router import (
         ParentStreamConfig,
@@ -5713,15 +5719,26 @@ def _make_child_stream_with_union_router(
         parameters={},
     )
 
-    stream_slicer_router = (
-        GroupingPartitionRouter(
+    if wrapper == "grouping":
+        stream_slicer_router = GroupingPartitionRouter(
             group_size=10,
             underlying_partition_router=union_router,
             config={},
         )
-        if wrap_in_grouping
-        else union_router
-    )
+    elif wrapper == "cartesian":
+        # A manifest declaring `partition_router` as a list builds a CartesianProductStreamSlicer;
+        # ancestor collection must descend into it to find the union's parents.
+        stream_slicer_router = CartesianProductStreamSlicer(
+            stream_slicers=[
+                union_router,
+                ListPartitionRouter(
+                    values=["main"], cursor_field="branch", config={}, parameters={}
+                ),
+            ],
+            parameters={},
+        )
+    else:
+        stream_slicer_router = union_router
 
     cursor_factory = ConcurrentCursorFactory(lambda *args, **kwargs: Mock())
     message_repository = InMemoryMessageRepository()
@@ -5760,21 +5777,23 @@ def _make_child_stream_with_union_router(
 
 
 @pytest.mark.parametrize(
-    "grouped_parent,wrap_in_grouping",
+    "grouped_parent,wrapper",
     [
-        pytest.param("parent_a", False, id="first_union_child_parent"),
-        pytest.param("parent_b", False, id="second_union_child_parent"),
-        pytest.param("parent_a", True, id="union_nested_in_grouping"),
+        pytest.param("parent_a", None, id="first_union_child_parent"),
+        pytest.param("parent_b", None, id="second_union_child_parent"),
+        pytest.param("parent_a", "grouping", id="union_nested_in_grouping"),
+        pytest.param("parent_a", "cartesian", id="union_nested_in_cartesian_product_slicer"),
+        pytest.param("parent_b", "cartesian", id="second_parent_through_cartesian"),
     ],
 )
 def test_apply_stream_groups_raises_on_parent_child_in_same_group_with_union_router(
-    grouped_parent, wrap_in_grouping
+    grouped_parent, wrapper
 ):
     """Test _apply_stream_groups detects deadlock through a UnionPartitionRouter's children."""
     parent_a = _make_default_stream("parent_a")
     parent_b = _make_default_stream("parent_b")
     child = _make_child_stream_with_union_router(
-        "child_stream", [parent_a, parent_b], wrap_in_grouping=wrap_in_grouping
+        "child_stream", [parent_a, parent_b], wrapper=wrapper
     )
 
     source = Mock()
