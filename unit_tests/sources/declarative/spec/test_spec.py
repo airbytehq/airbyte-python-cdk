@@ -162,6 +162,24 @@ def test_spec(spec, expected_connection_specification) -> None:
     assert spec.generate_spec() == expected_connection_specification
 
 
+def test_generate_spec_is_idempotent_and_does_not_mutate_the_model() -> None:
+    spec = component_spec(
+        connection_specification={"client_id": "my_client_id"},
+        parameters={},
+        advanced_auth=component_auth_flow(
+            auth_flow_type=component_auth_flow_type.oauth2_0,
+            predicate_key=None,
+            predicate_value=None,
+        ),
+    )
+
+    first = spec.generate_spec()
+    second = spec.generate_spec()
+
+    assert first == second
+    assert spec.advanced_auth.auth_flow_type is component_auth_flow_type.oauth2_0
+
+
 def test_given_list_of_transformations_when_transform_config_then_config_is_transformed() -> None:
     input_config = {"planet_code": "CRSC"}
     expected_config = {
