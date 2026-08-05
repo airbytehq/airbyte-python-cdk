@@ -787,6 +787,15 @@ def _read(
     return records
 
 
+def _state_cursors(state_messages):
+    """The cursor carried by each STATE message, in emission order.
+
+    Asserting the sequence rather than the count pins *which* slices emitted,
+    so a throttle that inverted its comparison could not pass.
+    """
+    return [m.state.stream.stream_state.created_at for m in state_messages]
+
+
 def test_state_emission_throttle_suppresses_per_slice_emit_and_forces_final(mocker):
     """
     With `state_emission_throttle_seconds` set, per-slice state messages emitted
@@ -844,11 +853,11 @@ def test_state_emission_throttle_suppresses_per_slice_emit_and_forces_final(mock
     # Count STATE messages.
     state_messages = [m for m in actual_records if getattr(m, "type", None) == MessageType.STATE]
     # Cold-start emit fires; slices 2-4 are inside the throttle window and are
-    # suppressed; the forced final emit fires once at end of stream.
-    assert len(state_messages) == 2
-    # Final state must carry the latest observed cursor.
-    final = state_messages[-1]
-    assert final.state.stream.stream_state.created_at == timestamp
+    # suppressed; the forced final emit fires once at end of stream. Assert the
+    # whole cursor sequence, not just the count: a count-only check also passes
+    # for an implementation that suppresses the cold start and emits a later
+    # slice instead.
+    assert _state_cursors(state_messages) == ["1708899000", timestamp]
 
 
 def test_state_emission_throttle_emits_again_once_window_elapses(mocker):
@@ -902,8 +911,10 @@ def test_state_emission_throttle_emits_again_once_window_elapses(mocker):
     )
 
     state_messages = [m for m in actual_records if getattr(m, "type", None) == MessageType.STATE]
-    assert len(state_messages) == 3
-    assert state_messages[-1].state.stream.stream_state.created_at == timestamp
+    # Slice 1 (cold start), slice 3 (window elapsed), then the forced final.
+    # Slice 3's cursor proves the re-emit is the *slice* emit and not a second
+    # forced final.
+    assert _state_cursors(state_messages) == ["1708899000", "1708899200", timestamp]
 
 
 def test_state_emission_throttle_no_duplicate_final_emit_on_window_boundary(mocker):
@@ -954,9 +965,13 @@ def test_state_emission_throttle_no_duplicate_final_emit_on_window_boundary(mock
     )
 
     state_messages = [m for m in actual_records if getattr(m, "type", None) == MessageType.STATE]
-    # One per slice, and no extra forced final.
-    assert len(state_messages) == 4
-    assert state_messages[-1].state.stream.stream_state.created_at == timestamp
+    # One per slice, and no extra forced final duplicating the last cursor.
+    assert _state_cursors(state_messages) == [
+        "1708899000",
+        "1708899100",
+        "1708899200",
+        timestamp,
+    ]
 
 
 def test_state_emission_throttle_default_none_keeps_per_slice_emits():

@@ -268,7 +268,6 @@ class Stream(ABC):
             self._observe_state(checkpoint_reader)
             checkpoint_state = checkpoint_reader.get_checkpoint()
             if should_checkpoint and checkpoint_state is not None:
-                last_observed_checkpoint = checkpoint_state
                 if throttle_seconds is not None:
                     # Monotonic: measures elapsed time, immune to wall-clock jumps.
                     now = time.monotonic()
