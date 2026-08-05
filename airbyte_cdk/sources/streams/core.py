@@ -135,6 +135,11 @@ class Stream(ABC):
     # A plain attribute rather than a property (unlike `state_checkpoint_interval`)
     # so a source can set it per instance on an already-constructed stream.
     #
+    # A value <= 0 degrades to the unthrottled default rather than erroring: the
+    # window check is `elapsed < throttle`, which is never true for 0 or a
+    # negative value, so every slice emits. Failing open to the historical
+    # behaviour is the safe direction for a code-level knob.
+    #
     # Out of scope: the record-count checkpoints driven by
     # `state_checkpoint_interval` are not throttled and do not reset the window.
     # A stream setting both knobs can still emit more often than this allows.
