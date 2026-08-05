@@ -22,6 +22,9 @@ from airbyte_cdk.models import (
 from airbyte_cdk.sources.connector_state_manager import ConnectorStateManager
 from airbyte_cdk.sources.declarative.partition_routers.partition_router import PartitionRouter
 from airbyte_cdk.sources.message import MessageRepository
+from airbyte_cdk.sources.streams.checkpoint.checkpoint_reader import (
+    DEFAULT_STATE_EMISSION_THROTTLE_SECONDS,
+)
 from airbyte_cdk.sources.streams.checkpoint.per_partition_key_serializer import (
     PerPartitionKeySerializer,
 )
@@ -30,7 +33,6 @@ from airbyte_cdk.sources.streams.concurrent.partitions.partition import Partitio
 from airbyte_cdk.sources.streams.concurrent.state_converters.abstract_stream_state_converter import (
     AbstractStreamStateConverter,
 )
-from airbyte_cdk.sources.streams.core import DEFAULT_STATE_EMISSION_THROTTLE_SECONDS
 from airbyte_cdk.sources.types import Record, StreamSlice, StreamState
 
 logger = logging.getLogger("airbyte")

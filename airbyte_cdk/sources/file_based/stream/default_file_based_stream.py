@@ -48,10 +48,12 @@ from airbyte_cdk.sources.file_based.stream import AbstractFileBasedStream
 from airbyte_cdk.sources.file_based.stream.cursor import AbstractFileBasedCursor
 from airbyte_cdk.sources.file_based.types import StreamSlice
 from airbyte_cdk.sources.streams import IncrementalMixin
-from airbyte_cdk.sources.streams.core import (
+from airbyte_cdk.sources.streams.checkpoint import (
     DEFAULT_STATE_EMISSION_THROTTLE_SECONDS,
-    JsonSchema,
+    CheckpointReader,
+    ThrottledCheckpointReader,
 )
+from airbyte_cdk.sources.streams.core import JsonSchema
 from airbyte_cdk.sources.utils.record_helper import stream_data_to_airbyte_message
 from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 
@@ -74,16 +76,9 @@ class DefaultFileBasedStream(AbstractFileBasedStream, IncrementalMixin):
     preserve_directory_structure = True
     _file_transfer = FileTransfer()
 
-    # This stream's state carries a history dict that grows with every file
-    # synced, so the legacy emit-after-every-slice cadence puts an unbounded
-    # amount of un-ACKed state into the orchestrator buffer over a large sync.
-    # Set on the class so it reaches subclasses by inheritance: connectors such
-    # as source-s3 and source-gcs build their own `DefaultFileBasedStream`
-    # subclass in an overridden `_make_default_stream()` that never calls
-    # `super()`, so anything injected by the source would miss them.
-    # The concurrent path is unaffected — `FileBasedStreamFacade` overrides
-    # `read()` and never reaches `Stream.read()`.
-    state_emission_throttle_seconds = DEFAULT_STATE_EMISSION_THROTTLE_SECONDS
+    # How often this stream may emit a per-slice state message. Overridable, but
+    # connectors have no principled reason to diverge from the shared default.
+    state_emission_throttle_seconds: Optional[float] = DEFAULT_STATE_EMISSION_THROTTLE_SECONDS
 
     def __init__(self, **kwargs: Any):
         if self.FILE_TRANSFER_KW in kwargs:
@@ -102,6 +97,26 @@ class DefaultFileBasedStream(AbstractFileBasedStream, IncrementalMixin):
     def state(self, value: MutableMapping[str, Any]) -> None:
         """State setter, accept state serialized by state getter."""
         self._cursor.set_initial_state(value)
+
+    def _get_checkpoint_reader(self, *args: Any, **kwargs: Any) -> CheckpointReader:
+        """Wrap the reader chosen by the base class in a state-emission throttle.
+
+        On this stream a slice is a single file and the state payload carries the
+        whole file-history dict, so the default emit-per-slice cadence scales
+        state volume with the number of files synced. Throttling here rather than
+        in `Stream.read()` keeps the change off the generic base class: nothing
+        outside file-based streams is affected.
+
+        Wrapping the result of `super()` rather than constructing a reader
+        directly means we keep whatever reader the base class picks, including if
+        that choice changes later.
+        """
+        reader = super()._get_checkpoint_reader(*args, **kwargs)
+        if self.state_emission_throttle_seconds is None:
+            return reader
+        return ThrottledCheckpointReader(
+            reader, throttle_seconds=self.state_emission_throttle_seconds
+        )
 
     @property  # type: ignore # mypy complains wrong type, but AbstractFileBasedCursor is parent of file-based cursors
     def cursor(self) -> Optional[AbstractFileBasedCursor]:
