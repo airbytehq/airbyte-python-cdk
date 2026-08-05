@@ -197,8 +197,10 @@ class Stream(ABC):
 
         # State-emission throttle bookkeeping. Active only when the stream sets
         # `state_emission_throttle_seconds`; default behavior is preserved.
+        # `None` means nothing has been emitted yet, so the first per-slice
+        # checkpoint always fires regardless of the clock's absolute value.
         throttle_seconds = self.state_emission_throttle_seconds
-        last_state_emit_at: float = 0.0
+        last_state_emit_at: Optional[float] = None
         last_observed_checkpoint: Optional[Mapping[str, Any]] = None
         throttled_pending_emit = False
 
@@ -260,8 +262,12 @@ class Stream(ABC):
             if should_checkpoint and checkpoint_state is not None:
                 last_observed_checkpoint = checkpoint_state
                 if throttle_seconds is not None:
-                    now = time.time()
-                    if now - last_state_emit_at < throttle_seconds:
+                    # Monotonic: measures elapsed time, immune to wall-clock jumps.
+                    now = time.monotonic()
+                    if (
+                        last_state_emit_at is not None
+                        and now - last_state_emit_at < throttle_seconds
+                    ):
                         # Suppress this per-slice state emission; the final-
                         # state emit below will catch up if no other emit
                         # fires before the stream ends.
@@ -269,13 +275,9 @@ class Stream(ABC):
                     else:
                         last_state_emit_at = now
                         throttled_pending_emit = False
-                        yield self._checkpoint_state(
-                            checkpoint_state, state_manager=state_manager
-                        )
+                        yield self._checkpoint_state(checkpoint_state, state_manager=state_manager)
                 else:
-                    yield self._checkpoint_state(
-                        checkpoint_state, state_manager=state_manager
-                    )
+                    yield self._checkpoint_state(checkpoint_state, state_manager=state_manager)
 
             next_slice = checkpoint_reader.next()
 

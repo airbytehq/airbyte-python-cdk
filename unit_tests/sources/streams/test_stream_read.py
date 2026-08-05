@@ -823,13 +823,11 @@ def test_state_emission_throttle_suppresses_per_slice_emit_and_forces_final(mock
     # tests in this module. Reset it so we observe only the state this test
     # produces.
     type(stream)._state = {}
-    # 600 s throttle. We mock time.time so the first emit fires, the next two
-    # fall inside the throttle window, and the loop ends needing a final emit.
+    # 600 s throttle, with the clock advancing 10 s per slice. The cold-start
+    # emit fires, every later slice lands inside the window and is suppressed,
+    # so the stream ends owing a forced final emit.
     stream.state_emission_throttle_seconds = 600
-    mock_time = mocker.patch("airbyte_cdk.sources.streams.core.time.time")
-    # First call inside throttle check -> 0s; second -> 10s; third -> 20s;
-    # fourth -> 30s. All under 600 except the first (cold start, 0 - 0 < 600
-    # so suppressed... see logic).
+    mock_time = mocker.patch("airbyte_cdk.sources.streams.core.time.monotonic")
     mock_time.side_effect = [0, 10, 20, 30, 40, 50]
 
     actual_records = _read(
@@ -843,15 +841,68 @@ def test_state_emission_throttle_suppresses_per_slice_emit_and_forces_final(mock
     )
 
     # Count STATE messages.
-    state_messages = [
-        m for m in actual_records if getattr(m, "type", None) == MessageType.STATE
-    ]
-    # Cold-start emit is suppressed (delta 0 < 600); subsequent ones suppressed;
-    # final-state force emit fires once at end of stream.
-    assert len(state_messages) == 1
+    state_messages = [m for m in actual_records if getattr(m, "type", None) == MessageType.STATE]
+    # Cold-start emit fires; slices 2-4 are inside the throttle window and are
+    # suppressed; the forced final emit fires once at end of stream.
+    assert len(state_messages) == 2
     # Final state must carry the latest observed cursor.
     final = state_messages[-1]
     assert final.state.stream.stream_state.created_at == timestamp
+
+
+def test_state_emission_throttle_emits_again_once_window_elapses(mocker):
+    """The throttle is periodic, not first-and-last only: a slice that completes
+    after the window has elapsed emits its state, and the window restarts from
+    that emission."""
+    configured_stream = ConfiguredAirbyteStream(
+        stream=AirbyteStream(
+            name="mock_stream",
+            supported_sync_modes=[SyncMode.full_refresh, SyncMode.incremental],
+            json_schema={},
+        ),
+        sync_mode=SyncMode.incremental,
+        cursor_field=["created_at"],
+        destination_sync_mode=DestinationSyncMode.overwrite,
+    )
+    internal_config = InternalConfig()
+    logger = _mock_logger()
+    slice_logger = DebugSliceLogger()
+    message_repository = InMemoryMessageRepository(Level.INFO)
+    state_manager = ConnectorStateManager()
+    timestamp = "1708899427"
+
+    slice_to_partition = {
+        1: [{"id": 1, "partition": 1, "created_at": "1708899000"}],
+        2: [{"id": 2, "partition": 2, "created_at": "1708899100"}],
+        3: [{"id": 3, "partition": 3, "created_at": "1708899200"}],
+        4: [{"id": 4, "partition": 4, "created_at": timestamp}],
+    }
+    stream = _incremental_stream(
+        slice_to_partition, slice_logger, logger, message_repository, timestamp
+    )
+    type(stream)._state = {}
+
+    stream.state_emission_throttle_seconds = 15
+    mock_time = mocker.patch("airbyte_cdk.sources.streams.core.time.monotonic")
+    # slice 1 @0s  -> cold start, emits, window opens at 0
+    # slice 2 @10s -> 10 - 0 = 10 < 15, suppressed
+    # slice 3 @20s -> 20 - 0 = 20 >= 15, emits, window restarts at 20
+    # slice 4 @30s -> 30 - 20 = 10 < 15, suppressed -> forced final emit
+    mock_time.side_effect = [0, 10, 20, 30, 40, 50]
+
+    actual_records = _read(
+        stream,
+        configured_stream,
+        logger,
+        slice_logger,
+        message_repository,
+        state_manager,
+        internal_config,
+    )
+
+    state_messages = [m for m in actual_records if getattr(m, "type", None) == MessageType.STATE]
+    assert len(state_messages) == 3
+    assert state_messages[-1].state.stream.stream_state.created_at == timestamp
 
 
 def test_state_emission_throttle_default_none_keeps_per_slice_emits():
@@ -896,9 +947,7 @@ def test_state_emission_throttle_default_none_keeps_per_slice_emits():
         internal_config,
     )
 
-    state_messages = [
-        m for m in actual_records if getattr(m, "type", None) == MessageType.STATE
-    ]
+    state_messages = [m for m in actual_records if getattr(m, "type", None) == MessageType.STATE]
     # One per-slice emit per slice, no final duplicate (IncrementalCheckpointReader suppresses it).
     assert len(state_messages) == 2
 

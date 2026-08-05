@@ -87,14 +87,16 @@ class FileBasedSource(ConcurrentSourceAdapter, ABC):
     # We make each source override the concurrency level to give control over when they are upgraded.
     _concurrency_level = None
 
-    # When the legacy (non-concurrent) file-based read path is used, the
-    # framework emits a state message after every slice (i.e. every file). On
-    # streams with many small files the platform/orchestrator buffer of those
-    # state messages can OOM the replication pod before the destination ACKs
-    # them. Connectors can override this to throttle per-slice state emission
-    # to once per N seconds; the final state of each sync is always force
-    # emitted so destinations still see the latest cursor. Default `None`
-    # preserves the historical emit-per-slice behaviour.
+    # On the legacy (non-concurrent) file-based read path the framework emits a
+    # state message after every slice, and a slice is a single file. Because the
+    # payload carries the whole file-history dict, a stream with thousands of
+    # small files emits thousands of multi-megabyte state messages, which the
+    # platform buffers until the destination ACKs them.
+    #
+    # Set this to throttle per-slice emission to one message per N seconds. The
+    # final state of every sync is always force-emitted, so destinations still
+    # see the latest cursor; only intermediate checkpoint granularity is
+    # reduced. Default `None` keeps the historical emit-per-slice behaviour.
     _stream_state_emission_throttle_seconds: Optional[float] = None
 
     def __init__(
@@ -360,9 +362,7 @@ class FileBasedSource(ConcurrentSourceAdapter, ABC):
             preserve_directory_structure=preserve_directory_structure(parsed_config),
         )
         if self._stream_state_emission_throttle_seconds is not None:
-            stream.state_emission_throttle_seconds = (
-                self._stream_state_emission_throttle_seconds
-            )
+            stream.state_emission_throttle_seconds = self._stream_state_emission_throttle_seconds
         return stream
 
     def _ensure_permissions_reader_available(self) -> None:
