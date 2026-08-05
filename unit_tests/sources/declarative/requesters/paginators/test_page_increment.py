@@ -8,9 +8,64 @@ from typing import Any, Optional
 import pytest
 import requests
 
+from airbyte_cdk.sources.declarative.extractors import DpathExtractor
 from airbyte_cdk.sources.declarative.requesters.paginators.strategies.page_increment import (
     PageIncrement,
 )
+
+
+@pytest.mark.parametrize(
+    "response_results, last_page_size, last_page_token_value, expected_next_page_token",
+    [
+        pytest.param(
+            [{"id": 1}, {"id": 2}],
+            0,
+            3,
+            4,
+            id="test_full_page_continues_even_if_all_records_filtered",
+        ),
+        pytest.param(
+            [{"id": 1}, {"id": 2}],
+            1,
+            3,
+            4,
+            id="test_full_page_continues_even_if_some_records_filtered",
+        ),
+        pytest.param(
+            [{"id": 1}],
+            1,
+            3,
+            None,
+            id="test_partial_page_stops_pagination",
+        ),
+        pytest.param(
+            [],
+            0,
+            3,
+            None,
+            id="test_empty_page_stops_pagination",
+        ),
+    ],
+)
+def test_page_increment_paginator_strategy_with_extractor(
+    response_results, last_page_size, last_page_token_value, expected_next_page_token
+):
+    extractor = DpathExtractor(field_path=["results"], parameters={}, config={})
+    paginator_strategy = PageIncrement(
+        page_size=2, parameters={}, start_from_page=1, extractor=extractor, config={}
+    )
+
+    response = requests.Response()
+    response.headers = {"A_HEADER": "HEADER_VALUE"}
+    response._content = json.dumps({"results": response_results}).encode("utf-8")
+
+    next_page_token = paginator_strategy.next_page_token(
+        response,
+        last_page_size,
+        response_results[-1] if response_results else None,
+        last_page_token_value,
+    )
+    assert expected_next_page_token == next_page_token
 
 
 @pytest.mark.parametrize(
