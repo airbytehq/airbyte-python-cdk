@@ -4470,6 +4470,7 @@ definitions:
         anyOf:
           - "$ref": "#/definitions/ListPartitionRouter"
           - "$ref": "#/definitions/SubstreamPartitionRouter"
+          - "$ref": "#/definitions/UnionPartitionRouter"
           - "$ref": "#/definitions/CustomPartitionRouter"
       deduplicate:
         title: Deduplicate Partitions
@@ -4486,7 +4487,9 @@ definitions:
       partition routers. Every emitted partition is normalized to a single key defined by `partition_field`;
       any other partition keys coming from a child router (such as a SubstreamPartitionRouter's `parent_slice`)
       are moved into the slice's extra fields. The first occurrence of a partition value wins and later
-      duplicates are skipped.
+      duplicates are skipped. Partition values must be hashable; deduplication holds every distinct value
+      in memory for the duration of the sync, and the resulting partition count is the deduplicated sum
+      of the child routers' partition counts, which affects per-partition state size.
     type: object
     required:
       - type

@@ -13,6 +13,9 @@ from airbyte_cdk.sources.concurrent_source.partition_generation_completed_sentin
 )
 from airbyte_cdk.sources.concurrent_source.stream_thread_exception import StreamThreadException
 from airbyte_cdk.sources.concurrent_source.thread_pool_manager import ThreadPoolManager
+from airbyte_cdk.sources.declarative.partition_routers.cartesian_product_stream_slicer import (
+    CartesianProductStreamSlicer,
+)
 from airbyte_cdk.sources.declarative.partition_routers.grouping_partition_router import (
     GroupingPartitionRouter,
 )
@@ -441,13 +444,15 @@ class ConcurrentReadProcessor:
         partition_router = (
             stream.get_partition_router() if isinstance(stream, DefaultStream) else None
         )
-        routers = [partition_router] if partition_router else []
+        routers = [partition_router] if partition_router is not None else []
         while routers:
             router = routers.pop()
             if isinstance(router, GroupingPartitionRouter):
                 routers.append(router.underlying_partition_router)
             elif isinstance(router, UnionPartitionRouter):
                 routers.extend(router.partition_routers)
+            elif isinstance(router, CartesianProductStreamSlicer):
+                routers.extend(router.stream_slicers)
             elif isinstance(router, SubstreamPartitionRouter):
                 for parent_config in router.parent_stream_configs:
                     parent_name = parent_config.stream.name

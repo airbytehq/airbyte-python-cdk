@@ -4597,7 +4597,9 @@ class ModelToComponentFactory:
                     child_partition_fields.append(
                         InterpolatedString.create(
                             parent_stream_config.partition_field,
-                            parameters=child_model.parameters or {},
+                            parameters=parent_stream_config.parameters
+                            or child_model.parameters
+                            or {},
                         ).eval(config)
                     )
             elif isinstance(child_model, UnionPartitionRouterModel):

@@ -3236,7 +3236,10 @@ class GroupingPartitionRouter(BaseModel):
         title="Group Size",
     )
     underlying_partition_router: Union[
-        ListPartitionRouter, SubstreamPartitionRouter, CustomPartitionRouter
+        ListPartitionRouter,
+        SubstreamPartitionRouter,
+        "UnionPartitionRouter",
+        CustomPartitionRouter,
     ] = Field(
         ...,
         description="The partition router whose output will be grouped. This can be any valid partition router component.",
@@ -3322,4 +3325,5 @@ ParentStreamConfig.update_forward_refs()
 PropertiesFromEndpoint.update_forward_refs()
 SimpleRetriever.update_forward_refs()
 AsyncRetriever.update_forward_refs()
+GroupingPartitionRouter.update_forward_refs()
 UnionPartitionRouter.update_forward_refs()

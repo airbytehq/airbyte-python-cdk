@@ -76,6 +76,9 @@ from airbyte_cdk.sources.declarative.parsers.manifest_reference_resolver import 
 from airbyte_cdk.sources.declarative.parsers.model_to_component_factory import (
     ModelToComponentFactory,
 )
+from airbyte_cdk.sources.declarative.partition_routers.cartesian_product_stream_slicer import (
+    CartesianProductStreamSlicer,
+)
 from airbyte_cdk.sources.declarative.partition_routers.grouping_partition_router import (
     GroupingPartitionRouter,
 )
@@ -464,13 +467,16 @@ class ConcurrentDeclarativeSource(Source):
             inst = stream_name_to_instance.get(stream_name)
             if not isinstance(inst, DefaultStream):
                 return ancestors
-            routers = [inst.get_partition_router()]
+            partition_router = inst.get_partition_router()
+            routers = [partition_router] if partition_router is not None else []
             while routers:
                 router = routers.pop()
                 if isinstance(router, GroupingPartitionRouter):
                     routers.append(router.underlying_partition_router)
                 elif isinstance(router, UnionPartitionRouter):
                     routers.extend(router.partition_routers)
+                elif isinstance(router, CartesianProductStreamSlicer):
+                    routers.extend(router.stream_slicers)
                 elif isinstance(router, SubstreamPartitionRouter):
                     for parent_config in router.parent_stream_configs:
                         parent_name = parent_config.stream.name

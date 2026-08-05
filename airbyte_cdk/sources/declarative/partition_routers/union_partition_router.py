@@ -27,6 +27,12 @@ class UnionPartitionRouter(PartitionRouter):
     the union yields:
     [{"repository": "org/a"}, {"repository": "org/b"}, {"repository": "org/c"}]
 
+    Partition values must be hashable — deduplication holds every distinct value in a set
+    for the duration of slice generation, so memory grows linearly with the number of
+    unique partitions. Note also that a union's partition count is the (deduplicated) sum
+    of its children's, which counts against `ConcurrentPerPartitionCursor`'s per-partition
+    state limit.
+
     Attributes:
         partition_routers (List[PartitionRouter]): The child partition routers to union.
         partition_field (str): The single partition key all child slices are normalized to.
@@ -45,6 +51,8 @@ class UnionPartitionRouter(PartitionRouter):
 
         The first occurrence of a partition value wins; later duplicates from any child are skipped.
         """
+        # The concurrent framework consumes stream_slices() lazily, so this set stays live
+        # (and grows with each distinct partition value) for essentially the whole sync.
         seen: set[Any] = set()
         for router in self.partition_routers:
             for stream_slice in router.stream_slices():
