@@ -2,6 +2,7 @@
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
 
+import itertools
 import logging
 from copy import deepcopy
 from queue import Queue
@@ -828,7 +829,7 @@ def test_state_emission_throttle_suppresses_per_slice_emit_and_forces_final(mock
     # so the stream ends owing a forced final emit.
     stream.state_emission_throttle_seconds = 600
     mock_time = mocker.patch("airbyte_cdk.sources.streams.core.time.monotonic")
-    mock_time.side_effect = [0, 10, 20, 30, 40, 50]
+    mock_time.side_effect = itertools.count(0, 10)
 
     actual_records = _read(
         stream,
@@ -888,7 +889,7 @@ def test_state_emission_throttle_emits_again_once_window_elapses(mocker):
     # slice 2 @10s -> 10 - 0 = 10 < 15, suppressed
     # slice 3 @20s -> 20 - 0 = 20 >= 15, emits, window restarts at 20
     # slice 4 @30s -> 30 - 20 = 10 < 15, suppressed -> forced final emit
-    mock_time.side_effect = [0, 10, 20, 30, 40, 50]
+    mock_time.side_effect = itertools.count(0, 10)
 
     actual_records = _read(
         stream,
@@ -902,6 +903,59 @@ def test_state_emission_throttle_emits_again_once_window_elapses(mocker):
 
     state_messages = [m for m in actual_records if getattr(m, "type", None) == MessageType.STATE]
     assert len(state_messages) == 3
+    assert state_messages[-1].state.stream.stream_state.created_at == timestamp
+
+
+def test_state_emission_throttle_no_duplicate_final_emit_on_window_boundary(mocker):
+    """When the last slice emits exactly at the window boundary, nothing is left
+    pending — so the forced final emit must not fire and duplicate it."""
+    configured_stream = ConfiguredAirbyteStream(
+        stream=AirbyteStream(
+            name="mock_stream",
+            supported_sync_modes=[SyncMode.full_refresh, SyncMode.incremental],
+            json_schema={},
+        ),
+        sync_mode=SyncMode.incremental,
+        cursor_field=["created_at"],
+        destination_sync_mode=DestinationSyncMode.overwrite,
+    )
+    internal_config = InternalConfig()
+    logger = _mock_logger()
+    slice_logger = DebugSliceLogger()
+    message_repository = InMemoryMessageRepository(Level.INFO)
+    state_manager = ConnectorStateManager()
+    timestamp = "1708899427"
+
+    slice_to_partition = {
+        1: [{"id": 1, "partition": 1, "created_at": "1708899000"}],
+        2: [{"id": 2, "partition": 2, "created_at": "1708899100"}],
+        3: [{"id": 3, "partition": 3, "created_at": "1708899200"}],
+        4: [{"id": 4, "partition": 4, "created_at": timestamp}],
+    }
+    stream = _incremental_stream(
+        slice_to_partition, slice_logger, logger, message_repository, timestamp
+    )
+    type(stream)._state = {}
+
+    # Clock advances exactly one window per slice, so every slice sits on the
+    # boundary (delta == throttle, which is not < throttle) and emits.
+    stream.state_emission_throttle_seconds = 10
+    mock_time = mocker.patch("airbyte_cdk.sources.streams.core.time.monotonic")
+    mock_time.side_effect = itertools.count(0, 10)
+
+    actual_records = _read(
+        stream,
+        configured_stream,
+        logger,
+        slice_logger,
+        message_repository,
+        state_manager,
+        internal_config,
+    )
+
+    state_messages = [m for m in actual_records if getattr(m, "type", None) == MessageType.STATE]
+    # One per slice, and no extra forced final.
+    assert len(state_messages) == 4
     assert state_messages[-1].state.stream.stream_state.created_at == timestamp
 
 

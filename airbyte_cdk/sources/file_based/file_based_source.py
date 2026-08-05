@@ -348,7 +348,7 @@ class FileBasedSource(ConcurrentSourceAdapter, ABC):
         cursor: Optional[AbstractFileBasedCursor],
         parsed_config: AbstractFileBasedSpec,
     ) -> AbstractFileBasedStream:
-        stream = DefaultFileBasedStream(
+        return DefaultFileBasedStream(
             config=stream_config,
             catalog_schema=self.stream_schemas.get(stream_config.name),
             stream_reader=self.stream_reader,
@@ -361,9 +361,6 @@ class FileBasedSource(ConcurrentSourceAdapter, ABC):
             use_file_transfer=use_file_transfer(parsed_config),
             preserve_directory_structure=preserve_directory_structure(parsed_config),
         )
-        if self._stream_state_emission_throttle_seconds is not None:
-            stream.state_emission_throttle_seconds = self._stream_state_emission_throttle_seconds
-        return stream
 
     def _ensure_permissions_reader_available(self) -> None:
         """
@@ -405,10 +402,27 @@ class FileBasedSource(ConcurrentSourceAdapter, ABC):
         Creates different streams depending on the type of the transfer mode selected
         """
         if use_permissions_transfer(parsed_config):
-            return self._make_permissions_stream(stream_config, cursor)
+            stream = self._make_permissions_stream(stream_config, cursor)
         # we should have a stream for File transfer mode to decouple from DefaultFileBasedStream
         else:
-            return self._make_default_stream(stream_config, cursor, parsed_config)
+            stream = self._make_default_stream(stream_config, cursor, parsed_config)
+        # Applied here rather than in the factories above: connectors routinely
+        # override `_make_default_stream` without calling `super()`, so applying
+        # it there would silently miss them. Nothing overrides this method.
+        return self._apply_state_emission_throttle(stream)
+
+    def _apply_state_emission_throttle(
+        self, stream: AbstractFileBasedStream
+    ) -> AbstractFileBasedStream:
+        """Propagate the source-level state-emission throttle onto a stream."""
+        throttle = self._stream_state_emission_throttle_seconds
+        if throttle is not None:
+            stream.state_emission_throttle_seconds = throttle
+            self.logger.info(
+                f"Stream {stream.name}: state emission throttled to at most one message "
+                f"per {throttle}s. The final state of the sync is always emitted."
+            )
+        return stream
 
     def _make_identities_stream(
         self,

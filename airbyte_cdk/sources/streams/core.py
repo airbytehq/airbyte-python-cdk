@@ -131,6 +131,13 @@ class Stream(ABC):
     # very many slices with growing state payloads (e.g. file-based sources
     # carrying a history dict that grows with each file synced) can set this
     # to keep the platform/orchestrator state buffer bounded.
+    #
+    # A plain attribute rather than a property (unlike `state_checkpoint_interval`)
+    # so a source can set it per instance on an already-constructed stream.
+    #
+    # Out of scope: the record-count checkpoints driven by
+    # `state_checkpoint_interval` are not throttled and do not reset the window.
+    # A stream setting both knobs can still emit more often than this allows.
     state_emission_throttle_seconds: Optional[float] = None
 
     # Use self.logger in subclasses to log any messages
@@ -197,12 +204,13 @@ class Stream(ABC):
 
         # State-emission throttle bookkeeping. Active only when the stream sets
         # `state_emission_throttle_seconds`; default behavior is preserved.
-        # `None` means nothing has been emitted yet, so the first per-slice
-        # checkpoint always fires regardless of the clock's absolute value.
+        # `last_state_emit_at is None` means nothing has been emitted yet, so the
+        # first per-slice checkpoint always fires regardless of the clock's
+        # absolute value. `pending_checkpoint` holds the most recent suppressed
+        # checkpoint, and doubles as the "we owe a final emit" flag.
         throttle_seconds = self.state_emission_throttle_seconds
         last_state_emit_at: Optional[float] = None
-        last_observed_checkpoint: Optional[Mapping[str, Any]] = None
-        throttled_pending_emit = False
+        pending_checkpoint: Optional[Mapping[str, Any]] = None
 
         while next_slice is not None:
             if slice_logger.should_log_slice_message(logger):
@@ -268,13 +276,15 @@ class Stream(ABC):
                         last_state_emit_at is not None
                         and now - last_state_emit_at < throttle_seconds
                     ):
-                        # Suppress this per-slice state emission; the final-
-                        # state emit below will catch up if no other emit
-                        # fires before the stream ends.
-                        throttled_pending_emit = True
+                        # Suppress this emission. Note this holds a reference,
+                        # not a snapshot: cursors that return their live state
+                        # dict (e.g. DefaultFileBasedCursor) keep mutating it,
+                        # so the forced final emit below serializes the state as
+                        # of end-of-sync. That is the behaviour we want here.
+                        pending_checkpoint = checkpoint_state
                     else:
                         last_state_emit_at = now
-                        throttled_pending_emit = False
+                        pending_checkpoint = None
                         yield self._checkpoint_state(checkpoint_state, state_manager=state_manager)
                 else:
                     yield self._checkpoint_state(checkpoint_state, state_manager=state_manager)
@@ -285,16 +295,11 @@ class Stream(ABC):
         if should_checkpoint and checkpoint is not None:
             airbyte_state_message = self._checkpoint_state(checkpoint, state_manager=state_manager)
             yield airbyte_state_message
-        elif (
-            should_checkpoint
-            and throttle_seconds is not None
-            and throttled_pending_emit
-            and last_observed_checkpoint is not None
-        ):
+        elif should_checkpoint and pending_checkpoint is not None:
             # Throttling suppressed the final per-slice emit. Force a final
             # state message so the platform/destination always sees the
             # latest stream state for this sync.
-            yield self._checkpoint_state(last_observed_checkpoint, state_manager=state_manager)
+            yield self._checkpoint_state(pending_checkpoint, state_manager=state_manager)
 
     def read_only_records(self, state: Optional[Mapping[str, Any]] = None) -> Iterable[StreamData]:
         """
