@@ -4565,6 +4565,11 @@ class ModelToComponentFactory:
         stream_name: str,
         **kwargs: Any,
     ) -> UnionPartitionRouter:
+        if not model.partition_routers:
+            raise ValueError(
+                f"UnionPartitionRouter for stream {stream_name} needs at least 1 child partition router"
+            )
+
         partition_routers = [
             self._create_component_from_model(
                 model=child,

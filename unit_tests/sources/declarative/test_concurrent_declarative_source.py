@@ -1539,7 +1539,8 @@ def test_read_resumes_from_legacy_state_with_union_partition_router():
     )
 
     # The migrated state keys are exactly `{partition_field: partition_value}`.
-    migrated_states = source.streams(_CONFIG)[2].cursor.state.get("states")
+    streams_by_name = {stream.name: stream for stream in source.streams(_CONFIG)}
+    migrated_states = streams_by_name["issues"].cursor.state.get("states")
     assert {json.dumps(state["partition"], sort_keys=True) for state in migrated_states} == {
         '{"repository": "org/repo-a"}',
         '{"repository": "org/repo-b"}',
