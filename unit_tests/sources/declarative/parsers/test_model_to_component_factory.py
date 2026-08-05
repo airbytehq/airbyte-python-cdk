@@ -4803,6 +4803,33 @@ def test_create_union_partition_router_with_interpolated_partition_field():
     assert partition_router.partition_field == "repository"
 
 
+def test_create_union_partition_router_with_single_child():
+    """The schema requires minItems: 2; the factory enforces the same bound for
+    construction paths that bypass JSON-schema validation."""
+    content = """
+    partition_router:
+      type: UnionPartitionRouter
+      partition_field: repository
+      partition_routers:
+        - type: ListPartitionRouter
+          cursor_field: repository
+          values: ["org/a"]
+    """
+    parsed_manifest = YamlDeclarativeSource._parse(content)
+    resolved_manifest = resolver.preprocess_manifest(parsed_manifest)
+    partition_router_manifest = transformer.propagate_types_and_parameters(
+        "", resolved_manifest["partition_router"], {}
+    )
+
+    with pytest.raises(ValueError, match="needs at least 2 child partition routers"):
+        factory.create_component(
+            model_type=UnionPartitionRouterModel,
+            component_definition=partition_router_manifest,
+            config=input_config,
+            stream_name="child_stream",
+        )
+
+
 @pytest.mark.parametrize(
     "child_router_manifest",
     [

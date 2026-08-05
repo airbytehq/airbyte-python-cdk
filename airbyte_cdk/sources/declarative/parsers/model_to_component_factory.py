@@ -4565,9 +4565,11 @@ class ModelToComponentFactory:
         stream_name: str,
         **kwargs: Any,
     ) -> UnionPartitionRouter:
-        if not model.partition_routers:
+        # The schema enforces minItems: 2 for manifests; this guard covers construction paths
+        # that bypass JSON-schema validation (the generated model carries no min_items constraint).
+        if len(model.partition_routers) < 2:
             raise ValueError(
-                f"UnionPartitionRouter for stream {stream_name} needs at least 1 child partition router"
+                f"UnionPartitionRouter for stream {stream_name} needs at least 2 child partition routers"
             )
 
         partition_routers = [
