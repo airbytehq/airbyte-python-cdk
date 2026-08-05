@@ -28,6 +28,30 @@ FULL_REFRESH_COMPLETE_STATE: Mapping[str, Any] = {"__ab_full_refresh_sync_comple
 DEFAULT_STATE_EMISSION_THROTTLE_SECONDS = 600.0
 
 
+def state_emission_is_due(
+    last_emitted_at: Optional[float],
+    now: float,
+    throttle_seconds: float = DEFAULT_STATE_EMISSION_THROTTLE_SECONDS,
+) -> bool:
+    """Whether a throttled state message may be emitted at `now`.
+
+    Shared by `ThrottledCheckpointReader` (legacy per-slice emission) and
+    `ConcurrentPerPartitionCursor` so the two cannot drift apart. They used to
+    share only the constant, which still left them disagreeing at the boundary.
+
+    "At most once every N seconds" makes the boundary inclusive: an emission
+    exactly N seconds after the previous one is due.
+
+    `last_emitted_at is None` means nothing has been emitted yet, so the first
+    emission is always due regardless of the clock's absolute value. A
+    `throttle_seconds <= 0` never suppresses, which degrades to the historical
+    unthrottled behaviour rather than erroring.
+    """
+    if last_emitted_at is None:
+        return True
+    return now - last_emitted_at >= throttle_seconds
+
+
 class CheckpointReader(ABC):
     """
     CheckpointReader manages how to iterate over a stream's partitions and serves as the bridge for interpreting the current state
@@ -408,10 +432,7 @@ class ThrottledCheckpointReader(CheckpointReader):
             return None
 
         now = self._clock()
-        if (
-            self._last_surfaced_at is not None
-            and now - self._last_surfaced_at < self._throttle_seconds
-        ):
+        if not state_emission_is_due(self._last_surfaced_at, now, self._throttle_seconds):
             self._pending = checkpoint
             return None
 

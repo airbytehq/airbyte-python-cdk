@@ -21,6 +21,7 @@ from airbyte_cdk.sources.streams.checkpoint import (
     CheckpointReader,
     IncrementalCheckpointReader,
     ThrottledCheckpointReader,
+    state_emission_is_due,
 )
 
 
@@ -165,3 +166,70 @@ def test_delegates_iteration_and_observation_to_the_inner_reader() -> None:
 def test_default_throttle_is_the_shared_constant() -> None:
     reader = ThrottledCheckpointReader(_RecordingReader(SLICES))
     assert reader._throttle_seconds == DEFAULT_STATE_EMISSION_THROTTLE_SECONDS
+
+
+@pytest.mark.parametrize(
+    "last_emitted_at, now, throttle, expected, reason",
+    [
+        pytest.param(None, 0.0, 600.0, True, "nothing emitted yet", id="cold_start"),
+        pytest.param(1000.0, 1599.9, 600.0, False, "inside the window", id="inside"),
+        pytest.param(
+            1000.0,
+            1600.0,
+            600.0,
+            True,
+            "'once every N seconds' makes the boundary inclusive",
+            id="exactly_on_boundary",
+        ),
+        pytest.param(1000.0, 1600.1, 600.0, True, "past the window", id="past"),
+        pytest.param(1000.0, 1000.0, 0.0, True, "zero never suppresses", id="zero_fails_open"),
+        pytest.param(1000.0, 1000.0, -5.0, True, "negative never suppresses", id="negative"),
+        # A cold start expressed as 0.0 rather than None: ConcurrentPerPartitionCursor
+        # initialises `_last_emission_time = 0.0` and compares against wall-clock
+        # `time.time()`, so the first emission must still be due.
+        pytest.param(0.0, 1.7e9, 600.0, True, "epoch clock vs 0.0 sentinel", id="epoch_cold_start"),
+    ],
+)
+def test_state_emission_is_due(last_emitted_at, now, throttle, expected, reason) -> None:
+    assert state_emission_is_due(last_emitted_at, now, throttle) is expected, reason
+
+
+def test_both_throttle_paths_agree_on_the_boundary(mocker) -> None:
+    """Regression guard for the two paths drifting apart.
+
+    They used to share only the constant: `ConcurrentPerPartitionCursor` suppressed
+    at `elapsed == throttle` (`<=`) while the reader emitted. Both now route through
+    `state_emission_is_due`, so this asserts they agree at the exact boundary.
+    """
+    from types import SimpleNamespace
+
+    from airbyte_cdk.sources.declarative.incremental import concurrent_partition_cursor
+    from airbyte_cdk.sources.declarative.incremental.concurrent_partition_cursor import (
+        ConcurrentPerPartitionCursor,
+    )
+
+    boundary = 1000.0 + DEFAULT_STATE_EMISSION_THROTTLE_SECONDS
+    mocker.patch.object(concurrent_partition_cursor.time, "time", return_value=boundary)
+
+    # Concurrent path: only touches `_last_emission_time`, so a stub suffices.
+    concurrent_due = (
+        ConcurrentPerPartitionCursor._throttle_state_message(
+            SimpleNamespace(_last_emission_time=1000.0)  # type: ignore[arg-type]
+        )
+        is not None
+    )
+
+    # Legacy per-slice path, driven at the same elapsed time.
+    reader = ThrottledCheckpointReader(
+        _RecordingReader(SLICES),
+        throttle_seconds=DEFAULT_STATE_EMISSION_THROTTLE_SECONDS,
+        clock=iter([1000.0, boundary]).__next__,
+    )
+    reader.next()
+    reader.observe({"cursor": "a"})
+    reader.get_checkpoint()  # cold start, surfaces at t=1000
+    reader.next()
+    reader.observe({"cursor": "b"})
+    legacy_due = reader.get_checkpoint() is not None  # at t=boundary
+
+    assert concurrent_due is legacy_due is True
