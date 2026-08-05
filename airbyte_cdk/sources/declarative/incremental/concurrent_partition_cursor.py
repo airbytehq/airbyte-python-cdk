@@ -30,6 +30,7 @@ from airbyte_cdk.sources.streams.concurrent.partitions.partition import Partitio
 from airbyte_cdk.sources.streams.concurrent.state_converters.abstract_stream_state_converter import (
     AbstractStreamStateConverter,
 )
+from airbyte_cdk.sources.streams.core import DEFAULT_STATE_EMISSION_THROTTLE_SECONDS
 from airbyte_cdk.sources.types import Record, StreamSlice, StreamState
 
 logger = logging.getLogger("airbyte")
@@ -285,10 +286,11 @@ class ConcurrentPerPartitionCursor(Cursor):
 
     def _throttle_state_message(self) -> Optional[float]:
         """
-        Throttles the state message emission to once every 600 seconds.
+        Throttles the state message emission to once every
+        DEFAULT_STATE_EMISSION_THROTTLE_SECONDS seconds.
         """
         current_time = time.time()
-        if current_time - self._last_emission_time <= 600:
+        if current_time - self._last_emission_time <= DEFAULT_STATE_EMISSION_THROTTLE_SECONDS:
             return None
         return current_time
 

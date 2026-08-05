@@ -48,7 +48,10 @@ from airbyte_cdk.sources.file_based.stream import AbstractFileBasedStream
 from airbyte_cdk.sources.file_based.stream.cursor import AbstractFileBasedCursor
 from airbyte_cdk.sources.file_based.types import StreamSlice
 from airbyte_cdk.sources.streams import IncrementalMixin
-from airbyte_cdk.sources.streams.core import JsonSchema
+from airbyte_cdk.sources.streams.core import (
+    DEFAULT_STATE_EMISSION_THROTTLE_SECONDS,
+    JsonSchema,
+)
 from airbyte_cdk.sources.utils.record_helper import stream_data_to_airbyte_message
 from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 
@@ -70,6 +73,17 @@ class DefaultFileBasedStream(AbstractFileBasedStream, IncrementalMixin):
     use_file_transfer = False
     preserve_directory_structure = True
     _file_transfer = FileTransfer()
+
+    # This stream's state carries a history dict that grows with every file
+    # synced, so the legacy emit-after-every-slice cadence puts an unbounded
+    # amount of un-ACKed state into the orchestrator buffer over a large sync.
+    # Set on the class so it reaches subclasses by inheritance: connectors such
+    # as source-s3 and source-gcs build their own `DefaultFileBasedStream`
+    # subclass in an overridden `_make_default_stream()` that never calls
+    # `super()`, so anything injected by the source would miss them.
+    # The concurrent path is unaffected — `FileBasedStreamFacade` overrides
+    # `read()` and never reaches `Stream.read()`.
+    state_emission_throttle_seconds = DEFAULT_STATE_EMISSION_THROTTLE_SECONDS
 
     def __init__(self, **kwargs: Any):
         if self.FILE_TRANSFER_KW in kwargs:

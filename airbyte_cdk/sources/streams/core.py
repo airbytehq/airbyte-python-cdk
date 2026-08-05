@@ -48,6 +48,16 @@ JsonSchema = Mapping[str, Any]
 
 NO_CURSOR_STATE_KEY = "__ab_no_cursor_state_message"
 
+# How often a stream may emit a per-slice state message, in seconds.
+#
+# Not derived from any platform limit: the source heartbeat the platform
+# enforces is `heartbeat-max-seconds-between-messages` (10800s / 3h), and it is
+# reset by RECORD messages as well as STATE, so throttling state cannot stall a
+# sync that is still producing records. 600s is the cadence already used by
+# `ConcurrentPerPartitionCursor`, reused here so both cursor paths behave the
+# same. Shared so the two stay in sync if the number is ever revisited.
+DEFAULT_STATE_EMISSION_THROTTLE_SECONDS = 600.0
+
 
 def package_name_from_class(cls: object) -> str:
     """Find the package name given a class name"""
@@ -126,19 +136,28 @@ class Stream(ABC):
 
     # If set, per-slice state messages are emitted at most once per this many
     # seconds during a sync. The first per-slice emission and the final emission
-    # at the end of the stream always fire. Default `None` keeps the historical
-    # behaviour: emit a state message after every slice. Streams that produce
-    # very many slices with growing state payloads (e.g. file-based sources
-    # carrying a history dict that grows with each file synced) can set this
-    # to keep the platform/orchestrator state buffer bounded.
+    # at the end of the stream always fire, so the destination always sees the
+    # latest cursor.
+    #
+    # `None` here means every slice emits, which is the historical behaviour and
+    # remains the default for streams in general. File-based streams override
+    # this with `DEFAULT_STATE_EMISSION_THROTTLE_SECONDS`: their state payload
+    # carries a history dict that grows with every file synced, so emitting per
+    # slice puts GBs of un-ACKed state into the orchestrator buffer over a large
+    # sync (oncall #12663, #13210).
+    #
+    # This is deliberately not a per-connector tunable. Connectors have no
+    # principled basis for choosing a different number, so the value lives in
+    # one shared constant rather than being set at each call site.
     #
     # A plain attribute rather than a property (unlike `state_checkpoint_interval`)
-    # so a source can set it per instance on an already-constructed stream.
+    # so that subclasses can override it with a plain assignment and tests can
+    # set a short window on an already-constructed stream.
     #
-    # A value <= 0 degrades to the unthrottled default rather than erroring: the
-    # window check is `elapsed < throttle`, which is never true for 0 or a
-    # negative value, so every slice emits. Failing open to the historical
-    # behaviour is the safe direction for a code-level knob.
+    # A value <= 0 degrades to unthrottled rather than erroring: the window check
+    # is `elapsed < throttle`, never true for 0 or a negative value, so every
+    # slice emits. Failing open to the historical behaviour is the safe
+    # direction.
     #
     # Out of scope: the record-count checkpoints driven by
     # `state_checkpoint_interval` are not throttled and do not reset the window.
