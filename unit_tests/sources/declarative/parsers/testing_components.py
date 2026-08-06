@@ -114,3 +114,10 @@ class TestingRequester(HttpRequester):
             parameters=parameters or {},
         )
         super().__post_init__(parameters)
+
+
+@dataclass
+class TestingRequesterWithDefaultBudget(TestingRequester):
+    def __post_init__(self, parameters: Mapping[str, Any]) -> None:
+        self.api_budget = None
+        super().__post_init__(parameters)

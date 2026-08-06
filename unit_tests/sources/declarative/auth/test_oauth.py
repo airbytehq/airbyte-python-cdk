@@ -171,6 +171,53 @@ class TestOauth2Authenticator:
         }
         assert body == expected
 
+    def test_send_refresh_request_as_query_params(self):
+        """When `send_refresh_request_as_query_params=True` on the declarative
+        OAuth authenticator, the standard refresh args are returned by
+        `build_refresh_request_query_params()` and `build_refresh_request_body()`
+        returns an empty body.
+
+        This matches the shape required by OAuth providers like Gong that
+        document their refresh endpoint with refresh args on the URL query
+        string instead of the form body.
+        """
+        oauth = DeclarativeOauth2Authenticator(
+            token_refresh_endpoint="{{ config['refresh_endpoint'] }}",
+            client_id="{{ config['client_id'] }}",
+            client_secret="{{ config['client_secret'] }}",
+            refresh_token="{{ parameters['refresh_token'] }}",
+            config=config,
+            token_expiry_date="{{ config['token_expiry_date'] }}",
+            refresh_request_headers={
+                "Authorization": "Basic {{ [config['client_id'], config['client_secret']] | join(':') | base64encode }}",
+            },
+            send_refresh_request_as_query_params=True,
+            parameters=parameters,
+            grant_type="refresh_token",
+        )
+        params = oauth.build_refresh_request_query_params()
+        assert params == {
+            "grant_type": "refresh_token",
+            "refresh_token": "some_refresh_token",
+        }
+        body = oauth.build_refresh_request_body()
+        assert body == {}
+
+    def test_send_refresh_request_as_query_params_default_false(self):
+        """When `send_refresh_request_as_query_params` is not set, no query
+        params are sent on the refresh request.
+        """
+        oauth = DeclarativeOauth2Authenticator(
+            token_refresh_endpoint="{{ config['refresh_endpoint'] }}",
+            client_id="{{ config['client_id'] }}",
+            client_secret="{{ config['client_secret'] }}",
+            refresh_token="{{ parameters['refresh_token'] }}",
+            config=config,
+            token_expiry_date="{{ config['token_expiry_date'] }}",
+            parameters=parameters,
+        )
+        assert oauth.build_refresh_request_query_params() is None
+
     def test_refresh_with_encode_config_params(self):
         oauth = DeclarativeOauth2Authenticator(
             token_refresh_endpoint="{{ config['refresh_endpoint'] }}",
@@ -641,7 +688,7 @@ class TestOauth2Authenticator:
             assert e.value.errno == 400
 
 
-def mock_request(method, url, data, headers):
+def mock_request(method, url, data, headers, **kwargs):
     if url == "https://refresh_endpoint.com":
         return resp
     raise Exception(

@@ -314,13 +314,13 @@ class ManifestDeclarativeSource(DeclarativeSource):
             }
         )
 
-        stream_configs = (
-            self._stream_configs(self._source_config, config=config) + self.dynamic_streams
-        )
-
         api_budget_model = self._source_config.get("api_budget")
         if api_budget_model:
             self._constructor.set_api_budget(api_budget_model, config)
+
+        stream_configs = (
+            self._stream_configs(self._source_config, config=config) + self.dynamic_streams
+        )
 
         source_streams = [
             self._constructor.create_component(

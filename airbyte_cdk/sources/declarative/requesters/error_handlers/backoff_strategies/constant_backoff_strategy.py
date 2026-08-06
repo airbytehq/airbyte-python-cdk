@@ -2,8 +2,9 @@
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
 
+import random
 from dataclasses import InitVar, dataclass
-from typing import Any, Mapping, Optional, Union
+from typing import Any, Mapping, Optional, Union, cast
 
 import requests
 
@@ -24,6 +25,7 @@ class ConstantBackoffStrategy(BackoffStrategy):
     backoff_time_in_seconds: Union[float, InterpolatedString, str]
     parameters: InitVar[Mapping[str, Any]]
     config: Config
+    jitter_range_in_seconds: Optional[float] = None
 
     def __post_init__(self, parameters: Mapping[str, Any]) -> None:
         if not isinstance(self.backoff_time_in_seconds, InterpolatedString):
@@ -42,4 +44,10 @@ class ConstantBackoffStrategy(BackoffStrategy):
         response_or_exception: Optional[Union[requests.Response, requests.RequestException]],
         attempt_count: int,
     ) -> Optional[float]:
-        return self.backoff_time_in_seconds.eval(self.config)  # type: ignore # backoff_time_in_seconds is always cast to an interpolated string
+        backoff_time = float(
+            cast(InterpolatedString, self.backoff_time_in_seconds).eval(self.config)
+        )
+        if self.jitter_range_in_seconds is None:
+            return backoff_time
+
+        return random.uniform(backoff_time, backoff_time + (self.jitter_range_in_seconds * 2))

@@ -90,6 +90,15 @@ from airbyte_cdk.sources.declarative.models import (
     SubstreamPartitionRouter as SubstreamPartitionRouterModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    ConstantBackoffStrategy as ConstantBackoffStrategyModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    CustomRequester as CustomRequesterModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    ExponentialBackoffStrategy as ExponentialBackoffStrategyModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     OffsetIncrement as OffsetIncrementModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
@@ -97,6 +106,11 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     SelectiveAuthenticator,
+)
+from airbyte_cdk.sources.declarative.parsers.custom_code_compiler import (
+    ENV_VAR_ALLOW_CUSTOM_CODE,
+    INJECTED_MANIFEST,
+    AirbyteCustomCodeNotPermittedError,
 )
 from airbyte_cdk.sources.declarative.parsers.manifest_component_transformer import (
     ManifestComponentTransformer,
@@ -173,7 +187,7 @@ from airbyte_cdk.sources.declarative.transformations.keys_replace_transformation
 )
 from airbyte_cdk.sources.declarative.yaml_declarative_source import YamlDeclarativeSource
 from airbyte_cdk.sources.message.repository import StateFilteringMessageRepository
-from airbyte_cdk.sources.streams.call_rate import MovingWindowCallRatePolicy
+from airbyte_cdk.sources.streams.call_rate import HttpAPIBudget, MovingWindowCallRatePolicy
 from airbyte_cdk.sources.streams.concurrent.clamping import (
     ClampingEndProvider,
     DayClampingStrategy,
@@ -1751,6 +1765,123 @@ requester:
     )
 
 
+@pytest.mark.parametrize(
+    "backoff_strategy_yaml, expected_backoff_strategy_type, expected_jitter_range",
+    [
+        pytest.param(
+            """
+  error_handler:
+    backoff_strategies:
+      - type: "ConstantBackoffStrategy"
+        backoff_time_in_seconds: 60
+        jitter_range_in_seconds: 7
+            """,
+            ConstantBackoffStrategy,
+            7,
+            id="constant_backoff_strategy",
+        ),
+        pytest.param(
+            """
+  error_handler:
+    backoff_strategies:
+      - type: "ExponentialBackoffStrategy"
+        factor: 5
+        jitter_range_in_seconds: 15
+            """,
+            ExponentialBackoffStrategy,
+            15,
+            id="exponential_backoff_strategy",
+        ),
+    ],
+)
+def test_create_requester_with_backoff_jitter(
+    backoff_strategy_yaml, expected_backoff_strategy_type, expected_jitter_range
+):
+    content = f"""
+requester:
+  type: HttpRequester
+  path: "/v3/marketing/lists"
+  url_base: "https://api.sendgrid.com"
+  {backoff_strategy_yaml}
+    """
+    parsed_manifest = YamlDeclarativeSource._parse(content)
+    resolved_manifest = resolver.preprocess_manifest(parsed_manifest)
+    requester_manifest = transformer.propagate_types_and_parameters(
+        "", resolved_manifest["requester"], {}
+    )
+
+    requester = factory.create_component(
+        model_type=HttpRequesterModel,
+        component_definition=requester_manifest,
+        config=input_config,
+        name="name",
+        decoder=None,
+    )
+
+    assert isinstance(requester.error_handler, DefaultErrorHandler)
+    assert len(requester.error_handler.backoff_strategies) == 1
+    backoff_strategy = requester.error_handler.backoff_strategies[0]
+    assert isinstance(backoff_strategy, expected_backoff_strategy_type)
+    assert backoff_strategy.jitter_range_in_seconds == expected_jitter_range
+
+
+@pytest.mark.parametrize(
+    "backoff_strategy_model, backoff_strategy_arguments",
+    [
+        pytest.param(
+            ConstantBackoffStrategyModel,
+            {
+                "type": "ConstantBackoffStrategy",
+                "backoff_time_in_seconds": 60,
+            },
+            id="constant_backoff_strategy",
+        ),
+        pytest.param(
+            ExponentialBackoffStrategyModel,
+            {
+                "type": "ExponentialBackoffStrategy",
+                "factor": 5,
+            },
+            id="exponential_backoff_strategy",
+        ),
+    ],
+)
+def test_backoff_jitter_schema_validation(backoff_strategy_model, backoff_strategy_arguments):
+    backoff_strategy_model(**backoff_strategy_arguments, jitter_range_in_seconds=0)
+
+    with pytest.raises(ValidationError, match="jitter_range_in_seconds"):
+        backoff_strategy_model(
+            **backoff_strategy_arguments,
+            jitter_range_in_seconds="{{ config['backoff_jitter'] }}",
+        )
+
+    with pytest.raises(ValidationError, match="jitter_range_in_seconds"):
+        backoff_strategy_model(**backoff_strategy_arguments, jitter_range_in_seconds=-1)
+
+
+@pytest.mark.parametrize(
+    "backoff_strategy_model",
+    [
+        pytest.param(
+            ConstantBackoffStrategyModel(
+                type="ConstantBackoffStrategy", backoff_time_in_seconds=60
+            ),
+            id="constant_backoff_strategy",
+        ),
+        pytest.param(
+            ExponentialBackoffStrategyModel(type="ExponentialBackoffStrategy", factor=5),
+            id="exponential_backoff_strategy",
+        ),
+    ],
+)
+def test_create_backoff_strategy_with_negative_jitter_raises_error(backoff_strategy_model):
+    # Verify factory validation catches negative jitter even if Pydantic validation is bypassed.
+    backoff_strategy_model.__dict__["jitter_range_in_seconds"] = -1
+
+    with pytest.raises(ValueError, match="jitter_range_in_seconds"):
+        factory._create_component_from_model(backoff_strategy_model, config=input_config)
+
+
 def test_create_request_with_legacy_session_authenticator():
     content = """
 requester:
@@ -2381,6 +2512,98 @@ def test_create_custom_components(manifest, field_name, expected_value, expected
 
         assert isinstance(getattr(custom_component, field_name), type(expected_value))
         assert getattr(custom_component, field_name) == expected_value
+
+
+@pytest.mark.parametrize(
+    "class_name",
+    [
+        pytest.param(
+            "unit_tests.sources.declarative.parsers.testing_components.TestingSomeComponent",
+            id="bundled_custom_component_class",
+        ),
+        pytest.param(
+            "os.getcwd",
+            id="arbitrary_importable_callable",
+        ),
+    ],
+)
+def test_create_custom_component_requires_custom_code_enabled(class_name, monkeypatch):
+    """A `Custom*` component declared by a config-injected manifest must not be instantiated
+    unless custom code execution is explicitly enabled via `AIRBYTE_ENABLE_UNSAFE_CODE`.
+
+    A manifest provided through the config is untrusted input, and resolving its
+    `class_name` executes arbitrary importable code, so it must honor the same gate as
+    injected `components.py` code. The gate must fire regardless of whether `class_name`
+    points at a bundled custom component or at an arbitrary importable callable, and it
+    must fire before the referenced module is imported.
+    """
+    monkeypatch.delenv(ENV_VAR_ALLOW_CUSTOM_CODE, raising=False)
+
+    def _fail_if_resolved(*args, **kwargs):
+        raise AssertionError(
+            "`class_name` must not be resolved or imported when custom code is disabled"
+        )
+
+    monkeypatch.setattr(factory, "_get_class_from_fully_qualified_class_name", _fail_if_resolved)
+
+    manifest = {
+        "type": "CustomErrorHandler",
+        "class_name": class_name,
+    }
+
+    with pytest.raises(AirbyteCustomCodeNotPermittedError):
+        factory.create_component(
+            CustomErrorHandlerModel,
+            manifest,
+            {**input_config, INJECTED_MANIFEST: {"type": "DeclarativeSource"}},
+        )
+
+
+def test_create_custom_component_permitted_for_bundled_manifest(monkeypatch):
+    """A manifest bundled in a connector image may use its bundled custom components.
+
+    Published manifest-only connectors ship their own `manifest.yaml` and `components.py`
+    inside a trusted image, so their `Custom*` components must keep working in environments
+    that do not set `AIRBYTE_ENABLE_UNSAFE_CODE`, such as Airbyte Cloud.
+    """
+    monkeypatch.delenv(ENV_VAR_ALLOW_CUSTOM_CODE, raising=False)
+
+    manifest = {
+        "type": "CustomErrorHandler",
+        "class_name": "unit_tests.sources.declarative.parsers.testing_components.TestingSomeComponent",
+    }
+
+    component = factory.create_component(CustomErrorHandlerModel, manifest, input_config)
+
+    assert isinstance(component, TestingSomeComponent)
+
+
+def test_create_custom_component_requires_custom_code_enabled_when_untrusted(monkeypatch):
+    """A caller-supplied manifest must honor the gate even when it never passes through the config.
+
+    The manifest server receives the manifest as a request payload rather than through the
+    config, so its untrusted provenance is signalled by `custom_components_trusted=False`.
+    """
+    monkeypatch.delenv(ENV_VAR_ALLOW_CUSTOM_CODE, raising=False)
+
+    untrusted_factory = ModelToComponentFactory(custom_components_trusted=False)
+
+    def _fail_if_resolved(*args, **kwargs):
+        raise AssertionError(
+            "`class_name` must not be resolved or imported when custom code is disabled"
+        )
+
+    monkeypatch.setattr(
+        untrusted_factory, "_get_class_from_fully_qualified_class_name", _fail_if_resolved
+    )
+
+    manifest = {
+        "type": "CustomErrorHandler",
+        "class_name": "unit_tests.sources.declarative.parsers.testing_components.TestingSomeComponent",
+    }
+
+    with pytest.raises(AirbyteCustomCodeNotPermittedError):
+        untrusted_factory.create_component(CustomErrorHandlerModel, manifest, input_config)
 
 
 def test_custom_components_do_not_contain_extra_fields():
@@ -4239,6 +4462,90 @@ def test_api_budget():
     assert policy._bucket.rates[0].interval == 100  # 100 ms
 
 
+def test_api_budget_passed_to_custom_requester():
+    manifest = {
+        "type": "DeclarativeSource",
+        "api_budget": {
+            "type": "HTTPAPIBudget",
+            "policies": [
+                {
+                    "type": "MovingWindowCallRatePolicy",
+                    "rates": [
+                        {
+                            "limit": 3,
+                            "interval": "PT0.1S",
+                        }
+                    ],
+                    "matchers": [],
+                }
+            ],
+        },
+        "my_requester": {
+            "type": "CustomRequester",
+            "class_name": "unit_tests.sources.declarative.parsers.testing_components.TestingRequester",
+            "path": "/v3/marketing/lists",
+            "url_base": "https://api.sendgrid.com",
+            "http_method": "GET",
+        },
+    }
+
+    factory = ModelToComponentFactory()
+    factory.set_api_budget(manifest["api_budget"], input_config)
+
+    custom_requester = factory.create_component(
+        model_type=CustomRequesterModel,
+        component_definition=manifest["my_requester"],
+        config=input_config,
+        name="lists_stream",
+        decoder=None,
+    )
+
+    assert isinstance(custom_requester.api_budget, HttpAPIBudget)
+    assert custom_requester._http_client._api_budget is custom_requester.api_budget
+    assert len(custom_requester._http_client._api_budget._policies) == 1
+
+
+def test_api_budget_does_not_override_custom_requester_default_value():
+    manifest = {
+        "type": "DeclarativeSource",
+        "api_budget": {
+            "type": "HTTPAPIBudget",
+            "policies": [
+                {
+                    "type": "MovingWindowCallRatePolicy",
+                    "rates": [
+                        {
+                            "limit": 3,
+                            "interval": "PT0.1S",
+                        }
+                    ],
+                    "matchers": [],
+                }
+            ],
+        },
+        "my_requester": {
+            "type": "CustomRequester",
+            "class_name": "unit_tests.sources.declarative.parsers.testing_components.TestingRequesterWithDefaultBudget",
+            "path": "/v3/marketing/lists",
+            "url_base": "https://api.sendgrid.com",
+            "http_method": "GET",
+        },
+    }
+
+    factory = ModelToComponentFactory()
+    factory.set_api_budget(manifest["api_budget"], input_config)
+
+    custom_requester = factory.create_component(
+        model_type=CustomRequesterModel,
+        component_definition=manifest["my_requester"],
+        config=input_config,
+        name="lists_stream",
+        decoder=None,
+    )
+
+    assert custom_requester.api_budget is None
+
+
 def test_api_budget_fixed_window_policy():
     manifest = {
         "type": "DeclarativeSource",
@@ -5351,3 +5658,23 @@ def get_retriever(stream: Union[DeclarativeStream, DefaultStream]):
         if isinstance(stream, DeclarativeStream)
         else stream._stream_partition_generator._partition_factory._retriever
     )
+
+
+def test_create_response_to_file_extractor_preserve_na_values():
+    from airbyte_cdk.sources.declarative.extractors import ResponseToFileExtractor
+    from airbyte_cdk.sources.declarative.models import (
+        ResponseToFileExtractor as ResponseToFileExtractorModel,
+    )
+
+    factory = ModelToComponentFactory()
+
+    default_component = factory.create_response_to_file_extractor(
+        ResponseToFileExtractorModel(type="ResponseToFileExtractor")
+    )
+    assert isinstance(default_component, ResponseToFileExtractor)
+    assert default_component.preserve_na_values is False
+
+    enabled_component = factory.create_response_to_file_extractor(
+        ResponseToFileExtractorModel(type="ResponseToFileExtractor", preserve_na_values=True)
+    )
+    assert enabled_component.preserve_na_values is True

@@ -312,11 +312,191 @@ definitions:
             - "$ref": "#/definitions/LegacySessionTokenAuthenticator"
             - "$ref": "#/definitions/CustomAuthenticator"
             - "$ref": "#/definitions/NoAuth"
+            - "$ref": "#/definitions/RateLimitedMultipleTokenAuthenticator"
         examples:
           - authenticators:
               token: "#/definitions/ApiKeyAuthenticator"
               oauth: "#/definitions/OAuthAuthenticator"
               jwt: "#/definitions/JwtAuthenticator"
+      $parameters:
+        type: object
+        additionalProperties: true
+  RateLimitedMultipleTokenAuthenticator:
+    title: Rate Limited Multiple Token Authenticator
+    description: >
+      Authenticator that rotates between multiple interchangeable tokens, tracking each token's remaining
+      call quota. Outgoing requests are classified into quota pools using request matchers. When the active
+      token's quota for the matched pool is exhausted, the authenticator rotates to the next token. When all
+      tokens are exhausted, it waits until the earliest quota reset (bounded by `max_wait_time`) before
+      resuming. Quota counters are seeded per token from `quota_status_source` at startup and refreshed after
+      an exhaustion wait.
+    type: object
+    required:
+      - type
+      - tokens
+      - quota_status_source
+      - quotas
+    properties:
+      type:
+        type: string
+        enum: [RateLimitedMultipleTokenAuthenticator]
+      tokens:
+        title: Tokens
+        description: The tokens to rotate between. Either an explicit list of tokens, or a single string containing multiple tokens separated by `token_delimiter`.
+        anyOf:
+          - type: string
+          - type: array
+            minItems: 1
+            items:
+              type: string
+        interpolation_context:
+          - config
+        examples:
+          - "{{ config['credentials']['personal_access_token'] }}"
+          - ["{{ config['token_1'] }}", "{{ config['token_2'] }}"]
+      token_delimiter:
+        title: Token Delimiter
+        description: Delimiter used to split a single token string into multiple tokens.
+        type: string
+        default: ","
+      auth_method:
+        title: Auth Method
+        description: "The prefix to prepend to the token in the auth header value (e.g. `Authorization: Bearer <token>`)."
+        type: string
+        default: "Bearer"
+        examples:
+          - "Bearer"
+          - "token"
+      header:
+        title: Header Name
+        description: The name of the HTTP header in which to inject the token.
+        type: string
+        default: "Authorization"
+      quota_status_source:
+        title: Quota Status Source
+        description: Defines where to fetch each token's current quota status. Called once per token at startup and after an exhaustion wait, not per data request.
+        "$ref": "#/definitions/QuotaStatusSource"
+      quotas:
+        title: Quota Pools
+        description: >
+          Quota pools tracked per token. Each outgoing request is classified into the first pool whose
+          matchers match the request; a pool with no matchers acts as the default. The `remaining_path` and
+          `reset_path` locate each pool's values in the quota status response.
+        type: array
+        minItems: 1
+        items:
+          "$ref": "#/definitions/TokenQuota"
+      max_wait_time:
+        title: Maximum Wait Time
+        description: ISO 8601 duration. When all tokens are exhausted, the maximum time to wait for a quota reset before raising a transient error.
+        type: string
+        default: "PT2H"
+        interpolation_context:
+          - config
+        examples:
+          - "PT2H"
+          - "PT30M"
+          - "PT{{ config.get('max_waiting_time', 120) }}M"
+      budget_reserve_fraction:
+        title: Budget Reserve Fraction
+        description: Fraction of each token's quota to keep in reserve. When every token drops below its reserve, requests are proactively throttled to spread the remaining calls until the quota reset. Set to 0 (along with `budget_min_reserve`) to disable throttling.
+        type: number
+        default: 0.1
+      budget_min_reserve:
+        title: Budget Minimum Reserve
+        description: Minimum number of calls to keep in reserve per token before proactive throttling kicks in.
+        type: integer
+        default: 50
+      $parameters:
+        type: object
+        additionalProperties: true
+  QuotaStatusSource:
+    title: Quota Status Source
+    description: Describes the endpoint from which a token's current rate limit quota status can be fetched.
+    type: object
+    required:
+      - type
+      - url
+    properties:
+      type:
+        type: string
+        enum: [QuotaStatusSource]
+      url:
+        title: URL
+        description: The full URL of the quota status endpoint.
+        type: string
+        interpolation_context:
+          - config
+        examples:
+          - "https://api.github.com/rate_limit"
+          - "{{ config.get('api_url', 'https://api.github.com') }}/rate_limit"
+      http_method:
+        title: HTTP Method
+        description: The HTTP method used to fetch the quota status.
+        type: string
+        enum:
+          - GET
+          - POST
+        default: GET
+      request_headers:
+        title: Request Headers
+        description: Additional headers to send with the quota status request.
+        type: object
+        additionalProperties:
+          type: string
+      $parameters:
+        type: object
+        additionalProperties: true
+  TokenQuota:
+    title: Token Quota
+    description: A named per-token quota pool with matchers that classify outgoing requests into the pool.
+    type: object
+    required:
+      - type
+      - name
+      - remaining_path
+      - reset_path
+    properties:
+      type:
+        type: string
+        enum: [TokenQuota]
+      name:
+        title: Name
+        description: Name of the quota pool.
+        type: string
+        examples:
+          - "rest"
+          - "graphql"
+      remaining_path:
+        title: Remaining Path
+        description: Path to the remaining call count for this pool in the quota status response.
+        type: array
+        items:
+          type: string
+        examples:
+          - ["resources", "core", "remaining"]
+      reset_path:
+        title: Reset Path
+        description: Path to the quota reset timestamp for this pool in the quota status response.
+        type: array
+        items:
+          type: string
+        examples:
+          - ["resources", "core", "reset"]
+      limit_path:
+        title: Limit Path
+        description: Optional path to the total call limit for this pool in the quota status response. Used to compute the proactive throttling reserve; falls back to the initially observed remaining count when not set. Setting it on every pool is recommended so the reserve does not shrink when a sync starts with the pool already partially consumed.
+        type: array
+        items:
+          type: string
+        examples:
+          - ["resources", "core", "limit"]
+      matchers:
+        title: Matchers
+        description: List of matchers that classify outgoing requests into this quota pool. The first pool whose matcher matches a request is used. A pool with no matchers acts as the default pool.
+        type: array
+        items:
+          "$ref": "#/definitions/HttpRequestRegexMatcher"
       $parameters:
         type: object
         additionalProperties: true
@@ -482,6 +662,7 @@ definitions:
         anyOf:
           - type: number
             title: Number of seconds
+            minimum: 0
           - type: string
             title: Interpolated Value
         interpolation_context:
@@ -490,6 +671,13 @@ definitions:
           - 30
           - 30.5
           - "{{ config['backoff_time'] }}"
+      jitter_range_in_seconds:
+        title: Jitter Range
+        description: Optional additive jitter range in seconds. When set, the backoff time is uniformly distributed between backoff_time_in_seconds and backoff_time_in_seconds + (jitter_range_in_seconds * 2), so jitter only increases the base backoff.
+        type: number
+        minimum: 0
+        examples:
+          - 15
       $parameters:
         type: object
         additionalProperties: true
@@ -1426,6 +1614,13 @@ definitions:
         examples:
           - Authorization: "<AUTH_TOKEN>"
             Content-Type: "application/x-www-form-urlencoded"
+      send_refresh_request_as_query_params:
+        title: Send Refresh Request As Query Params
+        description: When set to true, the standard OAuth refresh args (`grant_type`, `refresh_token`, client credentials when not in an `Authorization` header, scopes, plus any `refresh_request_body` extras) are sent on the URL query string and the request body is emitted empty. Use this for OAuth providers like Gong that document their refresh endpoint with refresh args on the URL query string.
+        type: boolean
+        default: false
+        examples:
+          - true
       scopes:
         title: Scopes
         description: List of scopes that should be granted to the access token.
@@ -1967,6 +2162,11 @@ definitions:
       type:
         type: string
         enum: [ResponseToFileExtractor]
+      preserve_na_values:
+        title: Preserve NA Values
+        description: When enabled, string values such as "NA", "N/A", "NULL", "None" and "NaN" are kept as-is instead of being interpreted as missing and converted to null. Empty cells are still treated as null. Defaults to false to preserve historical behavior.
+        type: boolean
+        default: false
       $parameters:
         type: object
         additionalProperties: true
@@ -2033,6 +2233,13 @@ definitions:
           - 5
           - 5.5
           - "10"
+      jitter_range_in_seconds:
+        title: Jitter Range
+        description: Optional additive jitter range in seconds. When set, the backoff time is uniformly distributed between computed_backoff and computed_backoff + (jitter_range_in_seconds * 2), so jitter only increases the computed backoff.
+        type: number
+        minimum: 0
+        examples:
+          - 2
       $parameters:
         type: object
         additionalProperties: true
@@ -2255,6 +2462,7 @@ definitions:
           - "$ref": "#/definitions/CustomAuthenticator"
           - "$ref": "#/definitions/NoAuth"
           - "$ref": "#/definitions/LegacySessionTokenAuthenticator"
+          - "$ref": "#/definitions/RateLimitedMultipleTokenAuthenticator"
       fetch_properties_from_endpoint:
         deprecated: true
         deprecation_message: "Use `query_properties` field instead."
@@ -2628,6 +2836,40 @@ definitions:
       type:
         type: string
         enum: [JsonDecoder]
+  JsonItemsDecoder:
+    title: JSON Items (Streaming)
+    description: >-
+      Select 'JSON Items (Streaming)' to stream-decode a single JSON document
+      by yielding each element of a nested array, one at a time. Use this for
+      very large single-document JSON responses (e.g. a wrapping object
+      containing a multi-GB array) where buffering the whole document into
+      memory would cause out-of-memory errors. Powered by the `ijson`
+      streaming parser.
+    type: object
+    required:
+      - type
+      - items_path
+    properties:
+      type:
+        type: string
+        enum: [JsonItemsDecoder]
+      items_path:
+        title: Items Path
+        description: >-
+          Dot-separated path to the JSON array whose elements should be
+          yielded as records. Uses `ijson` path syntax (e.g. `data.users`),
+          not JSONPath syntax — do not include leading `$.` or trailing
+          `[*]`.
+        type: string
+        examples:
+          - dataByDepartmentAndSearchTerm
+          - dataByAsin
+          - data.users
+      encoding:
+        title: Encoding
+        description: Text encoding used to decode the streamed bytes before JSON parsing.
+        type: string
+        default: utf-8
   JsonlDecoder:
     title: JSON Lines
     description: Select 'JSON Lines' if the response consists of JSON objects separated by new lines ('\n') in JSONL format.
@@ -2869,6 +3111,7 @@ definitions:
           - "$ref": "#/definitions/CsvDecoder"
           - "$ref": "#/definitions/GzipDecoder"
           - "$ref": "#/definitions/JsonDecoder"
+          - "$ref": "#/definitions/JsonItemsDecoder"
           - "$ref": "#/definitions/JsonlDecoder"
   ListPartitionRouter:
     title: List Partition Router
@@ -3909,6 +4152,7 @@ definitions:
         description: Component decoding the response so records can be extracted.
         anyOf:
           - "$ref": "#/definitions/JsonDecoder"
+          - "$ref": "#/definitions/JsonItemsDecoder"
           - "$ref": "#/definitions/XmlDecoder"
           - "$ref": "#/definitions/CsvDecoder"
           - "$ref": "#/definitions/JsonlDecoder"
@@ -3997,6 +4241,7 @@ definitions:
           - "$ref": "#/definitions/CsvDecoder"
           - "$ref": "#/definitions/GzipDecoder"
           - "$ref": "#/definitions/JsonDecoder"
+          - "$ref": "#/definitions/JsonItemsDecoder"
           - "$ref": "#/definitions/JsonlDecoder"
   CsvDecoder:
     title: CSV
@@ -4163,6 +4408,7 @@ definitions:
           - "$ref": "#/definitions/CsvDecoder"
           - "$ref": "#/definitions/GzipDecoder"
           - "$ref": "#/definitions/JsonDecoder"
+          - "$ref": "#/definitions/JsonItemsDecoder"
           - "$ref": "#/definitions/JsonlDecoder"
           - "$ref": "#/definitions/IterableDecoder"
           - "$ref": "#/definitions/XmlDecoder"
@@ -4175,6 +4421,7 @@ definitions:
           - "$ref": "#/definitions/CsvDecoder"
           - "$ref": "#/definitions/GzipDecoder"
           - "$ref": "#/definitions/JsonDecoder"
+          - "$ref": "#/definitions/JsonItemsDecoder"
           - "$ref": "#/definitions/JsonlDecoder"
           - "$ref": "#/definitions/IterableDecoder"
           - "$ref": "#/definitions/XmlDecoder"

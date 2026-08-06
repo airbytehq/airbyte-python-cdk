@@ -78,6 +78,102 @@ def mock_read_records(responses, default_response=None, **kwargs):
     )
 
 
+def test_check_stream_names_can_be_overridden_from_config():
+    static_stream = MagicMock(spec=Stream)
+    static_stream.name = "static_stream"
+    static_stream.availability_strategy = None
+    selected_stream = MagicMock(spec=Stream)
+    selected_stream.name = "selected_stream"
+    selected_stream.availability_strategy = None
+    selected_stream.read_records.return_value = iter([record])
+    selected_stream.stream_slices.return_value = iter([{}])
+    source = MagicMock()
+    source.streams.return_value = [static_stream, selected_stream]
+
+    check_stream = CheckStream(["static_stream"], parameters={})
+
+    assert check_stream.check_connection(
+        source, logger, {"__airbyte_check_stream_names": ["selected_stream"]}
+    ) == (True, None)
+    static_stream.stream_slices.assert_not_called()
+
+
+def test_check_stream_names_override_empty_list_falls_back_to_manifest_streams():
+    stream = MagicMock(spec=Stream)
+    stream.name = "static_stream"
+    stream.availability_strategy = None
+    stream.read_records.return_value = iter([record])
+    stream.stream_slices.return_value = iter([{}])
+    source = MagicMock()
+    source.streams.return_value = [stream]
+
+    check_stream = CheckStream(["static_stream"], parameters={})
+
+    assert check_stream.check_connection(source, logger, {"__airbyte_check_stream_names": []}) == (
+        True,
+        None,
+    )
+    stream.stream_slices.assert_called_once()
+
+
+@pytest.mark.parametrize("override", ["selected_stream", [1], ["selected_stream", 1], None])
+def test_check_stream_names_override_requires_list_of_strings(override):
+    stream = MagicMock(spec=Stream)
+    stream.name = "selected_stream"
+    stream.availability_strategy = None
+    source = MagicMock()
+    source.streams.return_value = [stream]
+
+    check_stream = CheckStream(["selected_stream"], parameters={})
+
+    with pytest.raises(ValueError, match="__airbyte_check_stream_names must be a list of strings."):
+        check_stream.check_connection(source, logger, {"__airbyte_check_stream_names": override})
+
+
+def test_check_stream_names_override_rejects_unknown_stream():
+    stream = MagicMock(spec=Stream)
+    stream.name = "selected_stream"
+    stream.availability_strategy = None
+    source = MagicMock()
+    source.streams.return_value = [stream]
+
+    check_stream = CheckStream(["selected_stream"], parameters={})
+
+    with pytest.raises(ValueError, match="unknown_stream is not part of the catalog."):
+        check_stream.check_connection(
+            source, logger, {"__airbyte_check_stream_names": ["unknown_stream"]}
+        )
+
+
+def test_check_stream_names_override_returns_unavailable_stream_message():
+    stream = MagicMock(spec=Stream)
+    stream.name = "selected_stream"
+    stream.availability_strategy = None
+    stream.stream_slices.return_value = iter([])
+    source = MagicMock()
+    source.streams.return_value = [stream]
+
+    check_stream = CheckStream(["other_stream"], parameters={})
+
+    stream_is_available, reason = check_stream.check_connection(
+        source, logger, {"__airbyte_check_stream_names": ["selected_stream"]}
+    )
+    assert not stream_is_available
+    assert "no stream slices were found, likely because the parent stream is empty" in reason
+
+
+def test_check_stream_names_override_validates_before_stream_discovery():
+    source = MagicMock()
+    check_stream = CheckStream(["selected_stream"], parameters={})
+
+    with pytest.raises(ValueError, match="__airbyte_check_stream_names must be a list of strings."):
+        check_stream.check_connection(
+            source, logger, {"__airbyte_check_stream_names": "selected_stream"}
+        )
+
+    source.streams.assert_not_called()
+
+
 def test_check_empty_stream():
     stream = MagicMock(spec=Stream)
     stream.name = "s1"
@@ -698,6 +794,57 @@ def test_check_stream1(
             connection_status = source.check(logger, _CONFIG)
             http_mocker.assert_number_of_calls(item_request_2, request_count)
             assert connection_status.status == expected_result
+
+
+def test_check_empty_static_stream_override_falls_back_to_manifest_streams_and_checks_dynamic_streams():
+    manifest = {
+        **deepcopy(_MANIFEST_WITHOUT_CHECK_COMPONENT),
+        **{
+            "check": {
+                "type": "CheckStream",
+                "stream_names": ["static_stream"],
+                "dynamic_streams_check_configs": [
+                    {
+                        "type": "DynamicStreamCheckConfig",
+                        "dynamic_stream_name": "http_dynamic_stream",
+                    },
+                ],
+            }
+        },
+    }
+    check_config = {**_CONFIG, "__airbyte_check_stream_names": []}
+
+    with HttpMocker() as http_mocker:
+        static_stream_request = HttpRequest(url="https://api.test.com/static")
+        static_stream_response = HttpResponse(body=json.dumps([]), status_code=500)
+        http_mocker.get(static_stream_request, static_stream_response)
+
+        items_request = HttpRequest(url="https://api.test.com/items")
+        items_response = HttpResponse(
+            body=json.dumps([{"id": 1, "name": "item_1"}, {"id": 2, "name": "item_2"}])
+        )
+        http_mocker.get(items_request, items_response)
+
+        item_request_1 = HttpRequest(url="https://api.test.com/items/1")
+        item_response = HttpResponse(body=json.dumps([]), status_code=200)
+        http_mocker.get(item_request_1, item_response)
+
+        item_request_2 = HttpRequest(url="https://api.test.com/items/2")
+        item_response = HttpResponse(body=json.dumps([]), status_code=200)
+        http_mocker.get(item_request_2, item_response)
+
+        source = ConcurrentDeclarativeSource(
+            source_config=manifest,
+            config=check_config,
+            catalog=None,
+            state=None,
+        )
+
+        connection_status = source.check(logger, check_config)
+
+        http_mocker.assert_number_of_calls(static_stream_request, 6)
+        http_mocker.assert_number_of_calls(item_request_2, 0)
+        assert connection_status.status == Status.FAILED
 
 
 def test_check_stream_missing_fields():

@@ -47,6 +47,10 @@ class ConcurrentSource:
         queue: Optional[Queue[QueueItem]] = None,
         timeout_seconds: int = DEFAULT_TIMEOUT_SECONDS,
     ) -> "ConcurrentSource":
+        if initial_number_of_partitions_to_generate < 1:
+            raise ValueError(
+                f"initial_number_of_partitions_to_generate must be >= 1, got {initial_number_of_partitions_to_generate}"
+            )
         is_single_threaded = initial_number_of_partitions_to_generate == 1 and num_workers == 1
         too_many_generator = (
             not is_single_threaded and initial_number_of_partitions_to_generate >= num_workers
@@ -117,6 +121,7 @@ class ConcurrentSource:
                 self._queue,
                 PartitionLogger(self._slice_logger, self._logger, self._message_repository),
             ),
+            max_concurrent_partition_generators=self._initial_number_partitions_to_generate,
         )
 
         # Enqueue initial partition generation tasks

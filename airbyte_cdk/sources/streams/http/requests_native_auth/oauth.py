@@ -45,6 +45,7 @@ class Oauth2Authenticator(AbstractOauth2Authenticator):
         expires_in_name: str = "expires_in",
         refresh_request_body: Mapping[str, Any] | None = None,
         refresh_request_headers: Mapping[str, Any] | None = None,
+        send_refresh_request_as_query_params: bool = False,
         grant_type_name: str = "grant_type",
         grant_type: str = "refresh_token",
         token_expiry_is_time_of_expiration: bool = False,
@@ -64,6 +65,7 @@ class Oauth2Authenticator(AbstractOauth2Authenticator):
         self._expires_in_name = expires_in_name
         self._refresh_request_body = refresh_request_body
         self._refresh_request_headers = refresh_request_headers
+        self._send_refresh_request_as_query_params = send_refresh_request_as_query_params
         self._grant_type_name = grant_type_name
         self._grant_type = grant_type
 
@@ -110,6 +112,9 @@ class Oauth2Authenticator(AbstractOauth2Authenticator):
 
     def get_refresh_request_headers(self) -> Mapping[str, Any]:
         return self._refresh_request_headers  # type: ignore[return-value]
+
+    def should_send_refresh_request_as_query_params(self) -> bool:
+        return self._send_refresh_request_as_query_params
 
     def get_grant_type_name(self) -> str:
         return self._grant_type_name
@@ -160,6 +165,7 @@ class SingleUseRefreshTokenOauth2Authenticator(Oauth2Authenticator):
         refresh_token_name: str = "refresh_token",
         refresh_request_body: Mapping[str, Any] | None = None,
         refresh_request_headers: Mapping[str, Any] | None = None,
+        send_refresh_request_as_query_params: bool = False,
         grant_type_name: str = "grant_type",
         grant_type: str = "refresh_token",
         client_id_name: str = "client_id",
@@ -186,6 +192,7 @@ class SingleUseRefreshTokenOauth2Authenticator(Oauth2Authenticator):
             refresh_token_name (str, optional): Name of the name of the refresh token field, used to parse the refresh token response. Defaults to "refresh_token".
             refresh_request_body (Mapping[str, Any], optional): Custom key value pair that will be added to the refresh token request body. Defaults to None.
             refresh_request_headers (Mapping[str, Any], optional): Custom key value pair that will be added to the refresh token request headers. Defaults to None.
+            send_refresh_request_as_query_params (bool, optional): When True, the standard refresh args (`grant_type`, `refresh_token`, client credentials when not in an `Authorization` header, scopes, plus any `refresh_request_body` extras) are sent on the URL query string and the request body is emitted empty. Use this for OAuth providers like Gong that document their refresh endpoint with refresh args on the URL query string. Defaults to False.
             grant_type (str, optional): OAuth grant type. Defaults to "refresh_token".
             client_id (Optional[str]): The client id to authenticate. If not specified, defaults to credentials.client_id in the config object.
             client_secret (Optional[str]): The client secret to authenticate. If not specified, defaults to credentials.client_secret in the config object.
@@ -227,6 +234,7 @@ class SingleUseRefreshTokenOauth2Authenticator(Oauth2Authenticator):
             expires_in_name=expires_in_name,
             refresh_request_body=refresh_request_body,
             refresh_request_headers=refresh_request_headers,
+            send_refresh_request_as_query_params=send_refresh_request_as_query_params,
             grant_type_name=self._grant_type_name,
             grant_type=grant_type,
             token_expiry_date_format=token_expiry_date_format,
@@ -340,20 +348,23 @@ class SingleUseRefreshTokenOauth2Authenticator(Oauth2Authenticator):
         """Force refresh the access token and update internal state.
 
         For single-use refresh tokens, this also persists the new refresh token
-        and emits a control message to update the connector config.
+        and emits a control message to update the connector config. If the
+        response omits a refresh token, the existing one is preserved.
         """
         new_access_token, access_token_expires_in, new_refresh_token = self.refresh_access_token()
         self.access_token = new_access_token
-        self.set_refresh_token(new_refresh_token)
+        if new_refresh_token is not None:
+            self.set_refresh_token(new_refresh_token)
         self.set_token_expiry_date(access_token_expires_in)
         self._emit_control_message()
 
-    def refresh_access_token(self) -> Tuple[str, AirbyteDateTime, str]:  # type: ignore[override]
+    def refresh_access_token(self) -> Tuple[str, AirbyteDateTime, Optional[str]]:  # type: ignore[override]
         """
         Refreshes the access token by making a handled request and extracting the necessary token information.
 
         Returns:
-            Tuple[str, str, str]: A tuple containing the new access token, token expiry date, and refresh token.
+            A tuple of (access_token, token_expiry_date, refresh_token). The refresh token
+            is `None` when the OAuth provider omits it from the response.
         """
         response_json = self._make_handled_request()
         return (

@@ -7,6 +7,7 @@ from __future__ import annotations
 import datetime
 import importlib
 import inspect
+import json
 import logging
 import re
 from functools import partial
@@ -65,6 +66,10 @@ from airbyte_cdk.sources.declarative.auth.jwt import JwtAlgorithm
 from airbyte_cdk.sources.declarative.auth.oauth import (
     DeclarativeSingleUseRefreshTokenOauth2Authenticator,
 )
+from airbyte_cdk.sources.declarative.auth.rate_limited_multiple_token import (
+    RateLimitedMultipleTokenAuthenticator,
+    TokenQuota,
+)
 from airbyte_cdk.sources.declarative.auth.selective_authenticator import SelectiveAuthenticator
 from airbyte_cdk.sources.declarative.auth.token import (
     ApiKeyAuthenticator,
@@ -97,6 +102,7 @@ from airbyte_cdk.sources.declarative.decoders.composite_raw_decoder import (
     CompositeRawDecoder,
     CsvParser,
     GzipParser,
+    JsonItemsParser,
     JsonLineParser,
     JsonParser,
     Parser,
@@ -322,6 +328,9 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
     JsonFileSchemaLoader as JsonFileSchemaLoaderModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    JsonItemsDecoder as JsonItemsDecoderModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     JsonlDecoder as JsonlDecoderModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
@@ -403,6 +412,9 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
     Rate as RateModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    RateLimitedMultipleTokenAuthenticator as RateLimitedMultipleTokenAuthenticatorModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     RecordExpander as RecordExpanderModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
@@ -472,6 +484,11 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     ZipfileDecoder as ZipfileDecoderModel,
+)
+from airbyte_cdk.sources.declarative.parsers.custom_code_compiler import (
+    INJECTED_MANIFEST,
+    AirbyteCustomCodeNotPermittedError,
+    custom_code_execution_permitted,
 )
 from airbyte_cdk.sources.declarative.partition_routers import (
     CartesianProductStreamSlicer,
@@ -696,8 +713,13 @@ class ModelToComponentFactory:
         max_concurrent_async_job_count: Optional[int] = None,
         configured_catalog: Optional[ConfiguredAirbyteCatalog] = None,
         api_budget: Optional[APIBudget] = None,
+        rate_limited_authenticators: Optional[
+            Dict[str, RateLimitedMultipleTokenAuthenticator]
+        ] = None,
+        custom_components_trusted: bool = True,
     ):
         self._init_mappings()
+        self._custom_components_trusted = custom_components_trusted
         self._limit_pages_fetched_per_slice = limit_pages_fetched_per_slice
         self._limit_slices_fetched = limit_slices_fetched
         self._emit_connector_builder_messages = emit_connector_builder_messages
@@ -711,6 +733,10 @@ class ModelToComponentFactory:
         )
         self._connector_state_manager = connector_state_manager or ConnectorStateManager()
         self._api_budget: Optional[Union[APIBudget]] = api_budget
+        # Shared instances so all streams see the same token quota counters (like api_budget)
+        self._rate_limited_authenticators: Dict[str, RateLimitedMultipleTokenAuthenticator] = (
+            rate_limited_authenticators if rate_limited_authenticators is not None else {}
+        )
         self._job_tracker: JobTracker = JobTracker(max_concurrent_async_job_count or 1)
         # placeholder for deprecation warnings
         self._collected_deprecation_logs: List[ConnectorBuilderLogMessage] = []
@@ -763,6 +789,7 @@ class ModelToComponentFactory:
             HttpResponseFilterModel: self.create_http_response_filter,
             InlineSchemaLoaderModel: self.create_inline_schema_loader,
             JsonDecoderModel: self.create_json_decoder,
+            JsonItemsDecoderModel: self.create_json_items_decoder,
             JsonlDecoderModel: self.create_jsonl_decoder,
             JsonSchemaPropertySelectorModel: self.create_json_schema_property_selector,
             GzipDecoderModel: self.create_gzip_decoder,
@@ -821,6 +848,7 @@ class ModelToComponentFactory:
             UnlimitedCallRatePolicyModel: self.create_unlimited_call_rate_policy,
             RateModel: self.create_rate,
             HttpRequestRegexMatcherModel: self.create_http_request_matcher,
+            RateLimitedMultipleTokenAuthenticatorModel: self.create_rate_limited_multiple_token_authenticator,
             GroupingPartitionRouterModel: self.create_grouping_partition_router,
         }
 
@@ -1752,11 +1780,18 @@ class ModelToComponentFactory:
     def create_constant_backoff_strategy(
         model: ConstantBackoffStrategyModel, config: Config, **kwargs: Any
     ) -> ConstantBackoffStrategy:
+        ModelToComponentFactory._validate_jitter_range(model.jitter_range_in_seconds)
         return ConstantBackoffStrategy(
             backoff_time_in_seconds=model.backoff_time_in_seconds,
+            jitter_range_in_seconds=model.jitter_range_in_seconds,
             config=config,
             parameters=model.parameters or {},
         )
+
+    @staticmethod
+    def _validate_jitter_range(jitter_range_in_seconds: Optional[float]) -> None:
+        if jitter_range_in_seconds is not None and jitter_range_in_seconds < 0:
+            raise ValueError("jitter_range_in_seconds must be greater than or equal to 0")
 
     def create_cursor_pagination(
         self, model: CursorPaginationModel, config: Config, decoder: Decoder, **kwargs: Any
@@ -1797,6 +1832,18 @@ class ModelToComponentFactory:
         :param config: The custom defined connector config
         :return: The declarative component built from the Pydantic model to be used at runtime
         """
+        # Instantiating a custom component means importing and executing arbitrary code referenced
+        # by `class_name`. Manifests supplied by a caller, whether through the config or directly to
+        # the manifest server, are untrusted input and could point `class_name` at any importable
+        # callable, so they honor the same `AIRBYTE_ENABLE_UNSAFE_CODE` gate as injected
+        # `components.py` code. Manifests bundled in a published connector image are trusted and may
+        # always use their bundled custom components.
+        manifest_is_untrusted = not self._custom_components_trusted or bool(
+            config.get(INJECTED_MANIFEST)
+        )
+        if manifest_is_untrusted and not custom_code_execution_permitted():
+            raise AirbyteCustomCodeNotPermittedError
+
         custom_component_class = self._get_class_from_fully_qualified_class_name(model.class_name)
         component_fields = get_type_hints(custom_component_class)
         model_args = model.dict()
@@ -1859,6 +1906,10 @@ class ModelToComponentFactory:
             for class_field in component_fields.keys()
             if class_field in model_args
         }
+
+        if "api_budget" in component_fields and kwargs.get("api_budget") is None:
+            kwargs["api_budget"] = self._api_budget
+
         return custom_component_class(**kwargs)
 
     @staticmethod
@@ -2422,14 +2473,21 @@ class ModelToComponentFactory:
         model: ResponseToFileExtractorModel,
         **kwargs: Any,
     ) -> ResponseToFileExtractor:
-        return ResponseToFileExtractor(parameters=model.parameters or {})
+        return ResponseToFileExtractor(
+            parameters=model.parameters or {},
+            preserve_na_values=model.preserve_na_values or False,
+        )
 
     @staticmethod
     def create_exponential_backoff_strategy(
         model: ExponentialBackoffStrategyModel, config: Config
     ) -> ExponentialBackoffStrategy:
+        ModelToComponentFactory._validate_jitter_range(model.jitter_range_in_seconds)
         return ExponentialBackoffStrategy(
-            factor=model.factor or 5, parameters=model.parameters or {}, config=config
+            factor=model.factor or 5,
+            jitter_range_in_seconds=model.jitter_range_in_seconds,
+            parameters=model.parameters or {},
+            config=config,
         )
 
     @staticmethod
@@ -2656,6 +2714,14 @@ class ModelToComponentFactory:
             stream_response=False if self._emit_connector_builder_messages else True,
         )
 
+    def create_json_items_decoder(
+        self, model: JsonItemsDecoderModel, config: Config, **kwargs: Any
+    ) -> Decoder:
+        return CompositeRawDecoder(
+            parser=ModelToComponentFactory._get_parser(model, config),
+            stream_response=False if self._emit_connector_builder_messages else True,
+        )
+
     def create_gzip_decoder(
         self, model: GzipDecoderModel, config: Config, **kwargs: Any
     ) -> Decoder:
@@ -2704,6 +2770,11 @@ class ModelToComponentFactory:
         if isinstance(model, JsonDecoderModel):
             # Note that the logic is a bit different from the JsonDecoder as there is some legacy that is maintained to return {} on error cases
             return JsonParser()
+        elif isinstance(model, JsonItemsDecoderModel):
+            return JsonItemsParser(
+                items_path=model.items_path,
+                encoding=model.encoding,
+            )
         elif isinstance(model, JsonlDecoderModel):
             return JsonLineParser()
         elif isinstance(model, CsvDecoderModel):
@@ -2857,6 +2928,9 @@ class ModelToComponentFactory:
                 refresh_request_headers=InterpolatedMapping(
                     model.refresh_request_headers or {}, parameters=model.parameters or {}
                 ).eval(config),
+                send_refresh_request_as_query_params=bool(
+                    model.send_refresh_request_as_query_params
+                ),
                 scopes=model.scopes,
                 token_expiry_date_format=model.token_expiry_date_format,
                 token_expiry_is_time_of_expiration=bool(model.token_expiry_date_format),
@@ -2878,6 +2952,7 @@ class ModelToComponentFactory:
             grant_type=model.grant_type or "refresh_token",
             refresh_request_body=model.refresh_request_body,
             refresh_request_headers=model.refresh_request_headers,
+            send_refresh_request_as_query_params=bool(model.send_refresh_request_as_query_params),
             refresh_token_name=model.refresh_token_name or "refresh_token",
             refresh_token=model.refresh_token,
             scopes=model.scopes,
@@ -2992,10 +3067,23 @@ class ModelToComponentFactory:
             parameters=model.parameters or {},
         )
 
-    @staticmethod
     def create_page_increment(
-        model: PageIncrementModel, config: Config, **kwargs: Any
+        self,
+        model: PageIncrementModel,
+        config: Config,
+        decoder: Optional[Decoder] = None,
+        extractor_model: Optional[Union[CustomRecordExtractorModel, DpathExtractorModel]] = None,
+        **kwargs: Any,
     ) -> PageIncrement:
+        # Like OffsetIncrement, we instantiate a separate extractor with identical behavior to the
+        # RecordSelector's so the strategy can count the raw records in the response. This ensures
+        # pagination is driven by the API's page size, not the post-filter record count.
+        extractor = (
+            self._create_component_from_model(model=extractor_model, config=config, decoder=decoder)
+            if extractor_model
+            else None
+        )
+
         # Pydantic v1 Union type coercion can convert int to string depending on Union order.
         # If page_size is a string that represents an integer (not an interpolation), convert it back.
         page_size = model.page_size
@@ -3007,6 +3095,7 @@ class ModelToComponentFactory:
             config=config,
             start_from_page=model.start_from_page or 0,
             inject_on_first_request=model.inject_on_first_request or False,
+            extractor=extractor,
             parameters=model.parameters or {},
         )
 
@@ -4074,6 +4163,7 @@ class ModelToComponentFactory:
         )
 
         substream_factory = ModelToComponentFactory(
+            custom_components_trusted=self._custom_components_trusted,
             connector_state_manager=connector_state_manager,
             limit_pages_fetched_per_slice=self._limit_pages_fetched_per_slice,
             limit_slices_fetched=self._limit_slices_fetched,
@@ -4091,6 +4181,9 @@ class ModelToComponentFactory:
                 ),
             ),
             api_budget=self._api_budget,
+            # Share the authenticator registry so parent and child streams draw from the
+            # same token quota counters
+            rate_limited_authenticators=self._rate_limited_authenticators,
         )
 
         return substream_factory.create_parent_stream_config(
@@ -4460,6 +4553,132 @@ class ModelToComponentFactory:
             headers=model.headers,
             weight=weight,
         )
+
+    def create_rate_limited_multiple_token_authenticator(
+        self,
+        model: RateLimitedMultipleTokenAuthenticatorModel,
+        config: Config,
+        **kwargs: Any,
+    ) -> RateLimitedMultipleTokenAuthenticator:
+        if isinstance(model.tokens, str):
+            tokens_value = InterpolatedString.create(model.tokens, parameters={}).eval(config)
+            delimiter = model.token_delimiter or ","
+            tokens = [
+                token.strip() for token in str(tokens_value).split(delimiter) if token.strip()
+            ]
+        else:
+            tokens = [
+                token_value
+                for token in model.tokens
+                if (
+                    token_value := str(
+                        InterpolatedString.create(token, parameters={}).eval(config)
+                    ).strip()
+                )
+            ]
+
+        quota_specs = [
+            {
+                "name": quota_model.name,
+                "remaining_path": quota_model.remaining_path,
+                "reset_path": quota_model.reset_path,
+                "limit_path": quota_model.limit_path,
+                "matchers": [
+                    {
+                        "method": matcher_model.method,
+                        "url_base": matcher_model.url_base,
+                        "url_path_pattern": matcher_model.url_path_pattern,
+                        "params": matcher_model.params,
+                        "headers": matcher_model.headers,
+                        "weight": matcher_model.weight,
+                    }
+                    for matcher_model in quota_model.matchers or []
+                ],
+            }
+            for quota_model in model.quotas
+        ]
+
+        quota_status_url = str(
+            InterpolatedString.create(model.quota_status_source.url, parameters={}).eval(config)
+        )
+        quota_status_http_method = (
+            model.quota_status_source.http_method.value
+            if model.quota_status_source.http_method
+            else "GET"
+        )
+        quota_status_headers = {
+            key: str(InterpolatedString.create(value, parameters={}).eval(config))
+            for key, value in (model.quota_status_source.request_headers or {}).items()
+        }
+        auth_method = model.auth_method or "Bearer"
+        header = model.header or "Authorization"
+        max_wait_time_str = str(
+            InterpolatedString.create(model.max_wait_time or "PT2H", parameters={}).eval(config)
+        )
+        max_wait_time = parse_duration(max_wait_time_str)
+        if not isinstance(max_wait_time, datetime.timedelta):
+            raise ValueError(
+                f"max_wait_time must be a fixed-length ISO 8601 duration (e.g. 'PT2H'); "
+                f"calendar-unit durations like '{max_wait_time_str}' are not supported"
+            )
+        budget_reserve_fraction = (
+            model.budget_reserve_fraction if model.budget_reserve_fraction is not None else 0.1
+        )
+        budget_min_reserve = (
+            model.budget_min_reserve if model.budget_min_reserve is not None else 50
+        )
+
+        # Reuse the same instance for identical definitions so that all streams share the
+        # same token quota counters (similar to how api_budget is shared). The key is built
+        # from the resolved constructor arguments rather than the raw model so that
+        # stream-specific `$parameters` propagated onto the model (and its nested components)
+        # cannot break instance sharing.
+        cache_key = json.dumps(
+            {
+                "tokens": tokens,
+                "quotas": quota_specs,
+                "quota_status_url": quota_status_url,
+                "quota_status_http_method": quota_status_http_method,
+                "quota_status_headers": quota_status_headers,
+                "auth_method": auth_method,
+                "header": header,
+                "max_wait_time": max_wait_time.total_seconds(),
+                "budget_reserve_fraction": budget_reserve_fraction,
+                "budget_min_reserve": budget_min_reserve,
+            },
+            sort_keys=True,
+        )
+        if cache_key in self._rate_limited_authenticators:
+            return self._rate_limited_authenticators[cache_key]
+
+        quotas = [
+            TokenQuota(
+                name=quota_model.name,
+                remaining_path=quota_model.remaining_path,
+                reset_path=quota_model.reset_path,
+                limit_path=quota_model.limit_path,
+                matchers=[
+                    self.create_http_request_matcher(matcher_model, config)
+                    for matcher_model in quota_model.matchers or []
+                ],
+            )
+            for quota_model in model.quotas
+        ]
+
+        authenticator = RateLimitedMultipleTokenAuthenticator(
+            tokens=tokens,
+            quotas=quotas,
+            quota_status_url=quota_status_url,
+            quota_status_http_method=quota_status_http_method,
+            quota_status_headers=quota_status_headers,
+            auth_method=auth_method,
+            header=header,
+            max_wait_time=max_wait_time,
+            budget_reserve_fraction=budget_reserve_fraction,
+            budget_min_reserve=budget_min_reserve,
+        )
+        self._rate_limited_authenticators[cache_key] = authenticator
+        return authenticator
 
     def set_api_budget(self, component_definition: ComponentDefinition, config: Config) -> None:
         self._api_budget = self.create_component(

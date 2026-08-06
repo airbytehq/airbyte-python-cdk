@@ -104,6 +104,13 @@ class ConstantBackoffStrategy(BaseModel):
         examples=[30, 30.5, "{{ config['backoff_time'] }}"],
         title="Backoff Time",
     )
+    jitter_range_in_seconds: Optional[float] = Field(
+        None,
+        description="Optional additive jitter range in seconds. When set, the backoff time is uniformly distributed between backoff_time_in_seconds and backoff_time_in_seconds + (jitter_range_in_seconds * 2), so jitter only increases the base backoff.",
+        examples=[15],
+        ge=0,
+        title="Jitter Range",
+    )
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
 
@@ -496,6 +503,11 @@ class HttpRequestRegexMatcher(BaseModel):
 
 class ResponseToFileExtractor(BaseModel):
     type: Literal["ResponseToFileExtractor"]
+    preserve_na_values: Optional[bool] = Field(
+        False,
+        description='When enabled, string values such as "NA", "N/A", "NULL", "None" and "NaN" are kept as-is instead of being interpreted as missing and converted to null. Empty cells are still treated as null. Defaults to false to preserve historical behavior.',
+        title="Preserve NA Values",
+    )
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
 
@@ -511,6 +523,13 @@ class ExponentialBackoffStrategy(BaseModel):
         description="Multiplicative constant applied on each retry.",
         examples=[5, 5.5, "10"],
         title="Factor",
+    )
+    jitter_range_in_seconds: Optional[float] = Field(
+        None,
+        description="Optional additive jitter range in seconds. When set, the backoff time is uniformly distributed between computed_backoff and computed_backoff + (jitter_range_in_seconds * 2), so jitter only increases the computed backoff.",
+        examples=[2],
+        ge=0,
+        title="Jitter Range",
     )
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
@@ -533,6 +552,121 @@ class SessionTokenRequestBearerAuthenticator(BaseModel):
 class HttpMethod(Enum):
     GET = "GET"
     POST = "POST"
+
+
+class QuotaStatusSource(BaseModel):
+    type: Literal["QuotaStatusSource"]
+    url: str = Field(
+        ...,
+        description="The full URL of the quota status endpoint.",
+        examples=[
+            "https://api.github.com/rate_limit",
+            "{{ config.get('api_url', 'https://api.github.com') }}/rate_limit",
+        ],
+        title="URL",
+    )
+    http_method: Optional[HttpMethod] = Field(
+        HttpMethod.GET,
+        description="The HTTP method used to fetch the quota status.",
+        title="HTTP Method",
+    )
+    request_headers: Optional[Dict[str, str]] = Field(
+        None,
+        description="Additional headers to send with the quota status request.",
+        title="Request Headers",
+    )
+    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
+
+
+class TokenQuota(BaseModel):
+    type: Literal["TokenQuota"]
+    name: str = Field(
+        ...,
+        description="Name of the quota pool.",
+        examples=["rest", "graphql"],
+        title="Name",
+    )
+    remaining_path: List[str] = Field(
+        ...,
+        description="Path to the remaining call count for this pool in the quota status response.",
+        examples=[["resources", "core", "remaining"]],
+        title="Remaining Path",
+    )
+    reset_path: List[str] = Field(
+        ...,
+        description="Path to the quota reset timestamp for this pool in the quota status response.",
+        examples=[["resources", "core", "reset"]],
+        title="Reset Path",
+    )
+    limit_path: Optional[List[str]] = Field(
+        None,
+        description="Optional path to the total call limit for this pool in the quota status response. Used to compute the proactive throttling reserve; falls back to the initially observed remaining count when not set. Setting it on every pool is recommended so the reserve does not shrink when a sync starts with the pool already partially consumed.",
+        examples=[["resources", "core", "limit"]],
+        title="Limit Path",
+    )
+    matchers: Optional[List[HttpRequestRegexMatcher]] = Field(
+        None,
+        description="List of matchers that classify outgoing requests into this quota pool. The first pool whose matcher matches a request is used. A pool with no matchers acts as the default pool.",
+        title="Matchers",
+    )
+    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
+
+
+class RateLimitedMultipleTokenAuthenticator(BaseModel):
+    type: Literal["RateLimitedMultipleTokenAuthenticator"]
+    tokens: Union[str, List[str]] = Field(
+        ...,
+        description="The tokens to rotate between. Either an explicit list of tokens, or a single string containing multiple tokens separated by `token_delimiter`.",
+        examples=[
+            "{{ config['credentials']['personal_access_token'] }}",
+            ["{{ config['token_1'] }}", "{{ config['token_2'] }}"],
+        ],
+        title="Tokens",
+    )
+    token_delimiter: Optional[str] = Field(
+        ",",
+        description="Delimiter used to split a single token string into multiple tokens.",
+        title="Token Delimiter",
+    )
+    auth_method: Optional[str] = Field(
+        "Bearer",
+        description="The prefix to prepend to the token in the auth header value (e.g. `Authorization: Bearer <token>`).",
+        examples=["Bearer", "token"],
+        title="Auth Method",
+    )
+    header: Optional[str] = Field(
+        "Authorization",
+        description="The name of the HTTP header in which to inject the token.",
+        title="Header Name",
+    )
+    quota_status_source: QuotaStatusSource = Field(
+        ...,
+        description="Defines where to fetch each token's current quota status. Called once per token at startup and after an exhaustion wait, not per data request.",
+        title="Quota Status Source",
+    )
+    quotas: List[TokenQuota] = Field(
+        ...,
+        description="Quota pools tracked per token. Each outgoing request is classified into the first pool whose matchers match the request; a pool with no matchers acts as the default. The `remaining_path` and `reset_path` locate each pool's values in the quota status response.\n",
+        min_items=1,
+        title="Quota Pools",
+    )
+    max_wait_time: Optional[str] = Field(
+        "PT2H",
+        description="ISO 8601 duration. When all tokens are exhausted, the maximum time to wait for a quota reset before raising a transient error.",
+        examples=["PT2H", "PT30M", "PT{{ config.get('max_waiting_time', 120) }}M"],
+        title="Maximum Wait Time",
+    )
+    budget_reserve_fraction: Optional[float] = Field(
+        0.1,
+        description="Fraction of each token's quota to keep in reserve. When every token drops below its reserve, requests are proactively throttled to spread the remaining calls until the quota reset. Set to 0 (along with `budget_min_reserve`) to disable throttling.",
+        title="Budget Reserve Fraction",
+    )
+    budget_min_reserve: Optional[int] = Field(
+        50,
+        description="Minimum number of calls to keep in reserve per token before proactive throttling kicks in.",
+        title="Budget Minimum Reserve",
+    )
+    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
 
 class Action(Enum):
@@ -658,6 +792,20 @@ class JsonFileSchemaLoader(BaseModel):
 
 class JsonDecoder(BaseModel):
     type: Literal["JsonDecoder"]
+
+
+class JsonItemsDecoder(BaseModel):
+    type: Literal["JsonItemsDecoder"]
+    items_path: str = Field(
+        ...,
+        description="Dot-separated path to the JSON array whose elements should be yielded as records. Uses `ijson` path syntax (e.g. `data.users`), not JSONPath syntax \u2014 do not include leading `$.` or trailing `[*]`.",
+        title="Items Path",
+    )
+    encoding: Optional[str] = Field(
+        "utf-8",
+        description="The character encoding of the JSON data. Defaults to UTF-8.",
+        title="Encoding",
+    )
 
 
 class JsonlDecoder(BaseModel):
@@ -1925,6 +2073,12 @@ class OAuthAuthenticator(BaseModel):
         ],
         title="Refresh Request Headers",
     )
+    send_refresh_request_as_query_params: Optional[bool] = Field(
+        False,
+        description="When set to true, the standard OAuth refresh args (`grant_type`, `refresh_token`, client credentials when not in an `Authorization` header, scopes, plus any `refresh_request_body` extras) are sent on the URL query string and the request body is emitted empty. Use this for OAuth providers like Gong that document their refresh endpoint with refresh args on the URL query string.",
+        examples=[True],
+        title="Send Refresh Request As Query Params",
+    )
     scopes: Optional[List[str]] = Field(
         None,
         description="List of scopes that should be granted to the access token.",
@@ -2181,7 +2335,7 @@ class PaginationReset(BaseModel):
 
 class GzipDecoder(BaseModel):
     type: Literal["GzipDecoder"]
-    decoder: Union[CsvDecoder, GzipDecoder, JsonDecoder, JsonlDecoder]
+    decoder: Union[CsvDecoder, GzipDecoder, JsonDecoder, JsonItemsDecoder, JsonlDecoder]
 
 
 class RequestBodyGraphQL(BaseModel):
@@ -2319,7 +2473,7 @@ class ZipfileDecoder(BaseModel):
         extra = Extra.allow
 
     type: Literal["ZipfileDecoder"]
-    decoder: Union[CsvDecoder, GzipDecoder, JsonDecoder, JsonlDecoder] = Field(
+    decoder: Union[CsvDecoder, GzipDecoder, JsonDecoder, JsonItemsDecoder, JsonlDecoder] = Field(
         ...,
         description="Parser to parse the decompressed data from the zipfile(s).",
         title="Parser",
@@ -2532,6 +2686,7 @@ class SelectiveAuthenticator(BaseModel):
             LegacySessionTokenAuthenticator,
             CustomAuthenticator,
             NoAuth,
+            RateLimitedMultipleTokenAuthenticator,
         ],
     ] = Field(
         ...,
@@ -2761,6 +2916,7 @@ class HttpRequester(BaseModelWithDeprecations):
             CustomAuthenticator,
             NoAuth,
             LegacySessionTokenAuthenticator,
+            RateLimitedMultipleTokenAuthenticator,
         ]
     ] = Field(
         None,
@@ -2991,6 +3147,7 @@ class SimpleRetriever(BaseModel):
     decoder: Optional[
         Union[
             JsonDecoder,
+            JsonItemsDecoder,
             XmlDecoder,
             CsvDecoder,
             JsonlDecoder,
@@ -3077,6 +3234,7 @@ class AsyncRetriever(BaseModel):
     failed_retry_wait_time_in_seconds: Optional[Union[int, str]] = Field(
         None,
         description="Time in seconds to wait before retrying a failed async job. Only applies to jobs that ran on the API side and reported a FAILED status (e.g. report generation failed due to a cooldown). Creation failures (HTTP errors when starting a job, such as 429s) and TIMED_OUT jobs are retried immediately and are not affected by this setting. When set, the orchestrator defers retry of real failed jobs until the wait time has elapsed, without blocking other jobs.",
+        ge=1,
     )
     download_target_requester: Optional[Union[HttpRequester, CustomRequester]] = Field(
         None,
@@ -3123,6 +3281,7 @@ class AsyncRetriever(BaseModel):
             CsvDecoder,
             GzipDecoder,
             JsonDecoder,
+            JsonItemsDecoder,
             JsonlDecoder,
             IterableDecoder,
             XmlDecoder,
@@ -3139,6 +3298,7 @@ class AsyncRetriever(BaseModel):
             CsvDecoder,
             GzipDecoder,
             JsonDecoder,
+            JsonItemsDecoder,
             JsonlDecoder,
             IterableDecoder,
             XmlDecoder,

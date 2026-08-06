@@ -851,6 +851,71 @@ class TestConcurrentReadProcessor(unittest.TestCase):
             self._partition_enqueuer.generate_partitions, self._stream
         )
 
+    def test_invalid_max_concurrent_partition_generators_raises(self):
+        for invalid in (0, -1):
+            with self.assertRaises(ValueError):
+                ConcurrentReadProcessor(
+                    [self._stream],
+                    self._partition_enqueuer,
+                    self._thread_pool_manager,
+                    self._logger,
+                    self._slice_logger,
+                    self._message_repository,
+                    self._partition_reader,
+                    max_concurrent_partition_generators=invalid,
+                )
+
+    def test_start_next_partition_generator_respects_concurrent_limit(self):
+        stream_instances_to_read_from = [self._stream]
+        handler = ConcurrentReadProcessor(
+            stream_instances_to_read_from,
+            self._partition_enqueuer,
+            self._thread_pool_manager,
+            self._logger,
+            self._slice_logger,
+            self._message_repository,
+            self._partition_reader,
+            max_concurrent_partition_generators=1,
+        )
+        handler._streams_currently_generating_partitions.append(_STREAM_NAME)
+
+        status_message = handler.start_next_partition_generator()
+
+        assert status_message is None
+        assert (
+            handler._stream_instances_to_start_partition_generation == stream_instances_to_read_from
+        )
+        self._thread_pool_manager.submit.assert_not_called()
+
+    def test_start_next_partition_generator_starts_when_below_limit(self):
+        other_stream = Mock(spec=AbstractStream)
+        other_stream.name = "other_stream"
+        other_stream.block_simultaneous_read = ""
+        other_stream.as_airbyte_stream.return_value = AirbyteStream(
+            name="other_stream",
+            json_schema={},
+            supported_sync_modes=[SyncMode.full_refresh],
+        )
+        handler = ConcurrentReadProcessor(
+            [other_stream],
+            self._partition_enqueuer,
+            self._thread_pool_manager,
+            self._logger,
+            self._slice_logger,
+            self._message_repository,
+            self._partition_reader,
+            max_concurrent_partition_generators=2,
+        )
+        handler._streams_currently_generating_partitions.append(_STREAM_NAME)
+
+        status_message = handler.start_next_partition_generator()
+
+        assert status_message is not None
+        assert "other_stream" in handler._streams_currently_generating_partitions
+        self._thread_pool_manager.submit.assert_called_with(
+            self._partition_enqueuer.generate_partitions, other_stream
+        )
+
 
 class TestBlockSimultaneousRead(unittest.TestCase):
     """Tests for block_simultaneous_read functionality"""
