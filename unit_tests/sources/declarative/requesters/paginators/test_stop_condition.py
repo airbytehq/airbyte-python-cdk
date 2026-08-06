@@ -9,8 +9,12 @@ from pytest import fixture
 from airbyte_cdk.sources.declarative.requesters.paginators.strategies.pagination_strategy import (
     PaginationStrategy,
 )
+from airbyte_cdk.sources.declarative.extractors.record_filter import (
+    ClientSideIncrementalRecordFilterDecorator,
+)
 from airbyte_cdk.sources.declarative.requesters.paginators.strategies.stop_condition import (
     CursorStopCondition,
+    FilterAwareStopCondition,
     PaginationStopCondition,
     StopConditionPaginationStrategyDecorator,
 )
@@ -45,6 +49,23 @@ def test_given_record_should_be_synced_when_is_met_return_false(mocked_cursor):
 def test_given_record_should_not_be_synced_when_is_met_return_true(mocked_cursor):
     mocked_cursor.should_be_synced.return_value = False
     assert CursorStopCondition(mocked_cursor).is_met(ANY_RECORD)
+
+
+def test_given_no_record_when_is_met_return_false(mocked_cursor):
+    assert not CursorStopCondition(mocked_cursor).is_met(NO_RECORD)
+    mocked_cursor.should_be_synced.assert_not_called()
+
+
+def test_given_stale_record_seen_by_filter_when_is_met_return_true():
+    record_filter = Mock(spec=ClientSideIncrementalRecordFilterDecorator)
+    record_filter.stale_record_seen_on_current_page = True
+    assert FilterAwareStopCondition(record_filter).is_met(NO_RECORD)
+
+
+def test_given_no_stale_record_seen_by_filter_when_is_met_return_false():
+    record_filter = Mock(spec=ClientSideIncrementalRecordFilterDecorator)
+    record_filter.stale_record_seen_on_current_page = False
+    assert not FilterAwareStopCondition(record_filter).is_met(ANY_RECORD)
 
 
 def test_given_stop_condition_is_met_when_next_page_token_then_return_none(
@@ -92,9 +113,10 @@ def test_given_stop_condition_is_not_met_when_next_page_token_then_delegate(
     mocked_stop_condition.is_met.assert_has_calls([call(last_record)])
 
 
-def test_given_no_records_when_next_page_token_then_delegate(
+def test_given_no_records_and_stop_condition_is_not_met_when_next_page_token_then_delegate(
     mocked_pagination_strategy, mocked_stop_condition
 ):
+    mocked_stop_condition.is_met.return_value = False
     decorator = StopConditionPaginationStrategyDecorator(
         mocked_pagination_strategy, mocked_stop_condition
     )
@@ -105,6 +127,21 @@ def test_given_no_records_when_next_page_token_then_delegate(
     mocked_pagination_strategy.next_page_token.assert_called_once_with(
         ANY_RESPONSE, 0, NO_RECORD, None
     )
+    mocked_stop_condition.is_met.assert_called_once_with(NO_RECORD)
+
+
+def test_given_no_records_and_stop_condition_is_met_when_next_page_token_then_return_none(
+    mocked_pagination_strategy, mocked_stop_condition
+):
+    # A page can yield no records even mid-feed when a record filter dropped all of them, so the
+    # stop condition must be consulted even without a last record
+    mocked_stop_condition.is_met.return_value = True
+    decorator = StopConditionPaginationStrategyDecorator(
+        mocked_pagination_strategy, mocked_stop_condition
+    )
+
+    assert not decorator.next_page_token(ANY_RESPONSE, 0, NO_RECORD)
+    mocked_pagination_strategy.next_page_token.assert_not_called()
 
 
 def test_when_get_page_size_then_delegate(mocked_pagination_strategy, mocked_stop_condition):

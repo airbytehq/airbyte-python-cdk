@@ -145,6 +145,8 @@ from airbyte_cdk.sources.declarative.requesters.http_job_repository import Async
 from airbyte_cdk.sources.declarative.requesters.paginators import DefaultPaginator
 from airbyte_cdk.sources.declarative.requesters.paginators.strategies import (
     CursorPaginationStrategy,
+    CursorStopCondition,
+    FilterAwareStopCondition,
     OffsetIncrement,
     PageIncrement,
     StopConditionPaginationStrategyDecorator,
@@ -1432,9 +1434,73 @@ list_stream:
         model_type=DeclarativeStreamModel, component_definition=stream_manifest, config=input_config
     )
 
+    pagination_strategy = get_retriever(stream).paginator.pagination_strategy
+    assert isinstance(pagination_strategy, StopConditionPaginationStrategyDecorator)
+    assert isinstance(pagination_strategy._stop_condition, CursorStopCondition)
+
+
+def test_incremental_data_feed_with_client_side_incremental():
+    content = """
+selector:
+  type: RecordSelector
+  extractor:
+      type: DpathExtractor
+      field_path: ["extractor_path"]
+requester:
+  type: HttpRequester
+  name: "{{ parameters['name'] }}"
+  url_base: "https://api.sendgrid.com/v3/"
+  http_method: "GET"
+list_stream:
+  type: DeclarativeStream
+  incremental_sync:
+    type: DatetimeBasedCursor
+    $parameters:
+      datetime_format: "%Y-%m-%dT%H:%M:%S.%f%z"
+    start_datetime: "{{ config['start_time'] }}"
+    cursor_field: "created"
+    is_data_feed: true
+    is_client_side_incremental: true
+  retriever:
+    type: SimpleRetriever
+    name: "{{ parameters['name'] }}"
+    paginator:
+      type: DefaultPaginator
+      pagination_strategy:
+        type: "CursorPagination"
+        cursor_value: "{{ response._metadata.next }}"
+        page_size: 10
+    requester:
+      $ref: "#/requester"
+      path: "/"
+    record_selector:
+      $ref: "#/selector"
+  $parameters:
+    name: "lists"
+    """
+
+    parsed_manifest = YamlDeclarativeSource._parse(content)
+    resolved_manifest = resolver.preprocess_manifest(parsed_manifest)
+    stream_manifest = transformer.propagate_types_and_parameters(
+        "", resolved_manifest["list_stream"], {}
+    )
+
+    stream = factory.create_component(
+        model_type=DeclarativeStreamModel, component_definition=stream_manifest, config=input_config
+    )
+
+    retriever = get_retriever(stream)
+    pagination_strategy = retriever.paginator.pagination_strategy
+    assert isinstance(pagination_strategy, StopConditionPaginationStrategyDecorator)
+    # the client-side filter drops below-cursor records before the paginator sees them, so the stop
+    # condition must observe the filter rather than the last emitted record
+    assert isinstance(pagination_strategy._stop_condition, FilterAwareStopCondition)
     assert isinstance(
-        get_retriever(stream).paginator.pagination_strategy,
-        StopConditionPaginationStrategyDecorator,
+        retriever.record_selector.record_filter, ClientSideIncrementalRecordFilterDecorator
+    )
+    assert (
+        pagination_strategy._stop_condition._record_filter
+        is retriever.record_selector.record_filter
     )
 
 
