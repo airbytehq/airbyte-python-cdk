@@ -7,6 +7,22 @@ import datetime
 import freezegun
 import pytest
 
+from airbyte_cdk.sources.streams.http.cache_stats import HTTP_CACHE_STATS
+
+
+@pytest.fixture(autouse=True)
+def reset_http_cache_stats():
+    """Isolate the process-wide HTTP counters between tests.
+
+    They are module-level by design -- one `requests_cache` backend is shared by
+    a whole run -- but a test process is many runs, and a leftover count makes
+    `AirbyteEntrypoint.run` emit analytics messages in a test that recorded no
+    requests of its own.
+    """
+    HTTP_CACHE_STATS.reset()
+    yield
+    HTTP_CACHE_STATS.reset()
+
 
 @pytest.fixture()
 def mock_sleep(monkeypatch):
