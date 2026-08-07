@@ -2050,6 +2050,7 @@ class ModelToComponentFactory:
     ) -> AbstractStream:
         primary_key = model.primary_key.__root__ if model.primary_key else None
         self._migrate_state(model, config)
+        self._warn_on_ineffective_incremental_dependency(model)
 
         partition_router = self._build_stream_slicer_from_partition_router(
             model.retriever,
@@ -2205,6 +2206,36 @@ class ModelToComponentFactory:
             cursor=concurrent_cursor,
             supports_file_transfer=hasattr(model, "file_uploader") and bool(model.file_uploader),
         )
+
+    def _warn_on_ineffective_incremental_dependency(self, model: DeclarativeStreamModel) -> None:
+        """
+        `incremental_dependency: true` only takes effect when the substream defines its own
+        `incremental_sync`: the parent cursor is persisted under the `parent_state` key of the
+        substream's state, which is only emitted by incremental substreams. On a stream without
+        `incremental_sync`, the setting is silently ignored and all parent records are re-read on
+        every sync, so we warn about the misconfiguration instead.
+        """
+        if model.incremental_sync:
+            return
+
+        partition_router = getattr(model.retriever, "partition_router", None)
+        if not partition_router:
+            return
+
+        routers = partition_router if isinstance(partition_router, list) else [partition_router]
+        for router in routers:
+            if isinstance(router, GroupingPartitionRouterModel):
+                router = router.underlying_partition_router
+            if isinstance(router, SubstreamPartitionRouterModel) and any(
+                parent_stream_config.incremental_dependency
+                for parent_stream_config in router.parent_stream_configs
+            ):
+                LOGGER.warning(
+                    f"Stream `{model.name}` has `incremental_dependency: true` in its parent stream configuration but does not define `incremental_sync`. "
+                    "The parent stream's cursor is only persisted in the state of an incremental substream, so this setting has no effect and all parent records will be re-read on every sync. "
+                    "Define `incremental_sync` on this stream or remove `incremental_dependency`."
+                )
+                return
 
     def _migrate_state(self, model: DeclarativeStreamModel, config: Config) -> None:
         stream_name = model.name or ""
