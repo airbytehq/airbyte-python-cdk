@@ -12,6 +12,7 @@ from airbyte_cdk.manifest_migrations.migration_handler import (
 from airbyte_cdk.manifest_migrations.migrations import (
     HttpRequesterPathToUrl,
     HttpRequesterRequestBodyJsonDataToRequestBody,
+    HttpRequesterRequestBodyPlainTextJsonToRequestBodyJson,
     HttpRequesterUrlBaseToUrl,
 )
 from airbyte_cdk.sources.declarative.parsers.manifest_reference_resolver import (
@@ -67,6 +68,24 @@ def test_manifest_resolve_migrate_request_body_json_and_data_to_request_body(
     migrated_manifest = ManifestMigrationHandler(dict(resolved_manifest)).apply_migrations()
 
     assert migrated_manifest == expected_manifest_with_migrated_to_request_body
+
+
+@freeze_time("2025-04-01")
+@patch.dict(
+    migrations_registry.MANIFEST_MIGRATIONS,
+    {"*": [HttpRequesterRequestBodyPlainTextJsonToRequestBodyJson]},
+    clear=True,
+)
+def test_manifest_migrate_request_body_plain_text_json_to_request_body_json(
+    manifest_with_request_body_plain_text_json,
+    expected_manifest_with_plain_text_json_migrated,
+) -> None:
+    """Verify that RequestBodyPlainText with JSON content is migrated to RequestBodyJsonObject with string value."""
+
+    resolved_manifest = resolver.preprocess_manifest(manifest_with_request_body_plain_text_json)
+    migrated_manifest = ManifestMigrationHandler(dict(resolved_manifest)).apply_migrations()
+
+    assert migrated_manifest == expected_manifest_with_plain_text_json_migrated
 
 
 @freeze_time("2025-04-01")
