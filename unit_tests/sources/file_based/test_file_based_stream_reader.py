@@ -433,7 +433,7 @@ def test_globs_and_prefixes_from_globs(
 
 
 @pytest.mark.parametrize(
-    "config, source_file_path, expected_file_relative_path, expected_local_file_path",
+    "config, source_file_path, expected_file_relative_path",
     [
         pytest.param(
             {
@@ -445,7 +445,6 @@ def test_globs_and_prefixes_from_globs(
             },
             "mirror_paths_testing/not_duplicates/data/jan/monthly-kickoff-202402.mpeg",
             "mirror_paths_testing/not_duplicates/data/jan/monthly-kickoff-202402.mpeg",
-            f"{files_directory}/mirror_paths_testing/not_duplicates/data/jan/monthly-kickoff-202402.mpeg",
             id="preserve_directories_present_and_true",
         ),
         pytest.param(
@@ -458,21 +457,18 @@ def test_globs_and_prefixes_from_globs(
             },
             "mirror_paths_testing/not_duplicates/data/jan/monthly-kickoff-202402.mpeg",
             "monthly-kickoff-202402.mpeg",
-            f"{files_directory}/monthly-kickoff-202402.mpeg",
             id="preserve_directories_present_and_false",
         ),
         pytest.param(
             {"streams": [], "delivery_method": {"delivery_type": "use_file_transfer"}},
             "mirror_paths_testing/not_duplicates/data/jan/monthly-kickoff-202402.mpeg",
             "mirror_paths_testing/not_duplicates/data/jan/monthly-kickoff-202402.mpeg",
-            f"{files_directory}/mirror_paths_testing/not_duplicates/data/jan/monthly-kickoff-202402.mpeg",
             id="preserve_directories_not_present_defaults_true",
         ),
         pytest.param(
             {"streams": []},
             "mirror_paths_testing/not_duplicates/data/jan/monthly-kickoff-202402.mpeg",
             "mirror_paths_testing/not_duplicates/data/jan/monthly-kickoff-202402.mpeg",
-            f"{files_directory}/mirror_paths_testing/not_duplicates/data/jan/monthly-kickoff-202402.mpeg",
             id="file_transfer_flag_not_present_defaults_true",
         ),
     ],
@@ -481,7 +477,6 @@ def test_preserve_sub_directories_scenarios(
     config: Mapping[str, Any],
     source_file_path: str,
     expected_file_relative_path: str,
-    expected_local_file_path: str,
 ) -> None:
     """
     Test scenarios when preserve_directory_structure is True or False, the flag indicates whether we need to
@@ -496,9 +491,66 @@ def test_preserve_sub_directories_scenarios(
     assert (
         file_paths[AbstractFileBasedStreamReader.FILE_RELATIVE_PATH] == expected_file_relative_path
     )
-    assert file_paths[AbstractFileBasedStreamReader.LOCAL_FILE_PATH] == expected_local_file_path
+    local_file_path = file_paths[AbstractFileBasedStreamReader.LOCAL_FILE_PATH]
+    staging_subdirectory = path.relpath(local_file_path, files_directory).split(path.sep)[0]
+    assert local_file_path == path.join(
+        files_directory, staging_subdirectory, expected_file_relative_path
+    )
     assert file_paths[AbstractFileBasedStreamReader.FILE_NAME] == path.basename(source_file_path)
     assert file_paths[AbstractFileBasedStreamReader.FILE_FOLDER] == path.dirname(source_file_path)
+
+
+@pytest.mark.parametrize(
+    "preserve_directory_structure, first_source_file_path, second_source_file_path",
+    [
+        pytest.param(
+            True,
+            "folder_a/Untitled document.docx",
+            "folder_a/Untitled document.docx",
+            id="same_relative_path_from_distinct_source_files",
+        ),
+        pytest.param(
+            False,
+            "folder_a/Untitled document.docx",
+            "folder_b/Untitled document.docx",
+            id="same_file_name_in_different_folders_without_preserved_directories",
+        ),
+    ],
+)
+def test_staging_paths_are_unique_per_file(
+    preserve_directory_structure: bool,
+    first_source_file_path: str,
+    second_source_file_path: str,
+) -> None:
+    """
+    Two source files that resolve to the same relative path must not share a staging file: the second
+    download would overwrite the first, and the destination fails with a FileNotFoundException once it
+    has consumed and deleted the first copy.
+    """
+    reader = TestStreamReader()
+    reader.config = TestSpec(
+        streams=[],
+        delivery_method={
+            "delivery_type": "use_file_transfer",
+            "preserve_directory_structure": preserve_directory_structure,
+        },
+    )
+
+    first_paths = reader._get_file_transfer_paths(
+        first_source_file_path, staging_directory=f"{files_directory}/"
+    )
+    second_paths = reader._get_file_transfer_paths(
+        second_source_file_path, staging_directory=f"{files_directory}/"
+    )
+
+    assert (
+        first_paths[AbstractFileBasedStreamReader.FILE_RELATIVE_PATH]
+        == second_paths[AbstractFileBasedStreamReader.FILE_RELATIVE_PATH]
+    )
+    assert (
+        first_paths[AbstractFileBasedStreamReader.LOCAL_FILE_PATH]
+        != second_paths[AbstractFileBasedStreamReader.LOCAL_FILE_PATH]
+    )
 
 
 @pytest.mark.parametrize(

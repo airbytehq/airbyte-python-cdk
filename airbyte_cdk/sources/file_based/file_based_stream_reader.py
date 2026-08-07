@@ -4,6 +4,7 @@
 
 import logging
 import time
+import uuid
 from abc import ABC, abstractmethod
 from datetime import datetime, timezone
 from enum import Enum
@@ -254,6 +255,11 @@ class AbstractFileBasedStreamReader(ABC):
             - LOCAL_FILE_PATH: The absolute path to the file.
             - FILE_NAME: The name of the referenced file.
             - FILE_FOLDER: The folder of the referenced file.
+
+        The local path is namespaced under a unique staging subdirectory so that two source files
+        resolving to the same relative path never share a staging file. Sharing a staging file makes
+        one download overwrite the other and makes the destination fail once it has consumed and
+        deleted the first copy.
         """
         preserve_directory_structure = self.preserve_directory_structure()
 
@@ -264,7 +270,7 @@ class AbstractFileBasedStreamReader(ABC):
             file_relative_path = source_file_relative_path.lstrip("/")
         else:
             file_relative_path = file_name
-        local_file_path = path.join(staging_directory, file_relative_path)
+        local_file_path = path.join(staging_directory, uuid.uuid4().hex, file_relative_path)
         # Ensure the local directory exists
         makedirs(path.dirname(local_file_path), exist_ok=True)
 
