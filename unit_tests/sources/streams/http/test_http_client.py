@@ -2,6 +2,7 @@
 
 import logging
 import os
+import sqlite3
 from datetime import timedelta
 from unittest.mock import MagicMock, patch
 
@@ -446,6 +447,23 @@ def test_session_request_exception_raises_backoff_exception():
 
     with pytest.raises(DefaultBackoffException):
         http_client._send(prepared_request, {})
+
+
+def test_session_operational_error_raises_cache_traced_exception():
+    mocked_session = MagicMock(spec=requests.Session)
+    mocked_session.send.side_effect = sqlite3.OperationalError("no more rows available")
+    http_client = HttpClient(name="test", logger=MagicMock(), session=mocked_session)
+    prepared_request = requests.PreparedRequest()
+
+    with pytest.raises(AirbyteTracedException) as exc_info:
+        http_client._send(prepared_request, {})
+
+    assert exc_info.value.message == "Internal HTTP response cache failed."
+    assert (
+        exc_info.value.internal_message
+        == "HTTP response cache operation failed with OperationalError: no more rows available"
+    )
+    assert exc_info.value.failure_type == FailureType.system_error
 
 
 def test_that_response_was_cached(requests_mock):
