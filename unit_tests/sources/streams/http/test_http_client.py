@@ -13,6 +13,10 @@ from requests_cache import CachedRequest
 from airbyte_cdk.models import FailureType
 from airbyte_cdk.sources.streams.call_rate import CachedLimiterSession, LimiterSession
 from airbyte_cdk.sources.streams.http import HttpClient
+from airbyte_cdk.sources.streams.http.cache_stats import (
+    HTTP_CACHE_STATS,
+    HttpCacheStatsSnapshot,
+)
 from airbyte_cdk.sources.streams.http.error_handlers import (
     BackoffStrategy,
     ErrorResolution,
@@ -470,6 +474,85 @@ def test_that_response_was_cached(requests_mock):
 
     assert isinstance(second_response.request, CachedRequest)
     assert not requests_mock.called
+
+
+def test_send_counts_a_cache_hit_only_for_the_response_served_from_cache():
+    """The connector's own cache is invisible from outside the process.
+
+    A `requests_cache` hit is served inside `Session.send()` and never reaches
+    the wire, so a proxy cannot see it and neither can the platform. These
+    counters are the only place it is observable, which is what the regression
+    report's connector cache-hit ratio is built on -- so a live response must
+    count as a request and not a hit, and a cached one as both.
+
+    `from_cache` is the marker `requests_cache.CacheMixin` sets on a response it
+    served, which is why the session is stubbed rather than really cached: what
+    is under test is the counting, not `requests_cache` itself.
+    """
+    HTTP_CACHE_STATS.reset()
+
+    live = requests.Response()
+    live.status_code = 200
+    cached = requests.Response()
+    cached.status_code = 200
+    cached.from_cache = True  # type: ignore[attr-defined] # set by requests_cache.CacheMixin
+
+    mocked_session = MagicMock(spec=requests.Session)
+    mocked_session.send.side_effect = [live, cached]
+    http_client = HttpClient(name="test", logger=MagicMock(), session=mocked_session)
+
+    http_client._send(requests.PreparedRequest(), {})
+
+    assert HTTP_CACHE_STATS.snapshot() == HttpCacheStatsSnapshot(requests=1, cache_hits=0)
+
+    http_client._send(requests.PreparedRequest(), {})
+
+    assert HTTP_CACHE_STATS.snapshot() == HttpCacheStatsSnapshot(requests=2, cache_hits=1)
+
+
+def test_send_counts_requests_without_caching_as_never_cached():
+    """A session with no cache has no `from_cache`, and reports no hits.
+
+    This is the shape most connectors have, and the number that must not read as
+    a cache that is failing: requests counted, zero hits.
+    """
+    HTTP_CACHE_STATS.reset()
+
+    response = requests.Response()
+    response.status_code = 200
+    mocked_session = MagicMock(spec=requests.Session)
+    mocked_session.send.return_value = response
+    http_client = HttpClient(name="test", logger=MagicMock(), session=mocked_session)
+
+    http_client._send(requests.PreparedRequest(), {})
+    http_client._send(requests.PreparedRequest(), {})
+
+    assert HTTP_CACHE_STATS.snapshot() == HttpCacheStatsSnapshot(requests=2, cache_hits=0)
+
+
+def test_send_counts_nothing_when_the_request_never_produced_a_response():
+    """No response means no wire flow to count, the way a proxy would see it."""
+    HTTP_CACHE_STATS.reset()
+    mocked_session = MagicMock(spec=requests.Session)
+    mocked_session.send.side_effect = requests.RequestException
+
+    http_client = HttpClient(
+        name="test",
+        logger=MagicMock(),
+        error_handler=HttpStatusErrorHandler(
+            logger=MagicMock(),
+            error_mapping={
+                requests.RequestException: ErrorResolution(
+                    ResponseAction.IGNORE, FailureType.system_error, "ignored"
+                )
+            },
+        ),
+        session=mocked_session,
+    )
+
+    http_client._send(requests.PreparedRequest(), {})
+
+    assert HTTP_CACHE_STATS.snapshot() == HttpCacheStatsSnapshot(requests=0, cache_hits=0)
 
 
 def test_send_handles_response_action_given_session_send_raises_request_exception():

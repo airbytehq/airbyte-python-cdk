@@ -25,6 +25,7 @@ from airbyte_cdk.models import (
 from airbyte_cdk.sources.http_config import MAX_CONNECTION_POOL_SIZE
 from airbyte_cdk.sources.message import MessageRepository
 from airbyte_cdk.sources.streams.call_rate import APIBudget, CachedLimiterSession, LimiterSession
+from airbyte_cdk.sources.streams.http.cache_stats import HTTP_CACHE_STATS
 from airbyte_cdk.sources.streams.http.error_handlers import (
     BackoffStrategy,
     DefaultBackoffStrategy,
@@ -348,6 +349,12 @@ class HttpClient:
             response = self._session.send(request, **request_kwargs)
         except requests.RequestException as e:
             exc = e
+
+        if response is not None:
+            # Counted per `_send` call, so a retried request counts once per
+            # attempt -- the same way a proxy counts wire flows, which is what
+            # makes the two numbers comparable in a regression report.
+            HTTP_CACHE_STATS.record_response(response)
 
         error_resolution: ErrorResolution = self._error_handler.interpret_response(
             response if response is not None else exc
