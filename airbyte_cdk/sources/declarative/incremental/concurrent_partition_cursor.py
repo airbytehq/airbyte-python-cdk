@@ -22,6 +22,10 @@ from airbyte_cdk.models import (
 from airbyte_cdk.sources.connector_state_manager import ConnectorStateManager
 from airbyte_cdk.sources.declarative.partition_routers.partition_router import PartitionRouter
 from airbyte_cdk.sources.message import MessageRepository
+from airbyte_cdk.sources.streams.checkpoint.checkpoint_reader import (
+    DEFAULT_STATE_EMISSION_THROTTLE_SECONDS,
+    state_emission_is_due,
+)
 from airbyte_cdk.sources.streams.checkpoint.per_partition_key_serializer import (
     PerPartitionKeySerializer,
 )
@@ -285,10 +289,19 @@ class ConcurrentPerPartitionCursor(Cursor):
 
     def _throttle_state_message(self) -> Optional[float]:
         """
-        Throttles the state message emission to once every 600 seconds.
+        Throttles the state message emission to once every
+        DEFAULT_STATE_EMISSION_THROTTLE_SECONDS seconds.
+
+        Shares `state_emission_is_due` with the legacy per-slice throttle in
+        `ThrottledCheckpointReader` so the two paths agree, including at the
+        boundary. This previously used `<=`, which suppressed an emission landing
+        exactly on the window; the shared predicate treats it as due, matching
+        "once every N seconds".
         """
         current_time = time.time()
-        if current_time - self._last_emission_time <= 600:
+        if not state_emission_is_due(
+            self._last_emission_time, current_time, DEFAULT_STATE_EMISSION_THROTTLE_SECONDS
+        ):
             return None
         return current_time
 

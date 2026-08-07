@@ -1,8 +1,9 @@
 # Copyright (c) 2024 Airbyte, Inc., all rights reserved.
 
+import time
 from abc import ABC, abstractmethod
 from enum import Enum
-from typing import Any, Iterable, Mapping, Optional
+from typing import Any, Callable, Iterable, Mapping, Optional
 
 from airbyte_cdk.sources.types import StreamSlice
 
@@ -16,6 +17,44 @@ class CheckpointMode(Enum):
 
 
 FULL_REFRESH_COMPLETE_STATE: Mapping[str, Any] = {"__ab_full_refresh_sync_complete": True}
+
+# How often a throttled reader may surface a checkpoint, in seconds.
+#
+# Not derived from any platform limit: the source heartbeat the platform enforces
+# is `heartbeat-max-seconds-between-messages` (10800s / 3h), and it is reset by
+# RECORD messages as well as STATE, so throttling state cannot stall a sync that
+# is still producing records. 600s is the cadence already used by
+# `ConcurrentPerPartitionCursor`, reused here so both paths behave the same.
+DEFAULT_STATE_EMISSION_THROTTLE_SECONDS = 600.0
+
+
+def state_emission_is_due(
+    last_emitted_at: Optional[float],
+    now: float,
+    throttle_seconds: float = DEFAULT_STATE_EMISSION_THROTTLE_SECONDS,
+) -> bool:
+    """Whether a throttled state message may be emitted at `now`.
+
+    Shared by `ThrottledCheckpointReader` (legacy per-slice emission) and
+    `ConcurrentPerPartitionCursor` so the two cannot drift apart. They used to
+    share only the constant, which still left them disagreeing at the boundary.
+
+    "At most once every N seconds" makes the boundary inclusive: an emission
+    exactly N seconds after the previous one is due.
+
+    `last_emitted_at is None` means nothing has been emitted yet, so the first
+    emission is always due regardless of the clock's absolute value.
+
+    A `throttle_seconds <= 0` never suppresses, degrading to the historical
+    unthrottled behaviour rather than erroring. That is checked before any
+    arithmetic: `ConcurrentPerPartitionCursor` measures with wall-clock
+    `time.time()`, which can step backwards, and a negative elapsed time would
+    otherwise fail the comparison and suppress an emission the caller asked to
+    never throttle.
+    """
+    if last_emitted_at is None or throttle_seconds <= 0:
+        return True
+    return now - last_emitted_at >= throttle_seconds
 
 
 class CheckpointReader(ABC):
@@ -333,3 +372,75 @@ class FullRefreshCheckpointReader(CheckpointReader):
         if self._final_checkpoint:
             return {"__ab_no_cursor_state_message": True}
         return None
+
+
+class ThrottledCheckpointReader(CheckpointReader):
+    """Rate-limits how often a wrapped reader surfaces a checkpoint.
+
+    Wraps any other reader and delegates iteration to it, but suppresses
+    per-slice checkpoints that land inside `throttle_seconds` of the last one
+    surfaced. Suppression uses the documented `get_checkpoint()` contract: a
+    `None` return means the caller emits no state message.
+
+    The first checkpoint of the sync always surfaces, and if the last per-slice
+    checkpoint was suppressed the held value is surfaced on the final
+    `get_checkpoint()` call after iteration ends. So the destination always sees
+    the latest cursor; only intermediate checkpoint granularity is reduced.
+
+    Exists because legacy file-based streams carry a file-history dict in every
+    state message, so the payload grows with the sync and emitting once per file
+    puts GBs of un-ACKed state into the orchestrator buffer (oncall #12663,
+    #13210).
+
+    Note the held checkpoint is a reference, not a snapshot: cursors that return
+    their live state dict (e.g. `DefaultFileBasedCursor`) keep mutating it, so
+    the final emit serializes state as of end-of-sync. That is what we want.
+    """
+
+    def __init__(
+        self,
+        inner: CheckpointReader,
+        throttle_seconds: float = DEFAULT_STATE_EMISSION_THROTTLE_SECONDS,
+        clock: Callable[[], float] = time.monotonic,
+    ):
+        self._inner = inner
+        self._throttle_seconds = throttle_seconds
+        # Monotonic by default: measures elapsed time, immune to wall-clock jumps.
+        self._clock = clock
+        # None means nothing has surfaced yet, so the first checkpoint always
+        # fires regardless of the clock's absolute value.
+        self._last_surfaced_at: Optional[float] = None
+        self._pending: Optional[Mapping[str, Any]] = None
+        self._finished = False
+
+    def next(self) -> Optional[Mapping[str, Any]]:
+        next_slice = self._inner.next()
+        if next_slice is None:
+            self._finished = True
+        return next_slice
+
+    def observe(self, new_state: Mapping[str, Any]) -> None:
+        self._inner.observe(new_state)
+
+    def get_checkpoint(self) -> Optional[Mapping[str, Any]]:
+        checkpoint = self._inner.get_checkpoint()
+
+        if self._finished:
+            # Final call, after iteration ended. Prefer whatever the wrapped
+            # reader wants to emit; otherwise pay out a suppressed checkpoint so
+            # the sync never ends on a state the destination has not seen. If
+            # nothing was suppressed, `_pending` is None and no duplicate final
+            # state is emitted.
+            return checkpoint if checkpoint is not None else self._pending
+
+        if checkpoint is None:
+            return None
+
+        now = self._clock()
+        if not state_emission_is_due(self._last_surfaced_at, now, self._throttle_seconds):
+            self._pending = checkpoint
+            return None
+
+        self._last_surfaced_at = now
+        self._pending = None
+        return checkpoint
