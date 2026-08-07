@@ -2,6 +2,7 @@
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
 
+import logging
 from abc import abstractmethod
 from datetime import datetime, timedelta, timezone
 from typing import Any, Callable, List, MutableMapping, Optional, Tuple
@@ -15,6 +16,8 @@ from airbyte_cdk.sources.streams.concurrent.state_converters.abstract_stream_sta
     ConcurrencyCompatibleStateType,
 )
 from airbyte_cdk.utils.datetime_helpers import AirbyteDateTime, ab_datetime_now, ab_datetime_parse
+
+logger = logging.getLogger("airbyte")
 
 
 class DateTimeStreamStateConverter(AbstractStreamStateConverter):
@@ -100,11 +103,23 @@ class DateTimeStreamStateConverter(AbstractStreamStateConverter):
         start: Optional[datetime],
     ) -> datetime:
         sync_start = start if start is not None else self.zero_value
-        prev_sync_low_water_mark = (
-            self.parse_timestamp(stream_state[cursor_field.cursor_field_key])
-            if cursor_field.cursor_field_key in stream_state
-            else None
-        )
+        prev_sync_low_water_mark = None
+        if cursor_field.cursor_field_key in stream_state:
+            saved_cursor_value = stream_state[cursor_field.cursor_field_key]
+            # Defense-in-depth guard. The primary/root fix for the boolean leaking into
+            # here lives in `ModelToComponentFactory._instantiate_parent_stream_state_manager`,
+            # which no longer re-keys the `__ab_no_cursor_state_message` sentinel as a cursor
+            # value. This guard is kept as a backstop: a boolean is never a valid datetime
+            # cursor value, so ignore it and fall back to the start date instead of crashing
+            # the whole source at startup (see airbytehq/oncall#13084).
+            if isinstance(saved_cursor_value, bool):
+                logger.warning(
+                    "Ignoring saved state for cursor field '%s': value %r is not a valid datetime. Falling back to the start date.",
+                    cursor_field.cursor_field_key,
+                    saved_cursor_value,
+                )
+            else:
+                prev_sync_low_water_mark = self.parse_timestamp(saved_cursor_value)
         if prev_sync_low_water_mark and prev_sync_low_water_mark >= sync_start:
             return prev_sync_low_water_mark
         else:
