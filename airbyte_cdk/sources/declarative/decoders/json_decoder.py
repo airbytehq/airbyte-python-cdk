@@ -43,7 +43,7 @@ class JsonDecoder(Decoder):
                 has_yielded = True
         except Exception as exc:
             request_method = response.request.method if response.request else "<unknown>"
-            body = response.content
+            body = response.content or b""
             body_preview = body[:200].decode("utf-8", errors="replace")
             logger.error(
                 filter_secrets(
