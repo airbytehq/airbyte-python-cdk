@@ -24,6 +24,9 @@ from airbyte_cdk.models import (
 from airbyte_cdk.sources.declarative.concurrent_declarative_source import (
     ConcurrentDeclarativeSource,
 )
+from airbyte_cdk.sources.declarative.datetime.datetime_parser import (
+    DatetimeFormatMismatchError,
+)
 from airbyte_cdk.test.mock_http import HttpMocker, HttpRequest, HttpResponse
 
 _CONFIG = {"start_date": "2024-07-01T00:00:00.000Z"}
@@ -608,8 +611,15 @@ def test_cursor_age_validation_raises_error_for_unparseable_cursor():
         source_config=manifest, config=_CONFIG, catalog=None, state=state
     )
 
-    with pytest.raises(ValueError, match="not-a-date"):
+    with pytest.raises(DatetimeFormatMismatchError) as exc_info:
         source.discover(logger=MagicMock(), config=_CONFIG)
+
+    assert isinstance(exc_info.value, ValueError)
+    assert exc_info.value.message == (
+        'Cursor field "updated_at" of stream "TestStream" matches none of the configured '
+        "datetime formats."
+    )
+    assert "not-a-date" in (exc_info.value.internal_message or "")
 
 
 @freezegun.freeze_time("2024-07-15")

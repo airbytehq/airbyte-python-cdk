@@ -2,6 +2,7 @@
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
 
+import logging
 from copy import deepcopy
 from datetime import datetime, timedelta, timezone
 from typing import Any, Mapping, Optional
@@ -11,7 +12,11 @@ from unittest.mock import Mock
 import freezegun
 import pytest
 
+from airbyte_cdk.models import FailureType
 from airbyte_cdk.sources.connector_state_manager import ConnectorStateManager
+from airbyte_cdk.sources.declarative.datetime.datetime_parser import (
+    DatetimeFormatMismatchError,
+)
 from airbyte_cdk.sources.message import MessageRepository
 from airbyte_cdk.sources.streams import NO_CURSOR_STATE_KEY
 from airbyte_cdk.sources.streams.concurrent.clamping import (
@@ -1411,3 +1416,53 @@ def test_final_state_cursor_get_cursor_datetime_from_state_returns_now_for_no_cu
 
     result_with_empty_state = cursor.get_cursor_datetime_from_state({})
     assert result_with_empty_state is None
+
+
+_MILLIS_FORMAT = "%Y-%m-%dT%H:%M:%S.%fZ"
+_WHOLE_SECOND_CURSOR_VALUE = "2025-06-28T18:35:16Z"
+
+
+def _cursor_with_custom_format(stream_state: Mapping[str, Any]) -> ConcurrentCursor:
+    return ConcurrentCursor(
+        _A_STREAM_NAME,
+        _A_STREAM_NAMESPACE,
+        deepcopy(stream_state),
+        Mock(spec=MessageRepository),
+        Mock(spec=ConnectorStateManager),
+        CustomFormatConcurrentStreamStateConverter(_MILLIS_FORMAT),
+        CursorField(_A_CURSOR_FIELD_KEY),
+        _SLICE_BOUNDARY_FIELDS,
+        None,
+        CustomFormatConcurrentStreamStateConverter.get_end_provider(),
+        _NO_LOOKBACK_WINDOW,
+    )
+
+
+def test_given_state_value_not_matching_format_when_create_cursor_then_raise_traced_error() -> None:
+    with pytest.raises(DatetimeFormatMismatchError) as exc_info:
+        _cursor_with_custom_format({_A_CURSOR_FIELD_KEY: _WHOLE_SECOND_CURSOR_VALUE})
+
+    assert isinstance(exc_info.value, ValueError)
+    assert exc_info.value.message == (
+        f'Cursor field "{_A_CURSOR_FIELD_KEY}" of stream "{_A_STREAM_NAME}" matches none of the '
+        "configured datetime formats."
+    )
+    assert exc_info.value.failure_type == FailureType.system_error
+    assert _WHOLE_SECOND_CURSOR_VALUE in (exc_info.value.internal_message or "")
+    assert _MILLIS_FORMAT in (exc_info.value.internal_message or "")
+
+
+def test_given_record_cursor_value_not_matching_format_when_should_be_synced_then_log_and_sync(
+    caplog,
+) -> None:
+    cursor = _cursor_with_custom_format(_NO_STATE)
+    record = Record(
+        data={_A_CURSOR_FIELD_KEY: _WHOLE_SECOND_CURSOR_VALUE},
+        associated_slice=None,
+        stream_name=_A_STREAM_NAME,
+    )
+
+    with caplog.at_level(logging.WARNING, logger="airbyte"):
+        assert cursor.should_be_synced(record) is True
+
+    assert "matches none of the configured datetime formats" in caplog.text

@@ -8,6 +8,10 @@ import unittest
 import pytest
 
 from airbyte_cdk.legacy.sources.declarative.incremental import DatetimeBasedCursor
+from airbyte_cdk.models import FailureType
+from airbyte_cdk.sources.declarative.datetime.datetime_parser import (
+    DatetimeFormatMismatchError,
+)
 from airbyte_cdk.sources.declarative.datetime.min_max_datetime import MinMaxDatetime
 from airbyte_cdk.sources.declarative.interpolation.interpolated_string import InterpolatedString
 from airbyte_cdk.sources.declarative.requesters.request_option import (
@@ -1020,8 +1024,16 @@ def test_given_unknown_format_when_parse_date_then_raise_error():
         config=config,
         parameters={},
     )
-    with pytest.raises(ValueError):
+    with pytest.raises(DatetimeFormatMismatchError) as exc_info:
         slicer.parse_date("2021-01-01T00:00:00.000000+0000")
+
+    assert isinstance(exc_info.value, ValueError)
+    assert (
+        exc_info.value.message
+        == f'Cursor field "{cursor_field}" matches none of the configured datetime formats.'
+    )
+    assert exc_info.value.failure_type == FailureType.system_error
+    assert "2021-01-01T00:00:00.000000+0000" in (exc_info.value.internal_message or "")
 
 
 @pytest.mark.parametrize(
