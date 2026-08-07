@@ -13,13 +13,17 @@ from airbyte_cdk.sources.declarative.requesters.paginators.strategies.page_incre
 )
 from airbyte_cdk.sources.declarative.requesters.paginators.strategies.stop_condition import (
     CursorStopCondition,
+    FilterAwareStopCondition,
+    PaginationStopCondition,
     StopConditionPaginationStrategyDecorator,
 )
 
 __all__ = [
     "CursorPaginationStrategy",
     "CursorStopCondition",
+    "FilterAwareStopCondition",
     "OffsetIncrement",
     "PageIncrement",
+    "PaginationStopCondition",
     "StopConditionPaginationStrategyDecorator",
 ]

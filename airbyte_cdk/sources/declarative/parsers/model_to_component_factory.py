@@ -525,8 +525,10 @@ from airbyte_cdk.sources.declarative.requesters.paginators import (
 from airbyte_cdk.sources.declarative.requesters.paginators.strategies import (
     CursorPaginationStrategy,
     CursorStopCondition,
+    FilterAwareStopCondition,
     OffsetIncrement,
     PageIncrement,
+    PaginationStopCondition,
     StopConditionPaginationStrategyDecorator,
 )
 from airbyte_cdk.sources.declarative.requesters.query_properties import (
@@ -2414,6 +2416,9 @@ class ModelToComponentFactory:
         extractor_model: Optional[Union[CustomRecordExtractorModel, DpathExtractorModel]] = None,
         decoder: Optional[Decoder] = None,
         cursor_used_for_stop_condition: Optional[Cursor] = None,
+        record_filter_used_for_stop_condition: Optional[
+            ClientSideIncrementalRecordFilterDecorator
+        ] = None,
     ) -> Union[DefaultPaginator, PaginatorTestReadDecorator]:
         if decoder:
             if self._is_supported_decoder_for_pagination(decoder):
@@ -2439,8 +2444,16 @@ class ModelToComponentFactory:
             extractor_model=extractor_model,
         )
         if cursor_used_for_stop_condition:
+            # When client-side incremental filtering is enabled, records older than the cursor are
+            # dropped before the paginator can observe them, so the stop condition must be driven
+            # by the record filter instead of the last record emitted for the page
+            stop_condition: PaginationStopCondition = (
+                FilterAwareStopCondition(record_filter_used_for_stop_condition)
+                if record_filter_used_for_stop_condition
+                else CursorStopCondition(cursor_used_for_stop_condition)
+            )
             pagination_strategy = StopConditionPaginationStrategyDecorator(
-                pagination_strategy, CursorStopCondition(cursor_used_for_stop_condition)
+                pagination_strategy, stop_condition
             )
         paginator = DefaultPaginator(
             decoder=decoder_to_use,
@@ -3555,6 +3568,14 @@ class ModelToComponentFactory:
                 extractor_model=model.record_selector.extractor,
                 decoder=decoder,
                 cursor_used_for_stop_condition=cursor if has_stop_condition_cursor else None,
+                record_filter_used_for_stop_condition=(
+                    record_selector.record_filter
+                    if has_stop_condition_cursor
+                    and isinstance(
+                        record_selector.record_filter, ClientSideIncrementalRecordFilterDecorator
+                    )
+                    else None
+                ),
             )
             if model.paginator
             else NoPagination(parameters={})

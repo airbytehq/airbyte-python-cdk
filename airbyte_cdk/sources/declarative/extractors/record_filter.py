@@ -1,6 +1,7 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
+import threading
 from dataclasses import InitVar, dataclass
 from typing import Any, Iterable, Mapping, Optional, Union
 
@@ -60,6 +61,18 @@ class ClientSideIncrementalRecordFilterDecorator(RecordFilter):
     ):
         super().__init__(**kwargs)
         self._cursor = cursor
+        # One retriever (and hence one record filter) may be shared across partitions that are read
+        # concurrently, so per-page bookkeeping must be tracked per thread
+        self._thread_local = threading.local()
+
+    @property
+    def stale_record_seen_on_current_page(self) -> bool:
+        """
+        Whether the page being filtered contained at least one record the cursor considers already
+        synced. Used by `FilterAwareStopCondition` to stop paginating on data feed streams, since
+        such records never reach the paginator. Reset on every `filter_records` call.
+        """
+        return getattr(self._thread_local, "stale_record_seen", False)
 
     def filter_records(
         self,
@@ -68,15 +81,8 @@ class ClientSideIncrementalRecordFilterDecorator(RecordFilter):
         stream_slice: Optional[StreamSlice] = None,
         next_page_token: Optional[Mapping[str, Any]] = None,
     ) -> Iterable[Mapping[str, Any]]:
-        records = (
-            record
-            for record in records
-            if self._cursor.should_be_synced(
-                # Record is created on the fly to align with cursors interface; stream name is ignored as we don't need it here
-                # Record stream name is empty because it is not used during the filtering
-                Record(data=record, associated_slice=stream_slice, stream_name="")
-            )
-        )
+        self._thread_local.stale_record_seen = False
+        records = (record for record in records if self._should_be_synced(record, stream_slice))
         if self.condition:
             records = super().filter_records(
                 records=records,
@@ -84,4 +90,16 @@ class ClientSideIncrementalRecordFilterDecorator(RecordFilter):
                 stream_slice=stream_slice,
                 next_page_token=next_page_token,
             )
-        yield from records
+        return records
+
+    def _should_be_synced(
+        self, record: Mapping[str, Any], stream_slice: Optional[StreamSlice]
+    ) -> bool:
+        if self._cursor.should_be_synced(
+            # Record is created on the fly to align with cursors interface; stream name is ignored as we don't need it here
+            # Record stream name is empty because it is not used during the filtering
+            Record(data=record, associated_slice=stream_slice, stream_name="")
+        ):
+            return True
+        self._thread_local.stale_record_seen = True
+        return False
