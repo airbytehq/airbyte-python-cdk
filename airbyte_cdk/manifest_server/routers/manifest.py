@@ -13,6 +13,7 @@ from airbyte_cdk.sources.declarative.concurrent_declarative_source import (
 from airbyte_cdk.sources.declarative.parsers.custom_code_compiler import (
     INJECTED_COMPONENTS_PY,
     INJECTED_COMPONENTS_PY_CHECKSUMS,
+    AirbyteCustomCodeNotPermittedError,
 )
 from airbyte_cdk.utils.airbyte_secrets_utils import filter_secrets
 
@@ -57,6 +58,11 @@ def safe_build_source(
         )
     except jsonschema.exceptions.ValidationError as e:
         raise HTTPException(status_code=400, detail=f"Invalid manifest: {e.message}")
+    except AirbyteCustomCodeNotPermittedError as e:
+        raise HTTPException(
+            status_code=400,
+            detail="Custom connector code is not permitted in this environment.",
+        ) from e
 
 
 router = APIRouter(
@@ -85,6 +91,7 @@ def test_read(request: StreamTestReadRequest) -> StreamReadResponse:
         )
 
     config_dict = request.config.model_dump()
+    manifest = request.manifest.model_dump()
 
     catalog = build_catalog(request.stream_name)
     converted_state = [AirbyteStateMessageSerializer.load(state) for state in request.state]
@@ -97,7 +104,6 @@ def test_read(request: StreamTestReadRequest) -> StreamReadResponse:
 
     # We enforce a concurrency level of 1 so that the stream is processed on a single thread
     # to retain ordering for the grouping of the builder message responses.
-    manifest = request.manifest.model_dump()
     if "concurrency_level" in manifest:
         manifest["concurrency_level"]["default_concurrency"] = 1
     else:

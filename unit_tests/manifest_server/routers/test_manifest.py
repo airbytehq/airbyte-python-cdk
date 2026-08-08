@@ -6,6 +6,9 @@ from fastapi.testclient import TestClient
 
 from airbyte_cdk.connector_builder.models import StreamRead as CDKStreamRead
 from airbyte_cdk.manifest_server.app import app
+from airbyte_cdk.sources.declarative.parsers.custom_code_compiler import (
+    AirbyteCustomCodeNotPermittedError,
+)
 
 client = TestClient(app)
 
@@ -186,6 +189,52 @@ class TestManifestRouter:
             50,  # record_limit
             3,  # page_limit
             2,  # slice_limit
+        )
+
+    @patch("airbyte_cdk.manifest_server.routers.manifest.build_catalog")
+    @patch("airbyte_cdk.manifest_server.routers.manifest.build_source")
+    def test_test_read_returns_bad_request_for_disallowed_custom_components(
+        self,
+        mock_build_source,
+        mock_build_catalog,
+        sample_manifest,
+        sample_config,
+    ):
+        manifest = {
+            **sample_manifest,
+            "streams": [
+                {
+                    **sample_manifest["streams"][0],
+                    "retriever": {
+                        **sample_manifest["streams"][0]["retriever"],
+                        "record_selector": {
+                            "type": "RecordSelector",
+                            "extractor": {
+                                "type": "CustomRecordExtractor",
+                                "class_name": "components.CustomRecordExtractor",
+                            },
+                        },
+                    },
+                }
+            ],
+        }
+        request_data = {
+            "manifest": manifest,
+            "config": sample_config,
+            "stream_name": "products",
+            "state": [],
+            "custom_components_code": "class CustomRecordExtractor: pass",
+        }
+
+        mock_build_catalog.return_value = Mock()
+        mock_build_source.side_effect = AirbyteCustomCodeNotPermittedError
+
+        response = client.post("/v1/manifest/test_read", json=request_data)
+
+        assert response.status_code == 400
+        assert (
+            response.json()["detail"]
+            == "Custom connector code is not permitted in this environment."
         )
 
     @patch("airbyte_cdk.manifest_server.routers.manifest.AirbyteStateMessageSerializer")
