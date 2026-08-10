@@ -145,8 +145,6 @@ from airbyte_cdk.sources.declarative.requesters.http_job_repository import Async
 from airbyte_cdk.sources.declarative.requesters.paginators import DefaultPaginator
 from airbyte_cdk.sources.declarative.requesters.paginators.strategies import (
     CursorPaginationStrategy,
-    CursorStopCondition,
-    FilterAwareStopCondition,
     OffsetIncrement,
     PageIncrement,
     StopConditionPaginationStrategyDecorator,
@@ -1434,13 +1432,27 @@ list_stream:
         model_type=DeclarativeStreamModel, component_definition=stream_manifest, config=input_config
     )
 
-    pagination_strategy = get_retriever(stream).paginator.pagination_strategy
-    assert isinstance(pagination_strategy, StopConditionPaginationStrategyDecorator)
-    assert isinstance(pagination_strategy._stop_condition, CursorStopCondition)
+    retriever = get_retriever(stream)
+    assert isinstance(
+        retriever.paginator.pagination_strategy,
+        StopConditionPaginationStrategyDecorator,
+    )
+    # the stop condition only prevents the next page from being requested; the already-synced records
+    # of the last page are dropped by the retriever
+    assert retriever.data_feed_cursor is stream.cursor
 
 
-def test_incremental_data_feed_with_client_side_incremental():
-    content = """
+@pytest.mark.parametrize(
+    "is_client_side_incremental",
+    [
+        pytest.param(False, id="test_data_feed_only"),
+        pytest.param(True, id="test_data_feed_with_client_side_incremental"),
+    ],
+)
+def test_incremental_data_feed_filters_already_synced_records_in_the_retriever(
+    is_client_side_incremental,
+):
+    content = f"""
 selector:
   type: RecordSelector
   extractor:
@@ -1448,7 +1460,7 @@ selector:
       field_path: ["extractor_path"]
 requester:
   type: HttpRequester
-  name: "{{ parameters['name'] }}"
+  name: "{{{{ parameters['name'] }}}}"
   url_base: "https://api.sendgrid.com/v3/"
   http_method: "GET"
 list_stream:
@@ -1457,18 +1469,18 @@ list_stream:
     type: DatetimeBasedCursor
     $parameters:
       datetime_format: "%Y-%m-%dT%H:%M:%S.%f%z"
-    start_datetime: "{{ config['start_time'] }}"
+    start_datetime: "{{{{ config['start_time'] }}}}"
     cursor_field: "created"
     is_data_feed: true
-    is_client_side_incremental: true
+    is_client_side_incremental: {str(is_client_side_incremental).lower()}
   retriever:
     type: SimpleRetriever
-    name: "{{ parameters['name'] }}"
+    name: "{{{{ parameters['name'] }}}}"
     paginator:
       type: DefaultPaginator
       pagination_strategy:
         type: "CursorPagination"
-        cursor_value: "{{ response._metadata.next }}"
+        cursor_value: "{{{{ response._metadata.next }}}}"
         page_size: 10
     requester:
       $ref: "#/requester"
@@ -1490,17 +1502,11 @@ list_stream:
     )
 
     retriever = get_retriever(stream)
-    pagination_strategy = retriever.paginator.pagination_strategy
-    assert isinstance(pagination_strategy, StopConditionPaginationStrategyDecorator)
-    # the client-side filter drops below-cursor records before the paginator sees them, so the stop
-    # condition must observe the filter rather than the last emitted record
-    assert isinstance(pagination_strategy._stop_condition, FilterAwareStopCondition)
-    assert isinstance(
+    assert retriever.data_feed_cursor is stream.cursor
+    # filtering in the record selector would hide the already-synced records from the paginator and
+    # therefore silently disable the stop condition
+    assert not isinstance(
         retriever.record_selector.record_filter, ClientSideIncrementalRecordFilterDecorator
-    )
-    assert (
-        pagination_strategy._stop_condition._record_filter
-        is retriever.record_selector.record_filter
     )
 
 

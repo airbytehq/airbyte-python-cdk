@@ -525,10 +525,8 @@ from airbyte_cdk.sources.declarative.requesters.paginators import (
 from airbyte_cdk.sources.declarative.requesters.paginators.strategies import (
     CursorPaginationStrategy,
     CursorStopCondition,
-    FilterAwareStopCondition,
     OffsetIncrement,
     PageIncrement,
-    PaginationStopCondition,
     StopConditionPaginationStrategyDecorator,
 )
 from airbyte_cdk.sources.declarative.requesters.query_properties import (
@@ -2385,9 +2383,6 @@ class ModelToComponentFactory:
         extractor_model: Optional[Union[CustomRecordExtractorModel, DpathExtractorModel]] = None,
         decoder: Optional[Decoder] = None,
         cursor_used_for_stop_condition: Optional[Cursor] = None,
-        record_filter_used_for_stop_condition: Optional[
-            ClientSideIncrementalRecordFilterDecorator
-        ] = None,
     ) -> Union[DefaultPaginator, PaginatorTestReadDecorator]:
         if decoder:
             if self._is_supported_decoder_for_pagination(decoder):
@@ -2413,16 +2408,8 @@ class ModelToComponentFactory:
             extractor_model=extractor_model,
         )
         if cursor_used_for_stop_condition:
-            # When client-side incremental filtering is enabled, records older than the cursor are
-            # dropped before the paginator can observe them, so the stop condition must be driven
-            # by the record filter instead of the last record emitted for the page
-            stop_condition: PaginationStopCondition = (
-                FilterAwareStopCondition(record_filter_used_for_stop_condition)
-                if record_filter_used_for_stop_condition
-                else CursorStopCondition(cursor_used_for_stop_condition)
-            )
             pagination_strategy = StopConditionPaginationStrategyDecorator(
-                pagination_strategy, stop_condition
+                pagination_strategy, CursorStopCondition(cursor_used_for_stop_condition)
             )
         paginator = DefaultPaginator(
             decoder=decoder_to_use,
@@ -3435,6 +3422,16 @@ class ModelToComponentFactory:
         if cursor is None:
             cursor = FinalStateCursor(name, None, self._message_repository)
 
+        # A data feed drops the records the cursor considers already synced in the retriever, which
+        # sits downstream of the paginator. Letting the record selector drop them as well would be
+        # redundant and would hide them from the pagination stop condition, so a data feed never
+        # delegates that filtering to the record selector, whether `is_client_side_incremental` is
+        # set or not.
+        data_feed_cursor = cursor if has_stop_condition_cursor else None
+        client_side_incremental_cursor = (
+            cursor if is_client_side_incremental_sync and not data_feed_cursor else None
+        )
+
         decoder = (
             self._create_component_from_model(model=model.decoder, config=config)
             if model.decoder
@@ -3446,7 +3443,7 @@ class ModelToComponentFactory:
             config=config,
             decoder=decoder,
             transformations=transformations,
-            client_side_incremental_sync_cursor=cursor if is_client_side_incremental_sync else None,
+            client_side_incremental_sync_cursor=client_side_incremental_cursor,
             file_uploader=file_uploader,
         )
 
@@ -3537,14 +3534,6 @@ class ModelToComponentFactory:
                 extractor_model=model.record_selector.extractor,
                 decoder=decoder,
                 cursor_used_for_stop_condition=cursor if has_stop_condition_cursor else None,
-                record_filter_used_for_stop_condition=(
-                    record_selector.record_filter
-                    if has_stop_condition_cursor
-                    and isinstance(
-                        record_selector.record_filter, ClientSideIncrementalRecordFilterDecorator
-                    )
-                    else None
-                ),
             )
             if model.paginator
             else NoPagination(parameters={})
@@ -3614,6 +3603,7 @@ class ModelToComponentFactory:
             pagination_tracker_factory=self._create_pagination_tracker_factory(
                 model.pagination_reset, cursor
             ),
+            data_feed_cursor=data_feed_cursor,
             parameters=model.parameters or {},
         )
 

@@ -1430,3 +1430,83 @@ def _mock_paginator():
     paginator.get_request_body_data.__name__ = "get_request_body_data"
     paginator.get_request_body_json.__name__ = "get_request_body_json"
     return paginator
+
+
+def _data_feed_retriever(cursor: Mock, paginator: Paginator) -> SimpleRetriever:
+    requester = MagicMock()
+    requester.send_request.return_value = MagicMock()
+    record_selector = MagicMock()
+    return SimpleRetriever(
+        name=A_STREAM_NAME,
+        primary_key=primary_key,
+        requester=requester,
+        paginator=paginator,
+        record_selector=record_selector,
+        stream_slicer=SinglePartitionRouter(parameters={}),
+        data_feed_cursor=cursor,
+        parameters={},
+        config={},
+    )
+
+
+def test_given_data_feed_cursor_when_read_records_then_filter_out_already_synced_records():
+    page = [
+        Record(data={"id": "1"}, stream_name=A_STREAM_NAME),
+        Record(data={"id": "2"}, stream_name=A_STREAM_NAME),
+        Record(data={"id": "3"}, stream_name=A_STREAM_NAME),
+    ]
+    cursor = Mock()
+    cursor.should_be_synced.side_effect = lambda record: record.data["id"] != "3"
+    paginator = _mock_paginator()
+    paginator.get_initial_token.return_value = None
+    paginator.next_page_token.return_value = None
+    retriever = _data_feed_retriever(cursor, paginator)
+
+    with patch.object(SimpleRetriever, "_parse_records", return_value=iter(page)):
+        actual_records = list(
+            retriever.read_records(records_schema={}, stream_slice=A_STREAM_SLICE)
+        )
+
+    assert actual_records == page[:2]
+
+
+def test_given_data_feed_cursor_when_read_records_then_paginator_still_sees_the_whole_page():
+    """
+    The record that stops the pagination is the very one being filtered out, so the paginator must
+    be given the page as returned by the API rather than the filtered one.
+    """
+    page = [
+        Record(data={"id": "1"}, stream_name=A_STREAM_NAME),
+        Record(data={"id": "2"}, stream_name=A_STREAM_NAME),
+        Record(data={"id": "3"}, stream_name=A_STREAM_NAME),
+    ]
+    cursor = Mock()
+    cursor.should_be_synced.side_effect = lambda record: record.data["id"] != "3"
+    paginator = _mock_paginator()
+    paginator.get_initial_token.return_value = None
+    paginator.next_page_token.return_value = None
+    retriever = _data_feed_retriever(cursor, paginator)
+
+    with patch.object(SimpleRetriever, "_parse_records", return_value=iter(page)):
+        list(retriever.read_records(records_schema={}, stream_slice=A_STREAM_SLICE))
+
+    assert paginator.next_page_token.call_args.kwargs["last_page_size"] == 3
+    assert paginator.next_page_token.call_args.kwargs["last_record"] == page[-1]
+
+
+def test_given_no_data_feed_cursor_when_read_records_then_emit_every_record():
+    page = [
+        Record(data={"id": "1"}, stream_name=A_STREAM_NAME),
+        Record(data={"id": "2"}, stream_name=A_STREAM_NAME),
+    ]
+    paginator = _mock_paginator()
+    paginator.get_initial_token.return_value = None
+    paginator.next_page_token.return_value = None
+    retriever = _data_feed_retriever(cursor=None, paginator=paginator)
+
+    with patch.object(SimpleRetriever, "_parse_records", return_value=iter(page)):
+        actual_records = list(
+            retriever.read_records(records_schema={}, stream_slice=A_STREAM_SLICE)
+        )
+
+    assert actual_records == page
