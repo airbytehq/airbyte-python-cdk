@@ -1439,7 +1439,8 @@ list_stream:
     )
     # the stop condition only prevents the next page from being requested; the already-synced records
     # of the last page are dropped by the retriever
-    assert retriever.data_feed_cursor is stream.cursor
+    assert isinstance(retriever.post_pagination_filter, ClientSideIncrementalRecordFilterDecorator)
+    assert retriever.post_pagination_filter._cursor is stream.cursor
 
 
 @pytest.mark.parametrize(
@@ -1502,12 +1503,74 @@ list_stream:
     )
 
     retriever = get_retriever(stream)
-    assert retriever.data_feed_cursor is stream.cursor
+    assert isinstance(retriever.post_pagination_filter, ClientSideIncrementalRecordFilterDecorator)
+    assert retriever.post_pagination_filter._cursor is stream.cursor
+    # the `record_filter` condition stays in the record selector, so the post-pagination filter must not evaluate it
+    assert retriever.post_pagination_filter.condition is None
     # filtering in the record selector would hide the already-synced records from the paginator and
     # therefore silently disable the stop condition
     assert not isinstance(
         retriever.record_selector.record_filter, ClientSideIncrementalRecordFilterDecorator
     )
+
+
+def test_given_data_feed_and_record_filter_then_condition_stays_in_the_record_selector():
+    content = """
+selector:
+  type: RecordSelector
+  record_filter:
+    type: RecordFilter
+    condition: "{{ record['id'] > 1 }}"
+  extractor:
+      type: DpathExtractor
+      field_path: ["extractor_path"]
+requester:
+  type: HttpRequester
+  name: "{{ parameters['name'] }}"
+  url_base: "https://api.sendgrid.com/v3/"
+  http_method: "GET"
+list_stream:
+  type: DeclarativeStream
+  incremental_sync:
+    type: DatetimeBasedCursor
+    $parameters:
+      datetime_format: "%Y-%m-%dT%H:%M:%S.%f%z"
+    start_datetime: "{{ config['start_time'] }}"
+    cursor_field: "created"
+    is_data_feed: true
+  retriever:
+    type: SimpleRetriever
+    name: "{{ parameters['name'] }}"
+    paginator:
+      type: DefaultPaginator
+      pagination_strategy:
+        type: "CursorPagination"
+        cursor_value: "{{ response._metadata.next }}"
+        page_size: 10
+    requester:
+      $ref: "#/requester"
+      path: "/"
+    record_selector:
+      $ref: "#/selector"
+  $parameters:
+    name: "lists"
+    """
+
+    parsed_manifest = YamlDeclarativeSource._parse(content)
+    resolved_manifest = resolver.preprocess_manifest(parsed_manifest)
+    stream_manifest = transformer.propagate_types_and_parameters(
+        "", resolved_manifest["list_stream"], {}
+    )
+
+    stream = factory.create_component(
+        model_type=DeclarativeStreamModel, component_definition=stream_manifest, config=input_config
+    )
+
+    retriever = get_retriever(stream)
+    # the condition must keep running upstream of the paginator, otherwise the records it rejects would start counting
+    # towards the page size and could become the record the stop condition is evaluated on
+    assert retriever.record_selector.record_filter.condition == "{{ record['id'] > 1 }}"
+    assert retriever.post_pagination_filter.condition is None
 
 
 def test_given_data_feed_and_incremental_then_raise_error():

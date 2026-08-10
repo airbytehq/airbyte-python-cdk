@@ -61,6 +61,16 @@ class ClientSideIncrementalRecordFilterDecorator(RecordFilter):
         super().__init__(**kwargs)
         self._cursor = cursor
 
+    def filter_typed_records(self, records: Iterable[Record]) -> Iterable[Record]:
+        """
+        Drop the records the cursor considers already synced.
+
+        Unlike `filter_records`, this operates on `Record` objects and does not evaluate `condition`. It exists for
+        callers that already hold records, such as a retriever filtering a data feed's boundary page once the paginator
+        has observed it.
+        """
+        return (record for record in records if self._cursor.should_be_synced(record))
+
     def filter_records(
         self,
         records: Iterable[Mapping[str, Any]],
@@ -68,15 +78,14 @@ class ClientSideIncrementalRecordFilterDecorator(RecordFilter):
         stream_slice: Optional[StreamSlice] = None,
         next_page_token: Optional[Mapping[str, Any]] = None,
     ) -> Iterable[Mapping[str, Any]]:
-        records = (
-            record
+        filtered_records = self.filter_typed_records(
+            # Records are created on the fly to align with the cursor interface; the stream name is empty because it is
+            # not used during the filtering
+            Record(data=record, associated_slice=stream_slice, stream_name="")
             for record in records
-            if self._cursor.should_be_synced(
-                # Record is created on the fly to align with cursors interface; stream name is ignored as we don't need it here
-                # Record stream name is empty because it is not used during the filtering
-                Record(data=record, associated_slice=stream_slice, stream_name="")
-            )
         )
+        # The records yielded downstream must be the ones that were passed in, not the wrappers built above
+        records = (record.data for record in filtered_records)
         if self.condition:
             records = super().filter_records(
                 records=records,

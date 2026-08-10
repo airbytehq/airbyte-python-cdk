@@ -3422,14 +3422,24 @@ class ModelToComponentFactory:
         if cursor is None:
             cursor = FinalStateCursor(name, None, self._message_repository)
 
-        # A data feed drops the records the cursor considers already synced in the retriever, which
-        # sits downstream of the paginator. Letting the record selector drop them as well would be
-        # redundant and would hide them from the pagination stop condition, so a data feed never
-        # delegates that filtering to the record selector, whether `is_client_side_incremental` is
-        # set or not.
-        data_feed_cursor = cursor if has_stop_condition_cursor else None
+        # A data feed drops the records the cursor considers already synced in the retriever, which sits downstream of
+        # the paginator. Letting the record selector drop them as well would be redundant and would hide them from the
+        # pagination stop condition, so a data feed never delegates that filtering to the record selector, whether
+        # `is_client_side_incremental` is set or not. The `condition` from `record_filter` is intentionally left out of
+        # the post-pagination filter: it stays in the record selector so that the records it rejects keep being counted
+        # by the paginator.
+        post_pagination_filter = (
+            ClientSideIncrementalRecordFilterDecorator(
+                config=config,
+                parameters=model.parameters or {},
+                condition=None,
+                cursor=cursor,
+            )
+            if has_stop_condition_cursor
+            else None
+        )
         client_side_incremental_cursor = (
-            cursor if is_client_side_incremental_sync and not data_feed_cursor else None
+            cursor if is_client_side_incremental_sync and not post_pagination_filter else None
         )
 
         decoder = (
@@ -3603,7 +3613,7 @@ class ModelToComponentFactory:
             pagination_tracker_factory=self._create_pagination_tracker_factory(
                 model.pagination_reset, cursor
             ),
-            data_feed_cursor=data_feed_cursor,
+            post_pagination_filter=post_pagination_filter,
             parameters=model.parameters or {},
         )
 

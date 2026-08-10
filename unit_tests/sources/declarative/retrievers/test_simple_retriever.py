@@ -20,6 +20,9 @@ from airbyte_cdk.models import (
 from airbyte_cdk.sources.declarative.auth.declarative_authenticator import NoAuth
 from airbyte_cdk.sources.declarative.decoders import JsonDecoder
 from airbyte_cdk.sources.declarative.extractors import DpathExtractor, HttpSelector, RecordSelector
+from airbyte_cdk.sources.declarative.extractors.record_filter import (
+    ClientSideIncrementalRecordFilterDecorator,
+)
 from airbyte_cdk.sources.declarative.partition_routers import SinglePartitionRouter
 from airbyte_cdk.sources.declarative.requesters.paginators import DefaultPaginator, Paginator
 from airbyte_cdk.sources.declarative.requesters.paginators.strategies import (
@@ -1432,7 +1435,7 @@ def _mock_paginator():
     return paginator
 
 
-def _data_feed_retriever(cursor: Mock, paginator: Paginator) -> SimpleRetriever:
+def _data_feed_retriever(cursor: Optional[Mock], paginator: Paginator) -> SimpleRetriever:
     requester = MagicMock()
     requester.send_request.return_value = MagicMock()
     record_selector = MagicMock()
@@ -1443,13 +1446,17 @@ def _data_feed_retriever(cursor: Mock, paginator: Paginator) -> SimpleRetriever:
         paginator=paginator,
         record_selector=record_selector,
         stream_slicer=SinglePartitionRouter(parameters={}),
-        data_feed_cursor=cursor,
+        post_pagination_filter=ClientSideIncrementalRecordFilterDecorator(
+            config={}, parameters={}, condition=None, cursor=cursor
+        )
+        if cursor
+        else None,
         parameters={},
         config={},
     )
 
 
-def test_given_data_feed_cursor_when_read_records_then_filter_out_already_synced_records():
+def test_given_data_feed_when_read_records_then_filter_out_already_synced_records():
     page = [
         Record(data={"id": "1"}, stream_name=A_STREAM_NAME),
         Record(data={"id": "2"}, stream_name=A_STREAM_NAME),
@@ -1470,7 +1477,7 @@ def test_given_data_feed_cursor_when_read_records_then_filter_out_already_synced
     assert actual_records == page[:2]
 
 
-def test_given_data_feed_cursor_when_read_records_then_paginator_still_sees_the_whole_page():
+def test_given_data_feed_when_read_records_then_paginator_still_sees_the_whole_page():
     """
     The record that stops the pagination is the very one being filtered out, so the paginator must
     be given the page as returned by the API rather than the filtered one.
@@ -1494,7 +1501,7 @@ def test_given_data_feed_cursor_when_read_records_then_paginator_still_sees_the_
     assert paginator.next_page_token.call_args.kwargs["last_record"] == page[-1]
 
 
-def test_given_no_data_feed_cursor_when_read_records_then_emit_every_record():
+def test_given_no_data_feed_when_read_records_then_emit_every_record():
     page = [
         Record(data={"id": "1"}, stream_name=A_STREAM_NAME),
         Record(data={"id": "2"}, stream_name=A_STREAM_NAME),

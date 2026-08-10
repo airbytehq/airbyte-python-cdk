@@ -24,6 +24,9 @@ import requests
 from typing_extensions import deprecated
 
 from airbyte_cdk.sources.declarative.extractors.http_selector import HttpSelector
+from airbyte_cdk.sources.declarative.extractors.record_filter import (
+    ClientSideIncrementalRecordFilterDecorator,
+)
 from airbyte_cdk.sources.declarative.interpolation import InterpolatedString
 from airbyte_cdk.sources.declarative.partition_routers.single_partition_router import (
     SinglePartitionRouter,
@@ -40,7 +43,6 @@ from airbyte_cdk.sources.declarative.retrievers.pagination_tracker import Pagina
 from airbyte_cdk.sources.declarative.retrievers.retriever import Retriever
 from airbyte_cdk.sources.declarative.stream_slicers.stream_slicer import StreamSlicer
 from airbyte_cdk.sources.source import ExperimentalClassWarning
-from airbyte_cdk.sources.streams.concurrent.cursor import Cursor
 from airbyte_cdk.sources.streams.core import StreamData
 from airbyte_cdk.sources.streams.http.pagination_reset_exception import (
     PaginationResetRequiredException,
@@ -73,8 +75,8 @@ class SimpleRetriever(Retriever):
         paginator (Optional[Paginator]): The paginator
         stream_slicer (Optional[StreamSlicer]): The stream slicer
         parameters (Mapping[str, Any]): Additional runtime parameters to be used for string interpolation
-        data_feed_cursor (Optional[Cursor]): Set for data feed streams only. Records the cursor considers
-            already synced are dropped after pagination has observed them
+        post_pagination_filter (Optional[ClientSideIncrementalRecordFilterDecorator]): Set for data feed streams only.
+            Records the cursor considers already synced are dropped once pagination has observed them
     """
 
     requester: Requester
@@ -98,7 +100,7 @@ class SimpleRetriever(Retriever):
     pagination_tracker_factory: Callable[[], PaginationTracker] = field(
         default_factory=lambda: lambda: PaginationTracker()
     )
-    data_feed_cursor: Optional[Cursor] = None
+    post_pagination_filter: Optional[ClientSideIncrementalRecordFilterDecorator] = None
 
     def __post_init__(self, parameters: Mapping[str, Any]) -> None:
         self._paginator = self.paginator or NoPagination(parameters=parameters)
@@ -461,15 +463,15 @@ class SimpleRetriever(Retriever):
             stream_slice=stream_slice,
             records_schema=records_schema,
         )
-        # A data feed paginates until it reaches a record older than the cursor, so the page that
-        # triggers the stop condition still holds already-synced records. Those are dropped here
-        # rather than in the record selector so that the paginator keeps seeing the whole page: the
-        # stop condition is evaluated on the last record of the page, which is precisely one of the
-        # records being dropped.
-        data_feed_cursor = self.data_feed_cursor
-        for record in self._read_pages(record_generator, _slice):
-            if data_feed_cursor is None or data_feed_cursor.should_be_synced(record):
-                yield record
+        records = self._read_pages(record_generator, _slice)
+        if self.post_pagination_filter:
+            # A data feed paginates until it reaches a record older than the cursor, so the page that triggers the stop
+            # condition still holds already-synced records. Those are filtered here rather than in the record selector
+            # so that the paginator keeps seeing the whole page: the stop condition is evaluated on the last record of
+            # the page, which is precisely one of the records being dropped. Note that the pagination tracker, and
+            # hence the cursor, still observes the dropped records.
+            records = self.post_pagination_filter.filter_typed_records(records)
+        yield from records
 
     def _parse_records(
         self,
