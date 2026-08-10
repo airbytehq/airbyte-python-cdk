@@ -463,14 +463,19 @@ class SimpleRetriever(Retriever):
             stream_slice=stream_slice,
             records_schema=records_schema,
         )
-        records = self._read_pages(record_generator, _slice)
+        records: Iterable[Mapping[str, Any]] = self._read_pages(record_generator, _slice)
         if self.post_pagination_filter:
             # A data feed paginates until it reaches a record older than the cursor, so the page that triggers the stop
             # condition still holds already-synced records. Those are filtered here rather than in the record selector
             # so that the paginator keeps seeing the whole page: the stop condition is evaluated on the last record of
             # the page, which is precisely one of the records being dropped. Note that the pagination tracker, and
             # hence the cursor, still observes the dropped records.
-            records = self.post_pagination_filter.filter_typed_records(records)
+            records = self.post_pagination_filter.filter_records(
+                records,
+                # the filter is only used for its cursor comparison, which does not read the stream state
+                stream_state={},
+                stream_slice=_slice,
+            )
         yield from records
 
     def _parse_records(
