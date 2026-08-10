@@ -155,6 +155,7 @@ def _read(
     manifest: Mapping[str, Any],
     state: Optional[List[AirbyteStateMessage]],
     pages_per_partition: Optional[Mapping[Tuple[str, str], List[Mapping[str, Any]]]] = None,
+    pages: Optional[Mapping[str, List[Mapping[str, Any]]]] = None,
 ) -> Tuple[List[str], List[str]]:
     pages_fetched = []
 
@@ -162,6 +163,8 @@ def _read(
         page = request.qs.get("page", ["1"])[0]
         if pages_per_partition is None:
             pages_fetched.append(page)
+            if pages is not None:
+                return json.dumps(pages.get(page, []))
             return json.dumps(_PAGE_1 if page == "1" else _PAGE_2)
         owner = request.path.strip("/").split("/")[0]
         pages_fetched.append(f"{owner}:{page}")
@@ -203,6 +206,29 @@ def test_given_no_already_synced_records_then_paginate_until_the_end(
 
     assert pages_fetched == ["1", "2"]
     assert record_ids == ["0", "1", "2", "3", "4"]
+
+
+def test_given_record_dated_in_the_future_then_filter_it_out() -> None:
+    """
+    The retriever drops the records the cursor would not sync, and `should_be_synced` is bounded on both ends: with no
+    `end_datetime` the upper bound is `now()`, so records dated ahead of the connector's clock are dropped too. This is
+    the behaviour `is_client_side_incremental` has always had, and a data feed now matches it.
+    """
+    pages_fetched, record_ids = _read(
+        _manifest(),
+        _state({"updated_at": "2021-01-01T00:00:00Z"}),
+        pages={
+            "1": [
+                {"id": "future", "updated_at": "2099-01-01T00:00:00Z"},
+                {"id": "fresh", "updated_at": "2022-06-01T00:00:00Z"},
+                {"id": "already_synced", "updated_at": "2020-06-01T00:00:00Z"},
+            ]
+        },
+    )
+
+    # the forward-dated record does not stop the pagination, it is only left out of the emitted records
+    assert pages_fetched == ["1"]
+    assert record_ids == ["fresh"]
 
 
 def test_given_multiple_partitions_then_each_partition_stops_on_its_own_cursor() -> None:

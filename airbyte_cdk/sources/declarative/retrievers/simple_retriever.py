@@ -468,8 +468,9 @@ class SimpleRetriever(Retriever):
             # A data feed paginates until it reaches a record older than the cursor, so the page that triggers the stop
             # condition still holds already-synced records. Those are filtered here rather than in the record selector
             # so that the paginator keeps seeing the whole page: the stop condition is evaluated on the last record of
-            # the page, which is precisely one of the records being dropped. Note that the pagination tracker, and
-            # hence the cursor, still observes the dropped records.
+            # the page, which is precisely one of the records being dropped. Two consequences of filtering this late:
+            # the pagination tracker observes the dropped records, and a `file_uploader` on the record selector has
+            # already uploaded their files by the time they are dropped.
             records = self.post_pagination_filter.filter_records(
                 records,
                 # the filter is only used for its cursor comparison, which does not read the stream state
