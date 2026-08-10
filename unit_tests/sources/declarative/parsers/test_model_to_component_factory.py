@@ -2,6 +2,7 @@
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
 import json
+import logging
 from copy import deepcopy
 
 # mypy: ignore-errors
@@ -109,6 +110,7 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
 )
 from airbyte_cdk.sources.declarative.parsers.custom_code_compiler import (
     ENV_VAR_ALLOW_CUSTOM_CODE,
+    INJECTED_MANIFEST,
     AirbyteCustomCodeNotPermittedError,
 )
 from airbyte_cdk.sources.declarative.parsers.manifest_component_transformer import (
@@ -2527,14 +2529,14 @@ def test_create_custom_components(manifest, field_name, expected_value, expected
     ],
 )
 def test_create_custom_component_requires_custom_code_enabled(class_name, monkeypatch):
-    """A `Custom*` component must not be instantiated unless custom code execution is
-    explicitly enabled via `AIRBYTE_ENABLE_UNSAFE_CODE`.
+    """A `Custom*` component declared by a config-injected manifest must not be instantiated
+    unless custom code execution is explicitly enabled via `AIRBYTE_ENABLE_UNSAFE_CODE`.
 
-    Resolving and instantiating a component's `class_name` executes arbitrary
-    importable code, so it must honor the same gate as injected `components.py` code.
-    The gate must fire regardless of whether `class_name` points at a bundled custom
-    component or at an arbitrary importable callable, and it must fire before the
-    referenced module is imported.
+    A manifest provided through the config is untrusted input, and resolving its
+    `class_name` executes arbitrary importable code, so it must honor the same gate as
+    injected `components.py` code. The gate must fire regardless of whether `class_name`
+    points at a bundled custom component or at an arbitrary importable callable, and it
+    must fire before the referenced module is imported.
     """
     monkeypatch.delenv(ENV_VAR_ALLOW_CUSTOM_CODE, raising=False)
 
@@ -2551,7 +2553,58 @@ def test_create_custom_component_requires_custom_code_enabled(class_name, monkey
     }
 
     with pytest.raises(AirbyteCustomCodeNotPermittedError):
-        factory.create_component(CustomErrorHandlerModel, manifest, input_config)
+        factory.create_component(
+            CustomErrorHandlerModel,
+            manifest,
+            {**input_config, INJECTED_MANIFEST: {"type": "DeclarativeSource"}},
+        )
+
+
+def test_create_custom_component_permitted_for_bundled_manifest(monkeypatch):
+    """A manifest bundled in a connector image may use its bundled custom components.
+
+    Published manifest-only connectors ship their own `manifest.yaml` and `components.py`
+    inside a trusted image, so their `Custom*` components must keep working in environments
+    that do not set `AIRBYTE_ENABLE_UNSAFE_CODE`, such as Airbyte Cloud.
+    """
+    monkeypatch.delenv(ENV_VAR_ALLOW_CUSTOM_CODE, raising=False)
+
+    manifest = {
+        "type": "CustomErrorHandler",
+        "class_name": "unit_tests.sources.declarative.parsers.testing_components.TestingSomeComponent",
+    }
+
+    component = factory.create_component(CustomErrorHandlerModel, manifest, input_config)
+
+    assert isinstance(component, TestingSomeComponent)
+
+
+def test_create_custom_component_requires_custom_code_enabled_when_untrusted(monkeypatch):
+    """A caller-supplied manifest must honor the gate even when it never passes through the config.
+
+    The manifest server receives the manifest as a request payload rather than through the
+    config, so its untrusted provenance is signalled by `custom_components_trusted=False`.
+    """
+    monkeypatch.delenv(ENV_VAR_ALLOW_CUSTOM_CODE, raising=False)
+
+    untrusted_factory = ModelToComponentFactory(custom_components_trusted=False)
+
+    def _fail_if_resolved(*args, **kwargs):
+        raise AssertionError(
+            "`class_name` must not be resolved or imported when custom code is disabled"
+        )
+
+    monkeypatch.setattr(
+        untrusted_factory, "_get_class_from_fully_qualified_class_name", _fail_if_resolved
+    )
+
+    manifest = {
+        "type": "CustomErrorHandler",
+        "class_name": "unit_tests.sources.declarative.parsers.testing_components.TestingSomeComponent",
+    }
+
+    with pytest.raises(AirbyteCustomCodeNotPermittedError):
+        untrusted_factory.create_component(CustomErrorHandlerModel, manifest, input_config)
 
 
 def test_custom_components_do_not_contain_extra_fields():
@@ -5626,3 +5679,108 @@ def test_create_response_to_file_extractor_preserve_na_values():
         ResponseToFileExtractorModel(type="ResponseToFileExtractor", preserve_na_values=True)
     )
     assert enabled_component.preserve_na_values is True
+
+
+def _stream_definition_with_incremental_dependency_parent(
+    child_has_incremental_sync: bool,
+) -> dict:
+    incremental_sync = {
+        "type": "DatetimeBasedCursor",
+        "cursor_field": "updated_at",
+        "datetime_format": "%Y-%m-%dT%H:%M:%SZ",
+        "cursor_datetime_formats": ["%Y-%m-%dT%H:%M:%SZ"],
+        "start_datetime": {
+            "type": "MinMaxDatetime",
+            "datetime": "2024-01-01T00:00:00Z",
+            "datetime_format": "%Y-%m-%dT%H:%M:%SZ",
+        },
+    }
+    parent_stream = {
+        "type": "DeclarativeStream",
+        "name": "parents",
+        "primary_key": ["id"],
+        "schema_loader": {
+            "type": "InlineSchemaLoader",
+            "schema": {"type": "object", "properties": {}},
+        },
+        "retriever": {
+            "type": "SimpleRetriever",
+            "requester": {
+                "type": "HttpRequester",
+                "url_base": "https://api.example.com",
+                "path": "/parents",
+                "http_method": "GET",
+            },
+            "record_selector": {
+                "type": "RecordSelector",
+                "extractor": {"type": "DpathExtractor", "field_path": []},
+            },
+        },
+        "incremental_sync": incremental_sync,
+    }
+    child_stream = {
+        "type": "DeclarativeStream",
+        "name": "children",
+        "primary_key": ["id"],
+        "schema_loader": {
+            "type": "InlineSchemaLoader",
+            "schema": {"type": "object", "properties": {}},
+        },
+        "retriever": {
+            "type": "SimpleRetriever",
+            "requester": {
+                "type": "HttpRequester",
+                "url_base": "https://api.example.com",
+                "path": "/parents/{{ stream_partition.parent_id }}/children",
+                "http_method": "GET",
+            },
+            "record_selector": {
+                "type": "RecordSelector",
+                "extractor": {"type": "DpathExtractor", "field_path": []},
+            },
+            "partition_router": {
+                "type": "SubstreamPartitionRouter",
+                "parent_stream_configs": [
+                    {
+                        "type": "ParentStreamConfig",
+                        "stream": parent_stream,
+                        "parent_key": "id",
+                        "partition_field": "parent_id",
+                        "incremental_dependency": True,
+                    }
+                ],
+            },
+        },
+    }
+    if child_has_incremental_sync:
+        child_stream["incremental_sync"] = incremental_sync
+    return child_stream
+
+
+@pytest.mark.parametrize(
+    "child_has_incremental_sync, expected_warning",
+    [
+        pytest.param(False, True, id="full_refresh_child_warns"),
+        pytest.param(True, False, id="incremental_child_does_not_warn"),
+    ],
+)
+def test_incremental_dependency_without_incremental_sync_warns(
+    caplog, child_has_incremental_sync, expected_warning
+):
+    stream_definition = _stream_definition_with_incremental_dependency_parent(
+        child_has_incremental_sync
+    )
+
+    with caplog.at_level(logging.WARNING, logger="airbyte.model_to_component_factory"):
+        stream = factory.create_component(
+            model_type=DeclarativeStreamModel,
+            component_definition=stream_definition,
+            config=input_config,
+        )
+
+    assert isinstance(stream, DefaultStream)
+    warning_emitted = any(
+        "`incremental_dependency: true`" in record.message and "children" in record.message
+        for record in caplog.records
+    )
+    assert warning_emitted == expected_warning

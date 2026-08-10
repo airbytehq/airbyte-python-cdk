@@ -288,10 +288,34 @@ def test_sync_with_injected_py_components(
             _read_fn()
 
 
-def test_register_components_from_file(components_file: str) -> None:
-    """Test that components can be properly loaded from a file."""
+def test_register_components_from_file(
+    components_file: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Test that components can be properly loaded from a file when custom code is permitted."""
+    monkeypatch.setenv(ENV_VAR_ALLOW_CUSTOM_CODE, "true")
+
     # Register the components
     _register_components_from_file(components_file)
 
     # Verify the components were loaded correctly
     verify_components_loaded()
+
+
+def test_register_components_from_file_is_gated(
+    components_file: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A `--components-path` file is caller-supplied Python executed via `exec_module`.
+
+    It must be gated behind `AIRBYTE_ENABLE_UNSAFE_CODE`: with the env var unset the file must
+    not be executed and the loader must raise `AirbyteCustomCodeNotPermittedError` before any
+    module-level code runs.
+    """
+    monkeypatch.delenv(ENV_VAR_ALLOW_CUSTOM_CODE, raising=False)
+
+    with pytest.raises(AirbyteCustomCodeNotPermittedError):
+        _register_components_from_file(components_file)
+
+    assert "components" not in sys.modules
+    assert "source_declarative_manifest.components" not in sys.modules
