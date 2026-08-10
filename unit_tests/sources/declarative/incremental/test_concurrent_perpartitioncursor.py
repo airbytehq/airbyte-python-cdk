@@ -3739,7 +3739,7 @@ def test_given_unfinished_first_parent_partition_no_parent_state_update():
                 record_counter=RecordCounter(),
             )
         )
-    cursor.ensure_at_least_one_state_emitted()
+    list(cursor.ensure_at_least_one_state_emitted())
 
     state = cursor.state
     assert state == {
@@ -3835,7 +3835,7 @@ def test_given_unfinished_last_parent_partition_with_partial_parent_state_update
                 record_counter=RecordCounter(),
             )
         )
-    cursor.ensure_at_least_one_state_emitted()
+    list(cursor.ensure_at_least_one_state_emitted())
 
     state = cursor.state
     assert state == {
@@ -3927,7 +3927,7 @@ def test_given_all_partitions_finished_when_close_partition_then_final_state_emi
             )
         )
 
-    cursor.ensure_at_least_one_state_emitted()
+    state_messages = list(cursor.ensure_at_least_one_state_emitted())
 
     final_state = cursor.state
     assert final_state["use_global_cursor"] is False
@@ -3935,7 +3935,10 @@ def test_given_all_partitions_finished_when_close_partition_then_final_state_emi
     assert final_state["state"]["updated_at"] == "2024-01-02T00:00:00Z"
     assert final_state["parent_state"] == {"posts": {"updated_at": "2024-01-06T00:00:00Z"}}
     assert final_state["lookback_window"] == 86400
-    assert cursor._message_repository.emit_message.call_count == 2
+    # close_partition() emits 1 state via message_repository (second is throttled)
+    # ensure_at_least_one_state_emitted() returns 1 state directly (no longer uses message_repository)
+    assert cursor._message_repository.emit_message.call_count == 1
+    assert len(state_messages) == 1
     assert mock_cursor.stream_slices.call_count == 2  # Called once for each partition
 
     # Checks that all internal variables are cleaned up
@@ -4001,7 +4004,7 @@ def test_given_partition_limit_exceeded_when_close_partition_then_switch_to_glob
                 record_counter=RecordCounter(),
             )
         )
-    cursor.ensure_at_least_one_state_emitted()
+    list(cursor.ensure_at_least_one_state_emitted())
 
     final_state = cursor.state
     assert len(slices) == 3
