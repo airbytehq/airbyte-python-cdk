@@ -218,17 +218,24 @@ def test_given_record_dated_in_the_future_then_filter_it_out() -> None:
         _manifest(),
         _state({"updated_at": "2021-01-01T00:00:00Z"}),
         pages={
+            # a full page, so that pagination is only stopped by the already-synced record on page 2 and not by a
+            # short page. Page 1 holds nothing already synced, so reaching page 2 proves the forward-dated record did
+            # not stop the pagination.
             "1": [
                 {"id": "future", "updated_at": "2099-01-01T00:00:00Z"},
-                {"id": "fresh", "updated_at": "2022-06-01T00:00:00Z"},
+                {"id": "fresh_1", "updated_at": "2022-06-01T00:00:00Z"},
+                {"id": "fresh_2", "updated_at": "2022-05-01T00:00:00Z"},
+                {"id": "fresh_3", "updated_at": "2022-04-01T00:00:00Z"},
+            ],
+            "2": [
                 {"id": "already_synced", "updated_at": "2020-06-01T00:00:00Z"},
-            ]
+            ],
         },
     )
 
     # the forward-dated record does not stop the pagination, it is only left out of the emitted records
-    assert pages_fetched == ["1"]
-    assert record_ids == ["fresh"]
+    assert pages_fetched == ["1", "2"]
+    assert record_ids == ["fresh_1", "fresh_2", "fresh_3"]
 
 
 def test_given_multiple_partitions_then_each_partition_stops_on_its_own_cursor() -> None:

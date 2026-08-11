@@ -1857,12 +1857,12 @@ class DatetimeBasedCursor(BaseModel):
     )
     is_data_feed: Optional[bool] = Field(
         None,
-        description="A data feed API is an API that does not allow filtering and paginates the content from the most recent to the least recent. Given this, the CDK needs to know when to stop paginating and this field will generate a stop condition for pagination. The last page fetched still contains records that were synced during a previous sync, and those are filtered out as well, so Client-side Incremental Filtering does not need to be enabled alongside this field.",
+        description="A data feed API is an API that does not allow filtering and paginates the content from the most recent to the least recent. Given this, the CDK needs to know when to stop paginating and this field will generate a stop condition for pagination. The last page fetched still holds records that fall outside the cursor window, and those are filtered out as well, so Client-side Incremental Filtering does not need to be enabled alongside this field. Records are kept when their cursor value is within the window that starts at the previous sync's cursor value (or the start date) and ends at the end date, defaulting to the current time, so records dated in the future are filtered out too.",
         title="Data Feed API",
     )
     is_client_side_incremental: Optional[bool] = Field(
         None,
-        description="Set to True if the target API endpoint does not take cursor values to filter records and returns all records anyway. This will cause the connector to filter out records locally, and only emit new records from the last sync, hence incremental. This means that all records would be read from the API, but only new records will be emitted to the destination. This is not needed when Data Feed API is enabled, as a data feed already filters out the records that were synced during a previous sync.",
+        description="Set to True if the target API endpoint does not take cursor values to filter records and returns all records anyway. This will cause the connector to filter out records locally, keeping only the ones whose cursor value falls within the window that starts at the previous sync's cursor value (or the start date) and ends at the end date, defaulting to the current time. This means that all records would be read from the API, but only the records within that window will be emitted to the destination. This is not needed when Data Feed API is enabled, as a data feed already filters on the same window.",
         title="Client-side Incremental Filtering",
     )
     is_compare_strictly: Optional[bool] = Field(

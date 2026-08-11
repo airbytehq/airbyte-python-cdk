@@ -3430,8 +3430,9 @@ class ModelToComponentFactory:
         # the paginator. Letting the record selector drop them as well would be redundant and would hide them from the
         # pagination stop condition, so a data feed never delegates that filtering to the record selector, whether
         # `is_client_side_incremental` is set or not. The `condition` from `record_filter` is intentionally left out of
-        # the post-pagination filter: it stays in the record selector so that the records it rejects keep being counted
-        # by the paginator.
+        # the post-pagination filter and stays in the record selector, which preserves the existing behaviour: the
+        # selector runs inside the page loop, so the records the condition rejects never reach the paginator's
+        # accounting. Moving it downstream would start counting them.
         post_pagination_filter = (
             ClientSideIncrementalRecordFilterDecorator(
                 config=config,
@@ -3447,8 +3448,9 @@ class ModelToComponentFactory:
         )
         if post_pagination_filter and is_client_side_incremental_sync:
             LOGGER.warning(
-                f"Stream {name}: `is_client_side_incremental` is ignored when `is_data_feed` is set, "
-                "as a data feed already filters out the records that were synced during a previous sync."
+                f"Stream {name}: `is_client_side_incremental` adds no record filtering when `is_data_feed` is set, "
+                "as a data feed already filters on the cursor value. It still makes the record selector apply the "
+                "transformations before the `record_filter` condition."
             )
 
         decoder = (
