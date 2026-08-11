@@ -2,6 +2,7 @@
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
 import json
+import logging
 from copy import deepcopy
 
 # mypy: ignore-errors
@@ -89,6 +90,9 @@ from airbyte_cdk.sources.declarative.models import Spec as SpecModel
 from airbyte_cdk.sources.declarative.models import (
     SubstreamPartitionRouter as SubstreamPartitionRouterModel,
 )
+from airbyte_cdk.sources.declarative.models import (
+    UnionPartitionRouter as UnionPartitionRouterModel,
+)
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     ConstantBackoffStrategy as ConstantBackoffStrategyModel,
 )
@@ -128,6 +132,7 @@ from airbyte_cdk.sources.declarative.partition_routers import (
     ListPartitionRouter,
     SinglePartitionRouter,
     SubstreamPartitionRouter,
+    UnionPartitionRouter,
 )
 from airbyte_cdk.sources.declarative.requesters import HttpRequester
 from airbyte_cdk.sources.declarative.requesters.error_handlers import (
@@ -5072,6 +5077,300 @@ def test_create_grouping_partition_router_substream_with_request_option():
         )
 
 
+def test_create_union_partition_router():
+    content = """
+    schema_loader:
+      file_path: "./source_example/schemas/{{ parameters['name'] }}.yaml"
+      name: "{{ parameters['stream_name'] }}"
+    retriever:
+      requester:
+        type: "HttpRequester"
+        path: "example"
+      record_selector:
+        extractor:
+          field_path: []
+    stream_A:
+      type: DeclarativeStream
+      name: "A"
+      primary_key: "id"
+      $parameters:
+        retriever: "#/retriever"
+        url_base: "https://airbyte.io"
+        schema_loader: "#/schema_loader"
+    partition_router:
+      type: UnionPartitionRouter
+      partition_field: repository
+      partition_routers:
+        - type: SubstreamPartitionRouter
+          parent_stream_configs:
+            - stream: "#/stream_A"
+              parent_key: full_name
+              partition_field: repository
+        - type: ListPartitionRouter
+          cursor_field: repository
+          values: ["org/a", "org/b"]
+    """
+    parsed_manifest = YamlDeclarativeSource._parse(content)
+    resolved_manifest = resolver.preprocess_manifest(parsed_manifest)
+    partition_router_manifest = transformer.propagate_types_and_parameters(
+        "", resolved_manifest["partition_router"], {}
+    )
+
+    partition_router = factory.create_component(
+        model_type=UnionPartitionRouterModel,
+        component_definition=partition_router_manifest,
+        config=input_config,
+        stream_name="child_stream",
+    )
+
+    assert isinstance(partition_router, UnionPartitionRouter)
+    assert partition_router.partition_field == "repository"
+    assert len(partition_router.partition_routers) == 2
+    assert isinstance(partition_router.partition_routers[0], SubstreamPartitionRouter)
+    assert isinstance(partition_router.partition_routers[1], ListPartitionRouter)
+
+    parent_stream_configs = partition_router.partition_routers[0].parent_stream_configs
+    assert len(parent_stream_configs) == 1
+    assert parent_stream_configs[0].parent_key.eval({}) == "full_name"
+    assert parent_stream_configs[0].partition_field.eval({}) == "repository"
+
+
+def test_create_grouping_partition_router_with_union_underlying_router():
+    content = """
+    partition_router:
+      type: GroupingPartitionRouter
+      group_size: 10
+      underlying_partition_router:
+        type: UnionPartitionRouter
+        partition_field: repository
+        partition_routers:
+          - type: ListPartitionRouter
+            cursor_field: repository
+            values: ["org/a"]
+          - type: ListPartitionRouter
+            cursor_field: repository
+            values: ["org/b"]
+    """
+    parsed_manifest = YamlDeclarativeSource._parse(content)
+    resolved_manifest = resolver.preprocess_manifest(parsed_manifest)
+    partition_router_manifest = transformer.propagate_types_and_parameters(
+        "", resolved_manifest["partition_router"], {}
+    )
+
+    partition_router = factory.create_component(
+        model_type=GroupingPartitionRouterModel,
+        component_definition=partition_router_manifest,
+        config=input_config,
+        stream_name="child_stream",
+    )
+
+    assert isinstance(partition_router, GroupingPartitionRouter)
+    assert isinstance(partition_router.underlying_partition_router, UnionPartitionRouter)
+
+
+def test_create_union_partition_router_with_interpolated_partition_field():
+    content = """
+    partition_router:
+      type: UnionPartitionRouter
+      partition_field: "{{ config['union_partition_field'] }}"
+      partition_routers:
+        - type: ListPartitionRouter
+          cursor_field: "{{ config['union_partition_field'] }}"
+          values: ["org/a"]
+        - type: ListPartitionRouter
+          cursor_field: repository
+          values: ["org/b"]
+    """
+    parsed_manifest = YamlDeclarativeSource._parse(content)
+    resolved_manifest = resolver.preprocess_manifest(parsed_manifest)
+    partition_router_manifest = transformer.propagate_types_and_parameters(
+        "", resolved_manifest["partition_router"], {}
+    )
+
+    partition_router = factory.create_component(
+        model_type=UnionPartitionRouterModel,
+        component_definition=partition_router_manifest,
+        config={**input_config, "union_partition_field": "repository"},
+        stream_name="child_stream",
+    )
+
+    assert isinstance(partition_router, UnionPartitionRouter)
+    assert partition_router.partition_field == "repository"
+
+
+def test_create_union_partition_router_with_single_child():
+    """The schema requires minItems: 2; the factory enforces the same bound for
+    construction paths that bypass JSON-schema validation."""
+    content = """
+    partition_router:
+      type: UnionPartitionRouter
+      partition_field: repository
+      partition_routers:
+        - type: ListPartitionRouter
+          cursor_field: repository
+          values: ["org/a"]
+    """
+    parsed_manifest = YamlDeclarativeSource._parse(content)
+    resolved_manifest = resolver.preprocess_manifest(parsed_manifest)
+    partition_router_manifest = transformer.propagate_types_and_parameters(
+        "", resolved_manifest["partition_router"], {}
+    )
+
+    with pytest.raises(ValueError, match="needs at least 2 child partition routers"):
+        factory.create_component(
+            model_type=UnionPartitionRouterModel,
+            component_definition=partition_router_manifest,
+            config=input_config,
+            stream_name="child_stream",
+        )
+
+
+@pytest.mark.parametrize(
+    "child_router_manifest",
+    [
+        pytest.param(
+            """
+        - type: SubstreamPartitionRouter
+          parent_stream_configs:
+            - stream: "#/stream_A"
+              parent_key: full_name
+              partition_field: repository
+              request_option:
+                inject_into: request_parameter
+                field_name: "repo"
+""",
+            id="substream_child_with_request_option",
+        ),
+        pytest.param(
+            """
+        - type: ListPartitionRouter
+          cursor_field: repository
+          values: ["org/a"]
+          request_option:
+            inject_into: request_parameter
+            field_name: "repo"
+""",
+            id="list_child_with_request_option",
+        ),
+    ],
+)
+def test_create_union_partition_router_with_request_option(child_router_manifest):
+    content = f"""
+    schema_loader:
+      file_path: "./source_example/schemas/{{{{ parameters['name'] }}}}.yaml"
+      name: "{{{{ parameters['stream_name'] }}}}"
+    retriever:
+      requester:
+        type: "HttpRequester"
+        path: "example"
+      record_selector:
+        extractor:
+          field_path: []
+    stream_A:
+      type: DeclarativeStream
+      name: "A"
+      primary_key: "id"
+      $parameters:
+        retriever: "#/retriever"
+        url_base: "https://airbyte.io"
+        schema_loader: "#/schema_loader"
+    partition_router:
+      type: UnionPartitionRouter
+      partition_field: repository
+      partition_routers:
+{child_router_manifest}
+        - type: ListPartitionRouter
+          cursor_field: repository
+          values: ["org/b"]
+    """
+    parsed_manifest = YamlDeclarativeSource._parse(content)
+    resolved_manifest = resolver.preprocess_manifest(parsed_manifest)
+    partition_router_manifest = transformer.propagate_types_and_parameters(
+        "", resolved_manifest["partition_router"], {}
+    )
+
+    with pytest.raises(
+        ValueError, match="Request options are not supported for UnionPartitionRouter."
+    ):
+        factory.create_component(
+            model_type=UnionPartitionRouterModel,
+            component_definition=partition_router_manifest,
+            config=input_config,
+            stream_name="child_stream",
+        )
+
+
+@pytest.mark.parametrize(
+    "child_router_manifest, mismatched_field",
+    [
+        pytest.param(
+            """
+        - type: SubstreamPartitionRouter
+          parent_stream_configs:
+            - stream: "#/stream_A"
+              parent_key: full_name
+              partition_field: repo
+""",
+            "repo",
+            id="substream_child_with_mismatched_partition_field",
+        ),
+        pytest.param(
+            """
+        - type: ListPartitionRouter
+          cursor_field: repo
+          values: ["org/a"]
+""",
+            "repo",
+            id="list_child_with_mismatched_cursor_field",
+        ),
+    ],
+)
+def test_create_union_partition_router_with_mismatched_partition_field(
+    child_router_manifest, mismatched_field
+):
+    content = f"""
+    schema_loader:
+      file_path: "./source_example/schemas/{{{{ parameters['name'] }}}}.yaml"
+      name: "{{{{ parameters['stream_name'] }}}}"
+    retriever:
+      requester:
+        type: "HttpRequester"
+        path: "example"
+      record_selector:
+        extractor:
+          field_path: []
+    stream_A:
+      type: DeclarativeStream
+      name: "A"
+      primary_key: "id"
+      $parameters:
+        retriever: "#/retriever"
+        url_base: "https://airbyte.io"
+        schema_loader: "#/schema_loader"
+    partition_router:
+      type: UnionPartitionRouter
+      partition_field: repository
+      partition_routers:
+{child_router_manifest}
+        - type: ListPartitionRouter
+          cursor_field: repository
+          values: ["org/b"]
+    """
+    parsed_manifest = YamlDeclarativeSource._parse(content)
+    resolved_manifest = resolver.preprocess_manifest(parsed_manifest)
+    partition_router_manifest = transformer.propagate_types_and_parameters(
+        "", resolved_manifest["partition_router"], {}
+    )
+
+    with pytest.raises(ValueError, match=f"emits '{mismatched_field}'"):
+        factory.create_component(
+            model_type=UnionPartitionRouterModel,
+            component_definition=partition_router_manifest,
+            config=input_config,
+            stream_name="child_stream",
+        )
+
+
 def test_simple_retriever_with_query_properties():
     content = """
     selector:
@@ -5975,3 +6274,108 @@ def test_create_response_to_file_extractor_preserve_na_values():
         ResponseToFileExtractorModel(type="ResponseToFileExtractor", preserve_na_values=True)
     )
     assert enabled_component.preserve_na_values is True
+
+
+def _stream_definition_with_incremental_dependency_parent(
+    child_has_incremental_sync: bool,
+) -> dict:
+    incremental_sync = {
+        "type": "DatetimeBasedCursor",
+        "cursor_field": "updated_at",
+        "datetime_format": "%Y-%m-%dT%H:%M:%SZ",
+        "cursor_datetime_formats": ["%Y-%m-%dT%H:%M:%SZ"],
+        "start_datetime": {
+            "type": "MinMaxDatetime",
+            "datetime": "2024-01-01T00:00:00Z",
+            "datetime_format": "%Y-%m-%dT%H:%M:%SZ",
+        },
+    }
+    parent_stream = {
+        "type": "DeclarativeStream",
+        "name": "parents",
+        "primary_key": ["id"],
+        "schema_loader": {
+            "type": "InlineSchemaLoader",
+            "schema": {"type": "object", "properties": {}},
+        },
+        "retriever": {
+            "type": "SimpleRetriever",
+            "requester": {
+                "type": "HttpRequester",
+                "url_base": "https://api.example.com",
+                "path": "/parents",
+                "http_method": "GET",
+            },
+            "record_selector": {
+                "type": "RecordSelector",
+                "extractor": {"type": "DpathExtractor", "field_path": []},
+            },
+        },
+        "incremental_sync": incremental_sync,
+    }
+    child_stream = {
+        "type": "DeclarativeStream",
+        "name": "children",
+        "primary_key": ["id"],
+        "schema_loader": {
+            "type": "InlineSchemaLoader",
+            "schema": {"type": "object", "properties": {}},
+        },
+        "retriever": {
+            "type": "SimpleRetriever",
+            "requester": {
+                "type": "HttpRequester",
+                "url_base": "https://api.example.com",
+                "path": "/parents/{{ stream_partition.parent_id }}/children",
+                "http_method": "GET",
+            },
+            "record_selector": {
+                "type": "RecordSelector",
+                "extractor": {"type": "DpathExtractor", "field_path": []},
+            },
+            "partition_router": {
+                "type": "SubstreamPartitionRouter",
+                "parent_stream_configs": [
+                    {
+                        "type": "ParentStreamConfig",
+                        "stream": parent_stream,
+                        "parent_key": "id",
+                        "partition_field": "parent_id",
+                        "incremental_dependency": True,
+                    }
+                ],
+            },
+        },
+    }
+    if child_has_incremental_sync:
+        child_stream["incremental_sync"] = incremental_sync
+    return child_stream
+
+
+@pytest.mark.parametrize(
+    "child_has_incremental_sync, expected_warning",
+    [
+        pytest.param(False, True, id="full_refresh_child_warns"),
+        pytest.param(True, False, id="incremental_child_does_not_warn"),
+    ],
+)
+def test_incremental_dependency_without_incremental_sync_warns(
+    caplog, child_has_incremental_sync, expected_warning
+):
+    stream_definition = _stream_definition_with_incremental_dependency_parent(
+        child_has_incremental_sync
+    )
+
+    with caplog.at_level(logging.WARNING, logger="airbyte.model_to_component_factory"):
+        stream = factory.create_component(
+            model_type=DeclarativeStreamModel,
+            component_definition=stream_definition,
+            config=input_config,
+        )
+
+    assert isinstance(stream, DefaultStream)
+    warning_emitted = any(
+        "`incremental_dependency: true`" in record.message and "children" in record.message
+        for record in caplog.records
+    )
+    assert warning_emitted == expected_warning
