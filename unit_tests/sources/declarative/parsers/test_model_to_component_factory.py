@@ -177,7 +177,11 @@ from airbyte_cdk.sources.declarative.requesters.request_options import (
 )
 from airbyte_cdk.sources.declarative.requesters.request_path import RequestPath
 from airbyte_cdk.sources.declarative.requesters.requester import HttpMethod
-from airbyte_cdk.sources.declarative.retrievers import AsyncRetriever, SimpleRetriever
+from airbyte_cdk.sources.declarative.retrievers import (
+    AsyncRetriever,
+    LazySimpleRetriever,
+    SimpleRetriever,
+)
 from airbyte_cdk.sources.declarative.schema import InlineSchemaLoader, JsonFileSchemaLoader
 from airbyte_cdk.sources.declarative.schema.caching_schema_loader_decorator import (
     CachingSchemaLoaderDecorator,
@@ -1437,10 +1441,303 @@ list_stream:
         model_type=DeclarativeStreamModel, component_definition=stream_manifest, config=input_config
     )
 
+    retriever = get_retriever(stream)
     assert isinstance(
-        get_retriever(stream).paginator.pagination_strategy,
+        retriever.paginator.pagination_strategy,
         StopConditionPaginationStrategyDecorator,
     )
+    # the stop condition only prevents the next page from being requested; the already-synced records
+    # of the last page are dropped by the retriever
+    assert isinstance(retriever.post_pagination_filter, ClientSideIncrementalRecordFilterDecorator)
+    assert retriever.post_pagination_filter._cursor is stream.cursor
+
+
+@pytest.mark.parametrize(
+    "is_client_side_incremental",
+    [
+        pytest.param(False, id="test_data_feed_only"),
+        pytest.param(True, id="test_data_feed_with_client_side_incremental"),
+    ],
+)
+def test_incremental_data_feed_filters_already_synced_records_in_the_retriever(
+    is_client_side_incremental,
+):
+    content = f"""
+selector:
+  type: RecordSelector
+  extractor:
+      type: DpathExtractor
+      field_path: ["extractor_path"]
+requester:
+  type: HttpRequester
+  name: "{{{{ parameters['name'] }}}}"
+  url_base: "https://api.sendgrid.com/v3/"
+  http_method: "GET"
+list_stream:
+  type: DeclarativeStream
+  incremental_sync:
+    type: DatetimeBasedCursor
+    $parameters:
+      datetime_format: "%Y-%m-%dT%H:%M:%S.%f%z"
+    start_datetime: "{{{{ config['start_time'] }}}}"
+    cursor_field: "created"
+    is_data_feed: true
+    is_client_side_incremental: {str(is_client_side_incremental).lower()}
+  retriever:
+    type: SimpleRetriever
+    name: "{{{{ parameters['name'] }}}}"
+    paginator:
+      type: DefaultPaginator
+      pagination_strategy:
+        type: "CursorPagination"
+        cursor_value: "{{{{ response._metadata.next }}}}"
+        page_size: 10
+    requester:
+      $ref: "#/requester"
+      path: "/"
+    record_selector:
+      $ref: "#/selector"
+  $parameters:
+    name: "lists"
+    """
+
+    parsed_manifest = YamlDeclarativeSource._parse(content)
+    resolved_manifest = resolver.preprocess_manifest(parsed_manifest)
+    stream_manifest = transformer.propagate_types_and_parameters(
+        "", resolved_manifest["list_stream"], {}
+    )
+
+    stream = factory.create_component(
+        model_type=DeclarativeStreamModel, component_definition=stream_manifest, config=input_config
+    )
+
+    retriever = get_retriever(stream)
+    assert isinstance(retriever.post_pagination_filter, ClientSideIncrementalRecordFilterDecorator)
+    assert retriever.post_pagination_filter._cursor is stream.cursor
+    # the `record_filter` condition stays in the record selector, so the post-pagination filter must not evaluate it
+    assert retriever.post_pagination_filter.condition is None
+    # filtering in the record selector would hide the already-synced records from the paginator and
+    # therefore silently disable the stop condition
+    assert not isinstance(
+        retriever.record_selector.record_filter, ClientSideIncrementalRecordFilterDecorator
+    )
+
+
+def test_given_data_feed_and_record_filter_then_condition_stays_in_the_record_selector():
+    content = """
+selector:
+  type: RecordSelector
+  record_filter:
+    type: RecordFilter
+    condition: "{{ record['id'] > 1 }}"
+  extractor:
+      type: DpathExtractor
+      field_path: ["extractor_path"]
+requester:
+  type: HttpRequester
+  name: "{{ parameters['name'] }}"
+  url_base: "https://api.sendgrid.com/v3/"
+  http_method: "GET"
+list_stream:
+  type: DeclarativeStream
+  incremental_sync:
+    type: DatetimeBasedCursor
+    $parameters:
+      datetime_format: "%Y-%m-%dT%H:%M:%S.%f%z"
+    start_datetime: "{{ config['start_time'] }}"
+    cursor_field: "created"
+    is_data_feed: true
+  retriever:
+    type: SimpleRetriever
+    name: "{{ parameters['name'] }}"
+    paginator:
+      type: DefaultPaginator
+      pagination_strategy:
+        type: "CursorPagination"
+        cursor_value: "{{ response._metadata.next }}"
+        page_size: 10
+    requester:
+      $ref: "#/requester"
+      path: "/"
+    record_selector:
+      $ref: "#/selector"
+  $parameters:
+    name: "lists"
+    """
+
+    parsed_manifest = YamlDeclarativeSource._parse(content)
+    resolved_manifest = resolver.preprocess_manifest(parsed_manifest)
+    stream_manifest = transformer.propagate_types_and_parameters(
+        "", resolved_manifest["list_stream"], {}
+    )
+
+    stream = factory.create_component(
+        model_type=DeclarativeStreamModel, component_definition=stream_manifest, config=input_config
+    )
+
+    retriever = get_retriever(stream)
+    # the condition must keep running upstream of the paginator, otherwise the records it rejects would start counting
+    # towards the page size and could become the record the stop condition is evaluated on
+    assert retriever.record_selector.record_filter.condition == "{{ record['id'] > 1 }}"
+    assert retriever.post_pagination_filter.condition is None
+    # a data feed that is not client-side incremental keeps the `transform_before_filtering` default it had before the
+    # cursor filtering moved to the retriever
+    assert retriever.record_selector.transform_before_filtering is False
+
+
+def test_given_data_feed_and_client_side_incremental_then_transform_before_filtering():
+    """
+    Moving the cursor filtering to the retriever must not change when the `record_filter` condition runs: a
+    client-side incremental stream evaluates it after the transformations, otherwise a condition reading a
+    transformation-produced field silently rejects every record.
+    """
+    content = """
+selector:
+  type: RecordSelector
+  record_filter:
+    type: RecordFilter
+    condition: "{{ record['keep'] == 'yes' }}"
+  extractor:
+      type: DpathExtractor
+      field_path: ["extractor_path"]
+requester:
+  type: HttpRequester
+  name: "{{ parameters['name'] }}"
+  url_base: "https://api.sendgrid.com/v3/"
+  http_method: "GET"
+list_stream:
+  type: DeclarativeStream
+  transformations:
+    - type: AddFields
+      fields:
+        - path: ["keep"]
+          value: "yes"
+  incremental_sync:
+    type: DatetimeBasedCursor
+    $parameters:
+      datetime_format: "%Y-%m-%dT%H:%M:%S.%f%z"
+    start_datetime: "{{ config['start_time'] }}"
+    cursor_field: "created"
+    is_data_feed: true
+    is_client_side_incremental: true
+  retriever:
+    type: SimpleRetriever
+    name: "{{ parameters['name'] }}"
+    paginator:
+      type: DefaultPaginator
+      pagination_strategy:
+        type: "CursorPagination"
+        cursor_value: "{{ response._metadata.next }}"
+        page_size: 10
+    requester:
+      $ref: "#/requester"
+      path: "/"
+    record_selector:
+      $ref: "#/selector"
+  $parameters:
+    name: "lists"
+    """
+
+    parsed_manifest = YamlDeclarativeSource._parse(content)
+    resolved_manifest = resolver.preprocess_manifest(parsed_manifest)
+    stream_manifest = transformer.propagate_types_and_parameters(
+        "", resolved_manifest["list_stream"], {}
+    )
+
+    stream = factory.create_component(
+        model_type=DeclarativeStreamModel, component_definition=stream_manifest, config=input_config
+    )
+
+    retriever = get_retriever(stream)
+    assert retriever.record_selector.transform_before_filtering is True
+
+
+def test_given_data_feed_and_lazy_read_then_lazy_retriever_filters_already_synced_records():
+    """
+    `LazySimpleRetriever` inherits `read_records`, so it only drops the already-synced records of the boundary page
+    if the factory passes it the filter too.
+    """
+    stream_definition = {
+        "type": "DeclarativeStream",
+        "name": "items",
+        "primary_key": [],
+        "schema_loader": {
+            "type": "InlineSchemaLoader",
+            "schema": {"type": "object", "properties": {}},
+        },
+        "incremental_sync": {
+            "type": "DatetimeBasedCursor",
+            "datetime_format": "%Y-%m-%dT%H:%M:%S.%f%z",
+            "start_datetime": "{{ config['start_time'] }}",
+            "cursor_field": "created",
+            "is_data_feed": True,
+        },
+        "retriever": {
+            "type": "SimpleRetriever",
+            "requester": {
+                "type": "HttpRequester",
+                "url_base": "https://api.test.com",
+                "path": "parent/{{ stream_partition.parent_id }}/items",
+                "http_method": "GET",
+            },
+            "record_selector": {
+                "type": "RecordSelector",
+                "extractor": {"type": "DpathExtractor", "field_path": ["data"]},
+            },
+            "paginator": {
+                "type": "DefaultPaginator",
+                "pagination_strategy": {
+                    "type": "CursorPagination",
+                    "cursor_value": '{{ response["data"][-1]["id"] }}',
+                },
+            },
+            "partition_router": {
+                "type": "SubstreamPartitionRouter",
+                "parent_stream_configs": [
+                    {
+                        "type": "ParentStreamConfig",
+                        "parent_key": "id",
+                        "partition_field": "parent_id",
+                        "lazy_read_pointer": ["items"],
+                        "stream": {
+                            "type": "DeclarativeStream",
+                            "name": "parent",
+                            "schema_loader": {
+                                "type": "InlineSchemaLoader",
+                                "schema": {"type": "object", "properties": {}},
+                            },
+                            "retriever": {
+                                "type": "SimpleRetriever",
+                                "requester": {
+                                    "type": "HttpRequester",
+                                    "url_base": "https://api.test.com",
+                                    "path": "/parents",
+                                    "http_method": "GET",
+                                },
+                                "record_selector": {
+                                    "type": "RecordSelector",
+                                    "extractor": {
+                                        "type": "DpathExtractor",
+                                        "field_path": ["data"],
+                                    },
+                                },
+                            },
+                        },
+                    }
+                ],
+            },
+        },
+    }
+
+    stream = factory.create_component(
+        model_type=DeclarativeStreamModel,
+        component_definition=stream_definition,
+        config=input_config,
+    )
+
+    retriever = get_retriever(stream)
+    assert isinstance(retriever, LazySimpleRetriever)
+    assert isinstance(retriever.post_pagination_filter, ClientSideIncrementalRecordFilterDecorator)
 
 
 def test_given_data_feed_and_incremental_then_raise_error():

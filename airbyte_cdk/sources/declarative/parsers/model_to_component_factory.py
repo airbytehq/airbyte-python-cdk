@@ -3330,6 +3330,7 @@ class ModelToComponentFactory:
         transformations: List[RecordTransformation] | None = None,
         decoder: Decoder | None = None,
         client_side_incremental_sync_cursor: Optional[Cursor] = None,
+        is_client_side_incremental_sync: bool = False,
         file_uploader: Optional[DefaultFileUploader] = None,
         **kwargs: Any,
     ) -> RecordSelector:
@@ -3342,8 +3343,16 @@ class ModelToComponentFactory:
             else None
         )
 
+        # A client-side incremental stream transforms before filtering by default. That default belongs to the flag,
+        # not to the component that ends up doing the cursor comparison: a data feed does it in the retriever and
+        # receives no cursor here, but its `record_filter` condition must keep running after the transformations.
+        default_transform_before_filtering = bool(
+            client_side_incremental_sync_cursor or is_client_side_incremental_sync
+        )
         transform_before_filtering = (
-            False if model.transform_before_filtering is None else model.transform_before_filtering
+            default_transform_before_filtering
+            if model.transform_before_filtering is None
+            else model.transform_before_filtering
         )
         if client_side_incremental_sync_cursor:
             record_filter = ClientSideIncrementalRecordFilterDecorator(
@@ -3353,11 +3362,6 @@ class ModelToComponentFactory:
                 if (model.record_filter and hasattr(model.record_filter, "condition"))
                 else None,
                 cursor=client_side_incremental_sync_cursor,
-            )
-            transform_before_filtering = (
-                True
-                if model.transform_before_filtering is None
-                else model.transform_before_filtering
             )
 
         if model.schema_normalization is None:
@@ -3465,6 +3469,33 @@ class ModelToComponentFactory:
         if cursor is None:
             cursor = FinalStateCursor(name, None, self._message_repository)
 
+        # A data feed drops the records the cursor considers already synced in the retriever, which sits downstream of
+        # the paginator. Letting the record selector drop them as well would be redundant and would hide them from the
+        # pagination stop condition, so a data feed never delegates that filtering to the record selector, whether
+        # `is_client_side_incremental` is set or not. The `condition` from `record_filter` is intentionally left out of
+        # the post-pagination filter and stays in the record selector, which preserves the existing behaviour: the
+        # selector runs inside the page loop, so the records the condition rejects never reach the paginator's
+        # accounting. Moving it downstream would start counting them.
+        post_pagination_filter = (
+            ClientSideIncrementalRecordFilterDecorator(
+                config=config,
+                parameters=model.parameters or {},
+                condition=None,
+                cursor=cursor,
+            )
+            if has_stop_condition_cursor
+            else None
+        )
+        client_side_incremental_cursor = (
+            cursor if is_client_side_incremental_sync and not post_pagination_filter else None
+        )
+        if post_pagination_filter and is_client_side_incremental_sync:
+            LOGGER.warning(
+                f"Stream {name}: `is_client_side_incremental` adds no record filtering when `is_data_feed` is set, "
+                "as a data feed already filters on the cursor value. It still makes the record selector apply the "
+                "transformations before the `record_filter` condition."
+            )
+
         decoder = (
             self._create_component_from_model(model=model.decoder, config=config)
             if model.decoder
@@ -3476,7 +3507,8 @@ class ModelToComponentFactory:
             config=config,
             decoder=decoder,
             transformations=transformations,
-            client_side_incremental_sync_cursor=cursor if is_client_side_incremental_sync else None,
+            client_side_incremental_sync_cursor=client_side_incremental_cursor,
+            is_client_side_incremental_sync=is_client_side_incremental_sync,
             file_uploader=file_uploader,
         )
 
@@ -3611,6 +3643,7 @@ class ModelToComponentFactory:
                 request_option_provider=request_options_provider,
                 config=config,
                 ignore_stream_slicer_parameters_on_paginated_requests=ignore_stream_slicer_parameters_on_paginated_requests,
+                post_pagination_filter=post_pagination_filter,
                 parameters=model.parameters or {},
             )
 
@@ -3636,6 +3669,7 @@ class ModelToComponentFactory:
             pagination_tracker_factory=self._create_pagination_tracker_factory(
                 model.pagination_reset, cursor
             ),
+            post_pagination_filter=post_pagination_filter,
             parameters=model.parameters or {},
         )
 
