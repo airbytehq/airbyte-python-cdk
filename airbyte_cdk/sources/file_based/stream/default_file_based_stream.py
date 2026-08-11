@@ -107,14 +107,16 @@ class DefaultFileBasedStream(AbstractFileBasedStream, IncrementalMixin):
             self.config
         )
 
-    def _duplicated_files_names(
-        self, slices: List[dict[str, List[RemoteFile]]]
-    ) -> List[dict[str, List[str]]]:
+    def _duplicated_files_names(self, files: List[RemoteFile]) -> List[dict[str, List[str]]]:
         seen_file_names: Dict[str, List[str]] = defaultdict(list)
-        for file_slice in slices:
-            for file_found in file_slice[self.FILES_KEY]:
-                file_name = path.basename(file_found.uri)
-                seen_file_names[file_name].append(file_found.uri)
+        for file_found in files:
+            source_file_relative_path = file_found.source_file_relative_path
+            file_name = (
+                source_file_relative_path.lstrip("/")
+                if self.preserve_directory_structure
+                else path.basename(source_file_relative_path)
+            )
+            seen_file_names[file_name].append(file_found.uri)
         return [
             {file_name: paths} for file_name, paths in seen_file_names.items() if len(paths) > 1
         ]
@@ -128,8 +130,8 @@ class DefaultFileBasedStream(AbstractFileBasedStream, IncrementalMixin):
             {self.FILES_KEY: list(group[1])}
             for group in itertools.groupby(sorted_files_to_read, lambda f: f.last_modified)
         ]
-        if slices and not self.preserve_directory_structure:
-            duplicated_files_names = self._duplicated_files_names(slices)
+        if all_files and self.use_file_transfer:
+            duplicated_files_names = self._duplicated_files_names(all_files)
             if duplicated_files_names:
                 raise DuplicatedFilesError(
                     stream=self.name, duplicated_files_names=duplicated_files_names
