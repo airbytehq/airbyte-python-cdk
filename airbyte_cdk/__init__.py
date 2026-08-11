@@ -114,6 +114,7 @@ from .sources.declarative.partition_routers import (
     CartesianProductStreamSlicer,
     SinglePartitionRouter,
     SubstreamPartitionRouter,
+    UnionPartitionRouter,
 )
 from .sources.declarative.partition_routers.substream_partition_router import ParentStreamConfig
 from .sources.declarative.requesters import HttpRequester, Requester
@@ -272,6 +273,7 @@ __all__ = [
     "StopConditionPaginationStrategyDecorator",
     "StreamSlice",
     "SubstreamPartitionRouter",
+    "UnionPartitionRouter",
     "YamlDeclarativeSource",
     # Entrypoint
     "launch",
