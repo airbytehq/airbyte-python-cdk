@@ -150,6 +150,7 @@ class ConcurrentDeclarativeSource(Source):
         normalize_manifest: bool = False,
         limits: Optional[TestLimits] = None,
         config_path: Optional[str] = None,
+        custom_components_trusted: bool = True,
         **kwargs: Any,
     ) -> None:
         self.logger = logging.getLogger(f"airbyte.{self.name}")
@@ -174,6 +175,7 @@ class ConcurrentDeclarativeSource(Source):
         # the declarative models into runtime components. Concurrent sources will continue to checkpoint
         # incremental streams running in full refresh.
         component_factory = ModelToComponentFactory(
+            custom_components_trusted=custom_components_trusted,
             emit_connector_builder_messages=emit_connector_builder_messages,
             message_repository=ConcurrentMessageRepository(queue, message_repository),
             configured_catalog=catalog,
@@ -197,6 +199,7 @@ class ConcurrentDeclarativeSource(Source):
             component_factory
             if component_factory
             else ModelToComponentFactory(
+                custom_components_trusted=custom_components_trusted,
                 emit_connector_builder_messages=emit_connector_builder_messages,
                 max_concurrent_async_job_count=source_config.get("max_concurrent_async_job_count"),
             )
