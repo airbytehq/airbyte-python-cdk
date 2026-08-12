@@ -35,11 +35,13 @@ from airbyte_cdk.models import (
 )
 from airbyte_cdk.sources import Source
 from airbyte_cdk.sources.connector_state_manager import HashableStreamDescriptor
+from airbyte_cdk.sources.streams.http.cache_stats import HTTP_CACHE_STATS
 from airbyte_cdk.sources.utils.schema_helpers import check_config_against_spec_or_exit, split_config
 
 # from airbyte_cdk.utils import PrintBuffer, is_cloud_environment, message_utils  # add PrintBuffer back once fixed
 from airbyte_cdk.utils import is_cloud_environment, message_utils
 from airbyte_cdk.utils.airbyte_secrets_utils import get_secrets, update_secrets
+from airbyte_cdk.utils.analytics_message import create_analytics_message
 from airbyte_cdk.utils.constants import ENV_REQUEST_CACHE_PATH
 from airbyte_cdk.utils.memory_monitor import MemoryMonitor
 from airbyte_cdk.utils.traced_exception import AirbyteTracedException
@@ -217,6 +219,30 @@ class AirbyteEntrypoint(object):
                 self.airbyte_message_to_string(queued_message)
                 for queued_message in self._emit_queued_messages(self.source)
             ]
+            yield from map(
+                AirbyteEntrypoint.airbyte_message_to_string,
+                self._http_cache_stats_messages(),
+            )
+
+    @staticmethod
+    def _http_cache_stats_messages() -> Iterable[AirbyteMessage]:
+        """Report how many requests the run made and how many its cache served.
+
+        A `requests_cache` hit never reaches the wire, so this is the only place
+        it can be observed from outside the process. Emitted as analytics, which
+        ride the protocol as TRACE messages on stdout: no `LOG_LEVEL=DEBUG` to
+        turn on, and one message pair per run rather than per-request log spam.
+
+        Silent when the run made no requests, so `spec` -- and every non-HTTP
+        connector -- does not report a meaningless `0`. That silence is load
+        bearing for readers: absent means *not measured*, which is also what a
+        connector on an older CDK looks like, and is not the same as `0%`.
+        """
+        stats = HTTP_CACHE_STATS.snapshot()
+        if stats.requests <= 0:
+            return
+        yield create_analytics_message("http-request-count", stats.requests)
+        yield create_analytics_message("http-cache-hit-count", stats.cache_hits)
 
     def check(
         self, source_spec: ConnectorSpecification, config: TConfig

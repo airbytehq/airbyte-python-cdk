@@ -45,6 +45,7 @@ from airbyte_cdk.models import (
 )
 from airbyte_cdk.sources import Source
 from airbyte_cdk.sources.connector_state_manager import HashableStreamDescriptor
+from airbyte_cdk.sources.streams.http.cache_stats import HTTP_CACHE_STATS
 from airbyte_cdk.utils import AirbyteTracedException
 
 
@@ -487,6 +488,101 @@ def test_run_read(entrypoint: AirbyteEntrypoint, mocker, spec_mock, config_mock)
         _wrap_message(expected),
     ] == messages
     assert spec_mock.called
+
+
+def _analytics_values(messages: List[str]) -> Mapping[str, str]:
+    """The analytics counters a run reported, keyed by type."""
+    parsed = [orjson.loads(message) for message in messages]
+    return {
+        message["trace"]["analytics"]["type"]: message["trace"]["analytics"]["value"]
+        for message in parsed
+        if message["type"] == "TRACE" and message["trace"]["type"] == "ANALYTICS"
+    }
+
+
+def test_read_reports_the_run_http_request_and_cache_hit_counts(
+    entrypoint: AirbyteEntrypoint, mocker, spec_mock, config_mock
+):
+    """A `requests_cache` hit never reaches the wire, so the run has to say so.
+
+    Analytics rather than logs: they ride the protocol as TRACE messages on
+    stdout, so a harness reads them without `LOG_LEVEL=DEBUG` and without one log
+    line per request.
+    """
+    parsed_args = Namespace(
+        command="read", config="config_path", state="statepath", catalog="catalogpath"
+    )
+    mocker.patch.object(MockSource, "read_state", return_value={})
+    mocker.patch.object(MockSource, "read_catalog", return_value={})
+
+    def read_making_requests(*args, **kwargs):
+        live = requests.Response()
+        live.status_code = 200
+        cached = requests.Response()
+        cached.status_code = 200
+        cached.from_cache = True
+        HTTP_CACHE_STATS.record_response(live)
+        HTTP_CACHE_STATS.record_response(cached)
+        HTTP_CACHE_STATS.record_response(cached)
+        return []
+
+    mocker.patch.object(MockSource, "read", side_effect=read_making_requests)
+
+    messages = list(entrypoint.run(parsed_args))
+
+    assert _analytics_values(messages) == {
+        "http-request-count": "3",
+        "http-cache-hit-count": "2",
+    }
+
+
+def test_read_reports_the_counts_even_when_it_fails(
+    entrypoint: AirbyteEntrypoint, mocker, spec_mock, config_mock
+):
+    """A crashed run is exactly the one whose request count a reviewer wants."""
+    parsed_args = Namespace(
+        command="read", config="config_path", state="statepath", catalog="catalogpath"
+    )
+    mocker.patch.object(MockSource, "read_state", return_value={})
+    mocker.patch.object(MockSource, "read_catalog", return_value={})
+
+    def read_then_fail(*args, **kwargs):
+        response = requests.Response()
+        response.status_code = 200
+        HTTP_CACHE_STATS.record_response(response)
+        raise ValueError("Any error")
+
+    mocker.patch.object(MockSource, "read", side_effect=read_then_fail)
+
+    messages = []
+    with pytest.raises(ValueError):
+        messages.extend(entrypoint.run(parsed_args))
+
+    assert _analytics_values(messages) == {
+        "http-request-count": "1",
+        "http-cache-hit-count": "0",
+    }
+
+
+def test_a_run_that_made_no_requests_reports_no_counts(
+    entrypoint: AirbyteEntrypoint, mocker, spec_mock, config_mock
+):
+    """Silence, not `0` -- absent has to mean *not measured*.
+
+    A connector on a CDK without these counters, or one that never calls out,
+    both report nothing; a `0` here would be indistinguishable from a measured
+    zero and would render as a `0%` cache ratio in a regression report.
+    """
+    parsed_args = Namespace(
+        command="read", config="config_path", state="statepath", catalog="catalogpath"
+    )
+    mocker.patch.object(MockSource, "read_state", return_value={})
+    mocker.patch.object(MockSource, "read_catalog", return_value={})
+    mocker.patch.object(MockSource, "read", return_value=[])
+
+    messages = list(entrypoint.run(parsed_args))
+
+    assert _analytics_values(messages) == {}
 
 
 def test_given_message_emitted_during_config_when_read_then_emit_message_before_next_steps(
