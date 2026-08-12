@@ -1377,6 +1377,11 @@ class CsvDecoder(BaseModel):
     type: Literal["CsvDecoder"]
     encoding: Optional[str] = "utf-8"
     delimiter: Optional[str] = ","
+    max_field_size: Optional[int] = Field(
+        2147483648,
+        description="Maximum number of characters allowed in a CSV field.",
+        title="Maximum Field Size",
+    )
     set_values_to_none: Optional[List[str]] = None
 
 
