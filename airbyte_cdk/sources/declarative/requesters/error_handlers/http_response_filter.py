@@ -27,8 +27,8 @@ class HttpResponseFilter:
     Filter to select a response based on its HTTP status code, error message or a predicate.
     If a response matches the filter, the response action, failure_type, and error message are returned as an ErrorResolution object.
     For http_codes declared in the filter, the failure_type will default to `system_error`.
-    To override the default failure_type, configure failure_type with a retry-style action
-    (`FAIL`, `RETRY`, `RATE_LIMITED`, or `REFRESH_TOKEN_THEN_RETRY`).
+    A configured failure_type overrides the default for the `FAIL`, `RETRY`, `RATE_LIMITED` and
+    `REFRESH_TOKEN_THEN_RETRY` actions. `IGNORE` and `RESET_PAGINATION` keep the default mapping.
 
     Attributes:
         action (Union[ResponseAction, str]): action to execute if a request matches
