@@ -23,6 +23,7 @@ from airbyte_cdk.sources.streams.http.error_handlers.response_models import Resp
         pytest.param(403, DEFAULT_ERROR_MAPPING[403], id="403 mapping"),
         pytest.param(404, DEFAULT_ERROR_MAPPING[404], id="404 mapping"),
         pytest.param(408, DEFAULT_ERROR_MAPPING[408], id="408 mapping"),
+        pytest.param(413, DEFAULT_ERROR_MAPPING[413], id="413 mapping"),
     ],
 )
 def test_matches_mapped_http_status_code(http_code, expected_error_resolution):
