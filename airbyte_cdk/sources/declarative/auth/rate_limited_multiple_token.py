@@ -28,6 +28,12 @@ class TokenQuota:
     `matchers` classify outgoing requests into the pool; a pool with no matchers acts as the
     default pool. `remaining_path`/`reset_path`/`limit_path` locate the pool's values in the
     quota status response.
+
+    `remaining_header`/`reset_header`/`limit_header`/`exhaustion_status_codes` are optional and
+    enable reconciling the pool against what the server reports on each response. Without them
+    the pool is only ever seeded from `quota_status_url`, so its counters drift whenever the
+    token is shared with another client, requests are in flight concurrently, or the sync runs
+    long enough for a single seeding to go stale.
     """
 
     name: str
@@ -35,6 +41,14 @@ class TokenQuota:
     reset_path: List[str]
     limit_path: Optional[List[str]] = None
     matchers: List[RequestMatcher] = field(default_factory=list)
+    remaining_header: Optional[str] = None
+    reset_header: Optional[str] = None
+    limit_header: Optional[str] = None
+    exhaustion_status_codes: List[int] = field(default_factory=list)
+
+    @property
+    def is_response_aware(self) -> bool:
+        return bool(self.remaining_header or self.limit_header or self.exhaustion_status_codes)
 
 
 @dataclass
@@ -59,8 +73,11 @@ class RateLimitedMultipleTokenAuthenticator(DeclarativeAuthenticator):
     `seconds_until_reset / total_remaining` (capped at 10s) is injected before each request.
 
     Counters are seeded per token from `quota_status_url` on first use and refreshed after an
-    exhaustion wait. All state transitions are guarded by a lock so the authenticator can be
-    shared safely across concurrent streams; sleeps never hold the lock.
+    exhaustion wait. When a pool declares response headers, `update_from_response` additionally
+    reconciles that pool against the server on every response, which keeps the counters honest
+    between seedings and makes the authenticator rotate off a token the server has rejected even
+    though the local count still looks healthy. All state transitions are guarded by a lock so
+    the authenticator can be shared safely across concurrent streams; sleeps never hold the lock.
     """
 
     HEARTBEAT_INTERVAL = 60.0  # Log every 60s during exhaustion wait
@@ -319,3 +336,85 @@ class RateLimitedMultipleTokenAuthenticator(DeclarativeAuthenticator):
                 )
             value = value[key]
         return value
+
+    def update_from_response(
+        self, request: requests.PreparedRequest, response: requests.Response
+    ) -> None:
+        """Reconcile the matched pool's counters against what the server reported.
+
+        Called once per HTTP attempt by `HttpClient`. Inert unless the matched pool declares
+        response headers, so behaviour is unchanged for pools configured only with paths.
+
+        The update is attributed to the token that *sent* the request rather than to the
+        currently active one: under concurrency the authenticator may have rotated between the
+        request going out and the response coming back.
+        """
+        quota = self._match_quota(request)
+        if not quota.is_response_aware:
+            return
+        token = self._token_from_request(request)
+        if token is None:
+            return
+
+        remaining = self._header_int(response, quota.remaining_header)
+        if remaining is None and response.status_code in quota.exhaustion_status_codes:
+            # The server rejected the call for rate-limit reasons but told us nothing about the
+            # remaining count. Treat the pool as spent so the next request rotates.
+            remaining = 0
+        reset_at = self._header_datetime(response, quota.reset_header)
+        limit = self._header_int(response, quota.limit_header)
+        if remaining is None and limit is None:
+            return
+
+        with self._lock:
+            state = self._states.get(token, {}).get(quota.name)
+            if state is None:
+                return  # not seeded yet; the initial seeding is the more authoritative source
+            if limit is not None and limit > 0:
+                state.limit = limit
+            if reset_at is not None and reset_at > state.reset_at:
+                # The quota window rolled over, so the local count is meaningless -- take the
+                # server's numbers wholesale.
+                state.reset_at = reset_at
+                if remaining is not None:
+                    state.remaining = remaining
+            elif remaining is not None and (reset_at is None or reset_at == state.reset_at):
+                # Same window. Responses can arrive out of order and a slow one carries a stale,
+                # higher count, so only ever tighten the estimate -- never hand back calls that
+                # concurrent requests have already spent.
+                state.remaining = min(state.remaining, remaining)
+
+    def _token_from_request(self, request: requests.PreparedRequest) -> Optional[str]:
+        """Recover the token a request was signed with from its auth header."""
+        value = request.headers.get(self._header)
+        if not value:
+            return None
+        token = value[len(self._auth_method) :].strip() if self._auth_method else value.strip()
+        return token if token in self._states else None
+
+    @staticmethod
+    def _header_int(response: requests.Response, header: Optional[str]) -> Optional[int]:
+        if not header:
+            return None
+        value = response.headers.get(header)
+        if value is None:
+            return None
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return None
+
+    @staticmethod
+    def _header_datetime(
+        response: requests.Response, header: Optional[str]
+    ) -> Optional[AirbyteDateTime]:
+        if not header:
+            return None
+        value = response.headers.get(header)
+        if value is None:
+            return None
+        try:
+            # Same parsing rules as `reset_path`, so epoch seconds and ISO 8601 both work.
+            return ab_datetime_parse(value)
+        except Exception:
+            return None

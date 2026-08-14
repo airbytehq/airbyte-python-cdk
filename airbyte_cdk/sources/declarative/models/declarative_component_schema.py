@@ -609,6 +609,30 @@ class TokenQuota(BaseModel):
         description="List of matchers that classify outgoing requests into this quota pool. The first pool whose matcher matches a request is used. A pool with no matchers acts as the default pool.",
         title="Matchers",
     )
+    remaining_header: Optional[str] = Field(
+        None,
+        description="Optional response header carrying the remaining call count for this pool. When set, the pool's counter is reconciled against this header on every response, which corrects drift caused by sharing the token with other clients, by requests in flight concurrently, or by a sync running long enough for the initial quota status read to go stale. Without it the pool is only ever seeded from the quota status endpoint.",
+        examples=["X-RateLimit-Remaining"],
+        title="Remaining Header",
+    )
+    reset_header: Optional[str] = Field(
+        None,
+        description="Optional response header carrying the quota reset timestamp for this pool. Parsed with the same rules as `reset_path`, so epoch seconds and ISO 8601 both work. Used to tell a rolled-over quota window from the current one.",
+        examples=["X-RateLimit-Reset"],
+        title="Reset Header",
+    )
+    limit_header: Optional[str] = Field(
+        None,
+        description="Optional response header carrying the total call limit for this pool, used to keep the proactive throttling reserve accurate as the limit changes.",
+        examples=["X-RateLimit-Limit"],
+        title="Limit Header",
+    )
+    exhaustion_status_codes: Optional[List[int]] = Field(
+        None,
+        description="Response status codes that mean this token's pool is spent, applied when the response carries no remaining header. The pool is set to zero so the next request rotates to another token instead of waiting out the reset window. Only list codes the API uses exclusively for rate limiting -- a code that also signals other failures would park a healthy token.",
+        examples=[[429]],
+        title="Exhaustion Status Codes",
+    )
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
 

@@ -1062,6 +1062,75 @@ def test_refresh_token_then_retry_action_retries_and_succeeds_after_token_refres
     assert call_count == 2
 
 
+class _RecordingAuthenticator(TokenAuthenticator):
+    """An authenticator that tracks quota state and wants to see responses."""
+
+    def __init__(self):
+        super().__init__(token="token")
+        self.seen = []
+
+    def update_from_response(self, request, response):
+        self.seen.append(response.status_code)
+
+
+def test_authenticator_receives_every_response(requests_mock):
+    """A quota-tracking authenticator only ever sees requests, so `HttpClient` hands it the
+    responses too. Every attempt counts, including the retried ones."""
+    authenticator = _RecordingAuthenticator()
+    http_client = HttpClient(
+        name="test",
+        logger=logging.getLogger("test"),
+        authenticator=authenticator,
+        error_handler=HttpStatusErrorHandler(logger=logging.getLogger("test"), max_retries=1),
+    )
+    requests_mock.get(
+        "https://example.com/",
+        [{"status_code": 500}, {"status_code": 200}],
+    )
+
+    with patch("time.sleep"):
+        http_client.send_request(http_method="GET", url="https://example.com/", request_kwargs={})
+
+    assert authenticator.seen == [500, 200]
+
+
+def test_authenticator_without_update_hook_is_left_alone(requests_mock):
+    """Duck typed, so authenticators that don't track quota are untouched."""
+    http_client = HttpClient(
+        name="test",
+        logger=logging.getLogger("test"),
+        authenticator=TokenAuthenticator(token="token"),
+    )
+    requests_mock.get("https://example.com/", status_code=200)
+
+    _, response = http_client.send_request(
+        http_method="GET", url="https://example.com/", request_kwargs={}
+    )
+
+    assert response.status_code == 200
+
+
+def test_authenticator_update_failure_does_not_break_the_request(requests_mock):
+    """Quota bookkeeping is best-effort; it must never turn a good response into a failure."""
+
+    class _BrokenAuthenticator(TokenAuthenticator):
+        def update_from_response(self, request, response):
+            raise ValueError("boom")
+
+    http_client = HttpClient(
+        name="test",
+        logger=logging.getLogger("test"),
+        authenticator=_BrokenAuthenticator(token="token"),
+    )
+    requests_mock.get("https://example.com/", status_code=200, json={"ok": True})
+
+    _, response = http_client.send_request(
+        http_method="GET", url="https://example.com/", request_kwargs={}
+    )
+
+    assert response.json() == {"ok": True}
+
+
 def test_deprecated_alias_message_representation_airbyte_traced_errors_is_importable():
     """Verify that the deprecated alias still resolves to AirbyteTracedException."""
     assert MessageRepresentationAirbyteTracedErrors is AirbyteTracedException

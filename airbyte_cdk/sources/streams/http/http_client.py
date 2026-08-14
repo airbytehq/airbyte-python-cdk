@@ -322,6 +322,31 @@ class HttpClient:
                 stream_descriptor=StreamDescriptor(name=self._name),
             )
 
+    def _update_authenticator_from_response(
+        self, request: requests.PreparedRequest, response: requests.Response
+    ) -> None:
+        """Let a quota-tracking authenticator reconcile its state against the server.
+
+        Authenticators only ever see requests, so an authenticator that tracks per-token quota
+        has no way to learn that the server disagrees with its local bookkeeping. This is the
+        feedback channel, mirroring what `LimiterMixin.send` does for the API budget.
+        """
+        authenticator = getattr(self._session, "auth", None)
+        update_from_response = getattr(authenticator, "update_from_response", None)
+        if not callable(update_from_response):
+            return
+        if getattr(response, "from_cache", False):
+            # A replayed cached response carries the rate-limit headers from whenever it was
+            # first fetched and consumed no quota of its own.
+            return
+        try:
+            update_from_response(request, response)
+        except Exception:
+            # Quota bookkeeping must never turn an otherwise fine response into a failure.
+            self._logger.debug(
+                "Authenticator failed to update quota state from response", exc_info=True
+            )
+
     def _send(
         self,
         request: requests.PreparedRequest,
@@ -348,6 +373,9 @@ class HttpClient:
             response = self._session.send(request, **request_kwargs)
         except requests.RequestException as e:
             exc = e
+
+        if response is not None:
+            self._update_authenticator_from_response(request, response)
 
         error_resolution: ErrorResolution = self._error_handler.interpret_response(
             response if response is not None else exc

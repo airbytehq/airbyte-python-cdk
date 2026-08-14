@@ -281,6 +281,249 @@ def test_raises_after_cumulative_max_wait_time(requests_mock):
     assert clock["now"] <= 30
 
 
+# --- reconciling quota state against response headers ---------------------------------------
+
+
+def _response_aware_quotas(exhaustion_status_codes=(429,)):
+    return [
+        TokenQuota(
+            name="rest",
+            remaining_path=["resources", "core", "remaining"],
+            reset_path=["resources", "core", "reset"],
+            limit_path=["resources", "core", "limit"],
+            remaining_header="X-RateLimit-Remaining",
+            reset_header="X-RateLimit-Reset",
+            limit_header="X-RateLimit-Limit",
+            exhaustion_status_codes=list(exhaustion_status_codes),
+        ),
+        TokenQuota(
+            name="graphql",
+            remaining_path=["resources", "graphql", "remaining"],
+            reset_path=["resources", "graphql", "reset"],
+            limit_path=["resources", "graphql", "limit"],
+            remaining_header="X-RateLimit-Remaining",
+            reset_header="X-RateLimit-Reset",
+            matchers=[HttpRequestRegexMatcher(url_path_pattern="/graphql")],
+        ),
+    ]
+
+
+def _response_aware_authenticator(tokens=("token_1", "token_2"), **kwargs):
+    return RateLimitedMultipleTokenAuthenticator(
+        tokens=list(tokens),
+        quotas=_response_aware_quotas(**kwargs),
+        quota_status_url=QUOTA_STATUS_URL,
+        auth_method="token",
+    )
+
+
+def _response(status_code=200, headers=None, from_cache=False):
+    response = requests.Response()
+    response.status_code = status_code
+    response.headers.update(headers or {})
+    if from_cache:
+        response.from_cache = True  # type: ignore[attr-defined] # mirrors requests_cache
+    return response
+
+
+def test_response_header_corrects_counter_downward(requests_mock):
+    """The server is the source of truth: a lower remaining count wins over the local estimate."""
+    requests_mock.get(QUOTA_STATUS_URL, json=_quota_status_body())
+    authenticator = _response_aware_authenticator(tokens=("token_1",))
+    request = authenticator(_prepared_request())
+    assert authenticator._states["token_1"]["rest"].remaining == 4999
+
+    authenticator.update_from_response(request, _response(headers={"X-RateLimit-Remaining": "10"}))
+
+    assert authenticator._states["token_1"]["rest"].remaining == 10
+
+
+def test_response_header_does_not_ratchet_counter_up_within_a_window(requests_mock):
+    """A slow response carries a stale, higher count. Handing those calls back would let concurrent
+    requests overspend, so within one window the estimate may only tighten."""
+    requests_mock.get(QUOTA_STATUS_URL, json=_quota_status_body())
+    authenticator = _response_aware_authenticator(tokens=("token_1",))
+    request = authenticator(_prepared_request())
+    reset_at = authenticator._states["token_1"]["rest"].reset_at
+    authenticator._states["token_1"]["rest"].remaining = 10
+
+    authenticator.update_from_response(
+        request,
+        _response(
+            headers={
+                "X-RateLimit-Remaining": "4000",
+                "X-RateLimit-Reset": str(int(reset_at.timestamp())),
+            }
+        ),
+    )
+
+    assert authenticator._states["token_1"]["rest"].remaining == 10
+
+
+def test_later_reset_in_response_starts_a_new_window(requests_mock):
+    requests_mock.get(QUOTA_STATUS_URL, json=_quota_status_body())
+    authenticator = _response_aware_authenticator(tokens=("token_1",))
+    request = authenticator(_prepared_request())
+    state = authenticator._states["token_1"]["rest"]
+    state.remaining = 3
+    next_window = int(state.reset_at.timestamp()) + 3600
+
+    authenticator.update_from_response(
+        request,
+        _response(headers={"X-RateLimit-Remaining": "5000", "X-RateLimit-Reset": str(next_window)}),
+    )
+
+    assert state.remaining == 5000
+    assert int(state.reset_at.timestamp()) == next_window
+
+
+def test_earlier_reset_in_response_is_ignored(requests_mock):
+    """A response from a window that has already rolled over must not disturb current state."""
+    requests_mock.get(QUOTA_STATUS_URL, json=_quota_status_body())
+    authenticator = _response_aware_authenticator(tokens=("token_1",))
+    request = authenticator(_prepared_request())
+    state = authenticator._states["token_1"]["rest"]
+    state.remaining = 100
+    previous_window = int(state.reset_at.timestamp()) - 3600
+
+    authenticator.update_from_response(
+        request,
+        _response(
+            headers={"X-RateLimit-Remaining": "7", "X-RateLimit-Reset": str(previous_window)}
+        ),
+    )
+
+    assert state.remaining == 100
+
+
+def test_limit_header_updates_the_throttling_reserve(requests_mock):
+    requests_mock.get(QUOTA_STATUS_URL, json=_quota_status_body())
+    authenticator = _response_aware_authenticator(tokens=("token_1",))
+    request = authenticator(_prepared_request())
+
+    authenticator.update_from_response(request, _response(headers={"X-RateLimit-Limit": "15000"}))
+
+    assert authenticator._states["token_1"]["rest"].limit == 15000
+
+
+def test_exhaustion_status_code_zeroes_the_pool_and_next_request_rotates(requests_mock):
+    """Regression test for the core defect.
+
+    GitHub rejects a request for rate-limit reasons while the local counter still reads healthy.
+    Before response awareness the authenticator kept handing out the same token and the error
+    handler waited out the whole reset window with other tokens sitting idle.
+    """
+    requests_mock.get(QUOTA_STATUS_URL, json=_quota_status_body())
+    authenticator = _response_aware_authenticator()
+    request = authenticator(_prepared_request())
+    assert request.headers["Authorization"] == "token token_1"
+    assert authenticator._states["token_1"]["rest"].remaining == 4999  # locally still healthy
+
+    authenticator.update_from_response(request, _response(status_code=429))
+
+    assert authenticator._states["token_1"]["rest"].remaining == 0
+    retry = authenticator(_prepared_request())
+    assert retry.headers["Authorization"] == "token token_2"
+
+
+def test_rate_limited_response_is_ignored_when_no_headers_are_configured(requests_mock):
+    """Pools configured only with paths keep their previous behaviour."""
+    requests_mock.get(QUOTA_STATUS_URL, json=_quota_status_body())
+    authenticator = _authenticator(tokens=("token_1", "token_2"))
+    request = authenticator(_prepared_request())
+
+    authenticator.update_from_response(
+        request, _response(status_code=429, headers={"X-RateLimit-Remaining": "0"})
+    )
+
+    assert authenticator._states["token_1"]["rest"].remaining == 4999
+    assert authenticator(_prepared_request()).headers["Authorization"] == "token token_1"
+
+
+def test_response_is_attributed_to_the_token_that_sent_it(requests_mock):
+    """Under concurrency the active token can move on before a response lands, so the update has
+    to follow the request's own auth header rather than whichever token is active now."""
+    requests_mock.get(QUOTA_STATUS_URL, json=_quota_status_body())
+    authenticator = _response_aware_authenticator()
+    request = authenticator(_prepared_request())
+    assert request.headers["Authorization"] == "token token_1"
+    authenticator.update_token = None  # guard against accidental reliance on a rotation helper
+    authenticator._active_token = "token_2"
+
+    authenticator.update_from_response(request, _response(headers={"X-RateLimit-Remaining": "12"}))
+
+    assert authenticator._states["token_1"]["rest"].remaining == 12
+    assert authenticator._states["token_2"]["rest"].remaining == 5000
+
+
+def test_cached_response_does_not_update_quota_state(requests_mock):
+    """A replayed cached response carries stale headers and consumed no quota. `HttpClient` filters
+    those out; this pins the behaviour if anything ever calls the method directly."""
+    requests_mock.get(QUOTA_STATUS_URL, json=_quota_status_body())
+    authenticator = _response_aware_authenticator(tokens=("token_1",))
+    request = authenticator(_prepared_request())
+
+    from airbyte_cdk.sources.streams.http import HttpClient
+
+    client = HttpClient(name="test", logger=__import__("logging").getLogger("test"))
+    client._session.auth = authenticator
+    client._update_authenticator_from_response(
+        request, _response(headers={"X-RateLimit-Remaining": "1"}, from_cache=True)
+    )
+
+    assert authenticator._states["token_1"]["rest"].remaining == 4999
+
+
+def test_graphql_response_updates_only_the_graphql_pool(requests_mock):
+    requests_mock.get(QUOTA_STATUS_URL, json=_quota_status_body())
+    authenticator = _response_aware_authenticator(tokens=("token_1",))
+    request = authenticator(_prepared_request("https://api.example.com/graphql"))
+
+    authenticator.update_from_response(request, _response(headers={"X-RateLimit-Remaining": "42"}))
+
+    assert authenticator._states["token_1"]["graphql"].remaining == 42
+    assert authenticator._states["token_1"]["rest"].remaining == 5000
+
+
+def test_malformed_headers_are_ignored(requests_mock):
+    requests_mock.get(QUOTA_STATUS_URL, json=_quota_status_body())
+    authenticator = _response_aware_authenticator(tokens=("token_1",))
+    request = authenticator(_prepared_request())
+
+    authenticator.update_from_response(
+        request,
+        _response(headers={"X-RateLimit-Remaining": "not-a-number", "X-RateLimit-Reset": "soon"}),
+    )
+
+    assert authenticator._states["token_1"]["rest"].remaining == 4999
+
+
+def test_concurrent_response_updates_do_not_lose_decrements(requests_mock):
+    requests_mock.get(QUOTA_STATUS_URL, json=_quota_status_body())
+    authenticator = _response_aware_authenticator(tokens=("token_1",))
+    authenticator._ensure_initialized()
+    reset_at = authenticator._states["token_1"]["rest"].reset_at
+    headers = {
+        "X-RateLimit-Remaining": "4000",
+        "X-RateLimit-Reset": str(int(reset_at.timestamp())),
+    }
+
+    def worker():
+        for _ in range(50):
+            request = authenticator(_prepared_request())
+            authenticator.update_from_response(request, _response(headers=headers))
+
+    threads = [threading.Thread(target=worker) for _ in range(4)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+    # 200 requests were charged; the server's 4000 clamps the count and further local decrements
+    # continue from there, so the result must never exceed the clamp.
+    assert authenticator._states["token_1"]["rest"].remaining <= 4000
+
+
 def _model(tokens):
     return RateLimitedMultipleTokenAuthenticatorModel.parse_obj(
         {
@@ -422,3 +665,42 @@ def test_factory_interpolates_max_wait_time():
     )
 
     assert authenticator._max_wait_time == timedelta(minutes=30)
+
+
+def test_factory_passes_response_header_fields_through():
+    factory = ModelToComponentFactory()
+    model = _model("{{ config['pat'] }}")
+    model.quotas[0].remaining_header = "X-RateLimit-Remaining"
+    model.quotas[0].reset_header = "X-RateLimit-Reset"
+    model.quotas[0].limit_header = "X-RateLimit-Limit"
+    model.quotas[0].exhaustion_status_codes = [429]
+
+    authenticator = factory.create_rate_limited_multiple_token_authenticator(
+        model, {"pat": "token_1"}
+    )
+
+    rest, graphql = authenticator._quotas
+    assert rest.remaining_header == "X-RateLimit-Remaining"
+    assert rest.reset_header == "X-RateLimit-Reset"
+    assert rest.limit_header == "X-RateLimit-Limit"
+    assert rest.exhaustion_status_codes == [429]
+    assert rest.is_response_aware
+    assert not graphql.is_response_aware
+
+
+def test_factory_does_not_share_instances_across_differing_header_config():
+    """Header config is part of the authenticator's behaviour, so it must take part in the
+    instance cache key -- otherwise two differently configured pools would silently share state."""
+    factory = ModelToComponentFactory()
+    config = {"pat": "token_1,token_2"}
+
+    plain = factory.create_rate_limited_multiple_token_authenticator(
+        _model("{{ config['pat'] }}"), config
+    )
+    response_aware_model = _model("{{ config['pat'] }}")
+    response_aware_model.quotas[0].remaining_header = "X-RateLimit-Remaining"
+    response_aware = factory.create_rate_limited_multiple_token_authenticator(
+        response_aware_model, config
+    )
+
+    assert plain is not response_aware
