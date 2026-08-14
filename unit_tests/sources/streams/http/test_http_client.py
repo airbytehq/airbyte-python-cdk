@@ -2,6 +2,7 @@
 
 import logging
 import os
+import time
 from datetime import timedelta
 from unittest.mock import MagicMock, patch
 
@@ -1129,6 +1130,100 @@ def test_authenticator_update_failure_does_not_break_the_request(requests_mock):
     )
 
     assert response.json() == {"ok": True}
+
+
+def test_rate_limited_token_rotates_on_the_retry_end_to_end(requests_mock):
+    """End-to-end: a rate-limited response zeroes that token's pool and the retry goes out on
+    another token.
+
+    This depends on `_send` re-signing the request on every attempt past the first. Nothing else
+    covers that line, so a refactor could silently drop rotation-on-retry and leave the sync
+    hammering a token the server has already rejected.
+
+    The residual sleep is the point of the assertion on `sleeps`: zeroing the pool does not
+    shorten the backoff for the request that *received* the rate limit -- the error handler has
+    already computed it from the response headers. The win is that the retry, and every request
+    after it, uses a token with quota.
+    """
+    from airbyte_cdk.sources.declarative.auth.rate_limited_multiple_token import (
+        RateLimitedMultipleTokenAuthenticator,
+        TokenQuota,
+    )
+    from airbyte_cdk.sources.declarative.requesters.error_handlers import DefaultErrorHandler
+    from airbyte_cdk.sources.declarative.requesters.error_handlers.backoff_strategies import (
+        WaitUntilTimeFromHeaderBackoffStrategy,
+    )
+
+    quota_status_url = "https://api.example.com/rate_limit"
+    reset = int(time.time()) + 1800
+    requests_mock.get(
+        quota_status_url,
+        json={"resources": {"core": {"remaining": 5000, "reset": reset, "limit": 5000}}},
+    )
+    authenticator = RateLimitedMultipleTokenAuthenticator(
+        tokens=["token_1", "token_2"],
+        quotas=[
+            TokenQuota(
+                name="rest",
+                remaining_path=["resources", "core", "remaining"],
+                reset_path=["resources", "core", "reset"],
+                limit_path=["resources", "core", "limit"],
+                remaining_header="X-RateLimit-Remaining",
+                reset_header="X-RateLimit-Reset",
+                exhaustion_status_codes=[429],
+            )
+        ],
+        quota_status_url=quota_status_url,
+        auth_method="token",
+    )
+
+    tokens_used = []
+
+    def respond(request, context):
+        token = request.headers["Authorization"].split()[-1]
+        tokens_used.append(token)
+        if token == "token_1":
+            context.status_code = 429
+            context.headers = {"X-RateLimit-Reset": str(reset), "X-RateLimit-Remaining": "0"}
+            return "{}"
+        context.status_code = 200
+        context.headers = {}
+        return "{}"
+
+    requests_mock.get("https://api.example.com/data", text=respond)
+    # The backoff strategies must be on the client: that is what `_handle_error_resolution`
+    # consults. Passing them only to the error handler falls through to a 1s default and hides
+    # the real wait.
+    http_client = HttpClient(
+        name="test",
+        logger=logging.getLogger("test"),
+        authenticator=authenticator,
+        error_handler=DefaultErrorHandler(config={}, parameters={}),
+        backoff_strategy=[
+            WaitUntilTimeFromHeaderBackoffStrategy(
+                header="X-RateLimit-Reset", config={}, parameters={}
+            )
+        ],
+    )
+
+    sleeps = []
+    with patch("time.sleep", side_effect=lambda seconds: sleeps.append(seconds)):
+        _, response = http_client.send_request(
+            http_method="GET", url="https://api.example.com/data", request_kwargs={}
+        )
+
+    assert response.status_code == 200
+    assert tokens_used == ["token_1", "token_2"]
+    assert authenticator._states["token_1"]["rest"].remaining == 0
+    # One backoff was still paid, by the request that received the 429.
+    assert len([s for s in sleeps if s > 1]) == 1
+
+    tokens_used.clear()
+    with patch("time.sleep", side_effect=lambda seconds: sleeps.append(seconds)):
+        http_client.send_request(
+            http_method="GET", url="https://api.example.com/data", request_kwargs={}
+        )
+    assert tokens_used == ["token_2"]  # the spent token is not tried again
 
 
 def test_deprecated_alias_message_representation_airbyte_traced_errors_is_importable():

@@ -617,7 +617,7 @@ class TokenQuota(BaseModel):
     )
     reset_header: Optional[str] = Field(
         None,
-        description="Optional response header carrying the quota reset timestamp for this pool. Parsed with the same rules as `reset_path`, so epoch seconds and ISO 8601 both work. Used to tell a rolled-over quota window from the current one.",
+        description="Optional response header carrying the quota reset timestamp for this pool. Parsed with the same rules as `reset_path`, so epoch seconds and ISO 8601 both work. Used to tell a rolled-over quota window from the current one; a response proving the window has rolled over restores the pool to its limit. Most useful alongside `remaining_header`.",
         examples=["X-RateLimit-Reset"],
         title="Reset Header",
     )

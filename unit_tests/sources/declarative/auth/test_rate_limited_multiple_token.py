@@ -26,6 +26,7 @@ from airbyte_cdk.sources.declarative.parsers.model_to_component_factory import (
 )
 from airbyte_cdk.sources.streams.call_rate import HttpRequestRegexMatcher
 from airbyte_cdk.utils import AirbyteTracedException
+from airbyte_cdk.utils.datetime_helpers import ab_datetime_now
 
 QUOTA_STATUS_URL = "https://api.example.com/rate_limit"
 
@@ -377,23 +378,25 @@ def test_later_reset_in_response_starts_a_new_window(requests_mock):
     assert int(state.reset_at.timestamp()) == next_window
 
 
-def test_earlier_reset_in_response_is_ignored(requests_mock):
-    """A response from a window that has already rolled over must not disturb current state."""
+def test_earlier_reset_in_response_never_moves_the_window_backwards(requests_mock):
+    """A response carrying an older reset still clamps the count -- dropping it outright would
+    let a stale reset value mask an exhaustion signal -- but it must not rewind the window."""
     requests_mock.get(QUOTA_STATUS_URL, json=_quota_status_body())
     authenticator = _response_aware_authenticator(tokens=("token_1",))
     request = authenticator(_prepared_request())
     state = authenticator._states["token_1"]["rest"]
     state.remaining = 100
-    previous_window = int(state.reset_at.timestamp()) - 3600
+    current_window = int(state.reset_at.timestamp())
 
     authenticator.update_from_response(
         request,
         _response(
-            headers={"X-RateLimit-Remaining": "7", "X-RateLimit-Reset": str(previous_window)}
+            headers={"X-RateLimit-Remaining": "7", "X-RateLimit-Reset": str(current_window - 3600)}
         ),
     )
 
-    assert state.remaining == 100
+    assert state.remaining == 7
+    assert int(state.reset_at.timestamp()) == current_window
 
 
 def test_limit_header_updates_the_throttling_reserve(requests_mock):
@@ -426,6 +429,105 @@ def test_exhaustion_status_code_zeroes_the_pool_and_next_request_rotates(request
     assert retry.headers["Authorization"] == "token token_2"
 
 
+def test_exhaustion_is_not_masked_by_an_earlier_reset_header(requests_mock):
+    """A rate-limited response must zero the pool even when its reset header is older than the
+    one we hold. Dropping the whole update in that case would silently disable rotation, since
+    the seeding read and the response headers routinely disagree by a few seconds."""
+    requests_mock.get(QUOTA_STATUS_URL, json=_quota_status_body(reset_in_seconds=3600))
+    authenticator = _response_aware_authenticator()
+    request = authenticator(_prepared_request())
+    earlier = int(authenticator._states["token_1"]["rest"].reset_at.timestamp()) - 1800
+
+    authenticator.update_from_response(
+        request,
+        _response(
+            status_code=429,
+            headers={"X-RateLimit-Remaining": "0", "X-RateLimit-Reset": str(earlier)},
+        ),
+    )
+
+    assert authenticator._states["token_1"]["rest"].remaining == 0
+    # the window itself is never moved backwards
+    assert int(authenticator._states["token_1"]["rest"].reset_at.timestamp()) == earlier + 1800
+    assert authenticator(_prepared_request()).headers["Authorization"] == "token token_2"
+
+
+def test_token_whose_window_elapsed_is_picked_up_instead_of_waiting(requests_mock):
+    """A pool zeroed from a response must not be treated as exhausted once its window rolls over.
+
+    Rotation skips spent tokens and only the all-exhausted branch refills them, so without this
+    the sync drops into the exhaustion wait (and a full reseed round trip) even though one
+    token's calls are already due back. Reading quota from responses makes a pool reachable
+    zero in a single response, which is what makes this easy to hit.
+    """
+    rate_limit_mock = requests_mock.get(QUOTA_STATUS_URL, json=_quota_status_body())
+    authenticator = _response_aware_authenticator()
+    request = authenticator(_prepared_request())
+    authenticator.update_from_response(request, _response(status_code=429))
+    assert authenticator._states["token_1"]["rest"].remaining == 0
+    # token_2 takes over and is spent in turn, while token_1's window rolls over
+    assert authenticator(_prepared_request()).headers["Authorization"] == "token token_2"
+    authenticator._states["token_2"]["rest"].remaining = 0
+    authenticator._states["token_1"]["rest"].reset_at = ab_datetime_now() - timedelta(seconds=1)
+    seeding_calls = rate_limit_mock.call_count
+
+    with patch("time.sleep") as mock_sleep:
+        signed = authenticator(_prepared_request())
+
+    assert signed.headers["Authorization"] == "token token_1"
+    assert not mock_sleep.called, "a token with an elapsed window must not trigger a wait"
+    assert rate_limit_mock.call_count == seeding_calls, "and must not need a reseed either"
+
+
+def test_pool_the_server_reports_spent_with_an_elapsed_reset_is_not_restored(requests_mock):
+    """Guard on the recovery above: when the quota endpoint itself answers "nothing left" with a
+    reset already in the past, that is a contradictory answer (clock skew, lagging endpoint).
+    Inventing quota from it would spin against a server that has just refused the call."""
+    requests_mock.get(
+        QUOTA_STATUS_URL, json=_quota_status_body(rest_remaining=0, reset_in_seconds=-10)
+    )
+    authenticator = RateLimitedMultipleTokenAuthenticator(
+        tokens=["token_1", "token_2"],
+        quotas=_response_aware_quotas(),
+        quota_status_url=QUOTA_STATUS_URL,
+        auth_method="token",
+        max_wait_time=timedelta(seconds=30),
+    )
+    authenticator._ensure_initialized()
+    assert all(authenticator._states[token]["rest"].stale_zero for token in authenticator._tokens)
+
+    # The exhaustion wait is bounded by wall clock, so the fake clock has to advance with the
+    # mocked sleeps or the reseed loop never reaches its deadline.
+    clock = {"now": 0.0}
+    with (
+        patch(
+            "time.sleep",
+            side_effect=lambda seconds: clock.__setitem__("now", clock["now"] + seconds),
+        ),
+        patch("time.monotonic", side_effect=lambda: clock["now"]),
+    ):
+        with pytest.raises(AirbyteTracedException, match="Rate limit is exceeded"):
+            authenticator(_prepared_request())
+
+
+def test_reset_only_response_restores_the_pool_on_a_new_window(requests_mock):
+    """A response that proves the window rolled over is actionable on its own: the previous
+    count belongs to a window that no longer exists."""
+    requests_mock.get(QUOTA_STATUS_URL, json=_quota_status_body())
+    authenticator = _response_aware_authenticator(tokens=("token_1",))
+    request = authenticator(_prepared_request())
+    state = authenticator._states["token_1"]["rest"]
+    state.remaining = 0
+    next_window = int(state.reset_at.timestamp()) + 3600
+
+    authenticator.update_from_response(
+        request, _response(headers={"X-RateLimit-Reset": str(next_window)})
+    )
+
+    assert state.remaining == state.limit
+    assert int(state.reset_at.timestamp()) == next_window
+
+
 def test_rate_limited_response_is_ignored_when_no_headers_are_configured(requests_mock):
     """Pools configured only with paths keep their previous behaviour."""
     requests_mock.get(QUOTA_STATUS_URL, json=_quota_status_body())
@@ -447,8 +549,9 @@ def test_response_is_attributed_to_the_token_that_sent_it(requests_mock):
     authenticator = _response_aware_authenticator()
     request = authenticator(_prepared_request())
     assert request.headers["Authorization"] == "token token_1"
-    authenticator.update_token = None  # guard against accidental reliance on a rotation helper
-    authenticator._active_token = "token_2"
+    authenticator._active_token = (
+        "token_2"  # the authenticator rotated while the call was in flight
+    )
 
     authenticator.update_from_response(request, _response(headers={"X-RateLimit-Remaining": "12"}))
 
@@ -499,29 +602,39 @@ def test_malformed_headers_are_ignored(requests_mock):
 
 
 def test_concurrent_response_updates_do_not_lose_decrements(requests_mock):
+    """Clamp once, then charge a known number of calls with no further updates, so the assertion
+    fails if a single decrement is lost rather than only if the clamp itself is."""
     requests_mock.get(QUOTA_STATUS_URL, json=_quota_status_body())
     authenticator = _response_aware_authenticator(tokens=("token_1",))
     authenticator._ensure_initialized()
     reset_at = authenticator._states["token_1"]["rest"].reset_at
-    headers = {
-        "X-RateLimit-Remaining": "4000",
-        "X-RateLimit-Reset": str(int(reset_at.timestamp())),
-    }
+    seed_request = authenticator(_prepared_request())
+    authenticator.update_from_response(
+        seed_request,
+        _response(
+            headers={
+                "X-RateLimit-Remaining": "4000",
+                "X-RateLimit-Reset": str(int(reset_at.timestamp())),
+            }
+        ),
+    )
+    assert authenticator._states["token_1"]["rest"].remaining == 4000
+
+    calls_per_thread, thread_count = 50, 4
 
     def worker():
-        for _ in range(50):
-            request = authenticator(_prepared_request())
-            authenticator.update_from_response(request, _response(headers=headers))
+        for _ in range(calls_per_thread):
+            authenticator(_prepared_request())
 
-    threads = [threading.Thread(target=worker) for _ in range(4)]
+    threads = [threading.Thread(target=worker) for _ in range(thread_count)]
     for thread in threads:
         thread.start()
     for thread in threads:
         thread.join()
 
-    # 200 requests were charged; the server's 4000 clamps the count and further local decrements
-    # continue from there, so the result must never exceed the clamp.
-    assert authenticator._states["token_1"]["rest"].remaining <= 4000
+    assert (
+        authenticator._states["token_1"]["rest"].remaining == 4000 - calls_per_thread * thread_count
+    )
 
 
 def _model(tokens):

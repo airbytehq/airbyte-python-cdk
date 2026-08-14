@@ -6,7 +6,18 @@ import logging
 import os
 import urllib
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Mapping, Optional, Tuple, Union
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    List,
+    Mapping,
+    Optional,
+    Protocol,
+    Tuple,
+    Union,
+    runtime_checkable,
+)
 
 import orjson
 import requests
@@ -64,6 +75,22 @@ from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 MessageRepresentationAirbyteTracedErrors = AirbyteTracedException
 
 BODY_REQUEST_METHODS = ("GET", "POST", "PUT", "PATCH")
+
+
+@runtime_checkable
+class ResponseAwareAuthenticator(Protocol):
+    """An authenticator that wants to see responses, not just sign requests.
+
+    Authenticators tracking per-token quota need a feedback channel: without one they can only
+    guess at the server's view of the quota and cannot tell that a token has been rejected.
+    `HttpClient` calls `update_from_response` once per attempt on any authenticator that
+    implements this, skipping replayed cache hits. Implementations must not raise for a response
+    they cannot interpret, and must be safe to call from multiple threads.
+    """
+
+    def update_from_response(
+        self, request: requests.PreparedRequest, response: requests.Response
+    ) -> None: ...
 
 
 def monkey_patched_get_item(self, key):  # type: ignore # this interface is a copy/paste from the requests_cache lib
@@ -138,6 +165,7 @@ class HttpClient:
         self._request_attempt_count: Dict[requests.PreparedRequest, int] = {}
         self._disable_retries = disable_retries
         self._message_repository = message_repository
+        self._authenticator_update_failed = False
 
     @property
     def cache_filename(self) -> str:
@@ -330,6 +358,8 @@ class HttpClient:
         Authenticators only ever see requests, so an authenticator that tracks per-token quota
         has no way to learn that the server disagrees with its local bookkeeping. This is the
         feedback channel, mirroring what `LimiterMixin.send` does for the API budget.
+
+        Any authenticator implementing `ResponseAwareAuthenticator` opts in.
         """
         authenticator = getattr(self._session, "auth", None)
         update_from_response = getattr(authenticator, "update_from_response", None)
@@ -342,10 +372,20 @@ class HttpClient:
         try:
             update_from_response(request, response)
         except Exception:
-            # Quota bookkeeping must never turn an otherwise fine response into a failure.
-            self._logger.debug(
-                "Authenticator failed to update quota state from response", exc_info=True
-            )
+            # Quota bookkeeping must never turn an otherwise fine response into a failure. Warn
+            # once so a persistently broken update -- which silently degrades the connector back
+            # to single-token behaviour -- is at least diagnosable from default-level logs.
+            if not self._authenticator_update_failed:
+                self._authenticator_update_failed = True
+                self._logger.warning(
+                    "Authenticator failed to update quota state from a response; token rotation "
+                    "may fall back to local counters only. Further occurrences log at debug.",
+                    exc_info=True,
+                )
+            else:
+                self._logger.debug(
+                    "Authenticator failed to update quota state from response", exc_info=True
+                )
 
     def _send(
         self,
