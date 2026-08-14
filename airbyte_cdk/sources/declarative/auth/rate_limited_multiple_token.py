@@ -431,11 +431,22 @@ class RateLimitedMultipleTokenAuthenticator(DeclarativeAuthenticator):
                 state.remaining = min(state.remaining, remaining)
 
     def _token_from_request(self, request: requests.PreparedRequest) -> Optional[str]:
-        """Recover the token a request was signed with from its auth header."""
+        """Recover the token a request was signed with from its auth header.
+
+        The prefix is checked rather than assumed: the header may have been written by
+        something other than this authenticator, and slicing blindly would leave membership in
+        `_states` as the only thing standing between a mangled value and a wrong attribution.
+        """
         value = request.headers.get(self._header)
         if not value:
             return None
-        token = value[len(self._auth_method) :].strip() if self._auth_method else value.strip()
+        if self._auth_method:
+            prefix = f"{self._auth_method} "
+            if not value.startswith(prefix):
+                return None
+            token = value[len(prefix) :].strip()
+        else:
+            token = value.strip()
         return token if token in self._states else None
 
     @staticmethod

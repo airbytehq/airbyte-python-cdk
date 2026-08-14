@@ -588,6 +588,21 @@ def test_graphql_response_updates_only_the_graphql_pool(requests_mock):
     assert authenticator._states["token_1"]["rest"].remaining == 5000
 
 
+def test_response_signed_by_something_else_is_not_attributed_to_a_token(requests_mock):
+    """The auth header may have been written by another component. Slicing off the configured
+    prefix without checking it would leave `_states` membership as the only guard against
+    charging the wrong token."""
+    requests_mock.get(QUOTA_STATUS_URL, json=_quota_status_body())
+    authenticator = _response_aware_authenticator(tokens=("token_1",))
+    authenticator._ensure_initialized()
+    request = _prepared_request()
+    request.headers["Authorization"] = "Bearer token_1"  # different scheme
+
+    authenticator.update_from_response(request, _response(headers={"X-RateLimit-Remaining": "1"}))
+
+    assert authenticator._states["token_1"]["rest"].remaining == 5000
+
+
 def test_malformed_headers_are_ignored(requests_mock):
     requests_mock.get(QUOTA_STATUS_URL, json=_quota_status_body())
     authenticator = _response_aware_authenticator(tokens=("token_1",))
@@ -799,6 +814,22 @@ def test_factory_passes_response_header_fields_through():
     assert rest.exhaustion_status_codes == [429]
     assert rest.is_response_aware
     assert not graphql.is_response_aware
+
+
+def test_factory_shares_instances_when_exhaustion_codes_are_omitted_versus_empty():
+    """An omitted `exhaustion_status_codes` and an explicit `[]` behave identically at runtime,
+    so they must not key differently -- splitting the counters is the very failure this
+    component exists to avoid."""
+    factory = ModelToComponentFactory()
+    config = {"pat": "token_1,token_2"}
+
+    omitted = _model("{{ config['pat'] }}")
+    explicit_empty = _model("{{ config['pat'] }}")
+    explicit_empty.quotas[0].exhaustion_status_codes = []
+
+    assert factory.create_rate_limited_multiple_token_authenticator(
+        omitted, config
+    ) is factory.create_rate_limited_multiple_token_authenticator(explicit_empty, config)
 
 
 def test_factory_does_not_share_instances_across_differing_header_config():

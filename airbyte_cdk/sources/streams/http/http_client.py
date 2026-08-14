@@ -90,7 +90,8 @@ class ResponseAwareAuthenticator(Protocol):
 
     def update_from_response(
         self, request: requests.PreparedRequest, response: requests.Response
-    ) -> None: ...
+    ) -> None:
+        pass
 
 
 def monkey_patched_get_item(self, key):  # type: ignore # this interface is a copy/paste from the requests_cache lib
