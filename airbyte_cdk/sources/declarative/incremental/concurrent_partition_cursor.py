@@ -185,6 +185,15 @@ class ConcurrentPerPartitionCursor(Cursor):
         self._last_emission_time: float = 0.0
         self._timer = Timer()
 
+        # Partitioned stream status tracking for progress estimation.
+        # These counters are per-sync only and intentionally NOT restored from persisted state
+        # (_set_initial_state does not read them back). On resume, they reset to 0.
+        self._num_partitions_completed: int = 0
+        self._is_partition_discovery_complete: bool = False
+        # Tracks partition keys for which observe() has been called (worker produced at least one record).
+        # Only len() is used in state emission; the set itself is never serialized.
+        self._partitions_observed: set[str] = set()
+
         self._set_initial_state(stream_state)
 
         # FIXME this is a temporary field the time of the migration from declarative cursors to concurrent ones
@@ -217,6 +226,13 @@ class ConcurrentPerPartitionCursor(Cursor):
             state["lookback_window"] = self._lookback_window
         if self._parent_state is not None:
             state["parent_state"] = self._parent_state
+        num_observed = len(self._partitions_observed)
+        state["partitioned_stream_status"] = {
+            "num_partitions_in_progress": max(0, num_observed - self._num_partitions_completed),
+            "num_partitions_completed": self._num_partitions_completed,
+            "num_partitions_expected": self._generated_partitions_count,
+            "is_partition_discovery_complete": self._is_partition_discovery_complete,
+        }
         return state
 
     def close_partition(self, partition: Partition) -> None:
@@ -322,6 +338,8 @@ class ConcurrentPerPartitionCursor(Cursor):
             slices, self._partition_router.get_stream_state
         ):
             yield from self._generate_slices_from_partition(partition, parent_state)
+        with self._lock:
+            self._is_partition_discovery_complete = True
 
     def _generate_slices_from_partition(
         self, partition: StreamSlice, parent_state: Mapping[str, Any]
@@ -537,11 +555,11 @@ class ConcurrentPerPartitionCursor(Cursor):
             return
 
         self._synced_some_data = True
+        partition_key = self._to_partition_key(record.associated_slice.partition)
+        self._partitions_observed.add(partition_key)
         self._update_global_cursor(record_cursor)
         if not self._use_global_cursor:
-            self._cursor_per_partition[
-                self._to_partition_key(record.associated_slice.partition)
-            ].observe(record)
+            self._cursor_per_partition[partition_key].observe(record)
 
     def _update_global_cursor(self, value: Any) -> None:
         if (
@@ -566,6 +584,9 @@ class ConcurrentPerPartitionCursor(Cursor):
 
         seq = self._partition_key_to_index.pop(partition_key)
         self._processing_partitions_indexes.remove(seq)
+        # Ensure completed partitions are counted as observed (handles partitions with no records)
+        self._partitions_observed.add(partition_key)
+        self._num_partitions_completed += 1
 
         logger.debug(f"Partition {partition_key} fully processed and cleaned up.")
 
