@@ -92,6 +92,10 @@ class RateLimitedMultipleTokenAuthenticator(DeclarativeAuthenticator):
     HEARTBEAT_INTERVAL = 60.0  # Log every 60s during exhaustion wait
     MAX_BUDGET_DELAY = 10.0  # Cap for the per-request proactive throttling delay
     MIN_EXHAUSTION_WAIT = 5.0  # Floor for the exhaustion wait, so stale reset timestamps can't cause a refresh busy-loop
+    # How far behind the reset we hold a response's reset may be while still counting as the
+    # current window. Covers ordinary disagreement between the quota endpoint and response
+    # headers; anything older is treated as belonging to a window that has already rolled over.
+    RESET_SKEW_TOLERANCE = timedelta(seconds=60)
 
     def __init__(
         self,
@@ -392,13 +396,22 @@ class RateLimitedMultipleTokenAuthenticator(DeclarativeAuthenticator):
                 # is worth a full limit.
                 state.reset_at = reset_at
                 state.remaining = remaining if remaining is not None else state.limit
-            elif remaining is not None:
-                # Same window, or a response whose reset is older than what we hold. Only ever
-                # tighten the estimate: responses arrive out of order and a slow one carries a
-                # stale, higher count, so handing those calls back would let concurrent requests
-                # overspend. Clamping unconditionally also means an exhaustion signal is never
-                # dropped -- an earlier reset value must not be able to mask `remaining: 0`.
-                # The window itself is never moved backwards.
+            elif remaining is not None and (
+                remaining <= 0
+                or reset_at is None
+                or reset_at >= state.reset_at - self.RESET_SKEW_TOLERANCE
+            ):
+                # Same window: only ever tighten the estimate. Responses arrive out of order and
+                # a slow one carries a stale, higher count, so handing those calls back would let
+                # concurrent requests overspend. The window itself is never moved backwards.
+                #
+                # A count from a window that has already rolled over describes a window that no
+                # longer exists, and `min` would pin the fresh pool to it for the rest of the
+                # hour, so those are ignored -- with two exceptions. `remaining <= 0` is an
+                # exhaustion signal and must never be dropped, or a rate limit whose reset header
+                # trails the value we hold would silently stop rotation. And a reset within
+                # `RESET_SKEW_TOLERANCE` is treated as the current window, since the quota
+                # endpoint and the response headers can disagree by a little.
                 state.remaining = min(state.remaining, remaining)
 
     def has_alternative_token(self, request: requests.PreparedRequest) -> bool:

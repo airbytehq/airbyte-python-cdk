@@ -25,6 +25,10 @@ from airbyte_cdk.sources.declarative.parsers.model_to_component_factory import (
     ModelToComponentFactory,
 )
 from airbyte_cdk.sources.streams.call_rate import HttpRequestRegexMatcher
+from airbyte_cdk.sources.streams.http.requests_native_auth import (
+    ResponseAwareAuthenticator,
+    TokenRotatingAuthenticator,
+)
 from airbyte_cdk.utils import AirbyteTracedException
 
 QUOTA_STATUS_URL = "https://api.example.com/rate_limit"
@@ -417,9 +421,9 @@ def test_later_reset_in_response_starts_a_new_window(requests_mock):
     assert int(state.reset_at.timestamp()) == next_window
 
 
-def test_earlier_reset_in_response_never_moves_the_window_backwards(requests_mock):
-    """A response carrying an older reset still clamps the count -- dropping it outright would
-    let a stale reset value mask an exhaustion signal -- but it must not rewind the window."""
+def test_slightly_earlier_reset_still_counts_as_the_current_window(requests_mock):
+    """The quota endpoint and the response headers can disagree by a little, so a reset just
+    behind the one we hold is the same window and its count still clamps."""
     requests_mock.get(QUOTA_STATUS_URL, json=_quota_status_body())
     authenticator = _response_aware_authenticator(tokens=("token_1",))
     request = authenticator(_prepared_request())
@@ -430,12 +434,46 @@ def test_earlier_reset_in_response_never_moves_the_window_backwards(requests_moc
     authenticator.update_from_response(
         request,
         _response(
-            headers={"X-RateLimit-Remaining": "7", "X-RateLimit-Reset": str(current_window - 3600)}
+            headers={"X-RateLimit-Remaining": "7", "X-RateLimit-Reset": str(current_window - 5)}
         ),
     )
 
     assert state.remaining == 7
-    assert int(state.reset_at.timestamp()) == current_window
+    assert int(state.reset_at.timestamp()) == current_window  # never moved backwards
+
+
+def test_count_from_a_rolled_over_window_does_not_clamp_the_fresh_pool(requests_mock):
+    """A slow response that lands after the window turned describes a window that no longer
+    exists. `min` would pin the refilled pool to that dead count for the rest of the hour, and
+    nothing short of the next rollover would undo it."""
+    requests_mock.get(QUOTA_STATUS_URL, json=_quota_status_body())
+    authenticator = _response_aware_authenticator(tokens=("token_1",))
+    request = authenticator(_prepared_request())
+    state = authenticator._states["token_1"]["rest"]
+    previous_window = int(state.reset_at.timestamp())
+
+    # the window turns over
+    authenticator.update_from_response(
+        request,
+        _response(
+            headers={
+                "X-RateLimit-Remaining": "5000",
+                "X-RateLimit-Reset": str(previous_window + 3600),
+            }
+        ),
+    )
+    assert state.remaining == 5000
+
+    # ...and only now does an in-flight response from the old window arrive
+    authenticator.update_from_response(
+        request,
+        _response(
+            headers={"X-RateLimit-Remaining": "3", "X-RateLimit-Reset": str(previous_window)}
+        ),
+    )
+
+    assert state.remaining == 5000
+    assert int(state.reset_at.timestamp()) == previous_window + 3600
 
 
 def test_limit_from_an_older_window_is_not_applied(requests_mock):
@@ -592,6 +630,17 @@ def test_graphql_response_updates_only_the_graphql_pool(requests_mock):
 
     assert authenticator._states["token_1"]["graphql"].remaining == 42
     assert authenticator._states["token_1"]["rest"].remaining == 5000
+
+
+def test_satisfies_both_authenticator_capability_protocols(requests_mock):
+    """`HttpClient` dispatches structurally, but the protocols are the declared contract -- an
+    implementation drifting from either one should fail here rather than silently stop being
+    consulted at runtime."""
+    requests_mock.get(QUOTA_STATUS_URL, json=_quota_status_body())
+    authenticator = _response_aware_authenticator()
+
+    assert isinstance(authenticator, ResponseAwareAuthenticator)
+    assert isinstance(authenticator, TokenRotatingAuthenticator)
 
 
 def test_has_alternative_token_when_sender_is_spent_and_another_is_not(requests_mock):
