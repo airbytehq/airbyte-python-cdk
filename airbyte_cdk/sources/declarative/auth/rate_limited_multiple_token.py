@@ -379,7 +379,12 @@ class RateLimitedMultipleTokenAuthenticator(DeclarativeAuthenticator):
             state = self._states.get(token, {}).get(quota.name)
             if state is None:
                 return  # not seeded yet; the initial seeding is the more authoritative source
-            if limit is not None and limit > 0:
+            if limit is not None and limit > 0 and (reset_at is None or reset_at >= state.reset_at):
+                # A response from an older window carries that window's limit. Taking it would
+                # skew the throttling reserve and, on a later reset-only response, refill the
+                # pool to the wrong capacity -- so the limit is accepted on the same terms as
+                # the reset itself. Assigned before the rollover branch below, which reads
+                # `state.limit` when a fresh window arrives with no remaining header.
                 state.limit = limit
             if reset_at is not None and reset_at > state.reset_at:
                 # The quota window rolled over, so the local count is meaningless -- take the

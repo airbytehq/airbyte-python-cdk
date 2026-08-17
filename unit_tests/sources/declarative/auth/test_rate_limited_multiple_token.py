@@ -438,6 +438,31 @@ def test_earlier_reset_in_response_never_moves_the_window_backwards(requests_moc
     assert int(state.reset_at.timestamp()) == current_window
 
 
+def test_limit_from_an_older_window_is_not_applied(requests_mock):
+    """The limit is accepted on the same terms as the reset it arrived with.
+
+    Taking a previous window's limit would skew the throttling reserve and, on a later
+    reset-only response, refill the pool to the wrong capacity.
+    """
+    requests_mock.get(QUOTA_STATUS_URL, json=_quota_status_body())
+    authenticator = _response_aware_authenticator(tokens=("token_1",))
+    request = authenticator(_prepared_request())
+    state = authenticator._states["token_1"]["rest"]
+    current_window = int(state.reset_at.timestamp())
+
+    authenticator.update_from_response(
+        request,
+        _response(
+            headers={
+                "X-RateLimit-Limit": "1000",
+                "X-RateLimit-Reset": str(current_window - 3600),
+            }
+        ),
+    )
+
+    assert state.limit == 5000
+
+
 def test_limit_header_updates_the_throttling_reserve(requests_mock):
     requests_mock.get(QUOTA_STATUS_URL, json=_quota_status_body())
     authenticator = _response_aware_authenticator(tokens=("token_1",))
