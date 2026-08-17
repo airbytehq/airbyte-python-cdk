@@ -1140,10 +1140,8 @@ def test_rate_limited_token_rotates_on_the_retry_end_to_end(requests_mock):
     covers that line, so a refactor could silently drop rotation-on-retry and leave the sync
     hammering a token the server has already rejected.
 
-    The residual sleep is the point of the assertion on `sleeps`: zeroing the pool does not
-    shorten the backoff for the request that *received* the rate limit -- the error handler has
-    already computed it from the response headers. The win is that the retry, and every request
-    after it, uses a token with quota.
+    The 30-minute reset in the response is deliberately far away: the assertion on `sleeps` is
+    that it is *not* waited out, because the authenticator reports another token with quota.
     """
     from airbyte_cdk.sources.declarative.auth.rate_limited_multiple_token import (
         RateLimitedMultipleTokenAuthenticator,
@@ -1215,8 +1213,8 @@ def test_rate_limited_token_rotates_on_the_retry_end_to_end(requests_mock):
     assert response.status_code == 200
     assert tokens_used == ["token_1", "token_2"]
     assert authenticator._states["token_1"]["rest"].remaining == 0
-    # One backoff was still paid, by the request that received the 429.
-    assert len([s for s in sleeps if s > 1]) == 1
+    # The 1800s reset is skipped: a token with quota was available the whole time.
+    assert max(sleeps) < 5, f"expected a prompt retry, slept {sleeps}"
 
     tokens_used.clear()
     with patch("time.sleep", side_effect=lambda seconds: sleeps.append(seconds)):
@@ -1224,6 +1222,100 @@ def test_rate_limited_token_rotates_on_the_retry_end_to_end(requests_mock):
             http_method="GET", url="https://api.example.com/data", request_kwargs={}
         )
     assert tokens_used == ["token_2"]  # the spent token is not tried again
+
+
+class _SpareTokenAuthenticator(TokenAuthenticator):
+    """Reports a spare credential without tracking any quota."""
+
+    def __init__(self, has_spare=True):
+        super().__init__(token="token")
+        self.has_spare = has_spare
+
+    def has_alternative_token(self, request):
+        return self.has_spare
+
+
+def _rate_limited_client(authenticator, backoff_seconds=1800):
+    return HttpClient(
+        name="test",
+        logger=logging.getLogger("test"),
+        authenticator=authenticator,
+        error_handler=HttpStatusErrorHandler(
+            logger=logging.getLogger("test"),
+            error_mapping={
+                429: ErrorResolution(
+                    response_action=ResponseAction.RATE_LIMITED,
+                    failure_type=FailureType.transient_error,
+                    error_message="rate limited",
+                ),
+                500: ErrorResolution(
+                    response_action=ResponseAction.RETRY,
+                    failure_type=FailureType.transient_error,
+                    error_message="server error",
+                ),
+            },
+            max_retries=1,
+        ),
+        backoff_strategy=_ConstantBackoffStrategy(backoff_seconds),
+    )
+
+
+class _ConstantBackoffStrategy(BackoffStrategy):
+    def __init__(self, seconds):
+        self.seconds = seconds
+
+    def backoff_time(self, *args, **kwargs):
+        return self.seconds
+
+
+def test_rate_limit_wait_is_skipped_when_another_credential_is_available(requests_mock):
+    """The backoff is computed from the rejected credential's response, so it cannot know a
+    spare one is idle. The client asks before sleeping."""
+    requests_mock.get("https://example.com/", [{"status_code": 429}, {"status_code": 200}])
+    client = _rate_limited_client(_SpareTokenAuthenticator(has_spare=True))
+
+    sleeps = []
+    with patch("time.sleep", side_effect=lambda seconds: sleeps.append(seconds)):
+        _, response = client.send_request(
+            http_method="GET", url="https://example.com/", request_kwargs={}
+        )
+
+    assert response.status_code == 200
+    assert max(sleeps) < 5, f"expected a prompt retry, slept {sleeps}"
+
+
+def test_rate_limit_wait_is_paid_when_no_other_credential_is_available(requests_mock):
+    requests_mock.get("https://example.com/", [{"status_code": 429}, {"status_code": 200}])
+    client = _rate_limited_client(_SpareTokenAuthenticator(has_spare=False))
+
+    sleeps = []
+    with patch("time.sleep", side_effect=lambda seconds: sleeps.append(seconds)):
+        client.send_request(http_method="GET", url="https://example.com/", request_kwargs={})
+
+    assert max(sleeps) > 1000, f"the full rate-limit wait should stand, slept {sleeps}"
+
+
+def test_non_rate_limit_retry_is_not_shortened_by_a_spare_credential(requests_mock):
+    """A 500 has nothing to do with credentials; its backoff must be left alone."""
+    requests_mock.get("https://example.com/", [{"status_code": 500}, {"status_code": 200}])
+    client = _rate_limited_client(_SpareTokenAuthenticator(has_spare=True))
+
+    sleeps = []
+    with patch("time.sleep", side_effect=lambda seconds: sleeps.append(seconds)):
+        client.send_request(http_method="GET", url="https://example.com/", request_kwargs={})
+
+    assert max(sleeps) > 1000, f"a server-error backoff should stand, slept {sleeps}"
+
+
+def test_authenticator_without_alternative_token_hook_pays_the_full_wait(requests_mock):
+    requests_mock.get("https://example.com/", [{"status_code": 429}, {"status_code": 200}])
+    client = _rate_limited_client(TokenAuthenticator(token="token"))
+
+    sleeps = []
+    with patch("time.sleep", side_effect=lambda seconds: sleeps.append(seconds)):
+        client.send_request(http_method="GET", url="https://example.com/", request_kwargs={})
+
+    assert max(sleeps) > 1000
 
 
 def test_deprecated_alias_message_representation_airbyte_traced_errors_is_importable():

@@ -570,6 +570,67 @@ def test_graphql_response_updates_only_the_graphql_pool(requests_mock):
     assert authenticator._states["token_1"]["rest"].remaining == 5000
 
 
+def test_has_alternative_token_when_sender_is_spent_and_another_is_not(requests_mock):
+    requests_mock.get(QUOTA_STATUS_URL, json=_quota_status_body())
+    authenticator = _response_aware_authenticator()
+    request = authenticator(_prepared_request())
+    authenticator.update_from_response(request, _response(status_code=429))
+
+    assert authenticator.has_alternative_token(request) is True
+
+
+def test_no_alternative_token_while_the_sending_token_still_has_calls(requests_mock):
+    """A rejection that did not exhaust the sending token is not something rotation fixes --
+    a secondary limit is typically per-account and would reject every token alike, so the
+    computed wait must stand."""
+    requests_mock.get(QUOTA_STATUS_URL, json=_quota_status_body())
+    authenticator = _response_aware_authenticator()
+    request = authenticator(_prepared_request())
+
+    assert authenticator.has_alternative_token(request) is False
+
+
+def test_no_alternative_token_when_every_token_is_spent(requests_mock):
+    requests_mock.get(QUOTA_STATUS_URL, json=_quota_status_body())
+    authenticator = _response_aware_authenticator()
+    request = authenticator(_prepared_request())
+    authenticator._ensure_initialized()
+    for token in authenticator._tokens:
+        authenticator._states[token]["rest"].remaining = 0
+
+    assert authenticator.has_alternative_token(request) is False
+
+
+def test_no_alternative_token_with_a_single_token(requests_mock):
+    requests_mock.get(QUOTA_STATUS_URL, json=_quota_status_body())
+    authenticator = _response_aware_authenticator(tokens=("token_1",))
+    request = authenticator(_prepared_request())
+    authenticator.update_from_response(request, _response(status_code=429))
+
+    assert authenticator.has_alternative_token(request) is False
+
+
+def test_alternative_token_is_scoped_to_the_matched_quota_pool(requests_mock):
+    """Availability is answered per pool: exhausting graphql says nothing about rest.
+
+    The graphql pool here declares `remaining_header` but no `exhaustion_status_codes`, so it
+    learns it is spent from the header rather than from the status code.
+    """
+    requests_mock.get(QUOTA_STATUS_URL, json=_quota_status_body())
+    authenticator = _response_aware_authenticator()
+    graphql_request = authenticator(_prepared_request("https://api.example.com/graphql"))
+    rest_request = authenticator(_prepared_request())
+    authenticator.update_from_response(
+        graphql_request, _response(status_code=429, headers={"X-RateLimit-Remaining": "0"})
+    )
+
+    assert authenticator._states["token_1"]["graphql"].remaining == 0
+    assert authenticator.has_alternative_token(graphql_request) is True
+    # the rest pool is untouched, so nothing about it is "spent" and no rotation is implied
+    assert authenticator._states["token_1"]["rest"].remaining == 4999
+    assert authenticator.has_alternative_token(rest_request) is False
+
+
 def test_response_signed_by_something_else_is_not_attributed_to_a_token(requests_mock):
     """The auth header may have been written by another component. Slicing off the configured
     prefix without checking it would leave `_states` membership as the only guard against

@@ -94,6 +94,22 @@ class ResponseAwareAuthenticator(Protocol):
         pass
 
 
+@runtime_checkable
+class TokenRotatingAuthenticator(Protocol):
+    """An authenticator holding several interchangeable credentials.
+
+    A rate-limit backoff is computed from the response alone, so it assumes the only way
+    forward is for that quota to come back. An authenticator with a spare credential knows
+    better. `HttpClient` asks before sleeping out a rate-limit window.
+
+    Implementations must only answer True when retrying immediately would actually use a
+    different credential -- otherwise the retry hammers the same rejected one.
+    """
+
+    def has_alternative_token(self, request: requests.PreparedRequest) -> bool:
+        pass
+
+
 def monkey_patched_get_item(self, key):  # type: ignore # this interface is a copy/paste from the requests_cache lib
     """
     con.execute can lead to `sqlite3.InterfaceError: bad parameter or other API misuse`. There was a fix implemented
@@ -118,6 +134,10 @@ requests_cache.SQLiteDict.__getitem__ = monkey_patched_get_item  # type: ignore 
 class HttpClient:
     _DEFAULT_MAX_RETRY: int = 5
     _DEFAULT_MAX_TIME: int = 60 * 10
+    # Backoff used in place of a rate-limit wait when another credential can serve the retry.
+    # Kept non-zero so a misreporting authenticator degrades to a slow retry, not a hot loop
+    # (the retry handler adds a second on top of whatever is returned).
+    TOKEN_ROTATION_BACKOFF: float = 0.1
     _ACTIONS_TO_RETRY_ON = {
         ResponseAction.RETRY,
         ResponseAction.RATE_LIMITED,
@@ -350,6 +370,21 @@ class HttpClient:
                 exception=e,
                 stream_descriptor=StreamDescriptor(name=self._name),
             )
+
+    def _can_retry_on_another_token(self, request: requests.PreparedRequest) -> bool:
+        """Whether the authenticator can serve this request from a different credential now."""
+        authenticator = getattr(self._session, "auth", None)
+        has_alternative_token = getattr(authenticator, "has_alternative_token", None)
+        if not callable(has_alternative_token):
+            return False
+        try:
+            return bool(has_alternative_token(request))
+        except Exception:
+            # Falling back to the computed wait is always safe, so never fail a retry over this.
+            self._logger.debug(
+                "Authenticator failed to report credential availability", exc_info=True
+            )
+            return False
 
     def _update_authenticator_from_response(
         self, request: requests.PreparedRequest, response: requests.Response
@@ -596,6 +631,22 @@ class HttpClient:
                 if backoff_time:
                     user_defined_backoff_time = backoff_time
                     break
+
+            if (
+                user_defined_backoff_time
+                and error_resolution.response_action == ResponseAction.RATE_LIMITED
+                and self._can_retry_on_another_token(request)
+            ):
+                # The backoff was derived from this response's headers, which only describe the
+                # credential that was rejected. Another one has quota, and the retry re-signs the
+                # request, so waiting out this window would idle for nothing.
+                self._logger.info(
+                    f"Rate limited on the current credential; retrying in "
+                    f"{self.TOKEN_ROTATION_BACKOFF}s with another one instead of waiting "
+                    f"{user_defined_backoff_time:.0f}s for the rate limit to reset."
+                )
+                user_defined_backoff_time = self.TOKEN_ROTATION_BACKOFF
+
             error_message = (
                 error_resolution.error_message
                 or f"Request to {request.url} failed with failure type {error_resolution.failure_type}, response action {error_resolution.response_action}."

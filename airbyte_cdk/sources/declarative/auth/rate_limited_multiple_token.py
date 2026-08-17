@@ -392,6 +392,33 @@ class RateLimitedMultipleTokenAuthenticator(DeclarativeAuthenticator):
                 # The window itself is never moved backwards.
                 state.remaining = min(state.remaining, remaining)
 
+    def has_alternative_token(self, request: requests.PreparedRequest) -> bool:
+        """Whether another token could serve this request right now.
+
+        Answers the question a rate-limit backoff cannot answer for itself: the wait computed
+        from a response's reset header assumes the only way forward is for that quota to come
+        back, which is false when a different token still has calls. `HttpClient` uses this to
+        retry promptly instead of sleeping out a window it does not need.
+
+        Deliberately narrow. It reports True only when the token that *sent* the request is
+        spent for the matched pool -- so the next request is guaranteed to rotate -- and some
+        other token is not. If the sending token still has calls locally, the rejection was not
+        about exhausting it (a secondary limit, say, which on many APIs is per-user and would
+        reject every token alike), and waiting remains the right response.
+        """
+        quota = self._match_quota(request)
+        sender = self._token_from_request(request)
+        with self._lock:
+            if not self._states or sender is None:
+                return False
+            if self._states[sender][quota.name].remaining > 0:
+                return False
+            return any(
+                self._states[token][quota.name].remaining > 0
+                for token in self._tokens
+                if token != sender
+            )
+
     def _token_from_request(self, request: requests.PreparedRequest) -> Optional[str]:
         """Recover the token a request was signed with from its auth header.
 
