@@ -61,11 +61,6 @@ class _QuotaState:
     remaining: int
     reset_at: AirbyteDateTime
     limit: int
-    # True when the quota status endpoint reported this pool spent with a reset that had
-    # *already* passed -- a self-contradictory answer (server clock skew, or a lagging quota
-    # endpoint). Such a pool must not be restored from its elapsed window, or the connector
-    # would invent quota the server has just denied and spin on it.
-    stale_zero: bool = False
 
 
 class RateLimitedMultipleTokenAuthenticator(DeclarativeAuthenticator):
@@ -207,13 +202,10 @@ class RateLimitedMultipleTokenAuthenticator(DeclarativeAuthenticator):
             with self._lock:
                 token = self._active_token
                 state = self._states[token][quota.name]
-                self._restore_if_window_elapsed(state)
                 if state.remaining > 0:
                     state.remaining -= 1
                     budget_delay = self._compute_budget_delay(quota)
-                elif all(
-                    self._is_pool_spent(self._states[token][quota.name]) for token in self._tokens
-                ):
+                elif all(self._states[token][quota.name].remaining <= 0 for token in self._tokens):
                     now = time.monotonic()
                     if exhaustion_deadline is None:
                         exhaustion_deadline = now + self._max_wait_time.total_seconds()
@@ -258,34 +250,6 @@ class RateLimitedMultipleTokenAuthenticator(DeclarativeAuthenticator):
                     self._budget_logged = True
                 time.sleep(budget_delay)
             return token
-
-    @staticmethod
-    def _is_pool_spent(state: _QuotaState) -> bool:
-        """Whether a pool is out of calls with no prospect of recovering on its own.
-
-        A pool whose window has already elapsed is not spent -- its allowance is due back, so
-        the caller should pick it up rather than treat every token as exhausted and wait.
-        """
-        if state.remaining > 0:
-            return False
-        return state.stale_zero or state.reset_at > ab_datetime_now()
-
-    @staticmethod
-    def _restore_if_window_elapsed(state: _QuotaState) -> None:
-        """Give a spent pool its allowance back once its quota window has passed.
-
-        Rotation skips spent tokens and only the all-exhausted branch refills them, so a token
-        that reached zero stays out until *every* token is also at zero. Reading quota from
-        responses makes a pool reachable zero in a single rate-limited response, which would
-        otherwise send the sync into the exhaustion wait even when a token's window has already
-        rolled over and its calls are available again.
-
-        Must be called while holding the lock.
-        """
-        if state.stale_zero:
-            return
-        if state.remaining <= 0 and state.reset_at <= ab_datetime_now():
-            state.remaining = state.limit
 
     def _compute_budget_delay(self, quota: TokenQuota) -> Optional[float]:
         """Compute the proactive throttling delay. Must be called while holding the lock."""
@@ -359,12 +323,10 @@ class RateLimitedMultipleTokenAuthenticator(DeclarativeAuthenticator):
                 if quota.limit_path
                 else remaining
             )
-            reset_at = ab_datetime_parse(reset)
             states[quota.name] = _QuotaState(
                 remaining=int(remaining),
-                reset_at=reset_at,
+                reset_at=ab_datetime_parse(reset),
                 limit=int(limit),
-                stale_zero=int(remaining) <= 0 and reset_at <= ab_datetime_now(),
             )
         return states
 
