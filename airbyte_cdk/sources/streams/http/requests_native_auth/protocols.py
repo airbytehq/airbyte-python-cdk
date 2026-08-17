@@ -10,8 +10,15 @@ interchangeable credentials, needs more than that -- it has to learn what the se
 it knows things about credential availability that the retry logic cannot work out on its own.
 
 These protocols are how it says so. Both are optional and dispatched structurally: `HttpClient`
-looks for the method and skips authenticators that do not define it, so implementing one does
-not require inheriting from anything or importing the client.
+checks the authenticator against the protocol and skips one that does not satisfy it, so
+implementing one does not require inheriting from anything or importing the client.
+
+Define the methods on the class or set them on the instance. Dispatch is an `isinstance` check,
+and from Python 3.12 those resolve protocol members with `inspect.getattr_static`, which does
+not run `__getattr__` -- so a delegating authenticator that only exposes the method dynamically
+satisfies the protocol on 3.10/3.11 and is silently skipped on 3.12+. Presence is all that is
+checked either way: an implementation with the wrong signature still dispatches, and then fails
+at the call.
 """
 
 from typing import Protocol, runtime_checkable
