@@ -629,7 +629,7 @@ class TokenQuota(BaseModel):
     )
     exhaustion_status_codes: Optional[List[int]] = Field(
         None,
-        description="Response status codes that mean this token's pool is spent, applied when the response carries no remaining header. The pool is set to zero so the next request rotates to another token instead of waiting out the reset window. Only list codes the API uses exclusively for rate limiting -- a code that also signals other failures would park a healthy token.",
+        description="Response status codes that mean this token's pool is spent. These have two effects. A response carrying one of them but no remaining count sets the pool to zero, so the next request rotates to another token instead of waiting out the reset window. They also mark which responses may report a zero for a quota window that has already elapsed, so a rate limit whose reset header trails the value being held still stops the token being used; a zero on any other response is treated as the last call of a finished window and ignored. Leaving this empty means such trailing rejections are ignored unless their reset is within the skew tolerance of the current window. Only list codes the API uses exclusively for rate limiting -- a code that also signals other failures would park a healthy token.",
         examples=[[429]],
         title="Exhaustion Status Codes",
     )
