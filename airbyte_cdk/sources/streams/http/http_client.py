@@ -50,6 +50,14 @@ from airbyte_cdk.sources.streams.http.rate_limiting import (
     rate_limit_default_backoff_handler,
     user_defined_backoff_handler,
 )
+
+# Imported from the leaf module rather than the package: `protocols` pulls in nothing from the
+# CDK, so this import cannot cycle no matter what else lands in `requests_native_auth` -- an
+# authenticator there needing `HttpClient` (as the declarative one does) stays safe.
+from airbyte_cdk.sources.streams.http.requests_native_auth.protocols import (
+    ResponseAwareAuthenticator,
+    TokenRotatingAuthenticator,
+)
 from airbyte_cdk.sources.utils.types import JsonType
 from airbyte_cdk.utils.airbyte_secrets_utils import filter_secrets
 from airbyte_cdk.utils.constants import ENV_REQUEST_CACHE_PATH
@@ -330,14 +338,13 @@ class HttpClient:
     def _can_retry_on_another_token(self, request: requests.PreparedRequest) -> bool:
         """Whether the authenticator can serve this request from a different credential now.
 
-        Opted into by implementing `requests_native_auth.TokenRotatingAuthenticator`.
+        Opted into by implementing `TokenRotatingAuthenticator`.
         """
         authenticator = getattr(self._session, "auth", None)
-        has_alternative_token = getattr(authenticator, "has_alternative_token", None)
-        if not callable(has_alternative_token):
+        if not isinstance(authenticator, TokenRotatingAuthenticator):
             return False
         try:
-            return bool(has_alternative_token(request))
+            return bool(authenticator.has_alternative_token(request))
         except Exception:
             # Falling back to the computed wait is always safe, so never fail a retry over this.
             self._logger.debug(
@@ -354,18 +361,17 @@ class HttpClient:
         has no way to learn that the server disagrees with its local bookkeeping. This is the
         feedback channel, mirroring what `LimiterMixin.send` does for the API budget.
 
-        Opted into by implementing `requests_native_auth.ResponseAwareAuthenticator`.
+        Opted into by implementing `ResponseAwareAuthenticator`.
         """
         authenticator = getattr(self._session, "auth", None)
-        update_from_response = getattr(authenticator, "update_from_response", None)
-        if not callable(update_from_response):
+        if not isinstance(authenticator, ResponseAwareAuthenticator):
             return
         if getattr(response, "from_cache", False):
             # A replayed cached response carries the rate-limit headers from whenever it was
             # first fetched and consumed no quota of its own.
             return
         try:
-            update_from_response(request, response)
+            authenticator.update_from_response(request, response)
         except Exception:
             # Quota bookkeeping must never turn an otherwise fine response into a failure. Warn
             # once so a persistently broken update -- which silently degrades the connector back
