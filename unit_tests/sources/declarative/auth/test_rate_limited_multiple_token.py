@@ -442,6 +442,39 @@ def test_slightly_earlier_reset_still_counts_as_the_current_window(requests_mock
     assert int(state.reset_at.timestamp()) == current_window  # never moved backwards
 
 
+def test_stale_zero_from_a_successful_response_does_not_park_a_refilled_pool(requests_mock):
+    """A zero on a 200 is just the last call of a window, not a rate-limit rejection.
+
+    The exhaustion exception to the window check exists so a rate limit whose reset header
+    trails cannot stop rotation; honouring a zero from *any* response would let a dead
+    window's final count park a pool that has already refilled -- the F9 bug via the escape
+    hatch. The status is what tells the two apart.
+    """
+    requests_mock.get(QUOTA_STATUS_URL, json=_quota_status_body())
+    authenticator = _response_aware_authenticator(tokens=("token_1",))
+    request = authenticator(_prepared_request())
+    state = authenticator._states["token_1"]["rest"]
+    previous_window = int(state.reset_at.timestamp())
+    authenticator.update_from_response(
+        request,
+        _response(
+            headers={
+                "X-RateLimit-Remaining": "5000",
+                "X-RateLimit-Reset": str(previous_window + 3600),
+            }
+        ),
+    )
+    assert state.remaining == 5000
+
+    stale = {"X-RateLimit-Remaining": "0", "X-RateLimit-Reset": str(previous_window)}
+    authenticator.update_from_response(request, _response(status_code=200, headers=stale))
+    assert state.remaining == 5000, "a zero from a successful dead-window response must be ignored"
+
+    # ...but the same zero on a rate-limited response is an exhaustion signal and still lands
+    authenticator.update_from_response(request, _response(status_code=429, headers=stale))
+    assert state.remaining == 0
+
+
 def test_count_from_a_rolled_over_window_does_not_clamp_the_fresh_pool(requests_mock):
     """A slow response that lands after the window turned describes a window that no longer
     exists. `min` would pin the refilled pool to that dead count for the rest of the hour, and

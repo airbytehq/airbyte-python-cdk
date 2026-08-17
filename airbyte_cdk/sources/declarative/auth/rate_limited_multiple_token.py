@@ -397,7 +397,7 @@ class RateLimitedMultipleTokenAuthenticator(DeclarativeAuthenticator):
                 state.reset_at = reset_at
                 state.remaining = remaining if remaining is not None else state.limit
             elif remaining is not None and (
-                remaining <= 0
+                (remaining <= 0 and response.status_code in quota.exhaustion_status_codes)
                 or reset_at is None
                 or reset_at >= state.reset_at - self.RESET_SKEW_TOLERANCE
             ):
@@ -407,11 +407,16 @@ class RateLimitedMultipleTokenAuthenticator(DeclarativeAuthenticator):
                 #
                 # A count from a window that has already rolled over describes a window that no
                 # longer exists, and `min` would pin the fresh pool to it for the rest of the
-                # hour, so those are ignored -- with two exceptions. `remaining <= 0` is an
-                # exhaustion signal and must never be dropped, or a rate limit whose reset header
-                # trails the value we hold would silently stop rotation. And a reset within
-                # `RESET_SKEW_TOLERANCE` is treated as the current window, since the quota
-                # endpoint and the response headers can disagree by a little.
+                # hour, so those are ignored -- with two exceptions.
+                #
+                # First, a zero on a response the pool counts as rate-limited is an exhaustion
+                # signal and must never be dropped, or a rate limit whose reset header trails the
+                # value we hold would silently stop rotation. The status check is what keeps that
+                # narrow: a zero on a *successful* response is just the last call of a window, and
+                # honouring it from a dead window would park a pool that has already refilled.
+                #
+                # Second, a reset within `RESET_SKEW_TOLERANCE` is treated as the current window,
+                # since the quota endpoint and the response headers can disagree by a little.
                 state.remaining = min(state.remaining, remaining)
 
     def has_alternative_token(self, request: requests.PreparedRequest) -> bool:
