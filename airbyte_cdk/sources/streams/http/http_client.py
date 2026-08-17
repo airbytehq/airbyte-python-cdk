@@ -6,18 +6,7 @@ import logging
 import os
 import urllib
 from pathlib import Path
-from typing import (
-    Any,
-    Callable,
-    Dict,
-    List,
-    Mapping,
-    Optional,
-    Protocol,
-    Tuple,
-    Union,
-    runtime_checkable,
-)
+from typing import Any, Callable, Dict, List, Mapping, Optional, Tuple, Union
 
 import orjson
 import requests
@@ -75,39 +64,6 @@ from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 MessageRepresentationAirbyteTracedErrors = AirbyteTracedException
 
 BODY_REQUEST_METHODS = ("GET", "POST", "PUT", "PATCH")
-
-
-@runtime_checkable
-class ResponseAwareAuthenticator(Protocol):
-    """An authenticator that wants to see responses, not just sign requests.
-
-    Authenticators tracking per-token quota need a feedback channel: without one they can only
-    guess at the server's view of the quota and cannot tell that a token has been rejected.
-    `HttpClient` calls `update_from_response` once per attempt on any authenticator that
-    implements this, skipping replayed cache hits. Implementations must not raise for a response
-    they cannot interpret, and must be safe to call from multiple threads.
-    """
-
-    def update_from_response(
-        self, request: requests.PreparedRequest, response: requests.Response
-    ) -> None:
-        pass
-
-
-@runtime_checkable
-class TokenRotatingAuthenticator(Protocol):
-    """An authenticator holding several interchangeable credentials.
-
-    A rate-limit backoff is computed from the response alone, so it assumes the only way
-    forward is for that quota to come back. An authenticator with a spare credential knows
-    better. `HttpClient` asks before sleeping out a rate-limit window.
-
-    Implementations must only answer True when retrying immediately would actually use a
-    different credential -- otherwise the retry hammers the same rejected one.
-    """
-
-    def has_alternative_token(self, request: requests.PreparedRequest) -> bool:
-        pass
 
 
 def monkey_patched_get_item(self, key):  # type: ignore # this interface is a copy/paste from the requests_cache lib
@@ -372,7 +328,10 @@ class HttpClient:
             )
 
     def _can_retry_on_another_token(self, request: requests.PreparedRequest) -> bool:
-        """Whether the authenticator can serve this request from a different credential now."""
+        """Whether the authenticator can serve this request from a different credential now.
+
+        Opted into by implementing `requests_native_auth.TokenRotatingAuthenticator`.
+        """
         authenticator = getattr(self._session, "auth", None)
         has_alternative_token = getattr(authenticator, "has_alternative_token", None)
         if not callable(has_alternative_token):
@@ -395,7 +354,7 @@ class HttpClient:
         has no way to learn that the server disagrees with its local bookkeeping. This is the
         feedback channel, mirroring what `LimiterMixin.send` does for the API budget.
 
-        Any authenticator implementing `ResponseAwareAuthenticator` opts in.
+        Opted into by implementing `requests_native_auth.ResponseAwareAuthenticator`.
         """
         authenticator = getattr(self._session, "auth", None)
         update_from_response = getattr(authenticator, "update_from_response", None)

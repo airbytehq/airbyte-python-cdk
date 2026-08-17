@@ -77,6 +77,10 @@ class RateLimitedMultipleTokenAuthenticator(DeclarativeAuthenticator):
     (`max(budget_min_reserve, budget_reserve_fraction * limit)`), a small delay proportional to
     `seconds_until_reset / total_remaining` (capped at 10s) is injected before each request.
 
+    Implements `ResponseAwareAuthenticator` and `TokenRotatingAuthenticator` (see
+    `airbyte_cdk.sources.streams.http.requests_native_auth.protocols`), which is how `HttpClient`
+    feeds it responses and asks it whether a rate-limit wait can be skipped.
+
     Counters are seeded per token from `quota_status_url` on first use and refreshed after an
     exhaustion wait. When a pool declares response headers, `update_from_response` additionally
     reconciles that pool against the server on every response, which keeps the counters honest
