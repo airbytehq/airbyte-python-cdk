@@ -26,7 +26,6 @@ from airbyte_cdk.sources.declarative.parsers.model_to_component_factory import (
 )
 from airbyte_cdk.sources.streams.call_rate import HttpRequestRegexMatcher
 from airbyte_cdk.utils import AirbyteTracedException
-from airbyte_cdk.utils.datetime_helpers import ab_datetime_now
 
 QUOTA_STATUS_URL = "https://api.example.com/rate_limit"
 
