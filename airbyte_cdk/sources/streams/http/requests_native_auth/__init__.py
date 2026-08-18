@@ -3,6 +3,7 @@
 #
 
 from .oauth import Oauth2Authenticator, SingleUseRefreshTokenOauth2Authenticator
+from .protocols import ResponseAwareAuthenticator, TokenRotatingAuthenticator
 from .token import BasicHttpAuthenticator, MultipleTokenAuthenticator, TokenAuthenticator
 
 __all__ = [
@@ -11,4 +12,6 @@ __all__ = [
     "TokenAuthenticator",
     "MultipleTokenAuthenticator",
     "BasicHttpAuthenticator",
+    "ResponseAwareAuthenticator",
+    "TokenRotatingAuthenticator",
 ]

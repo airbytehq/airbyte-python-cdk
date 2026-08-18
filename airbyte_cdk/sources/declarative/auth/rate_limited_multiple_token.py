@@ -28,6 +28,12 @@ class TokenQuota:
     `matchers` classify outgoing requests into the pool; a pool with no matchers acts as the
     default pool. `remaining_path`/`reset_path`/`limit_path` locate the pool's values in the
     quota status response.
+
+    `remaining_header`/`reset_header`/`limit_header`/`exhaustion_status_codes` are optional and
+    enable reconciling the pool against what the server reports on each response. Without them
+    the pool is only ever seeded from `quota_status_url`, so its counters drift whenever the
+    token is shared with another client, requests are in flight concurrently, or the sync runs
+    long enough for a single seeding to go stale.
     """
 
     name: str
@@ -35,6 +41,19 @@ class TokenQuota:
     reset_path: List[str]
     limit_path: Optional[List[str]] = None
     matchers: List[RequestMatcher] = field(default_factory=list)
+    remaining_header: Optional[str] = None
+    reset_header: Optional[str] = None
+    limit_header: Optional[str] = None
+    exhaustion_status_codes: List[int] = field(default_factory=list)
+
+    @property
+    def is_response_aware(self) -> bool:
+        return bool(
+            self.remaining_header
+            or self.reset_header
+            or self.limit_header
+            or self.exhaustion_status_codes
+        )
 
 
 @dataclass
@@ -58,14 +77,25 @@ class RateLimitedMultipleTokenAuthenticator(DeclarativeAuthenticator):
     (`max(budget_min_reserve, budget_reserve_fraction * limit)`), a small delay proportional to
     `seconds_until_reset / total_remaining` (capped at 10s) is injected before each request.
 
+    Implements `ResponseAwareAuthenticator` and `TokenRotatingAuthenticator` (see
+    `airbyte_cdk.sources.streams.http.requests_native_auth.protocols`), which is how `HttpClient`
+    feeds it responses and asks it whether a rate-limit wait can be skipped.
+
     Counters are seeded per token from `quota_status_url` on first use and refreshed after an
-    exhaustion wait. All state transitions are guarded by a lock so the authenticator can be
-    shared safely across concurrent streams; sleeps never hold the lock.
+    exhaustion wait. When a pool declares response headers, `update_from_response` additionally
+    reconciles that pool against the server on every response, which keeps the counters honest
+    between seedings and makes the authenticator rotate off a token the server has rejected even
+    though the local count still looks healthy. All state transitions are guarded by a lock so
+    the authenticator can be shared safely across concurrent streams; sleeps never hold the lock.
     """
 
     HEARTBEAT_INTERVAL = 60.0  # Log every 60s during exhaustion wait
     MAX_BUDGET_DELAY = 10.0  # Cap for the per-request proactive throttling delay
     MIN_EXHAUSTION_WAIT = 5.0  # Floor for the exhaustion wait, so stale reset timestamps can't cause a refresh busy-loop
+    # How far behind the reset we hold a response's reset may be while still counting as the
+    # current window. Covers ordinary disagreement between the quota endpoint and response
+    # headers; anything older is treated as belonging to a window that has already rolled over.
+    RESET_SKEW_TOLERANCE = timedelta(seconds=60)
 
     def __init__(
         self,
@@ -319,3 +349,145 @@ class RateLimitedMultipleTokenAuthenticator(DeclarativeAuthenticator):
                 )
             value = value[key]
         return value
+
+    def update_from_response(
+        self, request: requests.PreparedRequest, response: requests.Response
+    ) -> None:
+        """Reconcile the matched pool's counters against what the server reported.
+
+        Called once per HTTP attempt by `HttpClient`. Inert unless the matched pool declares
+        response headers, so behaviour is unchanged for pools configured only with paths.
+
+        The update is attributed to the token that *sent* the request rather than to the
+        currently active one: under concurrency the authenticator may have rotated between the
+        request going out and the response coming back.
+        """
+        quota = self._match_quota(request)
+        if not quota.is_response_aware:
+            return
+        token = self._token_from_request(request)
+        if token is None:
+            return
+
+        remaining = self._header_int(response, quota.remaining_header)
+        if remaining is None and response.status_code in quota.exhaustion_status_codes:
+            # The server rejected the call for rate-limit reasons but told us nothing about the
+            # remaining count. Treat the pool as spent so the next request rotates.
+            remaining = 0
+        reset_at = self._header_datetime(response, quota.reset_header)
+        limit = self._header_int(response, quota.limit_header)
+        if remaining is None and limit is None and reset_at is None:
+            return
+
+        with self._lock:
+            state = self._states.get(token, {}).get(quota.name)
+            if state is None:
+                return  # not seeded yet; the initial seeding is the more authoritative source
+            if limit is not None and limit > 0 and (reset_at is None or reset_at >= state.reset_at):
+                # A response from an older window carries that window's limit. Taking it would
+                # skew the throttling reserve and, on a later reset-only response, refill the
+                # pool to the wrong capacity -- so the limit is accepted on the same terms as
+                # the reset itself. Assigned before the rollover branch below, which reads
+                # `state.limit` when a fresh window arrives with no remaining header.
+                state.limit = limit
+            if reset_at is not None and reset_at > state.reset_at:
+                # The quota window rolled over, so the local count is meaningless -- take the
+                # server's numbers wholesale. With no remaining header to go on, a fresh window
+                # is worth a full limit.
+                state.reset_at = reset_at
+                state.remaining = remaining if remaining is not None else state.limit
+            elif remaining is not None and (
+                (remaining <= 0 and response.status_code in quota.exhaustion_status_codes)
+                or reset_at is None
+                or reset_at >= state.reset_at - self.RESET_SKEW_TOLERANCE
+            ):
+                # Same window: only ever tighten the estimate. Responses arrive out of order and
+                # a slow one carries a stale, higher count, so handing those calls back would let
+                # concurrent requests overspend. The window itself is never moved backwards.
+                #
+                # A count from a window that has already rolled over describes a window that no
+                # longer exists, and `min` would pin the fresh pool to it for the rest of the
+                # hour, so those are ignored -- with two exceptions.
+                #
+                # First, a zero on a response the pool counts as rate-limited is an exhaustion
+                # signal and must never be dropped, or a rate limit whose reset header trails the
+                # value we hold would silently stop rotation. The status check is what keeps that
+                # narrow: a zero on a *successful* response is just the last call of a window, and
+                # honouring it from a dead window would park a pool that has already refilled.
+                #
+                # Second, a reset within `RESET_SKEW_TOLERANCE` is treated as the current window,
+                # since the quota endpoint and the response headers can disagree by a little.
+                state.remaining = min(state.remaining, remaining)
+
+    def has_alternative_token(self, request: requests.PreparedRequest) -> bool:
+        """Whether another token could serve this request right now.
+
+        Answers the question a rate-limit backoff cannot answer for itself: the wait computed
+        from a response's reset header assumes the only way forward is for that quota to come
+        back, which is false when a different token still has calls. `HttpClient` uses this to
+        retry promptly instead of sleeping out a window it does not need.
+
+        Deliberately narrow. It reports True only when the token that *sent* the request is
+        spent for the matched pool -- so the next request is guaranteed to rotate -- and some
+        other token is not. If the sending token still has calls locally, the rejection was not
+        about exhausting it (a secondary limit, say, which on many APIs is per-user and would
+        reject every token alike), and waiting remains the right response.
+        """
+        quota = self._match_quota(request)
+        sender = self._token_from_request(request)
+        with self._lock:
+            if not self._states or sender is None:
+                return False
+            if self._states[sender][quota.name].remaining > 0:
+                return False
+            return any(
+                self._states[token][quota.name].remaining > 0
+                for token in self._tokens
+                if token != sender
+            )
+
+    def _token_from_request(self, request: requests.PreparedRequest) -> Optional[str]:
+        """Recover the token a request was signed with from its auth header.
+
+        The prefix is checked rather than assumed: the header may have been written by
+        something other than this authenticator, and slicing blindly would leave membership in
+        `_states` as the only thing standing between a mangled value and a wrong attribution.
+        """
+        value = request.headers.get(self._header)
+        if not value:
+            return None
+        if self._auth_method:
+            prefix = f"{self._auth_method} "
+            if not value.startswith(prefix):
+                return None
+            token = value[len(prefix) :].strip()
+        else:
+            token = value.strip()
+        return token if token in self._states else None
+
+    @staticmethod
+    def _header_int(response: requests.Response, header: Optional[str]) -> Optional[int]:
+        if not header:
+            return None
+        value = response.headers.get(header)
+        if value is None:
+            return None
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return None
+
+    @staticmethod
+    def _header_datetime(
+        response: requests.Response, header: Optional[str]
+    ) -> Optional[AirbyteDateTime]:
+        if not header:
+            return None
+        value = response.headers.get(header)
+        if value is None:
+            return None
+        try:
+            # Same parsing rules as `reset_path`, so epoch seconds and ISO 8601 both work.
+            return ab_datetime_parse(value)
+        except Exception:
+            return None

@@ -497,6 +497,32 @@ definitions:
         type: array
         items:
           "$ref": "#/definitions/HttpRequestRegexMatcher"
+      remaining_header:
+        title: Remaining Header
+        description: Optional response header carrying the remaining call count for this pool. When set, the pool's counter is reconciled against this header on every response, which corrects drift caused by sharing the token with other clients, by requests in flight concurrently, or by a sync running long enough for the initial quota status read to go stale. Without it the pool is only ever seeded from the quota status endpoint.
+        type: string
+        examples:
+          - "X-RateLimit-Remaining"
+      reset_header:
+        title: Reset Header
+        description: Optional response header carrying the quota reset timestamp for this pool. Parsed with the same rules as `reset_path`, so epoch seconds and ISO 8601 both work. Used to tell a rolled-over quota window from the current one; a response proving the window has rolled over restores the pool to its limit. Most useful alongside `remaining_header`.
+        type: string
+        examples:
+          - "X-RateLimit-Reset"
+      limit_header:
+        title: Limit Header
+        description: Optional response header carrying the total call limit for this pool, used to keep the proactive throttling reserve accurate as the limit changes.
+        type: string
+        examples:
+          - "X-RateLimit-Limit"
+      exhaustion_status_codes:
+        title: Exhaustion Status Codes
+        description: Response status codes that mean this token's pool is spent. These have two effects. A response carrying one of them but no remaining count sets the pool to zero, so the next request rotates to another token instead of waiting out the reset window. They also mark which responses may report a zero for a quota window that has already elapsed, so a rate limit whose reset header trails the value being held still stops the token being used; a zero on any other response is treated as the last call of a finished window and ignored. Leaving this empty means such trailing rejections are ignored unless their reset is within the skew tolerance of the current window. Only list codes the API uses exclusively for rate limiting -- a code that also signals other failures would park a healthy token.
+        type: array
+        items:
+          type: integer
+        examples:
+          - [429]
       $parameters:
         type: object
         additionalProperties: true
@@ -1295,11 +1321,11 @@ definitions:
           - "P1D"
       is_data_feed:
         title: Data Feed API
-        description: A data feed API is an API that does not allow filtering and paginates the content from the most recent to the least recent. Given this, the CDK needs to know when to stop paginating and this field will generate a stop condition for pagination.
+        description: A data feed API is an API that does not allow filtering and paginates the content from the most recent to the least recent. Given this, the CDK needs to know when to stop paginating and this field will generate a stop condition for pagination. The last page fetched still holds records that fall outside the cursor window, and those are filtered out as well, so Client-side Incremental Filtering does not need to be enabled alongside this field. Records are kept when their cursor value is within the window that starts at the previous sync's cursor value (or the start date) and ends at the end date, defaulting to the current time, so records dated in the future are filtered out too.
         type: boolean
       is_client_side_incremental:
         title: Client-side Incremental Filtering
-        description: Set to True if the target API endpoint does not take cursor values to filter records and returns all records anyway. This will cause the connector to filter out records locally, and only emit new records from the last sync, hence incremental. This means that all records would be read from the API, but only new records will be emitted to the destination.
+        description: Set to True if the target API endpoint does not take cursor values to filter records and returns all records anyway. This will cause the connector to filter out records locally, keeping only the ones whose cursor value falls within the window that starts at the previous sync's cursor value (or the start date) and ends at the end date, defaulting to the current time. This means that all records would be read from the API, but only the records within that window will be emitted to the destination. This is not needed when Data Feed API is enabled, as a data feed already filters on the same window.
         type: boolean
       is_compare_strictly:
         title: Strict Start-End Time Comparison
@@ -4183,6 +4209,7 @@ definitions:
           - "$ref": "#/definitions/SubstreamPartitionRouter"
           - "$ref": "#/definitions/ListPartitionRouter"
           - "$ref": "#/definitions/GroupingPartitionRouter"
+          - "$ref": "#/definitions/UnionPartitionRouter"
           - "$ref": "#/definitions/CustomPartitionRouter"
           - type: array
             title: Multiple Partition Routers
@@ -4191,6 +4218,7 @@ definitions:
                 - "$ref": "#/definitions/SubstreamPartitionRouter"
                 - "$ref": "#/definitions/ListPartitionRouter"
                 - "$ref": "#/definitions/GroupingPartitionRouter"
+                - "$ref": "#/definitions/UnionPartitionRouter"
                 - "$ref": "#/definitions/CustomPartitionRouter"
       $parameters:
         type: object
@@ -4393,6 +4421,7 @@ definitions:
           - "$ref": "#/definitions/ListPartitionRouter"
           - "$ref": "#/definitions/SubstreamPartitionRouter"
           - "$ref": "#/definitions/GroupingPartitionRouter"
+          - "$ref": "#/definitions/UnionPartitionRouter"
           - "$ref": "#/definitions/CustomPartitionRouter"
           - type: array
             items:
@@ -4400,6 +4429,7 @@ definitions:
                 - "$ref": "#/definitions/ListPartitionRouter"
                 - "$ref": "#/definitions/SubstreamPartitionRouter"
                 - "$ref": "#/definitions/GroupingPartitionRouter"
+                - "$ref": "#/definitions/UnionPartitionRouter"
                 - "$ref": "#/definitions/CustomPartitionRouter"
       decoder:
         title: HTTP Response Format
@@ -4647,12 +4677,58 @@ definitions:
         anyOf:
           - "$ref": "#/definitions/ListPartitionRouter"
           - "$ref": "#/definitions/SubstreamPartitionRouter"
+          - "$ref": "#/definitions/UnionPartitionRouter"
           - "$ref": "#/definitions/CustomPartitionRouter"
       deduplicate:
         title: Deduplicate Partitions
         description: If true, ensures that partitions are unique within each group by removing duplicates based on the partition key.
         type: boolean
         default: true
+      $parameters:
+        type: object
+        additionalProperties: true
+  UnionPartitionRouter:
+    title: Union Partition Router
+    description: >
+      A partition router that yields the deduplicated union of the partitions produced by its child
+      partition routers. Every emitted partition is normalized to a single key defined by `partition_field`;
+      any other partition keys coming from a child router (such as a SubstreamPartitionRouter's `parent_slice`)
+      are moved into the slice's extra fields. The first occurrence of a partition value wins and later
+      duplicates are skipped. Partition values must be hashable; deduplication holds every distinct value
+      in memory for the duration of the sync, and the resulting partition count is the deduplicated sum
+      of the child routers' partition counts, which affects per-partition state size. Because child routers
+      must emit scalar partition values, GroupingPartitionRouter (which emits list-valued partitions)
+      cannot be used as a child.
+    type: object
+    required:
+      - type
+      - partition_field
+      - partition_routers
+    properties:
+      type:
+        type: string
+        enum: [UnionPartitionRouter]
+      partition_field:
+        title: Partition Field
+        description: The single partition key that all child partition routers' slices are normalized to. Each child router must emit this key in its partitions. Interpolation is evaluated once when the connector is built, using the connector config and $parameters.
+        type: string
+        interpolation_context:
+          - config
+          - parameters
+        examples:
+          - "repository"
+          - "{{ config['partition_field'] }}"
+      partition_routers:
+        title: Partition Routers
+        description: The child partition routers whose partitions are unioned. Request options are not supported on child partition routers; partition values should be consumed via interpolation (e.g. `stream_partition`).
+        type: array
+        minItems: 2
+        items:
+          anyOf:
+            - "$ref": "#/definitions/ListPartitionRouter"
+            - "$ref": "#/definitions/SubstreamPartitionRouter"
+            - "$ref": "#/definitions/UnionPartitionRouter"
+            - "$ref": "#/definitions/CustomPartitionRouter"
       $parameters:
         type: object
         additionalProperties: true
