@@ -997,3 +997,167 @@ def test_factory_does_not_share_instances_across_differing_header_config():
     )
 
     assert plain is not response_aware
+
+
+def test_unavailable_status_is_untracked_and_never_blocks(requests_mock):
+    """A deployment with rate limiting switched off answers the quota endpoint with an error.
+
+    Opting in must turn that into "there is no quota here" rather than a failed connection:
+    requests are still signed, nothing waits for a reset that will never come, and the
+    proactive budget never throttles.
+    """
+    requests_mock.get(
+        QUOTA_STATUS_URL, status_code=404, json={"message": "Rate limiting is not enabled."}
+    )
+    authenticator = _authenticator(quota_status_unavailable_status_codes=[404])
+
+    with patch("time.sleep") as sleep_mock:
+        for _ in range(3):
+            request = authenticator(_prepared_request())
+
+    assert request.headers["Authorization"] == "token token_1"
+    sleep_mock.assert_not_called()
+    for token in ("token_1", "token_2"):
+        for pool in ("rest", "graphql"):
+            assert authenticator._states[token][pool].tracked is False
+
+
+def test_unavailable_status_without_opt_in_still_fails(requests_mock):
+    """Unchanged behaviour for every connector that has not opted in -- the endpoint failing is
+    still a broken connection, not a silent switch to untracked quotas."""
+    requests_mock.get(
+        QUOTA_STATUS_URL, status_code=404, json={"message": "Rate limiting is not enabled."}
+    )
+    authenticator = _authenticator()
+
+    with pytest.raises(AirbyteTracedException):
+        authenticator(_prepared_request())
+
+
+def test_status_outside_the_opt_in_list_still_fails(requests_mock):
+    """The opt-in is a list of specific codes, not blanket tolerance -- a 500 from the quota
+    endpoint is a real failure even when 404 is excused."""
+    requests_mock.get(QUOTA_STATUS_URL, status_code=500, json={"message": "Internal Server Error"})
+    authenticator = _authenticator(quota_status_unavailable_status_codes=[404])
+
+    with pytest.raises(AirbyteTracedException):
+        authenticator(_prepared_request())
+
+
+def test_untracked_pool_reports_no_alternative_token(requests_mock):
+    """`has_alternative_token` answers "should HttpClient skip the rate-limit wait and retry on
+    another credential". With no counters it cannot claim a token is spent, so it must say no
+    and let the computed backoff stand."""
+    requests_mock.get(
+        QUOTA_STATUS_URL, status_code=404, json={"message": "Rate limiting is not enabled."}
+    )
+    authenticator = _authenticator(quota_status_unavailable_status_codes=[404])
+    request = _prepared_request()
+    authenticator(request)
+
+    assert authenticator.has_alternative_token(request) is False
+
+
+def test_untracked_pool_ignores_response_headers(requests_mock):
+    """A pool the quota endpoint does not track stays untracked even if responses carry quota
+    headers. Adopting them would resurrect exhaustion waits and throttling on a deployment that
+    deliberately has rate limiting turned off; responses that actually report a rate limit are
+    the error handler's job."""
+    requests_mock.get(
+        QUOTA_STATUS_URL, status_code=404, json={"message": "Rate limiting is not enabled."}
+    )
+    quotas = [
+        TokenQuota(
+            name="rest",
+            remaining_path=["resources", "core", "remaining"],
+            reset_path=["resources", "core", "reset"],
+            remaining_header="X-RateLimit-Remaining",
+            reset_header="X-RateLimit-Reset",
+        )
+    ]
+    authenticator = RateLimitedMultipleTokenAuthenticator(
+        tokens=["token_1"],
+        quotas=quotas,
+        quota_status_url=QUOTA_STATUS_URL,
+        quota_status_unavailable_status_codes=[404],
+        auth_method="token",
+    )
+    request = _prepared_request()
+    authenticator(request)
+
+    response = requests.Response()
+    response.status_code = 200
+    response.headers["X-RateLimit-Remaining"] = "17"
+    response.headers["X-RateLimit-Reset"] = str(int(time.time()) + 3600)
+    authenticator.update_from_response(request, response)
+
+    assert authenticator._states["token_1"]["rest"].tracked is False
+
+
+def test_missing_quota_path_is_untracked_only_for_that_pool(requests_mock):
+    """A deployment that reports some pools but not others should lose the pool, not the
+    connection -- and only when the connector has opted into tolerating this endpoint."""
+    body = _quota_status_body()
+    del body["resources"]["graphql"]
+    requests_mock.get(QUOTA_STATUS_URL, json=body)
+    authenticator = _authenticator(tokens=("token_1",), quota_status_unavailable_status_codes=[404])
+
+    authenticator(_prepared_request())
+
+    assert authenticator._states["token_1"]["graphql"].tracked is False
+    assert authenticator._states["token_1"]["rest"].tracked is True
+    assert authenticator._states["token_1"]["rest"].remaining == 4999
+
+
+def test_missing_quota_path_without_opt_in_still_raises(requests_mock):
+    body = _quota_status_body()
+    del body["resources"]["graphql"]
+    requests_mock.get(QUOTA_STATUS_URL, json=body)
+    authenticator = _authenticator(tokens=("token_1",))
+
+    with pytest.raises(AirbyteTracedException):
+        authenticator(_prepared_request())
+
+
+def test_unavailable_status_codes_are_threaded_through_the_factory():
+    """The manifest field has to reach the constructor, and two definitions that differ only by
+    it must not collide in the factory's instance cache."""
+    definition = {
+        "type": "RateLimitedMultipleTokenAuthenticator",
+        "tokens": "token_1,token_2",
+        "token_delimiter": ",",
+        "quota_status_source": {
+            "type": "QuotaStatusSource",
+            "url": QUOTA_STATUS_URL,
+            "unavailable_status_codes": [404],
+        },
+        "quotas": [
+            {
+                "type": "TokenQuota",
+                "name": "rest",
+                "remaining_path": ["resources", "core", "remaining"],
+                "reset_path": ["resources", "core", "reset"],
+            }
+        ],
+    }
+    factory = ModelToComponentFactory()
+    transformer = ManifestComponentTransformer()
+
+    def build(component_definition):
+        propagated = transformer.propagate_types_and_parameters("", component_definition, {})
+        return factory.create_component(
+            model_type=RateLimitedMultipleTokenAuthenticatorModel,
+            component_definition=propagated,
+            config={},
+        )
+
+    tolerant = build(definition)
+    assert tolerant._unavailable_status_codes == {404}
+
+    without = {
+        **definition,
+        "quota_status_source": {"type": "QuotaStatusSource", "url": QUOTA_STATUS_URL},
+    }
+    strict = build(without)
+    assert strict._unavailable_status_codes == set()
+    assert strict is not tolerant, "the cache key must include the new field"

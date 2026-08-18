@@ -575,6 +575,12 @@ class QuotaStatusSource(BaseModel):
         description="Additional headers to send with the quota status request.",
         title="Request Headers",
     )
+    unavailable_status_codes: Optional[List[int]] = Field(
+        None,
+        description="Status codes from the quota status endpoint that mean quota tracking is unavailable rather than broken, such as a self-hosted deployment with rate limiting turned off. Every pool is then treated as untracked, so the authenticator stops waiting for quota resets, stops throttling proactively and stops rotating on exhaustion, while still signing requests. Rate limiting reported by ordinary responses is unaffected, so an error handler that retries 429 or 403 keeps working. Any status not listed still fails the connection, so list only the codes the endpoint uses to report that rate limiting is not enabled.",
+        examples=[[404]],
+        title="Unavailable Status Codes",
+    )
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
 

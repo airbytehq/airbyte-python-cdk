@@ -16,6 +16,14 @@ from airbyte_cdk.models import FailureType
 from airbyte_cdk.sources.declarative.auth.declarative_authenticator import DeclarativeAuthenticator
 from airbyte_cdk.sources.streams.call_rate import RequestMatcher
 from airbyte_cdk.sources.streams.http import HttpClient
+from airbyte_cdk.sources.streams.http.error_handlers import HttpStatusErrorHandler
+from airbyte_cdk.sources.streams.http.error_handlers.default_error_mapping import (
+    DEFAULT_ERROR_MAPPING,
+)
+from airbyte_cdk.sources.streams.http.error_handlers.response_models import (
+    ErrorResolution,
+    ResponseAction,
+)
 from airbyte_cdk.sources.streams.http.requests_native_auth import TokenAuthenticator
 from airbyte_cdk.utils import AirbyteTracedException
 from airbyte_cdk.utils.datetime_helpers import AirbyteDateTime, ab_datetime_now, ab_datetime_parse
@@ -56,11 +64,33 @@ class TokenQuota:
         )
 
 
+class _Missing:
+    """Marks a quota path the response did not contain. Distinct from `None`, which a server is
+    free to send as a legitimate value."""
+
+    def __repr__(self) -> str:
+        return "<missing>"
+
+
+_MISSING = _Missing()
+
+
 @dataclass
 class _QuotaState:
     remaining: int
     reset_at: AirbyteDateTime
     limit: int
+    tracked: bool = True
+    """Whether the server reports a quota for this pool at all.
+
+    False means the quota status endpoint answered with one of `unavailable_status_codes`, or
+    omitted this pool's path from an otherwise-healthy response. The pool then has no numbers
+    worth acting on, so every decision derived from them is skipped rather than made against
+    invented ones. Modelled as a flag rather than a very large `remaining` because six call
+    sites read this state and a sentinel would have to satisfy all of them by arithmetic
+    accident -- and a far-future `reset_at` would silently make both branches of
+    `update_from_response` unreachable, discarding real headers if the server sends them.
+    """
 
 
 class RateLimitedMultipleTokenAuthenticator(DeclarativeAuthenticator):
@@ -104,6 +134,7 @@ class RateLimitedMultipleTokenAuthenticator(DeclarativeAuthenticator):
         quota_status_url: str,
         quota_status_http_method: str = "GET",
         quota_status_headers: Optional[Mapping[str, str]] = None,
+        quota_status_unavailable_status_codes: Optional[List[int]] = None,
         auth_method: str = "Bearer",
         header: str = "Authorization",
         max_wait_time: timedelta = timedelta(hours=2),
@@ -134,11 +165,14 @@ class RateLimitedMultipleTokenAuthenticator(DeclarativeAuthenticator):
         self._budget_reserve_fraction = budget_reserve_fraction
         self._budget_min_reserve = budget_min_reserve
 
+        self._unavailable_status_codes = set(quota_status_unavailable_status_codes or [])
+
         self._lock = threading.RLock()
         self._refresh_lock = threading.Lock()
         self._initialized = False
         self._budget_logged = False
         self._unmatched_logged = False
+        self._untracked_logged = False
         self._states: dict[str, dict[str, _QuotaState]] = {}
         self._token_to_http_client: Mapping[str, HttpClient] = {
             token: HttpClient(
@@ -148,6 +182,7 @@ class RateLimitedMultipleTokenAuthenticator(DeclarativeAuthenticator):
                     token, auth_method=self._auth_method, auth_header=self._header
                 ),
                 use_cache=False,  # quota values change frequently; never reuse cached responses
+                error_handler=self._quota_status_error_handler(),
             )
             for token in self._tokens
         }
@@ -170,6 +205,54 @@ class RateLimitedMultipleTokenAuthenticator(DeclarativeAuthenticator):
         token = self._acquire_call(quota)
         request.headers[self._header] = f"{self._auth_method} {token}".strip()
         return request
+
+    def _quota_status_error_handler(self) -> Optional[HttpStatusErrorHandler]:
+        """Error handling for the quota status request itself.
+
+        `None` keeps `HttpClient`'s default, under which every non-2xx fails the connection --
+        which is correct when the endpoint is expected to work. When the connector has declared
+        that some statuses mean "quota tracking is not enabled here", those are mapped to
+        `IGNORE` instead, so `send_request` hands the response back rather than raising and
+        `_fetch_quota_states` can decide what it means. Statuses outside the list keep failing.
+        """
+        if not self._unavailable_status_codes:
+            return None
+        return HttpStatusErrorHandler(
+            self._logger,
+            error_mapping={
+                **DEFAULT_ERROR_MAPPING,
+                **{
+                    status_code: ErrorResolution(
+                        response_action=ResponseAction.IGNORE,
+                        failure_type=FailureType.transient_error,
+                        error_message=(
+                            "Quota status endpoint reports that rate limiting is unavailable; "
+                            "treating token quotas as untracked."
+                        ),
+                    )
+                    for status_code in self._unavailable_status_codes
+                },
+            },
+        )
+
+    def _untracked_states(self) -> dict[str, _QuotaState]:
+        """A state per pool meaning "the server tracks nothing here"."""
+        now = ab_datetime_now()
+        return {
+            quota.name: _QuotaState(remaining=0, reset_at=now, limit=0, tracked=False)
+            for quota in self._quotas
+        }
+
+    def _log_untracked_once(self, reason: str) -> None:
+        if self._untracked_logged:
+            return
+        self._untracked_logged = True
+        self._logger.info(
+            "Quota status endpoint %s. Token quotas are untracked: the connector will not wait "
+            "for quota resets, throttle proactively, or rotate tokens on exhaustion. Responses "
+            "that report a rate limit are still handled by the stream's error handler.",
+            reason,
+        )
 
     def _ensure_initialized(self) -> None:
         if self._initialized:
@@ -210,10 +293,19 @@ class RateLimitedMultipleTokenAuthenticator(DeclarativeAuthenticator):
             with self._lock:
                 token = self._active_token
                 state = self._states[token][quota.name]
+                if not state.tracked:
+                    # Nothing to spend and nothing to wait for. Rotation still works on demand
+                    # (`update_from_response`, an explicit exhaustion signal), it just is not
+                    # driven by counters that do not exist.
+                    return token
                 if state.remaining > 0:
                     state.remaining -= 1
                     budget_delay = self._compute_budget_delay(quota)
-                elif all(self._states[token][quota.name].remaining <= 0 for token in self._tokens):
+                elif all(
+                    self._states[token][quota.name].remaining <= 0
+                    and self._states[token][quota.name].tracked
+                    for token in self._tokens
+                ):
                     now = time.monotonic()
                     if exhaustion_deadline is None:
                         exhaustion_deadline = now + self._max_wait_time.total_seconds()
@@ -262,6 +354,8 @@ class RateLimitedMultipleTokenAuthenticator(DeclarativeAuthenticator):
     def _compute_budget_delay(self, quota: TokenQuota) -> Optional[float]:
         """Compute the proactive throttling delay. Must be called while holding the lock."""
         states = [self._states[token][quota.name] for token in self._tokens]
+        if any(not state.tracked for state in states):
+            return None
         if not all(state.remaining <= self._get_budget_reserve(state) for state in states):
             return None
 
@@ -295,7 +389,9 @@ class RateLimitedMultipleTokenAuthenticator(DeclarativeAuthenticator):
         with self._refresh_lock:
             with self._lock:
                 still_exhausted = all(
-                    self._states[token][quota.name].remaining <= 0 for token in self._tokens
+                    self._states[token][quota.name].remaining <= 0
+                    and self._states[token][quota.name].tracked
+                    for token in self._tokens
                 )
             if still_exhausted:
                 self._seed_all_tokens()
@@ -320,6 +416,11 @@ class RateLimitedMultipleTokenAuthenticator(DeclarativeAuthenticator):
             headers=self._quota_status_headers,
             request_kwargs={},
         )
+        if response.status_code in self._unavailable_status_codes:
+            # Only reachable when the connector opted in: without `unavailable_status_codes`
+            # the default error mapping raises before this point.
+            self._log_untracked_once(f"returned HTTP {response.status_code}")
+            return self._untracked_states()
         response_body = response.json()
 
         states = {}
@@ -331,6 +432,15 @@ class RateLimitedMultipleTokenAuthenticator(DeclarativeAuthenticator):
                 if quota.limit_path
                 else remaining
             )
+            if remaining is _MISSING or reset is _MISSING or limit is _MISSING:
+                # A deployment that reports some pools but not others. Losing the whole
+                # connection over one absent key is worse than running that pool untracked --
+                # but only for connectors that opted into tolerating this endpoint at all.
+                self._log_untracked_once(
+                    f"did not report quota '{quota.name}'; that pool is untracked"
+                )
+                states[quota.name] = self._untracked_states()[quota.name]
+                continue
             states[quota.name] = _QuotaState(
                 remaining=int(remaining),
                 reset_at=ab_datetime_parse(reset),
@@ -342,6 +452,8 @@ class RateLimitedMultipleTokenAuthenticator(DeclarativeAuthenticator):
         value: Any = response_body
         for key in path:
             if not isinstance(value, Mapping) or key not in value:
+                if self._unavailable_status_codes:
+                    return _MISSING
                 raise AirbyteTracedException(
                     failure_type=FailureType.config_error,
                     internal_message=f"Quota status response did not contain expected path: {path}",
@@ -383,6 +495,12 @@ class RateLimitedMultipleTokenAuthenticator(DeclarativeAuthenticator):
             state = self._states.get(token, {}).get(quota.name)
             if state is None:
                 return  # not seeded yet; the initial seeding is the more authoritative source
+            if not state.tracked:
+                # The quota status endpoint said this pool is not tracked. Response headers
+                # could contradict that, but adopting them would resurrect exhaustion waits and
+                # throttling on a deployment that has rate limiting switched off. Rate-limit
+                # *responses* remain the error handler's job either way.
+                return
             if limit is not None and limit > 0 and (reset_at is None or reset_at >= state.reset_at):
                 # A response from an older window carries that window's limit. Taking it would
                 # skew the throttling reserve and, on a later reset-only response, refill the
@@ -438,10 +556,12 @@ class RateLimitedMultipleTokenAuthenticator(DeclarativeAuthenticator):
         with self._lock:
             if not self._states or sender is None:
                 return False
-            if self._states[sender][quota.name].remaining > 0:
+            sender_state = self._states[sender][quota.name]
+            if not sender_state.tracked or sender_state.remaining > 0:
                 return False
             return any(
                 self._states[token][quota.name].remaining > 0
+                and self._states[token][quota.name].tracked
                 for token in self._tokens
                 if token != sender
             )
