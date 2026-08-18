@@ -4660,6 +4660,12 @@ class ModelToComponentFactory:
                 "remaining_path": quota_model.remaining_path,
                 "reset_path": quota_model.reset_path,
                 "limit_path": quota_model.limit_path,
+                "remaining_header": quota_model.remaining_header,
+                "reset_header": quota_model.reset_header,
+                "limit_header": quota_model.limit_header,
+                # Normalized the same way as the runtime TokenQuota below, so an omitted field
+                # and an explicit `[]` key identically and keep sharing one set of counters.
+                "exhaustion_status_codes": quota_model.exhaustion_status_codes or [],
                 "matchers": [
                     {
                         "method": matcher_model.method,
@@ -4734,6 +4740,10 @@ class ModelToComponentFactory:
                 remaining_path=quota_model.remaining_path,
                 reset_path=quota_model.reset_path,
                 limit_path=quota_model.limit_path,
+                remaining_header=quota_model.remaining_header,
+                reset_header=quota_model.reset_header,
+                limit_header=quota_model.limit_header,
+                exhaustion_status_codes=quota_model.exhaustion_status_codes or [],
                 matchers=[
                     self.create_http_request_matcher(matcher_model, config)
                     for matcher_model in quota_model.matchers or []

@@ -497,6 +497,32 @@ definitions:
         type: array
         items:
           "$ref": "#/definitions/HttpRequestRegexMatcher"
+      remaining_header:
+        title: Remaining Header
+        description: Optional response header carrying the remaining call count for this pool. When set, the pool's counter is reconciled against this header on every response, which corrects drift caused by sharing the token with other clients, by requests in flight concurrently, or by a sync running long enough for the initial quota status read to go stale. Without it the pool is only ever seeded from the quota status endpoint.
+        type: string
+        examples:
+          - "X-RateLimit-Remaining"
+      reset_header:
+        title: Reset Header
+        description: Optional response header carrying the quota reset timestamp for this pool. Parsed with the same rules as `reset_path`, so epoch seconds and ISO 8601 both work. Used to tell a rolled-over quota window from the current one; a response proving the window has rolled over restores the pool to its limit. Most useful alongside `remaining_header`.
+        type: string
+        examples:
+          - "X-RateLimit-Reset"
+      limit_header:
+        title: Limit Header
+        description: Optional response header carrying the total call limit for this pool, used to keep the proactive throttling reserve accurate as the limit changes.
+        type: string
+        examples:
+          - "X-RateLimit-Limit"
+      exhaustion_status_codes:
+        title: Exhaustion Status Codes
+        description: Response status codes that mean this token's pool is spent. These have two effects. A response carrying one of them but no remaining count sets the pool to zero, so the next request rotates to another token instead of waiting out the reset window. They also mark which responses may report a zero for a quota window that has already elapsed, so a rate limit whose reset header trails the value being held still stops the token being used; a zero on any other response is treated as the last call of a finished window and ignored. Leaving this empty means such trailing rejections are ignored unless their reset is within the skew tolerance of the current window. Only list codes the API uses exclusively for rate limiting -- a code that also signals other failures would park a healthy token.
+        type: array
+        items:
+          type: integer
+        examples:
+          - [429]
       $parameters:
         type: object
         additionalProperties: true
