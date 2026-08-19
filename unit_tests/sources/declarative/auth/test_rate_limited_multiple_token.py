@@ -11,6 +11,7 @@ import pytest
 import requests
 from pydantic.v1 import ValidationError
 
+from airbyte_cdk.models import FailureType
 from airbyte_cdk.sources.declarative.auth.rate_limited_multiple_token import (
     RateLimitedMultipleTokenAuthenticator,
     TokenQuota,
@@ -259,12 +260,17 @@ def test_thread_safety_header_token_matches_decremented_token(requests_mock):
         assert authenticator._states[token]["rest"].remaining == 100 - used
 
 
-def test_missing_path_in_quota_status_response_raises_config_error(requests_mock):
+def test_missing_path_in_quota_status_response_raises_system_error(requests_mock):
+    """Reclassified from `config_error`: the quota paths come from the manifest, so a path the
+    response does not contain is a connector defect and there is nothing in the user's
+    configuration for them to correct."""
     requests_mock.get(QUOTA_STATUS_URL, json={"unexpected": {}})
 
     authenticator = _authenticator()
-    with pytest.raises(AirbyteTracedException, match="missing an expected field"):
+    with pytest.raises(AirbyteTracedException, match="does not contain the configured") as exc_info:
         authenticator(_prepared_request())
+
+    assert exc_info.value.failure_type == FailureType.system_error
 
 
 def test_no_tokens_raises_config_error():
@@ -1011,15 +1017,33 @@ def test_unavailable_status_is_untracked_and_never_blocks(requests_mock):
     )
     authenticator = _authenticator(quota_status_unavailable_status_codes=[404])
 
-    with patch("time.sleep") as sleep_mock:
+    with patch("time.sleep", side_effect=AssertionError("waited on an untracked quota")):
         for _ in range(3):
-            request = authenticator(_prepared_request())
+            authenticator(_prepared_request())
 
-    assert request.headers["Authorization"] == "token token_1"
-    sleep_mock.assert_not_called()
     for token in ("token_1", "token_2"):
         for pool in ("rest", "graphql"):
             assert authenticator._states[token][pool].tracked is False
+
+
+def test_untracked_tokens_still_share_the_load(requests_mock):
+    """Every token hits the same `quota_status_url` and so gets the same status, which makes the
+    untracked branch the only one `_acquire_call` ever takes on a deployment that reports no
+    quota. Without advancing the active token there, one credential would serve the whole sync
+    and the rest of a multi-token configuration would go unused -- there is no counter saying a
+    token is spent, but there is also nothing saying the others should sit idle."""
+    requests_mock.get(
+        QUOTA_STATUS_URL, status_code=404, json={"message": "Rate limiting is not enabled."}
+    )
+    authenticator = _authenticator(
+        tokens=("token_1", "token_2", "token_3"), quota_status_unavailable_status_codes=[404]
+    )
+
+    used = [
+        authenticator(_prepared_request()).headers["Authorization"].split()[1] for _ in range(9)
+    ]
+
+    assert used == ["token_1", "token_2", "token_3"] * 3
 
 
 def test_unavailable_status_without_opt_in_still_fails(requests_mock):
@@ -1084,39 +1108,209 @@ def test_untracked_pool_ignores_response_headers(requests_mock):
     )
     request = _prepared_request()
     authenticator(request)
+    before = authenticator._states["token_1"]["rest"]
+    held_remaining, held_reset, held_limit = before.remaining, before.reset_at, before.limit
 
     response = requests.Response()
     response.status_code = 200
     response.headers["X-RateLimit-Remaining"] = "17"
     response.headers["X-RateLimit-Reset"] = str(int(time.time()) + 3600)
+    response.headers["X-RateLimit-Limit"] = "5000"
     authenticator.update_from_response(request, response)
 
-    assert authenticator._states["token_1"]["rest"].tracked is False
+    state = authenticator._states["token_1"]["rest"]
+    assert state.tracked is False
+    # `tracked` is never written by `update_from_response`, so asserting only that would hold
+    # whether the guard exists or not. These three are what it protects.
+    assert (state.remaining, state.reset_at, state.limit) == (
+        held_remaining,
+        held_reset,
+        held_limit,
+    )
 
 
-def test_missing_quota_path_is_untracked_only_for_that_pool(requests_mock):
-    """A deployment that reports some pools but not others should lose the pool, not the
-    connection -- and only when the connector has opted into tolerating this endpoint."""
+@pytest.mark.parametrize(
+    "unavailable_status_codes",
+    [pytest.param(None, id="without_opt_in"), pytest.param([404], id="with_opt_in")],
+)
+def test_missing_quota_path_always_raises(requests_mock, unavailable_status_codes):
+    """`unavailable_status_codes` says what an *error* from the endpoint means. It does not
+    excuse a path missing from a body the endpoint did answer with: a responding endpoint does
+    report quotas, so an absent path is a wrong path, and excusing it would let a typo in
+    `remaining_path` silently switch quota tracking off for the whole sync."""
     body = _quota_status_body()
     del body["resources"]["graphql"]
     requests_mock.get(QUOTA_STATUS_URL, json=body)
-    authenticator = _authenticator(tokens=("token_1",), quota_status_unavailable_status_codes=[404])
+    authenticator = _authenticator(
+        tokens=("token_1",), quota_status_unavailable_status_codes=unavailable_status_codes
+    )
 
-    authenticator(_prepared_request())
-
-    assert authenticator._states["token_1"]["graphql"].tracked is False
-    assert authenticator._states["token_1"]["rest"].tracked is True
-    assert authenticator._states["token_1"]["rest"].remaining == 4999
-
-
-def test_missing_quota_path_without_opt_in_still_raises(requests_mock):
-    body = _quota_status_body()
-    del body["resources"]["graphql"]
-    requests_mock.get(QUOTA_STATUS_URL, json=body)
-    authenticator = _authenticator(tokens=("token_1",))
-
-    with pytest.raises(AirbyteTracedException):
+    with pytest.raises(AirbyteTracedException) as exc_info:
         authenticator(_prepared_request())
+
+    # The quota paths come from the manifest, not from anything the end user can edit, so there
+    # is no configuration for them to correct.
+    assert exc_info.value.failure_type == FailureType.system_error
+    assert "graphql" in exc_info.value.message
+
+
+def test_untracked_tokens_are_reported_once_with_the_right_scope(requests_mock):
+    """The consequence of untracking is only true of the tokens that are untracked. A message
+    claiming the connector will not wait, throttle or rotate -- while another token is still
+    tracked and doing all three -- points an operator at the wrong problem."""
+    requests_mock.get(
+        QUOTA_STATUS_URL,
+        [
+            {"status_code": 404, "json": {"message": "Rate limiting is not enabled."}},
+            {"status_code": 200, "json": _quota_status_body()},
+        ],
+    )
+    authenticator = _authenticator(quota_status_unavailable_status_codes=[404])
+
+    with patch.object(authenticator._logger, "info") as info_mock:
+        authenticator(_prepared_request())
+
+    summaries = [
+        call.args[0] % call.args[1:] if len(call.args) > 1 else call.args[0]
+        for call in info_mock.call_args_list
+        if "rate limiting is unavailable" in call.args[0]
+    ]
+    assert len(summaries) == 1, summaries
+    assert "for 1 of 2 tokens" in summaries[0]
+    # Not "the others are unaffected": once any token is untracked the exhaustion wait is
+    # unreachable, so the tracked token is never reseeded after its counters run out.
+    assert (
+        "The other 1 keep proactive throttling until their counters are locally spent"
+        in (summaries[0])
+    )
+    assert "never refreshes them" in summaries[0]
+
+
+def _mixed_authenticator(requests_mock, *, untracked_token, rest_remaining=5000):
+    """Seed one token from a 404 and the other from a healthy body.
+
+    `_seed_all_tokens` fetches in `self._tokens` order, so the response list maps positionally
+    onto `token_1`, `token_2`. This is the only state in which four of the `tracked` guards are
+    reachable at all: every all-tracked or all-untracked run is short-circuited earlier by the
+    `_acquire_call` early return.
+    """
+    unavailable = {"status_code": 404, "json": {"message": "Rate limiting is not enabled."}}
+    healthy = {"status_code": 200, "json": _quota_status_body(rest_remaining=rest_remaining)}
+    order = [unavailable, healthy] if untracked_token == "token_1" else [healthy, unavailable]
+    requests_mock.get(QUOTA_STATUS_URL, order)
+    authenticator = _authenticator(quota_status_unavailable_status_codes=[404])
+    authenticator._ensure_initialized()
+    tracked_token = "token_2" if untracked_token == "token_1" else "token_1"
+    assert authenticator._states[untracked_token]["rest"].tracked is False
+    assert authenticator._states[tracked_token]["rest"].tracked is True
+    return authenticator
+
+
+def test_exhausted_tracked_token_rotates_onto_an_untracked_token_without_waiting(requests_mock):
+    """An untracked token holds `remaining=0`, so a plain "every token is spent" test counts it
+    as exhausted and the connector sleeps for a reset that will never be reported. It should
+    rotate onto the untracked token instead, which can serve the request immediately."""
+    authenticator = _mixed_authenticator(requests_mock, untracked_token="token_2")
+    for pool in ("rest", "graphql"):
+        authenticator._states["token_1"][pool].remaining = 0
+
+    with patch("time.sleep", side_effect=AssertionError("waited instead of rotating")):
+        request = authenticator(_prepared_request())
+
+    assert request.headers["Authorization"] == "token token_2"
+
+
+def test_untracked_peer_disables_proactive_throttling(requests_mock):
+    """The budget delay is `seconds_until_reset / total_remaining` across every token. An
+    untracked token contributes 0 to the total and a reset that means nothing, so including it
+    invents a delay from a pool the server does not report."""
+    authenticator = _mixed_authenticator(
+        requests_mock, untracked_token="token_2", rest_remaining=100
+    )
+
+    with authenticator._lock:
+        assert authenticator._compute_budget_delay(authenticator._quotas[0]) is None
+
+    with patch("time.sleep", side_effect=AssertionError("throttled an untracked pool")):
+        authenticator(_prepared_request())
+
+
+def test_refresh_after_exhaustion_skips_the_reseed_when_a_token_is_untracked(requests_mock):
+    """Reachable under concurrency: a token can be untracked by another thread's reseed while
+    this one sleeps out the exhaustion wait. Reseeding again buys nothing, because
+    `_acquire_call` will rotate onto the untracked token rather than wait a second time."""
+    authenticator = _mixed_authenticator(requests_mock, untracked_token="token_2")
+    authenticator._states["token_1"]["rest"].remaining = 0
+    seeding_requests = requests_mock.call_count
+
+    authenticator._refresh_after_exhaustion(authenticator._quotas[0])
+
+    assert requests_mock.call_count == seeding_requests
+
+
+def test_untracked_sender_reports_no_alternative_token_even_when_another_token_has_quota(
+    requests_mock,
+):
+    """`has_alternative_token` promises `HttpClient` that retrying in 0.1s will use a different
+    credential. `_acquire_call` returns the active token unchanged for an untracked pool, so an
+    untracked sender must answer False -- otherwise the retry hammers the credential the server
+    just rejected."""
+    authenticator = _mixed_authenticator(requests_mock, untracked_token="token_1")
+    request = _prepared_request()
+    authenticator(request)
+
+    assert request.headers["Authorization"] == "token token_1"
+    assert authenticator._states["token_2"]["rest"].remaining > 0
+    assert authenticator.has_alternative_token(request) is False
+
+
+def test_untracked_tokens_are_never_reseeded(requests_mock):
+    """ "Untracked holds for the rest of the sync" is load-bearing for the design, so pin the
+    mechanism rather than trusting the prose: the exhaustion wait is the only thing that reseeds
+    after startup, and it cannot fire while any token is untracked, so the quota endpoint is
+    never consulted again and an untracked pool can never silently flip back to tracked."""
+    requests_mock.get(
+        QUOTA_STATUS_URL,
+        [
+            {"status_code": 200, "json": _quota_status_body(rest_remaining=1, graphql_remaining=1)},
+            {"status_code": 404, "json": {"message": "Rate limiting is not enabled."}},
+        ],
+    )
+    authenticator = _authenticator(quota_status_unavailable_status_codes=[404])
+    authenticator._ensure_initialized()
+    seeding_requests = requests_mock.call_count
+
+    # Spend the tracked token, then keep going well past the point where a reseed would happen
+    # if one were reachable.
+    with patch("time.sleep", side_effect=AssertionError("waited for a reset")):
+        for _ in range(6):
+            authenticator(_prepared_request())
+
+    assert requests_mock.call_count == seeding_requests
+    assert authenticator._states["token_2"]["rest"].tracked is False
+
+
+def test_duplicate_unavailable_status_codes_are_rejected():
+    """`[404, 404]` and `[404]` behave identically at runtime, so they must not be two different
+    manifests. The schema rejects the duplicate rather than silently collapsing it."""
+    with pytest.raises(ValidationError):
+        RateLimitedMultipleTokenAuthenticatorModel(
+            type="RateLimitedMultipleTokenAuthenticator",
+            tokens=["token_1"],
+            quota_status_source={
+                "type": "QuotaStatusSource",
+                "url": QUOTA_STATUS_URL,
+                "unavailable_status_codes": [404, 404],
+            },
+            quotas=[
+                {
+                    "type": "TokenQuota",
+                    "name": "rest",
+                    "remaining_path": ["resources", "core", "remaining"],
+                    "reset_path": ["resources", "core", "reset"],
+                }
+            ],
+        )
 
 
 def test_unavailable_status_codes_are_threaded_through_the_factory():
@@ -1161,3 +1355,27 @@ def test_unavailable_status_codes_are_threaded_through_the_factory():
     strict = build(without)
     assert strict._unavailable_status_codes == set()
     assert strict is not tolerant, "the cache key must include the new field"
+
+    # Order is not meaning: the runtime holds a set, so two definitions listing the same codes
+    # in a different order must keep sharing one set of counters.
+    reordered = build(
+        {
+            **definition,
+            "quota_status_source": {
+                "type": "QuotaStatusSource",
+                "url": QUOTA_STATUS_URL,
+                "unavailable_status_codes": [500, 404],
+            },
+        }
+    )
+    forward = build(
+        {
+            **definition,
+            "quota_status_source": {
+                "type": "QuotaStatusSource",
+                "url": QUOTA_STATUS_URL,
+                "unavailable_status_codes": [404, 500],
+            },
+        }
+    )
+    assert reordered is forward

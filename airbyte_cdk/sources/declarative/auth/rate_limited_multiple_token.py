@@ -64,17 +64,6 @@ class TokenQuota:
         )
 
 
-class _Missing:
-    """Marks a quota path the response did not contain. Distinct from `None`, which a server is
-    free to send as a legitimate value."""
-
-    def __repr__(self) -> str:
-        return "<missing>"
-
-
-_MISSING = _Missing()
-
-
 @dataclass
 class _QuotaState:
     remaining: int
@@ -83,13 +72,16 @@ class _QuotaState:
     tracked: bool = True
     """Whether the server reports a quota for this pool at all.
 
-    False means the quota status endpoint answered with one of `unavailable_status_codes`, or
-    omitted this pool's path from an otherwise-healthy response. The pool then has no numbers
-    worth acting on, so every decision derived from them is skipped rather than made against
-    invented ones. Modelled as a flag rather than a very large `remaining` because six call
-    sites read this state and a sentinel would have to satisfy all of them by arithmetic
-    accident -- and a far-future `reset_at` would silently make both branches of
-    `update_from_response` unreachable, discarding real headers if the server sends them.
+    False means the quota status endpoint answered with one of `unavailable_status_codes`. The
+    pool then has no numbers worth acting on, so every decision derived from them is skipped
+    rather than made against invented ones. A quota *path* missing from an otherwise-healthy
+    response is not this case and still fails: the endpoint answering at all means it reports
+    quotas, so an absent path is a wrong path.
+
+    Modelled as a flag rather than a very large `remaining` because six call sites read this
+    state and a sentinel would have to satisfy all of them by arithmetic accident -- and a
+    far-future `reset_at` would silently make both branches of `update_from_response`
+    unreachable, discarding real headers if the server sends them.
     """
 
 
@@ -225,10 +217,6 @@ class RateLimitedMultipleTokenAuthenticator(DeclarativeAuthenticator):
                     status_code: ErrorResolution(
                         response_action=ResponseAction.IGNORE,
                         failure_type=FailureType.transient_error,
-                        error_message=(
-                            "Quota status endpoint reports that rate limiting is unavailable; "
-                            "treating token quotas as untracked."
-                        ),
                     )
                     for status_code in self._unavailable_status_codes
                 },
@@ -236,23 +224,62 @@ class RateLimitedMultipleTokenAuthenticator(DeclarativeAuthenticator):
         )
 
     def _untracked_states(self) -> dict[str, _QuotaState]:
-        """A state per pool meaning "the server tracks nothing here"."""
+        """A state per pool meaning "the server tracks nothing here".
+
+        `remaining=0` is load-bearing rather than arbitrary: it is what keeps every
+        `remaining > 0` test in this class correct for an untracked pool without also having to
+        consult `tracked`. Nothing ever raises it, since `_acquire_call` only decrements and
+        `update_from_response` returns early for an untracked pool.
+        """
         now = ab_datetime_now()
         return {
             quota.name: _QuotaState(remaining=0, reset_at=now, limit=0, tracked=False)
             for quota in self._quotas
         }
 
-    def _log_untracked_once(self, reason: str) -> None:
+    def _log_untracked_tokens(self, states: Mapping[str, Mapping[str, _QuotaState]]) -> None:
+        """Report untracked tokens once, scoped to how many of them there are.
+
+        Deliberately called with every token's states rather than from `_fetch_quota_states`,
+        which sees one token at a time. The consequence of untracking -- no exhaustion waits, no
+        proactive throttling, no rotation -- is only true of the tokens that are untracked, and
+        a per-token call site cannot know whether the others are. Claiming it globally while one
+        token is still tracked and still doing all three would send an operator looking for a
+        problem in the wrong place.
+        """
         if self._untracked_logged:
             return
+        untracked = [
+            token
+            for token, pools in states.items()
+            if any(not state.tracked for state in pools.values())
+        ]
+        if not untracked:
+            return
         self._untracked_logged = True
-        self._logger.info(
-            "Quota status endpoint %s. Token quotas are untracked: the connector will not wait "
-            "for quota resets, throttle proactively, or rotate tokens on exhaustion. Responses "
-            "that report a rate limit are still handled by the stream's error handler.",
-            reason,
-        )
+        if len(untracked) == len(self._tokens):
+            self._logger.info(
+                "Quota status endpoint reports that rate limiting is unavailable. Token quotas "
+                "are untracked: the connector will not wait for quota resets, throttle "
+                "proactively, or rotate tokens on exhaustion. Responses that report a rate "
+                "limit are still handled by the stream's error handler."
+            )
+        else:
+            # Not "the others are unaffected": `_acquire_call` rotates onto an untracked token
+            # rather than waiting, so the exhaustion wait -- and with it the only reseed after
+            # startup -- becomes unreachable as soon as one token is untracked. The tracked
+            # tokens keep throttling until their counters are locally spent and are then left
+            # spent for the rest of the sync.
+            self._logger.info(
+                "Quota status endpoint reports that rate limiting is unavailable for %d of %d "
+                "tokens. Those tokens are used without quota tracking. The other %d keep "
+                "proactive throttling until their counters are locally spent, after which "
+                "traffic moves onto the untracked tokens: the connector no longer waits for a "
+                "quota reset, so it never refreshes them.",
+                len(untracked),
+                len(states),
+                len(states) - len(untracked),
+            )
 
     def _ensure_initialized(self) -> None:
         if self._initialized:
@@ -294,9 +321,20 @@ class RateLimitedMultipleTokenAuthenticator(DeclarativeAuthenticator):
                 token = self._active_token
                 state = self._states[token][quota.name]
                 if not state.tracked:
-                    # Nothing to spend and nothing to wait for. Rotation still works on demand
-                    # (`update_from_response`, an explicit exhaustion signal), it just is not
-                    # driven by counters that do not exist.
+                    # Nothing to spend and nothing to wait for, but the tokens are still there
+                    # to spread load over. Every token hits the same `quota_status_url` and so
+                    # gets the same status, which means this branch is the *only* one taken on a
+                    # deployment that reports no quota -- so without advancing here, one
+                    # credential would serve the entire sync and the rest would go unused.
+                    # Round-robin is the right rule precisely because there are no counters:
+                    # nothing distinguishes the tokens, and the server may still enforce limits
+                    # it declines to report.
+                    #
+                    # Note the other half of the mechanism: once any token is untracked the
+                    # exhaustion branch below can never fire, so `_refresh_after_exhaustion` --
+                    # the only reseed after startup -- is unreachable, and a tracked token's
+                    # quota is never picked up again even after its window resets.
+                    self._active_token = next(self._tokens_iter)
                     return token
                 if state.remaining > 0:
                     state.remaining -= 1
@@ -385,7 +423,13 @@ class RateLimitedMultipleTokenAuthenticator(DeclarativeAuthenticator):
                 )
 
     def _refresh_after_exhaustion(self, quota: TokenQuota) -> None:
-        """Refresh counters after an exhaustion wait. Only one thread refreshes; others re-check state."""
+        """Refresh counters after an exhaustion wait. Only one thread refreshes; others re-check state.
+
+        The `tracked` term is not reachable from a single-threaded run -- reaching the wait at
+        all requires every token to be tracked -- but it is reachable under concurrency, because
+        another thread's reseed can untrack a token while this one sleeps. Reseeding then buys
+        nothing: `_acquire_call` will rotate onto the untracked token instead of waiting again.
+        """
         with self._refresh_lock:
             with self._lock:
                 still_exhausted = all(
@@ -407,6 +451,7 @@ class RateLimitedMultipleTokenAuthenticator(DeclarativeAuthenticator):
         with self._lock:
             self._states = states
             self._budget_logged = False
+        self._log_untracked_tokens(states)
 
     def _fetch_quota_states(self, token: str) -> dict[str, _QuotaState]:
         http_client = self._token_to_http_client[token]
@@ -418,29 +463,23 @@ class RateLimitedMultipleTokenAuthenticator(DeclarativeAuthenticator):
         )
         if response.status_code in self._unavailable_status_codes:
             # Only reachable when the connector opted in: without `unavailable_status_codes`
-            # the default error mapping raises before this point.
-            self._log_untracked_once(f"returned HTTP {response.status_code}")
+            # the default error mapping raises before this point. `_seed_all_tokens` reports it
+            # once every token has been fetched, which is the first point at which the scope of
+            # the consequence is known.
             return self._untracked_states()
         response_body = response.json()
 
         states = {}
         for quota in self._quotas:
-            remaining = self._extract_path(response_body, quota.remaining_path)
-            reset = self._extract_path(response_body, quota.reset_path)
+            remaining = self._extract_path(
+                response_body, quota.remaining_path, quota.name, "remaining"
+            )
+            reset = self._extract_path(response_body, quota.reset_path, quota.name, "reset")
             limit = (
-                self._extract_path(response_body, quota.limit_path)
+                self._extract_path(response_body, quota.limit_path, quota.name, "limit")
                 if quota.limit_path
                 else remaining
             )
-            if remaining is _MISSING or reset is _MISSING or limit is _MISSING:
-                # A deployment that reports some pools but not others. Losing the whole
-                # connection over one absent key is worse than running that pool untracked --
-                # but only for connectors that opted into tolerating this endpoint at all.
-                self._log_untracked_once(
-                    f"did not report quota '{quota.name}'; that pool is untracked"
-                )
-                states[quota.name] = self._untracked_states()[quota.name]
-                continue
             states[quota.name] = _QuotaState(
                 remaining=int(remaining),
                 reset_at=ab_datetime_parse(reset),
@@ -448,16 +487,30 @@ class RateLimitedMultipleTokenAuthenticator(DeclarativeAuthenticator):
             )
         return states
 
-    def _extract_path(self, response_body: Mapping[str, Any], path: List[str]) -> Any:
+    def _extract_path(
+        self, response_body: Mapping[str, Any], path: List[str], quota_name: str, field_name: str
+    ) -> Any:
+        """Read a configured quota path out of the response, or fail.
+
+        A path the response does not contain is a `system_error` rather than a `config_error`:
+        the paths come from the manifest, not from anything the end user can edit, so there is
+        no configuration for them to correct. `unavailable_status_codes` does not soften this --
+        it says what an endpoint answering with an error *means*, and an endpoint that answers
+        with a body does report quotas, so a path missing from that body is a wrong path.
+        """
         value: Any = response_body
         for key in path:
             if not isinstance(value, Mapping) or key not in value:
-                if self._unavailable_status_codes:
-                    return _MISSING
                 raise AirbyteTracedException(
-                    failure_type=FailureType.config_error,
-                    internal_message=f"Quota status response did not contain expected path: {path}",
-                    message="Quota status response is missing an expected field.",
+                    failure_type=FailureType.system_error,
+                    internal_message=(
+                        f"Quota status response did not contain the {field_name} path {path} "
+                        f"configured for quota '{quota_name}'"
+                    ),
+                    message=(
+                        f"Quota status response does not contain the configured {field_name} "
+                        f'path for token quota "{quota_name}".'
+                    ),
                 )
             value = value[key]
         return value
@@ -550,6 +603,16 @@ class RateLimitedMultipleTokenAuthenticator(DeclarativeAuthenticator):
         other token is not. If the sending token still has calls locally, the rejection was not
         about exhausting it (a secondary limit, say, which on many APIs is per-user and would
         reject every token alike), and waiting remains the right response.
+
+        An untracked sender answers False too, but for a different reason, and it is a trade-off
+        rather than a clear win. The retry does rotate -- `_acquire_call` round-robins untracked
+        tokens -- so what this withholds is only the *skipped wait*. The backoff it would skip is
+        computed from what the server said (a reset or `Retry-After` header), and an untracked
+        pool has no counters with which to argue the rejection was about this credential
+        specifically. Overriding the server's own instruction on a guess would, when the limit is
+        shared across credentials, burn every retry in under a second and fail a request that
+        waiting would have completed. So a rate-limited response on an untracked pool rotates
+        credentials but still pays the computed backoff.
         """
         quota = self._match_quota(request)
         sender = self._token_from_request(request)
@@ -561,7 +624,6 @@ class RateLimitedMultipleTokenAuthenticator(DeclarativeAuthenticator):
                 return False
             return any(
                 self._states[token][quota.name].remaining > 0
-                and self._states[token][quota.name].tracked
                 for token in self._tokens
                 if token != sender
             )
