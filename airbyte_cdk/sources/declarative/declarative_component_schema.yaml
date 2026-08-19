@@ -549,6 +549,14 @@ definitions:
         type: array
         items:
           "$ref": "#/definitions/DynamicStreamCheckConfig"
+      config_overrides:
+        title: Config Overrides
+        description: Values overlaid onto the connector config for the duration of the check operation only. Use this when a check must behave differently from a sync - for example a shorter rate limit wait budget, so that check fails fast with a clear message instead of sleeping until the quota resets. Keys should be fields declared in the connector's spec. Values are used as-is and are not interpolated.
+        type: object
+        additionalProperties: true
+        examples:
+          - max_waiting_time: 0
+          - page_size: 1
   DynamicStreamCheckConfig:
     type: object
     required:
@@ -587,6 +595,14 @@ definitions:
         description: Enables stream check availability. This field is automatically set by the CDK.
         type: boolean
         default: true
+      config_overrides:
+        title: Config Overrides
+        description: Values overlaid onto the connector config for the duration of the check operation only. Use this when a check must behave differently from a sync - for example a shorter rate limit wait budget, so that check fails fast with a clear message instead of sleeping until the quota resets. Keys should be fields declared in the connector's spec. Values are used as-is and are not interpolated.
+        type: object
+        additionalProperties: true
+        examples:
+          - max_waiting_time: 0
+          - page_size: 1
   CompositeErrorHandler:
     title: Composite Error Handler
     description: Error handler that sequentially iterates over a list of error handlers.

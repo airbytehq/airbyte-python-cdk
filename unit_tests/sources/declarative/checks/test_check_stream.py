@@ -907,3 +907,186 @@ def test_check_stream_only_type_provided():
     )
     with pytest.raises(ValueError):
         source.check(logger, _CONFIG)
+
+
+_CONFIG_DRIVEN_PATH_CONFIG = {"resource": "sync"}
+
+_MANIFEST_WITH_CONFIG_DRIVEN_PATH = {
+    "version": "6.7.0",
+    "type": "DeclarativeSource",
+    "check": {"type": "CheckStream", "stream_names": ["items"]},
+    "streams": [
+        {
+            "type": "DeclarativeStream",
+            "name": "items",
+            "primary_key": "id",
+            "schema_loader": {
+                "type": "InlineSchemaLoader",
+                "schema": {
+                    "$schema": "http://json-schema.org/schema#",
+                    "type": "object",
+                    "properties": {"id": {"type": "integer"}},
+                },
+            },
+            "retriever": {
+                "type": "SimpleRetriever",
+                "requester": {
+                    "type": "HttpRequester",
+                    "url": "https://api.test.com/{{ config['resource'] }}",
+                    "http_method": "GET",
+                },
+                "record_selector": {
+                    "type": "RecordSelector",
+                    "extractor": {"type": "DpathExtractor", "field_path": []},
+                },
+                "paginator": {"type": "NoPagination"},
+            },
+        }
+    ],
+}
+
+
+def _source_with_check_component(check_component):
+    manifest = deepcopy(_MANIFEST_WITH_CONFIG_DRIVEN_PATH)
+    manifest["check"] = check_component
+    return ConcurrentDeclarativeSource(
+        source_config=manifest,
+        config=_CONFIG_DRIVEN_PATH_CONFIG,
+        catalog=None,
+        state=None,
+    )
+
+
+def test_given_no_config_overrides_when_check_then_components_use_the_user_config():
+    source = _source_with_check_component({"type": "CheckStream", "stream_names": ["items"]})
+
+    with HttpMocker() as http_mocker:
+        # Only the user-configured path is mocked, so a request to any other path fails the test.
+        http_mocker.get(
+            HttpRequest(url="https://api.test.com/sync"),
+            HttpResponse(body=json.dumps([{"id": 1}])),
+        )
+
+        assert source.check(logger, _CONFIG_DRIVEN_PATH_CONFIG).status == Status.SUCCEEDED
+
+
+def test_given_config_overrides_when_check_then_components_built_during_check_see_them():
+    source = _source_with_check_component(
+        {
+            "type": "CheckStream",
+            "stream_names": ["items"],
+            "config_overrides": {"resource": "check-only"},
+        }
+    )
+
+    with HttpMocker() as http_mocker:
+        # Only the overridden path is mocked. Reaching this endpoint proves the overlay was applied to
+        # the stream the checker built, and not merely stored on the source.
+        overridden_request = HttpRequest(url="https://api.test.com/check-only")
+        http_mocker.get(overridden_request, HttpResponse(body=json.dumps([{"id": 1}])))
+
+        assert source.check(logger, _CONFIG_DRIVEN_PATH_CONFIG).status == Status.SUCCEEDED
+        http_mocker.assert_number_of_calls(overridden_request, 1)
+
+
+def test_given_config_overrides_when_check_then_the_config_is_restored_afterwards():
+    source = _source_with_check_component(
+        {
+            "type": "CheckStream",
+            "stream_names": ["items"],
+            "config_overrides": {"resource": "check-only"},
+        }
+    )
+
+    with HttpMocker() as http_mocker:
+        http_mocker.get(
+            HttpRequest(url="https://api.test.com/check-only"),
+            HttpResponse(body=json.dumps([{"id": 1}])),
+        )
+
+        assert source.check(logger, _CONFIG_DRIVEN_PATH_CONFIG).status == Status.SUCCEEDED
+
+    assert source._config == _CONFIG_DRIVEN_PATH_CONFIG
+
+    # A sync that follows a check in the same process must go back to the user's value.
+    with HttpMocker() as http_mocker:
+        sync_request = HttpRequest(url="https://api.test.com/sync")
+        http_mocker.get(sync_request, HttpResponse(body=json.dumps([{"id": 1}])))
+
+        stream = source.streams(_CONFIG_DRIVEN_PATH_CONFIG)[0]
+        assert stream.check_availability().is_available
+
+        http_mocker.assert_number_of_calls(sync_request, 1)
+
+
+def test_given_config_overrides_when_check_raises_then_the_config_is_restored():
+    source = _source_with_check_component(
+        {
+            "type": "CheckStream",
+            "stream_names": ["not_in_the_catalog"],
+            "config_overrides": {"resource": "check-only"},
+        }
+    )
+
+    with pytest.raises(ValueError):
+        source.check(logger, _CONFIG_DRIVEN_PATH_CONFIG)
+
+    assert source._config == _CONFIG_DRIVEN_PATH_CONFIG
+
+
+def test_given_config_overrides_when_check_then_config_validations_run_against_the_user_config():
+    """An override is authored in the manifest, so it must not be held to validations written for the
+    user's own input - the user has no way to satisfy them."""
+    config = {"resource": "sync", "settings": {"mode": "sync"}}
+    manifest = deepcopy(_MANIFEST_WITH_CONFIG_DRIVEN_PATH)
+    manifest["check"] = {
+        "type": "CheckStream",
+        "stream_names": ["items"],
+        "config_overrides": {"resource": "check-only", "settings": {"mode": "check-only"}},
+    }
+    manifest["spec"] = {
+        "type": "Spec",
+        "connection_specification": {
+            "$schema": "http://json-schema.org/draft-07/schema#",
+            "type": "object",
+            "properties": {
+                "resource": {"type": "string"},
+                "settings": {"type": "object"},
+            },
+        },
+        "config_normalization_rules": {
+            "type": "ConfigNormalizationRules",
+            "validations": [
+                {
+                    "type": "DpathValidator",
+                    "field_path": ["settings"],
+                    "validation_strategy": {
+                        "type": "ValidateAdheresToSchema",
+                        "base_schema": {
+                            "$schema": "http://json-schema.org/draft-07/schema#",
+                            "type": "object",
+                            "properties": {"mode": {"type": "string", "enum": ["sync"]}},
+                            "required": ["mode"],
+                            "additionalProperties": False,
+                        },
+                    },
+                }
+            ],
+        },
+    }
+    source = ConcurrentDeclarativeSource(
+        source_config=manifest,
+        config=config,
+        catalog=None,
+        state=None,
+    )
+
+    with HttpMocker() as http_mocker:
+        http_mocker.get(
+            HttpRequest(url="https://api.test.com/check-only"),
+            HttpResponse(body=json.dumps([{"id": 1}])),
+        )
+
+        # `settings.mode` is overridden to a value outside the validator's enum, so this would fail were
+        # the overlay validated instead of the config the user supplied.
+        assert source.check(logger, config).status == Status.SUCCEEDED

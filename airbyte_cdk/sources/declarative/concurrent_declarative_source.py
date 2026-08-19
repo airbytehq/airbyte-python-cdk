@@ -3,6 +3,7 @@
 import json
 import logging
 import pkgutil
+from contextlib import contextmanager
 from copy import deepcopy
 from dataclasses import dataclass, field
 from queue import Queue
@@ -228,6 +229,10 @@ class ConcurrentDeclarativeSource(Source):
             self._constructor.create_component(SpecModel, spec, dict()) if spec else None
         )
         self._config = self._migrate_and_transform_config(config_path, config) or {}
+        # `check` may temporarily overlay values onto `self._config` (see
+        # `_config_overridden_for_check`). The manifest's `config_validations` express intent about what
+        # the *user* supplied, so they must always run against the unmodified config.
+        self._user_provided_config = self._config
 
         concurrency_level_from_manifest = self._source_config.get("concurrency_level")
         if concurrency_level_from_manifest:
@@ -413,7 +418,7 @@ class ConcurrentDeclarativeSource(Source):
         """
 
         if self._spec_component:
-            self._spec_component.validate_config(self._config)
+            self._spec_component.validate_config(self._user_provided_config)
 
         api_budget_model = self._source_config.get("api_budget")
         if api_budget_model:
@@ -607,10 +612,39 @@ class ConcurrentDeclarativeSource(Source):
                 f"Expected to generate a ConnectionChecker component, but received {connection_checker.__class__}"
             )
 
-        check_succeeded, error = connection_checker.check_connection(self, logger, self._config)
+        with self._config_overridden_for_check(check.get("config_overrides")):
+            check_succeeded, error = connection_checker.check_connection(self, logger, self._config)
         if not check_succeeded:
             return AirbyteConnectionStatus(status=Status.FAILED, message=repr(error))
         return AirbyteConnectionStatus(status=Status.SUCCEEDED)
+
+    @contextmanager
+    def _config_overridden_for_check(
+        self, config_overrides: Optional[Mapping[str, Any]]
+    ) -> Iterator[None]:
+        """Overlay the check component's `config_overrides` onto the config for the duration of a check.
+
+        A check and a sync legitimately want different behaviour from the same manifest: a check is
+        interactive and should fail fast with an actionable message, while a sync can afford to wait out
+        a rate limit window. Before this existed, expressing that difference required a Python
+        `check_connection` override that built a second component tree from a modified config, which is
+        not available to a manifest-only connector.
+
+        Overlaying here is enough to reach every component the checker builds, because `streams()`
+        interpolates from `self._config` and ignores its own `config` argument. Values are applied
+        verbatim - they are not interpolated - and `config_validations` still run against the config the
+        user supplied, so an override cannot fail a validation the user has no way to satisfy.
+        """
+        if not config_overrides:
+            yield
+            return
+
+        unmodified_config = self._config
+        self._config = {**self._config, **config_overrides}
+        try:
+            yield
+        finally:
+            self._config = unmodified_config
 
     @property
     def dynamic_streams(self) -> List[Dict[str, Any]]:
