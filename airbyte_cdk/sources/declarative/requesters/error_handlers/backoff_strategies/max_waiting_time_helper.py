@@ -37,8 +37,9 @@ def evaluate_max_waiting_time(
     """
     Resolve a `max_waiting_time_in_seconds` field to a number of seconds.
 
-    The `is None` checks are deliberate: 0 is a meaningful cap -- "never wait" -- so a truthiness
-    check would silently disable it.
+    The `is None` check is deliberate: 0 is a meaningful cap -- "never wait" -- so a truthiness
+    check would silently disable it. Only an absent field means "no cap"; a field that is present
+    but resolves to nothing raises, rather than quietly leaving the wait unbounded.
 
     A cap is only read while handling an error the requester is already going to retry, so an
     interpolation that cannot be resolved would otherwise surface as an unhandled jinja
@@ -54,10 +55,10 @@ def evaluate_max_waiting_time(
     if max_waiting_time_in_seconds is None:
         return None
     try:
-        evaluated = max_waiting_time_in_seconds.eval(config)
-        if evaluated is None or evaluated == "":
-            return None
-        return float(evaluated)
+        # A cap that resolves to nothing -- an empty or null config value -- is a failure rather
+        # than "no cap": silently dropping the bound restores the unbounded wait the field exists
+        # to prevent, and "no cap" is already spelled by leaving the field out of the manifest.
+        return float(max_waiting_time_in_seconds.eval(config))
     except AirbyteTracedException:
         raise
     except Exception as exception:

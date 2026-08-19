@@ -72,11 +72,9 @@ class WaitTimeFromHeaderBackoffStrategy(BackoffStrategy):
             # "never wait" instead of silently disabling the cap. The comparison stays `>=`,
             # which is what this cap has always done; `WaitUntilTimeFromHeader` stops at `>`,
             # so a wait exactly equal to the cap is allowed there and refused here.
-            if (
-                max_waiting_time is not None
-                and header_value is not None
-                and header_value >= max_waiting_time
-            ):
+            # `header_value` is checked for truthiness rather than `is not None` on purpose: a
+            # header of `0` asks for no wait at all, which no cap -- not even 0 -- should refuse.
+            if max_waiting_time is not None and header_value and header_value >= max_waiting_time:
                 raise AirbyteTracedException(
                     internal_message=(
                         f"Rate limit wait time {header_value}s is greater than or equal to the "

@@ -145,3 +145,43 @@ def test_given_max_waiting_time_cannot_be_evaluated_then_raise_system_error(
         strategy.backoff_time(_response(120), 1)
     assert exc_info.value.failure_type == FailureType.system_error
     assert "max_waiting_time_in_seconds" in exc_info.value.internal_message
+
+
+@pytest.mark.parametrize(
+    "max_waiting_time_in_seconds",
+    [pytest.param(0, id="never_wait"), pytest.param(60, id="finite_cap")],
+)
+def test_given_header_asks_for_no_wait_then_no_cap_refuses_it(max_waiting_time_in_seconds):
+    """`Retry-After: 0` asks for no wait at all, so no cap -- not even 0 -- should stop the stream
+    over it. Headers arrive as strings, and `"0"` reads as 0.0 rather than as a missing header."""
+    strategy = _strategy(max_waiting_time_in_seconds)
+
+    assert strategy.backoff_time(_response(0), 1) == 0
+
+
+@pytest.mark.parametrize(
+    "config",
+    [
+        pytest.param({"max_waiting_time": ""}, id="config_value_is_empty"),
+        pytest.param({"max_waiting_time": None}, id="config_value_is_null"),
+    ],
+)
+def test_given_max_waiting_time_resolves_to_nothing_then_raise_rather_than_drop_the_cap(config):
+    """A blank config value must not leave the wait unbounded: "no cap" is spelled by leaving the
+    field out of the manifest, so a field that is present and resolves to nothing is a failure."""
+    strategy = _strategy("{{ config['max_waiting_time'] }}", config=config)
+
+    with pytest.raises(AirbyteTracedException) as exc_info:
+        strategy.backoff_time(_response(120), 1)
+    assert exc_info.value.failure_type == FailureType.system_error
+
+
+def test_given_interpolation_raises_a_traced_error_then_keep_its_own_failure_type_and_message():
+    """`stream_state` interpolation raises an AirbyteTracedException of its own, with a message
+    written for that case. The cap's own error handling must not reclassify or replace it."""
+    strategy = _strategy("{{ stream_state['max_waiting_time'] }}")
+
+    with pytest.raises(AirbyteTracedException) as exc_info:
+        strategy.backoff_time(_response(120), 1)
+    assert exc_info.value.failure_type == FailureType.config_error
+    assert "`stream_state` is no longer supported for interpolation" in exc_info.value.message
