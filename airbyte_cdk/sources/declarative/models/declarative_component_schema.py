@@ -1434,10 +1434,10 @@ class WaitTimeFromHeader(BaseModel):
         examples=["([-+]?\\d+)"],
         title="Extraction Regex",
     )
-    max_waiting_time_in_seconds: Optional[float] = Field(
+    max_waiting_time_in_seconds: Optional[Union[float, str]] = Field(
         None,
-        description="Given the value extracted from the header is greater than this value, stop the stream.",
-        examples=[3600],
+        description="Stop the stream instead of waiting, when the value extracted from the header is greater than this value. Can be a hardcoded number or a string interpolated from the connector config, which lets an operation that must answer quickly, such as a connection check, use a tighter bound than a sync. A value of 0 means never wait.",
+        examples=[3600, "{{ config['max_waiting_time'] * 60 }}"],
         title="Max Waiting Time in Seconds",
     )
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
@@ -1462,6 +1462,12 @@ class WaitUntilTimeFromHeader(BaseModel):
         description="Optional regex to apply on the header to extract its value. The regex should define a capture group defining the wait time.",
         examples=["([-+]?\\d+)"],
         title="Extraction Regex",
+    )
+    max_waiting_time_in_seconds: Optional[Union[float, str]] = Field(
+        None,
+        description="Stop the stream instead of waiting, when the wait this strategy computes is longer than this value. The comparison is against the computed wait rather than the raw header, since the header holds an absolute timestamp, and it is applied after `min_wait`, so a cap below the floor still wins. Can be a hardcoded number or a string interpolated from the connector config, which lets an operation that must answer quickly, such as a connection check, use a tighter bound than a sync. A value of 0 means never wait.",
+        examples=[3600, "{{ config['max_waiting_time'] * 60 }}"],
+        title="Max Waiting Time in Seconds",
     )
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 

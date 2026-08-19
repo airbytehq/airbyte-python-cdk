@@ -4349,6 +4349,7 @@ class ModelToComponentFactory:
             config=config,
             min_wait=model.min_wait,
             regex=model.regex,
+            max_waiting_time_in_seconds=model.max_waiting_time_in_seconds,
         )
 
     def get_message_repository(self) -> MessageRepository:

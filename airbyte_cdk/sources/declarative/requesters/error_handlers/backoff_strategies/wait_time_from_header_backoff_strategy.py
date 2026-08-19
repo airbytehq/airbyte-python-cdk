@@ -35,13 +35,21 @@ class WaitTimeFromHeaderBackoffStrategy(BackoffStrategy):
     parameters: InitVar[Mapping[str, Any]]
     config: Config
     regex: Optional[Union[InterpolatedString, str]] = None
-    max_waiting_time_in_seconds: Optional[float] = None
+    max_waiting_time_in_seconds: Optional[Union[float, InterpolatedString, str]] = None
 
     def __post_init__(self, parameters: Mapping[str, Any]) -> None:
         self.regex = (
             InterpolatedString.create(self.regex, parameters=parameters) if self.regex else None
         )
         self.header = InterpolatedString.create(self.header, parameters=parameters)
+        self._max_waiting_time_in_seconds = (
+            self.max_waiting_time_in_seconds
+            if self.max_waiting_time_in_seconds is None
+            or isinstance(self.max_waiting_time_in_seconds, InterpolatedString)
+            else InterpolatedString.create(
+                str(self.max_waiting_time_in_seconds), parameters=parameters
+            )
+        )
 
     def backoff_time(
         self,
@@ -57,14 +65,25 @@ class WaitTimeFromHeaderBackoffStrategy(BackoffStrategy):
         header_value = None
         if isinstance(response_or_exception, requests.Response):
             header_value = get_numeric_value_from_header(response_or_exception, header, regex)
+            max_waiting_time = self._eval_max_waiting_time()
+            # `is not None` rather than a truthiness check, so that 0 means "never wait" instead
+            # of silently disabling the cap.
             if (
-                self.max_waiting_time_in_seconds
-                and header_value
-                and header_value >= self.max_waiting_time_in_seconds
+                max_waiting_time is not None
+                and header_value is not None
+                and header_value >= max_waiting_time
             ):
                 raise AirbyteTracedException(
-                    internal_message=f"Rate limit wait time {header_value} is greater than max waiting time of {self.max_waiting_time_in_seconds} seconds. Stopping the stream...",
+                    internal_message=f"Rate limit wait time {header_value} is greater than max waiting time of {max_waiting_time} seconds. Stopping the stream...",
                     message="The rate limit is greater than max waiting time has been reached.",
                     failure_type=FailureType.transient_error,
                 )
         return header_value
+
+    def _eval_max_waiting_time(self) -> Optional[float]:
+        if self._max_waiting_time_in_seconds is None:
+            return None
+        evaluated = self._max_waiting_time_in_seconds.eval(self.config)
+        if evaluated is None or evaluated == "":
+            return None
+        return float(evaluated)
