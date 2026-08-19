@@ -1306,6 +1306,9 @@ class ModelToComponentFactory:
             else []
         )
 
+        # `model.config_overrides` is deliberately not read here. The source applies it around the whole
+        # check operation (`ConcurrentDeclarativeSource._config_overridden_for_check`), which is what makes
+        # it work for every checker type rather than only this one. Do not wire it in a second time.
         return CheckStream(
             stream_names=model.stream_names or [],
             dynamic_streams_check_configs=dynamic_streams_check_configs,
@@ -1320,6 +1323,7 @@ class ModelToComponentFactory:
 
         use_check_availability = model.use_check_availability
 
+        # See `create_check_stream`: `model.config_overrides` is applied by the source, not here.
         return CheckDynamicStream(
             stream_count=model.stream_count,
             use_check_availability=use_check_availability,

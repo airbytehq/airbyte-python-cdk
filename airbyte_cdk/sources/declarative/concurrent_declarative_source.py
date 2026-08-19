@@ -642,16 +642,30 @@ class ConcurrentDeclarativeSource(Source):
             normalised itself nor propagated to fields derived from it by a `ConfigTransformation`.
           - `config_validations` run against `self._config_for_validation`, so an override cannot fail a
             validation written for the config as supplied.
-          - `self._config` is shared state. Reassigning it is not thread safe, and a component that writes
-            back into the config during check - a `SingleUseRefreshTokenOauth2Authenticator` refreshing its
-            token, say - writes into the throwaway overlay, which the restore then discards. The control
-            message is still emitted so the platform persists the new token, but an in-process read
-            following a check would carry the stale one. Both are acceptable while this is scoped to
-            `check`, which is one command per process.
+
+        Two consequences of the copy being shallow and of `self._config` being shared state:
+          - Rebinding `self._config` is not thread safe. Acceptable only because `check` is one command
+            per process.
+          - The copy is shallow, so every nested object is the *same* object as in the config the source
+            was constructed with. A component that writes into a nested path - `dpath.new(config,
+            ("credentials", "access_token"), ...)` - therefore writes through to that shared dict, and the
+            restore does not undo it, because the restore only rebinds the top level. Only a write to a
+            top-level key is discarded.
+
+        The write-through above is why a manifest that declares a `refresh_token_updater` is rejected
+        outright rather than documented: see `_raise_if_config_is_persisted`.
         """
         if not config_overrides:
             yield
             return
+
+        self._raise_on_reserved_override_keys(config_overrides)
+        self._raise_if_config_is_persisted(config_overrides)
+        self._warn_on_unknown_override_keys(config_overrides)
+        # Keys only. An override may name a secret field, so values must not reach the logs.
+        self.logger.info(
+            f"Overriding config keys for the check operation: {', '.join(sorted(config_overrides))}"
+        )
 
         unmodified_config = self._config
         self._config = {**self._config, **config_overrides}
@@ -659,6 +673,84 @@ class ConcurrentDeclarativeSource(Source):
             yield
         finally:
             self._config = unmodified_config
+
+    @staticmethod
+    def _raise_on_reserved_override_keys(config_overrides: Mapping[str, Any]) -> None:
+        """Refuse to overlay keys in the platform's reserved `__airbyte` namespace.
+
+        These are not connector config, they are the platform's channel into it: `CheckStream` reads
+        `__airbyte_check_stream_names` out of the very config this overlay writes to, so an override there
+        would change which streams a check tests. A manifest wanting that has `stream_names` for it. The
+        prefix is refused wholesale so future internal keys are covered too.
+        """
+        reserved = sorted(key for key in config_overrides if key.startswith("__airbyte"))
+        if reserved:
+            raise ValueError(
+                f"`config_overrides` may not set the reserved key(s) {reserved}. Keys prefixed with "
+                "`__airbyte` belong to the platform, not to the connector's spec."
+            )
+
+    def _raise_if_config_is_persisted(self, config_overrides: Mapping[str, Any]) -> None:
+        """Reject `config_overrides` on a manifest whose authenticator writes the config back.
+
+        A `refresh_token_updater` turns an `OAuthAuthenticator` into a
+        `DeclarativeSingleUseRefreshTokenOauth2Authenticator`, which is handed the config the component
+        tree was built with - during a check, the overlay. When it refreshes, `_emit_control_message`
+        prints that *entire* dict as a `CONNECTOR_CONFIG` control message, and the platform persists it.
+        So a check-only override would become the connection's saved config and apply to every later sync.
+
+        Restoring `self._config` afterwards cannot help: the control message is already on stdout. And no
+        amount of threading the config through properly would help either, because the hazard is inherent
+        to handing an overridden config to something whose job is to write the config back. Until the
+        emitter is fixed to emit the config it was given plus only the token fields it owns, refusing the
+        combination is the honest answer.
+        """
+        if not self._manifest_writes_back_config(self._source_config):
+            return
+        raise ValueError(
+            "`config_overrides` cannot be used by a manifest that declares a `refresh_token_updater`. "
+            "A token refresh during `check` emits the whole config it was handed as a CONNECTOR_CONFIG "
+            "control message, which the platform persists, so the check-only "
+            f"override(s) {sorted(config_overrides)} would be saved as this connection's config and "
+            "applied to every later sync. Remove `config_overrides`, or drop the `refresh_token_updater`."
+        )
+
+    @staticmethod
+    def _manifest_writes_back_config(definition: Any) -> bool:
+        """Whether any component in the manifest emits the connector config back to the platform."""
+        if isinstance(definition, Mapping):
+            if definition.get("refresh_token_updater"):
+                return True
+            return any(
+                ConcurrentDeclarativeSource._manifest_writes_back_config(value)
+                for value in definition.values()
+            )
+        if isinstance(definition, list):
+            return any(
+                ConcurrentDeclarativeSource._manifest_writes_back_config(item)
+                for item in definition
+            )
+        return False
+
+    def _warn_on_unknown_override_keys(self, config_overrides: Mapping[str, Any]) -> None:
+        """Warn about override keys the spec does not declare.
+
+        The overlay is the one part of the config nothing validates - the entrypoint validates what the
+        user supplied, and `config_validations` deliberately run against `self._config_for_validation`. So
+        a typo or a since-renamed field is a silent no-op that surfaces much later as "why does check no
+        longer fail fast".
+        """
+        if not self._spec_component:
+            return
+        declared = self._spec_component.connection_specification.get("properties")
+        if not isinstance(declared, Mapping):
+            return
+        unknown = sorted(key for key in config_overrides if key not in declared)
+        if unknown:
+            self.logger.warning(
+                f"Check-only config override(s) {unknown} are not declared in the connector spec, so "
+                "they will have no effect on any component that reads the config by field name."
+            )
 
     @property
     def dynamic_streams(self) -> List[Dict[str, Any]]:

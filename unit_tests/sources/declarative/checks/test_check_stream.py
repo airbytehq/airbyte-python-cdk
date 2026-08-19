@@ -1189,3 +1189,138 @@ def test_given_config_overrides_on_check_dynamic_stream_then_components_see_them
 
         assert source.check(logger, config).status == Status.SUCCEEDED
         http_mocker.assert_number_of_calls(overridden_request, 1)
+
+
+_OAUTH_WITH_REFRESH_TOKEN_UPDATER = {
+    "type": "OAuthAuthenticator",
+    "token_refresh_endpoint": "https://api.test.com/oauth/token",
+    "client_id": "{{ config['credentials']['client_id'] }}",
+    "client_secret": "{{ config['credentials']['client_secret'] }}",
+    "refresh_token": "{{ config['credentials']['refresh_token'] }}",
+    "refresh_token_updater": {"type": "RefreshTokenUpdater", "refresh_token_name": "refresh_token"},
+}
+
+
+def _manifest_with_refresh_token_updater(check_component):
+    manifest = deepcopy(_MANIFEST_WITH_CONFIG_DRIVEN_PATH)
+    manifest["check"] = check_component
+    manifest["streams"][0]["retriever"]["requester"]["authenticator"] = deepcopy(
+        _OAUTH_WITH_REFRESH_TOKEN_UPDATER
+    )
+    return manifest
+
+
+def test_given_refresh_token_updater_when_config_overrides_then_manifest_is_rejected():
+    """A `refresh_token_updater` emits the whole config it was handed as a CONNECTOR_CONFIG control
+    message, which the platform persists - so a check-only override would become the connection's saved
+    config. The restore cannot recall a message already on stdout, so the combination is refused."""
+    source = ConcurrentDeclarativeSource(
+        source_config=_manifest_with_refresh_token_updater(
+            {
+                "type": "CheckStream",
+                "stream_names": ["items"],
+                "config_overrides": {"resource": "check-only"},
+            }
+        ),
+        config=_CONFIG_DRIVEN_PATH_CONFIG,
+        catalog=None,
+        state=None,
+    )
+
+    with pytest.raises(ValueError, match="refresh_token_updater"):
+        source.check(logger, _CONFIG_DRIVEN_PATH_CONFIG)
+
+
+def test_given_refresh_token_updater_without_config_overrides_then_nothing_is_rejected():
+    """The rejection is scoped to the feature. A manifest that does not use `config_overrides` keeps
+    working with a `refresh_token_updater` exactly as before, even though the manifest scan detects it."""
+    source = ConcurrentDeclarativeSource(
+        source_config=_manifest_with_refresh_token_updater(
+            {"type": "CheckStream", "stream_names": ["items"]}
+        ),
+        config=_CONFIG_DRIVEN_PATH_CONFIG,
+        catalog=None,
+        state=None,
+    )
+
+    assert source._manifest_writes_back_config(source.resolved_manifest) is True
+
+    # No overrides means no overlay, so the guard must not fire and the config must not be copied.
+    with source._config_overridden_for_check(None):
+        assert source._config is _CONFIG_DRIVEN_PATH_CONFIG
+
+
+def test_given_config_overrides_when_check_then_overridden_keys_are_logged_without_values(caplog):
+    """An override may name a secret field, so the log records which keys were overridden but never what
+    they were set to."""
+    source = _source_with_check_component(
+        {
+            "type": "CheckStream",
+            "stream_names": ["items"],
+            "config_overrides": {"resource": "s3cr3t-value"},
+        }
+    )
+
+    with HttpMocker() as http_mocker:
+        http_mocker.get(
+            HttpRequest(url="https://api.test.com/s3cr3t-value"),
+            HttpResponse(body=json.dumps([{"id": 1}])),
+        )
+
+        with caplog.at_level(logging.INFO):
+            source.check(logger, _CONFIG_DRIVEN_PATH_CONFIG)
+
+    assert "Overriding config keys for the check operation: resource" in caplog.text
+    assert "s3cr3t-value" not in caplog.text
+
+
+def test_given_override_key_absent_from_the_spec_then_a_warning_is_logged(caplog):
+    manifest = deepcopy(_MANIFEST_WITH_CONFIG_DRIVEN_PATH)
+    manifest["check"] = {
+        "type": "CheckStream",
+        "stream_names": ["items"],
+        "config_overrides": {"resource": "check-only", "typoed_key": 1},
+    }
+    manifest["spec"] = {
+        "type": "Spec",
+        "connection_specification": {
+            "$schema": "http://json-schema.org/draft-07/schema#",
+            "type": "object",
+            "properties": {"resource": {"type": "string"}},
+        },
+    }
+    source = ConcurrentDeclarativeSource(
+        source_config=manifest,
+        config=_CONFIG_DRIVEN_PATH_CONFIG,
+        catalog=None,
+        state=None,
+    )
+
+    with HttpMocker() as http_mocker:
+        http_mocker.get(
+            HttpRequest(url="https://api.test.com/check-only"),
+            HttpResponse(body=json.dumps([{"id": 1}])),
+        )
+
+        with caplog.at_level(logging.WARNING):
+            source.check(logger, _CONFIG_DRIVEN_PATH_CONFIG)
+
+    assert "typoed_key" in caplog.text
+    assert "not declared in the connector spec" in caplog.text
+    assert "'resource'" not in caplog.text
+
+
+def test_given_an_airbyte_reserved_override_key_then_the_manifest_is_rejected():
+    """`__airbyte`-prefixed keys are the platform's channel into the config - `CheckStream` reads
+    `__airbyte_check_stream_names` from the very config the overlay writes to. The feature refuses to
+    touch that namespace rather than leaving it available."""
+    source = _source_with_check_component(
+        {
+            "type": "CheckStream",
+            "stream_names": ["items"],
+            "config_overrides": {"__airbyte_check_stream_names": ["something_else"]},
+        }
+    )
+
+    with pytest.raises(ValueError, match="__airbyte_check_stream_names"):
+        source.check(logger, _CONFIG_DRIVEN_PATH_CONFIG)
