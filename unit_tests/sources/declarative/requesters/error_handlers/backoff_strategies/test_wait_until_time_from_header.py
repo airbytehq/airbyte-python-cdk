@@ -226,14 +226,15 @@ def test_cap_is_interpolated_from_config(time_mock, config, expected):
     ],
 )
 @patch("time.time", return_value=NOW)
-def test_given_cap_cannot_be_evaluated_then_raise_config_error(
+def test_given_cap_cannot_be_evaluated_then_raise_system_error(
     time_mock, max_waiting_time_in_seconds, config
 ):
     """The cap is only read while handling an error that was already going to be retried, so an
-    unresolvable interpolation must not surface as an unhandled jinja or float error."""
+    unresolvable interpolation must not surface as an unhandled jinja or float error. It is a
+    system error because the field is declared in the manifest: the user has nothing to fix."""
     strategy = _strategy(max_waiting_time_in_seconds, config=config)
 
     with pytest.raises(AirbyteTracedException) as exc_info:
         strategy.backoff_time(_response(), 1)
-    assert exc_info.value.failure_type == FailureType.config_error
+    assert exc_info.value.failure_type == FailureType.system_error
     assert "max_waiting_time_in_seconds" in exc_info.value.internal_message

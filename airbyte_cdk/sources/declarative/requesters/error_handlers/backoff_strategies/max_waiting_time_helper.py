@@ -42,8 +42,10 @@ def evaluate_max_waiting_time(
 
     A cap is only read while handling an error the requester is already going to retry, so an
     interpolation that cannot be resolved would otherwise surface as an unhandled jinja
-    UndefinedError or ValueError in the middle of a sync that has been running fine. Raising a
-    config error instead names the field and points at the configuration that has to change.
+    UndefinedError or ValueError in the middle of a sync that has been running fine. It is raised
+    as a system error rather than a config error because the field lives in the manifest: whether
+    it is a bad expression or a config key the manifest reads but the spec does not expose, the
+    connector is at fault and there is nothing for the user to correct.
 
     :param max_waiting_time_in_seconds: the interpolated field, or None when no cap is configured
     :param config: the connector config to interpolate against
@@ -65,8 +67,9 @@ def evaluate_max_waiting_time(
                 f"{max_waiting_time_in_seconds.string!r}: {exception}"
             ),
             message=(
-                f"The maximum rate limit waiting time is misconfigured. Check the value of "
-                f"`{MAX_WAITING_TIME_FIELD}` and the connector configuration it reads."
+                "The connector could not determine how long it is allowed to wait for a rate "
+                "limit to clear. This is a problem with the connector rather than with your "
+                "configuration."
             ),
-            failure_type=FailureType.config_error,
+            failure_type=FailureType.system_error,
         ) from exception
