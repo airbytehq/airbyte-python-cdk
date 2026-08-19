@@ -646,6 +646,7 @@ from airbyte_cdk.sources.message import (
     NoopMessageRepository,
 )
 from airbyte_cdk.sources.message.repository import StateFilteringMessageRepository
+from airbyte_cdk.sources.streams import NO_CURSOR_STATE_KEY
 from airbyte_cdk.sources.streams.call_rate import (
     APIBudget,
     FixedWindowCallRatePolicy,
@@ -4231,6 +4232,14 @@ class ModelToComponentFactory:
         self, model: ParentStreamConfigModel, config: Config, *, stream_name: str, **kwargs: Any
     ) -> Any:
         child_state = self._connector_state_manager.get_stream_state(stream_name, None)
+        if NO_CURSOR_STATE_KEY in child_state:
+            # Full refresh streams checkpoint a `{NO_CURSOR_STATE_KEY: true}` sentinel. When such a
+            # stream is later converted to incremental with an incremental_dependency parent,
+            # `_instantiate_parent_stream_state_manager` would treat the sentinel's boolean as a legacy
+            # cursor value and re-key it under the parent's cursor field, crashing cursor initialization.
+            child_state = {
+                key: value for key, value in child_state.items() if key != NO_CURSOR_STATE_KEY
+            }
 
         parent_state: Optional[Mapping[str, Any]] = (
             child_state if model.incremental_dependency and child_state else None
