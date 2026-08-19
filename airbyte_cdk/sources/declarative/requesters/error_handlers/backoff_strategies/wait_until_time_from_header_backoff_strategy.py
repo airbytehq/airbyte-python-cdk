@@ -93,7 +93,10 @@ class WaitUntilTimeFromHeaderBackoffStrategy(BackoffStrategy):
         even when the floor would otherwise round the wait up past N.
         """
         max_waiting_time = evaluate_max_waiting_time(self._max_waiting_time_in_seconds, self.config)
-        if max_waiting_time is not None and wait_time > max_waiting_time:
+        # `>=` rather than `>` to match WaitTimeFromHeader, so one field name does not mean two
+        # different things depending on which strategy it is written on. A cap of 0 therefore
+        # refuses every wait, which is what "never wait" has to mean.
+        if max_waiting_time is not None and wait_time >= max_waiting_time:
             raise AirbyteTracedException(
                 internal_message=(
                     f"Rate limit wait time {wait_time}s is greater than the maximum of "

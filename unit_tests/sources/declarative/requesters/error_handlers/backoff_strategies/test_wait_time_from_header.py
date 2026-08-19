@@ -109,6 +109,7 @@ def test_given_max_waiting_time_is_zero_then_never_wait():
     "config, expected",
     [
         pytest.param({"max_waiting_time": 10}, 120, id="cap_above_the_header_value_waits"),
+        pytest.param({"max_waiting_time": 2}, "raises", id="cap_equal_to_the_header_value_raises"),
         pytest.param({"max_waiting_time": 1}, "raises", id="cap_below_the_header_value_raises"),
         pytest.param({"max_waiting_time": 0}, "raises", id="zero_cap_never_waits"),
     ],

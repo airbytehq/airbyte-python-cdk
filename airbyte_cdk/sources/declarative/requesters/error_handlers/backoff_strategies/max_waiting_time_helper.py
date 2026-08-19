@@ -2,6 +2,7 @@
 # Copyright (c) 2025 Airbyte, Inc., all rights reserved.
 #
 
+import math
 from typing import Any, Mapping, Optional, Union
 
 from airbyte_cdk.models import FailureType
@@ -58,7 +59,13 @@ def evaluate_max_waiting_time(
         # A cap that resolves to nothing -- an empty or null config value -- is a failure rather
         # than "no cap": silently dropping the bound restores the unbounded wait the field exists
         # to prevent, and "no cap" is already spelled by leaving the field out of the manifest.
-        return float(max_waiting_time_in_seconds.eval(config))
+        max_waiting_time = float(max_waiting_time_in_seconds.eval(config))
+        if not math.isfinite(max_waiting_time):
+            # NaN would be the one value that disables the cap without saying so: every
+            # comparison against it is False, so the wait this field exists to bound would run
+            # unbounded again. Infinity is rejected alongside it as the same kind of mistake.
+            raise ValueError(f"resolved to {max_waiting_time}, which is not a finite number")
+        return max_waiting_time
     except AirbyteTracedException:
         raise
     except Exception as exception:

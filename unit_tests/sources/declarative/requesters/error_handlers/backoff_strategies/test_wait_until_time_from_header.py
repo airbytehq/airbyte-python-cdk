@@ -151,7 +151,8 @@ def _strategy(max_waiting_time_in_seconds, min_wait=None, config=None):
     [
         pytest.param(None, 60, id="no_cap_waits"),
         pytest.param(3600, 60, id="cap_above_the_wait_waits"),
-        pytest.param(60, 60, id="cap_equal_to_the_wait_waits"),
+        pytest.param(60, "raises", id="cap_equal_to_the_wait_raises"),
+        pytest.param(61, 60, id="cap_just_above_the_wait_waits"),
         pytest.param(30, "raises", id="cap_below_the_wait_raises"),
         pytest.param(0, "raises", id="zero_cap_never_waits"),
     ],
@@ -162,6 +163,9 @@ def test_max_waiting_time_in_seconds(time_mock, max_waiting_time_in_seconds, exp
 
     `0` has to raise rather than switch the cap off: it is the value a caller uses to say "never
     wait", and the equivalent field on WaitTimeFromHeader read it as falsy and ignored it.
+
+    The boundary is `>=`, matching WaitTimeFromHeader, so that one field name does not mean two
+    different things depending on which strategy it is written on.
     """
     strategy = _strategy(max_waiting_time_in_seconds)
 
@@ -238,3 +242,20 @@ def test_given_cap_cannot_be_evaluated_then_raise_system_error(
         strategy.backoff_time(_response(), 1)
     assert exc_info.value.failure_type == FailureType.system_error
     assert "max_waiting_time_in_seconds" in exc_info.value.internal_message
+
+
+@pytest.mark.parametrize(
+    "cap",
+    [pytest.param("nan", id="nan"), pytest.param("inf", id="infinity")],
+)
+@patch("time.time", return_value=NOW)
+def test_non_finite_cap_is_rejected(time_mock, cap):
+    """NaN is the one value that would switch the cap off without saying so -- every comparison
+    against it is False, so the wait this field exists to bound would run unbounded again.
+    Infinity is rejected as the same kind of mistake rather than read as "no cap", which is
+    already spelled by leaving the field out."""
+    strategy = _strategy(cap)
+
+    with pytest.raises(AirbyteTracedException) as exc_info:
+        strategy.backoff_time(_response(), 1)
+    assert exc_info.value.failure_type == FailureType.system_error
