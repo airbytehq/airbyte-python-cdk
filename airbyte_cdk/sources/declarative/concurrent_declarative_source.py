@@ -230,9 +230,9 @@ class ConcurrentDeclarativeSource(Source):
         )
         self._config = self._migrate_and_transform_config(config_path, config) or {}
         # `check` may temporarily overlay values onto `self._config` (see
-        # `_config_overridden_for_check`). The manifest's `config_validations` express intent about what
-        # the *user* supplied, so they must always run against the unmodified config.
-        self._user_provided_config = self._config
+        # `_config_overridden_for_check`). The manifest's `config_validations` express intent about the
+        # config as supplied, so they must run against it rather than against a check-time overlay.
+        self._config_for_validation = self._config
 
         concurrency_level_from_manifest = self._source_config.get("concurrency_level")
         if concurrency_level_from_manifest:
@@ -418,7 +418,7 @@ class ConcurrentDeclarativeSource(Source):
         """
 
         if self._spec_component:
-            self._spec_component.validate_config(self._user_provided_config)
+            self._spec_component.validate_config(self._config_for_validation)
 
         api_budget_model = self._source_config.get("api_budget")
         if api_budget_model:
@@ -631,9 +631,23 @@ class ConcurrentDeclarativeSource(Source):
         not available to a manifest-only connector.
 
         Overlaying here is enough to reach every component the checker builds, because `streams()`
-        interpolates from `self._config` and ignores its own `config` argument. Values are applied
-        verbatim - they are not interpolated - and `config_validations` still run against the config the
-        user supplied, so an override cannot fail a validation the user has no way to satisfy.
+        interpolates from `self._config` and ignores its own `config` argument.
+
+        Semantics, all deliberate:
+          - Values are applied verbatim. They are not interpolated, so a value containing `{{ }}` reaches
+            components as that literal string.
+          - The merge is one level deep. Overriding a key whose value is an object replaces that object
+            rather than merging into it, which keeps removing a nested key expressible.
+          - The overlay happens long after `_migrate_and_transform_config`, so an override is neither
+            normalised itself nor propagated to fields derived from it by a `ConfigTransformation`.
+          - `config_validations` run against `self._config_for_validation`, so an override cannot fail a
+            validation written for the config as supplied.
+          - `self._config` is shared state. Reassigning it is not thread safe, and a component that writes
+            back into the config during check - a `SingleUseRefreshTokenOauth2Authenticator` refreshing its
+            token, say - writes into the throwaway overlay, which the restore then discards. The control
+            message is still emitted so the platform persists the new token, but an in-process read
+            following a check would carry the stale one. Both are acceptable while this is scoped to
+            `check`, which is one command per process.
         """
         if not config_overrides:
             yield

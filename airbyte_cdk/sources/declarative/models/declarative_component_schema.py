@@ -79,7 +79,7 @@ class CheckDynamicStream(BaseModel):
     )
     config_overrides: Optional[Dict[str, Any]] = Field(
         None,
-        description="Values overlaid onto the connector config for the duration of the check operation only. Use this when a check must behave differently from a sync - for example a shorter rate limit wait budget, so that check fails fast with a clear message instead of sleeping until the quota resets. Keys should be fields declared in the connector's spec. Values are used as-is and are not interpolated.",
+        description="Values overlaid onto the connector config for the duration of the check operation only. Use this when a check must behave differently from a sync - for example a shorter rate limit wait budget, so that check fails fast with a clear message instead of sleeping until the quota resets. Keys should be fields declared in the connector's spec. Values are used as-is. They are not interpolated, they replace a nested object rather than deep-merging into it, and they are applied after config migrations and transformations have run, so a field derived from an overridden field is not recomputed.",
         examples=[{"max_waiting_time": 0}, {"page_size": 1}],
         title="Config Overrides",
     )
@@ -1789,7 +1789,7 @@ class CheckStream(BaseModel):
     dynamic_streams_check_configs: Optional[List[DynamicStreamCheckConfig]] = None
     config_overrides: Optional[Dict[str, Any]] = Field(
         None,
-        description="Values overlaid onto the connector config for the duration of the check operation only. Use this when a check must behave differently from a sync - for example a shorter rate limit wait budget, so that check fails fast with a clear message instead of sleeping until the quota resets. Keys should be fields declared in the connector's spec. Values are used as-is and are not interpolated.",
+        description="Values overlaid onto the connector config for the duration of the check operation only. Use this when a check must behave differently from a sync - for example a shorter rate limit wait budget, so that check fails fast with a clear message instead of sleeping until the quota resets. Keys should be fields declared in the connector's spec. Values are used as-is. They are not interpolated, they replace a nested object rather than deep-merging into it, and they are applied after config migrations and transformations have run, so a field derived from an overridden field is not recomputed.",
         examples=[{"max_waiting_time": 0}, {"page_size": 1}],
         title="Config Overrides",
     )

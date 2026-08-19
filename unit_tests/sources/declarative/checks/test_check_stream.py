@@ -1090,3 +1090,102 @@ def test_given_config_overrides_when_check_then_config_validations_run_against_t
         # `settings.mode` is overridden to a value outside the validator's enum, so this would fail were
         # the overlay validated instead of the config the user supplied.
         assert source.check(logger, config).status == Status.SUCCEEDED
+
+
+def test_given_config_overrides_when_check_then_values_are_not_interpolated():
+    """Pins the verbatim contract. A value containing `{{ }}` reaches components as that literal string,
+    so turning interpolation on later is a deliberate, test-breaking decision rather than a silent
+    reinterpretation of overrides already written."""
+    source = _source_with_check_component(
+        {
+            "type": "CheckStream",
+            "stream_names": ["items"],
+            "config_overrides": {"resource": "{{config['resource']}}"},
+        }
+    )
+
+    with HttpMocker() as http_mocker:
+        literal_request = HttpRequest(url="https://api.test.com/%7B%7Bconfig%5B'resource'%5D%7D%7D")
+        http_mocker.get(literal_request, HttpResponse(body=json.dumps([{"id": 1}])))
+
+        assert source.check(logger, _CONFIG_DRIVEN_PATH_CONFIG).status == Status.SUCCEEDED
+        http_mocker.assert_number_of_calls(literal_request, 1)
+
+
+_MANIFEST_WITH_CONFIG_DRIVEN_DYNAMIC_STREAM = {
+    "version": "6.7.0",
+    "type": "DeclarativeSource",
+    "check": {"type": "CheckDynamicStream", "stream_count": 1},
+    "streams": [],
+    "dynamic_streams": [
+        {
+            "type": "DynamicDeclarativeStream",
+            "name": "dynamic_items",
+            "stream_template": {
+                "type": "DeclarativeStream",
+                "name": "",
+                "primary_key": [],
+                "schema_loader": {
+                    "type": "InlineSchemaLoader",
+                    "schema": {
+                        "$schema": "http://json-schema.org/schema#",
+                        "type": "object",
+                        "properties": {"id": {"type": "integer"}},
+                    },
+                },
+                "retriever": {
+                    "type": "SimpleRetriever",
+                    "requester": {
+                        "type": "HttpRequester",
+                        "url": "https://api.test.com/{{ config['resource'] }}",
+                        "http_method": "GET",
+                    },
+                    "record_selector": {
+                        "type": "RecordSelector",
+                        "extractor": {"type": "DpathExtractor", "field_path": []},
+                    },
+                    "paginator": {"type": "NoPagination"},
+                },
+            },
+            "components_resolver": {
+                "type": "ConfigComponentsResolver",
+                "stream_config": {
+                    "type": "StreamConfig",
+                    "configs_pointer": ["custom_streams"],
+                },
+                "components_mapping": [
+                    {
+                        "type": "ComponentMappingDefinition",
+                        "field_path": ["name"],
+                        "value": "{{components_values['name']}}",
+                    }
+                ],
+            },
+        }
+    ],
+}
+
+
+def test_given_config_overrides_on_check_dynamic_stream_then_components_see_them():
+    """The overlay is read from the raw check definition, so it is checker-agnostic. Without this test a
+    refactor moving the read into `create_check_stream` would silently drop `CheckDynamicStream`."""
+    config = {"resource": "sync", "custom_streams": [{"name": "items"}]}
+    manifest = deepcopy(_MANIFEST_WITH_CONFIG_DRIVEN_DYNAMIC_STREAM)
+    manifest["check"] = {
+        "type": "CheckDynamicStream",
+        "stream_count": 1,
+        "config_overrides": {"resource": "check-only"},
+    }
+    source = ConcurrentDeclarativeSource(
+        source_config=manifest,
+        config=config,
+        catalog=None,
+        state=None,
+    )
+
+    with HttpMocker() as http_mocker:
+        overridden_request = HttpRequest(url="https://api.test.com/check-only")
+        http_mocker.get(overridden_request, HttpResponse(body=json.dumps([{"id": 1}])))
+
+        assert source.check(logger, config).status == Status.SUCCEEDED
+        http_mocker.assert_number_of_calls(overridden_request, 1)
