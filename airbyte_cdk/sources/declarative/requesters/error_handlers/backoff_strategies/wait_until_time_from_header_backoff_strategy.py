@@ -2,7 +2,6 @@
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
 
-import numbers
 import re
 import time
 from dataclasses import InitVar, dataclass
@@ -14,6 +13,10 @@ from airbyte_cdk.models import FailureType
 from airbyte_cdk.sources.declarative.interpolation.interpolated_string import InterpolatedString
 from airbyte_cdk.sources.declarative.requesters.error_handlers.backoff_strategies.header_helper import (
     get_numeric_value_from_header,
+)
+from airbyte_cdk.sources.declarative.requesters.error_handlers.backoff_strategies.max_waiting_time_helper import (
+    evaluate_max_waiting_time,
+    interpolated_max_waiting_time,
 )
 from airbyte_cdk.sources.declarative.requesters.error_handlers.backoff_strategy import (
     BackoffStrategy,
@@ -30,9 +33,10 @@ class WaitUntilTimeFromHeaderBackoffStrategy(BackoffStrategy):
 
     Attributes:
         header (str): header to read wait time from
-        min_wait (Optional[float]): minimum time to wait for safety
+        min_wait (Optional[Union[float, InterpolatedString, str]]): minimum time to wait for safety
         regex (Optional[str]): optional regex to apply on the header to extract its value
-        max_waiting_time_in_seconds (Optional[float]): stop the stream rather than wait longer than this
+        max_waiting_time_in_seconds (Optional[Union[float, InterpolatedString, str]]): stop the stream
+            rather than wait longer than this
     """
 
     header: Union[InterpolatedString, str]
@@ -49,13 +53,8 @@ class WaitUntilTimeFromHeaderBackoffStrategy(BackoffStrategy):
         )
         if not isinstance(self.min_wait, InterpolatedString):
             self.min_wait = InterpolatedString.create(str(self.min_wait), parameters=parameters)
-        self._max_waiting_time_in_seconds = (
-            self.max_waiting_time_in_seconds
-            if self.max_waiting_time_in_seconds is None
-            or isinstance(self.max_waiting_time_in_seconds, InterpolatedString)
-            else InterpolatedString.create(
-                str(self.max_waiting_time_in_seconds), parameters=parameters
-            )
+        self._max_waiting_time_in_seconds = interpolated_max_waiting_time(
+            self.max_waiting_time_in_seconds, parameters
         )
 
     def backoff_time(
@@ -72,16 +71,12 @@ class WaitUntilTimeFromHeaderBackoffStrategy(BackoffStrategy):
             regex = None
         wait_until = None
         if isinstance(response_or_exception, requests.Response):
+            # get_numeric_value_from_header returns a float or None, never a string
             wait_until = get_numeric_value_from_header(response_or_exception, header, regex)
         min_wait = self.min_wait.eval(self.config)  # type: ignore # header is always cast to an interpolated string
-        if wait_until is None or not wait_until:
+        if not wait_until:
             return self._capped(float(min_wait)) if min_wait else None
-        if (isinstance(wait_until, str) and wait_until.isnumeric()) or isinstance(
-            wait_until, numbers.Number
-        ):
-            wait_time = float(wait_until) - now
-        else:
-            return self._capped(float(min_wait))
+        wait_time = wait_until - now
         if min_wait:
             return self._capped(float(max(wait_time, min_wait)))
         elif wait_time < 0:
@@ -97,7 +92,7 @@ class WaitUntilTimeFromHeaderBackoffStrategy(BackoffStrategy):
         cap below the floor wins -- a caller asking never to wait more than N seconds means it,
         even when the floor would otherwise round the wait up past N.
         """
-        max_waiting_time = self._eval_max_waiting_time()
+        max_waiting_time = evaluate_max_waiting_time(self._max_waiting_time_in_seconds, self.config)
         if max_waiting_time is not None and wait_time > max_waiting_time:
             raise AirbyteTracedException(
                 internal_message=(
@@ -108,13 +103,3 @@ class WaitUntilTimeFromHeaderBackoffStrategy(BackoffStrategy):
                 failure_type=FailureType.transient_error,
             )
         return wait_time
-
-    def _eval_max_waiting_time(self) -> Optional[float]:
-        if self._max_waiting_time_in_seconds is None:
-            return None
-        evaluated = self._max_waiting_time_in_seconds.eval(self.config)
-        # `is None` rather than a truthiness check: 0 is a meaningful cap -- "never wait" -- and
-        # the equivalent field on WaitTimeFromHeader silently disables itself when set to 0.
-        if evaluated is None or evaluated == "":
-            return None
-        return float(evaluated)

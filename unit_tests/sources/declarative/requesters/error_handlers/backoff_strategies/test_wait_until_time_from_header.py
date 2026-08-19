@@ -214,3 +214,26 @@ def test_cap_is_interpolated_from_config(time_mock, config, expected):
             strategy.backoff_time(_response(), 1)
     else:
         assert strategy.backoff_time(_response(), 1) == expected
+
+
+@pytest.mark.parametrize(
+    "max_waiting_time_in_seconds, config",
+    [
+        pytest.param("{{ config['max_waiting_time'] * 60 }}", {}, id="config_value_is_missing"),
+        pytest.param(
+            "{{ config['max_waiting_time'] }}", {"max_waiting_time": "abc"}, id="not_a_number"
+        ),
+    ],
+)
+@patch("time.time", return_value=NOW)
+def test_given_cap_cannot_be_evaluated_then_raise_config_error(
+    time_mock, max_waiting_time_in_seconds, config
+):
+    """The cap is only read while handling an error that was already going to be retried, so an
+    unresolvable interpolation must not surface as an unhandled jinja or float error."""
+    strategy = _strategy(max_waiting_time_in_seconds, config=config)
+
+    with pytest.raises(AirbyteTracedException) as exc_info:
+        strategy.backoff_time(_response(), 1)
+    assert exc_info.value.failure_type == FailureType.config_error
+    assert "max_waiting_time_in_seconds" in exc_info.value.internal_message

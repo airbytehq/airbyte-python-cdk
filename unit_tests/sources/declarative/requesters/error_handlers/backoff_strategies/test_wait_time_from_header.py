@@ -77,3 +77,70 @@ def test_given_retry_after_greater_than_max_time_then_raise_transient_error():
     with pytest.raises(AirbyteTracedException) as exception:
         backoff_strategy.backoff_time(response_mock, 1)
     assert exception.value.failure_type == FailureType.transient_error
+
+
+def _response(header_value):
+    response = MagicMock(spec=Response)
+    response.headers = {_A_RETRY_HEADER: str(header_value)}
+    return response
+
+
+def _strategy(max_waiting_time_in_seconds, config=None):
+    return WaitTimeFromHeaderBackoffStrategy(
+        header=_A_RETRY_HEADER,
+        max_waiting_time_in_seconds=max_waiting_time_in_seconds,
+        parameters={},
+        config=config if config is not None else {},
+    )
+
+
+def test_given_max_waiting_time_is_zero_then_never_wait():
+    """`0` is the value a caller uses to say "never wait". It used to be read as falsy, which
+    silently disabled the cap; it is now honoured, which is the one behaviour change of the PR
+    that introduced interpolation on this field."""
+    strategy = _strategy(max_waiting_time_in_seconds=0)
+
+    with pytest.raises(AirbyteTracedException) as exc_info:
+        strategy.backoff_time(_response(1), 1)
+    assert exc_info.value.failure_type == FailureType.transient_error
+
+
+@pytest.mark.parametrize(
+    "config, expected",
+    [
+        pytest.param({"max_waiting_time": 10}, 120, id="cap_above_the_header_value_waits"),
+        pytest.param({"max_waiting_time": 1}, "raises", id="cap_below_the_header_value_raises"),
+        pytest.param({"max_waiting_time": 0}, "raises", id="zero_cap_never_waits"),
+    ],
+)
+def test_max_waiting_time_is_interpolated_from_config(config, expected):
+    strategy = _strategy("{{ config['max_waiting_time'] * 60 }}", config=config)
+
+    if expected == "raises":
+        with pytest.raises(AirbyteTracedException) as exc_info:
+            strategy.backoff_time(_response(120), 1)
+        assert exc_info.value.failure_type == FailureType.transient_error
+    else:
+        assert strategy.backoff_time(_response(120), 1) == expected
+
+
+@pytest.mark.parametrize(
+    "max_waiting_time_in_seconds, config",
+    [
+        pytest.param("{{ config['max_waiting_time'] * 60 }}", {}, id="config_value_is_missing"),
+        pytest.param(
+            "{{ config['max_waiting_time'] }}", {"max_waiting_time": "abc"}, id="not_a_number"
+        ),
+    ],
+)
+def test_given_max_waiting_time_cannot_be_evaluated_then_raise_config_error(
+    max_waiting_time_in_seconds, config
+):
+    """The cap is only read while handling an error that was already going to be retried, so an
+    unresolvable interpolation must not surface as an unhandled jinja or float error."""
+    strategy = _strategy(max_waiting_time_in_seconds, config=config)
+
+    with pytest.raises(AirbyteTracedException) as exc_info:
+        strategy.backoff_time(_response(120), 1)
+    assert exc_info.value.failure_type == FailureType.config_error
+    assert "max_waiting_time_in_seconds" in exc_info.value.internal_message
