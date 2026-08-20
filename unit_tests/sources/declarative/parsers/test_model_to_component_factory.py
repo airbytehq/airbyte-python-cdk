@@ -1,6 +1,8 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
+import gzip
+import io
 import json
 import logging
 from copy import deepcopy
@@ -22,6 +24,7 @@ from airbyte_protocol_dataclasses.models.airbyte_protocol import (
 )
 from freezegun.api import FakeDatetime
 from pydantic.v1 import ValidationError
+from urllib3 import HTTPResponse
 
 from airbyte_cdk.legacy.sources.declarative.declarative_stream import DeclarativeStream
 from airbyte_cdk.legacy.sources.declarative.incremental import DatetimeBasedCursor
@@ -97,10 +100,16 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
     ConstantBackoffStrategy as ConstantBackoffStrategyModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    CsvDecoder as CsvDecoderModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     CustomRequester as CustomRequesterModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     ExponentialBackoffStrategy as ExponentialBackoffStrategyModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    GzipDecoder as GzipDecoderModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     OffsetIncrement as OffsetIncrementModel,
@@ -259,6 +268,42 @@ def test_create_check_stream():
 
     assert isinstance(check, CheckStream)
     assert check.stream_names == ["list_stream"]
+
+
+@pytest.mark.parametrize(
+    "headers",
+    [
+        {"Content-Type": "application/gzip"},
+        {"Content-Type": "application/x-gzip"},
+        {"Content-Type": "text/csv"},
+        {"Content-Type": "binary/octet-stream"},
+        {"Content-Encoding": "gzip"},
+    ],
+)
+@pytest.mark.parametrize("emit_connector_builder_messages", [False, True])
+def test_create_gzip_decoder_handles_compressed_response(
+    headers: Mapping[str, str], emit_connector_builder_messages: bool
+):
+    csv_data = b"date,units\n2026-08-01,42\n"
+    response = requests.Response()
+    response.status_code = 200
+    response.headers.update(headers)
+    response.raw = HTTPResponse(
+        body=io.BytesIO(gzip.compress(csv_data)),
+        headers=headers,
+        status=200,
+        preload_content=False,
+    )
+
+    model = GzipDecoderModel(
+        type="GzipDecoder",
+        decoder=CsvDecoderModel(type="CsvDecoder"),
+    )
+    decoder = ModelToComponentFactory(
+        emit_connector_builder_messages=emit_connector_builder_messages
+    ).create_gzip_decoder(model, {})
+
+    assert list(decoder.decode(response)) == [{"date": "2026-08-01", "units": "42"}]
 
 
 def test_create_component_type_mismatch():

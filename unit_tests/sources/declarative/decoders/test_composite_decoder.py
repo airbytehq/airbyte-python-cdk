@@ -73,6 +73,42 @@ def generate_csv(
     return csv_data.encode(encoding)
 
 
+class NonSeekableBytesIO(BytesIO):
+    def seekable(self) -> bool:
+        return False
+
+
+def test_gzip_parser_decompresses_gzip_payload():
+    parser = GzipParser(inner_parser=CsvParser())
+
+    assert list(parser.parse(BytesIO(compress_with_gzip("date,units\n2026-08-01,42\n")))) == [
+        {"date": "2026-08-01", "units": "42"}
+    ]
+
+
+@pytest.mark.parametrize("stream_class", [BytesIO, NonSeekableBytesIO])
+def test_gzip_parser_passes_through_non_gzip_payload(stream_class):
+    parser = GzipParser(inner_parser=CsvParser())
+
+    assert list(parser.parse(stream_class(b"date,units\n2026-08-01,42\n"))) == [
+        {"date": "2026-08-01", "units": "42"}
+    ]
+
+
+def test_gzip_parser_handles_empty_payload():
+    parser = GzipParser(inner_parser=CsvParser())
+
+    assert list(parser.parse(BytesIO())) == []
+
+
+def test_nested_gzip_parser_decompresses_single_gzip_payload():
+    parser = GzipParser(inner_parser=GzipParser(inner_parser=CsvParser()))
+
+    assert list(parser.parse(BytesIO(compress_with_gzip("date,units\n2026-08-01,42\n")))) == [
+        {"date": "2026-08-01", "units": "42"}
+    ]
+
+
 @pytest.mark.parametrize("encoding", ["utf-8", "utf", "iso-8859-1"])
 def test_composite_raw_decoder_gzip_csv_parser(requests_mock, encoding: str):
     requests_mock.register_uri(
