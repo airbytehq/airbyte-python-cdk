@@ -1295,6 +1295,75 @@ def test_rate_limit_wait_is_paid_when_no_other_credential_is_available(requests_
     assert max(sleeps) > 1000, f"the full rate-limit wait should stand, slept {sleeps}"
 
 
+class _RefusingBackoffStrategy(BackoffStrategy):
+    """A strategy that refuses to wait, the way `max_waiting_time_in_seconds` does."""
+
+    def backoff_time(self, *args, **kwargs):
+        raise AirbyteTracedException(
+            internal_message="wait longer than allowed",
+            message="The rate limit wait time is longer than the connector is allowed to wait.",
+            failure_type=FailureType.transient_error,
+        )
+
+
+def test_rotation_is_preferred_over_a_strategy_that_refuses_to_wait(requests_mock):
+    """A capped strategy raises rather than returning a number. Rotation has to be decided
+    before it runs, or a bound on waiting silently becomes a bound on the sync: the retry the
+    spare credential could serve in 0.1s never happens."""
+    requests_mock.get("https://example.com/", [{"status_code": 429}, {"status_code": 200}])
+    client = HttpClient(
+        name="test",
+        logger=logging.getLogger("test"),
+        authenticator=_SpareTokenAuthenticator(has_spare=True),
+        error_handler=HttpStatusErrorHandler(
+            logger=logging.getLogger("test"),
+            error_mapping={
+                429: ErrorResolution(
+                    response_action=ResponseAction.RATE_LIMITED,
+                    failure_type=FailureType.transient_error,
+                    error_message="rate limited",
+                )
+            },
+            max_retries=1,
+        ),
+        backoff_strategy=_RefusingBackoffStrategy(),
+    )
+
+    sleeps = []
+    with patch("time.sleep", side_effect=lambda seconds: sleeps.append(seconds)):
+        _, response = client.send_request(
+            http_method="GET", url="https://example.com/", request_kwargs={}
+        )
+
+    assert response.status_code == 200
+    assert max(sleeps) < 5, f"expected a prompt retry on the spare credential, slept {sleeps}"
+
+
+def test_a_refusing_strategy_still_ends_the_stream_without_a_spare_credential(requests_mock):
+    """The cap must keep working when rotation is not an option — that is what it is for."""
+    requests_mock.get("https://example.com/", [{"status_code": 429}, {"status_code": 200}])
+    client = HttpClient(
+        name="test",
+        logger=logging.getLogger("test"),
+        authenticator=_SpareTokenAuthenticator(has_spare=False),
+        error_handler=HttpStatusErrorHandler(
+            logger=logging.getLogger("test"),
+            error_mapping={
+                429: ErrorResolution(
+                    response_action=ResponseAction.RATE_LIMITED,
+                    failure_type=FailureType.transient_error,
+                    error_message="rate limited",
+                )
+            },
+            max_retries=1,
+        ),
+        backoff_strategy=_RefusingBackoffStrategy(),
+    )
+
+    with pytest.raises(AirbyteTracedException, match="longer than the connector is allowed"):
+        client.send_request(http_method="GET", url="https://example.com/", request_kwargs={})
+
+
 def test_non_rate_limit_retry_is_not_shortened_by_a_spare_credential(requests_mock):
     """A 500 has nothing to do with credentials; its backoff must be left alone."""
     requests_mock.get("https://example.com/", [{"status_code": 500}, {"status_code": 200}])

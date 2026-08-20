@@ -588,29 +588,33 @@ class HttpClient:
             ResponseAction.REFRESH_TOKEN_THEN_RETRY,
         ):
             user_defined_backoff_time = None
-            for backoff_strategy in self._backoff_strategies:
-                backoff_time = backoff_strategy.backoff_time(
-                    response_or_exception=response if response is not None else exc,
-                    attempt_count=self._request_attempt_count[request],
-                )
-                if backoff_time:
-                    user_defined_backoff_time = backoff_time
-                    break
-
-            if (
-                user_defined_backoff_time
-                and error_resolution.response_action == ResponseAction.RATE_LIMITED
+            # Asked before the strategies, not after. The backoff they compute describes the
+            # credential the server just rejected, so when another credential can serve the
+            # retry that wait is irrelevant -- and a strategy is allowed to refuse a wait by
+            # raising (`max_waiting_time_in_seconds`), which would otherwise end the stream
+            # before rotation was ever considered. Rotating is strictly the better outcome
+            # there: it is the same retry, seconds from now, on a credential with quota.
+            rotate_instead_of_waiting = (
+                error_resolution.response_action == ResponseAction.RATE_LIMITED
                 and self._can_retry_on_another_token(request)
-            ):
-                # The backoff was derived from this response's headers, which only describe the
-                # credential that was rejected. Another one has quota, and the retry re-signs the
-                # request, so waiting out this window would idle for nothing.
+            )
+
+            if rotate_instead_of_waiting:
                 self._logger.info(
                     f"Rate limited on the current credential; retrying in "
-                    f"{self.TOKEN_ROTATION_BACKOFF}s with another one instead of waiting "
-                    f"{user_defined_backoff_time:.0f}s for the rate limit to reset."
+                    f"{self.TOKEN_ROTATION_BACKOFF}s with another one instead of waiting for "
+                    f"the rate limit to reset."
                 )
                 user_defined_backoff_time = self.TOKEN_ROTATION_BACKOFF
+            else:
+                for backoff_strategy in self._backoff_strategies:
+                    backoff_time = backoff_strategy.backoff_time(
+                        response_or_exception=response if response is not None else exc,
+                        attempt_count=self._request_attempt_count[request],
+                    )
+                    if backoff_time:
+                        user_defined_backoff_time = backoff_time
+                        break
 
             error_message = (
                 error_resolution.error_message
