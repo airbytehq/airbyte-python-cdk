@@ -717,9 +717,16 @@ class ConcurrentDeclarativeSource(Source):
 
     @staticmethod
     def _manifest_writes_back_config(definition: Any) -> bool:
-        """Whether any component in the manifest emits the connector config back to the platform."""
+        """Whether any component in the manifest emits the connector config back to the platform.
+
+        Tested with `is not None` rather than for truthiness, to match the factory. Every field of
+        `RefreshTokenUpdater` has a default, so `refresh_token_updater: {}` is a valid way to take all of
+        them - and it builds a single-use authenticator just like a populated one, because the factory's
+        `if model.refresh_token_updater:` sees a model instance, which is always truthy. A truthiness test
+        here would see an empty dict and let that manifest through.
+        """
         if isinstance(definition, Mapping):
-            if definition.get("refresh_token_updater"):
+            if definition.get("refresh_token_updater") is not None:
                 return True
             return any(
                 ConcurrentDeclarativeSource._manifest_writes_back_config(value)

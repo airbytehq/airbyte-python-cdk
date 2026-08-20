@@ -1201,16 +1201,31 @@ _OAUTH_WITH_REFRESH_TOKEN_UPDATER = {
 }
 
 
-def _manifest_with_refresh_token_updater(check_component):
+def _manifest_with_refresh_token_updater(check_component, refresh_token_updater=None):
     manifest = deepcopy(_MANIFEST_WITH_CONFIG_DRIVEN_PATH)
     manifest["check"] = check_component
-    manifest["streams"][0]["retriever"]["requester"]["authenticator"] = deepcopy(
-        _OAUTH_WITH_REFRESH_TOKEN_UPDATER
-    )
+    authenticator = deepcopy(_OAUTH_WITH_REFRESH_TOKEN_UPDATER)
+    if refresh_token_updater is not None:
+        authenticator["refresh_token_updater"] = deepcopy(refresh_token_updater)
+    manifest["streams"][0]["retriever"]["requester"]["authenticator"] = authenticator
     return manifest
 
 
-def test_given_refresh_token_updater_when_config_overrides_then_manifest_is_rejected():
+@pytest.mark.parametrize(
+    "refresh_token_updater",
+    [
+        pytest.param(
+            {"type": "RefreshTokenUpdater", "refresh_token_name": "refresh_token"}, id="populated"
+        ),
+        # Every field of `RefreshTokenUpdater` has a default, so an empty mapping is a valid way to take
+        # all of them. It builds the same single-use authenticator a populated one does, and the
+        # transformer injects no `type` into it, so it stays falsy - a truthiness test would miss it.
+        pytest.param({}, id="empty-taking-all-defaults"),
+    ],
+)
+def test_given_refresh_token_updater_when_config_overrides_then_manifest_is_rejected(
+    refresh_token_updater,
+):
     """A `refresh_token_updater` emits the whole config it was handed as a CONNECTOR_CONFIG control
     message, which the platform persists - so a check-only override would become the connection's saved
     config. The restore cannot recall a message already on stdout, so the combination is refused."""
@@ -1220,7 +1235,8 @@ def test_given_refresh_token_updater_when_config_overrides_then_manifest_is_reje
                 "type": "CheckStream",
                 "stream_names": ["items"],
                 "config_overrides": {"resource": "check-only"},
-            }
+            },
+            refresh_token_updater=refresh_token_updater,
         ),
         config=_CONFIG_DRIVEN_PATH_CONFIG,
         catalog=None,
@@ -1229,6 +1245,28 @@ def test_given_refresh_token_updater_when_config_overrides_then_manifest_is_reje
 
     with pytest.raises(ValueError, match="refresh_token_updater"):
         source.check(logger, _CONFIG_DRIVEN_PATH_CONFIG)
+
+
+def test_given_no_refresh_token_updater_when_config_overrides_then_manifest_is_accepted():
+    """The scan must not reject every OAuth manifest. The same authenticator without the updater writes
+    nothing back, so the overlay is allowed."""
+    manifest = _manifest_with_refresh_token_updater(
+        {
+            "type": "CheckStream",
+            "stream_names": ["items"],
+            "config_overrides": {"resource": "check-only"},
+        }
+    )
+    del manifest["streams"][0]["retriever"]["requester"]["authenticator"]["refresh_token_updater"]
+
+    source = ConcurrentDeclarativeSource(
+        source_config=manifest,
+        config=_CONFIG_DRIVEN_PATH_CONFIG,
+        catalog=None,
+        state=None,
+    )
+
+    assert source._manifest_writes_back_config(source._source_config) is False
 
 
 def test_given_refresh_token_updater_without_config_overrides_then_nothing_is_rejected():
