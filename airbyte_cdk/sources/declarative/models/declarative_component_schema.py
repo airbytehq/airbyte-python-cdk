@@ -581,6 +581,13 @@ class QuotaStatusSource(BaseModel):
         description="Additional headers to send with the quota status request.",
         title="Request Headers",
     )
+    unavailable_status_codes: Optional[List[int]] = Field(
+        None,
+        description="Status codes from the quota status endpoint that mean quota tracking is unavailable rather than broken, such as a self-hosted deployment with rate limiting turned off. Every pool of the token whose request returned that status is then treated as untracked, so the authenticator stops waiting for quota resets, stops throttling proactively and stops rotating on exhaustion for it, while still signing requests. A token untracked this way stays untracked for the rest of the sync, because the endpoint is never consulted for it again, so a status the endpoint can also return transiently costs quota tracking for the whole run. If only some tokens return that status the others stay tracked, but they are no longer refreshed either, because the authenticator stops waiting for quota resets as soon as one token is untracked; once their counters are locally spent all traffic moves onto the untracked tokens. Rate limiting reported by ordinary responses is still handled by the stream's error handler, so one that retries 429 or 403 keeps working, and a retry rotates onto the next token; it pays the backoff the response asks for rather than the shortened one a tracked pool would get, since an untracked pool has no counters with which to argue the rejection was about that credential. Any status not listed still fails the connection, and this field never excuses a quota path missing from a response the endpoint did answer, so list only the codes the endpoint uses to report that rate limiting is not enabled. Do not list authentication or authorization statuses, since a 401 or 403 from a revoked credential would then be read as quota tracking being unavailable rather than as a credentials failure.",
+        examples=[[404]],
+        title="Unavailable Status Codes",
+        unique_items=True,
+    )
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
 
@@ -1440,10 +1447,10 @@ class WaitTimeFromHeader(BaseModel):
         examples=["([-+]?\\d+)"],
         title="Extraction Regex",
     )
-    max_waiting_time_in_seconds: Optional[float] = Field(
+    max_waiting_time_in_seconds: Optional[Union[float, str]] = Field(
         None,
-        description="Given the value extracted from the header is greater than this value, stop the stream.",
-        examples=[3600],
+        description="Stop the stream instead of waiting, when the value extracted from the header is greater than or equal to this value. Can be a hardcoded number, or a string interpolated from the connector config so that the bound can be changed without a connector release. A value of 0 means never wait.",
+        examples=[3600, "{{ config['max_waiting_time'] * 60 }}"],
         title="Max Waiting Time in Seconds",
     )
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
@@ -1468,6 +1475,12 @@ class WaitUntilTimeFromHeader(BaseModel):
         description="Optional regex to apply on the header to extract its value. The regex should define a capture group defining the wait time.",
         examples=["([-+]?\\d+)"],
         title="Extraction Regex",
+    )
+    max_waiting_time_in_seconds: Optional[Union[float, str]] = Field(
+        None,
+        description="Stop the stream instead of waiting, when the wait this strategy computes is longer than this value. The comparison is against the computed wait rather than the raw header, since the header holds an absolute timestamp, and it is applied after `min_wait`, so a cap below the floor still wins -- including for the fallback where the header is absent and `min_wait` supplies the wait on its own. Can be a hardcoded number, or a string interpolated from the connector config so that the bound can be changed without a connector release. A value of 0 means never wait.",
+        examples=[3600, "{{ config['max_waiting_time'] * 60 }}"],
+        title="Max Waiting Time in Seconds",
     )
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
