@@ -93,6 +93,74 @@ def test_composite_raw_decoder_gzip_csv_parser(requests_mock, encoding: str):
     assert counter == 3
 
 
+@pytest.mark.parametrize("encoding", ["utf-8", "iso-8859-1"])
+def test_gzip_parser_passes_through_uncompressed_data(requests_mock, encoding: str):
+    """A GzipParser should gracefully parse data that is not gzip-compressed.
+
+    This mirrors the documented behavior: if the payload is not gzipped, the data
+    is passed to the inner parser as-is instead of raising BadGzipFile.
+    """
+    requests_mock.register_uri(
+        "GET",
+        "https://airbyte.io/",
+        content=generate_csv(encoding=encoding, delimiter="\t", should_compress=False),
+    )
+    response = requests.get("https://airbyte.io/", stream=True)
+
+    parser = GzipParser(inner_parser=CsvParser(encoding=encoding, delimiter="\\t"))
+    composite_raw_decoder = CompositeRawDecoder(parser=parser)
+
+    assert len(list(composite_raw_decoder.decode(response))) == 3
+
+
+@pytest.mark.parametrize("should_compress", [True, False])
+def test_nested_gzip_parser_tolerates_variable_gzip_layers(requests_mock, should_compress: bool):
+    """Nested GzipParser(GzipParser(CsvParser)) should handle a payload that has
+    either one or two gzip layers.
+
+    App Store Connect style responses can intermittently arrive with fewer gzip
+    layers than the decoder was configured for. The outer/inner parsers should
+    fall through to the inner parser when a layer is not actually gzipped rather
+    than raising BadGzipFile.
+    """
+    csv_bytes = generate_csv(should_compress=True)  # inner gzip layer (the report file)
+    if should_compress:
+        buf = BytesIO()
+        with gzip.GzipFile(fileobj=buf, mode="wb") as f:
+            f.write(csv_bytes)
+        content = buf.getvalue()  # second (outer) gzip layer
+    else:
+        content = csv_bytes
+
+    requests_mock.register_uri("GET", "https://airbyte.io/", content=content)
+    response = requests.get("https://airbyte.io/", stream=True)
+
+    parser = GzipParser(inner_parser=GzipParser(inner_parser=CsvParser()))
+    composite_raw_decoder = CompositeRawDecoder(parser=parser)
+
+    assert len(list(composite_raw_decoder.decode(response))) == 3
+
+
+def test_gzip_fallback_parser_handles_uncompressed_response(requests_mock):
+    """When header-based selection falls back to a GzipParser but the response is
+    not gzipped, records should still be parsed without raising BadGzipFile."""
+    requests_mock.register_uri(
+        "GET",
+        "https://airbyte.io/",
+        content="".join(generate_jsonlines()).encode("utf-8"),
+        headers={"Content-Encoding": "identity"},
+    )
+    response = requests.get("https://airbyte.io/", stream=True)
+
+    composite_raw_decoder = CompositeRawDecoder.by_headers(
+        [({"Content-Encoding"}, {"gzip"}, GzipParser(inner_parser=JsonLineParser()))],
+        stream_response=True,
+        fallback_parser=GzipParser(inner_parser=JsonLineParser()),
+    )
+
+    assert len(list(composite_raw_decoder.decode(response))) == 3
+
+
 def generate_jsonlines() -> Iterable[str]:
     """
     Generator function to yield data in JSON Lines format.
