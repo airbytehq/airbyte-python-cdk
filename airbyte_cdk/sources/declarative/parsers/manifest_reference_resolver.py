@@ -13,11 +13,9 @@ from airbyte_cdk.sources.declarative.parsers.custom_exceptions import (
 
 REF_TAG = "$ref"
 
-# Manifest fields whose values are connector config, not components. A reference is a string that
-# starts with `#/`, so without this a config value shaped like a pointer would be replaced by whatever
-# it happens to resolve to - or, if it resolves to nothing, would raise out of `__init__` and take
-# `spec`, `discover` and `read` down with it, none of which ever read the field. Their contract is that
-# values are used as-is, so the resolver leaves the subtree alone.
+# Manifest fields whose values are connector config rather than components. Any string starting with
+# `#/` is a reference, so without this a config value shaped like a pointer would be resolved - or, if
+# it resolves to nothing, would raise during preprocessing and break every command.
 _FIELDS_HOLDING_CONFIG_VALUES = frozenset({"config_overrides"})
 
 
