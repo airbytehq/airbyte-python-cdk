@@ -1,5 +1,23 @@
 # CDK Migration Guide
 
+## Upgrading to the CDK that reports HTTP cache stats
+
+Every source that makes at least one HTTP request through `HttpClient` now ends each
+`spec`/`check`/`discover`/`read` with two extra `TRACE`/`ANALYTICS` messages:
+`http-request-count` and `http-cache-hit-count`. A run that made no requests emits
+nothing, so absent still means *not measured* rather than `0`.
+
+Migration steps: connector tests that assert an exact protocol message count need
+updating. `EntrypointOutput.trace_messages` grows by two for any run that made a
+request, including runs under `HttpMocker`, which leaves `Session.send` in the call
+path. Assertions of the shape `assert len(output.trace_messages) == N` are the ones
+that break; `> 0` and stream-status filters are unaffected. Nothing else changes --
+no records, state, schemas, or exit codes.
+
+Note on the numbers themselves: `http-request-count` counts responses handled, cache
+hits included, so the figure comparable to a proxy's wire-flow count is
+`http-request-count - http-cache-hit-count`.
+
 ## Upgrading to 7.0.0
 
 [Version 7.0.0](https://github.com/airbytehq/airbyte-python-cdk/releases/tag/v7.0.0) of the CDK migrates the CDK to the Concurrent CDK by removing some of the Declarative CDK concepts that are better expressed in the Concurrent CDK or that are outright incompatible with it. This changes mostly impact the Python implementations although the concept of CustomIncrementalSync has been removed from the declarative language as well.

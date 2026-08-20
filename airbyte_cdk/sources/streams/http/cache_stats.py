@@ -13,7 +13,18 @@ snapshot into analytics messages at the end of every command.
 The counters are module-level because the thing being measured is, too: one
 `requests_cache` backend is shared by every stream of a run, and the question the
 numbers answer ("does this connector's caching work, and did this version
-regress it") is about the run rather than about any one stream or client.
+regress it") is about the run rather than about any one stream or client. Being
+process-wide, they are cumulative: a reader wanting one run's numbers takes a
+snapshot when it starts and subtracts, which is what `AirbyteEntrypoint.run` does.
+
+Scope: every `HttpClient` in the process records here, but only
+`AirbyteEntrypoint.run` reports. Destinations (`Destination.run_cmd`), the
+manifest server, and the Connector Builder drive their commands without going
+through it, so they accumulate counts nothing reads. "No counts reported" means
+"a source connector run through the entrypoint, or nothing".
+
+`http-request-count` includes cache hits, so it is responses handled rather than
+wire flows; subtract `http-cache-hit-count` to get the number a proxy would see.
 """
 
 from __future__ import annotations

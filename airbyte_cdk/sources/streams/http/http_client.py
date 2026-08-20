@@ -352,8 +352,9 @@ class HttpClient:
 
         if response is not None:
             # Counted per `_send` call, so a retried request counts once per
-            # attempt -- the same way a proxy counts wire flows, which is what
-            # makes the two numbers comparable in a regression report.
+            # attempt. Cache hits are counted here too, so this is responses
+            # handled rather than wire flows: the figure comparable to what a
+            # proxy sees is `requests - cache_hits`, not `requests`.
             HTTP_CACHE_STATS.record_response(response)
 
         error_resolution: ErrorResolution = self._error_handler.interpret_response(

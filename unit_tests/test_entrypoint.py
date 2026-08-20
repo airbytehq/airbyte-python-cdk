@@ -585,6 +585,122 @@ def test_a_run_that_made_no_requests_reports_no_counts(
     assert _analytics_values(messages) == {}
 
 
+@pytest.fixture
+def multi_run_entrypoint(mocker) -> AirbyteEntrypoint:
+    """An entrypoint that can be run more than once in a test.
+
+    The shared `entrypoint` fixture hands out a fixed list of queue reads, which a
+    test driving several commands through one process exhausts.
+    """
+    message_repository = MagicMock()
+    message_repository.consume_queue.return_value = []
+    mocker.patch.object(
+        MockSource,
+        "message_repository",
+        new_callable=mocker.PropertyMock,
+        return_value=message_repository,
+    )
+    return AirbyteEntrypoint(MockSource())
+
+
+def _read_recording(*, requests_made: int, cache_hits: int = 0):
+    """A `read` that records `requests_made` responses, `cache_hits` of them cached."""
+
+    def read(*args, **kwargs):
+        for index in range(requests_made):
+            response = requests.Response()
+            response.status_code = 200
+            if index < cache_hits:
+                response.from_cache = True  # set by requests_cache.CacheMixin
+            HTTP_CACHE_STATS.record_response(response)
+        return []
+
+    return read
+
+
+def test_a_second_run_in_the_same_process_reports_only_its_own_requests(
+    multi_run_entrypoint: AirbyteEntrypoint, mocker, spec_mock, config_mock
+):
+    """Connector suites drive the entrypoint in-process, run after run.
+
+    The counters are process-wide, so reporting the absolute snapshot would hand
+    the second run the sum of both, and make every connector's numbers depend on
+    what pytest happened to run before them.
+    """
+    parsed_args = Namespace(
+        command="read", config="config_path", state="statepath", catalog="catalogpath"
+    )
+    mocker.patch.object(MockSource, "read_state", return_value={})
+    mocker.patch.object(MockSource, "read_catalog", return_value={})
+
+    mocker.patch.object(MockSource, "read", side_effect=_read_recording(requests_made=1))
+    first = _analytics_values(list(multi_run_entrypoint.run(parsed_args)))
+
+    mocker.patch.object(
+        MockSource, "read", side_effect=_read_recording(requests_made=2, cache_hits=1)
+    )
+    second = _analytics_values(list(multi_run_entrypoint.run(parsed_args)))
+
+    assert first == {"http-request-count": "1", "http-cache-hit-count": "0"}
+    assert second == {"http-request-count": "2", "http-cache-hit-count": "1"}
+
+
+def test_a_zero_request_run_stays_silent_after_a_run_that_made_requests(
+    multi_run_entrypoint: AirbyteEntrypoint, mocker, spec_mock, config_mock
+):
+    """The "absent means not measured" contract has to survive an earlier run.
+
+    Reporting the absolute snapshot would make this run claim the previous run's
+    requests as its own, which is the one output the design says is meaningless.
+    """
+    parsed_args = Namespace(
+        command="read", config="config_path", state="statepath", catalog="catalogpath"
+    )
+    mocker.patch.object(MockSource, "read_state", return_value={})
+    mocker.patch.object(MockSource, "read_catalog", return_value={})
+
+    mocker.patch.object(MockSource, "read", side_effect=_read_recording(requests_made=1))
+    list(multi_run_entrypoint.run(parsed_args))
+
+    mocker.patch.object(MockSource, "read", side_effect=_read_recording(requests_made=0))
+    messages = list(multi_run_entrypoint.run(parsed_args))
+
+    assert _analytics_values(messages) == {}
+
+
+def test_abandoning_the_run_generator_does_not_raise(
+    multi_run_entrypoint: AirbyteEntrypoint, mocker, spec_mock, config_mock
+):
+    """`launch()` abandons this generator whenever writing to stdout breaks.
+
+    A `yield` reached while the generator is closing raises `RuntimeError:
+    generator ignored GeneratorExit`, which the interpreter prints to stderr and
+    the platform ingests as a log line on top of the real failure.
+    """
+    parsed_args = Namespace(
+        command="read", config="config_path", state="statepath", catalog="catalogpath"
+    )
+    mocker.patch.object(MockSource, "read_state", return_value={})
+    mocker.patch.object(MockSource, "read_catalog", return_value={})
+
+    def read_forever(*args, **kwargs):
+        response = requests.Response()
+        response.status_code = 200
+        HTTP_CACHE_STATS.record_response(response)
+        while True:
+            yield AirbyteMessage(
+                type=Type.RECORD,
+                record=AirbyteRecordMessage(stream="stream", data={}, emitted_at=1),
+            )
+
+    mocker.patch.object(MockSource, "read", side_effect=read_forever)
+
+    messages = multi_run_entrypoint.run(parsed_args)
+    next(messages)
+
+    messages.close()
+
+
 def test_given_message_emitted_during_config_when_read_then_emit_message_before_next_steps(
     entrypoint: AirbyteEntrypoint, mocker, spec_mock, config_mock
 ):

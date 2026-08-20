@@ -465,6 +465,8 @@ def test_that_response_was_cached(requests_mock):
 
     requests_mock.register_uri("GET", "https://google.com/", json='{"test": "response"}')
 
+    before = HTTP_CACHE_STATS.snapshot()
+
     cached_http_client._send(prepared_request, {})
 
     assert requests_mock.called
@@ -474,6 +476,14 @@ def test_that_response_was_cached(requests_mock):
 
     assert isinstance(second_response.request, CachedRequest)
     assert not requests_mock.called
+
+    # Pins the counters to the real `requests_cache` marker rather than to a
+    # hand-set attribute: `getattr(response, "from_cache", False)` cannot tell
+    # "not cached" from "upstream renamed it", so without a hit recorded through
+    # a live CachedLimiterSession the metric could read 0% forever, green.
+    after = HTTP_CACHE_STATS.snapshot()
+    assert after.requests - before.requests == 2
+    assert after.cache_hits - before.cache_hits == 1
 
 
 def test_send_counts_a_cache_hit_only_for_the_response_served_from_cache():
