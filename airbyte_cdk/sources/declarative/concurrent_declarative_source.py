@@ -217,6 +217,8 @@ class ConcurrentDeclarativeSource(Source):
             AlwaysLogSliceLogger() if emit_connector_builder_messages else DebugSliceLogger()
         )
 
+        # Populated by `_pre_process_manifest` from the check component, before parameter propagation.
+        self._check_config_overrides: Optional[Mapping[str, Any]] = None
         # resolve all components in the manifest
         self._source_config = self._pre_process_manifest(dict(source_config))
         # validate resolved manifest against the declarative component schema
@@ -280,12 +282,37 @@ class ConcurrentDeclarativeSource(Source):
         manifest = self._fix_source_type(manifest)
         # Resolve references in the manifest
         resolved_manifest = ManifestReferenceResolver().preprocess_manifest(manifest)
+        # The check component's `config_overrides` holds connector config values rather than
+        # components, so it is read here: references are resolved, so a `check` behind a `$ref` is
+        # found, but parameters have not been propagated yet, so the values are still pristine.
+        self._check_config_overrides = self._extract_check_config_overrides(resolved_manifest)
         # Propagate types and parameters throughout the manifest
         propagated_manifest = ManifestComponentTransformer().propagate_types_and_parameters(
             "", resolved_manifest, {}
         )
 
         return propagated_manifest
+
+    @staticmethod
+    def _extract_check_config_overrides(
+        resolved_manifest: Mapping[str, Any],
+    ) -> Optional[Mapping[str, Any]]:
+        """Take the check component's `config_overrides` before parameter propagation mangles it.
+
+        `ManifestComponentTransformer` injects `$parameters` and the parameters themselves into every
+        nested mapping that carries a truthy `type` key, because everywhere else in a manifest such a
+        mapping is a component. `config_overrides` values come from the connector's own spec, where
+        `type` is an ordinary field name - so an override like `credentials: {type: oauth, ...}` would
+        otherwise reach the check with stray keys in it.
+        """
+        check = resolved_manifest.get("check")
+        if not isinstance(check, Mapping):
+            return None
+        config_overrides = check.get("config_overrides")
+        if not isinstance(config_overrides, Mapping):
+            return None
+        # Deep copy so the propagation that follows, which mutates in place, cannot reach these values.
+        return deepcopy(dict(config_overrides))
 
     def _fix_source_type(self, manifest: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -612,7 +639,7 @@ class ConcurrentDeclarativeSource(Source):
                 f"Expected to generate a ConnectionChecker component, but received {connection_checker.__class__}"
             )
 
-        with self._config_overridden_for_check(check.get("config_overrides")):
+        with self._config_overridden_for_check(self._check_config_overrides):
             check_succeeded, error = connection_checker.check_connection(self, logger, self._config)
         if not check_succeeded:
             return AirbyteConnectionStatus(status=Status.FAILED, message=repr(error))

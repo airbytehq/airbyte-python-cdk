@@ -1112,6 +1112,48 @@ def test_given_config_overrides_when_check_then_values_are_not_interpolated():
         http_mocker.assert_number_of_calls(literal_request, 1)
 
 
+def test_given_object_valued_config_override_when_check_then_parameters_are_not_injected_into_it():
+    """`config_overrides` values come from the connector's spec, where `type` is an ordinary field name.
+
+    `ManifestComponentTransformer` injects the enclosing component's parameters, plus a `$parameters`
+    key, into every nested mapping carrying a truthy `type` key - everywhere else in a manifest such a
+    mapping is a component. So a check component that declares `$parameters` used to hand the checker a
+    `credentials` object with stray keys in it. The request echoes the override's keys, so the mocked
+    request matches only if the object reached the stream exactly as authored.
+    """
+    manifest = deepcopy(_MANIFEST_WITH_CONFIG_DRIVEN_PATH)
+    manifest["streams"][0]["retriever"]["requester"]["request_parameters"] = {
+        "credential_keys": "{{ config['credentials'].keys() | list | join(',') }}"
+    }
+    manifest["check"] = {
+        "type": "CheckStream",
+        "stream_names": ["items"],
+        # A no-op on a check component - `create_check_stream` passes `parameters={}` - but it is what
+        # the propagation walks with.
+        "$parameters": {"injected": "parameter"},
+        "config_overrides": {
+            "resource": "check-only",
+            "credentials": {"type": "oauth", "client_id": "client-id"},
+        },
+    }
+    source = ConcurrentDeclarativeSource(
+        source_config=manifest,
+        config=_CONFIG_DRIVEN_PATH_CONFIG,
+        catalog=None,
+        state=None,
+    )
+
+    with HttpMocker() as http_mocker:
+        pristine_request = HttpRequest(
+            url="https://api.test.com/check-only",
+            query_params={"credential_keys": "type,client_id"},
+        )
+        http_mocker.get(pristine_request, HttpResponse(body=json.dumps([{"id": 1}])))
+
+        assert source.check(logger, _CONFIG_DRIVEN_PATH_CONFIG).status == Status.SUCCEEDED
+        http_mocker.assert_number_of_calls(pristine_request, 1)
+
+
 _MANIFEST_WITH_CONFIG_DRIVEN_DYNAMIC_STREAM = {
     "version": "6.7.0",
     "type": "DeclarativeSource",
