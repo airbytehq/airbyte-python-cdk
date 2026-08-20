@@ -370,7 +370,7 @@ def test_given_refresh_token_updater_when_config_overrides_then_manifest_is_reje
 
     with pytest.raises(AirbyteTracedException, match="refresh_token_updater") as raised:
         source.check(logger, _CONFIG_DRIVEN_PATH_CONFIG)
-    assert raised.value.failure_type == FailureType.config_error
+    assert raised.value.failure_type == FailureType.system_error
 
 
 def test_given_no_refresh_token_updater_when_config_overrides_then_manifest_is_accepted():
@@ -491,7 +491,7 @@ def test_given_refresh_token_updater_behind_a_ref_then_manifest_is_rejected():
 
     with pytest.raises(AirbyteTracedException, match="refresh_token_updater") as raised:
         source.check(logger, _CONFIG_DRIVEN_PATH_CONFIG)
-    assert raised.value.failure_type == FailureType.config_error
+    assert raised.value.failure_type == FailureType.system_error
 
 
 def test_given_refresh_token_updater_without_config_overrides_then_nothing_is_rejected():
@@ -587,7 +587,7 @@ def test_given_an_airbyte_reserved_override_key_then_the_manifest_is_rejected():
 
     with pytest.raises(AirbyteTracedException, match="__airbyte_check_stream_names") as raised:
         source.check(logger, _CONFIG_DRIVEN_PATH_CONFIG)
-    assert raised.value.failure_type == FailureType.config_error
+    assert raised.value.failure_type == FailureType.system_error
 
 
 def _spec_with(properties):
@@ -601,11 +601,13 @@ def _spec_with(properties):
     }
 
 
-def test_given_a_reserved_key_when_check_through_the_entrypoint_then_a_failed_status_is_emitted():
-    """The guards exist to hand a manifest author an actionable sentence. `AirbyteEntrypoint.check`
-    catches `AirbyteTracedException` and nothing else, so a bare `ValueError` would escape `run()`, be
-    re-wrapped as a generic system error, and emit no CONNECTION_STATUS at all - throwing away the very
-    message the guard was written to deliver."""
+def test_given_a_reserved_key_when_check_through_the_entrypoint_then_a_trace_is_emitted_and_it_raises():
+    """The guards fire on a manifest authoring mistake, so they raise `system_error`, and
+    `AirbyteEntrypoint.check` treats anything other than `config_error` as exceptional: it emits the
+    TRACE and then re-raises rather than reporting a FAILED connection status. That is deliberate -- a
+    broken manifest is a connector bug and should exit non-zero, not be reported to the user as a bad
+    connection. What must not regress is the TRACE: a bare `ValueError` would escape `run()` entirely
+    and throw away the message the guard was written to deliver."""
     source = _source_with_check_component(
         {
             "type": "CheckStream",
@@ -615,18 +617,19 @@ def test_given_a_reserved_key_when_check_through_the_entrypoint_then_a_failed_st
     )
     entrypoint = AirbyteEntrypoint(source)
 
-    messages = list(
-        entrypoint.check(
+    messages = []
+    with pytest.raises(AirbyteTracedException) as raised:
+        for message in entrypoint.check(
             ConnectorSpecification(connectionSpecification={}), _CONFIG_DRIVEN_PATH_CONFIG
-        )
-    )
+        ):
+            messages.append(message)
 
-    statuses = [
-        message.connectionStatus for message in messages if message.type == Type.CONNECTION_STATUS
-    ]
-    assert len(statuses) == 1
-    assert statuses[0].status == Status.FAILED
-    assert "__airbyte_check_stream_names" in statuses[0].message
+    assert raised.value.failure_type == FailureType.system_error
+    traces = [message.trace for message in messages if message.type == Type.TRACE]
+    assert len(traces) == 1
+    assert traces[0].error.failure_type == FailureType.system_error
+    assert "__airbyte_check_stream_names" in traces[0].error.message
+    assert not [message for message in messages if message.type == Type.CONNECTION_STATUS]
 
 
 def test_given_a_config_override_shaped_like_a_reference_then_it_stays_a_literal():
@@ -793,9 +796,9 @@ def test_given_non_string_override_keys_then_the_manifest_is_rejected_cleanly():
         }
     )
 
-    with pytest.raises(AirbyteTracedException, match="must be strings") as raised:
+    with pytest.raises(AirbyteTracedException, match="are not strings") as raised:
         source.check(logger, _CONFIG_DRIVEN_PATH_CONFIG)
-    assert raised.value.failure_type == FailureType.config_error
+    assert raised.value.failure_type == FailureType.system_error
 
 
 def test_given_a_spec_composed_with_all_of_then_no_spurious_warning_is_logged(caplog):
@@ -922,4 +925,4 @@ def test_given_a_custom_authenticator_declaring_a_refresh_token_updater_then_it_
         AirbyteTracedException, match="cannot be used by a manifest that declares"
     ) as raised:
         source.check(logger, _CONFIG_DRIVEN_PATH_CONFIG)
-    assert raised.value.failure_type == FailureType.config_error
+    assert raised.value.failure_type == FailureType.system_error

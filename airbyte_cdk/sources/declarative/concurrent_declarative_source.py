@@ -680,11 +680,18 @@ class ConcurrentDeclarativeSource(Source):
         if reserved:
             raise AirbyteTracedException(
                 message=(
-                    f"`config_overrides` may not set the reserved key(s) {reserved}. Keys prefixed "
-                    "with `__airbyte` belong to the platform, not to the connector's spec."
+                    f"This connector's manifest is invalid: its check component overrides the "
+                    f"reserved config key(s) {reserved}. Keys prefixed with `__airbyte` belong to "
+                    "the platform, not to the connector's spec. This is a bug in the connector "
+                    "rather than in this connection's settings."
                 ),
-                internal_message="config_overrides rejected: reserved __airbyte key",
-                failure_type=FailureType.config_error,
+                internal_message=(
+                    f"config_overrides rejected: reserved __airbyte key(s) {reserved}. "
+                    "`CheckStream` reads `__airbyte_check_stream_names` out of the config this "
+                    "overlay writes to, so an override there would change which streams a check "
+                    "tests. Use `stream_names` instead."
+                ),
+                failure_type=FailureType.system_error,
             )
 
     @staticmethod
@@ -694,11 +701,17 @@ class ConcurrentDeclarativeSource(Source):
         if non_strings:
             raise AirbyteTracedException(
                 message=(
-                    f"`config_overrides` keys must be strings, but {sorted(map(repr, non_strings))} "
-                    "are not. Quote them in the manifest so they name a field in the connector's spec."
+                    "This connector's manifest is invalid: its check component has "
+                    f"`config_overrides` key(s) {sorted(map(repr, non_strings))} that are not "
+                    "strings, so they cannot name a field in the connector's spec. This is a bug "
+                    "in the connector rather than in this connection's settings."
                 ),
-                internal_message="config_overrides rejected: non-string key",
-                failure_type=FailureType.config_error,
+                internal_message=(
+                    "config_overrides rejected: non-string key(s) "
+                    f"{sorted(map(repr, non_strings))}. Quote them in the manifest so they name a "
+                    "field in the connector's spec."
+                ),
+                failure_type=FailureType.system_error,
             )
 
     def _raise_if_config_is_persisted(self, config_overrides: Mapping[str, Any]) -> None:
@@ -713,15 +726,19 @@ class ConcurrentDeclarativeSource(Source):
             return
         raise AirbyteTracedException(
             message=(
-                "`config_overrides` cannot be used by a manifest that declares a "
-                "`refresh_token_updater`. A token refresh during `check` emits the whole config it was "
-                "handed as a CONNECTOR_CONFIG control message, which the platform persists, so the "
-                f"check-only override(s) {sorted(config_overrides)} would be saved as this connection's "
-                "config and applied to every later sync. Remove `config_overrides`, or drop the "
+                "This connector's manifest is invalid: `config_overrides` cannot be used by a "
+                "manifest that declares a `refresh_token_updater`. A token refresh during `check` "
+                "emits the whole config it was handed as a CONNECTOR_CONFIG control message, which "
+                f"the platform persists, so the check-only override(s) {sorted(config_overrides)} "
+                "would be saved as this connection's config and applied to every later sync. This "
+                "is a bug in the connector rather than in this connection's settings."
+            ),
+            internal_message=(
+                "config_overrides rejected: manifest persists config via refresh_token_updater. "
+                "Remove `config_overrides` from the check component, or drop the "
                 "`refresh_token_updater`."
             ),
-            internal_message="config_overrides rejected: manifest persists config via refresh_token_updater",
-            failure_type=FailureType.config_error,
+            failure_type=FailureType.system_error,
         )
 
     @staticmethod
