@@ -152,9 +152,6 @@ class ConcurrentDeclarativeSource(Source):
         {"OAuthAuthenticator", "CustomAuthenticator"}
     )
 
-    # Manifest fields whose values are connector config rather than components.
-    _FIELDS_HOLDING_CONFIG_VALUES = frozenset({"config_overrides"})
-
     def __init__(
         self,
         catalog: Optional[ConfiguredAirbyteCatalog] = None,

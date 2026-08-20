@@ -4,39 +4,22 @@
 
 import json
 import logging
-import pkgutil
 from copy import deepcopy
 from typing import Any, Iterable, Mapping, Optional
 from unittest.mock import MagicMock
 
 import pytest
 import requests
-import yaml
 from jsonschema.exceptions import ValidationError
 
-from airbyte_cdk.entrypoint import AirbyteEntrypoint
-from airbyte_cdk.models import (
-    AirbyteConnectionStatus,
-    AirbyteMessage,
-    ConnectorSpecification,
-    FailureType,
-    Status,
-    Type,
-)
+from airbyte_cdk.models import Status
 from airbyte_cdk.sources.declarative.checks.check_stream import CheckStream
 from airbyte_cdk.sources.declarative.concurrent_declarative_source import (
     ConcurrentDeclarativeSource,
 )
-from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
-    CheckDynamicStream as CheckDynamicStreamModel,
-)
-from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
-    CheckStream as CheckStreamModel,
-)
 from airbyte_cdk.sources.streams.core import Stream
 from airbyte_cdk.sources.streams.http import HttpStream
 from airbyte_cdk.test.mock_http import HttpMocker, HttpRequest, HttpResponse
-from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 
 logger = logging.getLogger("test")
 config = dict()
