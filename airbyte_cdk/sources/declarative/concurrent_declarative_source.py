@@ -715,9 +715,22 @@ class ConcurrentDeclarativeSource(Source):
             "applied to every later sync. Remove `config_overrides`, or drop the `refresh_token_updater`."
         )
 
+    # Subtrees of a manifest that hold data rather than components, so a `refresh_token_updater` key
+    # found inside one is a name collision and not an authenticator. Neither key is declared on any
+    # component that could contain an authenticator: `spec` exists only at the top level of a manifest,
+    # and `config_overrides` only on `CheckStream` and `CheckDynamicStream`.
+    _NON_COMPONENT_MANIFEST_KEYS = frozenset({"spec", "config_overrides"})
+
     @staticmethod
     def _manifest_writes_back_config(definition: Any) -> bool:
         """Whether any component in the manifest emits the connector config back to the platform.
+
+        The scan is deliberately coarse - it looks for the key anywhere rather than only under a
+        recognised authenticator - because it runs on the raw manifest, before references are resolved.
+        An authenticator reached through a `$ref` is only found because the walk also visits
+        `definitions`, where it lives under its own key rather than under a requester. The two subtrees
+        in `_NON_COMPONENT_MANIFEST_KEYS` are the exception: they hold config values, so a matching key
+        there means a connector whose spec happens to declare a field by that name, not a token refresh.
 
         Tested with `is not None` rather than for truthiness, to match the factory. Every field of
         `RefreshTokenUpdater` has a default, so `refresh_token_updater: {}` is a valid way to take all of
@@ -730,7 +743,8 @@ class ConcurrentDeclarativeSource(Source):
                 return True
             return any(
                 ConcurrentDeclarativeSource._manifest_writes_back_config(value)
-                for value in definition.values()
+                for key, value in definition.items()
+                if key not in ConcurrentDeclarativeSource._NON_COMPONENT_MANIFEST_KEYS
             )
         if isinstance(definition, list):
             return any(

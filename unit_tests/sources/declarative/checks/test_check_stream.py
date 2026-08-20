@@ -1269,6 +1269,93 @@ def test_given_no_refresh_token_updater_when_config_overrides_then_manifest_is_a
     assert source._manifest_writes_back_config(source._source_config) is False
 
 
+def test_given_spec_property_named_refresh_token_updater_then_overrides_are_allowed():
+    """The scan walks the raw manifest looking for the key anywhere, because an authenticator reached
+    through a `$ref` is only found under `definitions`. A connector whose spec happens to declare a
+    config field by that name must not be caught by that net - nothing in `spec` is a component."""
+    manifest = deepcopy(_MANIFEST_WITH_CONFIG_DRIVEN_PATH)
+    manifest["check"] = {
+        "type": "CheckStream",
+        "stream_names": ["items"],
+        "config_overrides": {"resource": "check-only"},
+    }
+    manifest["spec"] = {
+        "type": "Spec",
+        "connection_specification": {
+            "$schema": "http://json-schema.org/draft-07/schema#",
+            "type": "object",
+            "properties": {
+                "resource": {"type": "string"},
+                "refresh_token_updater": {"type": "string"},
+            },
+        },
+    }
+
+    source = ConcurrentDeclarativeSource(
+        source_config=manifest,
+        config=_CONFIG_DRIVEN_PATH_CONFIG,
+        catalog=None,
+        state=None,
+    )
+
+    assert source._manifest_writes_back_config(source._source_config) is False
+
+    with HttpMocker() as http_mocker:
+        overridden_request = HttpRequest(url="https://api.test.com/check-only")
+        http_mocker.get(overridden_request, HttpResponse(body=json.dumps([{"id": 1}])))
+
+        assert source.check(logger, _CONFIG_DRIVEN_PATH_CONFIG).status == Status.SUCCEEDED
+
+
+def test_given_override_of_a_field_named_refresh_token_updater_then_it_is_allowed():
+    """`config_overrides` holds config values, not components, so a key that collides with the
+    authenticator field name is just a config field and must not trip the guard."""
+    manifest = deepcopy(_MANIFEST_WITH_CONFIG_DRIVEN_PATH)
+    manifest["check"] = {
+        "type": "CheckStream",
+        "stream_names": ["items"],
+        "config_overrides": {"resource": "check-only", "refresh_token_updater": "check-only"},
+    }
+
+    source = ConcurrentDeclarativeSource(
+        source_config=manifest,
+        config=_CONFIG_DRIVEN_PATH_CONFIG,
+        catalog=None,
+        state=None,
+    )
+
+    assert source._manifest_writes_back_config(source._source_config) is False
+
+
+def test_given_refresh_token_updater_behind_a_ref_then_manifest_is_rejected():
+    """The coarse walk is what makes a `$ref`-ed authenticator detectable at all: the raw manifest holds
+    only the reference, and the authenticator itself sits under `definitions`. Narrowing the walk must
+    not lose that."""
+    manifest = _manifest_with_refresh_token_updater(
+        {
+            "type": "CheckStream",
+            "stream_names": ["items"],
+            "config_overrides": {"resource": "check-only"},
+        }
+    )
+    manifest["definitions"] = {
+        "authenticator": manifest["streams"][0]["retriever"]["requester"]["authenticator"]
+    }
+    manifest["streams"][0]["retriever"]["requester"]["authenticator"] = {
+        "$ref": "#/definitions/authenticator"
+    }
+
+    source = ConcurrentDeclarativeSource(
+        source_config=manifest,
+        config=_CONFIG_DRIVEN_PATH_CONFIG,
+        catalog=None,
+        state=None,
+    )
+
+    with pytest.raises(ValueError, match="refresh_token_updater"):
+        source.check(logger, _CONFIG_DRIVEN_PATH_CONFIG)
+
+
 def test_given_refresh_token_updater_without_config_overrides_then_nothing_is_rejected():
     """The rejection is scoped to the feature. A manifest that does not use `config_overrides` keeps
     working with a `refresh_token_updater` exactly as before, even though the manifest scan detects it."""
