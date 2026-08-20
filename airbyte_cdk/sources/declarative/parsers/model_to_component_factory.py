@@ -4343,9 +4343,7 @@ class ModelToComponentFactory:
             parameters=model.parameters or {},
             config=config,
             regex=model.regex,
-            max_waiting_time_in_seconds=model.max_waiting_time_in_seconds
-            if model.max_waiting_time_in_seconds is not None
-            else None,
+            max_waiting_time_in_seconds=model.max_waiting_time_in_seconds,
         )
 
     @staticmethod
@@ -4358,6 +4356,7 @@ class ModelToComponentFactory:
             config=config,
             min_wait=model.min_wait,
             regex=model.regex,
+            max_waiting_time_in_seconds=model.max_waiting_time_in_seconds,
         )
 
     def get_message_repository(self) -> MessageRepository:
