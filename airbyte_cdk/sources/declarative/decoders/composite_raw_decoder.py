@@ -34,6 +34,7 @@ class _PrefixedStream(io.RawIOBase):
     """Restore consumed header bytes ahead of the remaining stream."""
 
     def __init__(self, prefix: bytes, stream: BufferedIOBase) -> None:
+        super().__init__()
         self._prefix = prefix
         self._stream = stream
 
