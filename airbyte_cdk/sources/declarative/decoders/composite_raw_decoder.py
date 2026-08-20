@@ -31,6 +31,8 @@ logger = logging.getLogger("airbyte")
 
 
 class _PrefixedStream(io.RawIOBase):
+    """Restore consumed header bytes ahead of the remaining stream."""
+
     def __init__(self, prefix: bytes, stream: BufferedIOBase) -> None:
         self._prefix = prefix
         self._stream = stream
@@ -69,7 +71,12 @@ class GzipParser(Parser):
         Yields:
             Records parsed by the inner parser.
         """
-        prefix = data.read(2)
+        prefix = b""
+        while len(prefix) < 2:
+            chunk = data.read(2 - len(prefix))
+            if not chunk:
+                break
+            prefix += chunk
         prefixed_data = io.BufferedReader(_PrefixedStream(prefix, data))
 
         if prefix == b"\x1f\x8b":

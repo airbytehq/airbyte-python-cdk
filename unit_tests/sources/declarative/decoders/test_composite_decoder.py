@@ -78,12 +78,27 @@ class NonSeekableBytesIO(BytesIO):
         return False
 
 
+class OneByteAtATimeBytesIO(BytesIO):
+    def read(self, size: int = -1) -> bytes:
+        if size > 0:
+            size = 1
+        return super().read(size)
+
+
 def test_gzip_parser_decompresses_gzip_payload():
     parser = GzipParser(inner_parser=CsvParser())
 
     assert list(parser.parse(BytesIO(compress_with_gzip("date,units\n2026-08-01,42\n")))) == [
         {"date": "2026-08-01", "units": "42"}
     ]
+
+
+def test_gzip_parser_handles_short_reads():
+    parser = GzipParser(inner_parser=CsvParser())
+
+    assert list(
+        parser.parse(OneByteAtATimeBytesIO(compress_with_gzip("date,units\n2026-08-01,42\n")))
+    ) == [{"date": "2026-08-01", "units": "42"}]
 
 
 @pytest.mark.parametrize("stream_class", [BytesIO, NonSeekableBytesIO])
