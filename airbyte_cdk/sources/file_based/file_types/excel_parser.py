@@ -118,9 +118,9 @@ class ExcelParser(FileTypeParser):
                 # DataFrame.to_dict() method returns datetime values in pandas.Timestamp values, which are not serializable by orjson
                 # DataFrame.to_json() returns string with datetime values serialized to iso8601 with microseconds to align with pydantic behavior
                 # see PR description: https://github.com/airbytehq/airbyte/pull/44444/
-                yield from orjson.loads(
-                    df.to_json(orient="records", date_format="iso", date_unit="us")
-                )
+                for index, row in df.iterrows():
+                    # Convert each row (as a Series) to a JSON string
+                    yield orjson.loads(row.to_json(date_format="iso", date_unit="us"))
 
         except Exception as exc:
             # Raise a RecordParseError if any exception occurs during parsing
