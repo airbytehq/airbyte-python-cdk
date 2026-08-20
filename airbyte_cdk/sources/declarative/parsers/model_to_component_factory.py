@@ -646,6 +646,7 @@ from airbyte_cdk.sources.message import (
     NoopMessageRepository,
 )
 from airbyte_cdk.sources.message.repository import StateFilteringMessageRepository
+from airbyte_cdk.sources.streams import NO_CURSOR_STATE_KEY
 from airbyte_cdk.sources.streams.call_rate import (
     APIBudget,
     FixedWindowCallRatePolicy,
@@ -4235,6 +4236,14 @@ class ModelToComponentFactory:
         self, model: ParentStreamConfigModel, config: Config, *, stream_name: str, **kwargs: Any
     ) -> Any:
         child_state = self._connector_state_manager.get_stream_state(stream_name, None)
+        if NO_CURSOR_STATE_KEY in child_state:
+            # Full refresh streams checkpoint a `{NO_CURSOR_STATE_KEY: true}` sentinel. When such a
+            # stream is later converted to incremental with an incremental_dependency parent,
+            # `_instantiate_parent_stream_state_manager` would treat the sentinel's boolean as a legacy
+            # cursor value and re-key it under the parent's cursor field, crashing cursor initialization.
+            child_state = {
+                key: value for key, value in child_state.items() if key != NO_CURSOR_STATE_KEY
+            }
 
         parent_state: Optional[Mapping[str, Any]] = (
             child_state if model.incremental_dependency and child_state else None
@@ -4338,9 +4347,7 @@ class ModelToComponentFactory:
             parameters=model.parameters or {},
             config=config,
             regex=model.regex,
-            max_waiting_time_in_seconds=model.max_waiting_time_in_seconds
-            if model.max_waiting_time_in_seconds is not None
-            else None,
+            max_waiting_time_in_seconds=model.max_waiting_time_in_seconds,
         )
 
     @staticmethod
@@ -4353,6 +4360,7 @@ class ModelToComponentFactory:
             config=config,
             min_wait=model.min_wait,
             regex=model.regex,
+            max_waiting_time_in_seconds=model.max_waiting_time_in_seconds,
         )
 
     def get_message_repository(self) -> MessageRepository:
@@ -4667,7 +4675,7 @@ class ModelToComponentFactory:
                 "remaining_header": quota_model.remaining_header,
                 "reset_header": quota_model.reset_header,
                 "limit_header": quota_model.limit_header,
-                # Normalized the same way as the runtime TokenQuota below, so an omitted field
+                # Normalize the same way as the runtime TokenQuota below, so an omitted field
                 # and an explicit `[]` key identically and keep sharing one set of counters.
                 "exhaustion_status_codes": quota_model.exhaustion_status_codes or [],
                 "matchers": [
@@ -4697,6 +4705,13 @@ class ModelToComponentFactory:
             key: str(InterpolatedString.create(value, parameters={}).eval(config))
             for key, value in (model.quota_status_source.request_headers or {}).items()
         }
+        # Normalize the same way as the quota specs above, so an omitted field and an explicit
+        # `[]` key identically and keep sharing one set of counters. Deduplicated as well as
+        # sorted, because the runtime turns this into a set: without it `[404]` and `[404, 404]`
+        # would key differently and stop sharing counters while behaving identically.
+        quota_status_unavailable_status_codes = sorted(
+            set(model.quota_status_source.unavailable_status_codes or [])
+        )
         auth_method = model.auth_method or "Bearer"
         header = model.header or "Authorization"
         max_wait_time_str = str(
@@ -4727,6 +4742,7 @@ class ModelToComponentFactory:
                 "quota_status_url": quota_status_url,
                 "quota_status_http_method": quota_status_http_method,
                 "quota_status_headers": quota_status_headers,
+                "quota_status_unavailable_status_codes": quota_status_unavailable_status_codes,
                 "auth_method": auth_method,
                 "header": header,
                 "max_wait_time": max_wait_time.total_seconds(),
@@ -4762,6 +4778,7 @@ class ModelToComponentFactory:
             quota_status_url=quota_status_url,
             quota_status_http_method=quota_status_http_method,
             quota_status_headers=quota_status_headers,
+            quota_status_unavailable_status_codes=quota_status_unavailable_status_codes,
             auth_method=auth_method,
             header=header,
             max_wait_time=max_wait_time,
