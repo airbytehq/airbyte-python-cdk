@@ -3,6 +3,7 @@
 import json
 import logging
 import pkgutil
+from contextlib import contextmanager
 from copy import deepcopy
 from dataclasses import dataclass, field
 from queue import Queue
@@ -101,6 +102,7 @@ from airbyte_cdk.sources.utils.slice_logger import (
     DebugSliceLogger,
     SliceLogger,
 )
+from airbyte_cdk.utils.airbyte_secrets_utils import add_to_secrets, get_secrets
 from airbyte_cdk.utils.stream_status_utils import as_airbyte_message
 from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 
@@ -142,6 +144,13 @@ class ConcurrentDeclarativeSource(Source):
     # By default, we defer to a value of 2. A value lower than could cause a PartitionEnqueuer to be stuck in a state of deadlock
     # because it has hit the limit of futures but not partition reader is consuming them.
     _LOWEST_SAFE_CONCURRENCY_LEVEL = 2
+
+    # Component types that hold the connector config and can write it back. `refresh_token_updater` is
+    # declared on `OAuthAuthenticator` alone; `CustomAuthenticator` is the type the transformer injects
+    # for a `class_name` component.
+    _CONFIG_PERSISTING_AUTHENTICATOR_TYPES = frozenset(
+        {"OAuthAuthenticator", "CustomAuthenticator"}
+    )
 
     def __init__(
         self,
@@ -228,6 +237,10 @@ class ConcurrentDeclarativeSource(Source):
             self._constructor.create_component(SpecModel, spec, dict()) if spec else None
         )
         self._config = self._migrate_and_transform_config(config_path, config) or {}
+        # `check` may temporarily overlay values onto `self._config` (see
+        # `_config_overridden_for_check`). The manifest's `config_validations` express intent about the
+        # config as supplied, so they must run against it rather than against a check-time overlay.
+        self._config_for_validation = self._config
 
         concurrency_level_from_manifest = self._source_config.get("concurrency_level")
         if concurrency_level_from_manifest:
@@ -413,7 +426,7 @@ class ConcurrentDeclarativeSource(Source):
         """
 
         if self._spec_component:
-            self._spec_component.validate_config(self._config)
+            self._spec_component.validate_config(self._config_for_validation)
 
         api_budget_model = self._source_config.get("api_budget")
         if api_budget_model:
@@ -607,10 +620,218 @@ class ConcurrentDeclarativeSource(Source):
                 f"Expected to generate a ConnectionChecker component, but received {connection_checker.__class__}"
             )
 
-        check_succeeded, error = connection_checker.check_connection(self, logger, self._config)
+        with self._config_overridden_for_check(check.get("config_overrides")):
+            check_succeeded, error = connection_checker.check_connection(self, logger, self._config)
         if not check_succeeded:
             return AirbyteConnectionStatus(status=Status.FAILED, message=repr(error))
         return AirbyteConnectionStatus(status=Status.SUCCEEDED)
+
+    @contextmanager
+    def _config_overridden_for_check(
+        self, config_overrides: Optional[Mapping[str, Any]]
+    ) -> Iterator[None]:
+        """Overlay the check component's `config_overrides` onto the config for the duration of a check.
+
+        Rebinding `self._config` reaches the whole component tree, because `streams()` interpolates from
+        it and ignores its own `config` argument. Not thread safe; `check` is one command per process.
+
+        Semantics:
+          - values are applied verbatim, never interpolated;
+          - the merge is one level deep, so an object-valued override replaces rather than merges;
+          - it happens after `_migrate_and_transform_config`, so derived fields are not recomputed;
+          - `config_validations` run against `self._config_for_validation`, not the overlay.
+
+        The copy is shallow, so a component writing into a nested path writes through to the config the
+        source was constructed with and the restore does not undo it. Only top-level writes are
+        discarded, which is why `_raise_if_config_is_persisted` refuses config-persisting manifests.
+
+        Known limitation: `$parameters` declared on a check component still propagate into object-valued
+        overrides. See https://github.com/airbytehq/airbyte-internal-issues/issues/16995.
+        """
+        if not config_overrides:
+            yield
+            return
+
+        self._raise_on_non_string_override_keys(config_overrides)
+        self._raise_on_reserved_override_keys(config_overrides)
+        self._raise_if_config_is_persisted(config_overrides)
+        self._warn_on_unknown_override_keys(config_overrides)
+        self._register_override_secrets(config_overrides)
+        # Keys only. An override may name a secret field, so values must not reach the logs.
+        self.logger.info(
+            f"Overriding config keys for the check operation: {', '.join(sorted(config_overrides))}"
+        )
+
+        unmodified_config = self._config
+        self._config = {**self._config, **config_overrides}
+        try:
+            yield
+        finally:
+            self._config = unmodified_config
+
+    @staticmethod
+    def _raise_on_reserved_override_keys(config_overrides: Mapping[str, Any]) -> None:
+        """Refuse keys in the platform's reserved `__airbyte` namespace.
+
+        `CheckStream` reads `__airbyte_check_stream_names` out of the config this overlay writes to, so
+        an override there would change which streams a check tests. The whole prefix is refused.
+        """
+        reserved = sorted(key for key in config_overrides if key.startswith("__airbyte"))
+        if reserved:
+            raise AirbyteTracedException(
+                message=(
+                    f"This connector's manifest is invalid: its check component overrides the "
+                    f"reserved config key(s) {reserved}. Keys prefixed with `__airbyte` belong to "
+                    "the platform, not to the connector's spec. This is a bug in the connector "
+                    "rather than in this connection's settings."
+                ),
+                internal_message=(
+                    f"config_overrides rejected: reserved __airbyte key(s) {reserved}. "
+                    "`CheckStream` reads `__airbyte_check_stream_names` out of the config this "
+                    "overlay writes to, so an override there would change which streams a check "
+                    "tests. Use `stream_names` instead."
+                ),
+                failure_type=FailureType.system_error,
+            )
+
+    @staticmethod
+    def _raise_on_non_string_override_keys(config_overrides: Mapping[str, Any]) -> None:
+        """Reject non-string keys, which YAML allows and every consumer below assumes away."""
+        non_strings = [key for key in config_overrides if not isinstance(key, str)]
+        if non_strings:
+            raise AirbyteTracedException(
+                message=(
+                    "This connector's manifest is invalid: its check component has "
+                    f"`config_overrides` key(s) {sorted(map(repr, non_strings))} that are not "
+                    "strings, so they cannot name a field in the connector's spec. This is a bug "
+                    "in the connector rather than in this connection's settings."
+                ),
+                internal_message=(
+                    "config_overrides rejected: non-string key(s) "
+                    f"{sorted(map(repr, non_strings))}. Quote them in the manifest so they name a "
+                    "field in the connector's spec."
+                ),
+                failure_type=FailureType.system_error,
+            )
+
+    def _raise_if_config_is_persisted(self, config_overrides: Mapping[str, Any]) -> None:
+        """Reject `config_overrides` on a manifest whose authenticator writes the config back.
+
+        A `refresh_token_updater` builds a `DeclarativeSingleUseRefreshTokenOauth2Authenticator`, whose
+        `_emit_control_message` emits the entire config it was handed as a `CONNECTOR_CONFIG` message.
+        During a check that is the overlay, and the platform persists it, so a check-only override would
+        become the connection's saved config. The restore cannot recall a message already on stdout.
+        """
+        if not self._manifest_writes_back_config(self._source_config):
+            return
+        raise AirbyteTracedException(
+            message=(
+                "This connector's manifest is invalid: `config_overrides` cannot be used by a "
+                "manifest that declares a `refresh_token_updater`. A token refresh during `check` "
+                "emits the whole config it was handed as a CONNECTOR_CONFIG control message, which "
+                f"the platform persists, so the check-only override(s) {sorted(config_overrides)} "
+                "would be saved as this connection's config and applied to every later sync. This "
+                "is a bug in the connector rather than in this connection's settings."
+            ),
+            internal_message=(
+                "config_overrides rejected: manifest persists config via refresh_token_updater. "
+                "Remove `config_overrides` from the check component, or drop the "
+                "`refresh_token_updater`."
+            ),
+            failure_type=FailureType.system_error,
+        )
+
+    @staticmethod
+    def _manifest_writes_back_config(definition: Any) -> bool:
+        """Whether any component in the manifest emits the connector config back to the platform.
+
+        Walks the whole manifest, since an authenticator can sit under any requester, inside a
+        `SelectiveAuthenticator`, or in a `ConditionalStreams` branch. Callers pass `self._source_config`,
+        which is post-`_pre_process_manifest`, so a `$ref`-ed authenticator is already inlined and
+        carries its own `type`.
+
+        `is not None` rather than truthiness because `refresh_token_updater: {}` takes every default and
+        still builds a single-use authenticator - the factory tests a model instance, which is truthy.
+        The type condition is what separates a component from a data blob that happens to use the name.
+
+        Does not detect a `CustomAuthenticator` that persists config without declaring the field.
+        """
+        if isinstance(definition, Mapping):
+            if (
+                definition.get("refresh_token_updater") is not None
+                and definition.get("type")
+                in ConcurrentDeclarativeSource._CONFIG_PERSISTING_AUTHENTICATOR_TYPES
+            ):
+                return True
+            return any(
+                ConcurrentDeclarativeSource._manifest_writes_back_config(value)
+                for value in definition.values()
+            )
+        if isinstance(definition, list):
+            return any(
+                ConcurrentDeclarativeSource._manifest_writes_back_config(item)
+                for item in definition
+            )
+        return False
+
+    def _warn_on_unknown_override_keys(self, config_overrides: Mapping[str, Any]) -> None:
+        """Warn about override keys the spec does not declare.
+
+        Nothing validates the overlay - the entrypoint validates what the user supplied, and
+        `config_validations` run against `self._config_for_validation` - so a typo is a silent no-op.
+        """
+        if not self._spec_component:
+            return
+        declared = self._declared_config_properties(self._spec_component.connection_specification)
+        if declared is None:
+            return
+        unknown = sorted(key for key in config_overrides if key not in declared)
+        if unknown:
+            self.logger.warning(
+                f"Check-only config override(s) {unknown} are not declared in the connector spec, so "
+                "they will have no effect on any component that reads the config by field name."
+            )
+
+    @staticmethod
+    def _declared_config_properties(
+        connection_specification: Mapping[str, Any],
+    ) -> Optional[Set[str]]:
+        """Every field name a spec declares, or `None` when it does not enumerate them.
+
+        `oneOf` and `allOf` composition put declarations one level down, so reading only the top-level
+        `properties` would report a declared field as undeclared.
+        """
+        if not isinstance(connection_specification, Mapping):
+            return None
+
+        names: Set[str] = set()
+        found_any = False
+        properties = connection_specification.get("properties")
+        if isinstance(properties, Mapping):
+            found_any = True
+            names.update(str(key) for key in properties)
+        for keyword in ("allOf", "anyOf", "oneOf"):
+            for branch in connection_specification.get(keyword) or []:
+                nested = ConcurrentDeclarativeSource._declared_config_properties(branch)
+                if nested is not None:
+                    found_any = True
+                    names.update(nested)
+        return names if found_any else None
+
+    def _register_override_secrets(self, config_overrides: Mapping[str, Any]) -> None:
+        """Register override values landing on an `airbyte_secret` field, so they get redacted.
+
+        The entrypoint builds the secret list from the config the user supplied, so a value substituted
+        here is unknown to `filter_secrets`. Uses the same discovery as the entrypoint, so the overlay is
+        redacted exactly where the user's own value at that path would be.
+        """
+        if not self._spec_component:
+            return
+        for secret in get_secrets(
+            self._spec_component.connection_specification, dict(config_overrides)
+        ):
+            if secret is not None:
+                add_to_secrets(str(secret))
 
     @property
     def dynamic_streams(self) -> List[Dict[str, Any]]:
