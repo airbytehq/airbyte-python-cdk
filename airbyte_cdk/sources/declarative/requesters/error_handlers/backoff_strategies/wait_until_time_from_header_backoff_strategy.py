@@ -36,7 +36,9 @@ class WaitUntilTimeFromHeaderBackoffStrategy(BackoffStrategy):
         min_wait (Optional[Union[float, InterpolatedString, str]]): minimum time to wait for safety
         regex (Optional[str]): optional regex to apply on the header to extract its value
         max_waiting_time_in_seconds (Optional[Union[float, InterpolatedString, str]]): stop the stream
-            rather than wait longer than this
+            rather than wait longer than this. Only governs waits that are actually taken: when
+            the authenticator holds another credential with quota, `HttpClient` rotates onto it
+            instead of asking this strategy for a wait, and the bound does not apply.
     """
 
     header: Union[InterpolatedString, str]
