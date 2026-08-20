@@ -594,16 +594,31 @@ class HttpClient:
             # raising (`max_waiting_time_in_seconds`), which would otherwise end the stream
             # before rotation was ever considered. Rotating is strictly the better outcome
             # there: it is the same retry, seconds from now, on a credential with quota.
+            #
+            # Two consequences of not calling the strategies, both deliberate. A rate limit
+            # that yields no backoff at all now rotates too, rather than falling through to
+            # the default exponential retry -- on a rotating credential that is the better
+            # behaviour, and `has_alternative_token` only answers True when the sending
+            # credential is tracked and spent. And a `max_waiting_time_in_seconds` the manifest
+            # got wrong -- one that cannot be evaluated -- is no longer reported here, since
+            # that error is raised from inside the strategy; it still surfaces on the first
+            # rate limit that finds no spare credential. Resolving the cap once at construction
+            # would close that gap on every path, but it moves when `max_waiting_time_in_seconds`
+            # fails, so it belongs in its own change rather than in this reorder.
             rotate_instead_of_waiting = (
                 error_resolution.response_action == ResponseAction.RATE_LIMITED
                 and self._can_retry_on_another_token(request)
             )
 
             if rotate_instead_of_waiting:
+                # Says that a wait was skipped without the number, which is no longer computed,
+                # and names the cap explicitly: a connector that configured one gets no other
+                # signal that the retry went ahead without consulting it.
                 self._logger.info(
-                    f"Rate limited on the current credential; retrying in "
-                    f"{self.TOKEN_ROTATION_BACKOFF}s with another one instead of waiting for "
-                    f"the rate limit to reset."
+                    "Rate limited on the current credential; retrying in "
+                    f"{self.TOKEN_ROTATION_BACKOFF}s with another one instead of waiting for the "
+                    "rate limit to reset. Any configured backoff, including a wait cap, is not "
+                    "evaluated for this retry."
                 )
                 user_defined_backoff_time = self.TOKEN_ROTATION_BACKOFF
             else:

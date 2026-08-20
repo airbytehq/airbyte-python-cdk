@@ -91,6 +91,11 @@ class WaitUntilTimeFromHeaderBackoffStrategy(BackoffStrategy):
         computed difference is a duration. It is also applied after the `min_wait` floor, so a
         cap below the floor wins -- a caller asking never to wait more than N seconds means it,
         even when the floor would otherwise round the wait up past N.
+
+        Not always reached: `HttpClient` decides token rotation before it asks a strategy for a
+        wait, so on a rate limit where the authenticator has another credential with quota this
+        method does not run and the cap does not apply. Waiting is what the cap bounds, and that
+        path is not waiting.
         """
         max_waiting_time = evaluate_max_waiting_time(self._max_waiting_time_in_seconds, self.config)
         # `>=` rather than `>` to match WaitTimeFromHeader, so one field name does not mean two

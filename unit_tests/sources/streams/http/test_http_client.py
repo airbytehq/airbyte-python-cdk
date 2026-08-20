@@ -1364,6 +1364,103 @@ def test_a_refusing_strategy_still_ends_the_stream_without_a_spare_credential(re
         client.send_request(http_method="GET", url="https://example.com/", request_kwargs={})
 
 
+def test_rotation_is_preferred_over_the_real_capped_strategy(requests_mock):
+    """The stub tests above pin the client's contract — a strategy may raise. This one pins the
+    integration that actually regressed: the real `WaitUntilTimeFromHeaderBackoffStrategy` with a
+    cap it cannot honour. Without it, a change making the cap return instead of raise would leave
+    both stub tests green while the bug came back."""
+    from airbyte_cdk.sources.declarative.requesters.error_handlers.backoff_strategies import (
+        WaitUntilTimeFromHeaderBackoffStrategy,
+    )
+
+    reset = int(time.time()) + 3600
+    requests_mock.get(
+        "https://example.com/",
+        [
+            {"status_code": 429, "headers": {"X-RateLimit-Reset": str(reset)}},
+            {"status_code": 200},
+        ],
+    )
+    client = HttpClient(
+        name="test",
+        logger=logging.getLogger("test"),
+        authenticator=_SpareTokenAuthenticator(has_spare=True),
+        error_handler=HttpStatusErrorHandler(
+            logger=logging.getLogger("test"),
+            error_mapping={
+                429: ErrorResolution(
+                    response_action=ResponseAction.RATE_LIMITED,
+                    failure_type=FailureType.transient_error,
+                    error_message="rate limited",
+                )
+            },
+            max_retries=1,
+        ),
+        # A cap far below the hour the response asks for: the strategy would refuse the wait.
+        backoff_strategy=WaitUntilTimeFromHeaderBackoffStrategy(
+            header="X-RateLimit-Reset",
+            parameters={},
+            config={},
+            max_waiting_time_in_seconds=60,
+        ),
+    )
+
+    sleeps = []
+    with patch("time.sleep", side_effect=lambda seconds: sleeps.append(seconds)):
+        _, response = client.send_request(
+            http_method="GET", url="https://example.com/", request_kwargs={}
+        )
+
+    assert response.status_code == 200
+    assert max(sleeps) < 5, f"expected a prompt retry on the spare credential, slept {sleeps}"
+
+
+class _NoWaitBackoffStrategy(BackoffStrategy):
+    """Returns no wait at all, as a strategy does when the response carries no timing header."""
+
+    def __init__(self):
+        self.calls = 0
+
+    def backoff_time(self, *args, **kwargs):
+        self.calls += 1
+        return None
+
+
+def test_rotation_also_covers_a_rate_limit_with_no_computed_wait(requests_mock):
+    """Deciding rotation first widens it to rate limits that produce no backoff at all, where the
+    old order fell through to the default exponential retry. Intended — the retry goes out on a
+    credential with quota — but it is a behaviour change, so it is pinned rather than implied."""
+    requests_mock.get("https://example.com/", [{"status_code": 429}, {"status_code": 200}])
+    strategy = _NoWaitBackoffStrategy()
+    client = HttpClient(
+        name="test",
+        logger=logging.getLogger("test"),
+        authenticator=_SpareTokenAuthenticator(has_spare=True),
+        error_handler=HttpStatusErrorHandler(
+            logger=logging.getLogger("test"),
+            error_mapping={
+                429: ErrorResolution(
+                    response_action=ResponseAction.RATE_LIMITED,
+                    failure_type=FailureType.transient_error,
+                    error_message="rate limited",
+                )
+            },
+            max_retries=1,
+        ),
+        backoff_strategy=strategy,
+    )
+
+    sleeps = []
+    with patch("time.sleep", side_effect=lambda seconds: sleeps.append(seconds)):
+        _, response = client.send_request(
+            http_method="GET", url="https://example.com/", request_kwargs={}
+        )
+
+    assert response.status_code == 200
+    assert strategy.calls == 0, "the strategies are skipped entirely on the rotation path"
+    assert max(sleeps) < 5, f"expected the rotation retry, slept {sleeps}"
+
+
 def test_non_rate_limit_retry_is_not_shortened_by_a_spare_credential(requests_mock):
     """A 500 has nothing to do with credentials; its backoff must be left alone."""
     requests_mock.get("https://example.com/", [{"status_code": 500}, {"status_code": 200}])
