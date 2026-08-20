@@ -1599,6 +1599,13 @@ def test_given_an_unresolvable_reference_shaped_override_then_the_source_still_c
             "top-level schemas block",
             id="top-level-schemas",
         ),
+        pytest.param(
+            lambda manifest: manifest["check"]["config_overrides"].update(
+                {"credentials": {"type": "settings", "refresh_token_updater": "a-value"}}
+            ),
+            "object-valued override carrying both keys",
+            id="override-value-with-type-and-key",
+        ),
     ],
 )
 def test_given_the_name_appears_in_a_data_blob_then_overrides_are_still_allowed(
@@ -1775,3 +1782,36 @@ def test_config_overrides_is_published_on_both_check_components():
     assert CheckDynamicStreamModel(
         type="CheckDynamicStream", stream_count=1, config_overrides={"a": 1}
     ).config_overrides == {"a": 1}
+
+
+def test_given_a_custom_authenticator_declaring_a_refresh_token_updater_then_it_is_rejected():
+    """`refresh_token_updater` is declared on `OAuthAuthenticator` alone, so matching that type would be
+    enough for the schema as written. `CustomAuthenticator` is matched too because the transformer
+    injects that type for a `class_name` component, and custom code that declares the field is the shape
+    most likely to write the config back - the one case of custom code the manifest does name."""
+    manifest = deepcopy(_MANIFEST_WITH_CONFIG_DRIVEN_PATH)
+    manifest["check"] = {
+        "type": "CheckStream",
+        "stream_names": ["items"],
+        "config_overrides": {"resource": "check-only"},
+    }
+    manifest["streams"][0]["retriever"]["requester"]["authenticator"] = {
+        "type": "CustomAuthenticator",
+        "class_name": "unit_tests.sources.declarative.checks.test_check_stream.NotBuilt",
+        "refresh_token_updater": {},
+    }
+
+    source = ConcurrentDeclarativeSource(
+        source_config=manifest,
+        config=_CONFIG_DRIVEN_PATH_CONFIG,
+        catalog=None,
+        state=None,
+    )
+
+    # Matched on the guard's own sentence: a failure to import the custom class also mentions
+    # `refresh_token_updater`, because the message echoes the component definition.
+    with pytest.raises(
+        AirbyteTracedException, match="cannot be used by a manifest that declares"
+    ) as raised:
+        source.check(logger, _CONFIG_DRIVEN_PATH_CONFIG)
+    assert raised.value.failure_type == FailureType.config_error

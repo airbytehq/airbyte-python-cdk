@@ -748,6 +748,14 @@ class ConcurrentDeclarativeSource(Source):
             failure_type=FailureType.config_error,
         )
 
+    # Component types that can be handed the connector config and write it back. `refresh_token_updater`
+    # is declared on `OAuthAuthenticator` alone in the schema, so that would be enough on its own -
+    # `CustomAuthenticator` is here because the transformer injects that type for a `class_name`
+    # component, and custom code declaring the field in the manifest is the shape most likely to persist.
+    _CONFIG_PERSISTING_AUTHENTICATOR_TYPES = frozenset(
+        {"OAuthAuthenticator", "CustomAuthenticator"}
+    )
+
     @staticmethod
     def _manifest_writes_back_config(definition: Any) -> bool:
         """Whether any component in the manifest emits the connector config back to the platform.
@@ -764,21 +772,23 @@ class ConcurrentDeclarativeSource(Source):
             all of them - and it builds a single-use authenticator just like a populated one, because
             the factory's `if model.refresh_token_updater:` sees a model instance, which is always
             truthy. A truthiness test here would let that manifest through.
-          - a string `type` on the mapping that holds the key, which is what separates a component from
-            a data blob. `refresh_token_updater` is declared on `OAuthAuthenticator` and nowhere else,
-            the schema makes `type` required there, and the transformer injects one for a `class_name`
-            authenticator - so every real declaration has it. A record schema property, a
-            `request_body_json` entry or a `schemas` block that happens to use the same name does not,
-            and matching those would refuse a manifest that declares no authenticator at all.
+          - an authenticator `type` on the mapping that holds the key, which is what separates a
+            component from a data blob. `refresh_token_updater` is declared on `OAuthAuthenticator` and
+            nowhere else, and the schema makes `type` required there, so no real declaration is missed.
+            A record schema property, a `request_parameters` entry, a `schemas` block or an
+            object-valued `config_overrides` that happens to use the same name does not carry that
+            type, and matching those would refuse a manifest that declares no authenticator at all.
 
-        Known gap: a `CustomAuthenticator` whose `class_name` points at a class that emits a
-        CONNECTOR_CONFIG message is not detected, because nothing in the manifest names the behaviour.
+        Known gap: a `CustomAuthenticator` that emits a CONNECTOR_CONFIG message without declaring a
+        `refresh_token_updater` is not detected, because nothing in the manifest names the behaviour.
         Custom code is only permitted for a trusted manifest, so this is a documented limit rather than
         an open hole.
         """
         if isinstance(definition, Mapping):
-            if definition.get("refresh_token_updater") is not None and isinstance(
-                definition.get("type"), str
+            if (
+                definition.get("refresh_token_updater") is not None
+                and definition.get("type")
+                in ConcurrentDeclarativeSource._CONFIG_PERSISTING_AUTHENTICATOR_TYPES
             ):
                 return True
             return any(
