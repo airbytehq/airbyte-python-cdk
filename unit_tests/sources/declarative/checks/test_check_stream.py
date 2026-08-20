@@ -4,22 +4,39 @@
 
 import json
 import logging
+import pkgutil
 from copy import deepcopy
 from typing import Any, Iterable, Mapping, Optional
 from unittest.mock import MagicMock
 
 import pytest
 import requests
+import yaml
 from jsonschema.exceptions import ValidationError
 
-from airbyte_cdk.models import Status
+from airbyte_cdk.entrypoint import AirbyteEntrypoint
+from airbyte_cdk.models import (
+    AirbyteConnectionStatus,
+    AirbyteMessage,
+    ConnectorSpecification,
+    FailureType,
+    Status,
+    Type,
+)
 from airbyte_cdk.sources.declarative.checks.check_stream import CheckStream
 from airbyte_cdk.sources.declarative.concurrent_declarative_source import (
     ConcurrentDeclarativeSource,
 )
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    CheckDynamicStream as CheckDynamicStreamModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    CheckStream as CheckStreamModel,
+)
 from airbyte_cdk.sources.streams.core import Stream
 from airbyte_cdk.sources.streams.http import HttpStream
 from airbyte_cdk.test.mock_http import HttpMocker, HttpRequest, HttpResponse
+from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 
 logger = logging.getLogger("test")
 config = dict()
@@ -1243,8 +1260,9 @@ def test_given_refresh_token_updater_when_config_overrides_then_manifest_is_reje
         state=None,
     )
 
-    with pytest.raises(ValueError, match="refresh_token_updater"):
+    with pytest.raises(AirbyteTracedException, match="refresh_token_updater") as raised:
         source.check(logger, _CONFIG_DRIVEN_PATH_CONFIG)
+    assert raised.value.failure_type == FailureType.config_error
 
 
 def test_given_no_refresh_token_updater_when_config_overrides_then_manifest_is_accepted():
@@ -1267,6 +1285,11 @@ def test_given_no_refresh_token_updater_when_config_overrides_then_manifest_is_a
     )
 
     assert source._manifest_writes_back_config(source._source_config) is False
+
+    # Asserted through the overlay rather than a full check: this manifest still authenticates with
+    # OAuth, and mocking a token exchange would test the handshake rather than the guard.
+    with source._config_overridden_for_check({"resource": "check-only"}):
+        assert source._config["resource"] == "check-only"
 
 
 def test_given_spec_property_named_refresh_token_updater_then_overrides_are_allowed():
@@ -1326,6 +1349,12 @@ def test_given_override_of_a_field_named_refresh_token_updater_then_it_is_allowe
 
     assert source._manifest_writes_back_config(source._source_config) is False
 
+    with HttpMocker() as http_mocker:
+        overridden_request = HttpRequest(url="https://api.test.com/check-only")
+        http_mocker.get(overridden_request, HttpResponse(body=json.dumps([{"id": 1}])))
+
+        assert source.check(logger, _CONFIG_DRIVEN_PATH_CONFIG).status == Status.SUCCEEDED
+
 
 def test_given_refresh_token_updater_behind_a_ref_then_manifest_is_rejected():
     """The coarse walk is what makes a `$ref`-ed authenticator detectable at all: the raw manifest holds
@@ -1352,8 +1381,9 @@ def test_given_refresh_token_updater_behind_a_ref_then_manifest_is_rejected():
         state=None,
     )
 
-    with pytest.raises(ValueError, match="refresh_token_updater"):
+    with pytest.raises(AirbyteTracedException, match="refresh_token_updater") as raised:
         source.check(logger, _CONFIG_DRIVEN_PATH_CONFIG)
+    assert raised.value.failure_type == FailureType.config_error
 
 
 def test_given_refresh_token_updater_without_config_overrides_then_nothing_is_rejected():
@@ -1393,7 +1423,7 @@ def test_given_config_overrides_when_check_then_overridden_keys_are_logged_witho
         )
 
         with caplog.at_level(logging.INFO):
-            source.check(logger, _CONFIG_DRIVEN_PATH_CONFIG)
+            assert source.check(logger, _CONFIG_DRIVEN_PATH_CONFIG).status == Status.SUCCEEDED
 
     assert "Overriding config keys for the check operation: resource" in caplog.text
     assert "s3cr3t-value" not in caplog.text
@@ -1428,7 +1458,7 @@ def test_given_override_key_absent_from_the_spec_then_a_warning_is_logged(caplog
         )
 
         with caplog.at_level(logging.WARNING):
-            source.check(logger, _CONFIG_DRIVEN_PATH_CONFIG)
+            assert source.check(logger, _CONFIG_DRIVEN_PATH_CONFIG).status == Status.SUCCEEDED
 
     assert "typoed_key" in caplog.text
     assert "not declared in the connector spec" in caplog.text
@@ -1447,5 +1477,301 @@ def test_given_an_airbyte_reserved_override_key_then_the_manifest_is_rejected():
         }
     )
 
-    with pytest.raises(ValueError, match="__airbyte_check_stream_names"):
+    with pytest.raises(AirbyteTracedException, match="__airbyte_check_stream_names") as raised:
         source.check(logger, _CONFIG_DRIVEN_PATH_CONFIG)
+    assert raised.value.failure_type == FailureType.config_error
+
+
+def _spec_with(properties):
+    return {
+        "type": "Spec",
+        "connection_specification": {
+            "$schema": "http://json-schema.org/draft-07/schema#",
+            "type": "object",
+            "properties": properties,
+        },
+    }
+
+
+def test_given_a_reserved_key_when_check_through_the_entrypoint_then_a_failed_status_is_emitted():
+    """The guards exist to hand a manifest author an actionable sentence. `AirbyteEntrypoint.check`
+    catches `AirbyteTracedException` and nothing else, so a bare `ValueError` would escape `run()`, be
+    re-wrapped as a generic system error, and emit no CONNECTION_STATUS at all - throwing away the very
+    message the guard was written to deliver."""
+    source = _source_with_check_component(
+        {
+            "type": "CheckStream",
+            "stream_names": ["items"],
+            "config_overrides": {"__airbyte_check_stream_names": ["something_else"]},
+        }
+    )
+    entrypoint = AirbyteEntrypoint(source)
+
+    messages = list(
+        entrypoint.check(
+            ConnectorSpecification(connectionSpecification={}), _CONFIG_DRIVEN_PATH_CONFIG
+        )
+    )
+
+    statuses = [
+        message.connectionStatus for message in messages if message.type == Type.CONNECTION_STATUS
+    ]
+    assert len(statuses) == 1
+    assert statuses[0].status == Status.FAILED
+    assert "__airbyte_check_stream_names" in statuses[0].message
+
+
+def test_given_a_config_override_shaped_like_a_reference_then_it_stays_a_literal():
+    """`ManifestReferenceResolver` treats any string starting with `#/` as a reference, wherever it
+    appears. Override values are connector config, so the resolver has to leave them alone - otherwise a
+    config value that happens to look like a pointer is silently replaced by whatever it resolves to."""
+    manifest = deepcopy(_MANIFEST_WITH_CONFIG_DRIVEN_PATH)
+    manifest["definitions"] = {"somewhere": {"a": 1}}
+    manifest["check"] = {
+        "type": "CheckStream",
+        "stream_names": ["items"],
+        "config_overrides": {"resource": "#/definitions/somewhere"},
+    }
+    source = ConcurrentDeclarativeSource(
+        source_config=manifest,
+        config=_CONFIG_DRIVEN_PATH_CONFIG,
+        catalog=None,
+        state=None,
+    )
+
+    assert source.resolved_manifest["check"]["config_overrides"] == {
+        "resource": "#/definitions/somewhere"
+    }
+
+    with HttpMocker() as http_mocker:
+        overridden_request = HttpRequest(url="https://api.test.com/#/definitions/somewhere")
+        http_mocker.get(overridden_request, HttpResponse(body=json.dumps([{"id": 1}])))
+
+        assert source.check(logger, _CONFIG_DRIVEN_PATH_CONFIG).status == Status.SUCCEEDED
+
+
+def test_given_an_unresolvable_reference_shaped_override_then_the_source_still_constructs():
+    """The worst version of the same bug: an unresolvable pointer raises inside `_pre_process_manifest`,
+    which runs in `__init__` - so `spec`, `discover` and `read` would all die over a field only `check`
+    ever reads."""
+    manifest = deepcopy(_MANIFEST_WITH_CONFIG_DRIVEN_PATH)
+    manifest["check"] = {
+        "type": "CheckStream",
+        "stream_names": ["items"],
+        "config_overrides": {"resource": "#/nothing/here"},
+    }
+
+    source = ConcurrentDeclarativeSource(
+        source_config=manifest,
+        config=_CONFIG_DRIVEN_PATH_CONFIG,
+        catalog=None,
+        state=None,
+    )
+
+    assert [stream.name for stream in source.streams(_CONFIG_DRIVEN_PATH_CONFIG)] == ["items"]
+
+
+@pytest.mark.parametrize(
+    "mutate_manifest, description",
+    [
+        pytest.param(
+            lambda manifest: manifest["streams"][0]["schema_loader"]["schema"]["properties"].update(
+                {"refresh_token_updater": {"type": "string"}}
+            ),
+            "record schema property",
+            id="inline-schema-property",
+        ),
+        pytest.param(
+            lambda manifest: manifest["streams"][0]["retriever"]["requester"].update(
+                {"request_parameters": {"refresh_token_updater": "x"}}
+            ),
+            "request parameter name",
+            id="request-parameter-name",
+        ),
+        pytest.param(
+            lambda manifest: manifest.update(
+                {
+                    "schemas": {
+                        "items": {"properties": {"refresh_token_updater": {"type": "string"}}}
+                    }
+                }
+            ),
+            "top-level schemas block",
+            id="top-level-schemas",
+        ),
+    ],
+)
+def test_given_the_name_appears_in_a_data_blob_then_overrides_are_still_allowed(
+    mutate_manifest, description
+):
+    """The scan looks for `refresh_token_updater` anywhere, because an authenticator can sit under any
+    requester. What keeps that from catching data is the `type` on the mapping holding the key: a
+    component always has one, a record schema property or a request body entry does not. Without that
+    condition these manifests - which declare no authenticator at all - are refused with an error
+    telling the author to remove something that does not exist."""
+    manifest = deepcopy(_MANIFEST_WITH_CONFIG_DRIVEN_PATH)
+    manifest["check"] = {
+        "type": "CheckStream",
+        "stream_names": ["items"],
+        "config_overrides": {"resource": "check-only"},
+    }
+    mutate_manifest(manifest)
+
+    source = ConcurrentDeclarativeSource(
+        source_config=manifest,
+        config=_CONFIG_DRIVEN_PATH_CONFIG,
+        catalog=None,
+        state=None,
+    )
+
+    assert source._manifest_writes_back_config(source._source_config) is False
+
+    with HttpMocker() as http_mocker:
+        overridden_request = HttpRequest(
+            url="https://api.test.com/check-only",
+            query_params=manifest["streams"][0]["retriever"]["requester"].get("request_parameters"),
+        )
+        http_mocker.get(overridden_request, HttpResponse(body=json.dumps([{"id": 1}])))
+
+        assert source.check(logger, _CONFIG_DRIVEN_PATH_CONFIG).status == Status.SUCCEEDED
+
+
+def test_given_a_nested_override_then_the_object_is_replaced_rather_than_merged():
+    """The one-level merge is a documented semantic, not an accident: replacing the object wholesale is
+    what keeps "remove this nested key during check" expressible. A recursive merge would leave every
+    sibling key in place, so this asserts a sibling is gone."""
+    config = {"resource": "sync", "settings": {"mode": "sync", "sibling": "present"}}
+    manifest = deepcopy(_MANIFEST_WITH_CONFIG_DRIVEN_PATH)
+    manifest["check"] = {
+        "type": "CheckStream",
+        "stream_names": ["items"],
+        "config_overrides": {"settings": {"mode": "check-only"}},
+    }
+    manifest["streams"][0]["retriever"]["requester"]["url"] = (
+        "https://api.test.com/{{ config['settings'].get('sibling', 'dropped') }}"
+    )
+
+    source = ConcurrentDeclarativeSource(
+        source_config=manifest,
+        config=config,
+        catalog=None,
+        state=None,
+    )
+
+    with HttpMocker() as http_mocker:
+        replaced_request = HttpRequest(url="https://api.test.com/dropped")
+        http_mocker.get(replaced_request, HttpResponse(body=json.dumps([{"id": 1}])))
+
+        assert source.check(logger, config).status == Status.SUCCEEDED
+        http_mocker.assert_number_of_calls(replaced_request, 1)
+
+
+def test_given_non_string_override_keys_then_the_manifest_is_rejected_cleanly():
+    """`type: object` in the schema does not constrain key types, and YAML will happily produce an
+    integer key. Every consumer downstream treats a key as a string, so this is refused with an
+    author-facing message rather than a `TypeError` from a join."""
+    source = _source_with_check_component(
+        {
+            "type": "CheckStream",
+            "stream_names": ["items"],
+            "config_overrides": {0: "check-only"},
+        }
+    )
+
+    with pytest.raises(AirbyteTracedException, match="must be strings") as raised:
+        source.check(logger, _CONFIG_DRIVEN_PATH_CONFIG)
+    assert raised.value.failure_type == FailureType.config_error
+
+
+def test_given_a_spec_composed_with_all_of_then_no_spurious_warning_is_logged(caplog):
+    """A spec does not have to enumerate its fields at the top level. Reading only `properties` reports
+    an `allOf`-composed field as undeclared, which sends an author chasing a warning about a key that is
+    perfectly valid."""
+    manifest = deepcopy(_MANIFEST_WITH_CONFIG_DRIVEN_PATH)
+    manifest["check"] = {
+        "type": "CheckStream",
+        "stream_names": ["items"],
+        "config_overrides": {"resource": "check-only"},
+    }
+    manifest["spec"] = {
+        "type": "Spec",
+        "connection_specification": {
+            "$schema": "http://json-schema.org/draft-07/schema#",
+            "type": "object",
+            "properties": {},
+            "allOf": [{"properties": {"resource": {"type": "string"}}}],
+        },
+    }
+    source = ConcurrentDeclarativeSource(
+        source_config=manifest,
+        config=_CONFIG_DRIVEN_PATH_CONFIG,
+        catalog=None,
+        state=None,
+    )
+
+    with HttpMocker() as http_mocker:
+        http_mocker.get(
+            HttpRequest(url="https://api.test.com/check-only"),
+            HttpResponse(body=json.dumps([{"id": 1}])),
+        )
+
+        with caplog.at_level(logging.WARNING):
+            assert source.check(logger, _CONFIG_DRIVEN_PATH_CONFIG).status == Status.SUCCEEDED
+
+    assert "not declared in the connector spec" not in caplog.text
+
+
+def test_given_an_override_on_a_secret_field_then_the_value_is_registered_for_redaction():
+    """The entrypoint builds the secret list from the config the user supplied, so a value substituted
+    here is unknown to `filter_secrets` - and would print in the clear at a path where the user's own
+    value prints as `****`."""
+    from airbyte_cdk.utils.airbyte_secrets_utils import filter_secrets, update_secrets
+
+    manifest = deepcopy(_MANIFEST_WITH_CONFIG_DRIVEN_PATH)
+    manifest["check"] = {
+        "type": "CheckStream",
+        "stream_names": ["items"],
+        "config_overrides": {"resource": "check-only-secret"},
+    }
+    manifest["spec"] = _spec_with({"resource": {"type": "string", "airbyte_secret": True}})
+    source = ConcurrentDeclarativeSource(
+        source_config=manifest,
+        config=_CONFIG_DRIVEN_PATH_CONFIG,
+        catalog=None,
+        state=None,
+    )
+
+    update_secrets([])
+    try:
+        with HttpMocker() as http_mocker:
+            http_mocker.get(
+                HttpRequest(url="https://api.test.com/check-only-secret"),
+                HttpResponse(body=json.dumps([{"id": 1}])),
+            )
+
+            assert source.check(logger, _CONFIG_DRIVEN_PATH_CONFIG).status == Status.SUCCEEDED
+
+        assert filter_secrets("saw check-only-secret") == "saw ****"
+    finally:
+        update_secrets([])
+
+
+def test_config_overrides_is_published_on_both_check_components():
+    """The schema is the contract the Connector Builder and the manifest server read, and the factory
+    deliberately ignores the field - so nothing at runtime notices if it disappears from the published
+    surface."""
+    schema = yaml.safe_load(
+        pkgutil.get_data(
+            "airbyte_cdk.sources.declarative", "declarative_component_schema.yaml"
+        ).decode()
+    )
+
+    for component in ("CheckStream", "CheckDynamicStream"):
+        assert "config_overrides" in schema["definitions"][component]["properties"]
+
+    assert CheckStreamModel(
+        type="CheckStream", stream_names=["items"], config_overrides={"a": 1}
+    ).config_overrides == {"a": 1}
+    assert CheckDynamicStreamModel(
+        type="CheckDynamicStream", stream_count=1, config_overrides={"a": 1}
+    ).config_overrides == {"a": 1}

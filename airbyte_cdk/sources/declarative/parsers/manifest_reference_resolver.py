@@ -3,6 +3,7 @@
 #
 
 import re
+from copy import deepcopy
 from typing import Any, Dict, Mapping, Set, Tuple, Union
 
 from airbyte_cdk.sources.declarative.parsers.custom_exceptions import (
@@ -11,6 +12,13 @@ from airbyte_cdk.sources.declarative.parsers.custom_exceptions import (
 )
 
 REF_TAG = "$ref"
+
+# Manifest fields whose values are connector config, not components. A reference is a string that
+# starts with `#/`, so without this a config value shaped like a pointer would be replaced by whatever
+# it happens to resolve to - or, if it resolves to nothing, would raise out of `__init__` and take
+# `spec`, `discover` and `read` down with it, none of which ever read the field. Their contract is that
+# values are used as-is, so the resolver leaves the subtree alone.
+_FIELDS_HOLDING_CONFIG_VALUES = frozenset({"config_overrides"})
 
 
 class ManifestReferenceResolver:
@@ -109,7 +117,9 @@ class ManifestReferenceResolver:
     def _evaluate_node(self, node: Any, manifest: Mapping[str, Any], visited: Set[Any]) -> Any:
         if isinstance(node, dict):
             evaluated_dict = {
-                k: self._evaluate_node(v, manifest, visited)
+                k: deepcopy(v)
+                if k in _FIELDS_HOLDING_CONFIG_VALUES
+                else self._evaluate_node(v, manifest, visited)
                 for k, v in node.items()
                 if not self._is_ref_key(k)
             }

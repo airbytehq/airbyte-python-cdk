@@ -102,6 +102,7 @@ from airbyte_cdk.sources.utils.slice_logger import (
     DebugSliceLogger,
     SliceLogger,
 )
+from airbyte_cdk.utils.airbyte_secrets_utils import add_to_secrets, get_secrets
 from airbyte_cdk.utils.stream_status_utils import as_airbyte_message
 from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 
@@ -659,9 +660,11 @@ class ConcurrentDeclarativeSource(Source):
             yield
             return
 
+        self._raise_on_non_string_override_keys(config_overrides)
         self._raise_on_reserved_override_keys(config_overrides)
         self._raise_if_config_is_persisted(config_overrides)
         self._warn_on_unknown_override_keys(config_overrides)
+        self._register_override_secrets(config_overrides)
         # Keys only. An override may name a secret field, so values must not reach the logs.
         self.logger.info(
             f"Overriding config keys for the check operation: {', '.join(sorted(config_overrides))}"
@@ -685,9 +688,34 @@ class ConcurrentDeclarativeSource(Source):
         """
         reserved = sorted(key for key in config_overrides if key.startswith("__airbyte"))
         if reserved:
-            raise ValueError(
-                f"`config_overrides` may not set the reserved key(s) {reserved}. Keys prefixed with "
-                "`__airbyte` belong to the platform, not to the connector's spec."
+            raise AirbyteTracedException(
+                message=(
+                    f"`config_overrides` may not set the reserved key(s) {reserved}. Keys prefixed "
+                    "with `__airbyte` belong to the platform, not to the connector's spec."
+                ),
+                internal_message="config_overrides rejected: reserved __airbyte key",
+                failure_type=FailureType.config_error,
+            )
+
+    @staticmethod
+    def _raise_on_non_string_override_keys(config_overrides: Mapping[str, Any]) -> None:
+        """Reject non-string keys before anything downstream assumes `str`.
+
+        The schema declares `type: object` with no `propertyNames` constraint, and YAML is happy to
+        produce `config_overrides: {0: 5}`. Every consumer from here on - the reserved-prefix test, the
+        undeclared-key warning, the log line - treats a key as a string, and a config field cannot be
+        addressed by a non-string name anyway, so this is a manifest error rather than something to
+        coerce.
+        """
+        non_strings = [key for key in config_overrides if not isinstance(key, str)]
+        if non_strings:
+            raise AirbyteTracedException(
+                message=(
+                    f"`config_overrides` keys must be strings, but {sorted(map(repr, non_strings))} "
+                    "are not. Quote them in the manifest so they name a field in the connector's spec."
+                ),
+                internal_message="config_overrides rejected: non-string key",
+                failure_type=FailureType.config_error,
             )
 
     def _raise_if_config_is_persisted(self, config_overrides: Mapping[str, Any]) -> None:
@@ -707,44 +735,55 @@ class ConcurrentDeclarativeSource(Source):
         """
         if not self._manifest_writes_back_config(self._source_config):
             return
-        raise ValueError(
-            "`config_overrides` cannot be used by a manifest that declares a `refresh_token_updater`. "
-            "A token refresh during `check` emits the whole config it was handed as a CONNECTOR_CONFIG "
-            "control message, which the platform persists, so the check-only "
-            f"override(s) {sorted(config_overrides)} would be saved as this connection's config and "
-            "applied to every later sync. Remove `config_overrides`, or drop the `refresh_token_updater`."
+        raise AirbyteTracedException(
+            message=(
+                "`config_overrides` cannot be used by a manifest that declares a "
+                "`refresh_token_updater`. A token refresh during `check` emits the whole config it was "
+                "handed as a CONNECTOR_CONFIG control message, which the platform persists, so the "
+                f"check-only override(s) {sorted(config_overrides)} would be saved as this connection's "
+                "config and applied to every later sync. Remove `config_overrides`, or drop the "
+                "`refresh_token_updater`."
+            ),
+            internal_message="config_overrides rejected: manifest persists config via refresh_token_updater",
+            failure_type=FailureType.config_error,
         )
-
-    # Subtrees of a manifest that hold data rather than components, so a `refresh_token_updater` key
-    # found inside one is a name collision and not an authenticator. Neither key is declared on any
-    # component that could contain an authenticator: `spec` exists only at the top level of a manifest,
-    # and `config_overrides` only on `CheckStream` and `CheckDynamicStream`.
-    _NON_COMPONENT_MANIFEST_KEYS = frozenset({"spec", "config_overrides"})
 
     @staticmethod
     def _manifest_writes_back_config(definition: Any) -> bool:
         """Whether any component in the manifest emits the connector config back to the platform.
 
-        The scan is deliberately coarse - it looks for the key anywhere rather than only under a
-        recognised authenticator - because it runs on the raw manifest, before references are resolved.
-        An authenticator reached through a `$ref` is only found because the walk also visits
-        `definitions`, where it lives under its own key rather than under a requester. The two subtrees
-        in `_NON_COMPONENT_MANIFEST_KEYS` are the exception: they hold config values, so a matching key
-        there means a connector whose spec happens to declare a field by that name, not a token refresh.
+        The walk visits the whole manifest rather than following a known path to the authenticator,
+        because an authenticator can sit under any requester, inside a `SelectiveAuthenticator`, or in a
+        `ConditionalStreams` branch. It runs on `self._source_config`, which is the output of
+        `_pre_process_manifest` - references are already resolved and `$parameters` already propagated,
+        so a `$ref`-ed authenticator is found inlined at the requester and carries its own `type`.
 
-        Tested with `is not None` rather than for truthiness, to match the factory. Every field of
-        `RefreshTokenUpdater` has a default, so `refresh_token_updater: {}` is a valid way to take all of
-        them - and it builds a single-use authenticator just like a populated one, because the factory's
-        `if model.refresh_token_updater:` sees a model instance, which is always truthy. A truthiness test
-        here would see an empty dict and let that manifest through.
+        Two conditions, and both are needed:
+          - `is not None` rather than truthiness, to match the factory. Every field of
+            `RefreshTokenUpdater` has a default, so `refresh_token_updater: {}` is a valid way to take
+            all of them - and it builds a single-use authenticator just like a populated one, because
+            the factory's `if model.refresh_token_updater:` sees a model instance, which is always
+            truthy. A truthiness test here would let that manifest through.
+          - a string `type` on the mapping that holds the key, which is what separates a component from
+            a data blob. `refresh_token_updater` is declared on `OAuthAuthenticator` and nowhere else,
+            the schema makes `type` required there, and the transformer injects one for a `class_name`
+            authenticator - so every real declaration has it. A record schema property, a
+            `request_body_json` entry or a `schemas` block that happens to use the same name does not,
+            and matching those would refuse a manifest that declares no authenticator at all.
+
+        Known gap: a `CustomAuthenticator` whose `class_name` points at a class that emits a
+        CONNECTOR_CONFIG message is not detected, because nothing in the manifest names the behaviour.
+        Custom code is only permitted for a trusted manifest, so this is a documented limit rather than
+        an open hole.
         """
         if isinstance(definition, Mapping):
-            if definition.get("refresh_token_updater") is not None:
+            if definition.get("refresh_token_updater") is not None and isinstance(
+                definition.get("type"), str
+            ):
                 return True
             return any(
                 ConcurrentDeclarativeSource._manifest_writes_back_config(value)
-                for key, value in definition.items()
-                if key not in ConcurrentDeclarativeSource._NON_COMPONENT_MANIFEST_KEYS
+                for value in definition.values()
             )
         if isinstance(definition, list):
             return any(
@@ -763,8 +802,8 @@ class ConcurrentDeclarativeSource(Source):
         """
         if not self._spec_component:
             return
-        declared = self._spec_component.connection_specification.get("properties")
-        if not isinstance(declared, Mapping):
+        declared = self._declared_config_properties(self._spec_component.connection_specification)
+        if declared is None:
             return
         unknown = sorted(key for key in config_overrides if key not in declared)
         if unknown:
@@ -772,6 +811,51 @@ class ConcurrentDeclarativeSource(Source):
                 f"Check-only config override(s) {unknown} are not declared in the connector spec, so "
                 "they will have no effect on any component that reads the config by field name."
             )
+
+    @staticmethod
+    def _declared_config_properties(
+        connection_specification: Mapping[str, Any],
+    ) -> Optional[Set[str]]:
+        """Every field name a spec declares, or `None` when the spec does not enumerate them.
+
+        A spec is not always a flat `properties` object. `oneOf` credentials blocks and `allOf`
+        composition both put declarations one level down, and reading only the top level reports a
+        declared field as undeclared - which sends an author chasing a warning about a key that is
+        fine. `None` means "cannot tell", and the caller stays quiet rather than guessing.
+        """
+        if not isinstance(connection_specification, Mapping):
+            return None
+
+        names: Set[str] = set()
+        found_any = False
+        properties = connection_specification.get("properties")
+        if isinstance(properties, Mapping):
+            found_any = True
+            names.update(str(key) for key in properties)
+        for keyword in ("allOf", "anyOf", "oneOf"):
+            for branch in connection_specification.get(keyword) or []:
+                nested = ConcurrentDeclarativeSource._declared_config_properties(branch)
+                if nested is not None:
+                    found_any = True
+                    names.update(nested)
+        return names if found_any else None
+
+    def _register_override_secrets(self, config_overrides: Mapping[str, Any]) -> None:
+        """Register override values that land on an `airbyte_secret` field, so they get redacted.
+
+        The entrypoint builds the secret list once, from the config the user supplied
+        (`entrypoint.py`, `update_secrets(get_secrets(...))`), so a value this overlay substitutes at a
+        secret path is unknown to `filter_secrets` - and would print in the clear where the user's own
+        value at the same path prints as `****`. Registering is additive and over-redaction is harmless,
+        so this errs towards registering.
+        """
+        if not self._spec_component:
+            return
+        for secret in get_secrets(
+            self._spec_component.connection_specification, dict(config_overrides)
+        ):
+            if secret is not None:
+                add_to_secrets(str(secret))
 
     @property
     def dynamic_streams(self) -> List[Dict[str, Any]]:
