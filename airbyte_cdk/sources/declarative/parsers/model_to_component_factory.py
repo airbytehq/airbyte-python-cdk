@@ -4672,7 +4672,7 @@ class ModelToComponentFactory:
                 "remaining_header": quota_model.remaining_header,
                 "reset_header": quota_model.reset_header,
                 "limit_header": quota_model.limit_header,
-                # Normalized the same way as the runtime TokenQuota below, so an omitted field
+                # Normalize the same way as the runtime TokenQuota below, so an omitted field
                 # and an explicit `[]` key identically and keep sharing one set of counters.
                 "exhaustion_status_codes": quota_model.exhaustion_status_codes or [],
                 "matchers": [
@@ -4702,6 +4702,13 @@ class ModelToComponentFactory:
             key: str(InterpolatedString.create(value, parameters={}).eval(config))
             for key, value in (model.quota_status_source.request_headers or {}).items()
         }
+        # Normalize the same way as the quota specs above, so an omitted field and an explicit
+        # `[]` key identically and keep sharing one set of counters. Deduplicated as well as
+        # sorted, because the runtime turns this into a set: without it `[404]` and `[404, 404]`
+        # would key differently and stop sharing counters while behaving identically.
+        quota_status_unavailable_status_codes = sorted(
+            set(model.quota_status_source.unavailable_status_codes or [])
+        )
         auth_method = model.auth_method or "Bearer"
         header = model.header or "Authorization"
         max_wait_time_str = str(
@@ -4732,6 +4739,7 @@ class ModelToComponentFactory:
                 "quota_status_url": quota_status_url,
                 "quota_status_http_method": quota_status_http_method,
                 "quota_status_headers": quota_status_headers,
+                "quota_status_unavailable_status_codes": quota_status_unavailable_status_codes,
                 "auth_method": auth_method,
                 "header": header,
                 "max_wait_time": max_wait_time.total_seconds(),
@@ -4767,6 +4775,7 @@ class ModelToComponentFactory:
             quota_status_url=quota_status_url,
             quota_status_http_method=quota_status_http_method,
             quota_status_headers=quota_status_headers,
+            quota_status_unavailable_status_codes=quota_status_unavailable_status_codes,
             auth_method=auth_method,
             header=header,
             max_wait_time=max_wait_time,
