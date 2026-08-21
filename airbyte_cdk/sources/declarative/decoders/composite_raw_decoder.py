@@ -30,7 +30,8 @@ logger = logging.getLogger("airbyte")
 
 
 def _raise_decode_error(exc: UnicodeDecodeError, encoding: str) -> NoReturn:
-    leading_bytes = exc.object[:16].hex(" ")
+    # Kept to a magic-number-sized prefix so record data never reaches the logs.
+    leading_bytes = exc.object[:4].hex(" ")
     format_guess = ""
     if exc.object.startswith(b"\x1f\x8b"):
         format_guess = " Format guess: gzip."
