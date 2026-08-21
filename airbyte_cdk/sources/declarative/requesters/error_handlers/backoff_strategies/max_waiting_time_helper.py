@@ -42,12 +42,13 @@ def evaluate_max_waiting_time(
     check would silently disable it. Only an absent field means "no cap"; a field that is present
     but resolves to nothing raises, rather than quietly leaving the wait unbounded.
 
-    A cap is only read while handling an error the requester is already going to retry, so an
-    interpolation that cannot be resolved would otherwise surface as an unhandled jinja
-    UndefinedError or ValueError in the middle of a sync that has been running fine. It is raised
-    as a system error rather than a config error because the field lives in the manifest: whether
-    it is a bad expression or a config key the manifest reads but the spec does not expose, the
-    connector is at fault and there is nothing for the user to correct.
+    Called once when the strategy is constructed, and again on each cap check. The eager call is
+    what makes an unresolvable interpolation a startup failure rather than something discovered at
+    whichever retryable error happens to reach a strategy -- a distinction that matters because
+    `HttpClient` skips the strategies entirely when a rate-limited retry can rotate credentials.
+    It is raised as a system error rather than a config error because the field lives in the
+    manifest: whether it is a bad expression or a config key the manifest reads but the spec does
+    not expose, the connector is at fault and there is nothing for the user to correct.
 
     :param max_waiting_time_in_seconds: the interpolated field, or None when no cap is configured
     :param config: the connector config to interpolate against

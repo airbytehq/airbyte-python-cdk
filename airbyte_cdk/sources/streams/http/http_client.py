@@ -598,13 +598,13 @@ class HttpClient:
             # Two consequences of not calling the strategies, both deliberate. A rate limit
             # that yields no backoff at all now rotates too, rather than falling through to
             # the default exponential retry -- on a rotating credential that is the better
-            # behaviour, and `has_alternative_token` only answers True when the sending
-            # credential is tracked and spent. And a `max_waiting_time_in_seconds` the manifest
-            # got wrong -- one that cannot be evaluated -- is no longer reported here, since
-            # that error is raised from inside the strategy; it still surfaces on the first
-            # rate limit that finds no spare credential. Resolving the cap once at construction
-            # would close that gap on every path, but it moves when `max_waiting_time_in_seconds`
-            # fails, so it belongs in its own change rather than in this reorder.
+            # behaviour, and `has_alternative_token` only answers True when the retry will
+            # rotate -- the CDK's own authenticator narrows that further, to a sending credential
+            # that is tracked and spent. And a `max_waiting_time_in_seconds` the manifest got
+            # wrong -- one that cannot be evaluated -- is not reported from here, since that
+            # error is raised from inside the strategy. Both capped strategies therefore resolve
+            # the field once in `__post_init__` too, so a manifest mistake fails at startup
+            # rather than waiting for a rate limit that finds no spare credential.
             rotate_instead_of_waiting = (
                 error_resolution.response_action == ResponseAction.RATE_LIMITED
                 and self._can_retry_on_another_token(request)

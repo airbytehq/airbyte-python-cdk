@@ -60,6 +60,12 @@ class WaitUntilTimeFromHeaderBackoffStrategy(BackoffStrategy):
         self._max_waiting_time_in_seconds = interpolated_max_waiting_time(
             self.max_waiting_time_in_seconds, parameters
         )
+        # Resolved here rather than only at the first retryable error. `config` is a field and this
+        # cap interpolates over `config` alone, so it is fully knowable the moment the component
+        # exists -- and since `HttpClient` decides token rotation before it asks a strategy for a
+        # wait, a cap that cannot be evaluated would otherwise stay silent for as long as a spare
+        # credential keeps the strategies from running. A manifest mistake belongs at startup.
+        evaluate_max_waiting_time(self._max_waiting_time_in_seconds, self.config)
 
     def backoff_time(
         self,

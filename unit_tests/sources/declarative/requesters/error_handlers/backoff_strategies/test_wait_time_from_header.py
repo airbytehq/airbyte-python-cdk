@@ -137,13 +137,13 @@ def test_max_waiting_time_is_interpolated_from_config(config, expected):
 def test_given_max_waiting_time_cannot_be_evaluated_then_raise_system_error(
     max_waiting_time_in_seconds, config
 ):
-    """The cap is only read while handling an error that was already going to be retried, so an
-    unresolvable interpolation must not surface as an unhandled jinja or float error. It is a
-    system error because the field is declared in the manifest: the user has nothing to fix."""
-    strategy = _strategy(max_waiting_time_in_seconds, config=config)
-
+    """Raised when the strategy is built, not when a retry first needs the cap. Waiting for a
+    retryable error would mean never raising at all on a connector whose rate limits are always
+    served by rotating to another credential, since `HttpClient` skips the strategies there. It
+    is a system error because the field is declared in the manifest: the user has nothing to fix,
+    and an unresolvable interpolation must not surface as a raw jinja or float error either."""
     with pytest.raises(AirbyteTracedException) as exc_info:
-        strategy.backoff_time(_response(120), 1)
+        _strategy(max_waiting_time_in_seconds, config=config)
     assert exc_info.value.failure_type == FailureType.system_error
     assert "max_waiting_time_in_seconds" in exc_info.value.internal_message
 
@@ -169,20 +169,17 @@ def test_given_header_asks_for_no_wait_then_no_cap_refuses_it(max_waiting_time_i
 )
 def test_given_max_waiting_time_resolves_to_nothing_then_raise_rather_than_drop_the_cap(config):
     """A blank config value must not leave the wait unbounded: "no cap" is spelled by leaving the
-    field out of the manifest, so a field that is present and resolves to nothing is a failure."""
-    strategy = _strategy("{{ config['max_waiting_time'] }}", config=config)
-
+    field out of the manifest, so a field that is present and resolves to nothing is a failure --
+    at construction, before any request has been sent."""
     with pytest.raises(AirbyteTracedException) as exc_info:
-        strategy.backoff_time(_response(120), 1)
+        _strategy("{{ config['max_waiting_time'] }}", config=config)
     assert exc_info.value.failure_type == FailureType.system_error
 
 
 def test_given_interpolation_raises_a_traced_error_then_keep_its_own_failure_type_and_message():
     """`stream_state` interpolation raises an AirbyteTracedException of its own, with a message
     written for that case. The cap's own error handling must not reclassify or replace it."""
-    strategy = _strategy("{{ stream_state['max_waiting_time'] }}")
-
     with pytest.raises(AirbyteTracedException) as exc_info:
-        strategy.backoff_time(_response(120), 1)
+        _strategy("{{ stream_state['max_waiting_time'] }}")
     assert exc_info.value.failure_type == FailureType.config_error
     assert "`stream_state` is no longer supported for interpolation" in exc_info.value.message
