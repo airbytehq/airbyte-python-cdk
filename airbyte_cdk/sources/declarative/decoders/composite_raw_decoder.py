@@ -10,7 +10,7 @@ import json
 import logging
 from dataclasses import dataclass
 from io import BufferedIOBase, TextIOWrapper
-from typing import Any, List, Optional
+from typing import Any, List, NoReturn, Optional
 
 import ijson
 import orjson
@@ -27,6 +27,27 @@ from airbyte_cdk.sources.declarative.decoders.decoder_parser import (
 from airbyte_cdk.utils import AirbyteTracedException
 
 logger = logging.getLogger("airbyte")
+
+
+def _raise_decode_error(exc: UnicodeDecodeError, encoding: str) -> NoReturn:
+    # Kept to a magic-number-sized prefix so record data never reaches the logs.
+    leading_bytes = exc.object[:4].hex(" ")
+    format_guess = ""
+    if exc.object.startswith(b"\x1f\x8b"):
+        format_guess = " Format guess: gzip."
+    elif exc.object.startswith(b"PK"):
+        format_guess = " Format guess: zip."
+    internal_message = (
+        f"Response body failed to decode using the configured encoding {encoding!r}: {exc}. "
+        f"Leading bytes of the chunk that failed to decode (hex): {leading_bytes}."
+        f"{format_guess}"
+    )
+    logger.error(internal_message)
+    raise AirbyteTracedException(
+        message="Response body cannot be decoded as text using the decoder's configured encoding.",
+        internal_message=internal_message,
+        failure_type=FailureType.system_error,
+    ) from exc
 
 
 @dataclass
@@ -57,7 +78,11 @@ class JsonParser(Parser):
         Attempts to deserialize data using orjson library. As an extra layer of safety we fallback on the json library to deserialize the data.
         """
         raw_data = data.read()
-        body_json = self._parse_orjson(raw_data) or self._parse_json(raw_data)
+        try:
+            decoded_data = raw_data.decode(self.encoding)
+        except UnicodeDecodeError as exc:
+            _raise_decode_error(exc, self.encoding)
+        body_json = self._parse_orjson(decoded_data) or self._parse_json(decoded_data)
 
         if body_json is None:
             raise AirbyteTracedException(
@@ -71,18 +96,18 @@ class JsonParser(Parser):
         else:
             yield from [body_json]
 
-    def _parse_orjson(self, raw_data: bytes) -> Optional[Any]:
+    def _parse_orjson(self, raw_data: str) -> Optional[Any]:
         try:
-            return orjson.loads(raw_data.decode(self.encoding))
+            return orjson.loads(raw_data)
         except Exception as exc:
             logger.debug(
                 f"Failed to parse JSON data using orjson library. Falling back to json library. {exc}"
             )
             return None
 
-    def _parse_json(self, raw_data: bytes) -> Optional[Any]:
+    def _parse_json(self, raw_data: str) -> Optional[Any]:
         try:
-            return json.loads(raw_data.decode(self.encoding))
+            return json.loads(raw_data)
         except Exception as exc:
             logger.error(f"Failed to parse JSON data using json library. {exc}")
             return None
@@ -93,9 +118,14 @@ class JsonLineParser(Parser):
     encoding: Optional[str] = "utf-8"
 
     def parse(self, data: BufferedIOBase) -> PARSER_OUTPUT_TYPE:
+        encoding = self.encoding or "utf-8"
         for line in data:
             try:
-                yield json.loads(line.decode(encoding=self.encoding or "utf-8"))
+                decoded_line = line.decode(encoding=encoding)
+            except UnicodeDecodeError as exc:
+                _raise_decode_error(exc, encoding)
+            try:
+                yield json.loads(decoded_line)
             except json.JSONDecodeError as e:
                 logger.warning(f"Cannot decode/parse line {line!r} as JSON, error: {e}")
 
@@ -111,12 +141,17 @@ class _Utf8Recoder:
 
     def __init__(self, stream: BufferedIOBase, encoding: str) -> None:
         self._stream = stream
+        self._encoding = encoding
         self._decoder = codecs.getincrementaldecoder(encoding)()
 
     def read(self, size: int = -1) -> bytes:
         chunk = self._stream.read(size)
         # `final` once the underlying stream is exhausted so a trailing partial sequence flushes.
-        return self._decoder.decode(chunk, final=not chunk).encode("utf-8")
+        try:
+            decoded = self._decoder.decode(chunk, final=not chunk)
+        except UnicodeDecodeError as exc:
+            _raise_decode_error(exc, self._encoding)
+        return decoded.encode("utf-8")
 
 
 @dataclass
@@ -177,10 +212,13 @@ class CsvParser(Parser):
         """
         text_data = TextIOWrapper(data, encoding=self.encoding)  # type: ignore
         reader = csv.DictReader(text_data, delimiter=self._get_delimiter() or ",")
-        for row in reader:
-            if self.set_values_to_none:
-                row = {k: (None if v in self.set_values_to_none else v) for k, v in row.items()}
-            yield row
+        try:
+            for row in reader:
+                if self.set_values_to_none:
+                    row = {k: (None if v in self.set_values_to_none else v) for k, v in row.items()}
+                yield row
+        except UnicodeDecodeError as exc:
+            _raise_decode_error(exc, self.encoding or "utf-8")
 
 
 class CompositeRawDecoder(Decoder):
