@@ -2,13 +2,15 @@
 # Copyright (c) 2026 Airbyte, Inc., all rights reserved.
 #
 
-"""The shipped manifest schema has to parse, and nothing else asserted that it does.
+"""The shipped manifest schema has to parse, and only 194 unrelated failures said so.
 
 `_get_declarative_component_schema()` runs before any low-code source is built, so a malformed
 `declarative_component_schema.yaml` fails every declarative connector at startup. It is also easy
 to break from a documentation edit alone: the descriptions are plain YAML scalars, so a `": "` in
 prose ends the scalar and the file stops being a mapping. That happened in this file's history and
-surfaced as 194 unrelated test failures rather than as one obvious error.
+surfaced as 194 unrelated test failures rather than as one obvious error -- the defect was caught,
+at the wrong layer and with unreadable output. What these guards add is not coverage but a named
+failure in milliseconds.
 
 Two guards, because the two ways prose breaks a plain scalar look nothing alike. A `": "` is loud:
 the file stops parsing, so loading it is enough to catch it. A `" #"` is silent: YAML reads the
@@ -75,11 +77,15 @@ def test_no_plain_scalar_carries_yaml_punctuation():
             if match is None:
                 continue
             value = match.group(1)
+            # Both exits break rather than continue: the scans overlap on `- key: value`, and
+            # whichever reads it first settles the line. Falling through to the next scan would
+            # re-capture `key: 'text # hash'` as one bare scalar, quotes and all, and report a
+            # value the author had already quoted correctly.
             if value[0] in _QUOTED_BLOCK_OR_FLOW:
-                continue
+                break
             if any(hazard in value for hazard in hazards):
                 offenders.append(f"line {number}: {value[:80]}")
-                break  # one report per line; the scans overlap on `- key: value`
+                break
 
     assert not offenders, (
         "these are plain YAML scalars containing punctuation that ends them early; "
