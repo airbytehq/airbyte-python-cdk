@@ -36,7 +36,11 @@ class WaitUntilTimeFromHeaderBackoffStrategy(BackoffStrategy):
         min_wait (Optional[Union[float, InterpolatedString, str]]): minimum time to wait for safety
         regex (Optional[str]): optional regex to apply on the header to extract its value
         max_waiting_time_in_seconds (Optional[Union[float, InterpolatedString, str]]): stop the stream
-            rather than wait longer than this
+            rather than wait this long or longer -- the bound is inclusive, so a wait exactly
+            equal to it is refused. Only governs waits that are actually taken: on a
+            rate-limited response where the authenticator holds another credential with quota,
+            `HttpClient` rotates onto it instead of asking this strategy for a wait, and the
+            bound does not apply. Any other retryable error still consults this strategy.
     """
 
     header: Union[InterpolatedString, str]
@@ -56,6 +60,12 @@ class WaitUntilTimeFromHeaderBackoffStrategy(BackoffStrategy):
         self._max_waiting_time_in_seconds = interpolated_max_waiting_time(
             self.max_waiting_time_in_seconds, parameters
         )
+        # Resolved here rather than only at the first retryable error. `config` is a field and this
+        # cap interpolates over `config` alone, so it is fully knowable the moment the component
+        # exists -- and since `HttpClient` decides token rotation before it asks a strategy for a
+        # wait, a cap that cannot be evaluated would otherwise stay silent for as long as a spare
+        # credential keeps the strategies from running. A manifest mistake belongs at startup.
+        evaluate_max_waiting_time(self._max_waiting_time_in_seconds, self.config)
 
     def backoff_time(
         self,
@@ -84,13 +94,18 @@ class WaitUntilTimeFromHeaderBackoffStrategy(BackoffStrategy):
         return self._capped(wait_time)
 
     def _capped(self, wait_time: float) -> float:
-        """Raise rather than wait longer than `max_waiting_time_in_seconds`.
+        """Raise rather than wait `max_waiting_time_in_seconds` or longer.
 
         The cap is compared against the wait this strategy is about to return, not against the
         raw header: unlike `Retry-After`, the header here is an absolute timestamp, so only the
         computed difference is a duration. It is also applied after the `min_wait` floor, so a
         cap below the floor wins -- a caller asking never to wait more than N seconds means it,
         even when the floor would otherwise round the wait up past N.
+
+        Not always reached: `HttpClient` decides token rotation before it asks a strategy for a
+        wait, so on a rate limit where the authenticator has another credential with quota this
+        method does not run and the cap does not apply. Waiting is what the cap bounds, and that
+        path is not waiting.
         """
         max_waiting_time = evaluate_max_waiting_time(self._max_waiting_time_in_seconds, self.config)
         # `>=` rather than `>` to match WaitTimeFromHeader, so one field name does not mean two
@@ -99,8 +114,8 @@ class WaitUntilTimeFromHeaderBackoffStrategy(BackoffStrategy):
         if max_waiting_time is not None and wait_time >= max_waiting_time:
             raise AirbyteTracedException(
                 internal_message=(
-                    f"Rate limit wait time {wait_time}s is greater than the maximum of "
-                    f"{max_waiting_time}s this stream is allowed to wait. Stopping the stream..."
+                    f"Rate limit wait time {wait_time}s is greater than or equal to the maximum "
+                    f"of {max_waiting_time}s this stream is allowed to wait. Stopping the stream..."
                 ),
                 message="The rate limit wait time is longer than the connector is allowed to wait.",
                 failure_type=FailureType.transient_error,

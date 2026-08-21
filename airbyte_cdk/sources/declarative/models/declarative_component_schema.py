@@ -1449,7 +1449,7 @@ class WaitTimeFromHeader(BaseModel):
     )
     max_waiting_time_in_seconds: Optional[Union[float, str]] = Field(
         None,
-        description="Stop the stream instead of waiting, when the value extracted from the header is greater than or equal to this value. Can be a hardcoded number, or a string interpolated from the connector config so that the bound can be changed without a connector release. A value of 0 means never wait.",
+        description="Stop the stream instead of waiting, when the value extracted from the header is greater than or equal to this value. Can be a hardcoded number, or a string interpolated from the connector config so that the bound can be changed without a connector release. A value of 0 means never wait. Not evaluated when a rate-limited retry can rotate to another credential with quota; any other retryable error still consults this strategy.",
         examples=[3600, "{{ config['max_waiting_time'] * 60 }}"],
         title="Max Waiting Time in Seconds",
     )
@@ -1478,7 +1478,7 @@ class WaitUntilTimeFromHeader(BaseModel):
     )
     max_waiting_time_in_seconds: Optional[Union[float, str]] = Field(
         None,
-        description="Stop the stream instead of waiting, when the wait this strategy computes is longer than this value. The comparison is against the computed wait rather than the raw header, since the header holds an absolute timestamp, and it is applied after `min_wait`, so a cap below the floor still wins -- including for the fallback where the header is absent and `min_wait` supplies the wait on its own. Can be a hardcoded number, or a string interpolated from the connector config so that the bound can be changed without a connector release. A value of 0 means never wait.",
+        description="Stop the stream instead of waiting, when the wait this strategy computes is greater than or equal to this value. The comparison is against the computed wait rather than the raw header, since the header holds an absolute timestamp, and it is applied after `min_wait`, so a cap below the floor still wins -- including for the fallback where the header is absent and `min_wait` supplies the wait on its own. Can be a hardcoded number, or a string interpolated from the connector config so that the bound can be changed without a connector release. A value of 0 means never wait. Not evaluated when a rate-limited retry can rotate to another credential with quota; any other retryable error still consults this strategy.",
         examples=[3600, "{{ config['max_waiting_time'] * 60 }}"],
         title="Max Waiting Time in Seconds",
     )

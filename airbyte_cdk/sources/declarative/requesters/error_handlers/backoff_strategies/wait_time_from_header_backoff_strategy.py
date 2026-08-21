@@ -33,7 +33,11 @@ class WaitTimeFromHeaderBackoffStrategy(BackoffStrategy):
         header (str): header to read wait time from
         regex (Optional[str]): optional regex to apply on the header to extract its value
         max_waiting_time_in_seconds (Optional[Union[float, InterpolatedString, str]]): stop the stream
-            rather than wait longer than this
+            rather than wait this long or longer -- the bound is inclusive, so a wait exactly
+            equal to it is refused. Only governs waits that are actually taken: on a
+            rate-limited response where the authenticator holds another credential with quota,
+            `HttpClient` rotates onto it instead of asking this strategy for a wait, and the
+            bound does not apply. Any other retryable error still consults this strategy.
     """
 
     header: Union[InterpolatedString, str]
@@ -50,6 +54,12 @@ class WaitTimeFromHeaderBackoffStrategy(BackoffStrategy):
         self._max_waiting_time_in_seconds = interpolated_max_waiting_time(
             self.max_waiting_time_in_seconds, parameters
         )
+        # Resolved here rather than only at the first retryable error. `config` is a field and this
+        # cap interpolates over `config` alone, so it is fully knowable the moment the component
+        # exists -- and since `HttpClient` decides token rotation before it asks a strategy for a
+        # wait, a cap that cannot be evaluated would otherwise stay silent for as long as a spare
+        # credential keeps the strategies from running. A manifest mistake belongs at startup.
+        evaluate_max_waiting_time(self._max_waiting_time_in_seconds, self.config)
 
     def backoff_time(
         self,
@@ -68,10 +78,14 @@ class WaitTimeFromHeaderBackoffStrategy(BackoffStrategy):
             max_waiting_time = evaluate_max_waiting_time(
                 self._max_waiting_time_in_seconds, self.config
             )
+            # Not always reached: `HttpClient` decides token rotation before it asks a strategy
+            # for a wait, so on a rate limit where the authenticator has another credential with
+            # quota this check does not run. The cap bounds waiting, and that path is not
+            # waiting.
             # `max_waiting_time is not None` rather than a truthiness check, so that 0 means
             # "never wait" instead of silently disabling the cap. The comparison stays `>=`,
-            # which is what this cap has always done; `WaitUntilTimeFromHeader` stops at `>`,
-            # so a wait exactly equal to the cap is allowed there and refused here.
+            # which is what this cap has always done, and `WaitUntilTimeFromHeader` matches it --
+            # a wait exactly equal to the cap is refused by both.
             # `header_value` is checked for truthiness rather than `is not None` on purpose: a
             # header of `0` asks for no wait at all, which no cap -- not even 0 -- should refuse.
             if max_waiting_time is not None and header_value and header_value >= max_waiting_time:

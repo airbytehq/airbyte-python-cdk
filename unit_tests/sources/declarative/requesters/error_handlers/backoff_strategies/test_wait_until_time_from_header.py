@@ -233,13 +233,13 @@ def test_cap_is_interpolated_from_config(time_mock, config, expected):
 def test_given_cap_cannot_be_evaluated_then_raise_system_error(
     time_mock, max_waiting_time_in_seconds, config
 ):
-    """The cap is only read while handling an error that was already going to be retried, so an
-    unresolvable interpolation must not surface as an unhandled jinja or float error. It is a
-    system error because the field is declared in the manifest: the user has nothing to fix."""
-    strategy = _strategy(max_waiting_time_in_seconds, config=config)
-
+    """Raised when the strategy is built, not when a retry first needs the cap. Waiting for a
+    retryable error would mean never raising at all on a connector whose rate limits are always
+    served by rotating to another credential, since `HttpClient` skips the strategies there. It
+    is a system error because the field is declared in the manifest: the user has nothing to fix,
+    and an unresolvable interpolation must not surface as a raw jinja or float error either."""
     with pytest.raises(AirbyteTracedException) as exc_info:
-        strategy.backoff_time(_response(), 1)
+        _strategy(max_waiting_time_in_seconds, config=config)
     assert exc_info.value.failure_type == FailureType.system_error
     assert "max_waiting_time_in_seconds" in exc_info.value.internal_message
 
@@ -253,9 +253,8 @@ def test_non_finite_cap_is_rejected(time_mock, cap):
     """NaN is the one value that would switch the cap off without saying so -- every comparison
     against it is False, so the wait this field exists to bound would run unbounded again.
     Infinity is rejected as the same kind of mistake rather than read as "no cap", which is
-    already spelled by leaving the field out."""
-    strategy = _strategy(cap)
-
+    already spelled by leaving the field out. Rejected at construction, like every other cap the
+    field cannot resolve."""
     with pytest.raises(AirbyteTracedException) as exc_info:
-        strategy.backoff_time(_response(), 1)
+        _strategy(cap)
     assert exc_info.value.failure_type == FailureType.system_error

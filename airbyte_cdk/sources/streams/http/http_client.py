@@ -588,29 +588,48 @@ class HttpClient:
             ResponseAction.REFRESH_TOKEN_THEN_RETRY,
         ):
             user_defined_backoff_time = None
-            for backoff_strategy in self._backoff_strategies:
-                backoff_time = backoff_strategy.backoff_time(
-                    response_or_exception=response if response is not None else exc,
-                    attempt_count=self._request_attempt_count[request],
-                )
-                if backoff_time:
-                    user_defined_backoff_time = backoff_time
-                    break
-
-            if (
-                user_defined_backoff_time
-                and error_resolution.response_action == ResponseAction.RATE_LIMITED
+            # Asked before the strategies, not after. The backoff they compute describes the
+            # credential the server just rejected, so when another credential can serve the
+            # retry that wait is irrelevant -- and a strategy is allowed to refuse a wait by
+            # raising (`max_waiting_time_in_seconds`), which would otherwise end the stream
+            # before rotation was ever considered. Rotating is strictly the better outcome
+            # there: it is the same retry, seconds from now, on a credential with quota.
+            #
+            # Two consequences of not calling the strategies, both deliberate. A rate limit
+            # that yields no backoff at all now rotates too, rather than falling through to
+            # the default exponential retry -- on a rotating credential that is the better
+            # behaviour, and `has_alternative_token` only answers True when the retry will
+            # rotate -- the CDK's own authenticator narrows that further, to a sending credential
+            # that is tracked and spent. And a `max_waiting_time_in_seconds` the manifest got
+            # wrong -- one that cannot be evaluated -- is not reported from here, since that
+            # error is raised from inside the strategy. Both capped strategies therefore resolve
+            # the field once in `__post_init__` too, so a manifest mistake fails at startup
+            # rather than waiting for a rate limit that finds no spare credential.
+            rotate_instead_of_waiting = (
+                error_resolution.response_action == ResponseAction.RATE_LIMITED
                 and self._can_retry_on_another_token(request)
-            ):
-                # The backoff was derived from this response's headers, which only describe the
-                # credential that was rejected. Another one has quota, and the retry re-signs the
-                # request, so waiting out this window would idle for nothing.
+            )
+
+            if rotate_instead_of_waiting:
+                # Says that a wait was skipped without the number, which is no longer computed,
+                # and names the cap explicitly: a connector that configured one gets no other
+                # signal that the retry went ahead without consulting it.
                 self._logger.info(
-                    f"Rate limited on the current credential; retrying in "
-                    f"{self.TOKEN_ROTATION_BACKOFF}s with another one instead of waiting "
-                    f"{user_defined_backoff_time:.0f}s for the rate limit to reset."
+                    "Rate limited on the current credential; retrying in "
+                    f"{self.TOKEN_ROTATION_BACKOFF}s with another one instead of waiting for the "
+                    "rate limit to reset. Any configured backoff, including a wait cap, is not "
+                    "evaluated for this retry."
                 )
                 user_defined_backoff_time = self.TOKEN_ROTATION_BACKOFF
+            else:
+                for backoff_strategy in self._backoff_strategies:
+                    backoff_time = backoff_strategy.backoff_time(
+                        response_or_exception=response if response is not None else exc,
+                        attempt_count=self._request_attempt_count[request],
+                    )
+                    if backoff_time:
+                        user_defined_backoff_time = backoff_time
+                        break
 
             error_message = (
                 error_resolution.error_message
