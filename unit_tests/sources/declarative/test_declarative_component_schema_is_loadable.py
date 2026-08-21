@@ -57,6 +57,9 @@ def test_no_plain_scalar_carries_yaml_punctuation():
     Every inline value is checked, not only `description`, because the hazard belongs to the
     scalar style rather than to the field: a `title`, an `error_message` or a value written
     under a sequence item all break the same way.
+
+    Line-anchored, so a plain scalar wrapped onto a continuation line is only checked on its first
+    line. The file has none today, and quoting a long value is the fix either way.
     """
     # The same bytes the loader reads, fetched the same way, so this cannot drift from what ships.
     raw_schema = pkgutil.get_data(

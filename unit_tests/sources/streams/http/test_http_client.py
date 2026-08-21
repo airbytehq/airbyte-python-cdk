@@ -1235,7 +1235,7 @@ class _SpareTokenAuthenticator(TokenAuthenticator):
         return self.has_spare
 
 
-def _rate_limited_client(authenticator, backoff_seconds=1800):
+def _rate_limited_client(authenticator, backoff_seconds=1800, backoff_strategy=None):
     return HttpClient(
         name="test",
         logger=logging.getLogger("test"),
@@ -1256,7 +1256,7 @@ def _rate_limited_client(authenticator, backoff_seconds=1800):
             },
             max_retries=1,
         ),
-        backoff_strategy=_ConstantBackoffStrategy(backoff_seconds),
+        backoff_strategy=backoff_strategy or _ConstantBackoffStrategy(backoff_seconds),
     )
 
 
@@ -1311,22 +1311,8 @@ def test_rotation_is_preferred_over_a_strategy_that_refuses_to_wait(requests_moc
     before it runs, or a bound on waiting silently becomes a bound on the sync: the retry the
     spare credential could serve in 0.1s never happens."""
     requests_mock.get("https://example.com/", [{"status_code": 429}, {"status_code": 200}])
-    client = HttpClient(
-        name="test",
-        logger=logging.getLogger("test"),
-        authenticator=_SpareTokenAuthenticator(has_spare=True),
-        error_handler=HttpStatusErrorHandler(
-            logger=logging.getLogger("test"),
-            error_mapping={
-                429: ErrorResolution(
-                    response_action=ResponseAction.RATE_LIMITED,
-                    failure_type=FailureType.transient_error,
-                    error_message="rate limited",
-                )
-            },
-            max_retries=1,
-        ),
-        backoff_strategy=_RefusingBackoffStrategy(),
+    client = _rate_limited_client(
+        _SpareTokenAuthenticator(has_spare=True), backoff_strategy=_RefusingBackoffStrategy()
     )
 
     sleeps = []
@@ -1342,22 +1328,8 @@ def test_rotation_is_preferred_over_a_strategy_that_refuses_to_wait(requests_moc
 def test_a_refusing_strategy_still_ends_the_stream_without_a_spare_credential(requests_mock):
     """The cap must keep working when rotation is not an option — that is what it is for."""
     requests_mock.get("https://example.com/", [{"status_code": 429}, {"status_code": 200}])
-    client = HttpClient(
-        name="test",
-        logger=logging.getLogger("test"),
-        authenticator=_SpareTokenAuthenticator(has_spare=False),
-        error_handler=HttpStatusErrorHandler(
-            logger=logging.getLogger("test"),
-            error_mapping={
-                429: ErrorResolution(
-                    response_action=ResponseAction.RATE_LIMITED,
-                    failure_type=FailureType.transient_error,
-                    error_message="rate limited",
-                )
-            },
-            max_retries=1,
-        ),
-        backoff_strategy=_RefusingBackoffStrategy(),
+    client = _rate_limited_client(
+        _SpareTokenAuthenticator(has_spare=False), backoff_strategy=_RefusingBackoffStrategy()
     )
 
     with pytest.raises(AirbyteTracedException, match="longer than the connector is allowed"):
@@ -1381,21 +1353,8 @@ def test_rotation_is_preferred_over_the_real_capped_strategy(requests_mock):
             {"status_code": 200},
         ],
     )
-    client = HttpClient(
-        name="test",
-        logger=logging.getLogger("test"),
-        authenticator=_SpareTokenAuthenticator(has_spare=True),
-        error_handler=HttpStatusErrorHandler(
-            logger=logging.getLogger("test"),
-            error_mapping={
-                429: ErrorResolution(
-                    response_action=ResponseAction.RATE_LIMITED,
-                    failure_type=FailureType.transient_error,
-                    error_message="rate limited",
-                )
-            },
-            max_retries=1,
-        ),
+    client = _rate_limited_client(
+        _SpareTokenAuthenticator(has_spare=True),
         # A cap far below the hour the response asks for: the strategy would refuse the wait.
         backoff_strategy=WaitUntilTimeFromHeaderBackoffStrategy(
             header="X-RateLimit-Reset",
@@ -1432,22 +1391,8 @@ def test_rotation_also_covers_a_rate_limit_with_no_computed_wait(requests_mock):
     credential with quota — but it is a behaviour change, so it is pinned rather than implied."""
     requests_mock.get("https://example.com/", [{"status_code": 429}, {"status_code": 200}])
     strategy = _NoWaitBackoffStrategy()
-    client = HttpClient(
-        name="test",
-        logger=logging.getLogger("test"),
-        authenticator=_SpareTokenAuthenticator(has_spare=True),
-        error_handler=HttpStatusErrorHandler(
-            logger=logging.getLogger("test"),
-            error_mapping={
-                429: ErrorResolution(
-                    response_action=ResponseAction.RATE_LIMITED,
-                    failure_type=FailureType.transient_error,
-                    error_message="rate limited",
-                )
-            },
-            max_retries=1,
-        ),
-        backoff_strategy=strategy,
+    client = _rate_limited_client(
+        _SpareTokenAuthenticator(has_spare=True), backoff_strategy=strategy
     )
 
     sleeps = []
