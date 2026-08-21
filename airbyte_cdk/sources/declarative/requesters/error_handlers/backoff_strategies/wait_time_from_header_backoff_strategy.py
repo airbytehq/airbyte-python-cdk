@@ -33,9 +33,11 @@ class WaitTimeFromHeaderBackoffStrategy(BackoffStrategy):
         header (str): header to read wait time from
         regex (Optional[str]): optional regex to apply on the header to extract its value
         max_waiting_time_in_seconds (Optional[Union[float, InterpolatedString, str]]): stop the stream
-            rather than wait longer than this. Only governs waits that are actually taken: when
-            the authenticator holds another credential with quota, `HttpClient` rotates onto it
-            instead of asking this strategy for a wait, and the bound does not apply.
+            rather than wait this long or longer -- the bound is inclusive, so a wait exactly
+            equal to it is refused. Only governs waits that are actually taken: on a
+            rate-limited response where the authenticator holds another credential with quota,
+            `HttpClient` rotates onto it instead of asking this strategy for a wait, and the
+            bound does not apply. Any other retryable error still consults this strategy.
     """
 
     header: Union[InterpolatedString, str]
