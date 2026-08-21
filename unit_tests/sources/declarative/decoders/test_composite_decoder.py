@@ -14,6 +14,7 @@ from unittest.mock import Mock, patch
 import pytest
 import requests
 
+from airbyte_cdk.models import FailureType
 from airbyte_cdk.sources.declarative.decoders.composite_raw_decoder import (
     CompositeRawDecoder,
     CsvParser,
@@ -188,6 +189,51 @@ def test_composite_raw_decoder_jsonline_parser(requests_mock, encoding: str):
     for _ in composite_raw_decoder.decode(response):
         counter += 1
     assert counter == 3
+
+
+@pytest.mark.parametrize(
+    "parser",
+    [CsvParser(), JsonParser(), JsonLineParser()],
+    ids=["csv", "json", "json_line"],
+)
+def test_parsers_raise_traced_exception_for_gzip_payload(parser) -> None:
+    with pytest.raises(AirbyteTracedException) as raised:
+        list(parser.parse(BytesIO(compress_with_gzip("{}"))))
+
+    exception = raised.value
+    assert exception.failure_type == FailureType.system_error
+    assert (
+        exception.message
+        == "Response body cannot be decoded as text using the decoder's configured encoding."
+    )
+    assert all(
+        detail not in exception.message
+        for detail in ("codec", "UnicodeDecodeError", "0x8b", "utf-8")
+    )
+    assert "codec can't decode byte 0x8b" in exception.internal_message
+    assert "1f 8b" in exception.internal_message
+
+
+def test_jsonline_parser_skips_malformed_json_line() -> None:
+    data = BytesIO(b'{"id": 1}\nnot-json\n{"id": 2}\n')
+
+    assert list(JsonLineParser().parse(data)) == [{"id": 1}, {"id": 2}]
+
+
+def test_json_items_parser_raises_traced_exception_for_decode_error() -> None:
+    parser = JsonItemsParser(items_path="data", encoding="ascii")
+
+    with pytest.raises(AirbyteTracedException) as raised:
+        list(parser.parse(BytesIO(compress_with_gzip("{}"))))
+
+    exception = raised.value
+    assert exception.failure_type == FailureType.system_error
+    assert (
+        exception.message
+        == "Response body cannot be decoded as text using the decoder's configured encoding."
+    )
+    assert "codec can't decode byte 0x8b" in exception.internal_message
+    assert "1f 8b" in exception.internal_message
 
 
 @pytest.mark.parametrize(
