@@ -24,14 +24,22 @@ from airbyte_cdk.sources.declarative.concurrent_declarative_source import (
     _get_declarative_component_schema,
 )
 
-# `key: value` with the value on the same line. List items are excluded on purpose: `- key: value`
-# is a nested mapping, where a colon is structure rather than a truncated sentence.
-_INLINE_VALUE = re.compile(r"^\s*[\w$\"-]+:\s+(\S.*?)\s*$")
-
 # A plain scalar is one not opened with a quote, a block indicator or a flow collection, and it is
 # the only style these two characters are dangerous in: inside `'...'` or a `|` block they are
 # text like any other.
 _QUOTED_BLOCK_OR_FLOW = "'\"|>&*[{"
+
+# What to read a value out of, and which punctuation can truncate it there.
+#
+# `key: value` and `- key: value` both hold prose and are checked for both hazards. A sequence
+# item that is a bare scalar (`- some text`) is checked for `" #"` only: a `": "` in that
+# position does not truncate anything, it makes the item a one-key mapping, which parses. Telling
+# that apart from the 125 nested mappings the file legitimately writes that way is not possible
+# from the text, so it is left alone.
+_SCANS = (
+    (re.compile(r"^\s*(?:-\s+)?[\w$\"-]+:\s+(\S.*?)\s*$"), (": ", " #")),
+    (re.compile(r"^\s*-\s+(\S.*?)\s*$"), (" #",)),
+)
 
 
 def test_the_shipped_component_schema_parses():
@@ -47,7 +55,8 @@ def test_no_plain_scalar_carries_yaml_punctuation():
     text rather than the parsed schema, which by then has already lost the evidence.
 
     Every inline value is checked, not only `description`, because the hazard belongs to the
-    scalar style rather than to the field: a `title` or an `error_message` breaks the same way.
+    scalar style rather than to the field: a `title`, an `error_message` or a value written
+    under a sequence item all break the same way.
     """
     # The same bytes the loader reads, fetched the same way, so this cannot drift from what ships.
     raw_schema = pkgutil.get_data(
@@ -58,14 +67,16 @@ def test_no_plain_scalar_carries_yaml_punctuation():
     offenders = []
 
     for number, line in enumerate(raw_schema.decode().splitlines(), start=1):
-        match = _INLINE_VALUE.match(line)
-        if match is None:
-            continue
-        value = match.group(1)
-        if value[0] in _QUOTED_BLOCK_OR_FLOW:
-            continue
-        if ": " in value or " #" in value:
-            offenders.append(f"line {number}: {value[:80]}")
+        for pattern, hazards in _SCANS:
+            match = pattern.match(line)
+            if match is None:
+                continue
+            value = match.group(1)
+            if value[0] in _QUOTED_BLOCK_OR_FLOW:
+                continue
+            if any(hazard in value for hazard in hazards):
+                offenders.append(f"line {number}: {value[:80]}")
+                break  # one report per line; the scans overlap on `- key: value`
 
     assert not offenders, (
         "these are plain YAML scalars containing punctuation that ends them early; "
