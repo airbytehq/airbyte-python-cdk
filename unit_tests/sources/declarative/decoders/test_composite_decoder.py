@@ -3,6 +3,7 @@
 #
 import csv
 import gzip
+import io
 import json
 import socket
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -71,6 +72,64 @@ def generate_csv(
     if should_compress:
         return compress_with_gzip(csv_data, encoding=encoding)
     return csv_data.encode(encoding)
+
+
+class NonSeekableBytesIO(BytesIO):
+    def seekable(self) -> bool:
+        return False
+
+    def seek(self, *args, **kwargs) -> int:
+        raise io.UnsupportedOperation("seek")
+
+    def tell(self) -> int:
+        raise io.UnsupportedOperation("tell")
+
+
+class OneByteAtATimeBytesIO(BytesIO):
+    def read(self, size: int = -1) -> bytes:
+        if size > 0:
+            size = 1
+        return super().read(size)
+
+
+@pytest.mark.parametrize("stream_class", [BytesIO, NonSeekableBytesIO])
+def test_gzip_parser_decompresses_gzip_payload(stream_class):
+    parser = GzipParser(inner_parser=CsvParser())
+
+    assert list(parser.parse(stream_class(compress_with_gzip("date,units\n2026-08-01,42\n")))) == [
+        {"date": "2026-08-01", "units": "42"}
+    ]
+
+
+def test_gzip_parser_handles_short_reads():
+    parser = GzipParser(inner_parser=CsvParser())
+
+    assert list(
+        parser.parse(OneByteAtATimeBytesIO(compress_with_gzip("date,units\n2026-08-01,42\n")))
+    ) == [{"date": "2026-08-01", "units": "42"}]
+
+
+@pytest.mark.parametrize("stream_class", [BytesIO, NonSeekableBytesIO])
+def test_gzip_parser_passes_through_non_gzip_payload(stream_class):
+    parser = GzipParser(inner_parser=CsvParser())
+
+    assert list(parser.parse(stream_class(b"date,units\n2026-08-01,42\n"))) == [
+        {"date": "2026-08-01", "units": "42"}
+    ]
+
+
+def test_gzip_parser_handles_empty_payload():
+    parser = GzipParser(inner_parser=CsvParser())
+
+    assert list(parser.parse(BytesIO())) == []
+
+
+def test_nested_gzip_parser_decompresses_single_gzip_payload():
+    parser = GzipParser(inner_parser=GzipParser(inner_parser=CsvParser()))
+
+    assert list(parser.parse(BytesIO(compress_with_gzip("date,units\n2026-08-01,42\n")))) == [
+        {"date": "2026-08-01", "units": "42"}
+    ]
 
 
 @pytest.mark.parametrize("encoding", ["utf-8", "utf", "iso-8859-1"])

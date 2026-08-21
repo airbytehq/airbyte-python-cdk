@@ -2787,15 +2787,16 @@ class ModelToComponentFactory:
         gzip_parser: GzipParser = ModelToComponentFactory._get_parser(model, config)  # type: ignore  # based on the model, we know this will be a GzipParser
 
         if self._emit_connector_builder_messages:
-            # This is very surprising but if the response is not streamed,
-            # CompositeRawDecoder calls response.content and the requests library actually uncompress the data as opposed to response.raw,
-            # which uses urllib3 directly and does not uncompress the data.
-            return CompositeRawDecoder(gzip_parser.inner_parser, False)
+            return CompositeRawDecoder(gzip_parser, False)
 
+        transport_gzip_parser = GzipParser(inner_parser=gzip_parser)
         return CompositeRawDecoder.by_headers(
-            [({"Content-Encoding", "Content-Type"}, _compressed_response_types, gzip_parser)],
+            [
+                ({"Content-Encoding"}, {"gzip"}, transport_gzip_parser),
+                ({"Content-Type"}, _compressed_response_types, gzip_parser),
+            ],
             stream_response=True,
-            fallback_parser=gzip_parser.inner_parser,
+            fallback_parser=gzip_parser,
         )
 
     @staticmethod
