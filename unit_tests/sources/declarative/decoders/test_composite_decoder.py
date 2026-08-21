@@ -3,6 +3,7 @@
 #
 import csv
 import gzip
+import io
 import json
 import socket
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -77,6 +78,12 @@ class NonSeekableBytesIO(BytesIO):
     def seekable(self) -> bool:
         return False
 
+    def seek(self, *args, **kwargs) -> int:
+        raise io.UnsupportedOperation("seek")
+
+    def tell(self) -> int:
+        raise io.UnsupportedOperation("tell")
+
 
 class OneByteAtATimeBytesIO(BytesIO):
     def read(self, size: int = -1) -> bytes:
@@ -85,10 +92,11 @@ class OneByteAtATimeBytesIO(BytesIO):
         return super().read(size)
 
 
-def test_gzip_parser_decompresses_gzip_payload():
+@pytest.mark.parametrize("stream_class", [BytesIO, NonSeekableBytesIO])
+def test_gzip_parser_decompresses_gzip_payload(stream_class):
     parser = GzipParser(inner_parser=CsvParser())
 
-    assert list(parser.parse(BytesIO(compress_with_gzip("date,units\n2026-08-01,42\n")))) == [
+    assert list(parser.parse(stream_class(compress_with_gzip("date,units\n2026-08-01,42\n")))) == [
         {"date": "2026-08-01", "units": "42"}
     ]
 

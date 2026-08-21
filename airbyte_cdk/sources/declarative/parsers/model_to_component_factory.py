@@ -2785,8 +2785,12 @@ class ModelToComponentFactory:
         if self._emit_connector_builder_messages:
             return CompositeRawDecoder(gzip_parser, False)
 
+        transport_gzip_parser = GzipParser(inner_parser=gzip_parser)
         return CompositeRawDecoder.by_headers(
-            [({"Content-Encoding", "Content-Type"}, _compressed_response_types, gzip_parser)],
+            [
+                ({"Content-Encoding"}, {"gzip"}, transport_gzip_parser),
+                ({"Content-Type"}, _compressed_response_types, gzip_parser),
+            ],
             stream_response=True,
             fallback_parser=gzip_parser,
         )

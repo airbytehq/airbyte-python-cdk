@@ -293,6 +293,35 @@ def test_create_gzip_decoder_handles_compressed_response(
         headers=headers,
         status=200,
         preload_content=False,
+        decode_content=False,
+    )
+
+    model = GzipDecoderModel(
+        type="GzipDecoder",
+        decoder=CsvDecoderModel(type="CsvDecoder"),
+    )
+    decoder = ModelToComponentFactory(
+        emit_connector_builder_messages=emit_connector_builder_messages
+    ).create_gzip_decoder(model, {})
+
+    assert list(decoder.decode(response)) == [{"date": "2026-08-01", "units": "42"}]
+
+
+@pytest.mark.parametrize("emit_connector_builder_messages", [False, True])
+def test_create_gzip_decoder_handles_transport_and_content_gzip(
+    emit_connector_builder_messages: bool,
+):
+    csv_data = b"date,units\n2026-08-01,42\n"
+    headers = {"Content-Encoding": "gzip", "Content-Type": "application/gzip"}
+    response = requests.Response()
+    response.status_code = 200
+    response.headers.update(headers)
+    response.raw = HTTPResponse(
+        body=io.BytesIO(gzip.compress(gzip.compress(csv_data))),
+        headers=headers,
+        status=200,
+        preload_content=False,
+        decode_content=False,
     )
 
     model = GzipDecoderModel(
