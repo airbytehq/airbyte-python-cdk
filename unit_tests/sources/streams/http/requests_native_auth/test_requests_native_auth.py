@@ -642,8 +642,12 @@ class TestOauth2Authenticator:
             oauth.refresh_access_token()
 
         if wrapped:
-            error_message = "Refresh token is invalid or expired. Please re-authenticate from Sources/<your source>/Settings."
-            assert exc_info.value.internal_message == error_message
+            error_message = "Refresh token was rejected by the OAuth provider (invalid, expired, or already used). Re-authenticate this source's credentials in its connection settings."
+            assert exc_info.value.internal_message.startswith(
+                "Refresh token rejected by the OAuth token endpoint."
+            )
+            assert f"HTTP {response_code}" in exc_info.value.internal_message
+            assert response_value in exc_info.value.internal_message
             assert exc_info.value.message == error_message
             assert exc_info.value.failure_type == FailureType.config_error
 
