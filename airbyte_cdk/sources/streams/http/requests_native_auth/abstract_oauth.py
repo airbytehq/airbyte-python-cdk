@@ -335,7 +335,7 @@ class AbstractOauth2Authenticator(AuthBase):
                     )
             if self._wrap_refresh_token_exception(e):
                 response_info = (
-                    f"HTTP {e.response.status_code}: {e.response.text}"
+                    f"HTTP {e.response.status_code}: {e.response.text[:1000]}"
                     if e.response is not None
                     else str(e)
                 )
