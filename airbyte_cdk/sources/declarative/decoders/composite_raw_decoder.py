@@ -226,14 +226,16 @@ class CsvParser(Parser):
 
 @dataclass
 class XmlParser(Parser):
-    """Streaming parser for XML documents.
+    """Parses an XML document read from a byte stream into a single record.
+
+    Unlike `XmlDecoder`, which needs a whole `requests.Response`, this parser reads from a
+    byte stream, so it can be nested inside `GzipParser` or `ZipfileDecoder` to handle
+    compressed XML payloads. It is not an incremental parser: the whole document is
+    materialized in memory and emitted as one record.
 
     Records keep the same shape as `airbyte_cdk.sources.declarative.decoders.XmlDecoder`:
     attributes are prefixed with `@` and the text content of an element carrying attributes
     is exposed under `#text`. XML namespace declarations are not supported.
-
-    Unlike `XmlDecoder`, this parser reads from a byte stream, so it can be nested inside
-    `GzipParser` or `ZipfileDecoder` to handle compressed XML payloads.
     """
 
     encoding: Optional[str] = None
