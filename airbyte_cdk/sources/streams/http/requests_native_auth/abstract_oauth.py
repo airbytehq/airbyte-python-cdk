@@ -334,10 +334,16 @@ class AbstractOauth2Authenticator(AuthBase):
                         failure_type=FailureType.transient_error,
                     )
             if self._wrap_refresh_token_exception(e):
-                message = "Refresh token is invalid or expired. Please re-authenticate from Sources/<your source>/Settings."
-                raise AirbyteTracedException(
-                    internal_message=message, message=message, failure_type=FailureType.config_error
+                response_info = (
+                    f"HTTP {e.response.status_code}: {e.response.text[:1000]}"
+                    if e.response is not None
+                    else str(e)
                 )
+                raise AirbyteTracedException(
+                    internal_message=f"Refresh token rejected by the OAuth token endpoint. {response_info}",
+                    message="Refresh token was rejected by the OAuth provider (invalid, expired, or already used). Re-authenticate this source's credentials in its connection settings.",
+                    failure_type=FailureType.config_error,
+                ) from e
             raise
         except Exception as e:
             raise AirbyteTracedException(
