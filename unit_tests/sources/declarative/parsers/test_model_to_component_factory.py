@@ -120,6 +120,9 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     SelectiveAuthenticator,
 )
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    XmlDecoder as XmlDecoderModel,
+)
 from airbyte_cdk.sources.declarative.parsers.custom_code_compiler import (
     ENV_VAR_ALLOW_CUSTOM_CODE,
     INJECTED_MANIFEST,
@@ -333,6 +336,41 @@ def test_create_gzip_decoder_handles_transport_and_content_gzip(
     ).create_gzip_decoder(model, {})
 
     assert list(decoder.decode(response)) == [{"date": "2026-08-01", "units": "42"}]
+
+
+@pytest.mark.parametrize(
+    "headers",
+    [
+        pytest.param({"Content-Encoding": "gzip"}, id="content_encoding_gzip"),
+        pytest.param({"Content-Type": "application/gzip"}, id="content_type_gzip"),
+        pytest.param({"Content-Type": "application/xml"}, id="no_content_encoding_header"),
+    ],
+)
+@pytest.mark.parametrize("emit_connector_builder_messages", [False, True])
+def test_create_gzip_decoder_handles_compressed_xml_response(
+    headers: Mapping[str, str], emit_connector_builder_messages: bool
+):
+    xml_data = b'<orders><order id="1"><units>42</units></order></orders>'
+    response = requests.Response()
+    response.status_code = 200
+    response.headers.update(headers)
+    response.raw = HTTPResponse(
+        body=io.BytesIO(gzip.compress(xml_data)),
+        headers=headers,
+        status=200,
+        preload_content=False,
+        decode_content=False,
+    )
+
+    model = GzipDecoderModel(
+        type="GzipDecoder",
+        decoder=XmlDecoderModel(type="XmlDecoder"),
+    )
+    decoder = ModelToComponentFactory(
+        emit_connector_builder_messages=emit_connector_builder_messages
+    ).create_gzip_decoder(model, {})
+
+    assert list(decoder.decode(response)) == [{"orders": {"order": {"@id": "1", "units": "42"}}}]
 
 
 def test_create_component_type_mismatch():

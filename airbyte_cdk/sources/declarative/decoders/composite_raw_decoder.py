@@ -11,10 +11,12 @@ import logging
 from dataclasses import dataclass
 from io import BufferedIOBase, TextIOWrapper
 from typing import Any, List, Optional
+from xml.parsers.expat import ExpatError
 
 import ijson
 import orjson
 import requests
+import xmltodict
 from typing_extensions import Buffer
 
 from airbyte_cdk.models import FailureType
@@ -220,6 +222,28 @@ class CsvParser(Parser):
             if self.set_values_to_none:
                 row = {k: (None if v in self.set_values_to_none else v) for k, v in row.items()}
             yield row
+
+
+@dataclass
+class XmlParser(Parser):
+    """Streaming parser for XML documents.
+
+    Records keep the same shape as `airbyte_cdk.sources.declarative.decoders.XmlDecoder`:
+    attributes are prefixed with `@` and the text content of an element carrying attributes
+    is exposed under `#text`. XML namespace declarations are not supported.
+
+    Unlike `XmlDecoder`, this parser reads from a byte stream, so it can be nested inside
+    `GzipParser` or `ZipfileDecoder` to handle compressed XML payloads.
+    """
+
+    encoding: Optional[str] = None
+
+    def parse(self, data: BufferedIOBase) -> PARSER_OUTPUT_TYPE:
+        try:
+            yield xmltodict.parse(data, encoding=self.encoding)
+        except ExpatError as exc:
+            logger.warning(f"Response cannot be parsed from XML: {exc}")
+            yield {}
 
 
 class CompositeRawDecoder(Decoder):
