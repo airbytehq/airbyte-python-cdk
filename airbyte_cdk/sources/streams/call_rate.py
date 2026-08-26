@@ -18,6 +18,7 @@ import requests_cache
 from pyrate_limiter import InMemoryBucket, Limiter, RateItem, TimeClock
 from pyrate_limiter import Rate as PyRateRate
 from pyrate_limiter.exceptions import BucketFullException
+from pyrate_limiter.utils import binary_search
 
 # prevents mypy from complaining about missing session attributes in LimiterMixin
 if TYPE_CHECKING:
@@ -478,22 +479,43 @@ class MovingWindowCallRatePolicy(BaseCallRatePolicy):
     ) -> None:
         """Adjust call bucket to reflect the state of the API server
 
-        :param available_calls:
-        :param call_reset_ts:
+        The bucket is filled with dummy calls until what it still allows matches what the API
+        reports as available. Updates only ever lower the local allowance: when the API reports
+        more available calls than the configured rates allow, the configured rates win.
+
+        `call_reset_ts` is not used. A moving window has no reset point, so the only actionable
+        part of the API feedback is the number of calls left; the window length stays the one
+        the rates were configured with.
+
+        :param available_calls: number of calls the API reports as still available
+        :param call_reset_ts: unused, see above
         :return:
         """
-        if (
-            available_calls is not None and call_reset_ts is None
-        ):  # we do our best to sync buckets with API
-            if available_calls == 0:
-                with self._limiter.lock:
-                    items_to_add = self._bucket.count() < self._bucket.rates[0].limit
-                    if items_to_add > 0:
-                        now: int = TimeClock().now()  # type: ignore[no-untyped-call]
-                        self._bucket.put(RateItem(name="dummy", timestamp=now, weight=items_to_add))
-        # TODO: add support if needed, it might be that it is not possible to make a good solution for this case
-        # if available_calls is not None and call_reset_ts is not None:
-        #     ts = call_reset_ts.timestamp()
+        if available_calls is None:
+            return
+
+        with self._limiter.lock:
+            now: int = TimeClock().now()  # type: ignore[no-untyped-call]
+            self._bucket.leak(now)
+            calls_left = self._calls_left(now)
+            items_to_add = calls_left - available_calls
+            if items_to_add > 0:
+                logger.debug(
+                    "got rate limit update from api, adjusting available calls from %s to %s",
+                    calls_left,
+                    available_calls,
+                )
+                self._bucket.put(RateItem(name="dummy", timestamp=now, weight=items_to_add))
+
+    def _calls_left(self, now: int) -> int:
+        """Number of calls the bucket still allows, i.e. the most constraining of all rates."""
+        items = self._bucket.items
+        calls_left = []
+        for rate in self._bucket.rates:
+            lower_bound_idx = binary_search(items, now - rate.interval)
+            calls_used = len(items) - lower_bound_idx if lower_bound_idx >= 0 else 0
+            calls_left.append(rate.limit - calls_used)
+        return min(calls_left)
 
     def __str__(self) -> str:
         """Return a human-friendly description of the moving window rate policy for logging purposes."""
