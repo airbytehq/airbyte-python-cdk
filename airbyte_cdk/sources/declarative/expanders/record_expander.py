@@ -91,9 +91,9 @@ class RecordExpander:
             raise ValueError(
                 "`truncation_indicator_path` is required when `truncated_list_retriever` is configured."
             )
-        if self.truncation_indicator_path and any(
-            "*" in path
-            for path in (*self.expand_records_from_field, *self.truncation_indicator_path)
+        if self.truncated_list_retriever and any(
+            path == "*"
+            for path in (*self.expand_records_from_field, *(self.truncation_indicator_path or []))
         ):
             raise ValueError(
                 "The '*' wildcard is not supported in `expand_records_from_field` or `truncation_indicator_path` when truncation handling is configured."
@@ -117,8 +117,10 @@ class RecordExpander:
         parent_record = record
 
         if self.truncated_list_retriever and self._is_truncated(parent_record):
-            fetched_records = list(self._fetch_complete_list(parent_record))
-            if fetched_records:
+            fetched_records = iter(self._fetch_complete_list(parent_record))
+            first_fetched = next(fetched_records, None)
+            if first_fetched is not None:
+                yield first_fetched
                 yield from fetched_records
                 return
 
