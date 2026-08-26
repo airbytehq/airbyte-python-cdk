@@ -2258,6 +2258,22 @@ definitions:
           - skip
           - emit_parent
         default: skip
+      truncation_indicator_path:
+        title: Truncation Indicator Path
+        description: Path within each record to a field indicating that the embedded nested list is truncated (e.g. a `has_more` flag on the list object). When the field evaluates to a truthy value and `truncated_list_retriever` is configured, the retriever is used to fetch the complete list instead of expanding the embedded items. Wildcards (*) are not supported in this path or in `expand_records_from_field` when this option is used.
+        type: array
+        items:
+          type: string
+        interpolation_context:
+          - config
+        examples:
+          - ["data", "object", "lines", "has_more"]
+      truncated_list_retriever:
+        title: Truncated List Retriever
+        description: Retriever used to fetch the complete list of items when the field at `truncation_indicator_path` is truthy on a record. The record being expanded is exposed to the retriever's interpolation context as `stream_slice['parent_record']`. If the retriever returns no records, the embedded items are expanded as a fallback. Requires `truncation_indicator_path`.
+        anyOf:
+          - "$ref": "#/definitions/SimpleRetriever"
+          - "$ref": "#/definitions/CustomRetriever"
       $parameters:
         type: object
         additionalProperties: true

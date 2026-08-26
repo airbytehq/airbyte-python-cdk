@@ -5,12 +5,15 @@
 import copy
 from dataclasses import InitVar, dataclass
 from enum import Enum
-from typing import Any, Iterable, Mapping, MutableMapping, Sequence
+from typing import TYPE_CHECKING, Any, Iterable, Mapping, MutableMapping, Optional, Sequence
 
 import dpath
 
 from airbyte_cdk.sources.declarative.interpolation.interpolated_string import InterpolatedString
-from airbyte_cdk.sources.types import Config
+from airbyte_cdk.sources.types import Config, Record, StreamSlice
+
+if TYPE_CHECKING:
+    from airbyte_cdk.sources.declarative.retrievers import Retriever
 
 
 class OnNoRecords(Enum):
@@ -62,6 +65,12 @@ class RecordExpander:
             parent record in an "original_record" field. Defaults to False.
         on_no_records: Behavior when expansion produces no records. "skip" (default)
             emits nothing. "emit_parent" emits the original parent record unchanged.
+        truncation_indicator_path: Path within each record to a field indicating that the
+            embedded nested list is truncated (e.g. a `has_more` flag on the list object).
+        truncated_list_retriever: Retriever used to fetch the complete list of items when
+            the field at `truncation_indicator_path` is truthy. The record being expanded is
+            exposed to the retriever's interpolation context as `stream_slice['parent_record']`.
+            If the retriever returns no records, the embedded items are expanded as a fallback.
         config: The user-provided configuration as specified by the source's spec.
     """
 
@@ -70,11 +79,28 @@ class RecordExpander:
     parameters: InitVar[Mapping[str, Any]]
     remain_original_record: bool = False
     on_no_records: OnNoRecords = OnNoRecords.skip
+    truncation_indicator_path: Optional[Sequence[str]] = None
+    truncated_list_retriever: Optional["Retriever"] = None
 
     def __post_init__(self, parameters: Mapping[str, Any]) -> None:
         self._expand_path: list[InterpolatedString] = [
             InterpolatedString.create(path, parameters=parameters)
             for path in self.expand_records_from_field
+        ]
+        if self.truncated_list_retriever and not self.truncation_indicator_path:
+            raise ValueError(
+                "`truncation_indicator_path` is required when `truncated_list_retriever` is configured."
+            )
+        if self.truncation_indicator_path and any(
+            "*" in path
+            for path in (*self.expand_records_from_field, *self.truncation_indicator_path)
+        ):
+            raise ValueError(
+                "The '*' wildcard is not supported in `expand_records_from_field` or `truncation_indicator_path` when truncation handling is configured."
+            )
+        self._truncation_indicator_path: list[InterpolatedString] = [
+            InterpolatedString.create(path, parameters=parameters)
+            for path in (self.truncation_indicator_path or [])
         ]
 
     def expand_record(self, record: MutableMapping[Any, Any]) -> Iterable[MutableMapping[Any, Any]]:
@@ -89,6 +115,13 @@ class RecordExpander:
             return
 
         parent_record = record
+
+        if self.truncated_list_retriever and self._is_truncated(parent_record):
+            fetched_records = list(self._fetch_complete_list(parent_record))
+            if fetched_records:
+                yield from fetched_records
+                return
+
         expand_path = [path.eval(self.config) for path in self._expand_path]
         expanded_any = False
 
@@ -119,6 +152,29 @@ class RecordExpander:
 
         if not expanded_any and self.on_no_records == OnNoRecords.emit_parent:
             yield parent_record
+
+    def _is_truncated(self, parent_record: MutableMapping[Any, Any]) -> bool:
+        indicator_path = [path.eval(self.config) for path in self._truncation_indicator_path]
+        try:
+            return bool(dpath.get(parent_record, indicator_path))
+        except KeyError:
+            return False
+
+    def _fetch_complete_list(
+        self, parent_record: Mapping[str, Any]
+    ) -> Iterable[MutableMapping[str, Any]]:
+        if not self.truncated_list_retriever:
+            return
+        stream_slice = StreamSlice(partition={"parent_record": parent_record}, cursor_slice={})
+        for item in self.truncated_list_retriever.read_records(
+            records_schema={}, stream_slice=stream_slice
+        ):
+            data = item.data if isinstance(item, Record) else item
+            if not isinstance(data, Mapping):
+                continue
+            expanded_record = dict(data)
+            self._apply_parent_context(parent_record, expanded_record)
+            yield expanded_record
 
     def _apply_parent_context(
         self, parent_record: Mapping[str, Any], child_record: MutableMapping[str, Any]
