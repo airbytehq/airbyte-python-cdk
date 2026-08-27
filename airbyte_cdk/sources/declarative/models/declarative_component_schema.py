@@ -2307,7 +2307,7 @@ class RecordExpander(BaseModel):
     )
     truncation_indicator_path: Optional[List[str]] = Field(
         None,
-        description="Path within each record to a field indicating that the embedded nested list is truncated (e.g. a `has_more` flag on the list object). When the field evaluates to a truthy value and `truncated_list_retriever` is configured, the retriever is used to fetch the complete list instead of expanding the embedded items. Wildcards (*) are not supported in this path or in `expand_records_from_field` when this option is used.",
+        description="Path within each record to a field indicating that the embedded nested list is truncated (e.g. a `has_more` flag on the list object). When the field evaluates to a truthy value and `truncated_list_retriever` is configured, the retriever is used to fetch the complete list instead of expanding the embedded items. When the field is truthy and no retriever is configured, the embedded items are expanded as normal and a WARNING is logged once per stream so the truncation is visible instead of silent. Wildcards (*) are not supported in this path, nor in `expand_records_from_field` when a retriever is configured.",
         examples=[["data", "object", "lines", "has_more"]],
         title="Truncation Indicator Path",
     )
