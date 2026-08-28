@@ -338,23 +338,55 @@ class TestMovingWindowCallRatePolicy:
     def test_update_respects_the_most_constraining_rate(self):
         policy = MovingWindowCallRatePolicy(
             rates=[
-                Rate(3, timedelta(seconds=1)),
-                Rate(60, timedelta(minutes=1)),
+                Rate(10, timedelta(seconds=1)),
+                Rate(5, timedelta(minutes=1)),
             ],
             matchers=[],
         )
 
-        policy.update(available_calls=1, call_reset_ts=datetime.now())
+        policy.update(available_calls=1, call_reset_ts=None)
 
         policy.try_acquire("call", weight=1)
         with pytest.raises(CallRateLimitHit) as exc:
             policy.try_acquire("call", weight=1)
-        assert exc.value.time_to_wait.total_seconds() <= 60
+        assert exc.value.rate == "limit=5/1.0m"
+        assert exc.value.time_to_wait.total_seconds() == pytest.approx(60, 0.1)
 
     def test_update_available_calls_zero_fills_bucket(self):
         policy = MovingWindowCallRatePolicy(rates=[Rate(10, timedelta(minutes=1))], matchers=[])
 
         policy.update(available_calls=0, call_reset_ts=None)
+
+        with pytest.raises(CallRateLimitHit):
+            policy.try_acquire("call", weight=1)
+
+    def test_update_ignores_rates_over_header_wait_cap(self):
+        policy = MovingWindowCallRatePolicy(rates=[Rate(100, timedelta(minutes=15))], matchers=[])
+
+        policy.update(available_calls=0, call_reset_ts=None)
+
+        for _ in range(100):
+            policy.try_acquire("call", weight=1)
+
+    def test_update_caps_to_eligible_rate(self):
+        policy = MovingWindowCallRatePolicy(
+            rates=[
+                Rate(10, timedelta(minutes=1)),
+                Rate(100, timedelta(minutes=15)),
+            ],
+            matchers=[],
+        )
+
+        policy.update(available_calls=0, call_reset_ts=None)
+
+        with pytest.raises(CallRateLimitHit) as exc:
+            policy.try_acquire("call", weight=1)
+        assert exc.value.time_to_wait.total_seconds() <= 600
+
+    def test_update_clamps_negative_available_calls(self):
+        policy = MovingWindowCallRatePolicy(rates=[Rate(10, timedelta(minutes=1))], matchers=[])
+
+        policy.update(available_calls=-1, call_reset_ts=None)
 
         with pytest.raises(CallRateLimitHit):
             policy.try_acquire("call", weight=1)
@@ -379,6 +411,33 @@ class TestHttpAPIBudget:
 
         budget.acquire_call(request, block=False)
         with pytest.raises(CallRateLimitHit):
+            budget.acquire_call(request, block=False)
+
+    def test_update_from_429_response(self, mocker):
+        policy = MovingWindowCallRatePolicy(rates=[Rate(10, timedelta(minutes=1))], matchers=[])
+        budget = HttpAPIBudget(policies=[policy])
+        request = Request("GET", "https://example.com")
+        response = mocker.Mock(spec=requests.Response)
+        response.headers = requests.structures.CaseInsensitiveDict()
+        response.status_code = 429
+
+        budget.update_from_response(request, response)
+
+        with pytest.raises(CallRateLimitHit) as exc:
+            budget.acquire_call(request, block=False)
+        assert exc.value.time_to_wait.total_seconds() <= 600
+
+    def test_update_from_429_response_ignores_over_cap_policy(self, mocker):
+        policy = MovingWindowCallRatePolicy(rates=[Rate(100, timedelta(minutes=15))], matchers=[])
+        budget = HttpAPIBudget(policies=[policy])
+        request = Request("GET", "https://example.com")
+        response = mocker.Mock(spec=requests.Response)
+        response.headers = requests.structures.CaseInsensitiveDict()
+        response.status_code = 429
+
+        budget.update_from_response(request, response)
+
+        for _ in range(100):
             budget.acquire_call(request, block=False)
 
 
