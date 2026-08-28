@@ -2,6 +2,7 @@
 
 import logging
 import os
+import time
 from datetime import timedelta
 from unittest.mock import MagicMock, patch
 
@@ -1060,6 +1061,372 @@ def test_refresh_token_then_retry_action_retries_and_succeeds_after_token_refres
     assert mock_authenticator.access_token == "new_refreshed_token"
     assert returned_response == valid_response
     assert call_count == 2
+
+
+class _RecordingAuthenticator(TokenAuthenticator):
+    """An authenticator that tracks quota state and wants to see responses."""
+
+    def __init__(self):
+        super().__init__(token="token")
+        self.seen = []
+
+    def update_from_response(self, request, response):
+        self.seen.append(response.status_code)
+
+
+def test_authenticator_receives_every_response(requests_mock):
+    """A quota-tracking authenticator only ever sees requests, so `HttpClient` hands it the
+    responses too. Every attempt counts, including the retried ones."""
+    authenticator = _RecordingAuthenticator()
+    http_client = HttpClient(
+        name="test",
+        logger=logging.getLogger("test"),
+        authenticator=authenticator,
+        error_handler=HttpStatusErrorHandler(logger=logging.getLogger("test"), max_retries=1),
+    )
+    requests_mock.get(
+        "https://example.com/",
+        [{"status_code": 500}, {"status_code": 200}],
+    )
+
+    with patch("time.sleep"):
+        http_client.send_request(http_method="GET", url="https://example.com/", request_kwargs={})
+
+    assert authenticator.seen == [500, 200]
+
+
+def test_authenticator_without_update_hook_is_left_alone(requests_mock):
+    """Duck typed, so authenticators that don't track quota are untouched."""
+    http_client = HttpClient(
+        name="test",
+        logger=logging.getLogger("test"),
+        authenticator=TokenAuthenticator(token="token"),
+    )
+    requests_mock.get("https://example.com/", status_code=200)
+
+    _, response = http_client.send_request(
+        http_method="GET", url="https://example.com/", request_kwargs={}
+    )
+
+    assert response.status_code == 200
+
+
+def test_authenticator_update_failure_does_not_break_the_request(requests_mock):
+    """Quota bookkeeping is best-effort; it must never turn a good response into a failure."""
+
+    class _BrokenAuthenticator(TokenAuthenticator):
+        def update_from_response(self, request, response):
+            raise ValueError("boom")
+
+    http_client = HttpClient(
+        name="test",
+        logger=logging.getLogger("test"),
+        authenticator=_BrokenAuthenticator(token="token"),
+    )
+    requests_mock.get("https://example.com/", status_code=200, json={"ok": True})
+
+    _, response = http_client.send_request(
+        http_method="GET", url="https://example.com/", request_kwargs={}
+    )
+
+    assert response.json() == {"ok": True}
+
+
+def test_rate_limited_token_rotates_on_the_retry_end_to_end(requests_mock):
+    """End-to-end: a rate-limited response zeroes that token's pool and the retry goes out on
+    another token.
+
+    This depends on `_send` re-signing the request on every attempt past the first. Nothing else
+    covers that line, so a refactor could silently drop rotation-on-retry and leave the sync
+    hammering a token the server has already rejected.
+
+    The 30-minute reset in the response is deliberately far away: the assertion on `sleeps` is
+    that it is *not* waited out, because the authenticator reports another token with quota.
+    """
+    from airbyte_cdk.sources.declarative.auth.rate_limited_multiple_token import (
+        RateLimitedMultipleTokenAuthenticator,
+        TokenQuota,
+    )
+    from airbyte_cdk.sources.declarative.requesters.error_handlers import DefaultErrorHandler
+    from airbyte_cdk.sources.declarative.requesters.error_handlers.backoff_strategies import (
+        WaitUntilTimeFromHeaderBackoffStrategy,
+    )
+
+    quota_status_url = "https://api.example.com/rate_limit"
+    reset = int(time.time()) + 1800
+    requests_mock.get(
+        quota_status_url,
+        json={"resources": {"core": {"remaining": 5000, "reset": reset, "limit": 5000}}},
+    )
+    authenticator = RateLimitedMultipleTokenAuthenticator(
+        tokens=["token_1", "token_2"],
+        quotas=[
+            TokenQuota(
+                name="rest",
+                remaining_path=["resources", "core", "remaining"],
+                reset_path=["resources", "core", "reset"],
+                limit_path=["resources", "core", "limit"],
+                remaining_header="X-RateLimit-Remaining",
+                reset_header="X-RateLimit-Reset",
+                exhaustion_status_codes=[429],
+            )
+        ],
+        quota_status_url=quota_status_url,
+        auth_method="token",
+    )
+
+    tokens_used = []
+
+    def respond(request, context):
+        token = request.headers["Authorization"].split()[-1]
+        tokens_used.append(token)
+        if token == "token_1":
+            context.status_code = 429
+            context.headers = {"X-RateLimit-Reset": str(reset), "X-RateLimit-Remaining": "0"}
+            return "{}"
+        context.status_code = 200
+        context.headers = {}
+        return "{}"
+
+    requests_mock.get("https://api.example.com/data", text=respond)
+    # The backoff strategies must be on the client: that is what `_handle_error_resolution`
+    # consults. Passing them only to the error handler falls through to a 1s default and hides
+    # the real wait.
+    http_client = HttpClient(
+        name="test",
+        logger=logging.getLogger("test"),
+        authenticator=authenticator,
+        error_handler=DefaultErrorHandler(config={}, parameters={}),
+        backoff_strategy=[
+            WaitUntilTimeFromHeaderBackoffStrategy(
+                header="X-RateLimit-Reset", config={}, parameters={}
+            )
+        ],
+    )
+
+    sleeps = []
+    with patch("time.sleep", side_effect=lambda seconds: sleeps.append(seconds)):
+        _, response = http_client.send_request(
+            http_method="GET", url="https://api.example.com/data", request_kwargs={}
+        )
+
+    assert response.status_code == 200
+    assert tokens_used == ["token_1", "token_2"]
+    assert authenticator._states["token_1"]["rest"].remaining == 0
+    # The 1800s reset is skipped: a token with quota was available the whole time.
+    assert max(sleeps) < 5, f"expected a prompt retry, slept {sleeps}"
+
+    tokens_used.clear()
+    with patch("time.sleep", side_effect=lambda seconds: sleeps.append(seconds)):
+        http_client.send_request(
+            http_method="GET", url="https://api.example.com/data", request_kwargs={}
+        )
+    assert tokens_used == ["token_2"]  # the spent token is not tried again
+
+
+class _SpareTokenAuthenticator(TokenAuthenticator):
+    """Reports a spare credential without tracking any quota."""
+
+    def __init__(self, has_spare=True):
+        super().__init__(token="token")
+        self.has_spare = has_spare
+
+    def has_alternative_token(self, request):
+        return self.has_spare
+
+
+def _rate_limited_client(authenticator, backoff_seconds=1800, backoff_strategy=None):
+    return HttpClient(
+        name="test",
+        logger=logging.getLogger("test"),
+        authenticator=authenticator,
+        error_handler=HttpStatusErrorHandler(
+            logger=logging.getLogger("test"),
+            error_mapping={
+                429: ErrorResolution(
+                    response_action=ResponseAction.RATE_LIMITED,
+                    failure_type=FailureType.transient_error,
+                    error_message="rate limited",
+                ),
+                500: ErrorResolution(
+                    response_action=ResponseAction.RETRY,
+                    failure_type=FailureType.transient_error,
+                    error_message="server error",
+                ),
+            },
+            max_retries=1,
+        ),
+        backoff_strategy=backoff_strategy or _ConstantBackoffStrategy(backoff_seconds),
+    )
+
+
+class _ConstantBackoffStrategy(BackoffStrategy):
+    def __init__(self, seconds):
+        self.seconds = seconds
+
+    def backoff_time(self, *args, **kwargs):
+        return self.seconds
+
+
+def test_rate_limit_wait_is_skipped_when_another_credential_is_available(requests_mock):
+    """The backoff is computed from the rejected credential's response, so it cannot know a
+    spare one is idle. The client asks before sleeping."""
+    requests_mock.get("https://example.com/", [{"status_code": 429}, {"status_code": 200}])
+    client = _rate_limited_client(_SpareTokenAuthenticator(has_spare=True))
+
+    sleeps = []
+    with patch("time.sleep", side_effect=lambda seconds: sleeps.append(seconds)):
+        _, response = client.send_request(
+            http_method="GET", url="https://example.com/", request_kwargs={}
+        )
+
+    assert response.status_code == 200
+    assert max(sleeps) < 5, f"expected a prompt retry, slept {sleeps}"
+
+
+def test_rate_limit_wait_is_paid_when_no_other_credential_is_available(requests_mock):
+    requests_mock.get("https://example.com/", [{"status_code": 429}, {"status_code": 200}])
+    client = _rate_limited_client(_SpareTokenAuthenticator(has_spare=False))
+
+    sleeps = []
+    with patch("time.sleep", side_effect=lambda seconds: sleeps.append(seconds)):
+        client.send_request(http_method="GET", url="https://example.com/", request_kwargs={})
+
+    assert max(sleeps) > 1000, f"the full rate-limit wait should stand, slept {sleeps}"
+
+
+class _RefusingBackoffStrategy(BackoffStrategy):
+    """A strategy that refuses to wait, the way `max_waiting_time_in_seconds` does."""
+
+    def backoff_time(self, *args, **kwargs):
+        raise AirbyteTracedException(
+            internal_message="wait longer than allowed",
+            message="The rate limit wait time is longer than the connector is allowed to wait.",
+            failure_type=FailureType.transient_error,
+        )
+
+
+def test_rotation_is_preferred_over_a_strategy_that_refuses_to_wait(requests_mock):
+    """A capped strategy raises rather than returning a number. Rotation has to be decided
+    before it runs, or a bound on waiting silently becomes a bound on the sync: the retry the
+    spare credential could serve in 0.1s never happens."""
+    requests_mock.get("https://example.com/", [{"status_code": 429}, {"status_code": 200}])
+    client = _rate_limited_client(
+        _SpareTokenAuthenticator(has_spare=True), backoff_strategy=_RefusingBackoffStrategy()
+    )
+
+    sleeps = []
+    with patch("time.sleep", side_effect=lambda seconds: sleeps.append(seconds)):
+        _, response = client.send_request(
+            http_method="GET", url="https://example.com/", request_kwargs={}
+        )
+
+    assert response.status_code == 200
+    assert max(sleeps) < 5, f"expected a prompt retry on the spare credential, slept {sleeps}"
+
+
+def test_a_refusing_strategy_still_ends_the_stream_without_a_spare_credential(requests_mock):
+    """The cap must keep working when rotation is not an option — that is what it is for."""
+    requests_mock.get("https://example.com/", [{"status_code": 429}, {"status_code": 200}])
+    client = _rate_limited_client(
+        _SpareTokenAuthenticator(has_spare=False), backoff_strategy=_RefusingBackoffStrategy()
+    )
+
+    with pytest.raises(AirbyteTracedException, match="longer than the connector is allowed"):
+        client.send_request(http_method="GET", url="https://example.com/", request_kwargs={})
+
+
+def test_rotation_is_preferred_over_the_real_capped_strategy(requests_mock):
+    """The stub tests above pin the client's contract — a strategy may raise. This one pins the
+    integration that actually regressed: the real `WaitUntilTimeFromHeaderBackoffStrategy` with a
+    cap it cannot honour. Without it, a change making the cap return instead of raise would leave
+    both stub tests green while the bug came back."""
+    from airbyte_cdk.sources.declarative.requesters.error_handlers.backoff_strategies import (
+        WaitUntilTimeFromHeaderBackoffStrategy,
+    )
+
+    reset = int(time.time()) + 3600
+    requests_mock.get(
+        "https://example.com/",
+        [
+            {"status_code": 429, "headers": {"X-RateLimit-Reset": str(reset)}},
+            {"status_code": 200},
+        ],
+    )
+    client = _rate_limited_client(
+        _SpareTokenAuthenticator(has_spare=True),
+        # A cap far below the hour the response asks for: the strategy would refuse the wait.
+        backoff_strategy=WaitUntilTimeFromHeaderBackoffStrategy(
+            header="X-RateLimit-Reset",
+            parameters={},
+            config={},
+            max_waiting_time_in_seconds=60,
+        ),
+    )
+
+    sleeps = []
+    with patch("time.sleep", side_effect=lambda seconds: sleeps.append(seconds)):
+        _, response = client.send_request(
+            http_method="GET", url="https://example.com/", request_kwargs={}
+        )
+
+    assert response.status_code == 200
+    assert max(sleeps) < 5, f"expected a prompt retry on the spare credential, slept {sleeps}"
+
+
+class _NoWaitBackoffStrategy(BackoffStrategy):
+    """Returns no wait at all, as a strategy does when the response carries no timing header."""
+
+    def __init__(self):
+        self.calls = 0
+
+    def backoff_time(self, *args, **kwargs):
+        self.calls += 1
+        return None
+
+
+def test_rotation_also_covers_a_rate_limit_with_no_computed_wait(requests_mock):
+    """Deciding rotation first widens it to rate limits that produce no backoff at all, where the
+    old order fell through to the default exponential retry. Intended — the retry goes out on a
+    credential with quota — but it is a behaviour change, so it is pinned rather than implied."""
+    requests_mock.get("https://example.com/", [{"status_code": 429}, {"status_code": 200}])
+    strategy = _NoWaitBackoffStrategy()
+    client = _rate_limited_client(
+        _SpareTokenAuthenticator(has_spare=True), backoff_strategy=strategy
+    )
+
+    sleeps = []
+    with patch("time.sleep", side_effect=lambda seconds: sleeps.append(seconds)):
+        _, response = client.send_request(
+            http_method="GET", url="https://example.com/", request_kwargs={}
+        )
+
+    assert response.status_code == 200
+    assert strategy.calls == 0, "the strategies are skipped entirely on the rotation path"
+    assert max(sleeps) < 5, f"expected the rotation retry, slept {sleeps}"
+
+
+def test_non_rate_limit_retry_is_not_shortened_by_a_spare_credential(requests_mock):
+    """A 500 has nothing to do with credentials; its backoff must be left alone."""
+    requests_mock.get("https://example.com/", [{"status_code": 500}, {"status_code": 200}])
+    client = _rate_limited_client(_SpareTokenAuthenticator(has_spare=True))
+
+    sleeps = []
+    with patch("time.sleep", side_effect=lambda seconds: sleeps.append(seconds)):
+        client.send_request(http_method="GET", url="https://example.com/", request_kwargs={})
+
+    assert max(sleeps) > 1000, f"a server-error backoff should stand, slept {sleeps}"
+
+
+def test_authenticator_without_alternative_token_hook_pays_the_full_wait(requests_mock):
+    requests_mock.get("https://example.com/", [{"status_code": 429}, {"status_code": 200}])
+    client = _rate_limited_client(TokenAuthenticator(token="token"))
+
+    sleeps = []
+    with patch("time.sleep", side_effect=lambda seconds: sleeps.append(seconds)):
+        client.send_request(http_method="GET", url="https://example.com/", request_kwargs={})
+
+    assert max(sleeps) > 1000
 
 
 def test_deprecated_alias_message_representation_airbyte_traced_errors_is_importable():
