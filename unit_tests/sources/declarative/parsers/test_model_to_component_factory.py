@@ -4861,6 +4861,52 @@ def test_create_async_retriever():
     assert download_retriever_record_selector.schema_normalization._config.name == "NoTransform"
 
 
+def test_create_async_retriever_requires_terminal_success_status():
+    definition = {
+        "type": "AsyncRetriever",
+        "status_mapping": {
+            "running": ["pending"],
+            "completed": [],
+            "failed": ["failed"],
+            "timeout": ["timeout"],
+        },
+        "record_selector": {
+            "type": "RecordSelector",
+            "extractor": {"type": "DpathExtractor", "field_path": []},
+        },
+        "status_extractor": {"type": "DpathExtractor", "field_path": ["status"]},
+        "creation_requester": {
+            "type": "HttpRequester",
+            "path": "/jobs",
+            "url_base": "https://api.test.com",
+            "http_method": "POST",
+        },
+        "polling_requester": {
+            "type": "HttpRequester",
+            "path": "/jobs/{{ creation_response['id'] }}",
+            "url_base": "https://api.test.com",
+            "http_method": "GET",
+        },
+        "download_requester": {
+            "type": "HttpRequester",
+            "path": "{{ download_target }}",
+            "url_base": "",
+            "http_method": "GET",
+        },
+    }
+
+    with pytest.raises(ValueError, match="AsyncJobStatusMap must map"):
+        factory.create_component(
+            model_type=AsyncRetrieverModel,
+            component_definition=definition,
+            name="test_stream",
+            primary_key=None,
+            stream_slicer=None,
+            transformations=[],
+            config={},
+        )
+
+
 def test_api_budget():
     manifest = {
         "type": "DeclarativeSource",

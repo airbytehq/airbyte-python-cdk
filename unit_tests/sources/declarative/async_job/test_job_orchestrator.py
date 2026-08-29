@@ -198,6 +198,32 @@ class AsyncJobOrchestratorTest(TestCase):
             == [call(_A_STREAM_SLICE)] * _MAX_NUMBER_OF_ATTEMPTS
         )
 
+    @mock.patch(sleep_mock_target)
+    def test_given_traced_config_error_when_update_job_status_then_abort_running_jobs_immediately(
+        self, mock_sleep: MagicMock
+    ) -> None:
+        self._job_repository.start.return_value = self._job_for_a_slice
+        config_error = AirbyteTracedException(
+            "Async job status is not supported by the connector.",
+            failure_type=FailureType.config_error,
+        )
+
+        def update_status(_jobs: Set[AsyncJob]) -> None:
+            if self._job_repository.update_jobs_status.call_count == 1:
+                raise config_error
+            self._job_for_a_slice.update_status(AsyncJobStatus.COMPLETED)
+
+        self._job_repository.update_jobs_status.side_effect = update_status
+        orchestrator = self._orchestrator([_A_STREAM_SLICE])
+
+        with pytest.raises(AirbyteTracedException) as exception_info:
+            list(orchestrator.create_and_get_completed_partitions())
+
+        assert exception_info.value is config_error
+        self._job_repository.update_jobs_status.assert_called_once_with({self._job_for_a_slice})
+        self._job_repository.abort.assert_called_once_with(self._job_for_a_slice)
+        assert len(orchestrator._job_tracker._jobs) == 0
+
     def test_when_fetch_records_then_yield_records_from_each_job(self) -> None:
         self._job_repository.fetch_records.return_value = [_ANY_RECORD]
         orchestrator = self._orchestrator([_A_STREAM_SLICE])
