@@ -5,7 +5,7 @@ from fastapi.testclient import TestClient
 
 from airbyte_cdk.manifest_server.app import app
 
-client = TestClient(app)
+client = TestClient(app, follow_redirects=False)
 
 
 class TestCapabilities:
@@ -14,6 +14,11 @@ class TestCapabilities:
     def test_capabilities_endpoint_exists(self):
         """Test that the capabilities endpoint is accessible."""
         response = client.get("/capabilities/")
+        assert response.status_code == 200
+
+    def test_capabilities_endpoint_without_trailing_slash(self):
+        """Test that the capabilities endpoint does not redirect without a trailing slash."""
+        response = client.get("/capabilities")
         assert response.status_code == 200
 
     def test_capabilities_custom_code_execution_false_by_default(self):
