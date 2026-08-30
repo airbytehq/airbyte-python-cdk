@@ -42,7 +42,7 @@ def should_migrate_manifest(manifest: Mapping[str, Any]) -> bool:
 
     This flag is set by the UI.
     """
-    return manifest.get(SHOULD_MIGRATE_KEY, False)
+    return bool(manifest.get(SHOULD_MIGRATE_KEY, False))
 
 
 def should_normalize_manifest(manifest: Mapping[str, Any]) -> bool:
@@ -52,7 +52,7 @@ def should_normalize_manifest(manifest: Mapping[str, Any]) -> bool:
 
     This flag is set by the UI.
     """
-    return manifest.get(SHOULD_NORMALIZE_KEY, False)
+    return bool(manifest.get(SHOULD_NORMALIZE_KEY, False))
 
 
 def build_source(
