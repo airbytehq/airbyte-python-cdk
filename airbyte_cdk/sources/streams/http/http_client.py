@@ -313,7 +313,9 @@ class HttpClient:
         except BaseBackoffException as e:
             self._logger.error("Retries exhausted with backoff exception.", exc_info=True)
 
-            is_rate_limited = (
+            # A rate limit can be signalled either by an HTTP 429 or, for APIs that encode errors in
+            # the response body, by an error resolution with a `RATE_LIMITED` action on any status code.
+            is_rate_limited = isinstance(e, RateLimitBackoffException) or (
                 isinstance(e.response, requests.Response)
                 and e.response.status_code == requests.codes.too_many_requests
             )
