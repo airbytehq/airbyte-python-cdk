@@ -22,6 +22,7 @@ from airbyte_cdk.sources.declarative.async_job.repository import AsyncJobReposit
 from airbyte_cdk.sources.message import MessageRepository
 from airbyte_cdk.sources.types import StreamSlice
 from airbyte_cdk.utils import AirbyteTracedException
+from airbyte_cdk.utils.traced_exception import RateLimitBudgetExhaustedException
 
 _ANY_STREAM_SLICE = Mock()
 _A_STREAM_SLICE = Mock()
@@ -287,6 +288,62 @@ class AsyncJobOrchestratorTest(TestCase):
             list(orchestrator.create_and_get_completed_partitions())
 
         assert job_tracker.try_to_get_intent()
+
+    def test_given_rate_limit_budget_exhausted_when_start_job_then_break_immediately(
+        self,
+    ) -> None:
+        """Rate limit budget exhaustion during job creation must be treated as a
+        breaking exception so the orchestrator does not retry and cascade into
+        hundreds of API calls."""
+        job_tracker = JobTracker(1)
+        self._job_repository.start.side_effect = RateLimitBudgetExhaustedException(
+            internal_message="Rate limit retry budget exhausted.",
+            message="Rate limit retry budget exhausted.",
+            failure_type=FailureType.transient_error,
+        )
+
+        orchestrator = AsyncJobOrchestrator(
+            self._job_repository,
+            [_A_STREAM_SLICE],
+            job_tracker,
+            self._message_repository,
+        )
+
+        with pytest.raises(RateLimitBudgetExhaustedException):
+            list(orchestrator.create_and_get_completed_partitions())
+
+        # Only one attempt — no orchestrator retry
+        assert self._job_repository.start.call_count == 1
+        # Budget was freed
+        assert job_tracker.try_to_get_intent()
+
+    @mock.patch(sleep_mock_target)
+    def test_given_rate_limit_budget_exhausted_with_running_jobs_then_abort_and_break(
+        self, mock_sleep: MagicMock
+    ) -> None:
+        """When rate limit budget exhaustion occurs while other jobs are running,
+        all running jobs should be aborted and the exception should propagate."""
+        self._job_repository.start.side_effect = [
+            self._job_for_a_slice,
+            RateLimitBudgetExhaustedException(
+                internal_message="Rate limit retry budget exhausted.",
+                message="Rate limit retry budget exhausted.",
+                failure_type=FailureType.transient_error,
+            ),
+        ]
+
+        orchestrator = AsyncJobOrchestrator(
+            self._job_repository,
+            [_A_STREAM_SLICE, _ANOTHER_STREAM_SLICE],
+            JobTracker(_NO_JOB_LIMIT),
+            self._message_repository,
+        )
+
+        with pytest.raises(RateLimitBudgetExhaustedException):
+            list(orchestrator.create_and_get_completed_partitions())
+
+        assert len(orchestrator._job_tracker._jobs) == 0
+        self._job_repository.abort.assert_called_once_with(self._job_for_a_slice)
 
     @mock.patch(sleep_mock_target)
     def test_given_exception_on_single_job_when_create_and_get_completed_partitions_then_return(
