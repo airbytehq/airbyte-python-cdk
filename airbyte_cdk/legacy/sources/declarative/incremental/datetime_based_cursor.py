@@ -11,7 +11,10 @@ from isodate import Duration, duration_isoformat, parse_duration
 
 from airbyte_cdk.legacy.sources.declarative.incremental.declarative_cursor import DeclarativeCursor
 from airbyte_cdk.models import AirbyteLogMessage, AirbyteMessage, Level, Type
-from airbyte_cdk.sources.declarative.datetime.datetime_parser import DatetimeParser
+from airbyte_cdk.sources.declarative.datetime.datetime_parser import (
+    DatetimeFormatMismatchError,
+    DatetimeParser,
+)
 from airbyte_cdk.sources.declarative.datetime.min_max_datetime import MinMaxDatetime
 from airbyte_cdk.sources.declarative.interpolation.interpolated_string import InterpolatedString
 from airbyte_cdk.sources.declarative.interpolation.jinja import JinjaInterpolation
@@ -308,12 +311,19 @@ class DatetimeBasedCursor(DeclarativeCursor):
         return comparator(cursor_date, default_date)
 
     def parse_date(self, date: str) -> datetime.datetime:
-        for datetime_format in self.cursor_datetime_formats + [self.datetime_format]:
+        formats = self.cursor_datetime_formats + [self.datetime_format]
+        last_error: Optional[ValueError] = None
+        for datetime_format in formats:
             try:
                 return self._parser.parse(date, datetime_format)
-            except ValueError:
-                pass
-        raise ValueError(f"No format in {self.cursor_datetime_formats} matching {date}")
+            except ValueError as error:
+                last_error = error
+        raise DatetimeFormatMismatchError(
+            value=date,
+            formats=formats,
+            cursor_field=self.cursor_field.eval(self.config),  # type: ignore  # cursor_field is converted to an InterpolatedString in __post_init__
+            original_error=last_error,
+        )
 
     @classmethod
     def _parse_timedelta(cls, time_str: Optional[str]) -> Union[datetime.timedelta, Duration]:

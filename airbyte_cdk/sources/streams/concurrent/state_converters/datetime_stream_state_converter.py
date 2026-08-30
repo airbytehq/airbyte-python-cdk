@@ -8,7 +8,10 @@ from typing import Any, Callable, List, MutableMapping, Optional, Tuple
 
 # FIXME We would eventually like the Concurrent package do be agnostic of the declarative package. However, this is a breaking change and
 #  the goal in the short term is only to fix the issue we are seeing for source-declarative-manifest.
-from airbyte_cdk.sources.declarative.datetime.datetime_parser import DatetimeParser
+from airbyte_cdk.sources.declarative.datetime.datetime_parser import (
+    DatetimeFormatMismatchError,
+    DatetimeParser,
+)
 from airbyte_cdk.sources.streams.concurrent.cursor import CursorField
 from airbyte_cdk.sources.streams.concurrent.state_converters.abstract_stream_state_converter import (
     AbstractStreamStateConverter,
@@ -215,9 +218,14 @@ class CustomFormatConcurrentStreamStateConverter(IsoMillisConcurrentStreamStateC
         return self._parser.format(timestamp, self._datetime_format)
 
     def parse_timestamp(self, timestamp: str) -> datetime:
+        last_error: Optional[ValueError] = None
         for datetime_format in self._input_datetime_formats:
             try:
                 return self._parser.parse(timestamp, datetime_format)
-            except ValueError:
-                pass
-        raise ValueError(f"No format in {self._input_datetime_formats} matching {timestamp}")
+            except ValueError as error:
+                last_error = error
+        raise DatetimeFormatMismatchError(
+            value=timestamp,
+            formats=self._input_datetime_formats,
+            original_error=last_error,
+        )
