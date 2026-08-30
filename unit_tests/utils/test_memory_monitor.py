@@ -388,9 +388,9 @@ def test_raises_when_cgroup_critical_and_anon_share_of_usage_above_threshold() -
         with pytest.raises(AirbyteTracedException) as exc_info:
             monitor.check_memory_usage()
     assert exc_info.value.failure_type == FailureType.system_error
-    assert "critical threshold" in (exc_info.value.message or "")
-    assert "96%" in (exc_info.value.message or "")
+    assert exc_info.value.message == "Source container memory exceeded the critical usage limit."
     assert "anon share of usage" in (exc_info.value.internal_message or "")
+    assert "96%" in (exc_info.value.internal_message or "")
     # Human-readable byte formatting: 960 MB usage, 1.00 GB limit, 840 MB anon.
     internal = exc_info.value.internal_message or ""
     assert "960.00 MB" in internal

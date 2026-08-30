@@ -287,7 +287,7 @@ class MemoryMonitor:
                 anon_share = anon_bytes / usage_bytes
                 if anon_share >= _ANON_SHARE_OF_USAGE_THRESHOLD:
                     raise AirbyteTracedException(
-                        message=f"Source memory usage exceeded critical threshold ({usage_percent}% of container limit).",
+                        message="Source container memory exceeded the critical usage limit.",
                         internal_message=(
                             f"Cgroup memory: {_format_bytes(usage_bytes)} / "
                             f"{_format_bytes(limit_bytes)} ({usage_percent}%). "
