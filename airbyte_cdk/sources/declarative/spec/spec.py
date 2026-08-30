@@ -2,6 +2,7 @@
 # Copyright (c) 2025 Airbyte, Inc., all rights reserved.
 #
 
+import json
 from dataclasses import InitVar, dataclass, field
 from typing import Any, List, Mapping, MutableMapping, Optional
 
@@ -54,19 +55,13 @@ class Spec:
         if self.documentation_url:
             obj["documentationUrl"] = self.documentation_url
         if self.advanced_auth:
-            self.advanced_auth.auth_flow_type = self.advanced_auth.auth_flow_type.value  # type: ignore # We know this is always assigned to an AuthFlow which has the auth_flow_type field
-            # Convert scopes_join_strategy enum to its string value (same pattern as auth_flow_type above)
-            oauth_spec = getattr(self.advanced_auth, "oauth_config_specification", None)
-            if oauth_spec:
-                oauth_input = getattr(oauth_spec, "oauth_connector_input_specification", None)
-                if (
-                    oauth_input
-                    and hasattr(oauth_input, "scopes_join_strategy")
-                    and oauth_input.scopes_join_strategy is not None
-                ):
-                    oauth_input.scopes_join_strategy = oauth_input.scopes_join_strategy.value  # type: ignore
+            # Serialize through JSON so enum values are normalized at any depth and the typed
+            # model is never mutated — repeated calls produce the same result.
+            # Note: an AuthFlow without an auth_flow_type (e.g. only a predicate) is passed
+            # through as auth_flow_type=None, which the protocol AdvancedAuth allows.
+            advanced_auth_dict = json.loads(self.advanced_auth.json())
             # Map CDK AuthFlow model to protocol AdvancedAuth model
-            obj["advanced_auth"] = self.advanced_auth.dict()
+            obj["advanced_auth"] = advanced_auth_dict
 
         # We remap these keys to camel case because that's the existing format expected by the rest of the platform
         return ConnectorSpecificationSerializer.load(obj)
