@@ -329,7 +329,7 @@ class HttpClient:
 
             raise AirbyteTracedException(
                 internal_message=f"Exhausted available request attempts. Exception: {e}",
-                message=f"Exhausted available request attempts. Please see logs for more details. Exception: {e}",
+                message="Available request retry attempts are exhausted.",
                 failure_type=e.failure_type or FailureType.system_error,
                 exception=e,
                 stream_descriptor=StreamDescriptor(name=self._name),

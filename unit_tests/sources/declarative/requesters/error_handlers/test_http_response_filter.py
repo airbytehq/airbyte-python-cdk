@@ -49,6 +49,21 @@ from airbyte_cdk.sources.streams.http.error_handlers.response_models import (
             id="test_http_code_matches_ignore_action",
         ),
         pytest.param(
+            ResponseAction.IGNORE,
+            FailureType.config_error,
+            {500},
+            "",
+            "",
+            "",
+            {"status_code": 500},
+            ErrorResolution(
+                response_action=ResponseAction.IGNORE,
+                failure_type=FailureType.transient_error,
+                error_message="HTTP Status Code: 500. Error: Internal server error.",
+            ),
+            id="test_http_code_matches_ignore_action_uses_default_failure_type",
+        ),
+        pytest.param(
             ResponseAction.RETRY,
             None,
             {429},
@@ -178,10 +193,10 @@ from airbyte_cdk.sources.streams.http.error_handlers.response_models import (
             {"status_code": 500},
             ErrorResolution(
                 response_action=ResponseAction.RETRY,
-                failure_type=FailureType.transient_error,
+                failure_type=FailureType.config_error,
                 error_message="rate limits",
             ),
-            id="test_http_code_matches_failure_type_config_error_action_retry_uses_default_failure_type",
+            id="test_http_code_matches_failure_type_config_error_action_retry",
         ),
         pytest.param(
             ResponseAction.RATE_LIMITED,
