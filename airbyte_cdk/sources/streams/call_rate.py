@@ -429,23 +429,35 @@ class MovingWindowCallRatePolicy(BaseCallRatePolicy):
     This strategy requires saving of timestamps of all requests within a window.
     """
 
-    MAX_HEADER_DRIVEN_WAIT = timedelta(minutes=10)
-    # Header-driven updates must not park workers longer than this; sources heartbeat well above it.
-    _MAX_HEADER_DRIVEN_WAIT_MS = int(MAX_HEADER_DRIVEN_WAIT.total_seconds() * 1000)
+    # Header-driven updates must not induce waits longer than this; sources heartbeat well above it.
+    # Policies with longer windows are left unchanged rather than parking a worker for the whole window.
+    DEFAULT_MAX_HEADER_DRIVEN_WAIT = timedelta(minutes=10)
 
-    def __init__(self, rates: list[Rate], matchers: list[RequestMatcher]):
+    def __init__(
+        self,
+        rates: list[Rate],
+        matchers: list[RequestMatcher],
+        max_header_driven_wait: timedelta = DEFAULT_MAX_HEADER_DRIVEN_WAIT,
+    ):
         """Constructor
 
         :param rates: list of rates, the order is important and must be ascending
         :param matchers:
+        :param max_header_driven_wait: maximum wait a header-driven update may induce. Rates whose
+            windows exceed this value are excluded from header-driven updates, so a policy with no
+            rate inside the bound is never adjusted from response headers. Defaults to 10 minutes,
+            chosen to stay well inside the platform's source heartbeat.
         """
         if not rates:
             raise ValueError("The list of rates can not be empty")
+        if max_header_driven_wait <= timedelta(0):
+            raise ValueError("max_header_driven_wait must be positive")
         pyrate_rates = [
             PyRateRate(limit=rate.limit, interval=int(rate.interval.total_seconds() * 1000))
             for rate in rates
         ]
         self._bucket = InMemoryBucket(pyrate_rates)
+        self._max_header_driven_wait_ms = int(max_header_driven_wait.total_seconds() * 1000)
         # Limiter will create the background task that clears old requests in the bucket
         self._limiter = Limiter(self._bucket)
         super().__init__(matchers=matchers)
@@ -534,7 +546,7 @@ class MovingWindowCallRatePolicy(BaseCallRatePolicy):
         items = self._bucket.items
         calls_left = []
         for rate in self._bucket.rates:
-            if rate.interval > self._MAX_HEADER_DRIVEN_WAIT_MS:
+            if rate.interval > self._max_header_driven_wait_ms:
                 continue
             lower_bound_idx = binary_search(items, now - rate.interval)
             calls_used = len(items) - lower_bound_idx if lower_bound_idx >= 0 else 0

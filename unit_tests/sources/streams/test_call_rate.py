@@ -257,6 +257,15 @@ class TestMovingWindowCallRatePolicy:
         with pytest.raises(ValueError, match="The list of rates can not be empty"):
             MovingWindowCallRatePolicy(rates=[], matchers=[])
 
+    @pytest.mark.parametrize("max_header_driven_wait", [timedelta(0), timedelta(minutes=-1)])
+    def test_invalid_max_header_driven_wait(self, max_header_driven_wait):
+        with pytest.raises(ValueError, match="max_header_driven_wait must be positive"):
+            MovingWindowCallRatePolicy(
+                rates=[Rate(10, timedelta(minutes=1))],
+                matchers=[],
+                max_header_driven_wait=max_header_driven_wait,
+            )
+
     def test_limit_rate(self):
         """try_acquire must respect configured call rate and throw CallRateLimitHit when hit the limit."""
         policy = MovingWindowCallRatePolicy(rates=[Rate(10, timedelta(minutes=1))], matchers=[])
@@ -367,6 +376,36 @@ class TestMovingWindowCallRatePolicy:
 
         for _ in range(100):
             policy.try_acquire("call", weight=1)
+
+    def test_update_uses_configured_header_wait_cap(self):
+        policy = MovingWindowCallRatePolicy(
+            rates=[Rate(100, timedelta(minutes=15))],
+            matchers=[],
+            max_header_driven_wait=timedelta(minutes=20),
+        )
+
+        policy.update(available_calls=0, call_reset_ts=None)
+
+        with pytest.raises(CallRateLimitHit):
+            policy.try_acquire("call", weight=1)
+
+    def test_update_uses_tightened_header_wait_cap(self):
+        default_policy = MovingWindowCallRatePolicy(
+            rates=[Rate(100, timedelta(minutes=5))], matchers=[]
+        )
+        tightened_policy = MovingWindowCallRatePolicy(
+            rates=[Rate(100, timedelta(minutes=5))],
+            matchers=[],
+            max_header_driven_wait=timedelta(minutes=1),
+        )
+
+        default_policy.update(available_calls=0, call_reset_ts=None)
+        tightened_policy.update(available_calls=0, call_reset_ts=None)
+
+        with pytest.raises(CallRateLimitHit):
+            default_policy.try_acquire("call", weight=1)
+        for _ in range(100):
+            tightened_policy.try_acquire("call", weight=1)
 
     def test_update_caps_to_eligible_rate(self):
         policy = MovingWindowCallRatePolicy(
