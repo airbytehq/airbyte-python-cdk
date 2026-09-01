@@ -96,8 +96,8 @@ class SourceTestSuiteBase(ConnectorTestSuiteBase):
         # If an error occurs, it will be raised above.
 
         assert len(result.spec_messages) == 1, (
-            "Expected exactly 1 spec message but got {len(result.spec_messages)}",
-            result.errors,
+            f"Expected exactly 1 spec message but got {len(result.spec_messages)}. "
+            f"Errors: {result.errors!s}"
         )
 
     def test_basic_read(
