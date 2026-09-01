@@ -35,6 +35,10 @@ def _uninterpolated_placeholders(node: ast.expr) -> list[str]:
             found.extend(_uninterpolated_placeholders(value))
         return found
 
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
+        # Messages built with `+` concatenation.
+        return _uninterpolated_placeholders(node.left) + _uninterpolated_placeholders(node.right)
+
     return []
 
 
@@ -52,14 +56,14 @@ def test_assert_messages_are_renderable(source_file: Path) -> None:
 
         if isinstance(node.msg, ast.Tuple):
             problems.append(
-                f"{source_file.name}:{node.msg.lineno}: assert message is a tuple, "
+                f"{source_file.name}:{node.lineno}: assert message is a tuple, "
                 "which is always truthy and prints as a tuple repr"
             )
             continue
 
         for placeholder in _uninterpolated_placeholders(node.msg):
             problems.append(
-                f"{source_file.name}:{node.msg.lineno}: assert message contains "
+                f"{source_file.name}:{node.lineno}: assert message contains "
                 f"{placeholder} but the fragment is missing the `f` prefix"
             )
 
