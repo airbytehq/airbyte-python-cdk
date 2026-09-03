@@ -25,9 +25,11 @@ from airbyte_cdk.sources.streams.http.requests_native_auth import (
     TokenAuthenticator,
 )
 from airbyte_cdk.sources.streams.http.requests_native_auth.abstract_oauth import (
+    _PROVIDER_ERROR_DETAIL_MAX_LENGTH,
     ResponseKeysMaxRecurtionReached,
 )
 from airbyte_cdk.utils import AirbyteTracedException
+from airbyte_cdk.utils.airbyte_secrets_utils import update_secrets
 from airbyte_cdk.utils.datetime_helpers import AirbyteDateTime, ab_datetime_now, ab_datetime_parse
 
 LOGGER = logging.getLogger(__name__)
@@ -662,8 +664,8 @@ class TestOauth2Authenticator:
             refresh_token_error_values=("invalid_grant", "invalid_client"),
         )
 
-    # Sits at the very end of each provider payload below, past the point where the user-facing
-    # message is truncated, so it can only be found in the internal message.
+    # Sits on a later line of each provider payload below, like the trace ids and timestamps
+    # Microsoft Entra appends, so it must reach the internal message and never the user-facing one.
     trailing_marker = "Correlation ID: 11111111-2222-3333-4444-555555555555"
 
     @pytest.mark.parametrize(
@@ -673,7 +675,7 @@ class TestOauth2Authenticator:
                 # Grant revoked, e.g. the user changed their password: re-authentication is the fix.
                 "invalid_grant",
                 "AADSTS50173: The provided grant has expired due to it being revoked, a fresh auth "
-                "grant is needed. The user might have changed or reset their password.\r\n"
+                "token is needed. The user might have changed or reset their password.\r\n"
                 "Trace ID: 00000000-0000-0000-0000-000000000000\r\n" + trailing_marker,
                 "AADSTS50173",
             ),
@@ -681,7 +683,7 @@ class TestOauth2Authenticator:
                 # Client type / credential misconfiguration: re-authentication will not help.
                 "invalid_client",
                 "AADSTS7000218: The request body must contain the following parameter: "
-                "'client_assertion' or a client credential.\r\n" + trailing_marker,
+                "'client_assertion' or 'client_secret'.\r\n" + trailing_marker,
                 "AADSTS7000218",
             ),
             (
@@ -720,6 +722,9 @@ class TestOauth2Authenticator:
         # ... followed by a short, single-line provider detail carrying the error code.
         assert f"Provider error: {error}: {expected_code}" in exc_info.value.message
         assert "\n" not in exc_info.value.message and "\r" not in exc_info.value.message
+        # Later lines of the description (trace ids, timestamps) stay out of the user-facing message,
+        # so the same failure produces the same message on every attempt.
+        assert TestOauth2Authenticator.trailing_marker not in exc_info.value.message
         assert exc_info.value.failure_type == FailureType.config_error
 
     def test_refresh_access_token_truncates_long_provider_error_detail(self, requests_mock):
@@ -737,21 +742,31 @@ class TestOauth2Authenticator:
         provider_detail = exc_info.value.message.split("Provider error: ", 1)[1]
         assert provider_detail.startswith("invalid_grant: AADSTS50173: ")
         assert provider_detail.endswith("...")
-        assert len(provider_detail) < 250
+        assert len(provider_detail) == _PROVIDER_ERROR_DETAIL_MAX_LENGTH + len("...")
         assert len(exc_info.value.internal_message) < 1200
 
     def test_refresh_access_token_redacts_credentials_from_provider_error(self, requests_mock):
         """A provider that echoes the submitted credentials must not leak them into the error."""
-        oauth = self._entra_style_authenticator()
+        # Start from no config-level secrets: earlier tests register values such as "token" through
+        # add_to_secrets, which would otherwise mask the credentials on their own.
+        update_secrets([])
+        refresh_token = "0.AXoA-rt-9f3ZqW7kP2"
+        client_secret = "s3cr3t~Xyz-1Qp"
+        oauth = Oauth2Authenticator(
+            f"https://{TestOauth2Authenticator.refresh_endpoint}",
+            TestOauth2Authenticator.client_id,
+            client_secret,
+            refresh_token,
+            refresh_token_error_status_codes=(400,),
+            refresh_token_error_key="error",
+            refresh_token_error_values=("invalid_grant",),
+        )
         requests_mock.post(
             f"https://{TestOauth2Authenticator.refresh_endpoint}",
             status_code=400,
             json={
                 "error": "invalid_grant",
-                "error_description": (
-                    f"AADSTS50173: rejected refresh_token={TestOauth2Authenticator.refresh_token} "
-                    f"client_secret={TestOauth2Authenticator.client_secret}"
-                ),
+                "error_description": f"AADSTS50173: rejected rt={refresh_token} cs={client_secret}",
             },
         )
 
@@ -759,9 +774,9 @@ class TestOauth2Authenticator:
             oauth.refresh_access_token()
 
         for message in (exc_info.value.message, exc_info.value.internal_message):
-            assert TestOauth2Authenticator.refresh_token not in message
-            assert TestOauth2Authenticator.client_secret not in message
-            assert "****" in message
+            assert refresh_token not in message
+            assert client_secret not in message
+            assert message.count("****") == 2
         assert "AADSTS50173" in exc_info.value.message
 
     @pytest.mark.parametrize(

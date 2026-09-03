@@ -19,7 +19,7 @@ from airbyte_cdk.sources.declarative.auth import DeclarativeOauth2Authenticator
 from airbyte_cdk.sources.declarative.auth.jwt import JwtAuthenticator
 from airbyte_cdk.test.mock_http import HttpMocker, HttpRequest, HttpResponse
 from airbyte_cdk.utils import AirbyteTracedException
-from airbyte_cdk.utils.airbyte_secrets_utils import filter_secrets
+from airbyte_cdk.utils.airbyte_secrets_utils import filter_secrets, update_secrets
 from airbyte_cdk.utils.datetime_helpers import AirbyteDateTime, ab_datetime_now, ab_datetime_parse
 
 LOGGER = logging.getLogger(__name__)
@@ -686,6 +686,50 @@ class TestOauth2Authenticator:
         with pytest.raises(requests.exceptions.HTTPError) as e:
             oauth.refresh_access_token()
             assert e.value.errno == 400
+
+    def test_refresh_access_token_rejected_surfaces_provider_error_and_redacts(self, requests_mock):
+        """The declarative authenticator (what manifest connectors use) carries the provider's own
+        error code into the user-facing message and never the interpolated credentials."""
+        update_secrets([])
+        oauth = DeclarativeOauth2Authenticator(
+            token_refresh_endpoint="{{ config['refresh_endpoint'] }}",
+            client_id="{{ config['client_id'] }}",
+            client_secret="{{ config['client_secret'] }}",
+            refresh_token="{{ parameters['refresh_token'] }}",
+            config=config,
+            parameters=parameters,
+            # The defaults the component factory applies when a manifest sets none of these.
+            refresh_token_error_status_codes=(400,),
+            refresh_token_error_key="error",
+            refresh_token_error_values=("invalid_grant", "invalid_permissions"),
+        )
+        requests_mock.post(
+            config["refresh_endpoint"],
+            status_code=400,
+            json={
+                "error": "invalid_grant",
+                "error_description": (
+                    f"AADSTS50173: Rejected {parameters['refresh_token']} for {config['client_secret']}. "
+                    "The provided grant has expired due to it being revoked, a fresh auth token is "
+                    "needed.\r\nTrace ID: 00000000-0000-0000-0000-000000000000"
+                ),
+            },
+        )
+
+        with pytest.raises(AirbyteTracedException) as exc_info:
+            oauth.refresh_access_token()
+
+        assert exc_info.value.failure_type == FailureType.config_error
+        assert exc_info.value.message.startswith("Refresh token was rejected by the OAuth provider")
+        assert (
+            "Provider error: invalid_grant: AADSTS50173: Rejected **** for ****."
+            in exc_info.value.message
+        )
+        assert "Trace ID" not in exc_info.value.message
+        assert "Trace ID" in exc_info.value.internal_message
+        for message in (exc_info.value.message, exc_info.value.internal_message):
+            assert parameters["refresh_token"] not in message
+            assert config["client_secret"] not in message
 
 
 def mock_request(method, url, data, headers, **kwargs):
