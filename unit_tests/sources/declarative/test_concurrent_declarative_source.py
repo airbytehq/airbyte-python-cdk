@@ -44,6 +44,7 @@ from airbyte_cdk.models import (
     DestinationSyncMode,
     FailureType,
     Level,
+    OrchestratorType,
     Status,
     StreamDescriptor,
     SyncMode,
@@ -52,6 +53,7 @@ from airbyte_cdk.models import (
 from airbyte_cdk.sources.declarative.async_job.job_tracker import ConcurrentJobLimitReached
 from airbyte_cdk.sources.declarative.concurrent_declarative_source import (
     ConcurrentDeclarativeSource,
+    TestLimits,
 )
 from airbyte_cdk.sources.declarative.extractors.record_filter import (
     ClientSideIncrementalRecordFilterDecorator,
@@ -6113,3 +6115,176 @@ def test_dynamic_stream_discovery_http_requests_use_api_budget():
         "HttpComponentsResolver's requester should have api_budget set during dynamic stream "
         "discovery, but it was None. This means discovery HTTP requests are not rate-limited."
     )
+
+
+def _single_use_refresh_token_manifest(include_check: bool = True) -> Dict[str, Any]:
+    manifest: Dict[str, Any] = {
+        "version": "6.7.0",
+        "type": "DeclarativeSource",
+        "streams": [
+            {
+                "type": "DeclarativeStream",
+                "name": "items",
+                "primary_key": "id",
+                "schema_loader": {
+                    "type": "InlineSchemaLoader",
+                    "schema": {
+                        "type": "object",
+                        "properties": {"id": {"type": "string"}},
+                    },
+                },
+                "retriever": {
+                    "type": "SimpleRetriever",
+                    "record_selector": {
+                        "type": "RecordSelector",
+                        "extractor": {"type": "DpathExtractor", "field_path": []},
+                    },
+                    "paginator": {"type": "NoPagination"},
+                    "requester": {
+                        "type": "HttpRequester",
+                        "url_base": "https://api.example.com",
+                        "path": "/items",
+                        "http_method": "GET",
+                        "authenticator": {
+                            "type": "OAuthAuthenticator",
+                            "token_refresh_endpoint": "https://api.example.com/oauth/token",
+                            "client_id": "{{ config['credentials']['client_id'] }}",
+                            "client_secret": "{{ config['credentials']['client_secret'] }}",
+                            "refresh_token": "{{ config['credentials']['refresh_token'] }}",
+                            "refresh_token_updater": {},
+                        },
+                    },
+                },
+            }
+        ],
+    }
+    if include_check:
+        manifest["check"] = {"type": "CheckStream", "stream_names": ["items"]}
+    return manifest
+
+
+def _single_use_refresh_token_config() -> Dict[str, Any]:
+    return {
+        "credentials": {
+            "client_id": "client_id",
+            "client_secret": "client_secret",
+            "refresh_token": "old_refresh",
+        }
+    }
+
+
+def _single_use_refresh_token_catalog() -> ConfiguredAirbyteCatalog:
+    return ConfiguredAirbyteCatalog(
+        streams=[
+            ConfiguredAirbyteStream(
+                stream=AirbyteStream(
+                    name="items",
+                    json_schema={"type": "object", "properties": {"id": {"type": "string"}}},
+                    supported_sync_modes=[SyncMode.full_refresh],
+                ),
+                sync_mode=SyncMode.full_refresh,
+                destination_sync_mode=DestinationSyncMode.append,
+            )
+        ]
+    )
+
+
+def _mock_single_use_refresh_token_requests(http_mocker: HttpMocker) -> None:
+    http_mocker.post(
+        HttpRequest(
+            "https://api.example.com/oauth/token",
+            body="grant_type=refresh_token&client_id=client_id&client_secret=client_secret&refresh_token=old_refresh",
+        ),
+        HttpResponse(
+            json.dumps(
+                {
+                    "access_token": "new_access",
+                    "refresh_token": "new_refresh",
+                    "expires_in": 3600,
+                }
+            )
+        ),
+    )
+    http_mocker.get(
+        HttpRequest("https://api.example.com/items"),
+        HttpResponse(json.dumps([{"id": "item-1"}])),
+    )
+
+
+def _connector_config_lines(output: str) -> List[Dict[str, Any]]:
+    return [
+        json.loads(line)
+        for line in output.splitlines()
+        if line.strip() and json.loads(line).get("type") == "CONTROL"
+    ]
+
+
+def test_given_refresh_token_updater_when_read_then_exactly_one_connector_config_message_on_stdout(
+    capsys,
+):
+    config = _single_use_refresh_token_config()
+    catalog = _single_use_refresh_token_catalog()
+    source = ConcurrentDeclarativeSource(
+        source_config=_single_use_refresh_token_manifest(),
+        config=config,
+        catalog=catalog,
+        state=None,
+    )
+
+    with HttpMocker() as http_mocker:
+        _mock_single_use_refresh_token_requests(http_mocker)
+        messages = list(source.read(logger, config, catalog, []))
+
+    assert not any(message.type == Type.CONTROL for message in messages)
+    assert any(message.type == Type.RECORD for message in messages)
+    connector_config_messages = _connector_config_lines(capsys.readouterr().out)
+    assert len(connector_config_messages) == 1
+    assert (
+        connector_config_messages[0]["control"]["connectorConfig"]["config"]["credentials"][
+            "refresh_token"
+        ]
+        == "new_refresh"
+    )
+
+
+def test_given_refresh_token_updater_and_connector_builder_mode_when_read_then_control_message_yielded_once(
+    capsys,
+):
+    config = _single_use_refresh_token_config()
+    catalog = _single_use_refresh_token_catalog()
+    source = ConcurrentDeclarativeSource(
+        source_config=_single_use_refresh_token_manifest(),
+        config=config,
+        catalog=catalog,
+        state=None,
+        emit_connector_builder_messages=True,
+        limits=TestLimits(max_records=10, max_pages_per_slice=10, max_slices=10, max_streams=10),
+    )
+
+    with HttpMocker() as http_mocker:
+        _mock_single_use_refresh_token_requests(http_mocker)
+        messages = list(source.read(logger, config, catalog, []))
+
+    yielded_control_messages = [message for message in messages if message.type == Type.CONTROL]
+    assert len(yielded_control_messages) == 1
+    assert yielded_control_messages[0].control.type == OrchestratorType.CONNECTOR_CONFIG
+    connector_config_messages = _connector_config_lines(capsys.readouterr().out)
+    assert len(connector_config_messages) == 1
+
+
+def test_given_refresh_token_updater_when_check_then_connector_config_message_on_stdout(capsys):
+    config = _single_use_refresh_token_config()
+    source = ConcurrentDeclarativeSource(
+        source_config=_single_use_refresh_token_manifest(),
+        config=config,
+        catalog=None,
+        state=None,
+    )
+
+    with HttpMocker() as http_mocker:
+        _mock_single_use_refresh_token_requests(http_mocker)
+        connection_status = source.check(logger, config)
+
+    assert connection_status.status == Status.SUCCEEDED
+    connector_config_messages = _connector_config_lines(capsys.readouterr().out)
+    assert len(connector_config_messages) == 1

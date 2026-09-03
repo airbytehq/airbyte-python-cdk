@@ -177,6 +177,7 @@ class SingleUseRefreshTokenOauth2Authenticator(Oauth2Authenticator):
         token_expiry_date_config_path: Sequence[str] = ("credentials", "token_expiry_date"),
         token_expiry_date_format: Optional[str] = None,
         message_repository: MessageRepository = NoopMessageRepository(),
+        emit_control_message_to_message_repository: bool = False,
         token_expiry_is_time_of_expiration: bool = False,
         refresh_token_error_status_codes: Tuple[int, ...] = (),
         refresh_token_error_key: str = "",
@@ -201,7 +202,8 @@ class SingleUseRefreshTokenOauth2Authenticator(Oauth2Authenticator):
             token_expiry_date_config_path (Sequence[str]): Dpath to the token_expiry_date field in the connector configuration. Defaults to ("credentials", "token_expiry_date").
             token_expiry_date_format (Optional[str]): Date format of the token expiry date field (set by expires_in_name). If not specified the token expiry date is interpreted as number of seconds until expiration.
             token_expiry_is_time_of_expiration bool: set True it if expires_in is returned as time of expiration instead of the number seconds until expiration
-            message_repository (MessageRepository): the message repository used to emit logs on HTTP requests and control message on config update
+            message_repository (MessageRepository): The message repository used to emit logs on HTTP requests and control message on config update.
+            emit_control_message_to_message_repository (bool): Whether the message repository additionally receives the CONNECTOR_CONFIG message. This is only for in-process consumers such as the Connector Builder, because messages in the repository are otherwise printed to stdout by the entrypoint and would duplicate the direct stdout emission. Defaults to False.
         """
         self._connector_config = connector_config
         self._client_id: str = self._get_config_value_by_path(
@@ -220,6 +222,9 @@ class SingleUseRefreshTokenOauth2Authenticator(Oauth2Authenticator):
         self._grant_type_name = grant_type_name
         self._connector_config = connector_config
         self.__message_repository = message_repository
+        self._emit_control_message_to_message_repository = (
+            emit_control_message_to_message_repository
+        )
         super().__init__(
             token_refresh_endpoint=token_refresh_endpoint,
             client_id_name=self._client_id_name,
@@ -407,24 +412,18 @@ class SingleUseRefreshTokenOauth2Authenticator(Oauth2Authenticator):
         )
 
     def _emit_control_message(self) -> None:
-        """
-        Emits a control message based on the connector configuration.
+        """Emit the updated connector config as a CONNECTOR_CONFIG control message.
 
-        Control messages for config updates (like refreshed tokens) must be printed directly
-        to stdout so the platform can process them immediately. The message repository is
-        also used to queue the message for any additional processing.
-
-        Note:
-            The function `emit_configuration_as_airbyte_control_message` prints directly to
-            stdout, which is required for the platform to detect and persist config changes.
+        The message is always printed to stdout, which is the delivery the platform relies on: it
+        is immediate and it works for every command, including `check` and `discover`, where the
+        message repository is never drained. The message repository is only used in addition when
+        explicitly requested, for in-process consumers such as the Connector Builder; repository
+        messages are otherwise printed by the entrypoint too and would duplicate the stdout emission.
         """
-        # Always emit to stdout so the platform can process the config update immediately.
-        # This is critical for single-use refresh tokens where the new token must be persisted
-        # before subsequent operations try to use the old (now invalid) token.
         emit_configuration_as_airbyte_control_message(self._connector_config)  # type: ignore[arg-type]
-
-        # Also emit to the message repository for any additional processing (e.g., logging)
-        if not isinstance(self._message_repository, NoopMessageRepository):
+        if self._emit_control_message_to_message_repository and not isinstance(
+            self._message_repository, NoopMessageRepository
+        ):
             self._message_repository.emit_message(
                 create_connector_config_control_message(self._connector_config)  # type: ignore[arg-type]
             )
