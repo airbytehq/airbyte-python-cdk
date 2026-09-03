@@ -27,8 +27,10 @@ _NOOP_MESSAGE_REPOSITORY = NoopMessageRepository()
 
 # How much of the provider's error detail is appended to the user-facing message. Long enough to
 # keep a provider error code and the start of its description (e.g. Microsoft Entra puts the
-# `AADSTS<code>` at the front of `error_description`), short enough to keep the message readable.
-_PROVIDER_ERROR_DETAIL_MAX_LENGTH = 200
+# `AADSTS<code>` at the front of `error_description`), short enough to keep the message readable
+# and to stop before the per-request values (issue dates, trace ids) that some providers embed
+# further into the description, so the same failure produces the same message on every attempt.
+_PROVIDER_ERROR_DETAIL_MAX_LENGTH = 120
 # How much of the raw provider response is kept in the internal message, which is logged and is not
 # shown to the user.
 _PROVIDER_ERROR_RESPONSE_MAX_LENGTH = 1000
@@ -295,24 +297,27 @@ class AbstractOauth2Authenticator(AuthBase):
         """
         Build a short, single-line provider error detail suitable for the user-facing message.
 
-        Only the standard OAuth 2.0 error fields (`error` and `error_description`) are used: they
-        are where providers put the actionable diagnostic, and they are not expected to carry
-        credentials. For Microsoft Entra this is what distinguishes a revoked grant
-        (`AADSTS50173`) from a client-type or secret misconfiguration (`AADSTS7000218`,
-        `AADSTS700025`) from Conditional Access requiring interactive sign-in (`AADSTS50076`,
-        `AADSTS50078`, `AADSTS700082`) - all of which otherwise collapse into the same message.
+        Only the standard OAuth 2.0 `error` and `error_description` fields (RFC 6749 section 5.2)
+        are used, and only the first line of the description: providers put the actionable code
+        there (Microsoft Entra leads with `AADSTS<code>`, which tells a revoked or expired grant
+        such as `AADSTS50173` / `AADSTS700082` apart from a client misconfiguration such as
+        `AADSTS7000218`), while per-request trace ids and timestamps follow on later lines. Which
+        provider errors reach this path at all is set by the authenticator's `refresh_token_error_*`
+        configuration.
         """
         if not response_content:
             return None
         parts = [
-            str(response_content[key])
+            response_content[key].strip()
             for key in ("error", "error_description")
-            if response_content.get(key)
+            if isinstance(response_content.get(key), str) and response_content[key].strip()
         ]
         if not parts:
             return None
-        # Collapse newlines and repeated whitespace so the detail stays on a single line.
-        detail = " ".join(": ".join(parts).split())
+        # Keep the first line only and collapse its whitespace: the actionable code leads the
+        # description, while trace ids and timestamps that differ on every attempt follow on later
+        # lines and would make the same failure read differently each time.
+        detail = " ".join(": ".join(parts).splitlines()[0].split())
         return self._truncate(self._redact_credentials(detail), _PROVIDER_ERROR_DETAIL_MAX_LENGTH)
 
     def _build_provider_response_info(self, exception: requests.exceptions.RequestException) -> str:
