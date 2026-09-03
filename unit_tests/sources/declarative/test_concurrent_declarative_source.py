@@ -6212,11 +6212,8 @@ def _mock_single_use_refresh_token_requests(http_mocker: HttpMocker) -> None:
 
 
 def _connector_config_lines(output: str) -> List[Dict[str, Any]]:
-    return [
-        json.loads(line)
-        for line in output.splitlines()
-        if line.strip() and json.loads(line).get("type") == "CONTROL"
-    ]
+    parsed = [json.loads(line) for line in output.splitlines() if line.strip()]
+    return [message for message in parsed if message.get("type") == "CONTROL"]
 
 
 def test_given_refresh_token_updater_when_read_then_exactly_one_connector_config_message_on_stdout(

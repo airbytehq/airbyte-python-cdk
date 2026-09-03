@@ -415,10 +415,12 @@ class SingleUseRefreshTokenOauth2Authenticator(Oauth2Authenticator):
         """Emit the updated connector config as a CONNECTOR_CONFIG control message.
 
         The message is always printed to stdout, which is the delivery the platform relies on: it
-        is immediate and it works for every command, including `check` and `discover`, where the
-        message repository is never drained. The message repository is only used in addition when
-        explicitly requested, for in-process consumers such as the Connector Builder; repository
-        messages are otherwise printed by the entrypoint too and would duplicate the stdout emission.
+        is immediate and independent of whether the source exposes a message repository and of
+        when that repository is drained (for `ConcurrentDeclarativeSource` the internal repository
+        is only drained during `read`, after partitions are processed). The message repository is
+        only used in addition when explicitly requested, for in-process consumers such as the
+        Connector Builder; repository messages are otherwise printed by the entrypoint too and
+        would duplicate the stdout emission.
         """
         emit_configuration_as_airbyte_control_message(self._connector_config)  # type: ignore[arg-type]
         if self._emit_control_message_to_message_repository and not isinstance(
