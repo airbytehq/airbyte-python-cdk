@@ -177,11 +177,11 @@ class SingleUseRefreshTokenOauth2Authenticator(Oauth2Authenticator):
         token_expiry_date_config_path: Sequence[str] = ("credentials", "token_expiry_date"),
         token_expiry_date_format: Optional[str] = None,
         message_repository: MessageRepository = NoopMessageRepository(),
-        emit_control_message_to_message_repository: bool = False,
         token_expiry_is_time_of_expiration: bool = False,
         refresh_token_error_status_codes: Tuple[int, ...] = (),
         refresh_token_error_key: str = "",
         refresh_token_error_values: Tuple[str, ...] = (),
+        emit_control_message_to_message_repository: bool = False,
     ) -> None:
         """
         Args:
