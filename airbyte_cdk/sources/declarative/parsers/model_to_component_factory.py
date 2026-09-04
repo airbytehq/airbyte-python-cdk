@@ -7,6 +7,7 @@ from __future__ import annotations
 import datetime
 import importlib
 import inspect
+import json
 import logging
 import re
 from functools import partial
@@ -64,6 +65,10 @@ from airbyte_cdk.sources.declarative.auth.declarative_authenticator import (
 from airbyte_cdk.sources.declarative.auth.jwt import JwtAlgorithm
 from airbyte_cdk.sources.declarative.auth.oauth import (
     DeclarativeSingleUseRefreshTokenOauth2Authenticator,
+)
+from airbyte_cdk.sources.declarative.auth.rate_limited_multiple_token import (
+    RateLimitedMultipleTokenAuthenticator,
+    TokenQuota,
 )
 from airbyte_cdk.sources.declarative.auth.selective_authenticator import SelectiveAuthenticator
 from airbyte_cdk.sources.declarative.auth.token import (
@@ -407,6 +412,9 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
     Rate as RateModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    RateLimitedMultipleTokenAuthenticator as RateLimitedMultipleTokenAuthenticatorModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     RecordExpander as RecordExpanderModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
@@ -459,6 +467,9 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
     TypesMap as TypesMapModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    UnionPartitionRouter as UnionPartitionRouterModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     UnlimitedCallRatePolicy as UnlimitedCallRatePolicyModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
@@ -477,6 +488,11 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     ZipfileDecoder as ZipfileDecoderModel,
 )
+from airbyte_cdk.sources.declarative.parsers.custom_code_compiler import (
+    INJECTED_MANIFEST,
+    AirbyteCustomCodeNotPermittedError,
+    custom_code_execution_permitted,
+)
 from airbyte_cdk.sources.declarative.partition_routers import (
     CartesianProductStreamSlicer,
     GroupingPartitionRouter,
@@ -484,6 +500,7 @@ from airbyte_cdk.sources.declarative.partition_routers import (
     PartitionRouter,
     SinglePartitionRouter,
     SubstreamPartitionRouter,
+    UnionPartitionRouter,
 )
 from airbyte_cdk.sources.declarative.partition_routers.async_job_partition_router import (
     AsyncJobPartitionRouter,
@@ -629,6 +646,7 @@ from airbyte_cdk.sources.message import (
     NoopMessageRepository,
 )
 from airbyte_cdk.sources.message.repository import StateFilteringMessageRepository
+from airbyte_cdk.sources.streams import NO_CURSOR_STATE_KEY
 from airbyte_cdk.sources.streams.call_rate import (
     APIBudget,
     FixedWindowCallRatePolicy,
@@ -700,8 +718,13 @@ class ModelToComponentFactory:
         max_concurrent_async_job_count: Optional[int] = None,
         configured_catalog: Optional[ConfiguredAirbyteCatalog] = None,
         api_budget: Optional[APIBudget] = None,
+        rate_limited_authenticators: Optional[
+            Dict[str, RateLimitedMultipleTokenAuthenticator]
+        ] = None,
+        custom_components_trusted: bool = True,
     ):
         self._init_mappings()
+        self._custom_components_trusted = custom_components_trusted
         self._limit_pages_fetched_per_slice = limit_pages_fetched_per_slice
         self._limit_slices_fetched = limit_slices_fetched
         self._emit_connector_builder_messages = emit_connector_builder_messages
@@ -715,6 +738,10 @@ class ModelToComponentFactory:
         )
         self._connector_state_manager = connector_state_manager or ConnectorStateManager()
         self._api_budget: Optional[Union[APIBudget]] = api_budget
+        # Shared instances so all streams see the same token quota counters (like api_budget)
+        self._rate_limited_authenticators: Dict[str, RateLimitedMultipleTokenAuthenticator] = (
+            rate_limited_authenticators if rate_limited_authenticators is not None else {}
+        )
         self._job_tracker: JobTracker = JobTracker(max_concurrent_async_job_count or 1)
         # placeholder for deprecation warnings
         self._collected_deprecation_logs: List[ConnectorBuilderLogMessage] = []
@@ -826,7 +853,9 @@ class ModelToComponentFactory:
             UnlimitedCallRatePolicyModel: self.create_unlimited_call_rate_policy,
             RateModel: self.create_rate,
             HttpRequestRegexMatcherModel: self.create_http_request_matcher,
+            RateLimitedMultipleTokenAuthenticatorModel: self.create_rate_limited_multiple_token_authenticator,
             GroupingPartitionRouterModel: self.create_grouping_partition_router,
+            UnionPartitionRouterModel: self.create_union_partition_router,
         }
 
         # Needed for the case where we need to perform a second parse on the fields of a custom component
@@ -1136,12 +1165,19 @@ class ModelToComponentFactory:
             )
         partition_router = retriever.partition_router
         if not isinstance(
-            partition_router, (SubstreamPartitionRouterModel, CustomPartitionRouterModel)
+            partition_router,
+            (
+                SubstreamPartitionRouterModel,
+                CustomPartitionRouterModel,
+                UnionPartitionRouterModel,
+            ),
         ):
             raise ValueError(
-                f"LegacyToPerPartitionStateMigrations can only be applied on a SimpleRetriever with a Substream partition router. Got {type(partition_router)}"
+                f"LegacyToPerPartitionStateMigrations can only be applied on a SimpleRetriever with a SubstreamPartitionRouter, UnionPartitionRouter or CustomPartitionRouter. Got {type(partition_router)}"
             )
-        if not hasattr(partition_router, "parent_stream_configs"):
+        if not isinstance(partition_router, UnionPartitionRouterModel) and not hasattr(
+            partition_router, "parent_stream_configs"
+        ):
             raise ValueError(
                 "LegacyToPerPartitionStateMigrations can only be applied with a parent stream configuration."
             )
@@ -1271,6 +1307,9 @@ class ModelToComponentFactory:
             else []
         )
 
+        # `model.config_overrides` is deliberately not read here. The source applies it around the whole
+        # check operation (`ConcurrentDeclarativeSource._config_overridden_for_check`), which is what makes
+        # it work for every checker type rather than only this one. Do not wire it in a second time.
         return CheckStream(
             stream_names=model.stream_names or [],
             dynamic_streams_check_configs=dynamic_streams_check_configs,
@@ -1285,6 +1324,7 @@ class ModelToComponentFactory:
 
         use_check_availability = model.use_check_availability
 
+        # See `create_check_stream`: `model.config_overrides` is applied by the source, not here.
         return CheckDynamicStream(
             stream_count=model.stream_count,
             use_check_availability=use_check_availability,
@@ -1809,6 +1849,18 @@ class ModelToComponentFactory:
         :param config: The custom defined connector config
         :return: The declarative component built from the Pydantic model to be used at runtime
         """
+        # Instantiating a custom component means importing and executing arbitrary code referenced
+        # by `class_name`. Manifests supplied by a caller, whether through the config or directly to
+        # the manifest server, are untrusted input and could point `class_name` at any importable
+        # callable, so they honor the same `AIRBYTE_ENABLE_UNSAFE_CODE` gate as injected
+        # `components.py` code. Manifests bundled in a published connector image are trusted and may
+        # always use their bundled custom components.
+        manifest_is_untrusted = not self._custom_components_trusted or bool(
+            config.get(INJECTED_MANIFEST)
+        )
+        if manifest_is_untrusted and not custom_code_execution_permitted():
+            raise AirbyteCustomCodeNotPermittedError
+
         custom_component_class = self._get_class_from_fully_qualified_class_name(model.class_name)
         component_fields = get_type_hints(custom_component_class)
         model_args = model.dict()
@@ -2015,6 +2067,7 @@ class ModelToComponentFactory:
     ) -> AbstractStream:
         primary_key = model.primary_key.__root__ if model.primary_key else None
         self._migrate_state(model, config)
+        self._warn_on_ineffective_incremental_dependency(model)
 
         partition_router = self._build_stream_slicer_from_partition_router(
             model.retriever,
@@ -2170,6 +2223,36 @@ class ModelToComponentFactory:
             cursor=concurrent_cursor,
             supports_file_transfer=hasattr(model, "file_uploader") and bool(model.file_uploader),
         )
+
+    def _warn_on_ineffective_incremental_dependency(self, model: DeclarativeStreamModel) -> None:
+        """
+        `incremental_dependency: true` only takes effect when the substream defines its own
+        `incremental_sync`: the parent cursor is persisted under the `parent_state` key of the
+        substream's state, which is only emitted by incremental substreams. On a stream without
+        `incremental_sync`, the setting is silently ignored and all parent records are re-read on
+        every sync, so we warn about the misconfiguration instead.
+        """
+        if model.incremental_sync:
+            return
+
+        partition_router = getattr(model.retriever, "partition_router", None)
+        if not partition_router:
+            return
+
+        routers = partition_router if isinstance(partition_router, list) else [partition_router]
+        for router in routers:
+            if isinstance(router, GroupingPartitionRouterModel):
+                router = router.underlying_partition_router
+            if isinstance(router, SubstreamPartitionRouterModel) and any(
+                parent_stream_config.incremental_dependency
+                for parent_stream_config in router.parent_stream_configs
+            ):
+                LOGGER.warning(
+                    f"Stream `{model.name}` has `incremental_dependency: true` in its parent stream configuration but does not define `incremental_sync`. "
+                    "The parent stream's cursor is only persisted in the state of an incremental substream, so this setting has no effect and all parent records will be re-read on every sync. "
+                    "Define `incremental_sync` on this stream or remove `incremental_dependency`."
+                )
+                return
 
     def _migrate_state(self, model: DeclarativeStreamModel, config: Config) -> None:
         stream_name = model.name or ""
@@ -2438,7 +2521,10 @@ class ModelToComponentFactory:
         model: ResponseToFileExtractorModel,
         **kwargs: Any,
     ) -> ResponseToFileExtractor:
-        return ResponseToFileExtractor(parameters=model.parameters or {})
+        return ResponseToFileExtractor(
+            parameters=model.parameters or {},
+            preserve_na_values=model.preserve_na_values or False,
+        )
 
     @staticmethod
     def create_exponential_backoff_strategy(
@@ -2701,15 +2787,16 @@ class ModelToComponentFactory:
         gzip_parser: GzipParser = ModelToComponentFactory._get_parser(model, config)  # type: ignore  # based on the model, we know this will be a GzipParser
 
         if self._emit_connector_builder_messages:
-            # This is very surprising but if the response is not streamed,
-            # CompositeRawDecoder calls response.content and the requests library actually uncompress the data as opposed to response.raw,
-            # which uses urllib3 directly and does not uncompress the data.
-            return CompositeRawDecoder(gzip_parser.inner_parser, False)
+            return CompositeRawDecoder(gzip_parser, False)
 
+        transport_gzip_parser = GzipParser(inner_parser=gzip_parser)
         return CompositeRawDecoder.by_headers(
-            [({"Content-Encoding", "Content-Type"}, _compressed_response_types, gzip_parser)],
+            [
+                ({"Content-Encoding"}, {"gzip"}, transport_gzip_parser),
+                ({"Content-Type"}, _compressed_response_types, gzip_parser),
+            ],
             stream_response=True,
-            fallback_parser=gzip_parser.inner_parser,
+            fallback_parser=gzip_parser,
         )
 
     @staticmethod
@@ -3029,10 +3116,23 @@ class ModelToComponentFactory:
             parameters=model.parameters or {},
         )
 
-    @staticmethod
     def create_page_increment(
-        model: PageIncrementModel, config: Config, **kwargs: Any
+        self,
+        model: PageIncrementModel,
+        config: Config,
+        decoder: Optional[Decoder] = None,
+        extractor_model: Optional[Union[CustomRecordExtractorModel, DpathExtractorModel]] = None,
+        **kwargs: Any,
     ) -> PageIncrement:
+        # Like OffsetIncrement, we instantiate a separate extractor with identical behavior to the
+        # RecordSelector's so the strategy can count the raw records in the response. This ensures
+        # pagination is driven by the API's page size, not the post-filter record count.
+        extractor = (
+            self._create_component_from_model(model=extractor_model, config=config, decoder=decoder)
+            if extractor_model
+            else None
+        )
+
         # Pydantic v1 Union type coercion can convert int to string depending on Union order.
         # If page_size is a string that represents an integer (not an interpolation), convert it back.
         page_size = model.page_size
@@ -3044,6 +3144,7 @@ class ModelToComponentFactory:
             config=config,
             start_from_page=model.start_from_page or 0,
             inject_on_first_request=model.inject_on_first_request or False,
+            extractor=extractor,
             parameters=model.parameters or {},
         )
 
@@ -3235,6 +3336,7 @@ class ModelToComponentFactory:
         transformations: List[RecordTransformation] | None = None,
         decoder: Decoder | None = None,
         client_side_incremental_sync_cursor: Optional[Cursor] = None,
+        is_client_side_incremental_sync: bool = False,
         file_uploader: Optional[DefaultFileUploader] = None,
         **kwargs: Any,
     ) -> RecordSelector:
@@ -3247,8 +3349,16 @@ class ModelToComponentFactory:
             else None
         )
 
+        # A client-side incremental stream transforms before filtering by default. That default belongs to the flag,
+        # not to the component that ends up doing the cursor comparison: a data feed does it in the retriever and
+        # receives no cursor here, but its `record_filter` condition must keep running after the transformations.
+        default_transform_before_filtering = bool(
+            client_side_incremental_sync_cursor or is_client_side_incremental_sync
+        )
         transform_before_filtering = (
-            False if model.transform_before_filtering is None else model.transform_before_filtering
+            default_transform_before_filtering
+            if model.transform_before_filtering is None
+            else model.transform_before_filtering
         )
         if client_side_incremental_sync_cursor:
             record_filter = ClientSideIncrementalRecordFilterDecorator(
@@ -3258,11 +3368,6 @@ class ModelToComponentFactory:
                 if (model.record_filter and hasattr(model.record_filter, "condition"))
                 else None,
                 cursor=client_side_incremental_sync_cursor,
-            )
-            transform_before_filtering = (
-                True
-                if model.transform_before_filtering is None
-                else model.transform_before_filtering
             )
 
         if model.schema_normalization is None:
@@ -3370,6 +3475,33 @@ class ModelToComponentFactory:
         if cursor is None:
             cursor = FinalStateCursor(name, None, self._message_repository)
 
+        # A data feed drops the records the cursor considers already synced in the retriever, which sits downstream of
+        # the paginator. Letting the record selector drop them as well would be redundant and would hide them from the
+        # pagination stop condition, so a data feed never delegates that filtering to the record selector, whether
+        # `is_client_side_incremental` is set or not. The `condition` from `record_filter` is intentionally left out of
+        # the post-pagination filter and stays in the record selector, which preserves the existing behaviour: the
+        # selector runs inside the page loop, so the records the condition rejects never reach the paginator's
+        # accounting. Moving it downstream would start counting them.
+        post_pagination_filter = (
+            ClientSideIncrementalRecordFilterDecorator(
+                config=config,
+                parameters=model.parameters or {},
+                condition=None,
+                cursor=cursor,
+            )
+            if has_stop_condition_cursor
+            else None
+        )
+        client_side_incremental_cursor = (
+            cursor if is_client_side_incremental_sync and not post_pagination_filter else None
+        )
+        if post_pagination_filter and is_client_side_incremental_sync:
+            LOGGER.warning(
+                f"Stream {name}: `is_client_side_incremental` adds no record filtering when `is_data_feed` is set, "
+                "as a data feed already filters on the cursor value. It still makes the record selector apply the "
+                "transformations before the `record_filter` condition."
+            )
+
         decoder = (
             self._create_component_from_model(model=model.decoder, config=config)
             if model.decoder
@@ -3381,7 +3513,8 @@ class ModelToComponentFactory:
             config=config,
             decoder=decoder,
             transformations=transformations,
-            client_side_incremental_sync_cursor=cursor if is_client_side_incremental_sync else None,
+            client_side_incremental_sync_cursor=client_side_incremental_cursor,
+            is_client_side_incremental_sync=is_client_side_incremental_sync,
             file_uploader=file_uploader,
         )
 
@@ -3516,6 +3649,7 @@ class ModelToComponentFactory:
                 request_option_provider=request_options_provider,
                 config=config,
                 ignore_stream_slicer_parameters_on_paginated_requests=ignore_stream_slicer_parameters_on_paginated_requests,
+                post_pagination_filter=post_pagination_filter,
                 parameters=model.parameters or {},
             )
 
@@ -3541,6 +3675,7 @@ class ModelToComponentFactory:
             pagination_tracker_factory=self._create_pagination_tracker_factory(
                 model.pagination_reset, cursor
             ),
+            post_pagination_filter=post_pagination_filter,
             parameters=model.parameters or {},
         )
 
@@ -4102,6 +4237,14 @@ class ModelToComponentFactory:
         self, model: ParentStreamConfigModel, config: Config, *, stream_name: str, **kwargs: Any
     ) -> Any:
         child_state = self._connector_state_manager.get_stream_state(stream_name, None)
+        if NO_CURSOR_STATE_KEY in child_state:
+            # Full refresh streams checkpoint a `{NO_CURSOR_STATE_KEY: true}` sentinel. When such a
+            # stream is later converted to incremental with an incremental_dependency parent,
+            # `_instantiate_parent_stream_state_manager` would treat the sentinel's boolean as a legacy
+            # cursor value and re-key it under the parent's cursor field, crashing cursor initialization.
+            child_state = {
+                key: value for key, value in child_state.items() if key != NO_CURSOR_STATE_KEY
+            }
 
         parent_state: Optional[Mapping[str, Any]] = (
             child_state if model.incremental_dependency and child_state else None
@@ -4111,6 +4254,7 @@ class ModelToComponentFactory:
         )
 
         substream_factory = ModelToComponentFactory(
+            custom_components_trusted=self._custom_components_trusted,
             connector_state_manager=connector_state_manager,
             limit_pages_fetched_per_slice=self._limit_pages_fetched_per_slice,
             limit_slices_fetched=self._limit_slices_fetched,
@@ -4128,6 +4272,9 @@ class ModelToComponentFactory:
                 ),
             ),
             api_budget=self._api_budget,
+            # Share the authenticator registry so parent and child streams draw from the
+            # same token quota counters
+            rate_limited_authenticators=self._rate_limited_authenticators,
         )
 
         return substream_factory.create_parent_stream_config(
@@ -4201,9 +4348,7 @@ class ModelToComponentFactory:
             parameters=model.parameters or {},
             config=config,
             regex=model.regex,
-            max_waiting_time_in_seconds=model.max_waiting_time_in_seconds
-            if model.max_waiting_time_in_seconds is not None
-            else None,
+            max_waiting_time_in_seconds=model.max_waiting_time_in_seconds,
         )
 
     @staticmethod
@@ -4216,6 +4361,7 @@ class ModelToComponentFactory:
             config=config,
             min_wait=model.min_wait,
             regex=model.regex,
+            max_waiting_time_in_seconds=model.max_waiting_time_in_seconds,
         )
 
     def get_message_repository(self) -> MessageRepository:
@@ -4498,6 +4644,151 @@ class ModelToComponentFactory:
             weight=weight,
         )
 
+    def create_rate_limited_multiple_token_authenticator(
+        self,
+        model: RateLimitedMultipleTokenAuthenticatorModel,
+        config: Config,
+        **kwargs: Any,
+    ) -> RateLimitedMultipleTokenAuthenticator:
+        if isinstance(model.tokens, str):
+            tokens_value = InterpolatedString.create(model.tokens, parameters={}).eval(config)
+            delimiter = model.token_delimiter or ","
+            tokens = [
+                token.strip() for token in str(tokens_value).split(delimiter) if token.strip()
+            ]
+        else:
+            tokens = [
+                token_value
+                for token in model.tokens
+                if (
+                    token_value := str(
+                        InterpolatedString.create(token, parameters={}).eval(config)
+                    ).strip()
+                )
+            ]
+
+        quota_specs = [
+            {
+                "name": quota_model.name,
+                "remaining_path": quota_model.remaining_path,
+                "reset_path": quota_model.reset_path,
+                "limit_path": quota_model.limit_path,
+                "remaining_header": quota_model.remaining_header,
+                "reset_header": quota_model.reset_header,
+                "limit_header": quota_model.limit_header,
+                # Normalize the same way as the runtime TokenQuota below, so an omitted field
+                # and an explicit `[]` key identically and keep sharing one set of counters.
+                "exhaustion_status_codes": quota_model.exhaustion_status_codes or [],
+                "matchers": [
+                    {
+                        "method": matcher_model.method,
+                        "url_base": matcher_model.url_base,
+                        "url_path_pattern": matcher_model.url_path_pattern,
+                        "params": matcher_model.params,
+                        "headers": matcher_model.headers,
+                        "weight": matcher_model.weight,
+                    }
+                    for matcher_model in quota_model.matchers or []
+                ],
+            }
+            for quota_model in model.quotas
+        ]
+
+        quota_status_url = str(
+            InterpolatedString.create(model.quota_status_source.url, parameters={}).eval(config)
+        )
+        quota_status_http_method = (
+            model.quota_status_source.http_method.value
+            if model.quota_status_source.http_method
+            else "GET"
+        )
+        quota_status_headers = {
+            key: str(InterpolatedString.create(value, parameters={}).eval(config))
+            for key, value in (model.quota_status_source.request_headers or {}).items()
+        }
+        # Normalize the same way as the quota specs above, so an omitted field and an explicit
+        # `[]` key identically and keep sharing one set of counters. Deduplicated as well as
+        # sorted, because the runtime turns this into a set: without it `[404]` and `[404, 404]`
+        # would key differently and stop sharing counters while behaving identically.
+        quota_status_unavailable_status_codes = sorted(
+            set(model.quota_status_source.unavailable_status_codes or [])
+        )
+        auth_method = model.auth_method or "Bearer"
+        header = model.header or "Authorization"
+        max_wait_time_str = str(
+            InterpolatedString.create(model.max_wait_time or "PT2H", parameters={}).eval(config)
+        )
+        max_wait_time = parse_duration(max_wait_time_str)
+        if not isinstance(max_wait_time, datetime.timedelta):
+            raise ValueError(
+                f"max_wait_time must be a fixed-length ISO 8601 duration (e.g. 'PT2H'); "
+                f"calendar-unit durations like '{max_wait_time_str}' are not supported"
+            )
+        budget_reserve_fraction = (
+            model.budget_reserve_fraction if model.budget_reserve_fraction is not None else 0.1
+        )
+        budget_min_reserve = (
+            model.budget_min_reserve if model.budget_min_reserve is not None else 50
+        )
+
+        # Reuse the same instance for identical definitions so that all streams share the
+        # same token quota counters (similar to how api_budget is shared). The key is built
+        # from the resolved constructor arguments rather than the raw model so that
+        # stream-specific `$parameters` propagated onto the model (and its nested components)
+        # cannot break instance sharing.
+        cache_key = json.dumps(
+            {
+                "tokens": tokens,
+                "quotas": quota_specs,
+                "quota_status_url": quota_status_url,
+                "quota_status_http_method": quota_status_http_method,
+                "quota_status_headers": quota_status_headers,
+                "quota_status_unavailable_status_codes": quota_status_unavailable_status_codes,
+                "auth_method": auth_method,
+                "header": header,
+                "max_wait_time": max_wait_time.total_seconds(),
+                "budget_reserve_fraction": budget_reserve_fraction,
+                "budget_min_reserve": budget_min_reserve,
+            },
+            sort_keys=True,
+        )
+        if cache_key in self._rate_limited_authenticators:
+            return self._rate_limited_authenticators[cache_key]
+
+        quotas = [
+            TokenQuota(
+                name=quota_model.name,
+                remaining_path=quota_model.remaining_path,
+                reset_path=quota_model.reset_path,
+                limit_path=quota_model.limit_path,
+                remaining_header=quota_model.remaining_header,
+                reset_header=quota_model.reset_header,
+                limit_header=quota_model.limit_header,
+                exhaustion_status_codes=quota_model.exhaustion_status_codes or [],
+                matchers=[
+                    self.create_http_request_matcher(matcher_model, config)
+                    for matcher_model in quota_model.matchers or []
+                ],
+            )
+            for quota_model in model.quotas
+        ]
+
+        authenticator = RateLimitedMultipleTokenAuthenticator(
+            tokens=tokens,
+            quotas=quotas,
+            quota_status_url=quota_status_url,
+            quota_status_http_method=quota_status_http_method,
+            quota_status_headers=quota_status_headers,
+            quota_status_unavailable_status_codes=quota_status_unavailable_status_codes,
+            auth_method=auth_method,
+            header=header,
+            max_wait_time=max_wait_time,
+            budget_reserve_fraction=budget_reserve_fraction,
+            budget_min_reserve=budget_min_reserve,
+        )
+        self._rate_limited_authenticators[cache_key] = authenticator
+        return authenticator
+
     def set_api_budget(self, component_definition: ComponentDefinition, config: Config) -> None:
         self._api_budget = self.create_component(
             model_type=HTTPAPIBudgetModel, component_definition=component_definition, config=config
@@ -4540,6 +4831,93 @@ class ModelToComponentFactory:
             underlying_partition_router=underlying_router,
             deduplicate=model.deduplicate if model.deduplicate is not None else True,
             config=config,
+        )
+
+    def create_union_partition_router(
+        self,
+        model: UnionPartitionRouterModel,
+        config: Config,
+        *,
+        stream_name: str,
+        **kwargs: Any,
+    ) -> UnionPartitionRouter:
+        # The schema enforces minItems: 2 for manifests; this guard covers construction paths
+        # that bypass JSON-schema validation (the generated model carries no min_items constraint).
+        if len(model.partition_routers) < 2:
+            raise ValueError(
+                f"UnionPartitionRouter for stream {stream_name} needs at least 2 child partition routers"
+            )
+
+        partition_routers = [
+            self._create_component_from_model(
+                model=child,
+                config=config,
+                stream_name=stream_name,
+                **kwargs,
+            )
+            for child in model.partition_routers
+        ]
+
+        # partition_field depends only on config/parameters, so it is evaluated once at build
+        # time; the runtime component always receives a plain string.
+        partition_field = InterpolatedString.create(
+            model.partition_field, parameters=model.parameters or {}
+        ).eval(config)
+
+        # Fail fast at build time when a built-in child router is statically known to emit a
+        # partition field different from the union's. CustomPartitionRouter children are opaque
+        # and can only be validated at runtime.
+        for child_model in model.partition_routers:
+            child_partition_fields: List[str] = []
+            if isinstance(child_model, ListPartitionRouterModel):
+                child_partition_fields.append(
+                    InterpolatedString.create(
+                        child_model.cursor_field, parameters=child_model.parameters or {}
+                    ).eval(config)
+                )
+            elif isinstance(child_model, SubstreamPartitionRouterModel):
+                for parent_stream_config in child_model.parent_stream_configs:
+                    child_partition_fields.append(
+                        InterpolatedString.create(
+                            parent_stream_config.partition_field,
+                            parameters=parent_stream_config.parameters
+                            or child_model.parameters
+                            or {},
+                        ).eval(config)
+                    )
+            elif isinstance(child_model, UnionPartitionRouterModel):
+                child_partition_fields.append(
+                    InterpolatedString.create(
+                        child_model.partition_field, parameters=child_model.parameters or {}
+                    ).eval(config)
+                )
+            for child_partition_field in child_partition_fields:
+                if child_partition_field != partition_field:
+                    raise ValueError(
+                        f"UnionPartitionRouter expects all child partition routers to emit the "
+                        f"partition field '{partition_field}', but a "
+                        f"{child_model.type} child emits '{child_partition_field}'."
+                    )
+
+        # A union slice comes from exactly one child partition router, so request options
+        # declared on children cannot be applied consistently to requests built from the
+        # normalized union slices. Partition values should be consumed via interpolation
+        # (e.g. stream_partition) instead. Note that this validation only covers built-in
+        # router types; CustomPartitionRouter children are opaque, so any request options
+        # they implement internally cannot be detected or rejected here.
+        for router in partition_routers:
+            if isinstance(router, SubstreamPartitionRouter):
+                if any(
+                    parent_config.request_option for parent_config in router.parent_stream_configs
+                ):
+                    raise ValueError("Request options are not supported for UnionPartitionRouter.")
+            if isinstance(router, ListPartitionRouter) and router.request_option:
+                raise ValueError("Request options are not supported for UnionPartitionRouter.")
+
+        return UnionPartitionRouter(
+            partition_routers=partition_routers,
+            partition_field=partition_field,
+            parameters=model.parameters or {},
         )
 
     def _ensure_query_properties_to_model(

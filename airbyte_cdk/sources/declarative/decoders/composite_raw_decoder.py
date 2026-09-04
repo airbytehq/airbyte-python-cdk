@@ -15,6 +15,7 @@ from typing import Any, List, Optional
 import ijson
 import orjson
 import requests
+from typing_extensions import Buffer
 
 from airbyte_cdk.models import FailureType
 from airbyte_cdk.sources.declarative.decoders.decoder import DECODER_OUTPUT_TYPE, Decoder
@@ -29,23 +30,61 @@ from airbyte_cdk.utils import AirbyteTracedException
 logger = logging.getLogger("airbyte")
 
 
+class _PrefixedStream(io.RawIOBase):
+    """Restore consumed header bytes ahead of the remaining stream."""
+
+    def __init__(self, prefix: bytes, stream: BufferedIOBase) -> None:
+        super().__init__()
+        self._prefix = prefix
+        self._stream = stream
+
+    def readable(self) -> bool:
+        return True
+
+    def readinto(self, buffer: Buffer) -> int:
+        buffer_view = memoryview(buffer)
+        prefix_size = min(len(self._prefix), len(buffer_view))
+        if prefix_size:
+            buffer_view[:prefix_size] = self._prefix[:prefix_size]
+            self._prefix = self._prefix[prefix_size:]
+
+        if prefix_size == len(buffer_view):
+            return prefix_size
+
+        data = self._stream.read(len(buffer_view) - prefix_size)
+        if not data:
+            return prefix_size
+
+        buffer_view[prefix_size : prefix_size + len(data)] = data
+        return prefix_size + len(data)
+
+
 @dataclass
 class GzipParser(Parser):
     inner_parser: Parser
 
     def parse(self, data: BufferedIOBase) -> PARSER_OUTPUT_TYPE:
+        """Decompress gzipped data or pass uncompressed data through unchanged.
+
+        Args:
+            data: A byte stream containing compressed or uncompressed data.
+
+        Yields:
+            Records parsed by the inner parser.
         """
-        Decompress gzipped bytes and pass decompressed data to the inner parser.
+        prefix = b""
+        while len(prefix) < 2:
+            chunk = data.read(2 - len(prefix))
+            if not chunk:
+                break
+            prefix += chunk
+        prefixed_data = io.BufferedReader(_PrefixedStream(prefix, data))
 
-        IMPORTANT:
-            - If the data is not gzipped, reset the pointer and pass the data to the inner parser as is.
-
-        Note:
-            - The data is not decoded by default.
-        """
-
-        with gzip.GzipFile(fileobj=data, mode="rb") as gzipobj:
-            yield from self.inner_parser.parse(gzipobj)
+        if prefix == b"\x1f\x8b":
+            with gzip.GzipFile(fileobj=prefixed_data, mode="rb") as gzipobj:
+                yield from self.inner_parser.parse(gzipobj)
+        else:
+            yield from self.inner_parser.parse(prefixed_data)
 
 
 @dataclass

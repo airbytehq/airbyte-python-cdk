@@ -312,11 +312,226 @@ definitions:
             - "$ref": "#/definitions/LegacySessionTokenAuthenticator"
             - "$ref": "#/definitions/CustomAuthenticator"
             - "$ref": "#/definitions/NoAuth"
+            - "$ref": "#/definitions/RateLimitedMultipleTokenAuthenticator"
         examples:
           - authenticators:
               token: "#/definitions/ApiKeyAuthenticator"
               oauth: "#/definitions/OAuthAuthenticator"
               jwt: "#/definitions/JwtAuthenticator"
+      $parameters:
+        type: object
+        additionalProperties: true
+  RateLimitedMultipleTokenAuthenticator:
+    title: Rate Limited Multiple Token Authenticator
+    description: >
+      Authenticator that rotates between multiple interchangeable tokens, tracking each token's remaining
+      call quota. Outgoing requests are classified into quota pools using request matchers. When the active
+      token's quota for the matched pool is exhausted, the authenticator rotates to the next token. When all
+      tokens are exhausted, it waits until the earliest quota reset (bounded by `max_wait_time`) before
+      resuming. Quota counters are seeded per token from `quota_status_source` at startup and refreshed after
+      an exhaustion wait.
+    type: object
+    required:
+      - type
+      - tokens
+      - quota_status_source
+      - quotas
+    properties:
+      type:
+        type: string
+        enum: [RateLimitedMultipleTokenAuthenticator]
+      tokens:
+        title: Tokens
+        description: The tokens to rotate between. Either an explicit list of tokens, or a single string containing multiple tokens separated by `token_delimiter`.
+        anyOf:
+          - type: string
+          - type: array
+            minItems: 1
+            items:
+              type: string
+        interpolation_context:
+          - config
+        examples:
+          - "{{ config['credentials']['personal_access_token'] }}"
+          - ["{{ config['token_1'] }}", "{{ config['token_2'] }}"]
+      token_delimiter:
+        title: Token Delimiter
+        description: Delimiter used to split a single token string into multiple tokens.
+        type: string
+        default: ","
+      auth_method:
+        title: Auth Method
+        description: "The prefix to prepend to the token in the auth header value (e.g. `Authorization: Bearer <token>`)."
+        type: string
+        default: "Bearer"
+        examples:
+          - "Bearer"
+          - "token"
+      header:
+        title: Header Name
+        description: The name of the HTTP header in which to inject the token.
+        type: string
+        default: "Authorization"
+      quota_status_source:
+        title: Quota Status Source
+        description: Defines where to fetch each token's current quota status. Called once per token at startup and after an exhaustion wait, not per data request.
+        "$ref": "#/definitions/QuotaStatusSource"
+      quotas:
+        title: Quota Pools
+        description: >
+          Quota pools tracked per token. Each outgoing request is classified into the first pool whose
+          matchers match the request; a pool with no matchers acts as the default. The `remaining_path` and
+          `reset_path` locate each pool's values in the quota status response.
+        type: array
+        minItems: 1
+        items:
+          "$ref": "#/definitions/TokenQuota"
+      max_wait_time:
+        title: Maximum Wait Time
+        description: ISO 8601 duration. When all tokens are exhausted, the maximum time to wait for a quota reset before raising a transient error.
+        type: string
+        default: "PT2H"
+        interpolation_context:
+          - config
+        examples:
+          - "PT2H"
+          - "PT30M"
+          - "PT{{ config.get('max_waiting_time', 120) }}M"
+      budget_reserve_fraction:
+        title: Budget Reserve Fraction
+        description: Fraction of each token's quota to keep in reserve. When every token drops below its reserve, requests are proactively throttled to spread the remaining calls until the quota reset. Set to 0 (along with `budget_min_reserve`) to disable throttling.
+        type: number
+        default: 0.1
+      budget_min_reserve:
+        title: Budget Minimum Reserve
+        description: Minimum number of calls to keep in reserve per token before proactive throttling kicks in.
+        type: integer
+        default: 50
+      $parameters:
+        type: object
+        additionalProperties: true
+  QuotaStatusSource:
+    title: Quota Status Source
+    description: Describes the endpoint from which a token's current rate limit quota status can be fetched.
+    type: object
+    required:
+      - type
+      - url
+    properties:
+      type:
+        type: string
+        enum: [QuotaStatusSource]
+      url:
+        title: URL
+        description: The full URL of the quota status endpoint.
+        type: string
+        interpolation_context:
+          - config
+        examples:
+          - "https://api.github.com/rate_limit"
+          - "{{ config.get('api_url', 'https://api.github.com') }}/rate_limit"
+      http_method:
+        title: HTTP Method
+        description: The HTTP method used to fetch the quota status.
+        type: string
+        enum:
+          - GET
+          - POST
+        default: GET
+      request_headers:
+        title: Request Headers
+        description: Additional headers to send with the quota status request.
+        type: object
+        additionalProperties:
+          type: string
+      unavailable_status_codes:
+        title: Unavailable Status Codes
+        description: Status codes from the quota status endpoint that mean quota tracking is unavailable rather than broken, such as a self-hosted deployment with rate limiting turned off. Every pool of the token whose request returned that status is then treated as untracked, so the authenticator stops waiting for quota resets, stops throttling proactively and stops rotating on exhaustion for it, while still signing requests. A token untracked this way stays untracked for the rest of the sync, because the endpoint is never consulted for it again, so a status the endpoint can also return transiently costs quota tracking for the whole run. If only some tokens return that status the others stay tracked, but they are no longer refreshed either, because the authenticator stops waiting for quota resets as soon as one token is untracked; once their counters are locally spent all traffic moves onto the untracked tokens. Rate limiting reported by ordinary responses is still handled by the stream's error handler, so one that retries 429 or 403 keeps working, and a retry rotates onto the next token; it pays the backoff the response asks for rather than the shortened one a tracked pool would get, since an untracked pool has no counters with which to argue the rejection was about that credential. Any status not listed still fails the connection, and this field never excuses a quota path missing from a response the endpoint did answer, so list only the codes the endpoint uses to report that rate limiting is not enabled. Do not list authentication or authorization statuses, since a 401 or 403 from a revoked credential would then be read as quota tracking being unavailable rather than as a credentials failure.
+        type: array
+        items:
+          type: integer
+        uniqueItems: true
+        examples:
+          - [404]
+      $parameters:
+        type: object
+        additionalProperties: true
+  TokenQuota:
+    title: Token Quota
+    description: A named per-token quota pool with matchers that classify outgoing requests into the pool.
+    type: object
+    required:
+      - type
+      - name
+      - remaining_path
+      - reset_path
+    properties:
+      type:
+        type: string
+        enum: [TokenQuota]
+      name:
+        title: Name
+        description: Name of the quota pool.
+        type: string
+        examples:
+          - "rest"
+          - "graphql"
+      remaining_path:
+        title: Remaining Path
+        description: Path to the remaining call count for this pool in the quota status response.
+        type: array
+        items:
+          type: string
+        examples:
+          - ["resources", "core", "remaining"]
+      reset_path:
+        title: Reset Path
+        description: Path to the quota reset timestamp for this pool in the quota status response.
+        type: array
+        items:
+          type: string
+        examples:
+          - ["resources", "core", "reset"]
+      limit_path:
+        title: Limit Path
+        description: Optional path to the total call limit for this pool in the quota status response. Used to compute the proactive throttling reserve; falls back to the initially observed remaining count when not set. Setting it on every pool is recommended so the reserve does not shrink when a sync starts with the pool already partially consumed.
+        type: array
+        items:
+          type: string
+        examples:
+          - ["resources", "core", "limit"]
+      matchers:
+        title: Matchers
+        description: List of matchers that classify outgoing requests into this quota pool. The first pool whose matcher matches a request is used. A pool with no matchers acts as the default pool.
+        type: array
+        items:
+          "$ref": "#/definitions/HttpRequestRegexMatcher"
+      remaining_header:
+        title: Remaining Header
+        description: Optional response header carrying the remaining call count for this pool. When set, the pool's counter is reconciled against this header on every response, which corrects drift caused by sharing the token with other clients, by requests in flight concurrently, or by a sync running long enough for the initial quota status read to go stale. Without it the pool is only ever seeded from the quota status endpoint.
+        type: string
+        examples:
+          - "X-RateLimit-Remaining"
+      reset_header:
+        title: Reset Header
+        description: Optional response header carrying the quota reset timestamp for this pool. Parsed with the same rules as `reset_path`, so epoch seconds and ISO 8601 both work. Used to tell a rolled-over quota window from the current one; a response proving the window has rolled over restores the pool to its limit. Most useful alongside `remaining_header`.
+        type: string
+        examples:
+          - "X-RateLimit-Reset"
+      limit_header:
+        title: Limit Header
+        description: Optional response header carrying the total call limit for this pool, used to keep the proactive throttling reserve accurate as the limit changes.
+        type: string
+        examples:
+          - "X-RateLimit-Limit"
+      exhaustion_status_codes:
+        title: Exhaustion Status Codes
+        description: Response status codes that mean this token's pool is spent. These have two effects. A response carrying one of them but no remaining count sets the pool to zero, so the next request rotates to another token instead of waiting out the reset window. They also mark which responses may report a zero for a quota window that has already elapsed, so a rate limit whose reset header trails the value being held still stops the token being used; a zero on any other response is treated as the last call of a finished window and ignored. Leaving this empty means such trailing rejections are ignored unless their reset is within the skew tolerance of the current window. Only list codes the API uses exclusively for rate limiting -- a code that also signals other failures would park a healthy token.
+        type: array
+        items:
+          type: integer
+        examples:
+          - [429]
       $parameters:
         type: object
         additionalProperties: true
@@ -343,6 +558,14 @@ definitions:
         type: array
         items:
           "$ref": "#/definitions/DynamicStreamCheckConfig"
+      config_overrides:
+        title: Config Overrides
+        description: Values overlaid onto the connector config for the duration of the check operation only. Use this when a check must behave differently from a sync - for example a shorter rate limit wait budget, so that check fails fast with a clear message instead of sleeping until the quota resets. Keys should be fields declared in the connector's spec. Values are used as-is. They are not interpolated, a `$ref` inside them is not resolved, they replace a nested object rather than deep-merging into it, and they are applied after config migrations and transformations have run, so a field derived from an overridden field is not recomputed. Keys must be strings, and two combinations are rejected outright. Keys prefixed with `__airbyte` belong to the platform rather than to the connector's spec. And a manifest that declares a `refresh_token_updater` cannot use this field at all, because a token refresh during check emits the whole config it was handed as a CONNECTOR_CONFIG control message, which the platform persists - so a check-only override would become the connection's saved config and apply to every later sync.
+        type: object
+        additionalProperties: true
+        examples:
+          - max_waiting_time: 0
+          - page_size: 1
   DynamicStreamCheckConfig:
     type: object
     required:
@@ -381,6 +604,14 @@ definitions:
         description: Enables stream check availability. This field is automatically set by the CDK.
         type: boolean
         default: true
+      config_overrides:
+        title: Config Overrides
+        description: Values overlaid onto the connector config for the duration of the check operation only. Use this when a check must behave differently from a sync - for example a shorter rate limit wait budget, so that check fails fast with a clear message instead of sleeping until the quota resets. Keys should be fields declared in the connector's spec. Values are used as-is. They are not interpolated, a `$ref` inside them is not resolved, they replace a nested object rather than deep-merging into it, and they are applied after config migrations and transformations have run, so a field derived from an overridden field is not recomputed. Keys must be strings, and two combinations are rejected outright. Keys prefixed with `__airbyte` belong to the platform rather than to the connector's spec. And a manifest that declares a `refresh_token_updater` cannot use this field at all, because a token refresh during check emits the whole config it was handed as a CONNECTOR_CONFIG control message, which the platform persists - so a check-only override would become the connection's saved config and apply to every later sync.
+        type: object
+        additionalProperties: true
+        examples:
+          - max_waiting_time: 0
+          - page_size: 1
   CompositeErrorHandler:
     title: Composite Error Handler
     description: Error handler that sequentially iterates over a list of error handlers.
@@ -1115,11 +1346,11 @@ definitions:
           - "P1D"
       is_data_feed:
         title: Data Feed API
-        description: A data feed API is an API that does not allow filtering and paginates the content from the most recent to the least recent. Given this, the CDK needs to know when to stop paginating and this field will generate a stop condition for pagination.
+        description: A data feed API is an API that does not allow filtering and paginates the content from the most recent to the least recent. Given this, the CDK needs to know when to stop paginating and this field will generate a stop condition for pagination. The last page fetched still holds records that fall outside the cursor window, and those are filtered out as well, so Client-side Incremental Filtering does not need to be enabled alongside this field. Records are kept when their cursor value is within the window that starts at the previous sync's cursor value (or the start date) and ends at the end date, defaulting to the current time, so records dated in the future are filtered out too.
         type: boolean
       is_client_side_incremental:
         title: Client-side Incremental Filtering
-        description: Set to True if the target API endpoint does not take cursor values to filter records and returns all records anyway. This will cause the connector to filter out records locally, and only emit new records from the last sync, hence incremental. This means that all records would be read from the API, but only new records will be emitted to the destination.
+        description: Set to True if the target API endpoint does not take cursor values to filter records and returns all records anyway. This will cause the connector to filter out records locally, keeping only the ones whose cursor value falls within the window that starts at the previous sync's cursor value (or the start date) and ends at the end date, defaulting to the current time. This means that all records would be read from the API, but only the records within that window will be emitted to the destination. This is not needed when Data Feed API is enabled, as a data feed already filters on the same window.
         type: boolean
       is_compare_strictly:
         title: Strict Start-End Time Comparison
@@ -1982,6 +2213,11 @@ definitions:
       type:
         type: string
         enum: [ResponseToFileExtractor]
+      preserve_na_values:
+        title: Preserve NA Values
+        description: When enabled, string values such as "NA", "N/A", "NULL", "None" and "NaN" are kept as-is instead of being interpreted as missing and converted to null. Empty cells are still treated as null. Defaults to false to preserve historical behavior.
+        type: boolean
+        default: false
       $parameters:
         type: object
         additionalProperties: true
@@ -2277,6 +2513,7 @@ definitions:
           - "$ref": "#/definitions/CustomAuthenticator"
           - "$ref": "#/definitions/NoAuth"
           - "$ref": "#/definitions/LegacySessionTokenAuthenticator"
+          - "$ref": "#/definitions/RateLimitedMultipleTokenAuthenticator"
       fetch_properties_from_endpoint:
         deprecated: true
         deprecation_message: "Use `query_properties` field instead."
@@ -3997,6 +4234,7 @@ definitions:
           - "$ref": "#/definitions/SubstreamPartitionRouter"
           - "$ref": "#/definitions/ListPartitionRouter"
           - "$ref": "#/definitions/GroupingPartitionRouter"
+          - "$ref": "#/definitions/UnionPartitionRouter"
           - "$ref": "#/definitions/CustomPartitionRouter"
           - type: array
             title: Multiple Partition Routers
@@ -4005,6 +4243,7 @@ definitions:
                 - "$ref": "#/definitions/SubstreamPartitionRouter"
                 - "$ref": "#/definitions/ListPartitionRouter"
                 - "$ref": "#/definitions/GroupingPartitionRouter"
+                - "$ref": "#/definitions/UnionPartitionRouter"
                 - "$ref": "#/definitions/CustomPartitionRouter"
       $parameters:
         type: object
@@ -4207,6 +4446,7 @@ definitions:
           - "$ref": "#/definitions/ListPartitionRouter"
           - "$ref": "#/definitions/SubstreamPartitionRouter"
           - "$ref": "#/definitions/GroupingPartitionRouter"
+          - "$ref": "#/definitions/UnionPartitionRouter"
           - "$ref": "#/definitions/CustomPartitionRouter"
           - type: array
             items:
@@ -4214,6 +4454,7 @@ definitions:
                 - "$ref": "#/definitions/ListPartitionRouter"
                 - "$ref": "#/definitions/SubstreamPartitionRouter"
                 - "$ref": "#/definitions/GroupingPartitionRouter"
+                - "$ref": "#/definitions/UnionPartitionRouter"
                 - "$ref": "#/definitions/CustomPartitionRouter"
       decoder:
         title: HTTP Response Format
@@ -4425,10 +4666,15 @@ definitions:
           - "([-+]?\\d+)"
       max_waiting_time_in_seconds:
         title: Max Waiting Time in Seconds
-        description: Given the value extracted from the header is greater than this value, stop the stream.
-        type: number
+        description: 'Stop the stream instead of waiting, when the value extracted from the header is greater than or equal to this value. Can be a hardcoded number, or a string interpolated from the connector config so that the bound can be changed without a connector release. A value of 0 means never wait. Not evaluated when a rate-limited retry can rotate to another credential with quota; any other retryable error still consults this strategy.'
+        anyOf:
+          - type: number
+          - type: string
+        interpolation_context:
+          - config
         examples:
           - 3600
+          - "{{ config['max_waiting_time'] * 60 }}"
       $parameters:
         type: object
         additionalProperties: true
@@ -4461,12 +4707,58 @@ definitions:
         anyOf:
           - "$ref": "#/definitions/ListPartitionRouter"
           - "$ref": "#/definitions/SubstreamPartitionRouter"
+          - "$ref": "#/definitions/UnionPartitionRouter"
           - "$ref": "#/definitions/CustomPartitionRouter"
       deduplicate:
         title: Deduplicate Partitions
         description: If true, ensures that partitions are unique within each group by removing duplicates based on the partition key.
         type: boolean
         default: true
+      $parameters:
+        type: object
+        additionalProperties: true
+  UnionPartitionRouter:
+    title: Union Partition Router
+    description: >
+      A partition router that yields the deduplicated union of the partitions produced by its child
+      partition routers. Every emitted partition is normalized to a single key defined by `partition_field`;
+      any other partition keys coming from a child router (such as a SubstreamPartitionRouter's `parent_slice`)
+      are moved into the slice's extra fields. The first occurrence of a partition value wins and later
+      duplicates are skipped. Partition values must be hashable; deduplication holds every distinct value
+      in memory for the duration of the sync, and the resulting partition count is the deduplicated sum
+      of the child routers' partition counts, which affects per-partition state size. Because child routers
+      must emit scalar partition values, GroupingPartitionRouter (which emits list-valued partitions)
+      cannot be used as a child.
+    type: object
+    required:
+      - type
+      - partition_field
+      - partition_routers
+    properties:
+      type:
+        type: string
+        enum: [UnionPartitionRouter]
+      partition_field:
+        title: Partition Field
+        description: The single partition key that all child partition routers' slices are normalized to. Each child router must emit this key in its partitions. Interpolation is evaluated once when the connector is built, using the connector config and $parameters.
+        type: string
+        interpolation_context:
+          - config
+          - parameters
+        examples:
+          - "repository"
+          - "{{ config['partition_field'] }}"
+      partition_routers:
+        title: Partition Routers
+        description: The child partition routers whose partitions are unioned. Request options are not supported on child partition routers; partition values should be consumed via interpolation (e.g. `stream_partition`).
+        type: array
+        minItems: 2
+        items:
+          anyOf:
+            - "$ref": "#/definitions/ListPartitionRouter"
+            - "$ref": "#/definitions/SubstreamPartitionRouter"
+            - "$ref": "#/definitions/UnionPartitionRouter"
+            - "$ref": "#/definitions/CustomPartitionRouter"
       $parameters:
         type: object
         additionalProperties: true
@@ -4508,6 +4800,17 @@ definitions:
           - config
         examples:
           - "([-+]?\\d+)"
+      max_waiting_time_in_seconds:
+        title: Max Waiting Time in Seconds
+        description: 'Stop the stream instead of waiting, when the wait this strategy computes is greater than or equal to this value. The comparison is against the computed wait rather than the raw header, since the header holds an absolute timestamp, and it is applied after `min_wait`, so a cap below the floor still wins -- including for the fallback where the header is absent and `min_wait` supplies the wait on its own. Can be a hardcoded number, or a string interpolated from the connector config so that the bound can be changed without a connector release. A value of 0 means never wait. Not evaluated when a rate-limited retry can rotate to another credential with quota; any other retryable error still consults this strategy.'
+        anyOf:
+          - type: number
+          - type: string
+        interpolation_context:
+          - config
+        examples:
+          - 3600
+          - "{{ config['max_waiting_time'] * 60 }}"
       $parameters:
         type: object
         additionalProperties: true

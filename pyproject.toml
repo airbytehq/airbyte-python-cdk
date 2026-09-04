@@ -76,7 +76,7 @@ python-calamine = { version = "0.2.3", optional = true }  # TODO: Remove if unus
 openpyxl = { version = "^3.1.0", optional = true }
 python-snappy = { version = "0.7.3", optional = true }  # TODO: remove if unused
 tiktoken = { version = "0.8.0", optional = true }
-nltk = { version = ">=3.9.1", optional = true }
+nltk = { version = "3.9.4", optional = true }
 unstructured = { version = ">=0.18.27,<0.19", extras = ["docx", "pdf", "pptx"], optional = true }
 onnxruntime = { version = ">=1.23,<1.24", optional = true }  # Pin below 1.24: the 1.24.x series claims >=3.10 but ships no cp310 wheels; >=1.25 requires Python >=3.11
 "unstructured.pytesseract" = { version = ">=0.3.12", optional = true }

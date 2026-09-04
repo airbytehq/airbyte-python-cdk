@@ -1,7 +1,10 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
+import gzip
+import io
 import json
+import logging
 from copy import deepcopy
 
 # mypy: ignore-errors
@@ -21,6 +24,7 @@ from airbyte_protocol_dataclasses.models.airbyte_protocol import (
 )
 from freezegun.api import FakeDatetime
 from pydantic.v1 import ValidationError
+from urllib3 import HTTPResponse
 
 from airbyte_cdk.legacy.sources.declarative.declarative_stream import DeclarativeStream
 from airbyte_cdk.legacy.sources.declarative.incremental import DatetimeBasedCursor
@@ -89,14 +93,23 @@ from airbyte_cdk.sources.declarative.models import Spec as SpecModel
 from airbyte_cdk.sources.declarative.models import (
     SubstreamPartitionRouter as SubstreamPartitionRouterModel,
 )
+from airbyte_cdk.sources.declarative.models import (
+    UnionPartitionRouter as UnionPartitionRouterModel,
+)
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     ConstantBackoffStrategy as ConstantBackoffStrategyModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    CsvDecoder as CsvDecoderModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     CustomRequester as CustomRequesterModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     ExponentialBackoffStrategy as ExponentialBackoffStrategyModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    GzipDecoder as GzipDecoderModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     OffsetIncrement as OffsetIncrementModel,
@@ -106,6 +119,11 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     SelectiveAuthenticator,
+)
+from airbyte_cdk.sources.declarative.parsers.custom_code_compiler import (
+    ENV_VAR_ALLOW_CUSTOM_CODE,
+    INJECTED_MANIFEST,
+    AirbyteCustomCodeNotPermittedError,
 )
 from airbyte_cdk.sources.declarative.parsers.manifest_component_transformer import (
     ManifestComponentTransformer,
@@ -123,6 +141,7 @@ from airbyte_cdk.sources.declarative.partition_routers import (
     ListPartitionRouter,
     SinglePartitionRouter,
     SubstreamPartitionRouter,
+    UnionPartitionRouter,
 )
 from airbyte_cdk.sources.declarative.requesters import HttpRequester
 from airbyte_cdk.sources.declarative.requesters.error_handlers import (
@@ -167,7 +186,11 @@ from airbyte_cdk.sources.declarative.requesters.request_options import (
 )
 from airbyte_cdk.sources.declarative.requesters.request_path import RequestPath
 from airbyte_cdk.sources.declarative.requesters.requester import HttpMethod
-from airbyte_cdk.sources.declarative.retrievers import AsyncRetriever, SimpleRetriever
+from airbyte_cdk.sources.declarative.retrievers import (
+    AsyncRetriever,
+    LazySimpleRetriever,
+    SimpleRetriever,
+)
 from airbyte_cdk.sources.declarative.schema import InlineSchemaLoader, JsonFileSchemaLoader
 from airbyte_cdk.sources.declarative.schema.caching_schema_loader_decorator import (
     CachingSchemaLoaderDecorator,
@@ -245,6 +268,71 @@ def test_create_check_stream():
 
     assert isinstance(check, CheckStream)
     assert check.stream_names == ["list_stream"]
+
+
+@pytest.mark.parametrize(
+    "headers",
+    [
+        {"Content-Type": "application/gzip"},
+        {"Content-Type": "application/x-gzip"},
+        {"Content-Type": "text/csv"},
+        {"Content-Type": "binary/octet-stream"},
+        {"Content-Encoding": "gzip"},
+    ],
+)
+@pytest.mark.parametrize("emit_connector_builder_messages", [False, True])
+def test_create_gzip_decoder_handles_compressed_response(
+    headers: Mapping[str, str], emit_connector_builder_messages: bool
+):
+    csv_data = b"date,units\n2026-08-01,42\n"
+    response = requests.Response()
+    response.status_code = 200
+    response.headers.update(headers)
+    response.raw = HTTPResponse(
+        body=io.BytesIO(gzip.compress(csv_data)),
+        headers=headers,
+        status=200,
+        preload_content=False,
+        decode_content=False,
+    )
+
+    model = GzipDecoderModel(
+        type="GzipDecoder",
+        decoder=CsvDecoderModel(type="CsvDecoder"),
+    )
+    decoder = ModelToComponentFactory(
+        emit_connector_builder_messages=emit_connector_builder_messages
+    ).create_gzip_decoder(model, {})
+
+    assert list(decoder.decode(response)) == [{"date": "2026-08-01", "units": "42"}]
+
+
+@pytest.mark.parametrize("emit_connector_builder_messages", [False, True])
+def test_create_gzip_decoder_handles_transport_and_content_gzip(
+    emit_connector_builder_messages: bool,
+):
+    csv_data = b"date,units\n2026-08-01,42\n"
+    headers = {"Content-Encoding": "gzip", "Content-Type": "application/gzip"}
+    response = requests.Response()
+    response.status_code = 200
+    response.headers.update(headers)
+    response.raw = HTTPResponse(
+        body=io.BytesIO(gzip.compress(gzip.compress(csv_data))),
+        headers=headers,
+        status=200,
+        preload_content=False,
+        decode_content=False,
+    )
+
+    model = GzipDecoderModel(
+        type="GzipDecoder",
+        decoder=CsvDecoderModel(type="CsvDecoder"),
+    )
+    decoder = ModelToComponentFactory(
+        emit_connector_builder_messages=emit_connector_builder_messages
+    ).create_gzip_decoder(model, {})
+
+    assert list(decoder.decode(response)) == [{"date": "2026-08-01", "units": "42"}]
 
 
 def test_create_component_type_mismatch():
@@ -1427,10 +1515,303 @@ list_stream:
         model_type=DeclarativeStreamModel, component_definition=stream_manifest, config=input_config
     )
 
+    retriever = get_retriever(stream)
     assert isinstance(
-        get_retriever(stream).paginator.pagination_strategy,
+        retriever.paginator.pagination_strategy,
         StopConditionPaginationStrategyDecorator,
     )
+    # the stop condition only prevents the next page from being requested; the already-synced records
+    # of the last page are dropped by the retriever
+    assert isinstance(retriever.post_pagination_filter, ClientSideIncrementalRecordFilterDecorator)
+    assert retriever.post_pagination_filter._cursor is stream.cursor
+
+
+@pytest.mark.parametrize(
+    "is_client_side_incremental",
+    [
+        pytest.param(False, id="test_data_feed_only"),
+        pytest.param(True, id="test_data_feed_with_client_side_incremental"),
+    ],
+)
+def test_incremental_data_feed_filters_already_synced_records_in_the_retriever(
+    is_client_side_incremental,
+):
+    content = f"""
+selector:
+  type: RecordSelector
+  extractor:
+      type: DpathExtractor
+      field_path: ["extractor_path"]
+requester:
+  type: HttpRequester
+  name: "{{{{ parameters['name'] }}}}"
+  url_base: "https://api.sendgrid.com/v3/"
+  http_method: "GET"
+list_stream:
+  type: DeclarativeStream
+  incremental_sync:
+    type: DatetimeBasedCursor
+    $parameters:
+      datetime_format: "%Y-%m-%dT%H:%M:%S.%f%z"
+    start_datetime: "{{{{ config['start_time'] }}}}"
+    cursor_field: "created"
+    is_data_feed: true
+    is_client_side_incremental: {str(is_client_side_incremental).lower()}
+  retriever:
+    type: SimpleRetriever
+    name: "{{{{ parameters['name'] }}}}"
+    paginator:
+      type: DefaultPaginator
+      pagination_strategy:
+        type: "CursorPagination"
+        cursor_value: "{{{{ response._metadata.next }}}}"
+        page_size: 10
+    requester:
+      $ref: "#/requester"
+      path: "/"
+    record_selector:
+      $ref: "#/selector"
+  $parameters:
+    name: "lists"
+    """
+
+    parsed_manifest = YamlDeclarativeSource._parse(content)
+    resolved_manifest = resolver.preprocess_manifest(parsed_manifest)
+    stream_manifest = transformer.propagate_types_and_parameters(
+        "", resolved_manifest["list_stream"], {}
+    )
+
+    stream = factory.create_component(
+        model_type=DeclarativeStreamModel, component_definition=stream_manifest, config=input_config
+    )
+
+    retriever = get_retriever(stream)
+    assert isinstance(retriever.post_pagination_filter, ClientSideIncrementalRecordFilterDecorator)
+    assert retriever.post_pagination_filter._cursor is stream.cursor
+    # the `record_filter` condition stays in the record selector, so the post-pagination filter must not evaluate it
+    assert retriever.post_pagination_filter.condition is None
+    # filtering in the record selector would hide the already-synced records from the paginator and
+    # therefore silently disable the stop condition
+    assert not isinstance(
+        retriever.record_selector.record_filter, ClientSideIncrementalRecordFilterDecorator
+    )
+
+
+def test_given_data_feed_and_record_filter_then_condition_stays_in_the_record_selector():
+    content = """
+selector:
+  type: RecordSelector
+  record_filter:
+    type: RecordFilter
+    condition: "{{ record['id'] > 1 }}"
+  extractor:
+      type: DpathExtractor
+      field_path: ["extractor_path"]
+requester:
+  type: HttpRequester
+  name: "{{ parameters['name'] }}"
+  url_base: "https://api.sendgrid.com/v3/"
+  http_method: "GET"
+list_stream:
+  type: DeclarativeStream
+  incremental_sync:
+    type: DatetimeBasedCursor
+    $parameters:
+      datetime_format: "%Y-%m-%dT%H:%M:%S.%f%z"
+    start_datetime: "{{ config['start_time'] }}"
+    cursor_field: "created"
+    is_data_feed: true
+  retriever:
+    type: SimpleRetriever
+    name: "{{ parameters['name'] }}"
+    paginator:
+      type: DefaultPaginator
+      pagination_strategy:
+        type: "CursorPagination"
+        cursor_value: "{{ response._metadata.next }}"
+        page_size: 10
+    requester:
+      $ref: "#/requester"
+      path: "/"
+    record_selector:
+      $ref: "#/selector"
+  $parameters:
+    name: "lists"
+    """
+
+    parsed_manifest = YamlDeclarativeSource._parse(content)
+    resolved_manifest = resolver.preprocess_manifest(parsed_manifest)
+    stream_manifest = transformer.propagate_types_and_parameters(
+        "", resolved_manifest["list_stream"], {}
+    )
+
+    stream = factory.create_component(
+        model_type=DeclarativeStreamModel, component_definition=stream_manifest, config=input_config
+    )
+
+    retriever = get_retriever(stream)
+    # the condition must keep running upstream of the paginator, otherwise the records it rejects would start counting
+    # towards the page size and could become the record the stop condition is evaluated on
+    assert retriever.record_selector.record_filter.condition == "{{ record['id'] > 1 }}"
+    assert retriever.post_pagination_filter.condition is None
+    # a data feed that is not client-side incremental keeps the `transform_before_filtering` default it had before the
+    # cursor filtering moved to the retriever
+    assert retriever.record_selector.transform_before_filtering is False
+
+
+def test_given_data_feed_and_client_side_incremental_then_transform_before_filtering():
+    """
+    Moving the cursor filtering to the retriever must not change when the `record_filter` condition runs: a
+    client-side incremental stream evaluates it after the transformations, otherwise a condition reading a
+    transformation-produced field silently rejects every record.
+    """
+    content = """
+selector:
+  type: RecordSelector
+  record_filter:
+    type: RecordFilter
+    condition: "{{ record['keep'] == 'yes' }}"
+  extractor:
+      type: DpathExtractor
+      field_path: ["extractor_path"]
+requester:
+  type: HttpRequester
+  name: "{{ parameters['name'] }}"
+  url_base: "https://api.sendgrid.com/v3/"
+  http_method: "GET"
+list_stream:
+  type: DeclarativeStream
+  transformations:
+    - type: AddFields
+      fields:
+        - path: ["keep"]
+          value: "yes"
+  incremental_sync:
+    type: DatetimeBasedCursor
+    $parameters:
+      datetime_format: "%Y-%m-%dT%H:%M:%S.%f%z"
+    start_datetime: "{{ config['start_time'] }}"
+    cursor_field: "created"
+    is_data_feed: true
+    is_client_side_incremental: true
+  retriever:
+    type: SimpleRetriever
+    name: "{{ parameters['name'] }}"
+    paginator:
+      type: DefaultPaginator
+      pagination_strategy:
+        type: "CursorPagination"
+        cursor_value: "{{ response._metadata.next }}"
+        page_size: 10
+    requester:
+      $ref: "#/requester"
+      path: "/"
+    record_selector:
+      $ref: "#/selector"
+  $parameters:
+    name: "lists"
+    """
+
+    parsed_manifest = YamlDeclarativeSource._parse(content)
+    resolved_manifest = resolver.preprocess_manifest(parsed_manifest)
+    stream_manifest = transformer.propagate_types_and_parameters(
+        "", resolved_manifest["list_stream"], {}
+    )
+
+    stream = factory.create_component(
+        model_type=DeclarativeStreamModel, component_definition=stream_manifest, config=input_config
+    )
+
+    retriever = get_retriever(stream)
+    assert retriever.record_selector.transform_before_filtering is True
+
+
+def test_given_data_feed_and_lazy_read_then_lazy_retriever_filters_already_synced_records():
+    """
+    `LazySimpleRetriever` inherits `read_records`, so it only drops the already-synced records of the boundary page
+    if the factory passes it the filter too.
+    """
+    stream_definition = {
+        "type": "DeclarativeStream",
+        "name": "items",
+        "primary_key": [],
+        "schema_loader": {
+            "type": "InlineSchemaLoader",
+            "schema": {"type": "object", "properties": {}},
+        },
+        "incremental_sync": {
+            "type": "DatetimeBasedCursor",
+            "datetime_format": "%Y-%m-%dT%H:%M:%S.%f%z",
+            "start_datetime": "{{ config['start_time'] }}",
+            "cursor_field": "created",
+            "is_data_feed": True,
+        },
+        "retriever": {
+            "type": "SimpleRetriever",
+            "requester": {
+                "type": "HttpRequester",
+                "url_base": "https://api.test.com",
+                "path": "parent/{{ stream_partition.parent_id }}/items",
+                "http_method": "GET",
+            },
+            "record_selector": {
+                "type": "RecordSelector",
+                "extractor": {"type": "DpathExtractor", "field_path": ["data"]},
+            },
+            "paginator": {
+                "type": "DefaultPaginator",
+                "pagination_strategy": {
+                    "type": "CursorPagination",
+                    "cursor_value": '{{ response["data"][-1]["id"] }}',
+                },
+            },
+            "partition_router": {
+                "type": "SubstreamPartitionRouter",
+                "parent_stream_configs": [
+                    {
+                        "type": "ParentStreamConfig",
+                        "parent_key": "id",
+                        "partition_field": "parent_id",
+                        "lazy_read_pointer": ["items"],
+                        "stream": {
+                            "type": "DeclarativeStream",
+                            "name": "parent",
+                            "schema_loader": {
+                                "type": "InlineSchemaLoader",
+                                "schema": {"type": "object", "properties": {}},
+                            },
+                            "retriever": {
+                                "type": "SimpleRetriever",
+                                "requester": {
+                                    "type": "HttpRequester",
+                                    "url_base": "https://api.test.com",
+                                    "path": "/parents",
+                                    "http_method": "GET",
+                                },
+                                "record_selector": {
+                                    "type": "RecordSelector",
+                                    "extractor": {
+                                        "type": "DpathExtractor",
+                                        "field_path": ["data"],
+                                    },
+                                },
+                            },
+                        },
+                    }
+                ],
+            },
+        },
+    }
+
+    stream = factory.create_component(
+        model_type=DeclarativeStreamModel,
+        component_definition=stream_definition,
+        config=input_config,
+    )
+
+    retriever = get_retriever(stream)
+    assert isinstance(retriever, LazySimpleRetriever)
+    assert isinstance(retriever.post_pagination_filter, ClientSideIncrementalRecordFilterDecorator)
 
 
 def test_given_data_feed_and_incremental_then_raise_error():
@@ -2507,6 +2888,98 @@ def test_create_custom_components(manifest, field_name, expected_value, expected
 
         assert isinstance(getattr(custom_component, field_name), type(expected_value))
         assert getattr(custom_component, field_name) == expected_value
+
+
+@pytest.mark.parametrize(
+    "class_name",
+    [
+        pytest.param(
+            "unit_tests.sources.declarative.parsers.testing_components.TestingSomeComponent",
+            id="bundled_custom_component_class",
+        ),
+        pytest.param(
+            "os.getcwd",
+            id="arbitrary_importable_callable",
+        ),
+    ],
+)
+def test_create_custom_component_requires_custom_code_enabled(class_name, monkeypatch):
+    """A `Custom*` component declared by a config-injected manifest must not be instantiated
+    unless custom code execution is explicitly enabled via `AIRBYTE_ENABLE_UNSAFE_CODE`.
+
+    A manifest provided through the config is untrusted input, and resolving its
+    `class_name` executes arbitrary importable code, so it must honor the same gate as
+    injected `components.py` code. The gate must fire regardless of whether `class_name`
+    points at a bundled custom component or at an arbitrary importable callable, and it
+    must fire before the referenced module is imported.
+    """
+    monkeypatch.delenv(ENV_VAR_ALLOW_CUSTOM_CODE, raising=False)
+
+    def _fail_if_resolved(*args, **kwargs):
+        raise AssertionError(
+            "`class_name` must not be resolved or imported when custom code is disabled"
+        )
+
+    monkeypatch.setattr(factory, "_get_class_from_fully_qualified_class_name", _fail_if_resolved)
+
+    manifest = {
+        "type": "CustomErrorHandler",
+        "class_name": class_name,
+    }
+
+    with pytest.raises(AirbyteCustomCodeNotPermittedError):
+        factory.create_component(
+            CustomErrorHandlerModel,
+            manifest,
+            {**input_config, INJECTED_MANIFEST: {"type": "DeclarativeSource"}},
+        )
+
+
+def test_create_custom_component_permitted_for_bundled_manifest(monkeypatch):
+    """A manifest bundled in a connector image may use its bundled custom components.
+
+    Published manifest-only connectors ship their own `manifest.yaml` and `components.py`
+    inside a trusted image, so their `Custom*` components must keep working in environments
+    that do not set `AIRBYTE_ENABLE_UNSAFE_CODE`, such as Airbyte Cloud.
+    """
+    monkeypatch.delenv(ENV_VAR_ALLOW_CUSTOM_CODE, raising=False)
+
+    manifest = {
+        "type": "CustomErrorHandler",
+        "class_name": "unit_tests.sources.declarative.parsers.testing_components.TestingSomeComponent",
+    }
+
+    component = factory.create_component(CustomErrorHandlerModel, manifest, input_config)
+
+    assert isinstance(component, TestingSomeComponent)
+
+
+def test_create_custom_component_requires_custom_code_enabled_when_untrusted(monkeypatch):
+    """A caller-supplied manifest must honor the gate even when it never passes through the config.
+
+    The manifest server receives the manifest as a request payload rather than through the
+    config, so its untrusted provenance is signalled by `custom_components_trusted=False`.
+    """
+    monkeypatch.delenv(ENV_VAR_ALLOW_CUSTOM_CODE, raising=False)
+
+    untrusted_factory = ModelToComponentFactory(custom_components_trusted=False)
+
+    def _fail_if_resolved(*args, **kwargs):
+        raise AssertionError(
+            "`class_name` must not be resolved or imported when custom code is disabled"
+        )
+
+    monkeypatch.setattr(
+        untrusted_factory, "_get_class_from_fully_qualified_class_name", _fail_if_resolved
+    )
+
+    manifest = {
+        "type": "CustomErrorHandler",
+        "class_name": "unit_tests.sources.declarative.parsers.testing_components.TestingSomeComponent",
+    }
+
+    with pytest.raises(AirbyteCustomCodeNotPermittedError):
+        untrusted_factory.create_component(CustomErrorHandlerModel, manifest, input_config)
 
 
 def test_custom_components_do_not_contain_extra_fields():
@@ -3923,6 +4396,108 @@ def test_create_concurrent_cursor_from_perpartition_cursor_runs_state_migrations
     )
 
 
+def test_create_concurrent_cursor_from_perpartition_cursor_ignores_full_refresh_sentinel_state():
+    """
+    A stream that synced as full refresh checkpoints `{"__ab_no_cursor_state_message": true}`. If a later
+    connector version converts that stream to incremental with an `incremental_dependency` parent, the
+    sentinel must not be re-keyed under the parent's cursor field as if it were a legacy cursor value —
+    doing so crashed cursor initialization with `ValueError: No format in [...] matching True`.
+    """
+    content = """
+    type: DeclarativeStream
+    primary_key: "id"
+    name: test
+    schema_loader:
+      type: InlineSchemaLoader
+      schema:
+        $schema: "http://json-schema.org/draft-07/schema"
+        type: object
+        properties:
+          id:
+            type: string
+    incremental_sync:
+      type: "DatetimeBasedCursor"
+      cursor_field: "updated_at"
+      datetime_format: "%Y-%m-%dT%H:%M:%S.%f%z"
+      start_datetime: "{{ config['start_time'] }}"
+    retriever:
+      type: SimpleRetriever
+      name: test
+      requester:
+        type: HttpRequester
+        name: "test"
+        url_base: "https://api.test.com/v3/"
+        http_method: "GET"
+        authenticator:
+          type: NoAuth
+      record_selector:
+        type: RecordSelector
+        extractor:
+          type: DpathExtractor
+          field_path: []
+      partition_router:
+        type: SubstreamPartitionRouter
+        parent_stream_configs:
+          - type: ParentStreamConfig
+            parent_key: id
+            partition_field: id
+            incremental_dependency: true
+            stream:
+              type: DeclarativeStream
+              primary_key: id
+              name: parent_stream
+              schema_loader:
+                type: InlineSchemaLoader
+                schema:
+                  $schema: "http://json-schema.org/draft-07/schema"
+                  type: object
+                  properties:
+                    id:
+                      type: string
+              incremental_sync:
+                type: "DatetimeBasedCursor"
+                cursor_field: "updated_at"
+                datetime_format: "%Y-%m-%dT%H:%M:%S.%f%z"
+                start_datetime: "{{ config['start_time'] }}"
+              retriever:
+                type: SimpleRetriever
+                requester:
+                  type: HttpRequester
+                  url_base: "https://api.test.com/v3/parent"
+                  http_method: "GET"
+                record_selector:
+                  type: RecordSelector
+                  extractor:
+                    type: DpathExtractor
+                    field_path: []
+      """
+
+    connector_state_manager = ConnectorStateManager(
+        state=[
+            AirbyteStateMessage(
+                type=AirbyteStateType.STREAM,
+                stream=AirbyteStreamState(
+                    stream_descriptor=StreamDescriptor(name="test"),
+                    stream_state=AirbyteStateBlob({"__ab_no_cursor_state_message": True}),
+                ),
+            )
+        ]
+    )
+    factory = ModelToComponentFactory(
+        emit_connector_builder_messages=True, connector_state_manager=connector_state_manager
+    )
+    stream = factory.create_component(
+        model_type=DeclarativeStreamModel,
+        component_definition=YamlDeclarativeSource._parse(content),
+        config=input_config,
+    )
+
+    parent_cursor_state = stream.cursor._partition_router.parent_stream_configs[
+        0
+    ].stream.cursor.state
+    assert all(value is not True for value in parent_cursor_state.values())
+
+
 def test_incrementing_count_cursor_with_partition_router_raises_error():
     content = """
     type: DeclarativeStream
@@ -4672,6 +5247,300 @@ def test_create_grouping_partition_router_substream_with_request_option():
     ):
         factory.create_component(
             model_type=GroupingPartitionRouterModel,
+            component_definition=partition_router_manifest,
+            config=input_config,
+            stream_name="child_stream",
+        )
+
+
+def test_create_union_partition_router():
+    content = """
+    schema_loader:
+      file_path: "./source_example/schemas/{{ parameters['name'] }}.yaml"
+      name: "{{ parameters['stream_name'] }}"
+    retriever:
+      requester:
+        type: "HttpRequester"
+        path: "example"
+      record_selector:
+        extractor:
+          field_path: []
+    stream_A:
+      type: DeclarativeStream
+      name: "A"
+      primary_key: "id"
+      $parameters:
+        retriever: "#/retriever"
+        url_base: "https://airbyte.io"
+        schema_loader: "#/schema_loader"
+    partition_router:
+      type: UnionPartitionRouter
+      partition_field: repository
+      partition_routers:
+        - type: SubstreamPartitionRouter
+          parent_stream_configs:
+            - stream: "#/stream_A"
+              parent_key: full_name
+              partition_field: repository
+        - type: ListPartitionRouter
+          cursor_field: repository
+          values: ["org/a", "org/b"]
+    """
+    parsed_manifest = YamlDeclarativeSource._parse(content)
+    resolved_manifest = resolver.preprocess_manifest(parsed_manifest)
+    partition_router_manifest = transformer.propagate_types_and_parameters(
+        "", resolved_manifest["partition_router"], {}
+    )
+
+    partition_router = factory.create_component(
+        model_type=UnionPartitionRouterModel,
+        component_definition=partition_router_manifest,
+        config=input_config,
+        stream_name="child_stream",
+    )
+
+    assert isinstance(partition_router, UnionPartitionRouter)
+    assert partition_router.partition_field == "repository"
+    assert len(partition_router.partition_routers) == 2
+    assert isinstance(partition_router.partition_routers[0], SubstreamPartitionRouter)
+    assert isinstance(partition_router.partition_routers[1], ListPartitionRouter)
+
+    parent_stream_configs = partition_router.partition_routers[0].parent_stream_configs
+    assert len(parent_stream_configs) == 1
+    assert parent_stream_configs[0].parent_key.eval({}) == "full_name"
+    assert parent_stream_configs[0].partition_field.eval({}) == "repository"
+
+
+def test_create_grouping_partition_router_with_union_underlying_router():
+    content = """
+    partition_router:
+      type: GroupingPartitionRouter
+      group_size: 10
+      underlying_partition_router:
+        type: UnionPartitionRouter
+        partition_field: repository
+        partition_routers:
+          - type: ListPartitionRouter
+            cursor_field: repository
+            values: ["org/a"]
+          - type: ListPartitionRouter
+            cursor_field: repository
+            values: ["org/b"]
+    """
+    parsed_manifest = YamlDeclarativeSource._parse(content)
+    resolved_manifest = resolver.preprocess_manifest(parsed_manifest)
+    partition_router_manifest = transformer.propagate_types_and_parameters(
+        "", resolved_manifest["partition_router"], {}
+    )
+
+    partition_router = factory.create_component(
+        model_type=GroupingPartitionRouterModel,
+        component_definition=partition_router_manifest,
+        config=input_config,
+        stream_name="child_stream",
+    )
+
+    assert isinstance(partition_router, GroupingPartitionRouter)
+    assert isinstance(partition_router.underlying_partition_router, UnionPartitionRouter)
+
+
+def test_create_union_partition_router_with_interpolated_partition_field():
+    content = """
+    partition_router:
+      type: UnionPartitionRouter
+      partition_field: "{{ config['union_partition_field'] }}"
+      partition_routers:
+        - type: ListPartitionRouter
+          cursor_field: "{{ config['union_partition_field'] }}"
+          values: ["org/a"]
+        - type: ListPartitionRouter
+          cursor_field: repository
+          values: ["org/b"]
+    """
+    parsed_manifest = YamlDeclarativeSource._parse(content)
+    resolved_manifest = resolver.preprocess_manifest(parsed_manifest)
+    partition_router_manifest = transformer.propagate_types_and_parameters(
+        "", resolved_manifest["partition_router"], {}
+    )
+
+    partition_router = factory.create_component(
+        model_type=UnionPartitionRouterModel,
+        component_definition=partition_router_manifest,
+        config={**input_config, "union_partition_field": "repository"},
+        stream_name="child_stream",
+    )
+
+    assert isinstance(partition_router, UnionPartitionRouter)
+    assert partition_router.partition_field == "repository"
+
+
+def test_create_union_partition_router_with_single_child():
+    """The schema requires minItems: 2; the factory enforces the same bound for
+    construction paths that bypass JSON-schema validation."""
+    content = """
+    partition_router:
+      type: UnionPartitionRouter
+      partition_field: repository
+      partition_routers:
+        - type: ListPartitionRouter
+          cursor_field: repository
+          values: ["org/a"]
+    """
+    parsed_manifest = YamlDeclarativeSource._parse(content)
+    resolved_manifest = resolver.preprocess_manifest(parsed_manifest)
+    partition_router_manifest = transformer.propagate_types_and_parameters(
+        "", resolved_manifest["partition_router"], {}
+    )
+
+    with pytest.raises(ValueError, match="needs at least 2 child partition routers"):
+        factory.create_component(
+            model_type=UnionPartitionRouterModel,
+            component_definition=partition_router_manifest,
+            config=input_config,
+            stream_name="child_stream",
+        )
+
+
+@pytest.mark.parametrize(
+    "child_router_manifest",
+    [
+        pytest.param(
+            """
+        - type: SubstreamPartitionRouter
+          parent_stream_configs:
+            - stream: "#/stream_A"
+              parent_key: full_name
+              partition_field: repository
+              request_option:
+                inject_into: request_parameter
+                field_name: "repo"
+""",
+            id="substream_child_with_request_option",
+        ),
+        pytest.param(
+            """
+        - type: ListPartitionRouter
+          cursor_field: repository
+          values: ["org/a"]
+          request_option:
+            inject_into: request_parameter
+            field_name: "repo"
+""",
+            id="list_child_with_request_option",
+        ),
+    ],
+)
+def test_create_union_partition_router_with_request_option(child_router_manifest):
+    content = f"""
+    schema_loader:
+      file_path: "./source_example/schemas/{{{{ parameters['name'] }}}}.yaml"
+      name: "{{{{ parameters['stream_name'] }}}}"
+    retriever:
+      requester:
+        type: "HttpRequester"
+        path: "example"
+      record_selector:
+        extractor:
+          field_path: []
+    stream_A:
+      type: DeclarativeStream
+      name: "A"
+      primary_key: "id"
+      $parameters:
+        retriever: "#/retriever"
+        url_base: "https://airbyte.io"
+        schema_loader: "#/schema_loader"
+    partition_router:
+      type: UnionPartitionRouter
+      partition_field: repository
+      partition_routers:
+{child_router_manifest}
+        - type: ListPartitionRouter
+          cursor_field: repository
+          values: ["org/b"]
+    """
+    parsed_manifest = YamlDeclarativeSource._parse(content)
+    resolved_manifest = resolver.preprocess_manifest(parsed_manifest)
+    partition_router_manifest = transformer.propagate_types_and_parameters(
+        "", resolved_manifest["partition_router"], {}
+    )
+
+    with pytest.raises(
+        ValueError, match="Request options are not supported for UnionPartitionRouter."
+    ):
+        factory.create_component(
+            model_type=UnionPartitionRouterModel,
+            component_definition=partition_router_manifest,
+            config=input_config,
+            stream_name="child_stream",
+        )
+
+
+@pytest.mark.parametrize(
+    "child_router_manifest, mismatched_field",
+    [
+        pytest.param(
+            """
+        - type: SubstreamPartitionRouter
+          parent_stream_configs:
+            - stream: "#/stream_A"
+              parent_key: full_name
+              partition_field: repo
+""",
+            "repo",
+            id="substream_child_with_mismatched_partition_field",
+        ),
+        pytest.param(
+            """
+        - type: ListPartitionRouter
+          cursor_field: repo
+          values: ["org/a"]
+""",
+            "repo",
+            id="list_child_with_mismatched_cursor_field",
+        ),
+    ],
+)
+def test_create_union_partition_router_with_mismatched_partition_field(
+    child_router_manifest, mismatched_field
+):
+    content = f"""
+    schema_loader:
+      file_path: "./source_example/schemas/{{{{ parameters['name'] }}}}.yaml"
+      name: "{{{{ parameters['stream_name'] }}}}"
+    retriever:
+      requester:
+        type: "HttpRequester"
+        path: "example"
+      record_selector:
+        extractor:
+          field_path: []
+    stream_A:
+      type: DeclarativeStream
+      name: "A"
+      primary_key: "id"
+      $parameters:
+        retriever: "#/retriever"
+        url_base: "https://airbyte.io"
+        schema_loader: "#/schema_loader"
+    partition_router:
+      type: UnionPartitionRouter
+      partition_field: repository
+      partition_routers:
+{child_router_manifest}
+        - type: ListPartitionRouter
+          cursor_field: repository
+          values: ["org/b"]
+    """
+    parsed_manifest = YamlDeclarativeSource._parse(content)
+    resolved_manifest = resolver.preprocess_manifest(parsed_manifest)
+    partition_router_manifest = transformer.propagate_types_and_parameters(
+        "", resolved_manifest["partition_router"], {}
+    )
+
+    with pytest.raises(ValueError, match=f"emits '{mismatched_field}'"):
+        factory.create_component(
+            model_type=UnionPartitionRouterModel,
             component_definition=partition_router_manifest,
             config=input_config,
             stream_name="child_stream",
@@ -5561,3 +6430,128 @@ def get_retriever(stream: Union[DeclarativeStream, DefaultStream]):
         if isinstance(stream, DeclarativeStream)
         else stream._stream_partition_generator._partition_factory._retriever
     )
+
+
+def test_create_response_to_file_extractor_preserve_na_values():
+    from airbyte_cdk.sources.declarative.extractors import ResponseToFileExtractor
+    from airbyte_cdk.sources.declarative.models import (
+        ResponseToFileExtractor as ResponseToFileExtractorModel,
+    )
+
+    factory = ModelToComponentFactory()
+
+    default_component = factory.create_response_to_file_extractor(
+        ResponseToFileExtractorModel(type="ResponseToFileExtractor")
+    )
+    assert isinstance(default_component, ResponseToFileExtractor)
+    assert default_component.preserve_na_values is False
+
+    enabled_component = factory.create_response_to_file_extractor(
+        ResponseToFileExtractorModel(type="ResponseToFileExtractor", preserve_na_values=True)
+    )
+    assert enabled_component.preserve_na_values is True
+
+
+def _stream_definition_with_incremental_dependency_parent(
+    child_has_incremental_sync: bool,
+) -> dict:
+    incremental_sync = {
+        "type": "DatetimeBasedCursor",
+        "cursor_field": "updated_at",
+        "datetime_format": "%Y-%m-%dT%H:%M:%SZ",
+        "cursor_datetime_formats": ["%Y-%m-%dT%H:%M:%SZ"],
+        "start_datetime": {
+            "type": "MinMaxDatetime",
+            "datetime": "2024-01-01T00:00:00Z",
+            "datetime_format": "%Y-%m-%dT%H:%M:%SZ",
+        },
+    }
+    parent_stream = {
+        "type": "DeclarativeStream",
+        "name": "parents",
+        "primary_key": ["id"],
+        "schema_loader": {
+            "type": "InlineSchemaLoader",
+            "schema": {"type": "object", "properties": {}},
+        },
+        "retriever": {
+            "type": "SimpleRetriever",
+            "requester": {
+                "type": "HttpRequester",
+                "url_base": "https://api.example.com",
+                "path": "/parents",
+                "http_method": "GET",
+            },
+            "record_selector": {
+                "type": "RecordSelector",
+                "extractor": {"type": "DpathExtractor", "field_path": []},
+            },
+        },
+        "incremental_sync": incremental_sync,
+    }
+    child_stream = {
+        "type": "DeclarativeStream",
+        "name": "children",
+        "primary_key": ["id"],
+        "schema_loader": {
+            "type": "InlineSchemaLoader",
+            "schema": {"type": "object", "properties": {}},
+        },
+        "retriever": {
+            "type": "SimpleRetriever",
+            "requester": {
+                "type": "HttpRequester",
+                "url_base": "https://api.example.com",
+                "path": "/parents/{{ stream_partition.parent_id }}/children",
+                "http_method": "GET",
+            },
+            "record_selector": {
+                "type": "RecordSelector",
+                "extractor": {"type": "DpathExtractor", "field_path": []},
+            },
+            "partition_router": {
+                "type": "SubstreamPartitionRouter",
+                "parent_stream_configs": [
+                    {
+                        "type": "ParentStreamConfig",
+                        "stream": parent_stream,
+                        "parent_key": "id",
+                        "partition_field": "parent_id",
+                        "incremental_dependency": True,
+                    }
+                ],
+            },
+        },
+    }
+    if child_has_incremental_sync:
+        child_stream["incremental_sync"] = incremental_sync
+    return child_stream
+
+
+@pytest.mark.parametrize(
+    "child_has_incremental_sync, expected_warning",
+    [
+        pytest.param(False, True, id="full_refresh_child_warns"),
+        pytest.param(True, False, id="incremental_child_does_not_warn"),
+    ],
+)
+def test_incremental_dependency_without_incremental_sync_warns(
+    caplog, child_has_incremental_sync, expected_warning
+):
+    stream_definition = _stream_definition_with_incremental_dependency_parent(
+        child_has_incremental_sync
+    )
+
+    with caplog.at_level(logging.WARNING, logger="airbyte.model_to_component_factory"):
+        stream = factory.create_component(
+            model_type=DeclarativeStreamModel,
+            component_definition=stream_definition,
+            config=input_config,
+        )
+
+    assert isinstance(stream, DefaultStream)
+    warning_emitted = any(
+        "`incremental_dependency: true`" in record.message and "children" in record.message
+        for record in caplog.records
+    )
+    assert warning_emitted == expected_warning

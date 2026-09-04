@@ -42,12 +42,25 @@ def image_cli_group() -> None:
     type=click.Path(exists=True, file_okay=True, path_type=Path),
     help="Optional. Override the Dockerfile used for building the image.",
 )
+@click.option(
+    "--connector-base-image",
+    "base_image",
+    default=None,
+    help=(
+        "Optional. Build the connector `FROM` this base image instead of the `baseImage` "
+        "declared in metadata.yaml. Useful for testing a connector against a locally-built "
+        "`source-declarative-manifest` image (e.g. built from the current CDK branch). "
+        "The image must be visible to your default buildx builder; locally-built images "
+        "are only resolved by the default `docker` driver, not `docker-container` builders."
+    ),
+)
 def build(
     connector: str | None = None,
     *,
     tag: str = "dev",
     no_verify: bool = False,
     dockerfile: Path | None = None,
+    base_image: str | None = None,
 ) -> None:
     """Build a connector Docker image.
 
@@ -80,6 +93,7 @@ def build(
             tag=tag,
             no_verify=no_verify,
             dockerfile_override=dockerfile or None,
+            base_image_override=base_image or None,
         )
     except ConnectorImageBuildError as e:
         click.echo(
@@ -106,11 +120,25 @@ def build(
     default=False,
     help="Skip tests that require credentials (marked with 'requires_creds').",
 )
+@click.option(
+    "--connector-base-image",
+    "base_image",
+    default=None,
+    help=(
+        "Optional. When building the image to test, build it `FROM` this base image instead of "
+        "the `baseImage` declared in metadata.yaml. Useful for testing a manifest-only connector "
+        "against a locally-built `source-declarative-manifest` image (e.g. built from the current "
+        "CDK branch). The image must be visible to your default buildx builder; locally-built "
+        "images are only resolved by the default `docker` driver, not `docker-container` "
+        "builders. Ignored when `--image` is provided."
+    ),
+)
 def image_test(  # "image test" command
     connector: str | None = None,
     *,
     image: str | None = None,
     no_creds: bool = False,
+    base_image: str | None = None,
 ) -> None:
     """Test a connector Docker image.
 
@@ -157,6 +185,7 @@ def image_test(  # "image test" command
                 metadata=metadata,
                 tag=tag,
                 no_verify=True,
+                base_image_override=base_image or None,
             )
         except ConnectorImageBuildError as e:
             click.echo(

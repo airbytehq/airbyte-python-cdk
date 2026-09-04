@@ -18,7 +18,12 @@ class BackoffStrategy(ABC):
         """
         Override this method to dynamically determine backoff time e.g: by reading the X-Retry-After header.
 
-        This method is called only if should_backoff() returns True for the input request.
+        Not called for every retryable response. `HttpClient` skips the strategies entirely when a
+        rate-limited response can be retried on another credential -- the authenticator says so via
+        `TokenRotatingAuthenticator.has_alternative_token` -- because the wait computed here is
+        derived from the credential that was rejected, and the retry will not use it. Implementations
+        must therefore not rely on being called for side effects such as counting attempts or
+        emitting metrics.
 
         :param response_or_exception: The response or exception that caused the backoff.
         :param attempt_count: The number of attempts already performed for this request.

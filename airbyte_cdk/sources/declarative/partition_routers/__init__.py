@@ -21,6 +21,9 @@ from airbyte_cdk.sources.declarative.partition_routers.single_partition_router i
 from airbyte_cdk.sources.declarative.partition_routers.substream_partition_router import (
     SubstreamPartitionRouter,
 )
+from airbyte_cdk.sources.declarative.partition_routers.union_partition_router import (
+    UnionPartitionRouter,
+)
 
 __all__ = [
     "AsyncJobPartitionRouter",
@@ -29,5 +32,6 @@ __all__ = [
     "ListPartitionRouter",
     "SinglePartitionRouter",
     "SubstreamPartitionRouter",
+    "UnionPartitionRouter",
     "PartitionRouter",
 ]
