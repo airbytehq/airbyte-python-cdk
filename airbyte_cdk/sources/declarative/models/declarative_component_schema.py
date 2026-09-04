@@ -2305,6 +2305,17 @@ class RecordExpander(BaseModel):
         description='Behavior when the expansion path is missing, not a list, or an empty list. "skip" (default) emits nothing. "emit_parent" emits the original parent record unchanged.',
         title="On No Records",
     )
+    truncation_indicator_path: Optional[List[str]] = Field(
+        None,
+        description="Path within each record to a field indicating that the embedded nested list is truncated (e.g. a `has_more` flag on the list object). When the field evaluates to a truthy value and `truncated_list_retriever` is configured, the retriever is used to fetch the complete list instead of expanding the embedded items. When the field is truthy and no retriever is configured, the embedded items are expanded as normal and a WARNING is logged once per stream so the truncation is visible instead of silent. Wildcards (*) are not supported in this path, nor in `expand_records_from_field` when a retriever is configured.",
+        examples=[["data", "object", "lines", "has_more"]],
+        title="Truncation Indicator Path",
+    )
+    truncated_list_retriever: Optional[Union[SimpleRetriever, CustomRetriever]] = Field(
+        None,
+        description="Retriever used to fetch the complete list of items when the field at `truncation_indicator_path` is truthy on a record. The record being expanded is exposed to the retriever's interpolation context as `stream_slice['parent_record']`. If the retriever returns no records, the embedded items are expanded as a fallback. Requires `truncation_indicator_path`.",
+        title="Truncated List Retriever",
+    )
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
 
@@ -3485,6 +3496,7 @@ ConditionalStreams.update_forward_refs()
 FileUploader.update_forward_refs()
 DeclarativeStream.update_forward_refs()
 SessionTokenAuthenticator.update_forward_refs()
+RecordExpander.update_forward_refs()
 HttpRequester.update_forward_refs()
 DynamicSchemaLoader.update_forward_refs()
 ParentStreamConfig.update_forward_refs()

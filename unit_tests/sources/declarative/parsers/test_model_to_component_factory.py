@@ -1986,6 +1986,54 @@ list_stream:
     )
 
 
+def test_create_record_expander_with_truncated_list_retriever():
+    content = """
+    selector:
+      type: RecordSelector
+      $parameters:
+        name: "lists"
+      extractor:
+        type: DpathExtractor
+        field_path: ["data"]
+        record_expander:
+          type: RecordExpander
+          expand_records_from_field: ["data", "object", "lines", "data"]
+          remain_original_record: true
+          truncation_indicator_path: ["data", "object", "lines", "has_more"]
+          truncated_list_retriever:
+            type: SimpleRetriever
+            requester:
+              type: HttpRequester
+              url_base: "https://api.stripe.com/v1/"
+              path: "invoices/{{ stream_slice['parent_record']['data']['object']['id'] }}/lines"
+              http_method: "GET"
+            record_selector:
+              type: RecordSelector
+              extractor:
+                type: DpathExtractor
+                field_path: ["data"]
+    """
+    parsed_manifest = YamlDeclarativeSource._parse(content)
+    resolved_manifest = resolver.preprocess_manifest(parsed_manifest)
+    selector_manifest = transformer.propagate_types_and_parameters(
+        "", resolved_manifest["selector"], {}
+    )
+
+    selector = factory.create_component(
+        model_type=RecordSelectorModel,
+        name="test_stream",
+        component_definition=selector_manifest,
+        decoder=None,
+        transformations=[],
+        config=input_config,
+    )
+
+    expander = selector.extractor.record_expander
+    assert expander is not None
+    assert expander.truncation_indicator_path == ["data", "object", "lines", "has_more"]
+    assert isinstance(expander.truncated_list_retriever, SimpleRetriever)
+
+
 @pytest.mark.parametrize(
     "test_name, record_selector, expected_runtime_selector",
     [

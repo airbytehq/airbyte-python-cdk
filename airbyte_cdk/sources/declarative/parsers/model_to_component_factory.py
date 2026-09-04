@@ -2506,6 +2506,16 @@ class ModelToComponentFactory:
         config: Config,
         **kwargs: Any,
     ) -> RecordExpander:
+        truncated_list_retriever = None
+        if model.truncated_list_retriever:
+            truncated_list_retriever = self._create_component_from_model(
+                model=model.truncated_list_retriever,
+                config=config,
+                name="record_expander_truncated_list",
+                primary_key=None,
+                stream_slicer=None,
+                transformations=[],
+            )
         return RecordExpander(
             expand_records_from_field=model.expand_records_from_field,
             config=config,
@@ -2514,6 +2524,8 @@ class ModelToComponentFactory:
             on_no_records=OnNoRecords(model.on_no_records.value)
             if model.on_no_records
             else OnNoRecords.skip,
+            truncation_indicator_path=model.truncation_indicator_path,
+            truncated_list_retriever=truncated_list_retriever,
         )
 
     @staticmethod
