@@ -349,9 +349,12 @@ class UnstructuredParser(FileTypeParser):
         file_handle.read()
         file_handle.seek(0)
 
-        assert unstructured_partition_pdf is not None
-        assert unstructured_partition_docx is not None
-        assert unstructured_partition_pptx is not None
+        if (
+            unstructured_partition_pdf is None
+            or unstructured_partition_docx is None
+            or unstructured_partition_pptx is None
+        ):
+            raise Exception("unstructured library is not available")
 
         try:
             if filetype == FileType.PDF:
