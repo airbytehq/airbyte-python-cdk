@@ -111,6 +111,19 @@ def test_infer_schema(mock_detect_filetype, filetype, format_config, raises):
     asyncio.set_event_loop(main_loop)
 
 
+@patch("airbyte_cdk.sources.file_based.file_types.unstructured_parser.detect_filetype")
+def test_get_filetype_falls_back_when_mime_type_is_unknown(mock_detect_filetype):
+    mock_detect_filetype.return_value = FileType.PDF
+    file = MagicMock()
+    remote_file = RemoteFile(
+        uri="sample.pdf",
+        mime_type="application/octet-stream",
+        last_modified=datetime.now(),
+    )
+
+    assert UnstructuredParser()._get_filetype(file, remote_file) == FileType.PDF
+
+
 @pytest.mark.parametrize(
     "filetype, format_config, parse_result, raises, expected_records, parsing_error",
     [

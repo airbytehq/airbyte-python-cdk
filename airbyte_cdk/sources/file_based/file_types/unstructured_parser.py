@@ -393,7 +393,7 @@ class UnstructuredParser(FileTypeParser):
         """
         if remote_file.mime_type:
             filetype_from_mime = FileType.from_mime_type(remote_file.mime_type)
-            if filetype_from_mime is not None:
+            if filetype_from_mime is not None and filetype_from_mime != FileType.UNK:
                 return filetype_from_mime
 
         # set name to none, otherwise unstructured will try to get the modified date from the local file system
