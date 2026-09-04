@@ -2014,6 +2014,11 @@ definitions:
         type: array
         items:
           "$ref": "#/definitions/HttpRequestRegexMatcher"
+      max_header_driven_wait:
+        title: Maximum Header-Driven Wait
+        description: Maximum wait a rate-limit-header-driven update may induce. Rates with longer windows are not adjusted from headers. Defaults to PT10M.
+        type: string
+        examples: ["PT10M", "PT1M"]
     additionalProperties: true
   UnlimitedCallRatePolicy:
     title: Unlimited Call Rate Policy
