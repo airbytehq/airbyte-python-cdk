@@ -17,6 +17,7 @@ from requests import Response
 from requests.exceptions import RequestException
 
 from airbyte_cdk.models import FailureType, OrchestratorType, Type
+from airbyte_cdk.sources.message import InMemoryMessageRepository, NoopMessageRepository
 from airbyte_cdk.sources.streams.http.requests_native_auth import (
     BasicHttpAuthenticator,
     MultipleTokenAuthenticator,
@@ -726,7 +727,9 @@ class TestSingleUseRefreshTokenOauth2Authenticator:
         authenticator.token_has_expired = mocker.Mock(return_value=True)
         access_token = authenticator.get_access_token()
         captured = capsys.readouterr()
-        airbyte_message = json.loads(captured.out)
+        messages = [json.loads(line) for line in captured.out.splitlines() if line.strip()]
+        assert len(messages) == 1
+        airbyte_message = messages[0]
         expected_new_config = connector_config.copy()
         expected_new_config["credentials"]["access_token"] = "new_access_token"
         expected_new_config["credentials"]["refresh_token"] = "new_refresh_token"
@@ -741,10 +744,10 @@ class TestSingleUseRefreshTokenOauth2Authenticator:
         assert not captured.out
         assert authenticator.access_token == access_token == "new_access_token"
 
-    def test_given_message_repository_when_get_access_token_then_emit_message(
-        self, mocker, connector_config
+    def test_given_message_repository_when_get_access_token_then_emit_exactly_one_control_message_to_stdout(
+        self, mocker, connector_config, capsys
     ):
-        message_repository = Mock()
+        message_repository = InMemoryMessageRepository()
         authenticator = SingleUseRefreshTokenOauth2Authenticator(
             connector_config,
             token_refresh_endpoint="https://refresh_endpoint.com",
@@ -771,8 +774,66 @@ class TestSingleUseRefreshTokenOauth2Authenticator:
 
         authenticator.get_access_token()
 
-        emitted_message = message_repository.emit_message.call_args_list[0].args[0]
-        assert emitted_message.type == Type.CONTROL
+        messages = [
+            json.loads(line) for line in capsys.readouterr().out.splitlines() if line.strip()
+        ]
+        assert len(messages) == 1
+        emitted_message = messages[0]
+        assert emitted_message["type"] == "CONTROL"
+        assert emitted_message["control"]["type"] == "CONNECTOR_CONFIG"
+        assert (
+            emitted_message["control"]["connectorConfig"]["config"]["credentials"]["access_token"]
+            == "new_access_token"
+        )
+        assert (
+            emitted_message["control"]["connectorConfig"]["config"]["credentials"]["refresh_token"]
+            == "new_refresh_token"
+        )
+        assert [m for m in message_repository.consume_queue() if m.type == Type.CONTROL] == []
+
+    def test_given_emit_control_message_to_message_repository_when_get_access_token_then_emit_to_stdout_and_repository(
+        self, mocker, connector_config, capsys
+    ):
+        message_repository = InMemoryMessageRepository()
+        authenticator = SingleUseRefreshTokenOauth2Authenticator(
+            connector_config,
+            token_refresh_endpoint="https://refresh_endpoint.com",
+            client_id=connector_config["credentials"]["client_id"],
+            client_secret=connector_config["credentials"]["client_secret"],
+            token_expiry_is_time_of_expiration=True,
+            token_expiry_date_format="YYYY-MM-DD",
+            message_repository=message_repository,
+            emit_control_message_to_message_repository=True,
+        )
+        resp.status_code = 200
+        mocker.patch.object(
+            resp,
+            "json",
+            return_value={
+                authenticator.get_access_token_name(): "new_access_token",
+                authenticator.get_expires_in_name(): "2023-04-04",
+                authenticator.get_refresh_token_name(): "new_refresh_token",
+            },
+        )
+        mocker.patch.object(requests, "request", side_effect=mock_request, autospec=True)
+
+        authenticator.token_has_expired = mocker.Mock(return_value=True)
+
+        authenticator.get_access_token()
+
+        messages = [
+            json.loads(line) for line in capsys.readouterr().out.splitlines() if line.strip()
+        ]
+        assert len(messages) == 1
+        assert messages[0]["type"] == "CONTROL"
+        assert messages[0]["control"]["type"] == "CONNECTOR_CONFIG"
+        emitted_messages = [
+            message
+            for message in message_repository.consume_queue()
+            if message.type == Type.CONTROL
+        ]
+        assert len(emitted_messages) == 1
+        emitted_message = emitted_messages[0]
         assert emitted_message.control.type == OrchestratorType.CONNECTOR_CONFIG
         assert (
             emitted_message.control.connectorConfig.config["credentials"]["access_token"]
@@ -794,6 +855,40 @@ class TestSingleUseRefreshTokenOauth2Authenticator:
             emitted_message.control.connectorConfig.config["credentials"]["client_secret"]
             == "my_client_secret"
         )
+
+    def test_given_noop_message_repository_and_emit_flag_when_get_access_token_then_only_stdout(
+        self, mocker, connector_config, capsys
+    ):
+        authenticator = SingleUseRefreshTokenOauth2Authenticator(
+            connector_config,
+            token_refresh_endpoint="https://refresh_endpoint.com",
+            client_id=connector_config["credentials"]["client_id"],
+            client_secret=connector_config["credentials"]["client_secret"],
+            message_repository=NoopMessageRepository(),
+            emit_control_message_to_message_repository=True,
+        )
+        resp.status_code = 200
+        mocker.patch.object(
+            resp,
+            "json",
+            return_value={
+                authenticator.get_access_token_name(): "new_access_token",
+                authenticator.get_expires_in_name(): 3600,
+                authenticator.get_refresh_token_name(): "new_refresh_token",
+            },
+        )
+        mocker.patch.object(requests, "request", side_effect=mock_request, autospec=True)
+
+        authenticator.token_has_expired = mocker.Mock(return_value=True)
+
+        authenticator.get_access_token()
+
+        messages = [
+            json.loads(line) for line in capsys.readouterr().out.splitlines() if line.strip()
+        ]
+        assert len(messages) == 1
+        assert messages[0]["type"] == "CONTROL"
+        assert messages[0]["control"]["type"] == "CONNECTOR_CONFIG"
 
     def test_given_message_repository_when_get_access_token_then_log_request(
         self, mocker, connector_config

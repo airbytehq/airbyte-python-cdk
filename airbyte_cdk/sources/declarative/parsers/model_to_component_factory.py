@@ -2984,6 +2984,7 @@ class ModelToComponentFactory:
                 token_expiry_date_format=model.token_expiry_date_format,
                 token_expiry_is_time_of_expiration=bool(model.token_expiry_date_format),
                 message_repository=self._message_repository,
+                emit_control_message_to_message_repository=self._emit_connector_builder_messages,
                 refresh_token_error_status_codes=refresh_token_error_status_codes,
                 refresh_token_error_key=refresh_token_error_key,
                 refresh_token_error_values=refresh_token_error_values,
