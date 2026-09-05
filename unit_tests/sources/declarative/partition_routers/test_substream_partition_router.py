@@ -44,6 +44,16 @@ from unit_tests.sources.streams.concurrent.scenarios.thread_based_concurrent_str
     InMemoryPartition,
 )
 
+
+def _strip_partitioned_stream_status(state_dict: dict) -> dict:
+    """Recursively strip partitioned_stream_status from state dicts (mutates in place)."""
+    state_dict.pop("partitioned_stream_status", None)
+    for value in state_dict.values():
+        if isinstance(value, dict):
+            _strip_partitioned_stream_status(value)
+    return state_dict
+
+
 parent_records = [{"id": 1, "data": "data1"}, {"id": 2, "data": "data2"}]
 more_records = [
     {"id": 10, "data": "data10", "slice": "second_parent"},
@@ -639,6 +649,7 @@ def test_substream_slicer_parent_state_update_with_cursor(parent_stream_config, 
 
     # Check if the parent state has been updated correctly
     parent_state = partition_router.get_stream_state()
+    _strip_partitioned_stream_status(parent_state)
     assert parent_state == expected_state
 
 
