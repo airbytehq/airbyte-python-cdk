@@ -42,6 +42,16 @@ class DateTimeStreamStateConverter(AbstractStreamStateConverter):
     @abstractmethod
     def parse_timestamp(self, timestamp: Any) -> datetime: ...
 
+    @staticmethod
+    def _to_utc(timestamp: datetime) -> datetime:
+        # Serialized state must represent an absolute instant in UTC. A timezone-aware
+        # datetime carrying a non-UTC offset would otherwise be formatted with its local
+        # wall-clock components, relabeling e.g. 21:59:38+05:30 as 21:59:38Z. Naive values
+        # are treated as UTC to match parse()/from_datetime() conventions.
+        if timestamp.tzinfo is None:
+            return timestamp.replace(tzinfo=timezone.utc)
+        return timestamp.astimezone(timezone.utc)
+
     @abstractmethod
     def output_format(self, timestamp: datetime) -> Any: ...
 
@@ -176,7 +186,7 @@ class IsoMillisConcurrentStreamStateConverter(DateTimeStreamStateConverter):
         Returns:
             str: ISO8601/RFC3339 formatted string with milliseconds.
         """
-        dt = AirbyteDateTime.from_datetime(timestamp)
+        dt = AirbyteDateTime.from_datetime(self._to_utc(timestamp))
         # Always include milliseconds, even if zero
         millis = dt.microsecond // 1000 if dt.microsecond else 0
         return f"{dt.year:04d}-{dt.month:02d}-{dt.day:02d}T{dt.hour:02d}:{dt.minute:02d}:{dt.second:02d}.{millis:03d}Z"
@@ -212,7 +222,7 @@ class CustomFormatConcurrentStreamStateConverter(IsoMillisConcurrentStreamStateC
         self._parser = DatetimeParser()
 
     def output_format(self, timestamp: datetime) -> str:
-        return self._parser.format(timestamp, self._datetime_format)
+        return self._parser.format(self._to_utc(timestamp), self._datetime_format)
 
     def parse_timestamp(self, timestamp: str) -> datetime:
         for datetime_format in self._input_datetime_formats:
