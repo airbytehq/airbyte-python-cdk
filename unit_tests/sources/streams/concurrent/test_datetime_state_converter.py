@@ -6,6 +6,10 @@ from datetime import datetime, timezone
 
 import pytest
 
+from airbyte_cdk.models import FailureType
+from airbyte_cdk.sources.declarative.datetime.datetime_parser import (
+    DatetimeFormatMismatchError,
+)
 from airbyte_cdk.sources.streams.concurrent.cursor import CursorField
 from airbyte_cdk.sources.streams.concurrent.state_converters.abstract_stream_state_converter import (
     ConcurrencyCompatibleStateType,
@@ -406,3 +410,19 @@ def test_given_when_parse_timestamp_then_eventually_fallback_on_output_format():
     parsed_datetime = converter.parse_timestamp("2024-01-01T02:00:00")
 
     assert parsed_datetime == datetime(2024, 1, 1, 2, 0, 0, tzinfo=timezone.utc)
+
+
+def test_given_no_matching_input_format_when_parse_timestamp_then_raise_traced_error():
+    converter = CustomFormatConcurrentStreamStateConverter(
+        "%Y-%m-%dT%H:%M:%S.%fZ", ["%Y-%m-%dT%H:%M:%S.%fZ"]
+    )
+
+    with pytest.raises(DatetimeFormatMismatchError) as exc_info:
+        converter.parse_timestamp("2025-06-28T18:35:16Z")
+
+    assert isinstance(exc_info.value, ValueError)
+    assert (
+        exc_info.value.message == "Datetime value matches none of the configured datetime formats."
+    )
+    assert exc_info.value.failure_type == FailureType.system_error
+    assert "2025-06-28T18:35:16Z" in (exc_info.value.internal_message or "")

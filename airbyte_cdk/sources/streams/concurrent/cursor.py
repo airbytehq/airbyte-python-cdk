@@ -20,6 +20,7 @@ from typing import (
 )
 
 from airbyte_cdk.sources.connector_state_manager import ConnectorStateManager
+from airbyte_cdk.sources.declarative.datetime.datetime_parser import DatetimeFormatMismatchError
 from airbyte_cdk.sources.message import MessageRepository, NoopMessageRepository
 from airbyte_cdk.sources.streams import NO_CURSOR_STATE_KEY
 from airbyte_cdk.sources.streams.concurrent.clamping import ClampingStrategy, NoClamping
@@ -230,8 +231,9 @@ class ConcurrentCursor(Cursor):
         ] = {}
         self._has_closed_at_least_one_slice = False
         self._cursor_granularity = cursor_granularity
-        # Flag to track if the logger has been triggered (per stream)
+        # Flags to track if the loggers have been triggered (per stream)
         self._should_be_synced_logger_triggered = False
+        self._unparsable_cursor_value_logger_triggered = False
         self._clamping_strategy = clamping_strategy
         self._is_ascending_order = True
 
@@ -263,6 +265,16 @@ class ConcurrentCursor(Cursor):
         )
 
     def _get_concurrent_state(
+        self, state: MutableMapping[str, Any]
+    ) -> Tuple[CursorValueType, MutableMapping[str, Any]]:
+        try:
+            return self._get_concurrent_state_without_context(state)
+        except DatetimeFormatMismatchError as error:
+            raise error.with_context(
+                cursor_field=self._cursor_field.cursor_field_key, stream_name=self._stream_name
+            ) from error
+
+    def _get_concurrent_state_without_context(
         self, state: MutableMapping[str, Any]
     ) -> Tuple[CursorValueType, MutableMapping[str, Any]]:
         if self._connector_state_converter.is_state_message_compatible(state):
@@ -307,6 +319,8 @@ class ConcurrentCursor(Cursor):
                 self._most_recent_cursor_value_per_partition[record.associated_slice] = cursor_value
             elif most_recent_cursor_value > cursor_value:
                 self._is_ascending_order = False
+        except DatetimeFormatMismatchError:
+            self._log_for_record_with_unparsable_cursor_value()
         except ValueError:
             self._log_for_record_without_cursor_value()
 
@@ -567,6 +581,9 @@ class ConcurrentCursor(Cursor):
         """
         try:
             record_cursor_value: CursorValueType = self._extract_cursor_value(record)
+        except DatetimeFormatMismatchError:
+            self._log_for_record_with_unparsable_cursor_value()
+            return True
         except ValueError:
             self._log_for_record_without_cursor_value()
             return True
@@ -578,6 +595,13 @@ class ConcurrentCursor(Cursor):
                 f"Could not find cursor field `{self.cursor_field.cursor_field_key}` in record for stream {self._stream_name}. The incremental sync will assume it needs to be synced"
             )
             self._should_be_synced_logger_triggered = True
+
+    def _log_for_record_with_unparsable_cursor_value(self) -> None:
+        if not self._unparsable_cursor_value_logger_triggered:
+            LOGGER.warning(
+                f"Cursor field `{self.cursor_field.cursor_field_key}` in record for stream {self._stream_name} matches none of the configured datetime formats. The incremental sync will assume the record needs to be synced"
+            )
+            self._unparsable_cursor_value_logger_triggered = True
 
     def reduce_slice_range(self, stream_slice: StreamSlice) -> StreamSlice:
         # In theory, we might be more flexible here meaning that it doesn't need to be in ascending order but it just

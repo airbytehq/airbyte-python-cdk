@@ -3,7 +3,66 @@
 #
 
 import datetime
-from typing import Union
+from typing import List, Optional, Union
+
+from airbyte_cdk.models import FailureType
+from airbyte_cdk.utils.traced_exception import AirbyteTracedException
+
+
+class DatetimeFormatMismatchError(AirbyteTracedException, ValueError):
+    """Raised when a datetime value matches none of the configured datetime formats.
+
+    Inherits from `ValueError` so that callers which already handle datetime parsing
+    failures (multi-format fallback loops, cursor value extraction) keep working, and
+    from `AirbyteTracedException` so that the failure surfaces with a user-facing
+    message instead of a raw Python error.
+
+    The user-facing `message` is deterministic: it names the stream and cursor field
+    when they are known, and never embeds the offending value or the format tokens.
+    Those live in `internal_message`.
+    """
+
+    def __init__(
+        self,
+        value: object,
+        formats: List[str],
+        cursor_field: Optional[str] = None,
+        stream_name: Optional[str] = None,
+        original_error: Optional[BaseException] = None,
+    ) -> None:
+        self.value = value
+        self.formats = formats
+        self.cursor_field = cursor_field
+        self.stream_name = stream_name
+        super().__init__(
+            message=self._build_message(cursor_field, stream_name),
+            internal_message=f"No format in {formats} matching {value}",
+            failure_type=FailureType.system_error,
+            exception=original_error,
+        )
+
+    @staticmethod
+    def _build_message(cursor_field: Optional[str], stream_name: Optional[str]) -> str:
+        if cursor_field and stream_name:
+            return (
+                f'Cursor field "{cursor_field}" of stream "{stream_name}" matches none of the '
+                "configured datetime formats."
+            )
+        if cursor_field:
+            return f'Cursor field "{cursor_field}" matches none of the configured datetime formats.'
+        return "Datetime value matches none of the configured datetime formats."
+
+    def with_context(
+        self, cursor_field: Optional[str] = None, stream_name: Optional[str] = None
+    ) -> "DatetimeFormatMismatchError":
+        """Return an equivalent error naming the stream and cursor field."""
+        return DatetimeFormatMismatchError(
+            value=self.value,
+            formats=self.formats,
+            cursor_field=cursor_field or self.cursor_field,
+            stream_name=stream_name or self.stream_name,
+            original_error=self,
+        )
 
 
 class DatetimeParser:
@@ -35,7 +94,12 @@ class DatetimeParser:
             return self._UNIX_EPOCH + datetime.timedelta(milliseconds=int(date))
         elif "%_ms" in format:
             format = format.replace("%_ms", "%f")
-        parsed_datetime = datetime.datetime.strptime(str(date), format)
+        try:
+            parsed_datetime = datetime.datetime.strptime(str(date), format)
+        except ValueError as error:
+            raise DatetimeFormatMismatchError(
+                value=date, formats=[format], original_error=error
+            ) from error
         if self._is_naive(parsed_datetime):
             return parsed_datetime.replace(tzinfo=datetime.timezone.utc)
         return parsed_datetime
