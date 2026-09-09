@@ -3,6 +3,9 @@
 #
 
 import json
+import threading
+from collections import defaultdict
+from concurrent.futures import ThreadPoolExecutor
 from functools import partial
 from typing import Any, Iterable, Mapping, Optional
 from unittest.mock import MagicMock, Mock, patch
@@ -13,6 +16,7 @@ import requests
 from airbyte_cdk.models import (
     AirbyteLogMessage,
     AirbyteMessage,
+    FailureType,
     Level,
     SyncMode,
     Type,
@@ -39,13 +43,21 @@ from airbyte_cdk.sources.declarative.requesters.query_properties.property_chunki
 )
 from airbyte_cdk.sources.declarative.requesters.request_option import RequestOptionType
 from airbyte_cdk.sources.declarative.requesters.requester import HttpMethod, Requester
+from airbyte_cdk.sources.declarative.retrievers.page_size_reducer import (
+    PageSizeReduction,
+    PageSizeResetPolicy,
+)
 from airbyte_cdk.sources.declarative.retrievers.pagination_tracker import PaginationTracker
 from airbyte_cdk.sources.declarative.retrievers.simple_retriever import SimpleRetriever
+from airbyte_cdk.sources.streams.http.page_size_reduction_exception import (
+    PageSizeReductionRequiredException,
+)
 from airbyte_cdk.sources.streams.http.pagination_reset_exception import (
     PaginationResetRequiredException,
 )
 from airbyte_cdk.sources.types import Record, StreamSlice
 from airbyte_cdk.sources.utils.transform import TransformConfig, TypeTransformer
+from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 
 A_RECORD_SCHEMA = {}
 A_SLICE_STATE = {"slice_state": "slice state value"}
@@ -487,7 +499,7 @@ def test_given_initial_token_is_zero_when_read_records_then_pass_initial_token()
         return_value=response,
     ) as fetch_next_page_mock:
         list(retriever.read_records(stream_slice=stream_slice, records_schema={}))
-        fetch_next_page_mock.assert_called_once_with(stream_slice, {"next_page_token": 0})
+        fetch_next_page_mock.assert_called_once_with(stream_slice, {"next_page_token": 0}, None)
 
 
 def _generate_slices(number_of_slices):
@@ -1424,6 +1436,235 @@ def test_given_reach_pagination_limit_after_two_pages_when_read_records_than_red
     assert requester.send_request.call_args_list[2].kwargs["next_page_token"] == {
         "next_page_token": 1
     }
+
+
+def _page_size_reduction_retriever(
+    requester: Requester,
+    paginator: Paginator,
+    record_selector: HttpSelector,
+    page_size_reduction: PageSizeReduction,
+) -> SimpleRetriever:
+    return SimpleRetriever(
+        name=A_STREAM_NAME,
+        primary_key=primary_key,
+        requester=requester,
+        record_selector=record_selector,
+        paginator=paginator,
+        page_size_reduction=page_size_reduction,
+        parameters={},
+        config={},
+    )
+
+
+def test_given_page_size_reduction_when_read_records_then_retry_same_page_with_reduced_page_size():
+    requester = Mock(spec=Requester)
+    requester.send_request.side_effect = [
+        PageSizeReductionRequiredException(),
+        [{"id": 1}],
+    ]
+    record_selector = Mock(spec=HttpSelector)
+    record_selector.select_records.return_value = [{"id": 1}]
+    paginator = _mock_paginator()
+    paginator.get_page_size.return_value = 100
+    paginator.get_initial_token.return_value = "a token"
+    paginator.next_page_token.return_value = None
+
+    retriever = _page_size_reduction_retriever(
+        requester, paginator, record_selector, PageSizeReduction()
+    )
+
+    records = list(retriever.read_records(A_RECORD_SCHEMA, A_STREAM_SLICE))
+
+    assert records == [{"id": 1}]
+    assert requester.send_request.call_count == 2
+    # the same page is requested again: only the page size changes
+    assert [call.kwargs["next_page_token"] for call in requester.send_request.call_args_list] == [
+        {"next_page_token": "a token"},
+        {"next_page_token": "a token"},
+    ]
+    assert [call.kwargs["stream_slice"] for call in requester.send_request.call_args_list] == [
+        A_STREAM_SLICE,
+        A_STREAM_SLICE,
+    ]
+    assert [
+        call.kwargs.get("page_size_override")
+        for call in paginator.get_request_params.call_args_list
+    ] == [None, 50]
+
+
+def test_given_page_size_reduction_when_read_records_then_next_page_token_not_computed_for_failed_page():
+    requester = Mock(spec=Requester)
+    requester.send_request.side_effect = [
+        PageSizeReductionRequiredException(),
+        [{"id": 1}],
+    ]
+    record_selector = Mock(spec=HttpSelector)
+    record_selector.select_records.return_value = [{"id": 1}]
+    paginator = _mock_paginator()
+    paginator.get_page_size.return_value = 100
+    paginator.get_initial_token.return_value = None
+    paginator.next_page_token.return_value = None
+
+    retriever = _page_size_reduction_retriever(
+        requester, paginator, record_selector, PageSizeReduction()
+    )
+
+    list(retriever.read_records(A_RECORD_SCHEMA, A_STREAM_SLICE))
+
+    assert paginator.next_page_token.call_count == 1
+    assert paginator.next_page_token.call_args.kwargs["page_size_override"] == 50
+
+
+def test_given_reset_policy_never_when_page_succeeds_then_following_pages_stay_reduced():
+    requester = Mock(spec=Requester)
+    requester.send_request.side_effect = [
+        PageSizeReductionRequiredException(),
+        [{"id": 1}],
+        [{"id": 2}],
+    ]
+    record_selector = Mock(spec=HttpSelector)
+    record_selector.select_records.side_effect = [[{"id": 1}], [{"id": 2}]]
+    paginator = _mock_paginator()
+    paginator.get_page_size.return_value = 100
+    paginator.get_initial_token.return_value = None
+    paginator.next_page_token.side_effect = [{"next_page_token": 2}, None]
+
+    retriever = _page_size_reduction_retriever(
+        requester, paginator, record_selector, PageSizeReduction()
+    )
+
+    list(retriever.read_records(A_RECORD_SCHEMA, A_STREAM_SLICE))
+
+    assert [
+        call.kwargs.get("page_size_override")
+        for call in paginator.get_request_params.call_args_list
+    ] == [None, 50, 50]
+
+
+def test_given_reset_policy_after_successful_page_when_page_succeeds_then_page_size_restored():
+    requester = Mock(spec=Requester)
+    requester.send_request.side_effect = [
+        PageSizeReductionRequiredException(),
+        [{"id": 1}],
+        [{"id": 2}],
+    ]
+    record_selector = Mock(spec=HttpSelector)
+    record_selector.select_records.side_effect = [[{"id": 1}], [{"id": 2}]]
+    paginator = _mock_paginator()
+    paginator.get_page_size.return_value = 100
+    paginator.get_initial_token.return_value = None
+    paginator.next_page_token.side_effect = [{"next_page_token": 2}, None]
+
+    retriever = _page_size_reduction_retriever(
+        requester,
+        paginator,
+        record_selector,
+        PageSizeReduction(reset_policy=PageSizeResetPolicy.AFTER_SUCCESSFUL_PAGE),
+    )
+
+    list(retriever.read_records(A_RECORD_SCHEMA, A_STREAM_SLICE))
+
+    # the reduced page size applies to the retry only, the following page is back to the configured one
+    assert [
+        call.kwargs.get("page_size_override")
+        for call in paginator.get_request_params.call_args_list
+    ] == [None, 50, None]
+
+
+def test_given_reductions_exhausted_when_read_records_then_raise_transient_error():
+    requester = Mock(spec=Requester)
+    requester.send_request.side_effect = PageSizeReductionRequiredException()
+    record_selector = Mock(spec=HttpSelector)
+    paginator = _mock_paginator()
+    paginator.get_page_size.return_value = 100
+    paginator.get_initial_token.return_value = None
+
+    retriever = _page_size_reduction_retriever(
+        requester, paginator, record_selector, PageSizeReduction(max_attempts=2)
+    )
+
+    with pytest.raises(AirbyteTracedException) as exception:
+        list(retriever.read_records(A_RECORD_SCHEMA, A_STREAM_SLICE))
+
+    assert exception.value.failure_type == FailureType.transient_error
+    assert requester.send_request.call_count == 3
+
+
+def test_given_no_page_size_reduction_when_reduce_page_size_required_then_raise_config_error():
+    requester = Mock(spec=Requester)
+    requester.send_request.side_effect = PageSizeReductionRequiredException()
+    record_selector = Mock(spec=HttpSelector)
+    paginator = _mock_paginator()
+    paginator.get_initial_token.return_value = None
+
+    retriever = SimpleRetriever(
+        name=A_STREAM_NAME,
+        primary_key=primary_key,
+        requester=requester,
+        record_selector=record_selector,
+        paginator=paginator,
+        parameters={},
+        config={},
+    )
+
+    with pytest.raises(AirbyteTracedException) as exception:
+        list(retriever.read_records(A_RECORD_SCHEMA, A_STREAM_SLICE))
+
+    assert exception.value.failure_type == FailureType.config_error
+
+
+def test_given_partitions_read_concurrently_when_one_reduces_then_others_keep_configured_page_size():
+    """
+    One retriever instance is shared by every partition of a stream, so the page size in effect must not leak
+    from one partition to another.
+    """
+    slice_a = StreamSlice(cursor_slice={}, partition={"id": "a"})
+    slice_b = StreamSlice(cursor_slice={}, partition={"id": "b"})
+    partition_a_reduced = threading.Event()
+    requested_page_sizes = defaultdict(list)
+
+    paginator = _mock_paginator()
+    paginator.get_page_size.return_value = 100
+    paginator.get_initial_token.return_value = None
+    paginator.next_page_token.return_value = None
+
+    def get_request_params(*, stream_slice, next_page_token, page_size_override=None):
+        requested_page_sizes[stream_slice.partition["id"]].append(page_size_override)
+        return {}
+
+    paginator.get_request_params.side_effect = get_request_params
+
+    def send_request(*args, **kwargs):
+        partition = kwargs["stream_slice"].partition["id"]
+        if partition == "a":
+            if len(requested_page_sizes["a"]) == 1:
+                raise PageSizeReductionRequiredException()
+            # the retry is in flight with the reduced page size
+            partition_a_reduced.set()
+        else:
+            # make sure the other partition requests its page while partition a runs reduced
+            assert partition_a_reduced.wait(timeout=10)
+        return [{"id": partition}]
+
+    requester = Mock(spec=Requester)
+    requester.send_request.side_effect = send_request
+    record_selector = Mock(spec=HttpSelector)
+    record_selector.select_records.side_effect = lambda **kwargs: [{"id": 1}]
+
+    retriever = _page_size_reduction_retriever(
+        requester, paginator, record_selector, PageSizeReduction()
+    )
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        futures = [
+            executor.submit(lambda s=s: list(retriever.read_records(A_RECORD_SCHEMA, s)))
+            for s in (slice_a, slice_b)
+        ]
+        for future in futures:
+            future.result()
+
+    assert requested_page_sizes["a"] == [None, 50]
+    assert requested_page_sizes["b"] == [None]
 
 
 def _mock_paginator():

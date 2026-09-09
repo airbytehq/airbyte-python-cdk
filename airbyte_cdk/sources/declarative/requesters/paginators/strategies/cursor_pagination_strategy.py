@@ -77,7 +77,10 @@ class CursorPaginationStrategy(PaginationStrategy):
         last_page_size: int,
         last_record: Optional[Record],
         last_page_token_value: Optional[Any] = None,
+        page_size_override: Optional[int] = None,
     ) -> Optional[Any]:
+        # `page_size_override` is not used: the next page is a cursor read from the response, so a smaller page
+        # only means a closer cursor. `last_page_size` already reflects what was actually returned.
         decoded_response = next(self.decoder.decode(response))
         # The default way that link is presented in requests.Response is a string of various links (last, next, etc). This
         # is not indexable or useful for parsing the cursor, so we replace it with the link dictionary from response.links

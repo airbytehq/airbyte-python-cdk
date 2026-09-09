@@ -4,7 +4,7 @@
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Any, Mapping, Optional
+from typing import Any, Dict, Mapping, Optional
 
 import requests
 
@@ -12,6 +12,16 @@ from airbyte_cdk.sources.declarative.requesters.request_options.request_options_
     RequestOptionsProvider,
 )
 from airbyte_cdk.sources.types import Record, StreamSlice
+
+
+def page_size_override_kwargs(page_size_override: Optional[int]) -> Dict[str, Any]:
+    """
+    Build the `page_size_override` keyword argument only when there is an override to pass.
+
+    Paginators and pagination strategies defined outside of the CDK may not accept the argument, and they only
+    need to when the stream actually reduces its page size (see `ResponseAction.REDUCE_PAGE_SIZE`).
+    """
+    return {"page_size_override": page_size_override} if page_size_override is not None else {}
 
 
 @dataclass
@@ -36,6 +46,7 @@ class Paginator(ABC, RequestOptionsProvider):
         last_page_size: int,
         last_record: Optional[Record],
         last_page_token_value: Optional[Any],
+        page_size_override: Optional[int] = None,
     ) -> Optional[Mapping[str, Any]]:
         """
         Returns the next_page_token to use to fetch the next page of records.
@@ -44,9 +55,17 @@ class Paginator(ABC, RequestOptionsProvider):
         :param last_page_size: the number of records read from the response
         :param last_record: the last record extracted from the response
         :param last_page_token_value: The current value of the page token made on the last request
+        :param page_size_override: the page size that was actually requested, when it differs from the configured
+            one because of a `REDUCE_PAGE_SIZE` response action
         :return: A mapping {"next_page_token": <token>} for the next page from the input response object. Returning None means there are no more pages to read in this response.
         """
         pass
+
+    def get_page_size(self) -> Optional[int]:
+        """
+        :return: the number of records this paginator asks for per page, or None if it does not define one
+        """
+        return None
 
     @abstractmethod
     def path(

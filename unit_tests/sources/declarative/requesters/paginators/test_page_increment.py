@@ -160,3 +160,20 @@ def test_page_increment_paginator_strategy_initial_token(
     )
 
     assert paginator_strategy.initial_token == expected_initial_token
+
+
+def test_given_page_size_override_then_raise_value_error():
+    """
+    Reducing the page size would move every following page boundary, so PageIncrement refuses it.
+    """
+    strategy = PageIncrement(page_size=100, config={}, parameters={}, start_from_page=1)
+    response = requests.Response()
+
+    with pytest.raises(ValueError):
+        strategy.next_page_token(
+            response=response,
+            last_page_size=50,
+            last_record=None,
+            last_page_token_value=1,
+            page_size_override=50,
+        )

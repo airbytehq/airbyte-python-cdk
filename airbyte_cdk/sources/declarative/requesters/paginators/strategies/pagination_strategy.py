@@ -31,12 +31,16 @@ class PaginationStrategy:
         last_page_size: int,
         last_record: Optional[Record],
         last_page_token_value: Optional[Any],
+        page_size_override: Optional[int] = None,
     ) -> Optional[Any]:
         """
         :param response: response to process
         :param last_page_size: the number of records read from the response
         :param last_record: the last record extracted from the response
         :param last_page_token_value: The current value of the page token made on the last request
+        :param page_size_override: the page size that was actually requested, when it differs from the configured
+            one because of a `REDUCE_PAGE_SIZE` response action. Strategies that use their configured page size as
+            a stop condition must honor this value, else they end the pagination early and skip records.
         :return: next page token. Returns None if there are no more pages to fetch
         """
         pass

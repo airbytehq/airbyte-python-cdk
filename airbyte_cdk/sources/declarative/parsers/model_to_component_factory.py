@@ -139,6 +139,9 @@ from airbyte_cdk.sources.declarative.models.base_model_with_deprecations import 
     BaseModelWithDeprecations,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    Action as HttpResponseFilterActionModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     Action1 as PaginationResetActionModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
@@ -385,6 +388,9 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
     PageIncrement as PageIncrementModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    PageSizeReduction as PageSizeReductionModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     PaginationReset as PaginationResetModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
@@ -578,6 +584,10 @@ from airbyte_cdk.sources.declarative.retrievers.file_uploader import (
     FileUploader,
     LocalFileSystemFileWriter,
     NoopFileWriter,
+)
+from airbyte_cdk.sources.declarative.retrievers.page_size_reducer import (
+    PageSizeReduction,
+    PageSizeResetPolicy,
 )
 from airbyte_cdk.sources.declarative.retrievers.pagination_tracker import PaginationTracker
 from airbyte_cdk.sources.declarative.schema import (
@@ -3639,6 +3649,12 @@ class ModelToComponentFactory:
                     f"LazySimpleRetriever only supports JsonDecoder. Found: {model.decoder.type}."
                 )
 
+            if model.page_size_reduction:
+                raise ValueError(
+                    f"`page_size_reduction` is not supported when reading a parent stream lazily. Remove either "
+                    f"`page_size_reduction` or the parent stream's `lazy_read_pointer` for stream {name}."
+                )
+
             return LazySimpleRetriever(
                 name=name,
                 paginator=paginator,
@@ -3675,9 +3691,94 @@ class ModelToComponentFactory:
             pagination_tracker_factory=self._create_pagination_tracker_factory(
                 model.pagination_reset, cursor
             ),
+            page_size_reduction=self._create_page_size_reduction(model, name, query_properties),
             post_pagination_filter=post_pagination_filter,
             parameters=model.parameters or {},
         )
+
+    def _create_page_size_reduction(
+        self,
+        model: SimpleRetrieverModel,
+        name: str,
+        query_properties: Optional[QueryProperties],
+    ) -> Optional[PageSizeReduction]:
+        # A CustomRequester does not necessarily define an error handler
+        error_handler = getattr(model.requester, "error_handler", None)
+        if self._uses_reduce_page_size_action(error_handler) and not model.page_size_reduction:
+            raise ValueError(
+                f"Stream {name} has a response filter with the REDUCE_PAGE_SIZE action but the retriever does not "
+                f"define `page_size_reduction`. Add a `page_size_reduction` block to the retriever."
+            )
+
+        if not model.page_size_reduction:
+            return None
+
+        self._validate_page_size_reduction_is_supported(model, name, query_properties)
+
+        reset_policy = model.page_size_reduction.reset_policy
+        return PageSizeReduction(
+            reduction_factor=model.page_size_reduction.reduction_factor,  # type: ignore[arg-type]  # the schema defines a default
+            minimum_page_size=model.page_size_reduction.minimum_page_size,  # type: ignore[arg-type]  # the schema defines a default
+            max_attempts=model.page_size_reduction.max_attempts,  # type: ignore[arg-type]  # the schema defines a default
+            reset_policy=PageSizeResetPolicy(getattr(reset_policy, "value", reset_policy)),
+        )
+
+    def _validate_page_size_reduction_is_supported(
+        self,
+        model: SimpleRetrieverModel,
+        name: str,
+        query_properties: Optional[QueryProperties],
+    ) -> None:
+        """
+        Page size reduction re-issues the same page with a smaller page size. That is only correct when the next
+        page does not depend on the page size, and it only has an effect when the paginator injects the page size
+        in the request.
+        """
+        if query_properties:
+            raise ValueError(
+                f"`page_size_reduction` cannot be used together with query properties on stream {name}. Records "
+                f"from the earlier property chunks have already been emitted when a chunk asks for a smaller page, "
+                f"so retrying the page would emit them twice."
+            )
+
+        if not isinstance(model.paginator, DefaultPaginatorModel):
+            raise ValueError(
+                f"`page_size_reduction` requires a DefaultPaginator on stream {name} so that the connector can "
+                f"send a smaller page size."
+            )
+
+        if not model.paginator.page_size_option:
+            raise ValueError(
+                f"`page_size_reduction` requires `page_size_option` on the paginator of stream {name}: without it "
+                f"the connector cannot tell the API to send a smaller page."
+            )
+
+        strategy = model.paginator.pagination_strategy
+        if isinstance(strategy, PageIncrementModel):
+            raise ValueError(
+                f"`page_size_reduction` does not support the PageIncrement pagination strategy used by stream "
+                f"{name}. Pages are addressed as page number * page size, so a smaller page size shifts every "
+                f"following page boundary and would skip records. Use OffsetIncrement or CursorPagination."
+            )
+        if not isinstance(strategy, (CursorPaginationModel, OffsetIncrementModel)):
+            raise ValueError(
+                f"`page_size_reduction` only supports the CursorPagination and OffsetIncrement pagination "
+                f"strategies. Stream {name} uses {type(strategy).__name__}."
+            )
+
+    def _uses_reduce_page_size_action(self, error_handler: Any) -> bool:
+        if isinstance(error_handler, CompositeErrorHandlerModel):
+            return any(
+                self._uses_reduce_page_size_action(nested)
+                for nested in error_handler.error_handlers
+            )
+        if isinstance(error_handler, DefaultErrorHandlerModel):
+            return any(
+                response_filter.action == HttpResponseFilterActionModel.REDUCE_PAGE_SIZE
+                for response_filter in error_handler.response_filters or []
+            )
+        # A CustomErrorHandler can return any action and we cannot inspect it, so we do not validate it.
+        return False
 
     def _create_pagination_tracker_factory(
         self, model: Optional[PaginationResetModel], cursor: Cursor

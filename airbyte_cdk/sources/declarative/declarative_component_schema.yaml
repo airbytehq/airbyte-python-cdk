@@ -2658,6 +2658,7 @@ definitions:
           - RESET_PAGINATION
           - RATE_LIMITED
           - REFRESH_TOKEN_THEN_RETRY
+          - REDUCE_PAGE_SIZE
         examples:
           - SUCCESS
           - FAIL
@@ -2666,6 +2667,7 @@ definitions:
           - RESET_PAGINATION
           - RATE_LIMITED
           - REFRESH_TOKEN_THEN_RETRY
+          - REDUCE_PAGE_SIZE
       failure_type:
         title: Failure Type
         description: Failure type of traced exception if a response matches the filter.
@@ -4223,6 +4225,9 @@ definitions:
       pagination_reset:
         description: Describes what triggers pagination reset and how to handle it.
         "$ref": "#/definitions/PaginationReset"
+      page_size_reduction:
+        description: Describes how the page size is reduced when an error handler resolves to the REDUCE_PAGE_SIZE action.
+        "$ref": "#/definitions/PageSizeReduction"
       ignore_stream_slicer_parameters_on_paginated_requests:
         description: If true, the partition router and incremental request options will be ignored when paginating requests. Request options set directly on the requester will not be ignored.
         type: boolean
@@ -4278,6 +4283,56 @@ definitions:
         enum: [PaginationResetLimits]
       number_of_records:
         type: integer
+  PageSizeReduction:
+    title: Page Size Reduction
+    description: >-
+      Describes how the page size is reduced when an error handler resolves to the REDUCE_PAGE_SIZE action. On such
+      a response, the connector re-issues the same page with a smaller page size instead of retrying the identical
+      request. Only supported on a DefaultPaginator that has a page_size_option and whose pagination_strategy is
+      CursorPagination or OffsetIncrement. PageIncrement is not supported because a smaller page size moves every
+      following page boundary and would skip records.
+    type: object
+    required:
+      - type
+    properties:
+      type:
+        type: string
+        enum: [PageSizeReduction]
+      reduction_factor:
+        title: Reduction Factor
+        description: Divisor applied to the page size on each reduction. The new page size is floor(current page size / reduction factor).
+        type: number
+        default: 2
+        exclusiveMinimum: 1
+        examples:
+          - 2
+          - 4
+      minimum_page_size:
+        title: Minimum Page Size
+        description: Page size below which the connector stops reducing and fails the sync.
+        type: integer
+        default: 1
+        minimum: 1
+        examples:
+          - 1
+          - 10
+      max_attempts:
+        title: Maximum Reduction Attempts
+        description: Maximum number of page size reductions allowed while reading a single partition. Exceeding it fails the sync with a transient error.
+        type: integer
+        default: 5
+        minimum: 1
+      reset_policy:
+        title: Reset Policy
+        description: >-
+          When to restore the page size configured on the pagination strategy. NEVER keeps the reduced page size for
+          the rest of the partition. AFTER_SUCCESSFUL_PAGE restores it as soon as one page succeeds, which can mean
+          hitting the same error again on every page.
+        type: string
+        enum:
+          - NEVER
+          - AFTER_SUCCESSFUL_PAGE
+        default: NEVER
   GzipDecoder:
     title: gzip
     description: Select 'gzip' for response data that is compressed with gzip. Requires specifying an inner data type/decoder to parse the decompressed data.

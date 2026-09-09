@@ -152,3 +152,17 @@ def test_interpolated_page_size_raises_on_non_integer():
             config={"page_size": "invalid"},
             parameters={},
         )
+
+
+def test_given_page_size_override_then_token_is_unchanged():
+    strategy = CursorPaginationStrategy(
+        page_size=100, cursor_value="{{ response.next }}", config={}, parameters={}
+    )
+    response = requests.Response()
+    response._content = json.dumps({"next": "a token"}).encode("utf-8")
+
+    assert (
+        strategy.next_page_token(response, 50, None, None, page_size_override=50)
+        == strategy.next_page_token(response, 100, None, None)
+        == "a token"
+    )

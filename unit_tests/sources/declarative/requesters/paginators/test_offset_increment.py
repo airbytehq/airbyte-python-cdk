@@ -146,3 +146,65 @@ def test_offset_increment_paginator_strategy_initial_token(
     )
 
     assert paginator_strategy.initial_token == expected_initial_token
+
+
+def _response(records):
+    response = requests.Response()
+    response._content = json.dumps({"results": records}).encode("utf-8")
+    return response
+
+
+def test_given_page_size_override_when_page_is_full_for_the_override_then_keep_paginating():
+    """
+    A page that is full for the reduced page size is not the last page, even though it is smaller than the
+    configured page size.
+    """
+    strategy = OffsetIncrement(page_size=100, extractor=None, config={}, parameters={})
+
+    next_page_token = strategy.next_page_token(
+        response=_response([{"id": index} for index in range(50)]),
+        last_page_size=50,
+        last_record=None,
+        last_page_token_value=0,
+        page_size_override=50,
+    )
+
+    assert next_page_token == 50
+
+
+def test_given_page_size_override_when_page_is_not_full_for_the_override_then_stop_paginating():
+    strategy = OffsetIncrement(page_size=100, extractor=None, config={}, parameters={})
+
+    next_page_token = strategy.next_page_token(
+        response=_response([{"id": index} for index in range(30)]),
+        last_page_size=30,
+        last_record=None,
+        last_page_token_value=0,
+        page_size_override=50,
+    )
+
+    assert next_page_token is None
+
+
+def test_given_page_size_override_then_offset_follows_the_records_actually_returned():
+    strategy = OffsetIncrement(page_size=100, extractor=None, config={}, parameters={})
+
+    assert (
+        strategy.next_page_token(
+            response=_response([{"id": index} for index in range(100)]),
+            last_page_size=100,
+            last_record=None,
+            last_page_token_value=0,
+        )
+        == 100
+    )
+    assert (
+        strategy.next_page_token(
+            response=_response([{"id": index} for index in range(50)]),
+            last_page_size=50,
+            last_record=None,
+            last_page_token_value=100,
+            page_size_override=50,
+        )
+        == 150
+    )
