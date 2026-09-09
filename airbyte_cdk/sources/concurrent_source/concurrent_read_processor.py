@@ -115,6 +115,19 @@ class ConcurrentReadProcessor:
                     f"Will defer starting this stream if another stream in the same group or its parents are active."
                 )
 
+    def get_in_flight_streams_description(self) -> str:
+        """Return a deterministic description of streams with in-flight work."""
+        generating_streams = sorted(self._streams_currently_generating_partitions)
+        running_partitions = {
+            stream_name: len(self._streams_to_running_partitions[stream_name])
+            for stream_name in sorted(self._streams_to_running_partitions)
+            if self._streams_to_running_partitions[stream_name]
+        }
+        return (
+            f"Streams generating partitions: {generating_streams}; "
+            f"streams with running partitions: {running_partitions}"
+        )
+
     def on_partition_generation_completed(
         self, sentinel: PartitionGenerationCompletedSentinel
     ) -> Iterable[AirbyteMessage]:
