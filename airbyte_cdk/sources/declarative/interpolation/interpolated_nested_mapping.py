@@ -39,6 +39,13 @@ class InterpolatedNestedMapping:
     ) -> Any:
         # Recursively interpolate dictionaries and lists
         if isinstance(value, str):
+            if "{{" not in value and "{%" not in value:
+                # Preserve structured static literals for request bodies, but avoid coercing scalar
+                # values such as "478" or "None" through literal evaluation.
+                evaluated = self._interpolation.eval(
+                    value, config, parameters=self._parameters, **kwargs
+                )
+                return evaluated if isinstance(evaluated, (dict, list)) else value
             return self._interpolation.eval(value, config, parameters=self._parameters, **kwargs)
         elif isinstance(value, dict):
             interpolated_dict = {
