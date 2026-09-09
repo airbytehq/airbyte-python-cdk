@@ -12,6 +12,10 @@ from pympler import asizeof
 from requests_cache import CachedRequest
 
 from airbyte_cdk.models import FailureType
+from airbyte_cdk.sources.declarative.requesters.error_handlers import (
+    DefaultErrorHandler,
+    HttpResponseFilter,
+)
 from airbyte_cdk.sources.streams.call_rate import CachedLimiterSession, LimiterSession
 from airbyte_cdk.sources.streams.http import HttpClient
 from airbyte_cdk.sources.streams.http.error_handlers import (
@@ -784,21 +788,81 @@ def test_send_request_respects_environment_variables():
 
 @pytest.mark.usefixtures("mock_sleep")
 @pytest.mark.parametrize(
-    "response_code, expected_failure_type, error_message, exception_class",
+    "response_code, resolution_failure_type, expected_failure_type, error_message, exception_class",
     [
-        (400, FailureType.system_error, "test error message", UserDefinedBackoffException),
-        (401, FailureType.config_error, "test error message", UserDefinedBackoffException),
-        (403, FailureType.transient_error, "test error message", UserDefinedBackoffException),
-        (400, FailureType.system_error, "test error message", DefaultBackoffException),
-        (401, FailureType.config_error, "test error message", DefaultBackoffException),
-        (403, FailureType.transient_error, "test error message", DefaultBackoffException),
-        (400, FailureType.system_error, "test error message", RateLimitBackoffException),
-        (401, FailureType.config_error, "test error message", RateLimitBackoffException),
-        (403, FailureType.transient_error, "test error message", RateLimitBackoffException),
+        (
+            400,
+            FailureType.system_error,
+            FailureType.system_error,
+            "test error message",
+            UserDefinedBackoffException,
+        ),
+        (
+            401,
+            FailureType.config_error,
+            FailureType.config_error,
+            "test error message",
+            UserDefinedBackoffException,
+        ),
+        (
+            403,
+            FailureType.transient_error,
+            FailureType.transient_error,
+            "test error message",
+            UserDefinedBackoffException,
+        ),
+        (
+            400,
+            FailureType.system_error,
+            FailureType.system_error,
+            "test error message",
+            DefaultBackoffException,
+        ),
+        (
+            401,
+            FailureType.config_error,
+            FailureType.config_error,
+            "test error message",
+            DefaultBackoffException,
+        ),
+        (
+            403,
+            FailureType.transient_error,
+            FailureType.transient_error,
+            "test error message",
+            DefaultBackoffException,
+        ),
+        # An exhausted rate limit is always transient, whatever failure type the resolution carries.
+        (
+            400,
+            FailureType.system_error,
+            FailureType.transient_error,
+            "test error message",
+            RateLimitBackoffException,
+        ),
+        (
+            401,
+            FailureType.config_error,
+            FailureType.transient_error,
+            "test error message",
+            RateLimitBackoffException,
+        ),
+        (
+            403,
+            FailureType.transient_error,
+            FailureType.transient_error,
+            "test error message",
+            RateLimitBackoffException,
+        ),
     ],
 )
 def test_send_with_retry_raises_airbyte_traced_exception_with_failure_type(
-    response_code, expected_failure_type, error_message, exception_class, requests_mock
+    response_code,
+    resolution_failure_type,
+    expected_failure_type,
+    error_message,
+    exception_class,
+    requests_mock,
 ):
     if exception_class == UserDefinedBackoffException:
 
@@ -816,7 +880,7 @@ def test_send_with_retry_raises_airbyte_traced_exception_with_failure_type(
         response_action = ResponseAction.RETRY
 
     error_mapping = {
-        response_code: ErrorResolution(response_action, expected_failure_type, error_message),
+        response_code: ErrorResolution(response_action, resolution_failure_type, error_message),
     }
 
     http_client = HttpClient(
@@ -839,6 +903,46 @@ def test_send_with_retry_raises_airbyte_traced_exception_with_failure_type(
     with pytest.raises(AirbyteTracedException) as e:
         http_client.send_request(http_method="get", url="https://airbyte.io/", request_kwargs={})
     assert e.value.failure_type == expected_failure_type
+
+
+@pytest.mark.usefixtures("mock_sleep")
+def test_send_with_retry_body_coded_rate_limit_raises_transient_error(requests_mock):
+    """A vendor signalling a rate limit through the response body must be classified as transient."""
+    vendor_error_message = "App **** reaches the QPS limit 10, current QPS is 11."
+    error_handler = DefaultErrorHandler(
+        config={},
+        parameters={},
+        max_retries=1,
+        response_filters=[
+            HttpResponseFilter(
+                config={},
+                parameters={},
+                action=ResponseAction.RATE_LIMITED,
+                predicate="{{ response.get('code') == 40100 }}",
+                error_message=vendor_error_message,
+            )
+        ],
+    )
+    http_client = HttpClient(
+        name="test",
+        logger=MagicMock(spec=logging.Logger),
+        error_handler=error_handler,
+    )
+
+    requests_mock.register_uri(
+        "GET",
+        "https://airbyte.io/",
+        status_code=200,
+        json={"code": 40100, "message": vendor_error_message},
+        headers={},
+    )
+
+    with pytest.raises(AirbyteTracedException) as exception_info:
+        http_client.send_request(http_method="get", url="https://airbyte.io/", request_kwargs={})
+
+    assert exception_info.value.failure_type == FailureType.transient_error
+    assert exception_info.value.message == "API rate limit exceeded."
+    assert vendor_error_message in exception_info.value.internal_message
 
 
 class MockOAuthAuthenticator:
