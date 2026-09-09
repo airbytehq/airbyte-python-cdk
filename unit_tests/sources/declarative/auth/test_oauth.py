@@ -721,11 +721,14 @@ class TestOauth2Authenticator:
 
         assert exc_info.value.failure_type == FailureType.config_error
         assert exc_info.value.message.startswith("Refresh token was rejected by the OAuth provider")
-        assert (
-            "Provider error: invalid_grant: AADSTS50173: Rejected **** for ****."
-            in exc_info.value.message
-        )
+        # Only the provider code is surfaced, so the echoed credentials cannot reach the
+        # user-facing message at all -- they are absent by construction, not merely masked.
+        assert exc_info.value.message.endswith("Provider error: invalid_grant: AADSTS50173")
+        assert "****" not in exc_info.value.message
+        assert "Rejected" not in exc_info.value.message
         assert "Trace ID" not in exc_info.value.message
+        # The internal message keeps the full body with both credentials redacted.
+        assert exc_info.value.internal_message.count("****") == 2
         assert "Trace ID" in exc_info.value.internal_message
         for message in (exc_info.value.message, exc_info.value.internal_message):
             assert parameters["refresh_token"] not in message

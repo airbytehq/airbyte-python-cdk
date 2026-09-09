@@ -3,6 +3,7 @@
 #
 
 import logging
+import re
 import threading
 from abc import abstractmethod
 from datetime import timedelta
@@ -25,12 +26,15 @@ from ..exceptions import DefaultBackoffException
 logger = logging.getLogger("airbyte")
 _NOOP_MESSAGE_REPOSITORY = NoopMessageRepository()
 
-# How much of the provider's error detail is appended to the user-facing message. Long enough to
-# keep a provider error code and the start of its description (e.g. Microsoft Entra puts the
-# `AADSTS<code>` at the front of `error_description`), short enough to keep the message readable
-# and to stop before the per-request values (issue dates, trace ids) that some providers embed
-# further into the description, so the same failure produces the same message on every attempt.
-_PROVIDER_ERROR_DETAIL_MAX_LENGTH = 120
+# Provider error codes that lead `error_description`, e.g. Microsoft Entra's `AADSTS50173`.
+# Only the code is appended to the user-facing message: it is the entire grouping key, and unlike
+# the surrounding prose it is identical on every attempt at the same failure.
+_PROVIDER_ERROR_CODE_PATTERN = re.compile(r"^[A-Za-z]{3,}\d{4,}\b")
+# Upper bound on the provider-controlled text appended to the user-facing message. Both the
+# RFC 6749 `error` token and the extracted code come from the provider, so both are still capped.
+# The longest standard token (`unsupported_grant_type`, 22) plus a 7-digit Entra code is 37
+# characters, so this leaves roughly 2x headroom while still bounding a misbehaving provider.
+_PROVIDER_ERROR_DETAIL_MAX_LENGTH = 64
 # How much of the raw provider response is kept in the internal message, which is logged and is not
 # shown to the user.
 _PROVIDER_ERROR_RESPONSE_MAX_LENGTH = 1000
@@ -295,30 +299,36 @@ class AbstractOauth2Authenticator(AuthBase):
         self, response_content: Optional[Mapping[str, Any]]
     ) -> Optional[str]:
         """
-        Build a short, single-line provider error detail suitable for the user-facing message.
+        Build a short, deterministic provider error detail for the user-facing message.
 
-        Only the standard OAuth 2.0 `error` and `error_description` fields (RFC 6749 section 5.2)
-        are used, and only the first line of the description: providers put the actionable code
-        there (Microsoft Entra leads with `AADSTS<code>`, which tells a revoked or expired grant
-        such as `AADSTS50173` / `AADSTS700082` apart from a client misconfiguration such as
-        `AADSTS7000218`), while per-request trace ids and timestamps follow on later lines. Which
-        provider errors reach this path at all is set by the authenticator's `refresh_token_error_*`
-        configuration.
+        Only the standard OAuth 2.0 `error` field (RFC 6749 section 5.2) and the provider error
+        code leading `error_description` are used. Both are stable for a given failure, so the same
+        failure produces a byte-identical message on every attempt and the platform groups them
+        into a single failure summary. The description prose is deliberately excluded: it is
+        free-form, and providers embed per-request values in it -- Microsoft Entra's
+        `AADSTS700082` carries the token issue timestamp in its first sentence -- which would make
+        the grouping key unbounded. The code alone is what distinguishes a revoked grant
+        (`AADSTS50173`) from a misconfigured client (`AADSTS7000218`) or a Conditional Access
+        requirement (`AADSTS50076`). The full response body is preserved in the internal message,
+        which is logged. Which provider errors reach this path at all is set by the
+        authenticator's `refresh_token_error_*` configuration.
         """
         if not response_content:
             return None
-        parts = [
-            response_content[key].strip()
-            for key in ("error", "error_description")
-            if isinstance(response_content.get(key), str) and response_content[key].strip()
-        ]
+        parts = []
+        error = response_content.get("error")
+        if isinstance(error, str) and error.strip():
+            parts.append(" ".join(error.split()))
+        description = response_content.get("error_description")
+        if isinstance(description, str):
+            code_match = _PROVIDER_ERROR_CODE_PATTERN.match(description.strip())
+            if code_match:
+                parts.append(code_match.group())
         if not parts:
             return None
-        # Keep the first line only and collapse its whitespace: the actionable code leads the
-        # description, while trace ids and timestamps that differ on every attempt follow on later
-        # lines and would make the same failure read differently each time.
-        detail = " ".join(": ".join(parts).splitlines()[0].split())
-        return self._truncate(self._redact_credentials(detail), _PROVIDER_ERROR_DETAIL_MAX_LENGTH)
+        return self._truncate(
+            self._redact_credentials(": ".join(parts)), _PROVIDER_ERROR_DETAIL_MAX_LENGTH
+        )
 
     def _build_provider_response_info(self, exception: requests.exceptions.RequestException) -> str:
         """
