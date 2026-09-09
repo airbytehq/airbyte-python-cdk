@@ -1,5 +1,10 @@
 # Airbyte Python CDK - Release Management Guide
 
+Airbyte employees: SDM's base image (the `python-connector-base` pin in the root `Dockerfile`) has
+its own lifecycle, and merging a bump to it does not publish anything — the new SDM image ships
+with the next CDK release described below. See the internal runbook
+[Connector base images](https://internal.airbyte.ai/docs/internal-docs/teams/apis/data-replication/runbooks/connector-base-images).
+
 ## Publishing stable releases of the CDK and SDM
 
 A few seconds after any PR is merged to `main` , a release draft will be created or updated on the releases page here: https://github.com/airbytehq/airbyte-python-cdk/releases. Here are the steps to publish a CDK release:
