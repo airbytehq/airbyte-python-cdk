@@ -4298,7 +4298,7 @@ definitions:
           - "$ref": "#/definitions/JsonlDecoder"
   CsvDecoder:
     title: CSV
-    description: "Select 'CSV' for response data that is formatted as CSV (comma-separated values). Can specify an encoding (default: 'utf-8') and a delimiter (default: ',')."
+    description: "Select 'CSV' for response data that is formatted as CSV (comma-separated values). Can specify an encoding (default: 'utf-8'), a delimiter (default: ','), and a maximum field size (default: 2147483648)."
     type: object
     required:
       - type
@@ -4312,6 +4312,11 @@ definitions:
       delimiter:
         type: string
         default: ","
+      max_field_size:
+        title: Maximum Field Size
+        description: Maximum number of characters allowed in a CSV field.
+        type: integer
+        default: 2147483648
       set_values_to_none:
         type: array
         items:

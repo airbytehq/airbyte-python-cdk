@@ -2831,6 +2831,7 @@ class ModelToComponentFactory:
                 encoding=model.encoding,
                 delimiter=model.delimiter,
                 set_values_to_none=model.set_values_to_none,
+                max_field_size=model.max_field_size,
             )
         elif isinstance(model, GzipDecoderModel):
             return GzipParser(
