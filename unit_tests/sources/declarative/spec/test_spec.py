@@ -37,6 +37,9 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
     OauthConnectorInputSpecification as component_declarative_oauth_connector_input_spec,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    ScopesJoinStrategy as component_declarative_oauth_scopes_join_strategy,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     State as component_declarative_oauth_state,
 )
 from airbyte_cdk.sources.declarative.spec.spec import ConfigMigration
@@ -160,6 +163,92 @@ from airbyte_cdk.sources.declarative.validators.validate_adheres_to_schema impor
 )
 def test_spec(spec, expected_connection_specification) -> None:
     assert spec.generate_spec() == expected_connection_specification
+
+
+@pytest.mark.parametrize(
+    "advanced_auth",
+    [
+        pytest.param(
+            component_auth_flow(
+                auth_flow_type=component_auth_flow_type.oauth2_0,
+                predicate_key=None,
+                predicate_value=None,
+            ),
+            id="top_level_auth_flow_type_enum",
+        ),
+        pytest.param(
+            component_auth_flow(
+                auth_flow_type=component_auth_flow_type.oauth2_0,
+                predicate_key=None,
+                predicate_value=None,
+                oauth_config_specification=component_declarative_oauth_config_spec(
+                    oauth_connector_input_specification=component_declarative_oauth_connector_input_spec(
+                        consent_url="https://domain.host.com/endpoint/oauth",
+                        access_token_url="https://domain.host.com/endpoint/v1/oauth2/access_token/",
+                        scope="reports:read campaigns:read",
+                        scopes_join_strategy=component_declarative_oauth_scopes_join_strategy.comma,
+                        extract_output=["data.access_token"],
+                    ),
+                ),
+            ),
+            id="nested_scopes_join_strategy_enum",
+        ),
+        pytest.param(
+            component_auth_flow(
+                auth_flow_type=None,
+                predicate_key=["credentials", "auth_type"],
+                predicate_value="oauth2.0",
+            ),
+            id="no_auth_flow_type",
+        ),
+    ],
+)
+def test_generate_spec_is_idempotent_and_does_not_mutate_the_model(advanced_auth) -> None:
+    spec = component_spec(
+        connection_specification={"client_id": "my_client_id"},
+        parameters={},
+        advanced_auth=advanced_auth,
+    )
+
+    first = spec.generate_spec()
+    second = spec.generate_spec()
+
+    assert first == second
+    # identity, not equality: catches an in-place mutation to the plain string "oauth2.0"
+    assert spec.advanced_auth.auth_flow_type is advanced_auth.auth_flow_type
+
+    oauth_spec = spec.advanced_auth.oauth_config_specification
+    if oauth_spec and oauth_spec.oauth_connector_input_specification:
+        # the model keeps its enum...
+        assert (
+            oauth_spec.oauth_connector_input_specification.scopes_join_strategy
+            is component_declarative_oauth_scopes_join_strategy.comma
+        )
+        # ...while the emitted spec carries the plain string the protocol declares.
+        # `scopes_join_strategy` is typed `Optional[str]`, so an un-normalized enum would
+        # otherwise slip through both the serializer and the `first == second` check.
+        emitted = first.advanced_auth.oauth_config_specification.oauth_connector_input_specification.scopes_join_strategy
+        assert emitted == "comma" and type(emitted) is str
+
+
+def test_generate_spec_without_auth_flow_type_emits_advanced_auth_with_none() -> None:
+    """An AuthFlow carrying only a predicate is valid: both the component model and the
+    protocol AdvancedAuth declare auth_flow_type as optional, so it is passed through as None."""
+    spec = component_spec(
+        connection_specification={},
+        parameters={},
+        advanced_auth=component_auth_flow(
+            auth_flow_type=None,
+            predicate_key=["credentials", "auth_type"],
+            predicate_value="oauth2.0",
+        ),
+    )
+
+    assert spec.generate_spec().advanced_auth == model_advanced_auth(
+        auth_flow_type=None,
+        predicate_key=["credentials", "auth_type"],
+        predicate_value="oauth2.0",
+    )
 
 
 def test_given_list_of_transformations_when_transform_config_then_config_is_transformed() -> None:
