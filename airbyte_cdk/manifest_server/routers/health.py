@@ -8,6 +8,7 @@ router = APIRouter(
 )
 
 
+@router.get("", include_in_schema=False)
 @router.get("/")
 def health() -> Dict[str, str]:
     return {"status": "ok"}
