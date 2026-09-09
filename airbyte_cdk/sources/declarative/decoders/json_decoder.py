@@ -12,6 +12,7 @@ import requests
 
 from airbyte_cdk.sources.declarative.decoders import CompositeRawDecoder, JsonParser
 from airbyte_cdk.sources.declarative.decoders.decoder import Decoder
+from airbyte_cdk.utils.airbyte_secrets_utils import filter_secrets
 
 logger = logging.getLogger("airbyte")
 
@@ -40,7 +41,18 @@ class JsonDecoder(Decoder):
             for element in self._decoder.decode(response):
                 yield element
                 has_yielded = True
-        except Exception:
+        except Exception as exc:
+            request_method = response.request.method if response.request else "<unknown>"
+            body = response.content or b""
+            body_preview = body[:200].decode("utf-8", errors="replace")
+            logger.error(
+                filter_secrets(
+                    "Failed to decode JSON response: "
+                    f"method={request_method}, url={response.url}, status_code={response.status_code}, "
+                    f"content_type={response.headers.get('Content-Type')}, body_length={len(body)}, "
+                    f"body_preview={body_preview!r}, error={exc}"
+                )
+            )
             yield {}
 
         if not has_yielded:
