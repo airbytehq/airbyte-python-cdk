@@ -58,6 +58,11 @@ DEFAULT_ERROR_MAPPING: Mapping[Union[int, str, Type[Exception]], ErrorResolution
         failure_type=FailureType.transient_error,
         error_message="HTTP Status Code: 408. Error: Request timeout.",
     ),
+    413: ErrorResolution(
+        response_action=ResponseAction.FAIL,
+        failure_type=FailureType.system_error,
+        error_message="HTTP Status Code: 413. Error: The request or its response exceeds the size limit accepted by the API.",
+    ),
     429: ErrorResolution(
         response_action=ResponseAction.RATE_LIMITED,
         failure_type=FailureType.transient_error,

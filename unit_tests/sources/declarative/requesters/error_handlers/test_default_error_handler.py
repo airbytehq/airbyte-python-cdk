@@ -57,6 +57,15 @@ SOME_BACKOFF_TIME = 60
             DEFAULT_ERROR_MAPPING[408],
         ),
         (
+            "_with_http_response_status_413",
+            413,
+            ErrorResolution(
+                response_action=ResponseAction.FAIL,
+                failure_type=FailureType.system_error,
+                error_message="HTTP Status Code: 413. Error: The request or its response exceeds the size limit accepted by the API.",
+            ),
+        ),
+        (
             "_with_unmapped_http_status_418",
             418,
             ErrorResolution(
