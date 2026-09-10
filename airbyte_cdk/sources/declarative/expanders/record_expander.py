@@ -10,13 +10,19 @@ from typing import TYPE_CHECKING, Any, Iterable, Mapping, MutableMapping, Option
 
 import dpath
 
+from airbyte_cdk.models import AirbyteLogMessage, AirbyteMessage, Level
+from airbyte_cdk.models import Type as MessageType
 from airbyte_cdk.sources.declarative.interpolation.interpolated_string import InterpolatedString
+from airbyte_cdk.sources.message import MessageRepository
 from airbyte_cdk.sources.types import Config, Record, StreamSlice
 
 if TYPE_CHECKING:
     from airbyte_cdk.sources.declarative.retrievers import Retriever
 
 logger = logging.getLogger("airbyte")
+
+# dpath treats these characters as glob metacharacters (fnmatch semantics) inside a path segment.
+_GLOB_METACHARACTERS = ("*", "?", "[")
 
 
 class OnNoRecords(Enum):
@@ -73,11 +79,21 @@ class RecordExpander:
             When the indicator is truthy and no `truncated_list_retriever` is configured, the
             embedded items are expanded as normal and a WARNING is logged (once per stream
             instance) describing the expansion path and the embedded item count, so that the
-            data loss is visible instead of silent.
+            data loss is visible instead of silent. Glob metacharacters (`*`, `?`, `[`) are
+            rejected in this path, and in `expand_records_from_field` when a retriever is
+            configured; the check runs on the interpolated values.
         truncated_list_retriever: Retriever used to fetch the complete list of items when
             the field at `truncation_indicator_path` is truthy. The record being expanded is
             exposed to the retriever's interpolation context as `stream_slice['parent_record']`.
-            If the retriever returns no records, the embedded items are expanded as a fallback.
+            One fetch is issued per truncated parent record; enable `use_cache` on its requester
+            when the same list can be fetched repeatedly. Without a `paginator` only the first
+            page is read. If the retriever returns no records, the embedded items are expanded
+            as a fallback; if it returns fewer records than the `total_count` field next to the
+            indicator, a WARNING is logged once per stream instance. Request failures surface
+            through the retriever's error handler and fail the stream like any other request.
+            `$parameters` of the enclosing stream propagate into this retriever's components.
+        message_repository: Optional repository used to also emit the truncation warnings as
+            Airbyte LOG messages so they are visible in the Connector Builder.
         config: The user-provided configuration as specified by the source's spec.
     """
 
@@ -88,6 +104,7 @@ class RecordExpander:
     on_no_records: OnNoRecords = OnNoRecords.skip
     truncation_indicator_path: Optional[Sequence[str]] = None
     truncated_list_retriever: Optional["Retriever"] = None
+    message_repository: Optional[MessageRepository] = None
 
     def __post_init__(self, parameters: Mapping[str, Any]) -> None:
         self._expand_path: list[InterpolatedString] = [
@@ -98,21 +115,33 @@ class RecordExpander:
             raise ValueError(
                 "`truncation_indicator_path` is required when `truncated_list_retriever` is configured."
             )
-        if any(path == "*" for path in (self.truncation_indicator_path or [])):
-            raise ValueError(
-                "The '*' wildcard is not supported in `truncation_indicator_path`: the indicator must identify a single field."
-            )
-        if self.truncated_list_retriever and any(
-            path == "*" for path in self.expand_records_from_field
-        ):
-            raise ValueError(
-                "The '*' wildcard is not supported in `expand_records_from_field` when `truncated_list_retriever` is configured."
-            )
         self._truncation_indicator_path: list[InterpolatedString] = [
             InterpolatedString.create(path, parameters=parameters)
             for path in (self.truncation_indicator_path or [])
         ]
+        # The paths only interpolate `config`, so their evaluated values are validated up front.
+        self._reject_globs(self._evaluated_indicator_path(), "truncation_indicator_path")
+        if self.truncated_list_retriever:
+            self._reject_globs(self._evaluated_expand_path(), "expand_records_from_field")
         self._warned_truncation_without_retriever = False
+        self._warned_incomplete_fetch = False
+
+    @staticmethod
+    def _reject_globs(path: Sequence[Any], field_name: str) -> None:
+        if any(
+            isinstance(segment, str) and any(char in segment for char in _GLOB_METACHARACTERS)
+            for segment in path
+        ):
+            raise ValueError(
+                f"Glob characters {_GLOB_METACHARACTERS} are not supported in `{field_name}` when "
+                "truncation handling is configured: the path must identify a single field."
+            )
+
+    def _evaluated_indicator_path(self) -> list[Any]:
+        return [segment.eval(self.config) for segment in self._truncation_indicator_path]
+
+    def _evaluated_expand_path(self) -> list[Any]:
+        return [segment.eval(self.config) for segment in self._expand_path]
 
     def expand_record(self, record: MutableMapping[Any, Any]) -> Iterable[MutableMapping[Any, Any]]:
         """Expand a record by extracting items from a nested array field."""
@@ -127,17 +156,18 @@ class RecordExpander:
 
         parent_record = record
 
+        expand_path = self._evaluated_expand_path()
         truncated = bool(self._truncation_indicator_path) and self._is_truncated(parent_record)
 
         if truncated and self.truncated_list_retriever:
-            fetched_records = iter(self._fetch_complete_list(parent_record))
-            first_fetched = next(fetched_records, None)
-            if first_fetched is not None:
-                yield first_fetched
-                yield from fetched_records
+            fetched_count = 0
+            for fetched in self._fetch_complete_list(parent_record):
+                fetched_count += 1
+                yield fetched
+            if fetched_count > 0:
+                self._warn_if_fetch_incomplete(parent_record, expand_path, fetched_count)
                 return
 
-        expand_path = [path.eval(self.config) for path in self._expand_path]
         expanded_any = False
         embedded_count = 0
 
@@ -169,36 +199,60 @@ class RecordExpander:
                     embedded_count += 1
 
         if truncated and not self.truncated_list_retriever:
-            self._warn_truncated_without_retriever(parent_record, embedded_count)
+            self._warn_truncated_without_retriever(parent_record, expand_path, embedded_count)
 
         if not expanded_any and self.on_no_records == OnNoRecords.emit_parent:
             yield parent_record
 
     def _warn_truncated_without_retriever(
-        self, parent_record: Mapping[str, Any], embedded_count: int
+        self, parent_record: Mapping[str, Any], expand_path: list[Any], embedded_count: int
     ) -> None:
         if self._warned_truncation_without_retriever:
             return
         self._warned_truncation_without_retriever = True
 
-        indicator_path = [path.eval(self.config) for path in self._truncation_indicator_path]
-        expand_path = [path.eval(self.config) for path in self._expand_path]
+        indicator_path = self._evaluated_indicator_path()
         total_count = self._get_sibling_total_count(parent_record, indicator_path)
         total_fragment = f" of {total_count} total" if total_count is not None else ""
-        logger.warning(
-            "The nested list at %s is marked as truncated (the field at %s is truthy) but no "
-            "`truncated_list_retriever` is configured, so only the %d embedded item(s)%s were "
-            "expanded and the remaining items are not emitted. Configure `truncated_list_retriever` "
-            "to fetch the complete list if the API provides an endpoint for it. This warning is "
-            "emitted once per stream; other records may be truncated as well.",
-            expand_path,
-            indicator_path,
-            embedded_count,
-            total_fragment,
+        self._emit_warning(
+            f"The nested list at {expand_path} is marked as truncated (the field at {indicator_path} "
+            f"is truthy) but no `truncated_list_retriever` is configured, so only the "
+            f"{embedded_count} embedded item(s){total_fragment} were expanded and the remaining "
+            "items are not emitted. Configure `truncated_list_retriever` to fetch the complete list "
+            "if the API provides an endpoint for it. This warning is emitted once per stream; other "
+            "records may be truncated as well."
         )
 
+    def _warn_if_fetch_incomplete(
+        self, parent_record: Mapping[str, Any], expand_path: list[Any], fetched_count: int
+    ) -> None:
+        if self._warned_incomplete_fetch:
+            return
+        indicator_path = self._evaluated_indicator_path()
+        total_count = self._get_sibling_total_count(parent_record, indicator_path)
+        if total_count is None or fetched_count >= total_count:
+            return
+        self._warned_incomplete_fetch = True
+        self._emit_warning(
+            f"The `truncated_list_retriever` for the nested list at {expand_path} returned "
+            f"{fetched_count} record(s) but the `total_count` field next to {indicator_path} reports "
+            f"{total_count}, so the fetched list is still incomplete. Check that the retriever has a "
+            "`paginator` configured and that its request matches the complete-list endpoint. This "
+            "warning is emitted once per stream; other records may be affected as well."
+        )
+
+    def _emit_warning(self, message: str) -> None:
+        logger.warning(message)
+        if self.message_repository:
+            self.message_repository.emit_message(
+                AirbyteMessage(
+                    type=MessageType.LOG,
+                    log=AirbyteLogMessage(level=Level.WARN, message=message),
+                )
+            )
+
     def _get_sibling_total_count(
-        self, parent_record: Mapping[str, Any], indicator_path: list[str]
+        self, parent_record: Mapping[str, Any], indicator_path: list[Any]
     ) -> Optional[int]:
         """Best-effort lookup of a `total_count` field next to the truncation indicator."""
         if not indicator_path:
@@ -210,15 +264,13 @@ class RecordExpander:
         return total if isinstance(total, int) and not isinstance(total, bool) else None
 
     def _is_truncated(self, parent_record: MutableMapping[Any, Any]) -> bool:
-        indicator_path = [path.eval(self.config) for path in self._truncation_indicator_path]
+        indicator_path = self._evaluated_indicator_path()
         try:
             return bool(dpath.get(parent_record, indicator_path))
-        except KeyError:
+        except (KeyError, ValueError):
             return False
 
-    def _fetch_complete_list(
-        self, parent_record: Mapping[str, Any]
-    ) -> Iterable[MutableMapping[str, Any]]:
+    def _fetch_complete_list(self, parent_record: Mapping[str, Any]) -> Iterable[Any]:
         if not self.truncated_list_retriever:
             return
         stream_slice = StreamSlice(partition={"parent_record": parent_record}, cursor_slice={})
@@ -226,11 +278,14 @@ class RecordExpander:
             records_schema={}, stream_slice=stream_slice
         ):
             data = item.data if isinstance(item, Record) else item
-            if not isinstance(data, Mapping):
-                continue
-            expanded_record = dict(data)
-            self._apply_parent_context(parent_record, expanded_record)
-            yield expanded_record
+            if isinstance(data, Mapping):
+                expanded_record = dict(data)
+                self._apply_parent_context(parent_record, expanded_record)
+                yield expanded_record
+            elif self.remain_original_record:
+                yield {"value": data, "original_record": copy.deepcopy(parent_record)}
+            else:
+                yield data
 
     def _apply_parent_context(
         self, parent_record: Mapping[str, Any], child_record: MutableMapping[str, Any]

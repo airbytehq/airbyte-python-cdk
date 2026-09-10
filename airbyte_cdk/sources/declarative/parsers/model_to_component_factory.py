@@ -2508,14 +2508,37 @@ class ModelToComponentFactory:
     ) -> RecordExpander:
         truncated_list_retriever = None
         if model.truncated_list_retriever:
-            truncated_list_retriever = self._create_component_from_model(
-                model=model.truncated_list_retriever,
-                config=config,
-                name="record_expander_truncated_list",
-                primary_key=None,
-                stream_slicer=None,
-                transformations=[],
-            )
+            retriever_model = model.truncated_list_retriever
+            name = "record_expander_truncated_list"
+            if isinstance(retriever_model, SimpleRetrieverModel):
+                if retriever_model.partition_router:
+                    raise ValueError(
+                        "`partition_router` is not supported on `truncated_list_retriever`."
+                    )
+                if retriever_model.pagination_reset:
+                    raise ValueError(
+                        "`pagination_reset` is not supported on `truncated_list_retriever`."
+                    )
+                truncated_list_retriever = self._create_component_from_model(
+                    model=retriever_model,
+                    config=config,
+                    name=name,
+                    primary_key=None,
+                    transformations=[],
+                    log_formatter=(
+                        lambda response: format_http_message(
+                            response,
+                            f"Record expander '{name}' request",
+                            "Request performed in order to fetch the complete nested list of a truncated record.",
+                            name,
+                            is_auxiliary=True,
+                        )
+                    ),
+                )
+            else:
+                truncated_list_retriever = self._create_component_from_model(
+                    model=retriever_model, config=config
+                )
         return RecordExpander(
             expand_records_from_field=model.expand_records_from_field,
             config=config,
@@ -2526,6 +2549,7 @@ class ModelToComponentFactory:
             else OnNoRecords.skip,
             truncation_indicator_path=model.truncation_indicator_path,
             truncated_list_retriever=truncated_list_retriever,
+            message_repository=self._message_repository,
         )
 
     @staticmethod

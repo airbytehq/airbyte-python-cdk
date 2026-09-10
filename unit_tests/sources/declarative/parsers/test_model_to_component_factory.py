@@ -225,6 +225,7 @@ from airbyte_cdk.sources.types import StreamSlice
 from airbyte_cdk.utils import AirbyteTracedException
 from airbyte_cdk.utils.datetime_helpers import AirbyteDateTime, ab_datetime_now, ab_datetime_parse
 from unit_tests.sources.declarative.parsers.testing_components import (
+    TestingCustomRetriever,
     TestingCustomSubstreamPartitionRouter,
     TestingSomeComponent,
 )
@@ -2032,6 +2033,113 @@ def test_create_record_expander_with_truncated_list_retriever():
     assert expander is not None
     assert expander.truncation_indicator_path == ["data", "object", "lines", "has_more"]
     assert isinstance(expander.truncated_list_retriever, SimpleRetriever)
+    assert expander.truncated_list_retriever.name == "record_expander_truncated_list"
+    assert expander.message_repository is factory._message_repository
+
+
+def _record_expander_selector(retriever_yaml: str) -> str:
+    return f"""
+    selector:
+      type: RecordSelector
+      $parameters:
+        name: "lists"
+      extractor:
+        type: DpathExtractor
+        field_path: ["data"]
+        record_expander:
+          type: RecordExpander
+          expand_records_from_field: ["lines", "data"]
+          truncation_indicator_path: ["lines", "has_more"]
+          truncated_list_retriever:
+{retriever_yaml}
+    """
+
+
+def _create_record_expander(content: str):
+    parsed_manifest = YamlDeclarativeSource._parse(content)
+    resolved_manifest = resolver.preprocess_manifest(parsed_manifest)
+    selector_manifest = transformer.propagate_types_and_parameters(
+        "", resolved_manifest["selector"], {}
+    )
+    selector = factory.create_component(
+        model_type=RecordSelectorModel,
+        name="test_stream",
+        component_definition=selector_manifest,
+        decoder=None,
+        transformations=[],
+        config=input_config,
+    )
+    return selector.extractor.record_expander
+
+
+def test_create_record_expander_with_custom_truncated_list_retriever():
+    expander = _create_record_expander(
+        _record_expander_selector(
+            """
+            type: CustomRetriever
+            class_name: unit_tests.sources.declarative.parsers.testing_components.TestingCustomRetriever
+            name: "custom_lines"
+            primary_key: "id"
+            requester:
+              type: HttpRequester
+              url_base: "https://api.test.com/"
+              path: "invoices/{{ stream_slice['parent_record']['id'] }}/lines"
+              http_method: "GET"
+            record_selector:
+              type: RecordSelector
+              extractor:
+                type: DpathExtractor
+                field_path: ["data"]
+            """
+        )
+    )
+    retriever = expander.truncated_list_retriever
+    assert isinstance(retriever, TestingCustomRetriever)
+    assert retriever.name == "custom_lines"
+    assert retriever.primary_key == "id"
+
+
+@pytest.mark.parametrize(
+    "unsupported_option",
+    [
+        pytest.param(
+            """
+            partition_router:
+              type: ListPartitionRouter
+              values: ["a", "b"]
+              cursor_field: "partition"
+            """,
+            id="partition_router",
+        ),
+        pytest.param(
+            """
+            pagination_reset:
+              type: PaginationReset
+              action: RESET
+            """,
+            id="pagination_reset",
+        ),
+    ],
+)
+def test_create_record_expander_rejects_unsupported_retriever_options(unsupported_option):
+    content = _record_expander_selector(
+        """
+            type: SimpleRetriever
+            requester:
+              type: HttpRequester
+              url_base: "https://api.test.com/"
+              path: "lines"
+              http_method: "GET"
+            record_selector:
+              type: RecordSelector
+              extractor:
+                type: DpathExtractor
+                field_path: ["data"]
+        """
+        + unsupported_option
+    )
+    with pytest.raises(ValueError, match="not supported on `truncated_list_retriever`"):
+        _create_record_expander(content)
 
 
 @pytest.mark.parametrize(

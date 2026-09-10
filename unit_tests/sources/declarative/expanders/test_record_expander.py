@@ -6,7 +6,9 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from airbyte_cdk.models import Level, Type
 from airbyte_cdk.sources.declarative.expanders.record_expander import RecordExpander
+from airbyte_cdk.sources.message import InMemoryMessageRepository
 from airbyte_cdk.sources.types import Record, StreamSlice
 
 config = {}
@@ -133,14 +135,186 @@ def test_wildcard_rejected_with_truncation_handling():
         )
 
 
-def test_wildcard_rejected_in_truncation_indicator_path():
+@pytest.mark.parametrize("segment", ["*", "has_*", "has_more?", "[hl]ines", "**"])
+def test_glob_metacharacters_rejected_in_truncation_indicator_path(segment):
     with pytest.raises(ValueError):
         RecordExpander(
             expand_records_from_field=["lines", "data"],
             config=config,
             parameters=parameters,
-            truncation_indicator_path=["*", "has_more"],
+            truncation_indicator_path=[segment, "has_more"],
         )
+
+
+@pytest.mark.parametrize("segment", ["sect?ons", "[s]ections", "sec*"])
+def test_glob_metacharacters_rejected_in_expand_path_with_retriever(segment):
+    with pytest.raises(ValueError):
+        RecordExpander(
+            expand_records_from_field=[segment, "items"],
+            config=config,
+            parameters=parameters,
+            truncation_indicator_path=["lines", "has_more"],
+            truncated_list_retriever=_make_retriever([]),
+        )
+
+
+def test_glob_metacharacters_allowed_in_expand_path_without_retriever():
+    expander = RecordExpander(
+        expand_records_from_field=["sections", "*", "items"],
+        config=config,
+        parameters=parameters,
+        truncation_indicator_path=["has_more"],
+    )
+    records = list(
+        expander.expand_record({"sections": [{"items": [{"id": 1}]}], "has_more": False})
+    )
+    assert records == [{"id": 1}]
+
+
+def test_interpolated_glob_rejected():
+    with pytest.raises(ValueError):
+        RecordExpander(
+            expand_records_from_field=["lines", "data"],
+            config={"indicator": "has_*"},
+            parameters=parameters,
+            truncation_indicator_path=["lines", "{{ config['indicator'] }}"],
+        )
+
+
+def test_interpolated_indicator_path_is_used():
+    expander = RecordExpander(
+        expand_records_from_field=["lines", "data"],
+        config={"indicator": "has_more"},
+        parameters=parameters,
+        truncation_indicator_path=["lines", "{{ config['indicator'] }}"],
+        truncated_list_retriever=_make_retriever([{"id": 2}]),
+    )
+    records = list(expander.expand_record({"lines": {"data": [{"id": 1}], "has_more": True}}))
+    assert records == [{"id": 2}]
+
+
+def test_indicator_path_through_non_mapping_is_not_truncated():
+    expander = RecordExpander(
+        expand_records_from_field=["lines", "data"],
+        config=config,
+        parameters=parameters,
+        truncation_indicator_path=["lines", "has_more", "nested"],
+    )
+    records = list(expander.expand_record({"lines": {"data": [{"id": 1}], "has_more": True}}))
+    assert records == [{"id": 1}]
+
+
+def test_fetched_scalar_items_are_yielded_like_embedded_items():
+    retriever = _make_retriever(["a", "b"])
+    expander = RecordExpander(
+        expand_records_from_field=["lines", "data"],
+        config=config,
+        parameters=parameters,
+        truncation_indicator_path=["lines", "has_more"],
+        truncated_list_retriever=retriever,
+    )
+    records = list(expander.expand_record({"lines": {"data": ["a"], "has_more": True}}))
+    assert records == ["a", "b"]
+
+
+def test_fetched_scalar_items_are_wrapped_when_remain_original_record():
+    retriever = _make_retriever(["a", "b"])
+    parent = {"lines": {"data": ["a"], "has_more": True}}
+    expander = RecordExpander(
+        expand_records_from_field=["lines", "data"],
+        config=config,
+        parameters=parameters,
+        remain_original_record=True,
+        truncation_indicator_path=["lines", "has_more"],
+        truncated_list_retriever=retriever,
+    )
+    records = list(expander.expand_record(parent))
+    assert records == [
+        {"value": "a", "original_record": parent},
+        {"value": "b", "original_record": parent},
+    ]
+
+
+def test_retriever_errors_propagate():
+    retriever = MagicMock()
+    retriever.read_records.side_effect = RuntimeError("boom")
+    expander = RecordExpander(
+        expand_records_from_field=["lines", "data"],
+        config=config,
+        parameters=parameters,
+        truncation_indicator_path=["lines", "has_more"],
+        truncated_list_retriever=retriever,
+    )
+    with pytest.raises(RuntimeError):
+        list(expander.expand_record({"lines": {"data": [{"id": 1}], "has_more": True}}))
+
+
+def _retriever_expander(retriever, message_repository=None):
+    return RecordExpander(
+        expand_records_from_field=["data", "object", "lines", "data"],
+        config=config,
+        parameters=parameters,
+        truncation_indicator_path=["data", "object", "lines", "has_more"],
+        truncated_list_retriever=retriever,
+        message_repository=message_repository,
+    )
+
+
+def test_warns_once_when_retriever_fetches_fewer_than_total_count(caplog):
+    embedded = [{"id": f"il_{i}"} for i in range(10)]
+    first_page_only = [{"id": f"il_{i}"} for i in range(12)]
+    retriever = MagicMock()
+    retriever.read_records.side_effect = lambda **_: iter(first_page_only)
+    expander = _retriever_expander(retriever)
+
+    with caplog.at_level("WARNING", logger="airbyte"):
+        first = list(expander.expand_record(_event(embedded, has_more=True, total_count=15)))
+        second = list(expander.expand_record(_event(embedded, has_more=True, total_count=15)))
+
+    assert len(first) == len(second) == 12
+    warnings = [r for r in caplog.records if r.levelname == "WARNING"]
+    assert len(warnings) == 1
+    message = warnings[0].getMessage()
+    assert "`truncated_list_retriever`" in message
+    assert "returned 12 record(s)" in message
+    assert "reports 15" in message
+    assert "['data', 'object', 'lines', 'data']" in message
+    assert "il_" not in message
+
+
+@pytest.mark.parametrize("total_count", [15, None, True, "15"])
+def test_no_incomplete_fetch_warning_when_count_matches_or_total_unknown(caplog, total_count):
+    embedded = [{"id": f"il_{i}"} for i in range(10)]
+    complete = [{"id": f"il_{i}"} for i in range(15)]
+    expander = _retriever_expander(_make_retriever(complete))
+
+    with caplog.at_level("WARNING", logger="airbyte"):
+        records = list(
+            expander.expand_record(_event(embedded, has_more=True, total_count=total_count))
+        )
+
+    assert len(records) == 15
+    assert not [r for r in caplog.records if r.levelname == "WARNING"]
+
+
+def test_warnings_are_emitted_through_message_repository():
+    repository = InMemoryMessageRepository()
+    expander = RecordExpander(
+        expand_records_from_field=["data", "object", "lines", "data"],
+        config=config,
+        parameters=parameters,
+        truncation_indicator_path=["data", "object", "lines", "has_more"],
+        message_repository=repository,
+    )
+    embedded = [{"id": f"il_{i}"} for i in range(10)]
+
+    list(expander.expand_record(_event(embedded, has_more=True, total_count=15)))
+
+    messages = list(repository.consume_queue())
+    assert len(messages) == 1
+    assert messages[0].type == Type.LOG
+    assert messages[0].log.level == Level.WARN
+    assert "10 embedded item(s) of 15 total" in messages[0].log.message
 
 
 def _indicator_only_expander():
