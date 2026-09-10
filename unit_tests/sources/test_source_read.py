@@ -6,10 +6,12 @@ from typing import Any, Iterable, List, Mapping, Optional, Tuple, Union
 from unittest.mock import Mock
 
 import freezegun
+from airbyte_protocol_dataclasses.models import AirbyteStateType
 
 from airbyte_cdk.models import (
     AirbyteMessage,
     AirbyteRecordMessage,
+    AirbyteStateMessage,
     AirbyteStream,
     AirbyteStreamStatus,
     AirbyteStreamStatusTraceMessage,
@@ -22,11 +24,15 @@ from airbyte_cdk.models import (
     TraceType,
 )
 from airbyte_cdk.models import Type as MessageType
+from airbyte_cdk.models.airbyte_protocol import (
+    AirbyteStateBlob,
+    AirbyteStreamState,
+)
 from airbyte_cdk.sources import AbstractSource
 from airbyte_cdk.sources.concurrent_source.concurrent_source import ConcurrentSource
 from airbyte_cdk.sources.concurrent_source.concurrent_source_adapter import ConcurrentSourceAdapter
 from airbyte_cdk.sources.message import InMemoryMessageRepository
-from airbyte_cdk.sources.streams import Stream
+from airbyte_cdk.sources.streams import NO_CURSOR_STATE_KEY, Stream
 from airbyte_cdk.sources.streams.concurrent.adapters import StreamFacade
 from airbyte_cdk.sources.streams.concurrent.cursor import FinalStateCursor
 from airbyte_cdk.sources.streams.core import StreamData
@@ -213,6 +219,16 @@ def test_concurrent_source_yields_the_same_messages_as_abstract_source_when_no_e
             ),
         ),
         AirbyteMessage(
+            type=MessageType.STATE,
+            state=AirbyteStateMessage(
+                type=AirbyteStateType.STREAM,
+                stream=AirbyteStreamState(
+                    stream_descriptor=StreamDescriptor(name="stream0"),
+                    stream_state=AirbyteStateBlob(**{NO_CURSOR_STATE_KEY: True}),
+                ),
+            ),
+        ),
+        AirbyteMessage(
             type=MessageType.TRACE,
             trace=AirbyteTraceMessage(
                 type=TraceType.STREAM_STATUS,
@@ -281,6 +297,16 @@ def test_concurrent_source_yields_the_same_messages_as_abstract_source_when_no_e
                 stream="stream1",
                 data=records_stream_2_partition_2[1],
                 emitted_at=1577836800000,
+            ),
+        ),
+        AirbyteMessage(
+            type=MessageType.STATE,
+            state=AirbyteStateMessage(
+                type=AirbyteStateType.STREAM,
+                stream=AirbyteStreamState(
+                    stream_descriptor=StreamDescriptor(name="stream1"),
+                    stream_state=AirbyteStateBlob(**{NO_CURSOR_STATE_KEY: True}),
+                ),
             ),
         ),
         AirbyteMessage(

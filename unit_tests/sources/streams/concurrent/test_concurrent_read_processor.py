@@ -85,6 +85,7 @@ class TestConcurrentReadProcessor(unittest.TestCase):
             json_schema={},
             supported_sync_modes=[SyncMode.full_refresh],
         )
+        self._stream.cursor.ensure_at_least_one_state_emitted.side_effect = lambda: iter([])
         self._another_stream = Mock(spec=AbstractStream)
         self._another_stream.name = _ANOTHER_STREAM_NAME
         self._another_stream.as_airbyte_stream.return_value = AirbyteStream(
@@ -92,6 +93,7 @@ class TestConcurrentReadProcessor(unittest.TestCase):
             json_schema={},
             supported_sync_modes=[SyncMode.full_refresh],
         )
+        self._another_stream.cursor.ensure_at_least_one_state_emitted.side_effect = lambda: iter([])
 
         self._record_data = {"id": 1, "value": "A"}
         self._partition = Mock(spec=Partition)
@@ -128,7 +130,7 @@ class TestConcurrentReadProcessor(unittest.TestCase):
             self._partition_reader,
         )
         handler.start_next_partition_generator()
-        handler.on_partition(self._an_open_partition)
+        list(handler.on_partition(self._an_open_partition))
 
         sentinel = PartitionGenerationCompletedSentinel(self._stream)
         messages = list(handler.on_partition_generation_completed(sentinel))
@@ -192,7 +194,7 @@ class TestConcurrentReadProcessor(unittest.TestCase):
 
         expected_cursor = handler._stream_name_to_instance[_ANOTHER_STREAM_NAME].cursor
 
-        handler.on_partition(self._a_closed_partition)
+        list(handler.on_partition(self._a_closed_partition))
 
         self._thread_pool_manager.submit.assert_called_with(
             self._partition_reader.process_partition, self._a_closed_partition, expected_cursor
@@ -219,12 +221,13 @@ class TestConcurrentReadProcessor(unittest.TestCase):
 
         expected_cursor = handler._stream_name_to_instance[_STREAM_NAME].cursor
 
-        handler.on_partition(self._an_open_partition)
+        messages = list(handler.on_partition(self._an_open_partition))
 
         self._thread_pool_manager.submit.assert_called_with(
             self._partition_reader.process_partition, self._an_open_partition, expected_cursor
         )
-        self._message_repository.emit_message.assert_called_with(self._log_message)
+        # Log message is now yielded directly instead of emitted through the repository
+        assert self._log_message in messages
 
         assert self._an_open_partition in handler._streams_to_running_partitions[_STREAM_NAME]
 
@@ -246,7 +249,7 @@ class TestConcurrentReadProcessor(unittest.TestCase):
             self._partition_reader,
         )
         handler.start_next_partition_generator()
-        handler.on_partition(partition)
+        list(handler.on_partition(partition))
 
         sentinel = PartitionCompleteSentinel(partition)
 
@@ -291,7 +294,7 @@ class TestConcurrentReadProcessor(unittest.TestCase):
             self._partition_reader,
         )
         handler.start_next_partition_generator()
-        handler.on_partition(self._a_closed_partition)
+        list(handler.on_partition(self._a_closed_partition))
         list(
             handler.on_partition_generation_completed(
                 PartitionGenerationCompletedSentinel(self._another_stream)
@@ -566,7 +569,7 @@ class TestConcurrentReadProcessor(unittest.TestCase):
         )
 
         handler.start_next_partition_generator()
-        handler.on_partition(self._an_open_partition)
+        list(handler.on_partition(self._an_open_partition))
         list(
             handler.on_partition_generation_completed(
                 PartitionGenerationCompletedSentinel(self._stream)
@@ -633,7 +636,7 @@ class TestConcurrentReadProcessor(unittest.TestCase):
         )
 
         handler.start_next_partition_generator()
-        handler.on_partition(self._an_open_partition)
+        list(handler.on_partition(self._an_open_partition))
         list(
             handler.on_partition_generation_completed(
                 PartitionGenerationCompletedSentinel(self._stream)
@@ -694,7 +697,7 @@ class TestConcurrentReadProcessor(unittest.TestCase):
         )
 
         handler.start_next_partition_generator()
-        handler.on_partition(self._an_open_partition)
+        list(handler.on_partition(self._an_open_partition))
         list(
             handler.on_partition_generation_completed(
                 PartitionGenerationCompletedSentinel(self._stream)
@@ -755,7 +758,7 @@ class TestConcurrentReadProcessor(unittest.TestCase):
         )
 
         handler.start_next_partition_generator()
-        handler.on_partition(self._an_open_partition)
+        list(handler.on_partition(self._an_open_partition))
         handler.on_partition_generation_completed(
             PartitionGenerationCompletedSentinel(self._stream)
         )
@@ -795,7 +798,7 @@ class TestConcurrentReadProcessor(unittest.TestCase):
         )
 
         handler.start_next_partition_generator()
-        handler.on_partition(self._an_open_partition)
+        list(handler.on_partition(self._an_open_partition))
         list(
             handler.on_partition_generation_completed(
                 PartitionGenerationCompletedSentinel(self._stream)
@@ -945,7 +948,7 @@ class TestBlockSimultaneousRead(unittest.TestCase):
             json_schema={},
             supported_sync_modes=[SyncMode.full_refresh],
         )
-        stream.cursor.ensure_at_least_one_state_emitted = Mock()
+        stream.cursor.ensure_at_least_one_state_emitted.side_effect = lambda: iter([])
         return stream
 
     def _create_mock_stream_with_parent(
@@ -960,7 +963,7 @@ class TestBlockSimultaneousRead(unittest.TestCase):
             json_schema={},
             supported_sync_modes=[SyncMode.full_refresh],
         )
-        stream.cursor.ensure_at_least_one_state_emitted = Mock()
+        stream.cursor.ensure_at_least_one_state_emitted.side_effect = lambda: iter([])
 
         mock_partition_router = Mock(spec=SubstreamPartitionRouter)
         mock_parent_config = Mock()

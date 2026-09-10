@@ -7,6 +7,7 @@ from abc import ABC, abstractmethod
 from datetime import datetime
 from typing import TYPE_CHECKING, Any, Iterable, List, MutableMapping
 
+from airbyte_cdk.models import AirbyteMessage
 from airbyte_cdk.sources.file_based.remote_file import RemoteFile
 from airbyte_cdk.sources.file_based.stream.cursor import AbstractFileBasedCursor
 from airbyte_cdk.sources.file_based.types import StreamState
@@ -56,4 +57,4 @@ class AbstractConcurrentFileBasedCursor(Cursor, AbstractFileBasedCursor, ABC):
     def emit_state_message(self) -> None: ...
 
     @abstractmethod
-    def ensure_at_least_one_state_emitted(self) -> None: ...
+    def ensure_at_least_one_state_emitted(self) -> Iterable[AirbyteMessage]: ...

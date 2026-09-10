@@ -6,6 +6,7 @@ import logging
 from datetime import datetime
 from typing import TYPE_CHECKING, Any, Iterable, List, MutableMapping, Optional
 
+from airbyte_cdk.models import AirbyteMessage
 from airbyte_cdk.sources.connector_state_manager import ConnectorStateManager
 from airbyte_cdk.sources.file_based.config.file_based_stream_config import FileBasedStreamConfig
 from airbyte_cdk.sources.file_based.remote_file import RemoteFile
@@ -73,14 +74,15 @@ class FileBasedFinalStateCursor(AbstractConcurrentFileBasedCursor):
     def emit_state_message(self) -> None:
         pass
 
-    def ensure_at_least_one_state_emitted(self) -> None:
+    def ensure_at_least_one_state_emitted(self) -> Iterable[AirbyteMessage]:
+        """Return the state message directly instead of putting it on the shared queue."""
         self._connector_state_manager.update_state_for_stream(
             self._stream_name, self._stream_namespace, self.state
         )
         state_message = self._connector_state_manager.create_state_message(
             self._stream_name, self._stream_namespace
         )
-        self._message_repository.emit_message(state_message)
+        yield state_message
 
     def should_be_synced(self, record: Record) -> bool:
         return True
