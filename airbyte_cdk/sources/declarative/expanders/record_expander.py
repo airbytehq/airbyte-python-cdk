@@ -4,6 +4,7 @@
 
 import copy
 import logging
+import threading
 from dataclasses import InitVar, dataclass
 from enum import Enum
 from typing import TYPE_CHECKING, Any, Iterable, Mapping, MutableMapping, Optional, Sequence
@@ -92,8 +93,9 @@ class RecordExpander:
             indicator, a WARNING is logged once per stream instance. Request failures surface
             through the retriever's error handler and fail the stream like any other request.
             `$parameters` of the enclosing stream propagate into this retriever's components.
-        message_repository: Optional repository used to also emit the truncation warnings as
-            Airbyte LOG messages so they are visible in the Connector Builder.
+        message_repository: Optional repository through which the truncation warnings are emitted
+            as Airbyte LOG messages so they are visible in the Connector Builder. When it is not
+            set, the warnings go to the `airbyte` logger instead.
         config: The user-provided configuration as specified by the source's spec.
     """
 
@@ -123,6 +125,7 @@ class RecordExpander:
         self._reject_globs(self._evaluated_indicator_path(), "truncation_indicator_path")
         if self.truncated_list_retriever:
             self._reject_globs(self._evaluated_expand_path(), "expand_records_from_field")
+        self._warning_lock = threading.Lock()
         self._warned_truncation_without_retriever = False
         self._warned_incomplete_fetch = False
 
@@ -164,8 +167,8 @@ class RecordExpander:
             for fetched in self._fetch_complete_list(parent_record):
                 fetched_count += 1
                 yield fetched
+            self._warn_if_fetch_incomplete(parent_record, expand_path, fetched_count)
             if fetched_count > 0:
-                self._warn_if_fetch_incomplete(parent_record, expand_path, fetched_count)
                 return
 
         expanded_any = False
@@ -207,9 +210,10 @@ class RecordExpander:
     def _warn_truncated_without_retriever(
         self, parent_record: Mapping[str, Any], expand_path: list[Any], embedded_count: int
     ) -> None:
-        if self._warned_truncation_without_retriever:
-            return
-        self._warned_truncation_without_retriever = True
+        with self._warning_lock:
+            if self._warned_truncation_without_retriever:
+                return
+            self._warned_truncation_without_retriever = True
 
         indicator_path = self._evaluated_indicator_path()
         total_count = self._get_sibling_total_count(parent_record, indicator_path)
@@ -226,23 +230,27 @@ class RecordExpander:
     def _warn_if_fetch_incomplete(
         self, parent_record: Mapping[str, Any], expand_path: list[Any], fetched_count: int
     ) -> None:
-        if self._warned_incomplete_fetch:
-            return
         indicator_path = self._evaluated_indicator_path()
         total_count = self._get_sibling_total_count(parent_record, indicator_path)
         if total_count is None or fetched_count >= total_count:
             return
-        self._warned_incomplete_fetch = True
+        with self._warning_lock:
+            if self._warned_incomplete_fetch:
+                return
+            self._warned_incomplete_fetch = True
+        fallback_fragment = (
+            " The embedded items were expanded as a fallback." if fetched_count == 0 else ""
+        )
         self._emit_warning(
             f"The `truncated_list_retriever` for the nested list at {expand_path} returned "
             f"{fetched_count} record(s) but the `total_count` field next to {indicator_path} reports "
-            f"{total_count}, so the fetched list is still incomplete. Check that the retriever has a "
-            "`paginator` configured and that its request matches the complete-list endpoint. This "
-            "warning is emitted once per stream; other records may be affected as well."
+            f"{total_count}, so the fetched list is still incomplete.{fallback_fragment} Check that "
+            "the retriever has a `paginator` configured and that its request matches the "
+            "complete-list endpoint. This warning is emitted once per stream; other records may be "
+            "affected as well."
         )
 
     def _emit_warning(self, message: str) -> None:
-        logger.warning(message)
         if self.message_repository:
             self.message_repository.emit_message(
                 AirbyteMessage(
@@ -250,6 +258,8 @@ class RecordExpander:
                     log=AirbyteLogMessage(level=Level.WARN, message=message),
                 )
             )
+        else:
+            logger.warning(message)
 
     def _get_sibling_total_count(
         self, parent_record: Mapping[str, Any], indicator_path: list[Any]

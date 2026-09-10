@@ -2,6 +2,7 @@
 # Copyright (c) 2026 Airbyte, Inc., all rights reserved.
 #
 
+import threading
 from unittest.mock import MagicMock
 
 import pytest
@@ -294,6 +295,70 @@ def test_no_incomplete_fetch_warning_when_count_matches_or_total_unknown(caplog,
         )
 
     assert len(records) == 15
+    assert not [r for r in caplog.records if r.levelname == "WARNING"]
+
+
+def test_warns_when_retriever_returns_nothing_but_total_count_is_positive(caplog):
+    embedded = [{"id": f"il_{i}"} for i in range(10)]
+    expander = _retriever_expander(_make_retriever([]))
+
+    with caplog.at_level("WARNING", logger="airbyte"):
+        records = list(expander.expand_record(_event(embedded, has_more=True, total_count=15)))
+
+    assert [record["id"] for record in records] == [f"il_{i}" for i in range(10)]
+    warnings = [r for r in caplog.records if r.levelname == "WARNING"]
+    assert len(warnings) == 1
+    message = warnings[0].getMessage()
+    assert "returned 0 record(s)" in message
+    assert "reports 15" in message
+    assert "embedded items were expanded as a fallback" in message
+
+
+def test_no_warning_when_retriever_returns_nothing_and_total_count_unknown(caplog):
+    embedded = [{"id": f"il_{i}"} for i in range(10)]
+    expander = _retriever_expander(_make_retriever([]))
+
+    with caplog.at_level("WARNING", logger="airbyte"):
+        records = list(expander.expand_record(_event(embedded, has_more=True, total_count=None)))
+
+    assert len(records) == 10
+    assert not [r for r in caplog.records if r.levelname == "WARNING"]
+
+
+def test_warning_is_emitted_once_across_concurrent_expansions():
+    repository = InMemoryMessageRepository()
+    expander = RecordExpander(
+        expand_records_from_field=["data", "object", "lines", "data"],
+        config=config,
+        parameters=parameters,
+        truncation_indicator_path=["data", "object", "lines", "has_more"],
+        message_repository=repository,
+    )
+    embedded = [{"id": f"il_{i}"} for i in range(10)]
+    barrier = threading.Barrier(8)
+
+    def expand():
+        barrier.wait()
+        list(expander.expand_record(_event(embedded, has_more=True, total_count=15)))
+
+    threads = [threading.Thread(target=expand) for _ in range(8)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+    assert len(list(repository.consume_queue())) == 1
+
+
+def test_warnings_go_to_message_repository_instead_of_logger_when_configured(caplog):
+    repository = InMemoryMessageRepository()
+    expander = _retriever_expander(_make_retriever([]), message_repository=repository)
+    embedded = [{"id": f"il_{i}"} for i in range(10)]
+
+    with caplog.at_level("WARNING", logger="airbyte"):
+        list(expander.expand_record(_event(embedded, has_more=True, total_count=15)))
+
+    assert len(list(repository.consume_queue())) == 1
     assert not [r for r in caplog.records if r.levelname == "WARNING"]
 
 

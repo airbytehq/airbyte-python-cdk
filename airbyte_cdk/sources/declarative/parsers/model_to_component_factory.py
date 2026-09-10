@@ -2510,15 +2510,14 @@ class ModelToComponentFactory:
         if model.truncated_list_retriever:
             retriever_model = model.truncated_list_retriever
             name = "record_expander_truncated_list"
+            # `CustomRetriever` allows extra fields, so read from the dumped model to cover both types.
+            retriever_fields = retriever_model.dict()
+            for unsupported_option in ("partition_router", "pagination_reset"):
+                if retriever_fields.get(unsupported_option):
+                    raise ValueError(
+                        f"`{unsupported_option}` is not supported on `truncated_list_retriever`."
+                    )
             if isinstance(retriever_model, SimpleRetrieverModel):
-                if retriever_model.partition_router:
-                    raise ValueError(
-                        "`partition_router` is not supported on `truncated_list_retriever`."
-                    )
-                if retriever_model.pagination_reset:
-                    raise ValueError(
-                        "`pagination_reset` is not supported on `truncated_list_retriever`."
-                    )
                 truncated_list_retriever = self._create_component_from_model(
                     model=retriever_model,
                     config=config,

@@ -2121,10 +2121,20 @@ def test_create_record_expander_with_custom_truncated_list_retriever():
         ),
     ],
 )
-def test_create_record_expander_rejects_unsupported_retriever_options(unsupported_option):
+@pytest.mark.parametrize(
+    "retriever_type",
+    [
+        "type: SimpleRetriever",
+        "type: CustomRetriever\n            class_name: unit_tests.sources.declarative.parsers.testing_components.TestingCustomRetriever",
+    ],
+    ids=["simple_retriever", "custom_retriever"],
+)
+def test_create_record_expander_rejects_unsupported_retriever_options(
+    unsupported_option, retriever_type
+):
     content = _record_expander_selector(
-        """
-            type: SimpleRetriever
+        f"""
+            {retriever_type}
             requester:
               type: HttpRequester
               url_base: "https://api.test.com/"
