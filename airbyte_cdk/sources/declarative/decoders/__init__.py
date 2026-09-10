@@ -7,6 +7,7 @@ from airbyte_cdk.sources.declarative.decoders.composite_raw_decoder import (
     GzipParser,
     JsonParser,
     Parser,
+    XmlParser,
 )
 from airbyte_cdk.sources.declarative.decoders.decoder import Decoder
 from airbyte_cdk.sources.declarative.decoders.json_decoder import (
@@ -29,5 +30,6 @@ __all__ = [
     "NoopDecoder",
     "PaginationDecoderDecorator",
     "XmlDecoder",
+    "XmlParser",
     "ZipfileDecoder",
 ]

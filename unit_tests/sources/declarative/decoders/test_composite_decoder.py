@@ -22,6 +22,7 @@ from airbyte_cdk.sources.declarative.decoders.composite_raw_decoder import (
     JsonItemsParser,
     JsonLineParser,
     JsonParser,
+    XmlParser,
 )
 from airbyte_cdk.utils import AirbyteTracedException
 
@@ -565,3 +566,47 @@ def test_json_items_parser_is_lazy() -> None:
     first = next(iterator)
     assert first == {"id": 0, "name": "name-0"}
     assert stream.bytes_read < stream.total_size
+
+
+@pytest.mark.parametrize(
+    "xml_content, expected",
+    [
+        pytest.param(
+            "<root><item id='1'><name>Book</name></item></root>",
+            [{"root": {"item": {"@id": "1", "name": "Book"}}}],
+            id="single-element",
+        ),
+        pytest.param(
+            "<root><item>a</item><item>b</item></root>",
+            [{"root": {"item": ["a", "b"]}}],
+            id="repeated-elements",
+        ),
+        pytest.param("not xml at all", [{}], id="invalid-xml-yields-empty-record"),
+    ],
+)
+def test_xml_parser(xml_content: str, expected: List[dict]):
+    assert list(XmlParser().parse(BytesIO(xml_content.encode("utf-8")))) == expected
+
+
+def test_xml_parser_composes_with_gzip():
+    xml_content = "<root><item id='1'><name>Book</name></item></root>"
+    parser = GzipParser(inner_parser=XmlParser())
+
+    assert list(parser.parse(BytesIO(compress_with_gzip(xml_content)))) == [
+        {"root": {"item": {"@id": "1", "name": "Book"}}}
+    ]
+
+
+def test_composite_raw_decoder_gzip_xml_parser(requests_mock):
+    xml_content = "<root><item id='1'><name>Book</name></item></root>"
+    requests_mock.register_uri(
+        "GET",
+        "https://airbyte.io/",
+        content=compress_with_gzip(xml_content),
+        headers={"Content-Type": "application/gzip"},
+    )
+    response = requests.get("https://airbyte.io/", stream=True)
+
+    decoder = CompositeRawDecoder(parser=GzipParser(inner_parser=XmlParser()))
+
+    assert list(decoder.decode(response)) == [{"root": {"item": {"@id": "1", "name": "Book"}}}]

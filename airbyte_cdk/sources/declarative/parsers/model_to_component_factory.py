@@ -106,6 +106,7 @@ from airbyte_cdk.sources.declarative.decoders.composite_raw_decoder import (
     JsonLineParser,
     JsonParser,
     Parser,
+    XmlParser,
 )
 from airbyte_cdk.sources.declarative.expanders.record_expander import (
     OnNoRecords,
@@ -2832,13 +2833,13 @@ class ModelToComponentFactory:
                 delimiter=model.delimiter,
                 set_values_to_none=model.set_values_to_none,
             )
+        elif isinstance(model, XmlDecoderModel):
+            return XmlParser()
         elif isinstance(model, GzipDecoderModel):
             return GzipParser(
                 inner_parser=ModelToComponentFactory._get_parser(model.decoder, config)
             )
-        elif isinstance(
-            model, (CustomDecoderModel, IterableDecoderModel, XmlDecoderModel, ZipfileDecoderModel)
-        ):
+        elif isinstance(model, (CustomDecoderModel, IterableDecoderModel, ZipfileDecoderModel)):
             raise ValueError(f"Decoder type {model} does not have parser associated to it")
 
         raise ValueError(f"Unknown decoder type {model}")
