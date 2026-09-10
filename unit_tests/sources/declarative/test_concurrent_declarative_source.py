@@ -3474,7 +3474,7 @@ def _create_page(response_body):
             )
             * 10,
             [{"ABC": 0}, {"AED": 1}],
-            [call({}, None)],
+            [call({}, None, None)],
         ),
         (
             "test_read_manifest_with_added_fields",
@@ -3561,7 +3561,7 @@ def _create_page(response_body):
                 {"ABC": 0, "added_field_key": "added_field_value"},
                 {"AED": 1, "added_field_key": "added_field_value"},
             ],
-            [call({}, None)],
+            [call({}, None, None)],
         ),
         (
             "test_read_manifest_with_flatten_fields",
@@ -3645,7 +3645,7 @@ def _create_page(response_body):
                 {"ABC": 0, "id": 1},
                 {"AED": 1, "id": 2},
             ],
-            [call({}, None)],
+            [call({}, None, None)],
         ),
         (
             "test_read_with_pagination_no_partitions",
@@ -3732,8 +3732,8 @@ def _create_page(response_body):
             * 10,
             [{"ABC": 0}, {"AED": 1}, {"USD": 2}],
             [
-                call({}, None),
-                call({}, {"next_page_token": "next"}),
+                call({}, None, None),
+                call({}, {"next_page_token": "next"}, None),
             ],
         ),
         (
@@ -3819,8 +3819,8 @@ def _create_page(response_body):
             ),
             [{"ABC": 0, "partition": 0}, {"AED": 1, "partition": 0}, {"ABC": 2, "partition": 1}],
             [
-                call({"partition": "0"}, None),
-                call({"partition": "1"}, None),
+                call({"partition": "0"}, None, None),
+                call({"partition": "1"}, None, None),
             ],
         ),
         (
@@ -3923,9 +3923,9 @@ def _create_page(response_body):
                 {"ABC": 2, "partition": 1},
             ],
             [
-                call({"partition": "0"}, None),
-                call({"partition": "0"}, {"next_page_token": "next"}),
-                call({"partition": "1"}, None),
+                call({"partition": "0"}, None, None),
+                call({"partition": "0"}, {"next_page_token": "next"}, None),
+                call({"partition": "1"}, None, None),
             ],
         ),
     ],
@@ -4979,6 +4979,92 @@ def test_given_response_action_is_pagination_reset_when_read_then_reset_paginati
         )
 
     assert len(list(filter(lambda message: message.type == Type.RECORD, messages)))
+
+
+def test_given_reduce_page_size_action_when_read_then_retry_page_with_smaller_page_size():
+    input_config = {}
+    manifest = {
+        "version": "0.34.2",
+        "type": "DeclarativeSource",
+        "check": {"type": "CheckStream", "stream_names": ["Test"]},
+        "streams": [
+            {
+                "type": "DeclarativeStream",
+                "name": "Test",
+                "schema_loader": {
+                    "type": "InlineSchemaLoader",
+                    "schema": {"type": "object"},
+                },
+                "retriever": {
+                    "type": "SimpleRetriever",
+                    "page_size_reduction": {"type": "PageSizeReduction"},
+                    "requester": {
+                        "type": "HttpRequester",
+                        "url_base": "https://example.org",
+                        "path": "/test",
+                        "authenticator": {"type": "NoAuth"},
+                        "error_handler": {
+                            "type": "DefaultErrorHandler",
+                            "response_filters": [
+                                {
+                                    "type": "HttpResponseFilter",
+                                    "http_codes": [502],
+                                    "action": "REDUCE_PAGE_SIZE",
+                                    "failure_type": "transient_error",
+                                },
+                            ],
+                        },
+                    },
+                    "paginator": {
+                        "type": "DefaultPaginator",
+                        "pagination_strategy": {
+                            "type": "CursorPagination",
+                            "page_size": 100,
+                            "cursor_value": "{{ response.next }}",
+                            "stop_condition": "{{ not response.next }}",
+                        },
+                        "page_size_option": {
+                            "type": "RequestOption",
+                            "inject_into": "request_parameter",
+                            "field_name": "first",
+                        },
+                    },
+                    "record_selector": {
+                        "type": "RecordSelector",
+                        "extractor": {"type": "DpathExtractor", "field_path": ["items"]},
+                    },
+                },
+            }
+        ],
+        "spec": {
+            "type": "Spec",
+            "documentation_url": "https://example.org",
+            "connection_specification": {},
+        },
+    }
+
+    catalog = create_catalog("Test")
+    source = ConcurrentDeclarativeSource(
+        source_config=manifest,
+        config=input_config,
+        catalog=catalog,
+        state=None,
+    )
+
+    with HttpMocker() as http_mocker:
+        http_mocker.get(
+            HttpRequest("https://example.org/test", query_params={"first": "100"}),
+            HttpResponse("", 502),
+        )
+        http_mocker.get(
+            HttpRequest("https://example.org/test", query_params={"first": "50"}),
+            HttpResponse(json.dumps({"items": [{"id": 1}]}), 200),
+        )
+        messages = list(
+            source.read(logger=source.logger, config=input_config, catalog=catalog, state=[])
+        )
+
+    assert [message.record.data["id"] for message in messages if message.type == Type.RECORD] == [1]
 
 
 def test_given_pagination_limit_reached_when_read_then_reset_pagination():

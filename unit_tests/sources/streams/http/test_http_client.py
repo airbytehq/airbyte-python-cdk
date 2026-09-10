@@ -27,6 +27,9 @@ from airbyte_cdk.sources.streams.http.exceptions import (
     UserDefinedBackoffException,
 )
 from airbyte_cdk.sources.streams.http.http_client import MessageRepresentationAirbyteTracedErrors
+from airbyte_cdk.sources.streams.http.page_size_reduction_exception import (
+    PageSizeReductionRequiredException,
+)
 from airbyte_cdk.sources.streams.http.requests_native_auth import TokenAuthenticator
 from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 
@@ -1441,3 +1444,32 @@ def test_deprecated_alias_is_catchable_as_airbyte_traced_exception():
             internal_message="test",
             message="test user message",
         )
+
+
+def test_send_raises_page_size_reduction_required_exception_with_reduce_page_size_response_action():
+    mocked_session = MagicMock(spec=requests.Session)
+    http_client = HttpClient(
+        name="test",
+        logger=MagicMock(),
+        error_handler=HttpStatusErrorHandler(
+            logger=MagicMock(),
+            error_mapping={
+                502: ErrorResolution(
+                    ResponseAction.REDUCE_PAGE_SIZE,
+                    FailureType.transient_error,
+                    "test reduce page size message",
+                )
+            },
+        ),
+        session=mocked_session,
+    )
+    prepared_request = requests.PreparedRequest()
+    mocked_response = requests.Response()
+    mocked_response.status_code = 502
+    mocked_session.send.return_value = mocked_response
+
+    # the retriever is responsible for retrying with a smaller page, so the backoff handlers must not retry
+    with pytest.raises(PageSizeReductionRequiredException):
+        http_client.send_request(http_method="get", url="https://airbyte.io", request_kwargs={})
+
+    assert http_client._session.send.call_count == 1

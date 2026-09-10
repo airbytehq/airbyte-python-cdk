@@ -13,7 +13,10 @@ from airbyte_cdk.sources.declarative.decoders import (
     PaginationDecoderDecorator,
 )
 from airbyte_cdk.sources.declarative.interpolation.interpolated_string import InterpolatedString
-from airbyte_cdk.sources.declarative.requesters.paginators.paginator import Paginator
+from airbyte_cdk.sources.declarative.requesters.paginators.paginator import (
+    Paginator,
+    page_size_override_kwargs,
+)
 from airbyte_cdk.sources.declarative.requesters.paginators.strategies.pagination_strategy import (
     PaginationStrategy,
 )
@@ -133,18 +136,23 @@ class DefaultPaginator(Paginator):
         """
         return self.pagination_strategy.initial_token
 
+    def get_page_size(self) -> Optional[int]:
+        return self.pagination_strategy.get_page_size()
+
     def next_page_token(
         self,
         response: requests.Response,
         last_page_size: int,
         last_record: Optional[Record],
         last_page_token_value: Optional[Any] = None,
+        page_size_override: Optional[int] = None,
     ) -> Optional[Mapping[str, Any]]:
         next_page_token = self.pagination_strategy.next_page_token(
             response=response,
             last_page_size=last_page_size,
             last_record=last_record,
             last_page_token_value=last_page_token_value,
+            **page_size_override_kwargs(page_size_override),
         )
         if next_page_token:
             return {"next_page_token": next_page_token}
@@ -169,8 +177,11 @@ class DefaultPaginator(Paginator):
         stream_state: Optional[StreamState] = None,
         stream_slice: Optional[StreamSlice] = None,
         next_page_token: Optional[Mapping[str, Any]] = None,
+        page_size_override: Optional[int] = None,
     ) -> MutableMapping[str, Any]:
-        return self._get_request_options(RequestOptionType.request_parameter, next_page_token)
+        return self._get_request_options(
+            RequestOptionType.request_parameter, next_page_token, page_size_override
+        )
 
     def get_request_headers(
         self,
@@ -178,8 +189,11 @@ class DefaultPaginator(Paginator):
         stream_state: Optional[StreamState] = None,
         stream_slice: Optional[StreamSlice] = None,
         next_page_token: Optional[Mapping[str, Any]] = None,
+        page_size_override: Optional[int] = None,
     ) -> Mapping[str, str]:
-        return self._get_request_options(RequestOptionType.header, next_page_token)
+        return self._get_request_options(
+            RequestOptionType.header, next_page_token, page_size_override
+        )
 
     def get_request_body_data(
         self,
@@ -187,8 +201,11 @@ class DefaultPaginator(Paginator):
         stream_state: Optional[StreamState] = None,
         stream_slice: Optional[StreamSlice] = None,
         next_page_token: Optional[Mapping[str, Any]] = None,
+        page_size_override: Optional[int] = None,
     ) -> Mapping[str, Any]:
-        return self._get_request_options(RequestOptionType.body_data, next_page_token)
+        return self._get_request_options(
+            RequestOptionType.body_data, next_page_token, page_size_override
+        )
 
     def get_request_body_json(
         self,
@@ -196,11 +213,17 @@ class DefaultPaginator(Paginator):
         stream_state: Optional[StreamState] = None,
         stream_slice: Optional[StreamSlice] = None,
         next_page_token: Optional[Mapping[str, Any]] = None,
+        page_size_override: Optional[int] = None,
     ) -> Mapping[str, Any]:
-        return self._get_request_options(RequestOptionType.body_json, next_page_token)
+        return self._get_request_options(
+            RequestOptionType.body_json, next_page_token, page_size_override
+        )
 
     def _get_request_options(
-        self, option_type: RequestOptionType, next_page_token: Optional[Mapping[str, Any]]
+        self,
+        option_type: RequestOptionType,
+        next_page_token: Optional[Mapping[str, Any]],
+        page_size_override: Optional[int] = None,
     ) -> MutableMapping[str, Any]:
         options: MutableMapping[str, Any] = {}
 
@@ -213,13 +236,14 @@ class DefaultPaginator(Paginator):
         ):
             self.page_token_option.inject_into_request(options, token, self.config)
 
-        if (
-            self.page_size_option
-            and self.pagination_strategy.get_page_size()
-            and self.page_size_option.inject_into == option_type
-        ):
-            page_size = self.pagination_strategy.get_page_size()
-            self.page_size_option.inject_into_request(options, page_size, self.config)
+        if self.page_size_option and self.page_size_option.inject_into == option_type:
+            page_size = (
+                page_size_override
+                if page_size_override is not None
+                else self.pagination_strategy.get_page_size()
+            )
+            if page_size:
+                self.page_size_option.inject_into_request(options, page_size, self.config)
 
         return options
 
@@ -248,19 +272,23 @@ class PaginatorTestReadDecorator(Paginator):
         self._page_count = self._PAGE_COUNT_BEFORE_FIRST_NEXT_CALL
         return self._decorated.get_initial_token()
 
+    def get_page_size(self) -> Optional[int]:
+        return self._decorated.get_page_size()
+
     def next_page_token(
         self,
         response: requests.Response,
         last_page_size: int,
         last_record: Optional[Record],
         last_page_token_value: Optional[Any] = None,
+        page_size_override: Optional[int] = None,
     ) -> Optional[Mapping[str, Any]]:
         if self._page_count >= self._maximum_number_of_pages:
             return None
 
         self._page_count += 1
         return self._decorated.next_page_token(
-            response, last_page_size, last_record, last_page_token_value
+            response, last_page_size, last_record, last_page_token_value, page_size_override
         )
 
     def path(
@@ -281,9 +309,13 @@ class PaginatorTestReadDecorator(Paginator):
         stream_state: Optional[StreamState] = None,
         stream_slice: Optional[StreamSlice] = None,
         next_page_token: Optional[Mapping[str, Any]] = None,
+        page_size_override: Optional[int] = None,
     ) -> Mapping[str, Any]:
         return self._decorated.get_request_params(
-            stream_state=stream_state, stream_slice=stream_slice, next_page_token=next_page_token
+            stream_state=stream_state,
+            stream_slice=stream_slice,
+            next_page_token=next_page_token,
+            **page_size_override_kwargs(page_size_override),
         )
 
     def get_request_headers(
@@ -292,9 +324,13 @@ class PaginatorTestReadDecorator(Paginator):
         stream_state: Optional[StreamState] = None,
         stream_slice: Optional[StreamSlice] = None,
         next_page_token: Optional[Mapping[str, Any]] = None,
+        page_size_override: Optional[int] = None,
     ) -> Mapping[str, str]:
         return self._decorated.get_request_headers(
-            stream_state=stream_state, stream_slice=stream_slice, next_page_token=next_page_token
+            stream_state=stream_state,
+            stream_slice=stream_slice,
+            next_page_token=next_page_token,
+            **page_size_override_kwargs(page_size_override),
         )
 
     def get_request_body_data(
@@ -303,9 +339,13 @@ class PaginatorTestReadDecorator(Paginator):
         stream_state: Optional[StreamState] = None,
         stream_slice: Optional[StreamSlice] = None,
         next_page_token: Optional[Mapping[str, Any]] = None,
+        page_size_override: Optional[int] = None,
     ) -> Union[Mapping[str, Any], str]:
         return self._decorated.get_request_body_data(
-            stream_state=stream_state, stream_slice=stream_slice, next_page_token=next_page_token
+            stream_state=stream_state,
+            stream_slice=stream_slice,
+            next_page_token=next_page_token,
+            **page_size_override_kwargs(page_size_override),
         )
 
     def get_request_body_json(
@@ -314,7 +354,11 @@ class PaginatorTestReadDecorator(Paginator):
         stream_state: Optional[StreamState] = None,
         stream_slice: Optional[StreamSlice] = None,
         next_page_token: Optional[Mapping[str, Any]] = None,
+        page_size_override: Optional[int] = None,
     ) -> Mapping[str, Any]:
         return self._decorated.get_request_body_json(
-            stream_state=stream_state, stream_slice=stream_slice, next_page_token=next_page_token
+            stream_state=stream_state,
+            stream_slice=stream_slice,
+            next_page_token=next_page_token,
+            **page_size_override_kwargs(page_size_override),
         )

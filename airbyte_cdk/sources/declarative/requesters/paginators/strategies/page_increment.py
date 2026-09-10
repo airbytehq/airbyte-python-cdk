@@ -53,7 +53,15 @@ class PageIncrement(PaginationStrategy):
         last_page_size: int,
         last_record: Optional[Record],
         last_page_token_value: Optional[Any],
+        page_size_override: Optional[int] = None,
     ) -> Optional[Any]:
+        if page_size_override is not None:
+            raise ValueError(
+                "PageIncrement does not support reducing the page size while paginating: pages are addressed as "
+                "page number * page size, so a smaller page size shifts every following page boundary and would "
+                "skip records. Use OffsetIncrement or CursorPagination instead."
+            )
+
         if self.extractor:
             # The record count is dependent on the records returned from the response which may not always
             # align with the size of pages emitted. For example, a record filter can reduce the number of

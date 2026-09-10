@@ -163,6 +163,9 @@ from airbyte_cdk.sources.declarative.requesters.paginators.strategies import (
     PageIncrement,
     StopConditionPaginationStrategyDecorator,
 )
+from airbyte_cdk.sources.declarative.requesters.paginators.strategies.pagination_strategy import (
+    PaginationStrategy,
+)
 from airbyte_cdk.sources.declarative.requesters.query_properties import (
     PropertiesFromEndpoint,
     PropertyChunking,
@@ -190,6 +193,10 @@ from airbyte_cdk.sources.declarative.retrievers import (
     AsyncRetriever,
     LazySimpleRetriever,
     SimpleRetriever,
+)
+from airbyte_cdk.sources.declarative.retrievers.page_size_reducer import (
+    PageSizeReduction,
+    PageSizeResetPolicy,
 )
 from airbyte_cdk.sources.declarative.schema import InlineSchemaLoader, JsonFileSchemaLoader
 from airbyte_cdk.sources.declarative.schema.caching_schema_loader_decorator import (
@@ -6422,6 +6429,225 @@ def get_schema_loader(stream: DefaultStream):
         CachingSchemaLoaderDecorator,
     )
     return stream._stream_partition_generator._partition_factory._schema_loader._decorated
+
+
+_PAGE_SIZE_REDUCTION_STREAM = """
+type: DeclarativeStream
+name: Test
+primary_key: id
+schema_loader:
+  type: InlineSchemaLoader
+  schema:
+    type: object
+retriever:
+  type: SimpleRetriever
+  {page_size_reduction}
+  requester:
+    type: HttpRequester
+    url_base: "https://airbyte.io"
+    path: "/graphql"
+    http_method: POST
+    error_handler:
+      type: DefaultErrorHandler
+      response_filters:
+        - type: HttpResponseFilter
+          http_codes: [502, 504]
+          action: {action}
+  paginator:
+    type: DefaultPaginator
+    pagination_strategy:
+      {pagination_strategy}
+    {page_size_option}
+  record_selector:
+    type: RecordSelector
+    extractor:
+      type: DpathExtractor
+      field_path: ["items"]
+"""
+
+_CURSOR_PAGINATION_STRATEGY = (
+    'type: CursorPagination\n      page_size: 100\n      cursor_value: "{{ response.next }}"'
+)
+_PAGE_SIZE_OPTION = """page_size_option:
+      type: RequestOption
+      inject_into: request_parameter
+      field_name: first"""
+
+
+def _page_size_reduction_stream(
+    page_size_reduction="page_size_reduction:\n    type: PageSizeReduction",
+    action="REDUCE_PAGE_SIZE",
+    pagination_strategy=_CURSOR_PAGINATION_STRATEGY,
+    page_size_option=_PAGE_SIZE_OPTION,
+):
+    content = _PAGE_SIZE_REDUCTION_STREAM.format(
+        page_size_reduction=page_size_reduction,
+        action=action,
+        pagination_strategy=pagination_strategy,
+        page_size_option=page_size_option,
+    )
+    stream_manifest = transformer.propagate_types_and_parameters(
+        "", resolver.preprocess_manifest(YamlDeclarativeSource._parse(content)), {}
+    )
+    return factory.create_component(
+        model_type=DeclarativeStreamModel, component_definition=stream_manifest, config={}
+    )
+
+
+def test_given_page_size_reduction_then_create_retriever_with_defaults():
+    retriever = get_retriever(_page_size_reduction_stream())
+
+    assert retriever.page_size_reduction == PageSizeReduction(
+        reduction_factor=2,
+        minimum_page_size=1,
+        max_attempts=5,
+        reset_policy=PageSizeResetPolicy.NEVER,
+    )
+
+
+def test_given_page_size_reduction_values_then_create_retriever_with_those_values():
+    retriever = get_retriever(
+        _page_size_reduction_stream(
+            page_size_reduction=(
+                "page_size_reduction:\n"
+                "    type: PageSizeReduction\n"
+                "    reduction_factor: 4\n"
+                "    minimum_page_size: 10\n"
+                "    max_attempts: 2\n"
+                "    reset_policy: AFTER_SUCCESSFUL_PAGE"
+            )
+        )
+    )
+
+    assert retriever.page_size_reduction == PageSizeReduction(
+        reduction_factor=4,
+        minimum_page_size=10,
+        max_attempts=2,
+        reset_policy=PageSizeResetPolicy.AFTER_SUCCESSFUL_PAGE,
+    )
+
+
+def test_given_no_page_size_reduction_then_retriever_has_none():
+    retriever = get_retriever(_page_size_reduction_stream(page_size_reduction="", action="RETRY"))
+
+    assert retriever.page_size_reduction is None
+
+
+def test_given_reduce_page_size_action_without_page_size_reduction_then_raise():
+    with pytest.raises(ValueError) as exception:
+        _page_size_reduction_stream(page_size_reduction="")
+
+    assert "REDUCE_PAGE_SIZE" in str(exception.value)
+
+
+def test_given_page_increment_and_page_size_reduction_then_raise():
+    with pytest.raises(ValueError) as exception:
+        _page_size_reduction_stream(pagination_strategy="type: PageIncrement\n      page_size: 100")
+
+    assert "PageIncrement" in str(exception.value)
+
+
+def test_given_no_page_size_option_and_page_size_reduction_then_raise():
+    with pytest.raises(ValueError) as exception:
+        _page_size_reduction_stream(page_size_option="")
+
+    assert "page_size_option" in str(exception.value)
+
+
+class _StrategyHonoringOverride(PaginationStrategy):
+    """A custom strategy that can be told the reduced page size."""
+
+    @property
+    def initial_token(self):
+        return None
+
+    def next_page_token(
+        self,
+        response,
+        last_page_size,
+        last_record,
+        last_page_token_value=None,
+        page_size_override=None,
+    ):
+        return None
+
+    def get_page_size(self):
+        return 100
+
+
+class _StrategyIgnoringOverride(PaginationStrategy):
+    """A custom strategy predating the feature: it would raise TypeError on the first reduction."""
+
+    @property
+    def initial_token(self):
+        return None
+
+    def next_page_token(self, response, last_page_size, last_record, last_page_token_value=None):
+        return None
+
+    def get_page_size(self):
+        return 100
+
+
+def test_given_custom_pagination_strategy_accepting_the_override_and_page_size_reduction_then_create_retriever():
+    """A custom strategy is written by whoever enables the reduction, so it is allowed as long
+    as it can receive the reduced page size. Rejecting every custom strategy would exclude the
+    GraphQL streams this feature exists for."""
+    retriever = get_retriever(
+        _page_size_reduction_stream(
+            pagination_strategy=(
+                "type: CustomPaginationStrategy\n"
+                "      class_name: unit_tests.sources.declarative.parsers.test_model_to_component_factory._StrategyHonoringOverride"
+            )
+        )
+    )
+
+    assert retriever.page_size_reduction is not None
+
+
+def test_given_custom_pagination_strategy_ignoring_the_override_and_page_size_reduction_then_raise():
+    with pytest.raises(ValueError, match="page_size_override"):
+        _page_size_reduction_stream(
+            pagination_strategy=(
+                "type: CustomPaginationStrategy\n"
+                "      class_name: unit_tests.sources.declarative.parsers.test_model_to_component_factory._StrategyIgnoringOverride"
+            )
+        )
+
+
+def test_given_no_paginator_and_page_size_reduction_then_raise():
+    content = """
+type: DeclarativeStream
+name: Test
+primary_key: id
+schema_loader:
+  type: InlineSchemaLoader
+  schema:
+    type: object
+retriever:
+  type: SimpleRetriever
+  page_size_reduction:
+    type: PageSizeReduction
+  requester:
+    type: HttpRequester
+    url_base: "https://airbyte.io"
+    path: "/items"
+  record_selector:
+    type: RecordSelector
+    extractor:
+      type: DpathExtractor
+      field_path: ["items"]
+"""
+    stream_manifest = transformer.propagate_types_and_parameters(
+        "", resolver.preprocess_manifest(YamlDeclarativeSource._parse(content)), {}
+    )
+
+    with pytest.raises(ValueError) as exception:
+        factory.create_component(
+            model_type=DeclarativeStreamModel, component_definition=stream_manifest, config={}
+        )
+
+    assert "DefaultPaginator" in str(exception.value)
 
 
 def get_retriever(stream: Union[DeclarativeStream, DefaultStream]):

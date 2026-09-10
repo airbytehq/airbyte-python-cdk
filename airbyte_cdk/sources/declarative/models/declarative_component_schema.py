@@ -714,6 +714,7 @@ class Action(Enum):
     RESET_PAGINATION = "RESET_PAGINATION"
     RATE_LIMITED = "RATE_LIMITED"
     REFRESH_TOKEN_THEN_RETRY = "REFRESH_TOKEN_THEN_RETRY"
+    REDUCE_PAGE_SIZE = "REDUCE_PAGE_SIZE"
 
 
 class FailureType(Enum):
@@ -735,6 +736,7 @@ class HttpResponseFilter(BaseModel):
             "RESET_PAGINATION",
             "RATE_LIMITED",
             "REFRESH_TOKEN_THEN_RETRY",
+            "REDUCE_PAGE_SIZE",
         ],
         title="Action",
     )
@@ -1408,6 +1410,37 @@ class Action1(Enum):
 class PaginationResetLimits(BaseModel):
     type: Literal["PaginationResetLimits"]
     number_of_records: Optional[int] = None
+
+
+class ResetPolicy(Enum):
+    NEVER = "NEVER"
+    AFTER_SUCCESSFUL_PAGE = "AFTER_SUCCESSFUL_PAGE"
+
+
+class PageSizeReduction(BaseModel):
+    type: Literal["PageSizeReduction"]
+    reduction_factor: Optional[float] = Field(
+        2,
+        description="Divisor applied to the page size on each reduction. The new page size is floor(current page size / reduction factor).",
+        examples=[2, 4],
+        title="Reduction Factor",
+    )
+    minimum_page_size: Optional[int] = Field(
+        1,
+        description="Page size below which the connector stops reducing and fails the sync.",
+        examples=[1, 10],
+        title="Minimum Page Size",
+    )
+    max_attempts: Optional[int] = Field(
+        5,
+        description="Maximum number of page size reductions allowed while reading a single partition. Exceeding it fails the sync with a transient error.",
+        title="Maximum Reduction Attempts",
+    )
+    reset_policy: Optional[ResetPolicy] = Field(
+        "NEVER",
+        description="When to restore the page size configured on the pagination strategy. NEVER keeps the reduced page size for the rest of the partition. AFTER_SUCCESSFUL_PAGE restores it as soon as one page succeeds, which can mean hitting the same error again on every page.",
+        title="Reset Policy",
+    )
 
 
 class CsvDecoder(BaseModel):
@@ -3221,6 +3254,10 @@ class SimpleRetriever(BaseModel):
     pagination_reset: Optional[PaginationReset] = Field(
         None,
         description="Describes what triggers pagination reset and how to handle it.",
+    )
+    page_size_reduction: Optional[PageSizeReduction] = Field(
+        None,
+        description="Describes how the page size is reduced when an error handler resolves to the REDUCE_PAGE_SIZE action.",
     )
     ignore_stream_slicer_parameters_on_paginated_requests: Optional[bool] = Field(
         False,
