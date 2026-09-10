@@ -7,8 +7,6 @@ from copy import deepcopy
 from typing import Any, Dict, List
 from unittest.mock import MagicMock
 
-import pytest
-
 from airbyte_cdk.models import ConfiguredAirbyteCatalog, ConfiguredAirbyteStream, Type
 from airbyte_cdk.sources.declarative.concurrent_declarative_source import (
     ConcurrentDeclarativeSource,
