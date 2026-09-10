@@ -309,6 +309,28 @@ def test_warns_once_when_retriever_fetches_fewer_than_total_count(caplog):
     assert "il_" not in message
 
 
+def test_warnings_are_emitted_even_when_consumer_stops_after_first_child(caplog):
+    embedded = [{"id": f"il_{i}"} for i in range(10)]
+    no_retriever = RecordExpander(
+        expand_records_from_field=["data", "object", "lines", "data"],
+        config=config,
+        parameters=parameters,
+        truncation_indicator_path=["data", "object", "lines", "has_more"],
+    )
+    short_fetch = _retriever_expander(_make_retriever([{"id": f"il_{i}"} for i in range(12)]))
+
+    with caplog.at_level("WARNING", logger="airbyte"):
+        first_embedded = next(iter(no_retriever.expand_record(_event(embedded, True, 15))))
+        first_fetched = next(iter(short_fetch.expand_record(_event(embedded, True, 15))))
+
+    assert first_embedded == first_fetched == {"id": "il_0"}
+    messages = [r.getMessage() for r in caplog.records if r.levelname == "WARNING"]
+    assert len(messages) == 2
+    assert "no `truncated_list_retriever` is configured" in messages[0]
+    assert "10 embedded item(s) of 15 total" in messages[0]
+    assert "returned 12 record(s)" in messages[1]
+
+
 @pytest.mark.parametrize("total_count", [15, None, True, "15"])
 def test_no_incomplete_fetch_warning_when_count_matches_or_total_unknown(caplog, total_count):
     embedded = [{"id": f"il_{i}"} for i in range(10)]

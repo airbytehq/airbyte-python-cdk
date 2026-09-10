@@ -177,49 +177,43 @@ class RecordExpander:
         expand_path = self._evaluated_expand_path()
         truncated = bool(self._truncation_indicator_path) and self._is_truncated(parent_record)
 
+        # Warnings are emitted before any child is yielded: a consumer such as the Connector
+        # Builder record limit may stop iterating mid-list and never resume this generator.
         if truncated and self.truncated_list_retriever:
-            fetched_count = 0
-            for fetched in self._fetch_complete_list(parent_record):
-                fetched_count += 1
-                yield fetched
-            self._warn_if_fetch_incomplete(parent_record, expand_path, fetched_count)
-            if fetched_count > 0:
+            fetched = list(self._fetch_complete_list(parent_record))
+            self._warn_if_fetch_incomplete(parent_record, expand_path, len(fetched))
+            if fetched:
+                yield from fetched
                 return
-
-        expanded_any = False
-        embedded_count = 0
 
         try:
             extracted_values = dpath.values(parent_record, expand_path)
         except KeyError:
             extracted_values = []
 
-        for extracted in extracted_values:
-            if not isinstance(extracted, list):
-                continue
-            items = extracted
+        embedded_lists = [
+            extracted for extracted in extracted_values if isinstance(extracted, list)
+        ]
+        embedded_count = sum(len(items) for items in embedded_lists)
+
+        if truncated and not self.truncated_list_retriever:
+            self._warn_truncated_without_retriever(parent_record, expand_path, embedded_count)
+
+        for items in embedded_lists:
             for item in items:
                 if isinstance(item, dict):
                     expanded_record = dict(item)
                     self._apply_parent_context(parent_record, expanded_record)
                     yield expanded_record
-                    expanded_any = True
-                    embedded_count += 1
+                elif self.remain_original_record:
+                    yield {
+                        "value": item,
+                        "original_record": copy.deepcopy(parent_record),
+                    }
                 else:
-                    if self.remain_original_record:
-                        yield {
-                            "value": item,
-                            "original_record": copy.deepcopy(parent_record),
-                        }
-                    else:
-                        yield item
-                    expanded_any = True
-                    embedded_count += 1
+                    yield item
 
-        if truncated and not self.truncated_list_retriever:
-            self._warn_truncated_without_retriever(parent_record, expand_path, embedded_count)
-
-        if not expanded_any and self.on_no_records == OnNoRecords.emit_parent:
+        if embedded_count == 0 and self.on_no_records == OnNoRecords.emit_parent:
             yield parent_record
 
     def _warn_truncated_without_retriever(
