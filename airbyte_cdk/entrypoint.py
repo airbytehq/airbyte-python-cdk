@@ -430,10 +430,13 @@ def _init_internal_request_filter() -> None:
                     message="Invalid URL endpoint: The endpoint that data is being requested from belongs to a private network. Source connectors only support requesting data from public API endpoints.",
                 )
         except socket.gaierror as exception:
-            # This is a special case where the developer specifies an IP address string that is not formatted correctly like trailing
-            # whitespace which will fail the socket IP lookup. This only happens when using IP addresses and not text hostnames.
-            # Knowing that this is a request using the requests library, we will mock the exception without calling the lib
-            raise requests.exceptions.InvalidURL(f"Invalid URL {parsed_url}: {exception}")
+            # socket.gaierror fires on transient DNS failures (EAI_AGAIN / errno -3)
+            # for valid hostnames, not just malformed IPs.  Re-raise as ConnectionError
+            # so every caller (CDK streams *and* external SDKs) treats it as retryable.
+            hostname = parsed_url.hostname or ""
+            raise requests.ConnectionError(
+                f"DNS resolution failed for {str(hostname)}: {str(exception)}"
+            )
 
         return wrapped_fn(self, request, **kwargs)
 
