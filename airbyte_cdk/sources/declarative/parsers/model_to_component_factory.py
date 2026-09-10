@@ -2506,6 +2506,37 @@ class ModelToComponentFactory:
         config: Config,
         **kwargs: Any,
     ) -> RecordExpander:
+        truncated_list_retriever = None
+        if model.truncated_list_retriever:
+            retriever_model = model.truncated_list_retriever
+            name = "record_expander_truncated_list"
+            # `CustomRetriever` allows extra fields, so read from the dumped model to cover both types.
+            retriever_fields = retriever_model.dict()
+            for unsupported_option in ("partition_router", "pagination_reset"):
+                if retriever_fields.get(unsupported_option):
+                    raise ValueError(
+                        f"`{unsupported_option}` is not supported on `truncated_list_retriever`."
+                    )
+            log_formatter = lambda response: format_http_message(
+                response,
+                f"Record expander '{name}' request",
+                "Request performed in order to fetch the complete nested list of a truncated record.",
+                name,
+                is_auxiliary=True,
+            )
+            if isinstance(retriever_model, SimpleRetrieverModel):
+                truncated_list_retriever = self._create_component_from_model(
+                    model=retriever_model,
+                    config=config,
+                    name=name,
+                    primary_key=None,
+                    transformations=[],
+                    log_formatter=log_formatter,
+                )
+            else:
+                truncated_list_retriever = self._create_component_from_model(
+                    model=retriever_model, config=config, log_formatter=log_formatter
+                )
         return RecordExpander(
             expand_records_from_field=model.expand_records_from_field,
             config=config,
@@ -2514,6 +2545,9 @@ class ModelToComponentFactory:
             on_no_records=OnNoRecords(model.on_no_records.value)
             if model.on_no_records
             else OnNoRecords.skip,
+            truncation_indicator_path=model.truncation_indicator_path,
+            truncated_list_retriever=truncated_list_retriever,
+            message_repository=self._message_repository,
         )
 
     @staticmethod
