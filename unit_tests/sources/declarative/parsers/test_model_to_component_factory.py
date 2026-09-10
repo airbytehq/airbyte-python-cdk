@@ -163,6 +163,9 @@ from airbyte_cdk.sources.declarative.requesters.paginators.strategies import (
     PageIncrement,
     StopConditionPaginationStrategyDecorator,
 )
+from airbyte_cdk.sources.declarative.requesters.paginators.strategies.pagination_strategy import (
+    PaginationStrategy,
+)
 from airbyte_cdk.sources.declarative.requesters.query_properties import (
     PropertiesFromEndpoint,
     PropertyChunking,
@@ -6549,6 +6552,67 @@ def test_given_no_page_size_option_and_page_size_reduction_then_raise():
         _page_size_reduction_stream(page_size_option="")
 
     assert "page_size_option" in str(exception.value)
+
+
+class _StrategyHonoringOverride(PaginationStrategy):
+    """A custom strategy that can be told the reduced page size."""
+
+    @property
+    def initial_token(self):
+        return None
+
+    def next_page_token(
+        self,
+        response,
+        last_page_size,
+        last_record,
+        last_page_token_value=None,
+        page_size_override=None,
+    ):
+        return None
+
+    def get_page_size(self):
+        return 100
+
+
+class _StrategyIgnoringOverride(PaginationStrategy):
+    """A custom strategy predating the feature: it would raise TypeError on the first reduction."""
+
+    @property
+    def initial_token(self):
+        return None
+
+    def next_page_token(self, response, last_page_size, last_record, last_page_token_value=None):
+        return None
+
+    def get_page_size(self):
+        return 100
+
+
+def test_given_custom_pagination_strategy_accepting_the_override_and_page_size_reduction_then_create_retriever():
+    """A custom strategy is written by whoever enables the reduction, so it is allowed as long
+    as it can receive the reduced page size. Rejecting every custom strategy would exclude the
+    GraphQL streams this feature exists for."""
+    retriever = get_retriever(
+        _page_size_reduction_stream(
+            pagination_strategy=(
+                "type: CustomPaginationStrategy\n"
+                "      class_name: unit_tests.sources.declarative.parsers.test_model_to_component_factory._StrategyHonoringOverride"
+            )
+        )
+    )
+
+    assert retriever.page_size_reduction is not None
+
+
+def test_given_custom_pagination_strategy_ignoring_the_override_and_page_size_reduction_then_raise():
+    with pytest.raises(ValueError, match="page_size_override"):
+        _page_size_reduction_stream(
+            pagination_strategy=(
+                "type: CustomPaginationStrategy\n"
+                "      class_name: unit_tests.sources.declarative.parsers.test_model_to_component_factory._StrategyIgnoringOverride"
+            )
+        )
 
 
 def test_given_no_paginator_and_page_size_reduction_then_raise():

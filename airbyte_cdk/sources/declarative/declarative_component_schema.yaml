@@ -4289,7 +4289,8 @@ definitions:
       Describes how the page size is reduced when an error handler resolves to the REDUCE_PAGE_SIZE action. On such
       a response, the connector re-issues the same page with a smaller page size instead of retrying the identical
       request. Only supported on a DefaultPaginator that has a page_size_option and whose pagination_strategy is
-      CursorPagination or OffsetIncrement. PageIncrement is not supported because a smaller page size moves every
+      CursorPagination, OffsetIncrement, or a CustomPaginationStrategy whose next_page_token accepts a
+      page_size_override keyword argument. PageIncrement is not supported because a smaller page size moves every
       following page boundary and would skip records.
     type: object
     required:

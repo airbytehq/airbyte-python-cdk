@@ -3732,7 +3732,8 @@ class ModelToComponentFactory:
         """
         Page size reduction re-issues the same page with a smaller page size. That is only correct when the next
         page does not depend on the page size, and it only has an effect when the paginator injects the page size
-        in the request.
+        in the request. A custom pagination strategy is accepted when it can receive the reduced page size, which
+        is checked by inspecting its signature rather than by recognizing its type.
         """
         if query_properties:
             raise ValueError(
@@ -3760,10 +3761,29 @@ class ModelToComponentFactory:
                 f"{name}. Pages are addressed as page number * page size, so a smaller page size shifts every "
                 f"following page boundary and would skip records. Use OffsetIncrement or CursorPagination."
             )
-        if not isinstance(strategy, (CursorPaginationModel, OffsetIncrementModel)):
+        if isinstance(strategy, CustomPaginationStrategyModel):
+            # A custom strategy is written by the same person enabling the reduction, so the
+            # question is not whether we recognize it but whether it can be told the reduced
+            # page size. Checking the signature keeps a strategy that would raise TypeError
+            # mid-sync from being accepted at config time.
+            custom_class = self._get_class_from_fully_qualified_class_name(strategy.class_name)
+            parameters = inspect.signature(custom_class.next_page_token).parameters
+            accepts_override = "page_size_override" in parameters or any(
+                parameter.kind == inspect.Parameter.VAR_KEYWORD for parameter in parameters.values()
+            )
+            if not accepts_override:
+                raise ValueError(
+                    f"`page_size_reduction` requires the custom pagination strategy "
+                    f"{strategy.class_name} used by stream {name} to accept a `page_size_override` keyword "
+                    f"argument in `next_page_token`, so that it can honor the reduced page size. Add "
+                    f"`page_size_override: Optional[int] = None` to its signature; a strategy that does not "
+                    f"use its page size as a stop condition can ignore the value."
+                )
+        elif not isinstance(strategy, (CursorPaginationModel, OffsetIncrementModel)):
             raise ValueError(
-                f"`page_size_reduction` only supports the CursorPagination and OffsetIncrement pagination "
-                f"strategies. Stream {name} uses {type(strategy).__name__}."
+                f"`page_size_reduction` only supports the CursorPagination, OffsetIncrement and "
+                f"CustomPaginationStrategy pagination strategies. Stream {name} uses "
+                f"{type(strategy).__name__}."
             )
 
     def _uses_reduce_page_size_action(self, error_handler: Any) -> bool:
