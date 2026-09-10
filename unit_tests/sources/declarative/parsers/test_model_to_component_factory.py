@@ -4879,6 +4879,7 @@ def test_api_budget():
                             "interval": "PT0.1S",  # 0.1 seconds
                         }
                     ],
+                    "max_header_driven_wait": "PT2M",
                     "matchers": [
                         {
                             "type": "HttpRequestRegexMatcher",
@@ -4938,6 +4939,7 @@ def test_api_budget():
     # The 0.1s from 'PT0.1S' is stored in ms by PyRateLimiter internally
     # but here just check that the limit and interval exist
     assert policy._bucket.rates[0].interval == 100  # 100 ms
+    assert policy._max_header_driven_wait_ms == 120_000
 
 
 def test_api_budget_passed_to_custom_requester():
@@ -4981,6 +4983,9 @@ def test_api_budget_passed_to_custom_requester():
     assert isinstance(custom_requester.api_budget, HttpAPIBudget)
     assert custom_requester._http_client._api_budget is custom_requester.api_budget
     assert len(custom_requester._http_client._api_budget._policies) == 1
+    policy = custom_requester.api_budget._policies[0]
+    assert isinstance(policy, MovingWindowCallRatePolicy)
+    assert policy._max_header_driven_wait_ms == 600_000
 
 
 def test_api_budget_does_not_override_custom_requester_default_value():

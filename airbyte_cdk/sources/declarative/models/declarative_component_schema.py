@@ -2217,6 +2217,12 @@ class MovingWindowCallRatePolicy(BaseModel):
         description="List of matchers that define which requests this policy applies to.",
         title="Matchers",
     )
+    max_header_driven_wait: Optional[str] = Field(
+        None,
+        description="Maximum wait a rate-limit-header-driven update may induce. Rates with longer windows are not adjusted from headers. Defaults to PT10M.",
+        examples=["PT10M", "PT1M"],
+        title="Maximum Header-Driven Wait",
+    )
 
 
 class UnlimitedCallRatePolicy(BaseModel):
