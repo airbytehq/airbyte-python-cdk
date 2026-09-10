@@ -4,6 +4,10 @@ Newer updates can be found here: [GitHub Release Notes](https://github.com/airby
 
 # Changelog
 
+## 6.5.3
+
+bugfix: Improve low-code async job retry exhaustion error messages and classification.
+
 ## 6.5.2
 
 bugfix: Ensure that streams with partition router are not executed concurrently
