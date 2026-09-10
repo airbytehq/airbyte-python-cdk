@@ -287,7 +287,14 @@ class RecordExpander:
         for item in self.truncated_list_retriever.read_records(
             records_schema={}, stream_slice=stream_slice
         ):
-            data = item.data if isinstance(item, Record) else item
+            if isinstance(item, AirbyteMessage):
+                if item.type != MessageType.RECORD or item.record is None:
+                    continue
+                data: Any = item.record.data
+            elif isinstance(item, Record):
+                data = item.data
+            else:
+                data = item
             if isinstance(data, Mapping):
                 expanded_record = dict(data)
                 self._apply_parent_context(parent_record, expanded_record)

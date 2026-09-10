@@ -7,7 +7,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from airbyte_cdk.models import Level, Type
+from airbyte_cdk.models import AirbyteLogMessage, AirbyteMessage, AirbyteRecordMessage, Level, Type
 from airbyte_cdk.sources.declarative.expanders.record_expander import RecordExpander
 from airbyte_cdk.sources.message import InMemoryMessageRepository
 from airbyte_cdk.sources.types import Record, StreamSlice
@@ -259,6 +259,25 @@ def _retriever_expander(retriever, message_repository=None):
         truncated_list_retriever=retriever,
         message_repository=message_repository,
     )
+
+
+def test_protocol_messages_from_retriever_are_not_treated_as_child_records():
+    embedded = [{"id": f"il_{i}"} for i in range(10)]
+    log_message = AirbyteMessage(
+        type=Type.LOG, log=AirbyteLogMessage(level=Level.INFO, message="custom retriever log")
+    )
+    record_message = AirbyteMessage(
+        type=Type.RECORD,
+        record=AirbyteRecordMessage(stream="lines", data={"id": "il_1"}, emitted_at=0),
+    )
+    retriever = _make_retriever(
+        [{"id": "il_0"}, log_message, record_message, Record(data={"id": "il_2"}, stream_name="t")]
+    )
+    expander = _retriever_expander(retriever)
+
+    records = list(expander.expand_record(_event(embedded, has_more=True, total_count=3)))
+
+    assert records == [{"id": "il_0"}, {"id": "il_1"}, {"id": "il_2"}]
 
 
 def test_warns_once_when_retriever_fetches_fewer_than_total_count(caplog):
