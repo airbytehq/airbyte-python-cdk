@@ -8,6 +8,7 @@ from unittest.mock import Mock
 
 import pytest
 
+from airbyte_cdk.models import FailureType
 from airbyte_cdk.sources.declarative.async_job.status import AsyncJobStatus
 from airbyte_cdk.sources.declarative.decoders import NoopDecoder
 from airbyte_cdk.sources.declarative.decoders.json_decoder import JsonDecoder
@@ -34,6 +35,7 @@ from airbyte_cdk.sources.streams.http.error_handlers import ErrorHandler
 from airbyte_cdk.sources.types import StreamSlice
 from airbyte_cdk.sources.utils.transform import TransformConfig, TypeTransformer
 from airbyte_cdk.test.mock_http import HttpMocker, HttpRequest, HttpResponse
+from airbyte_cdk.utils import AirbyteTracedException
 
 _ANY_CONFIG = {}
 _ANY_SLICE = StreamSlice(partition={}, cursor_slice={})
@@ -119,8 +121,22 @@ class HttpJobRepositoryTest(TestCase):
         )
         job = self._repository.start(_ANY_SLICE)
 
-        with pytest.raises(ValueError):
+        with pytest.raises(AirbyteTracedException) as exception_info:
             self._repository.update_jobs_status([job])
+        assert exception_info.value.failure_type == FailureType.config_error
+        assert "invalid_status" in str(exception_info.value)
+
+    def test_given_missing_status_when_update_jobs_status_then_raise_error(self) -> None:
+        self._mock_create_response(_A_JOB_ID)
+        self._http_mocker.get(
+            HttpRequest(url=f"{_EXPORT_URL}/{_A_JOB_ID}"),
+            HttpResponse(body=json.dumps({"id": _A_JOB_ID})),
+        )
+        job = self._repository.start(_ANY_SLICE)
+
+        with pytest.raises(AirbyteTracedException) as exception_info:
+            self._repository.update_jobs_status([job])
+        assert exception_info.value.failure_type == FailureType.config_error
 
     def test_given_multiple_jobs_when_update_jobs_status_then_all_the_jobs_are_updated(
         self,

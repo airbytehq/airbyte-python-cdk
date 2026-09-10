@@ -3910,6 +3910,15 @@ class ModelToComponentFactory:
                         f"API status {status} is already set for CDK status {cdk_status}. Please ensure API statuses are only provided once"
                     )
                 api_status_to_cdk_status[status] = self._get_async_job_status(cdk_status)
+
+        if not any(
+            cdk_status in (AsyncJobStatus.COMPLETED, AsyncJobStatus.SKIPPED)
+            for cdk_status in api_status_to_cdk_status.values()
+        ):
+            raise ValueError(
+                "AsyncJobStatusMap must map at least one API status to `completed` or `skipped`. "
+                "Without a terminal success status, async jobs can never finish and the stream polls until `polling_job_timeout` expires."
+            )
         return api_status_to_cdk_status
 
     def _get_async_job_status(self, status: str) -> AsyncJobStatus:

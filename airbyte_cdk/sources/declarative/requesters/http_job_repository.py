@@ -102,14 +102,18 @@ class AsyncHttpJobRepository(AsyncJobRepository):
             AsyncJobStatus: The validated job status.
 
         Raises:
-            ValueError: If the API status is unknown.
+            AirbyteTracedException: If the API status is not mapped to a CDK status. The failure type is
+                `config_error` so that the orchestrator stops the sync immediately instead of polling the
+                job until `polling_job_timeout` expires.
         """
 
         api_status = next(iter(self.status_extractor.extract_records(response)), None)
         job_status = self.status_mapping.get(str(api_status), None)
         if job_status is None:
-            raise ValueError(
-                f"API status `{api_status}` is unknown. Contact the connector developer to make sure this status is supported."
+            raise AirbyteTracedException(
+                message=f'Async job status "{api_status}" is not supported by the connector.',
+                internal_message=f"Async job status `{api_status}` is missing from the connector's `status_mapping`, which declares: {sorted(self.status_mapping.keys())}. Contact the connector developer to add support for this status.",
+                failure_type=FailureType.config_error,
             )
 
         return job_status
