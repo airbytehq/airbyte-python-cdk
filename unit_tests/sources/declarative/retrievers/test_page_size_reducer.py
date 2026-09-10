@@ -135,3 +135,19 @@ def test_given_reset_policy_after_successful_page_when_on_successful_page_then_a
 def test_given_invalid_configuration_then_raise_value_error(kwargs):
     with pytest.raises(ValueError):
         PageSizeReduction(**kwargs)
+
+
+def test_given_non_integer_page_size_when_reduce_then_raise_config_error():
+    """A custom pagination strategy can return anything from `get_page_size`; reducing is
+    arithmetic, so a non-integer has to be reported rather than raising a bare TypeError."""
+    reducer = PageSizeReducer(
+        PageSizeReduction(),
+        "{{ config['page_size'] }}",  # type: ignore[arg-type]
+        stream_name="a_stream",
+    )
+
+    with pytest.raises(AirbyteTracedException) as exception:
+        reducer.reduce()
+
+    assert exception.value.failure_type == FailureType.config_error
+    assert "not a whole number" in exception.value.message

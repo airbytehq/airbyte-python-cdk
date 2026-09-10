@@ -90,6 +90,16 @@ class PageSizeReducer:
             if self._current_page_size is not None
             else self._configured_page_size
         )
+        if not isinstance(current_page_size, int) or isinstance(current_page_size, bool):
+            # A custom pagination strategy can return anything from `get_page_size`. Reducing
+            # is arithmetic, so a non-integer would otherwise fail with a bare TypeError in
+            # the middle of a sync.
+            raise AirbyteTracedException(
+                internal_message=f"Stream {self._stream_name} has a page size of type {type(current_page_size).__name__}: {current_page_size!r}",
+                message="The connector is set up to reduce its page size on error but its page size is not a whole number. "
+                "Make sure the pagination strategy's `get_page_size` returns an integer.",
+                failure_type=FailureType.config_error,
+            )
 
         self._attempts += 1
         if self._attempts > self._config.max_attempts:
