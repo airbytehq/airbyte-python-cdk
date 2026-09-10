@@ -73,9 +73,12 @@ class _CsvReader:
                     headers, raw_headers = self._read_and_validate_headers(
                         fp, config_format, dialect_name
                     )
-                except UnicodeError:
+                except UnicodeError as e:
                     raise AirbyteTracedException(
-                        message=f"{FileBasedSourceError.ENCODING_ERROR.value} Expected encoding: {config_format.encoding}",
+                        message=f"File contains bytes that cannot be decoded with the configured {config_format.encoding} encoding.",
+                        internal_message=str(e),
+                        failure_type=FailureType.config_error,
+                        exception=e,
                     )
 
                 rows_to_skip = (
