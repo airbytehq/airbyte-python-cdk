@@ -12,6 +12,12 @@ from pympler import asizeof
 from requests_cache import CachedRequest
 
 from airbyte_cdk.models import FailureType
+from airbyte_cdk.sources.declarative.requesters.error_handlers import (
+    DefaultErrorHandler as DeclarativeDefaultErrorHandler,
+)
+from airbyte_cdk.sources.declarative.requesters.error_handlers import (
+    HttpResponseFilter,
+)
 from airbyte_cdk.sources.streams.call_rate import CachedLimiterSession, LimiterSession
 from airbyte_cdk.sources.streams.http import HttpClient
 from airbyte_cdk.sources.streams.http.error_handlers import (
@@ -839,6 +845,46 @@ def test_send_with_retry_raises_airbyte_traced_exception_with_failure_type(
     with pytest.raises(AirbyteTracedException) as e:
         http_client.send_request(http_method="get", url="https://airbyte.io/", request_kwargs={})
     assert e.value.failure_type == expected_failure_type
+
+
+@pytest.mark.usefixtures("mock_sleep")
+def test_send_request_exhaustion_preserves_declared_failure_type_and_hides_retry_details(
+    requests_mock,
+):
+    error_message = "The connector will retry automatically. Please see logs for more details."
+    error_handler = DeclarativeDefaultErrorHandler(
+        config={},
+        parameters={},
+        max_retries=1,
+        response_filters=[
+            HttpResponseFilter(
+                action=ResponseAction.RETRY,
+                failure_type=FailureType.transient_error,
+                http_codes={200},
+                error_message=error_message,
+                config={},
+                parameters={},
+            )
+        ],
+    )
+    http_client = HttpClient(name="test", logger=MagicMock(), error_handler=error_handler)
+    requests_mock.register_uri(
+        "GET",
+        "https://airbyte.io/",
+        status_code=200,
+        json={"code": 50000},
+        headers={},
+    )
+
+    with pytest.raises(AirbyteTracedException) as exception:
+        http_client.send_request(http_method="get", url="https://airbyte.io/", request_kwargs={})
+
+    assert exception.value.failure_type == FailureType.transient_error
+    assert exception.value.message == "Available request retry attempts are exhausted."
+    assert (
+        exception.value.internal_message == "Exhausted available request attempts. Exception: "
+        f"{error_message}"
+    )
 
 
 class MockOAuthAuthenticator:
