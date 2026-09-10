@@ -82,25 +82,35 @@ def get_ref_resolver_registry(schema: dict[str, Any]) -> Registry:
     )
 
 
-def _expand_refs(schema: Any, ref_resolver: Resolver) -> None:
+def _expand_refs(schema: Any, ref_resolver: Resolver, visited_refs: set[str] | None = None) -> None:
     """Internal function to iterate over schema and replace all occurrences of $ref with their definitions. Recursive.
 
     :param schema: schema that will be patched
+    :param ref_resolver: resolver to look up references
+    :param visited_refs: set of already visited reference URLs to detect circular references
     """
+    if visited_refs is None:
+        visited_refs = set()
+
     if isinstance(schema, MutableMapping):
         if "$ref" in schema:
             ref_url = schema.pop("$ref")
+
+            if ref_url in visited_refs:
+                return
+
+            visited_refs.add(ref_url)
             definition = ref_resolver.lookup(ref_url).contents
-            _expand_refs(
-                definition, ref_resolver=ref_resolver
-            )  # expand refs in definitions as well
+            _expand_refs(definition, ref_resolver=ref_resolver, visited_refs=visited_refs)
             schema.update(definition)
+            visited_refs.remove(ref_url)
         else:
             for key, value in schema.items():
-                _expand_refs(value, ref_resolver=ref_resolver)
+                if key != "definitions":
+                    _expand_refs(value, ref_resolver=ref_resolver, visited_refs=visited_refs)
     elif isinstance(schema, List):
         for value in schema:
-            _expand_refs(value, ref_resolver=ref_resolver)
+            _expand_refs(value, ref_resolver=ref_resolver, visited_refs=visited_refs)
 
 
 def expand_refs(schema: Any) -> None:
