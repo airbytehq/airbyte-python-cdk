@@ -177,13 +177,16 @@ class RecordExpander:
         expand_path = self._evaluated_expand_path()
         truncated = bool(self._truncation_indicator_path) and self._is_truncated(parent_record)
 
-        # Warnings are emitted before any child is yielded: a consumer such as the Connector
-        # Builder record limit may stop iterating mid-list and never resume this generator.
         if truncated and self.truncated_list_retriever:
-            fetched = list(self._fetch_complete_list(parent_record))
-            self._warn_if_fetch_incomplete(parent_record, expand_path, len(fetched))
-            if fetched:
-                yield from fetched
+            # Streamed, so the shortfall is only known once the retriever is exhausted. If the
+            # consumer stops early the fetch was cut short by it, not by the API, and no warning
+            # would be accurate anyway.
+            fetched_count = 0
+            for fetched in self._fetch_complete_list(parent_record):
+                fetched_count += 1
+                yield fetched
+            self._warn_if_fetch_incomplete(parent_record, expand_path, fetched_count)
+            if fetched_count > 0:
                 return
 
         try:
