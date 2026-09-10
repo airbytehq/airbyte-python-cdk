@@ -20,3 +20,10 @@ manifest_migrations:
         description: |
           This migration updates the `request_body_json_data` field in the `http_requester` spec to `request_body`.
           The `request_body_json_data` field is deprecated and will be removed in a future version.
+      - name: http_requester_request_body_plain_text_json_to_request_body_json
+        order: 4
+        description: |
+          This migration converts `RequestBodyPlainText` with JSON-like string content to
+          `RequestBodyJsonObject` with a string value. The Connector Builder UI sometimes
+          misclassifies JSON string bodies as plain text, which after CDK v7.17.1 routes them
+          to form-encoded `request_body_data` instead of JSON.
