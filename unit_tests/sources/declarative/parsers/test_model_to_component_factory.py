@@ -2098,6 +2098,15 @@ def test_create_record_expander_with_custom_truncated_list_retriever():
     assert retriever.name == "custom_lines"
     assert retriever.primary_key == "id"
 
+    request = requests.PreparedRequest()
+    request.headers = {}
+    request.url = "https://api.test.com/invoices/in_1/lines"
+    response = requests.Response()
+    response.request = request
+    response.status_code = 200
+    assert retriever.log_formatter is not None
+    assert retriever.log_formatter(response)["http"]["is_auxiliary"] is True
+
 
 @pytest.mark.parametrize(
     "unsupported_option",

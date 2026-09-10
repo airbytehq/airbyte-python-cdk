@@ -2517,6 +2517,13 @@ class ModelToComponentFactory:
                     raise ValueError(
                         f"`{unsupported_option}` is not supported on `truncated_list_retriever`."
                     )
+            log_formatter = lambda response: format_http_message(
+                response,
+                f"Record expander '{name}' request",
+                "Request performed in order to fetch the complete nested list of a truncated record.",
+                name,
+                is_auxiliary=True,
+            )
             if isinstance(retriever_model, SimpleRetrieverModel):
                 truncated_list_retriever = self._create_component_from_model(
                     model=retriever_model,
@@ -2524,19 +2531,11 @@ class ModelToComponentFactory:
                     name=name,
                     primary_key=None,
                     transformations=[],
-                    log_formatter=(
-                        lambda response: format_http_message(
-                            response,
-                            f"Record expander '{name}' request",
-                            "Request performed in order to fetch the complete nested list of a truncated record.",
-                            name,
-                            is_auxiliary=True,
-                        )
-                    ),
+                    log_formatter=log_formatter,
                 )
             else:
                 truncated_list_retriever = self._create_component_from_model(
-                    model=retriever_model, config=config
+                    model=retriever_model, config=config, log_formatter=log_formatter
                 )
         return RecordExpander(
             expand_records_from_field=model.expand_records_from_field,
