@@ -1,6 +1,7 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
+import json
 import logging
 import os
 import traceback
@@ -147,10 +148,17 @@ class UnstructuredParser(FileTypeParser):
                     self._get_file_type_error_message(filetype),
                 )
 
+            if format.output_format == "markdown_json":
+                content_description = "Content of the file as a JSON array of structured elements with type, text, and metadata fields. Might be null if the file could not be parsed"
+            else:
+                content_description = (
+                    "Content of the file as markdown. Might be null if the file could not be parsed"
+                )
+
             return {
                 "content": {
                     "type": "string",
-                    "description": "Content of the file as markdown. Might be null if the file could not be parsed",
+                    "description": content_description,
                 },
                 "document_key": {
                     "type": "string",
@@ -225,23 +233,33 @@ class UnstructuredParser(FileTypeParser):
         if filetype in {FileType.MD, FileType.TXT}:
             file_content: bytes = file_handle.read()
             decoded_content: str = optional_decode(file_content)
+            if format.output_format == "markdown_json":
+                return json.dumps(
+                    [{"type": "NarrativeText", "text": decoded_content, "metadata": {}}]
+                )
             return decoded_content
         if format.processing.mode == "local":
-            return self._read_file_locally(
+            elements = self._read_file_locally_elements(
                 file_handle,
                 filetype,
                 format.strategy,
                 remote_file,
             )
+            if format.output_format == "markdown_json":
+                return json.dumps(elements)
+            return self._render_markdown(elements)
         elif format.processing.mode == "api":
             try:
-                result: str = self._read_file_remotely_with_retries(
+                elements = self._read_file_remotely_elements_with_retries(
                     file_handle,
                     format.processing,
                     filetype,
                     format.strategy,
                     remote_file,
                 )
+                if format.output_format == "markdown_json":
+                    return json.dumps(elements)
+                return self._render_markdown(elements)
             except Exception as e:
                 # If a parser error happens during remotely processing the file, this means the file is corrupted. This case is handled by the parse_records method, so just rethrow.
                 #
@@ -252,8 +270,6 @@ class UnstructuredParser(FileTypeParser):
                 raise AirbyteTracedException.from_exception(
                     e, failure_type=FailureType.config_error
                 )
-
-            return result
 
     def _params_to_dict(
         self, params: Optional[List[APIParameterConfigModel]], strategy: str
@@ -323,6 +339,24 @@ class UnstructuredParser(FileTypeParser):
         """
         return self._read_file_remotely(file_handle, format, filetype, strategy, remote_file)
 
+    @backoff.on_exception(
+        backoff.expo, requests.exceptions.RequestException, max_tries=5, giveup=user_error
+    )
+    def _read_file_remotely_elements_with_retries(
+        self,
+        file_handle: IOBase,
+        format: APIProcessingConfigModel,
+        filetype: FileType,
+        strategy: str,
+        remote_file: RemoteFile,
+    ) -> List[Dict[str, Any]]:
+        """
+        Read a file remotely and return the raw JSON elements, retrying up to 5 times if the error is not caused by user error.
+        """
+        return self._read_file_remotely_elements(
+            file_handle, format, filetype, strategy, remote_file
+        )
+
     def _read_file_remotely(
         self,
         file_handle: IOBase,
@@ -352,9 +386,41 @@ class UnstructuredParser(FileTypeParser):
 
         return self._render_markdown(json_response)
 
+    def _read_file_remotely_elements(
+        self,
+        file_handle: IOBase,
+        format: APIProcessingConfigModel,
+        filetype: FileType,
+        strategy: str,
+        remote_file: RemoteFile,
+    ) -> List[Dict[str, Any]]:
+        headers = {"accept": "application/json", "unstructured-api-key": format.api_key}
+
+        data = self._params_to_dict(format.parameters, strategy)
+
+        file_data = {"files": ("filename", file_handle, FILETYPE_TO_MIMETYPE[filetype])}
+
+        response = requests.post(
+            f"{format.api_url}/general/v0/general", headers=headers, data=data, files=file_data
+        )
+
+        if response.status_code == 422:
+            raise self._create_parse_error(remote_file, response.json())
+        else:
+            response.raise_for_status()
+
+        json_response: List[Dict[str, Any]] = response.json()
+        return json_response
+
     def _read_file_locally(
         self, file_handle: IOBase, filetype: FileType, strategy: str, remote_file: RemoteFile
     ) -> str:
+        elements = self._read_file_locally_elements(file_handle, filetype, strategy, remote_file)
+        return self._render_markdown(elements)
+
+    def _read_file_locally_elements(
+        self, file_handle: IOBase, filetype: FileType, strategy: str, remote_file: RemoteFile
+    ) -> List[Dict[str, Any]]:
         _import_unstructured()
         if (
             (not unstructured_partition_pdf)
@@ -385,7 +451,7 @@ class UnstructuredParser(FileTypeParser):
         except Exception as e:
             raise self._create_parse_error(remote_file, str(e))
 
-        return self._render_markdown([element.to_dict() for element in elements])
+        return [element.to_dict() for element in elements]
 
     def _create_parse_error(
         self,
