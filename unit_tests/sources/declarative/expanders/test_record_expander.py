@@ -270,8 +270,15 @@ def test_protocol_messages_from_retriever_are_not_treated_as_child_records():
         type=Type.RECORD,
         record=AirbyteRecordMessage(stream="lines", data={"id": "il_1"}, emitted_at=0),
     )
+    bare_log_message = AirbyteLogMessage(level=Level.DEBUG, message="request/response log")
     retriever = _make_retriever(
-        [{"id": "il_0"}, log_message, record_message, Record(data={"id": "il_2"}, stream_name="t")]
+        [
+            {"id": "il_0"},
+            log_message,
+            bare_log_message,
+            record_message,
+            Record(data={"id": "il_2"}, stream_name="t"),
+        ]
     )
     expander = _retriever_expander(retriever)
 

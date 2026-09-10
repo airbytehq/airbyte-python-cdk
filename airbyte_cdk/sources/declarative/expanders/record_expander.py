@@ -11,7 +11,14 @@ from typing import TYPE_CHECKING, Any, Iterable, Mapping, MutableMapping, Option
 
 import dpath
 
-from airbyte_cdk.models import AirbyteLogMessage, AirbyteMessage, Level
+from airbyte_cdk.models import (
+    AirbyteControlMessage,
+    AirbyteLogMessage,
+    AirbyteMessage,
+    AirbyteStateMessage,
+    AirbyteTraceMessage,
+    Level,
+)
 from airbyte_cdk.models import Type as MessageType
 from airbyte_cdk.sources.declarative.interpolation.interpolated_string import InterpolatedString
 from airbyte_cdk.sources.message import MessageRepository
@@ -24,6 +31,14 @@ logger = logging.getLogger("airbyte")
 
 # dpath treats these characters as glob metacharacters (fnmatch semantics) inside a path segment.
 _GLOB_METACHARACTERS = ("*", "?", "[")
+
+# Protocol payloads a retriever may yield unwrapped (i.e. not inside an `AirbyteMessage` envelope).
+_BARE_PROTOCOL_MESSAGES = (
+    AirbyteControlMessage,
+    AirbyteLogMessage,
+    AirbyteStateMessage,
+    AirbyteTraceMessage,
+)
 
 
 class OnNoRecords(Enum):
@@ -293,6 +308,8 @@ class RecordExpander:
                 data: Any = item.record.data
             elif isinstance(item, Record):
                 data = item.data
+            elif isinstance(item, _BARE_PROTOCOL_MESSAGES):
+                continue
             else:
                 data = item
             if isinstance(data, Mapping):
