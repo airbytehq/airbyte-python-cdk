@@ -12,6 +12,7 @@ from airbyte_cdk.sources.concurrent_source.concurrent_read_processor import Conc
 from airbyte_cdk.sources.concurrent_source.partition_generation_completed_sentinel import (
     PartitionGenerationCompletedSentinel,
 )
+from airbyte_cdk.sources.concurrent_source.stream_abort_registry import StreamAbortRegistry
 from airbyte_cdk.sources.concurrent_source.stream_thread_exception import StreamThreadException
 from airbyte_cdk.sources.concurrent_source.thread_pool_manager import ThreadPoolManager
 from airbyte_cdk.sources.message import InMemoryMessageRepository, MessageRepository
@@ -110,9 +111,14 @@ class ConcurrentSource:
         streams: List[AbstractStream],
     ) -> Iterator[AirbyteMessage]:
         self._logger.info("Starting syncing")
+        # Shared across the generator, reader, and processor so that a stream-wide failure on one
+        # partition stops the stream's remaining partitions instead of repeating a doomed request.
+        stream_abort_registry = StreamAbortRegistry()
         concurrent_stream_processor = ConcurrentReadProcessor(
             streams,
-            PartitionEnqueuer(self._queue, self._threadpool),
+            PartitionEnqueuer(
+                self._queue, self._threadpool, stream_abort_registry=stream_abort_registry
+            ),
             self._threadpool,
             self._logger,
             self._slice_logger,
@@ -120,8 +126,10 @@ class ConcurrentSource:
             PartitionReader(
                 self._queue,
                 PartitionLogger(self._slice_logger, self._logger, self._message_repository),
+                stream_abort_registry=stream_abort_registry,
             ),
             max_concurrent_partition_generators=self._initial_number_partitions_to_generate,
+            stream_abort_registry=stream_abort_registry,
         )
 
         # Enqueue initial partition generation tasks
