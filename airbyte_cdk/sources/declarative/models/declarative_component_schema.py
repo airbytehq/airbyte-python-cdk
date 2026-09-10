@@ -2384,7 +2384,7 @@ class PaginationReset(BaseModel):
 
 class GzipDecoder(BaseModel):
     type: Literal["GzipDecoder"]
-    decoder: Union[CsvDecoder, GzipDecoder, JsonDecoder, JsonItemsDecoder, JsonlDecoder]
+    decoder: Union[CsvDecoder, GzipDecoder, JsonDecoder, JsonItemsDecoder, JsonlDecoder, XmlDecoder]
 
 
 class RequestBodyGraphQL(BaseModel):
@@ -2522,7 +2522,9 @@ class ZipfileDecoder(BaseModel):
         extra = Extra.allow
 
     type: Literal["ZipfileDecoder"]
-    decoder: Union[CsvDecoder, GzipDecoder, JsonDecoder, JsonItemsDecoder, JsonlDecoder] = Field(
+    decoder: Union[
+        CsvDecoder, GzipDecoder, JsonDecoder, JsonItemsDecoder, JsonlDecoder, XmlDecoder
+    ] = Field(
         ...,
         description="Parser to parse the decompressed data from the zipfile(s).",
         title="Parser",
