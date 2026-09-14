@@ -622,11 +622,12 @@ class APIBudget(AbstractAPIBudget):
         :param request: the API request
         :param policy: the matching rate-limiting policy
         :param block: indicates whether to block until a call credit is available
-        :param timeout: maximum time to wait if blocking
+        :param timeout: maximum total time to wait if blocking, in seconds
         :raises: CallRateLimitHit if unable to acquire a call credit
         """
         last_exception = None
         endpoint = self._extract_endpoint(request)
+        deadline = time.monotonic() + timeout if (block and timeout is not None) else None
         # sometimes we spend all budget before a second attempt, so we have a few more attempts
         for attempt in range(1, self._maximum_attempts_to_acquire):
             try:
@@ -635,24 +636,30 @@ class APIBudget(AbstractAPIBudget):
                 return
             except CallRateLimitHit as exc:
                 last_exception = exc
-                if block:
-                    if timeout is not None:
-                        time_to_wait = min(timedelta(seconds=timeout), exc.time_to_wait)
-                    else:
-                        time_to_wait = exc.time_to_wait
-                    # Ensure we never sleep for a negative duration.
-                    time_to_wait = max(timedelta(0), time_to_wait)
-                    logger.debug(
-                        f"Policy {policy} reached call limit for endpoint {endpoint} ({exc.rate}). "
-                        f"Sleeping for {time_to_wait} on attempt {attempt}."
-                    )
-                    time.sleep(time_to_wait.total_seconds())
-                else:
+                if not block:
                     logger.debug(
                         f"Policy {policy} reached call limit for endpoint {endpoint} ({exc.rate}) "
                         f"and blocking is disabled."
                     )
                     raise
+
+                time_to_wait = exc.time_to_wait
+                if deadline is not None:
+                    remaining = timedelta(seconds=deadline - time.monotonic())
+                    if remaining <= timedelta(0):
+                        logger.debug(
+                            f"Policy {policy} reached call limit for endpoint {endpoint} ({exc.rate}) "
+                            f"and the total timeout of {timeout}s has been exhausted."
+                        )
+                        raise
+                    time_to_wait = min(time_to_wait, remaining)
+                # Ensure we never sleep for a negative duration.
+                time_to_wait = max(timedelta(0), time_to_wait)
+                logger.debug(
+                    f"Policy {policy} reached call limit for endpoint {endpoint} ({exc.rate}). "
+                    f"Sleeping for {time_to_wait} on attempt {attempt}."
+                )
+                time.sleep(time_to_wait.total_seconds())
 
         if last_exception:
             logger.debug(
