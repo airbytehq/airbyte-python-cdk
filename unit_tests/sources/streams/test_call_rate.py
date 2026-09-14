@@ -85,6 +85,13 @@ class TestHttpRequestMatcher:
         assert root_matcher(request_factory(url="http://some_url/anything"))
 
     @try_all_types_of_requests
+    def test_url_path_boundary(self, request_factory):
+        matcher = HttpRequestMatcher(url="http://some_url/users/")
+        assert not matcher(request_factory(url="http://some_url/users-other"))
+        assert not matcher(request_factory(url="http://some_url/users_other"))
+        assert matcher(request_factory(url="http://some_url/users/123"))
+
+    @try_all_types_of_requests
     def test_method(self, request_factory):
         matcher = HttpRequestMatcher(method="GET")
         assert not matcher(request_factory(url="http://some_url"))

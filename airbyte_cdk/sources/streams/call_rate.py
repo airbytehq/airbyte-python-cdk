@@ -129,7 +129,7 @@ class HttpRequestMatcher(RequestMatcher):
         self._regex_matcher = HttpRequestRegexMatcher(
             method=method,
             url_base=url_base,
-            url_path_pattern=re.escape(url_path) if url_path else None,
+            url_path_pattern=re.escape(url_path) + r"(?=/|$)" if url_path else None,
             params=params,
             headers=headers,
         )
