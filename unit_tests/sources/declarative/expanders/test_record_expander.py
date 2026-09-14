@@ -309,6 +309,51 @@ def test_warns_once_when_retriever_fetches_fewer_than_total_count(caplog):
     assert "il_" not in message
 
 
+@pytest.mark.parametrize(
+    "suppress_incomplete_fetch_warning, expected_warning_count",
+    [
+        pytest.param(True, 0, id="test_read_page_cap_suppresses_warning"),
+        pytest.param(False, 1, id="no_page_cap_still_warns"),
+    ],
+)
+def test_incomplete_fetch_warning_under_test_read_page_cap(
+    caplog, suppress_incomplete_fetch_warning, expected_warning_count
+):
+    embedded = [{"id": f"il_{i}"} for i in range(10)]
+    capped_pages = [{"id": f"il_{i}"} for i in range(200)]
+    expander = _retriever_expander(_make_retriever(capped_pages))
+    expander.suppress_incomplete_fetch_warning = suppress_incomplete_fetch_warning
+
+    with caplog.at_level("WARNING", logger="airbyte"):
+        records = list(expander.expand_record(_event(embedded, has_more=True, total_count=250)))
+
+    assert len(records) == 200
+    messages = [r.getMessage() for r in caplog.records if r.levelname == "WARNING"]
+    assert len(messages) == expected_warning_count
+    for message in messages:
+        assert "returned 200 record(s)" in message
+        assert "reports 250" in message
+
+
+def test_test_read_page_cap_flag_does_not_suppress_no_retriever_warning(caplog):
+    embedded = [{"id": f"il_{i}"} for i in range(10)]
+    expander = RecordExpander(
+        expand_records_from_field=["data", "object", "lines", "data"],
+        config=config,
+        parameters=parameters,
+        truncation_indicator_path=["data", "object", "lines", "has_more"],
+        suppress_incomplete_fetch_warning=True,
+    )
+
+    with caplog.at_level("WARNING", logger="airbyte"):
+        records = list(expander.expand_record(_event(embedded, has_more=True, total_count=250)))
+
+    assert len(records) == 10
+    messages = [r.getMessage() for r in caplog.records if r.levelname == "WARNING"]
+    assert len(messages) == 1
+    assert "no `truncated_list_retriever` is configured" in messages[0]
+
+
 def test_no_retriever_warning_is_emitted_even_when_consumer_stops_after_first_child(caplog):
     embedded = [{"id": f"il_{i}"} for i in range(10)]
     expander = RecordExpander(

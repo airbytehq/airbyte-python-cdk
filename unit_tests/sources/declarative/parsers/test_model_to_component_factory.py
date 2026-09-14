@@ -2035,6 +2035,42 @@ def test_create_record_expander_with_truncated_list_retriever():
     assert isinstance(expander.truncated_list_retriever, SimpleRetriever)
     assert expander.truncated_list_retriever.name == "record_expander_truncated_list"
     assert expander.message_repository is factory._message_repository
+    assert expander.suppress_incomplete_fetch_warning is False
+
+
+def test_create_record_expander_suppresses_incomplete_fetch_warning_under_test_read_page_cap():
+    content = _record_expander_selector(
+        """
+            type: SimpleRetriever
+            requester:
+              type: HttpRequester
+              url_base: "https://api.test.com/"
+              path: "invoices/{{ stream_slice['parent_record']['id'] }}/lines"
+              http_method: "GET"
+            record_selector:
+              type: RecordSelector
+              extractor:
+                type: DpathExtractor
+                field_path: ["data"]
+        """
+    )
+    parsed_manifest = YamlDeclarativeSource._parse(content)
+    resolved_manifest = resolver.preprocess_manifest(parsed_manifest)
+    selector_manifest = transformer.propagate_types_and_parameters(
+        "", resolved_manifest["selector"], {}
+    )
+    test_read_factory = ModelToComponentFactory(limit_pages_fetched_per_slice=2)
+
+    selector = test_read_factory.create_component(
+        model_type=RecordSelectorModel,
+        name="test_stream",
+        component_definition=selector_manifest,
+        decoder=None,
+        transformations=[],
+        config=input_config,
+    )
+
+    assert selector.extractor.record_expander.suppress_incomplete_fetch_warning is True
 
 
 def _record_expander_selector(retriever_yaml: str) -> str:

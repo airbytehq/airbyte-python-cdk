@@ -108,9 +108,16 @@ class RecordExpander:
             indicator, a WARNING is logged once per stream instance. Request failures surface
             through the retriever's error handler and fail the stream like any other request.
             `$parameters` of the enclosing stream propagate into this retriever's components.
+            In Connector Builder test reads the page limit applies to each fetch independently,
+            so the fetched list may be shorter than `total_count`; no incomplete-fetch warning
+            is emitted there.
         message_repository: Optional repository through which the truncation warnings are emitted
             as Airbyte LOG messages so they are visible in the Connector Builder. When it is not
             set, the warnings go to the `airbyte` logger instead.
+        suppress_incomplete_fetch_warning: Skip the incomplete-fetch WARNING. Set by the factory
+            for Connector Builder test reads, where the page limit caps the retriever's pagination
+            and a shortfall against `total_count` is expected. The truncated-without-retriever
+            warning is not affected.
         config: The user-provided configuration as specified by the source's spec.
     """
 
@@ -122,6 +129,7 @@ class RecordExpander:
     truncation_indicator_path: Optional[Sequence[str]] = None
     truncated_list_retriever: Optional["Retriever"] = None
     message_repository: Optional[MessageRepository] = None
+    suppress_incomplete_fetch_warning: bool = False
 
     def __post_init__(self, parameters: Mapping[str, Any]) -> None:
         self._expand_path: list[InterpolatedString] = [
@@ -242,6 +250,8 @@ class RecordExpander:
     def _warn_if_fetch_incomplete(
         self, parent_record: Mapping[str, Any], expand_path: list[Any], fetched_count: int
     ) -> None:
+        if self.suppress_incomplete_fetch_warning:
+            return
         indicator_path = self._evaluated_indicator_path()
         total_count = self._get_sibling_total_count(parent_record, indicator_path)
         if total_count is None or fetched_count >= total_count:

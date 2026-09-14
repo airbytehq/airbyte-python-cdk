@@ -2548,6 +2548,7 @@ class ModelToComponentFactory:
             truncation_indicator_path=model.truncation_indicator_path,
             truncated_list_retriever=truncated_list_retriever,
             message_repository=self._message_repository,
+            suppress_incomplete_fetch_warning=bool(self._limit_pages_fetched_per_slice),
         )
 
     @staticmethod
