@@ -9,6 +9,7 @@ from typing import Any, Iterable, Mapping, Optional
 
 import pytest
 import requests
+from freezegun import freeze_time
 from requests import Request
 
 from airbyte_cdk.models import SyncMode
@@ -248,6 +249,72 @@ class TestFixedWindowCallRatePolicy:
         # so we still hit the limit with weight=3
         with pytest.raises(CallRateLimitHit):
             policy.try_acquire(mocker.Mock(), weight=3)
+
+    def test_multiple_missed_periods_enforce_limit(self, mocker):
+        base = datetime(2024, 1, 1, 12, 0, 0)
+        policy = FixedWindowCallRatePolicy(
+            matchers=[],
+            next_reset_ts=base - timedelta(minutes=3),
+            period=timedelta(minutes=1),
+            call_limit=2,
+        )
+
+        with freeze_time(base):
+            policy.try_acquire(mocker.Mock(), weight=1)
+            policy.try_acquire(mocker.Mock(), weight=1)
+            with pytest.raises(CallRateLimitHit):
+                policy.try_acquire(mocker.Mock(), weight=1)
+
+        assert policy._next_reset_ts == base + timedelta(minutes=1)
+
+    def test_call_allowed_exactly_at_reset_boundary(self, mocker):
+        base = datetime(2024, 1, 1, 12, 0, 0)
+        policy = FixedWindowCallRatePolicy(
+            matchers=[],
+            next_reset_ts=base + timedelta(minutes=1),
+            period=timedelta(minutes=1),
+            call_limit=1,
+        )
+
+        with freeze_time(base) as frozen:
+            policy.try_acquire(mocker.Mock(), weight=1)
+            with pytest.raises(CallRateLimitHit):
+                policy.try_acquire(mocker.Mock(), weight=1)
+
+            frozen.move_to(base + timedelta(minutes=1))
+            policy.try_acquire(mocker.Mock(), weight=1)
+
+    def test_alignment_preserved_after_skipping_periods(self, mocker):
+        base = datetime(2024, 1, 1, 12, 0, 0)
+        policy = FixedWindowCallRatePolicy(
+            matchers=[],
+            next_reset_ts=base,
+            period=timedelta(hours=1),
+            call_limit=5,
+        )
+
+        with freeze_time(base + timedelta(hours=2, minutes=30)):
+            policy.try_acquire(mocker.Mock(), weight=1)
+
+        assert policy._next_reset_ts == base + timedelta(hours=3)
+
+    def test_single_period_rollover(self, mocker):
+        base = datetime(2024, 1, 1, 12, 0, 0)
+        policy = FixedWindowCallRatePolicy(
+            matchers=[],
+            next_reset_ts=base + timedelta(minutes=1),
+            period=timedelta(minutes=1),
+            call_limit=1,
+        )
+
+        with freeze_time(base) as frozen:
+            policy.try_acquire(mocker.Mock(), weight=1)
+
+            frozen.move_to(base + timedelta(minutes=1, seconds=30))
+            policy.try_acquire(mocker.Mock(), weight=1)
+            assert policy._next_reset_ts == base + timedelta(minutes=2)
+            with pytest.raises(CallRateLimitHit):
+                policy.try_acquire(mocker.Mock(), weight=1)
 
 
 class TestMovingWindowCallRatePolicy:
