@@ -2507,6 +2507,7 @@ class ModelToComponentFactory:
         **kwargs: Any,
     ) -> RecordExpander:
         truncated_list_retriever = None
+        suppress_incomplete_fetch_warning = bool(self._limit_pages_fetched_per_slice)
         if model.truncated_list_retriever:
             retriever_model = model.truncated_list_retriever
             name = "record_expander_truncated_list"
@@ -2533,6 +2534,10 @@ class ModelToComponentFactory:
                     transformations=[],
                     log_formatter=log_formatter,
                 )
+                # Only a capped paginator makes a shortfall expected; `NoPagination` is never capped.
+                suppress_incomplete_fetch_warning = isinstance(
+                    truncated_list_retriever.paginator, PaginatorTestReadDecorator
+                )
             else:
                 truncated_list_retriever = self._create_component_from_model(
                     model=retriever_model, config=config, log_formatter=log_formatter
@@ -2548,7 +2553,7 @@ class ModelToComponentFactory:
             truncation_indicator_path=model.truncation_indicator_path,
             truncated_list_retriever=truncated_list_retriever,
             message_repository=self._message_repository,
-            suppress_incomplete_fetch_warning=bool(self._limit_pages_fetched_per_slice),
+            suppress_incomplete_fetch_warning=suppress_incomplete_fetch_warning,
         )
 
     @staticmethod

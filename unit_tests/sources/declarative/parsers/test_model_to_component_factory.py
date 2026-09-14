@@ -156,7 +156,10 @@ from airbyte_cdk.sources.declarative.requesters.error_handlers.backoff_strategie
     WaitUntilTimeFromHeaderBackoffStrategy,
 )
 from airbyte_cdk.sources.declarative.requesters.http_job_repository import AsyncHttpJobRepository
-from airbyte_cdk.sources.declarative.requesters.paginators import DefaultPaginator
+from airbyte_cdk.sources.declarative.requesters.paginators import (
+    DefaultPaginator,
+    PaginatorTestReadDecorator,
+)
 from airbyte_cdk.sources.declarative.requesters.paginators.strategies import (
     CursorPaginationStrategy,
     OffsetIncrement,
@@ -2038,20 +2041,45 @@ def test_create_record_expander_with_truncated_list_retriever():
     assert expander.suppress_incomplete_fetch_warning is False
 
 
-def test_create_record_expander_suppresses_incomplete_fetch_warning_under_test_read_page_cap():
+@pytest.mark.parametrize(
+    "paginator_yaml, expected_suppressed",
+    [
+        pytest.param(
+            """
+            paginator:
+              type: DefaultPaginator
+              page_token_option:
+                type: RequestOption
+                inject_into: request_parameter
+                field_name: starting_after
+              pagination_strategy:
+                type: CursorPagination
+                cursor_value: "{{ last_record['id'] }}"
+                stop_condition: "{{ not response['has_more'] }}"
+            """,
+            True,
+            id="capped_default_paginator_suppresses_warning",
+        ),
+        pytest.param("", False, id="no_pagination_is_not_capped_so_warning_stays"),
+    ],
+)
+def test_create_record_expander_suppresses_incomplete_fetch_warning_only_for_capped_paginator(
+    paginator_yaml, expected_suppressed
+):
     content = _record_expander_selector(
-        """
+        f"""
             type: SimpleRetriever
             requester:
               type: HttpRequester
               url_base: "https://api.test.com/"
-              path: "invoices/{{ stream_slice['parent_record']['id'] }}/lines"
+              path: "invoices/{{{{ stream_slice['parent_record']['id'] }}}}/lines"
               http_method: "GET"
             record_selector:
               type: RecordSelector
               extractor:
                 type: DpathExtractor
                 field_path: ["data"]
+            {paginator_yaml}
         """
     )
     parsed_manifest = YamlDeclarativeSource._parse(content)
@@ -2070,7 +2098,12 @@ def test_create_record_expander_suppresses_incomplete_fetch_warning_under_test_r
         config=input_config,
     )
 
-    assert selector.extractor.record_expander.suppress_incomplete_fetch_warning is True
+    expander = selector.extractor.record_expander
+    assert expander.suppress_incomplete_fetch_warning is expected_suppressed
+    assert (
+        isinstance(expander.truncated_list_retriever.paginator, PaginatorTestReadDecorator)
+        is expected_suppressed
+    )
 
 
 def _record_expander_selector(retriever_yaml: str) -> str:

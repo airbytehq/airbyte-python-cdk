@@ -115,8 +115,8 @@ class RecordExpander:
             as Airbyte LOG messages so they are visible in the Connector Builder. When it is not
             set, the warnings go to the `airbyte` logger instead.
         suppress_incomplete_fetch_warning: Skip the incomplete-fetch WARNING. Set by the factory
-            for Connector Builder test reads, where the page limit caps the retriever's pagination
-            and a shortfall against `total_count` is expected. The truncated-without-retriever
+            for Connector Builder test reads when the page limit caps the retriever's paginator,
+            so a shortfall against `total_count` is expected. The truncated-without-retriever
             warning is not affected.
         config: The user-provided configuration as specified by the source's spec.
     """
