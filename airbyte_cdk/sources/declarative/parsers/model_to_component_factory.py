@@ -4603,11 +4603,6 @@ class ModelToComponentFactory:
         return MovingWindowCallRatePolicy(
             rates=rates,
             matchers=matchers,
-            **(
-                {"max_header_driven_wait": parse_duration(model.max_header_driven_wait)}
-                if model.max_header_driven_wait
-                else {}
-            ),
         )
 
     def create_unlimited_call_rate_policy(
