@@ -72,6 +72,18 @@ class TestHttpRequestMatcher:
         assert not matcher(request_factory(url="http://some_wrong_url"))
         assert matcher(request_factory(url="http://some_url"))
 
+    @pytest.mark.parametrize("matcher_url", ["http://some_url/users", "http://some_url/users/"])
+    @pytest.mark.parametrize("request_url", ["http://some_url/users", "http://some_url/users/"])
+    @try_all_types_of_requests
+    def test_url_trailing_slash(self, request_factory, matcher_url, request_url):
+        matcher = HttpRequestMatcher(url=matcher_url)
+        assert matcher(request_factory(url=request_url))
+        assert not matcher(request_factory(url="http://some_url/other"))
+
+        root_matcher = HttpRequestMatcher(url="http://some_url/")
+        assert root_matcher(request_factory(url="http://some_url"))
+        assert root_matcher(request_factory(url="http://some_url/anything"))
+
     @try_all_types_of_requests
     def test_method(self, request_factory):
         matcher = HttpRequestMatcher(method="GET")
@@ -513,6 +525,47 @@ class TestHttpRequestRegexMatcher:
 
         assert matcher(req_ok)
         assert not matcher(req_wrong)
+
+    @pytest.mark.parametrize(
+        "pattern,matching_urls,non_matching_urls",
+        [
+            (r"^/users$", ["/users", "/users/"], ["/users/123"]),
+            (r"^/users/$", ["/users/"], ["/users", "/users/123"]),
+            (r"^/users/?$", ["/users", "/users/"], ["/users/123"]),
+        ],
+    )
+    def test_url_path_pattern_trailing_slash(self, pattern, matching_urls, non_matching_urls):
+        matcher = HttpRequestRegexMatcher(url_path_pattern=pattern)
+
+        for path in matching_urls:
+            assert matcher(Request("GET", f"https://example.com{path}"))
+        for path in non_matching_urls:
+            assert not matcher(Request("GET", f"https://example.com{path}"))
+
+    def test_api_budget_matches_trailing_slash_request(self):
+        regex_policy = MovingWindowCallRatePolicy(
+            rates=[Rate(limit=1, interval=timedelta(minutes=1))],
+            matchers=[HttpRequestRegexMatcher(url_path_pattern=r"^/users/$")],
+        )
+        regex_budget = APIBudget(policies=[regex_policy])
+        regex_request = Request("GET", "https://example.com/users/")
+
+        assert regex_budget.get_matching_policy(regex_request) is regex_policy
+        regex_budget.acquire_call(regex_request, block=False)
+        with pytest.raises(CallRateLimitHit):
+            regex_budget.acquire_call(regex_request, block=False)
+
+        literal_policy = MovingWindowCallRatePolicy(
+            rates=[Rate(limit=1, interval=timedelta(minutes=1))],
+            matchers=[HttpRequestMatcher(url="https://example.com/users/")],
+        )
+        literal_budget = APIBudget(policies=[literal_policy])
+        literal_request = Request("GET", "https://example.com/users")
+
+        assert literal_budget.get_matching_policy(literal_request) is literal_policy
+        literal_budget.acquire_call(literal_request, block=False)
+        with pytest.raises(CallRateLimitHit):
+            literal_budget.acquire_call(literal_request, block=False)
 
     def test_query_params(self):
         matcher = HttpRequestRegexMatcher(params={"foo": "bar"})
