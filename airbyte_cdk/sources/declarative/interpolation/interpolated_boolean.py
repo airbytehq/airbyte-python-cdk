@@ -19,6 +19,7 @@ FALSE_VALUES: Final[List[Any]] = [
     "0.0",
     {},
     False,
+    None,
     [],
     (),
     set(),
