@@ -9,6 +9,7 @@ from typing import Any, Iterable, Mapping, Optional
 
 import pytest
 import requests
+from freezegun import freeze_time
 from requests import Request
 
 from airbyte_cdk.models import SyncMode
@@ -16,6 +17,7 @@ from airbyte_cdk.sources.streams.call_rate import (
     APIBudget,
     CallRateLimitHit,
     FixedWindowCallRatePolicy,
+    HttpAPIBudget,
     HttpRequestMatcher,
     HttpRequestRegexMatcher,
     MovingWindowCallRatePolicy,
@@ -256,6 +258,82 @@ class TestMovingWindowCallRatePolicy:
         with pytest.raises(ValueError, match="The list of rates can not be empty"):
             MovingWindowCallRatePolicy(rates=[], matchers=[])
 
+    def test_update_with_reset_ts_blocks_until_reset(self):
+        with freeze_time("2024-01-01 00:00:00") as frozen:
+            policy = MovingWindowCallRatePolicy(
+                rates=[Rate(100, timedelta(minutes=1))], matchers=[]
+            )
+            policy.try_acquire("call", weight=1)
+            policy.update(
+                available_calls=0,
+                call_reset_ts=datetime.now() + timedelta(seconds=60),
+            )
+
+            with pytest.raises(CallRateLimitHit) as excinfo:
+                policy.try_acquire("call", weight=1)
+            assert excinfo.value.time_to_wait.total_seconds() == pytest.approx(60, 0.1)
+            assert policy._bucket.count() == 1
+
+            frozen.tick(30)
+            with pytest.raises(CallRateLimitHit) as excinfo:
+                policy.try_acquire("call", weight=1)
+            assert excinfo.value.time_to_wait.total_seconds() == pytest.approx(30, 0.1)
+
+            frozen.tick(31)
+            policy.try_acquire("call", weight=1)
+            assert policy._reset_ts is None
+
+    def test_update_with_past_reset_ts_is_noop(self):
+        with freeze_time("2024-01-01 00:00:00"):
+            policy = MovingWindowCallRatePolicy(
+                rates=[Rate(100, timedelta(minutes=1))], matchers=[]
+            )
+            policy.update(
+                available_calls=0,
+                call_reset_ts=datetime.now() - timedelta(seconds=1),
+            )
+
+            policy.try_acquire("call", weight=1)
+            assert policy._reset_ts is None
+
+    def test_update_with_reset_ts_still_enforces_local_rate(self):
+        with freeze_time("2024-01-01 00:00:00") as frozen:
+            policy = MovingWindowCallRatePolicy(rates=[Rate(2, timedelta(minutes=1))], matchers=[])
+            policy.try_acquire("call", weight=1)
+            policy.try_acquire("call", weight=1)
+            policy.update(
+                available_calls=0,
+                call_reset_ts=datetime.now() + timedelta(seconds=10),
+            )
+
+            frozen.tick(11)
+            with pytest.raises(CallRateLimitHit) as excinfo:
+                policy.try_acquire("call", weight=1)
+            assert excinfo.value.time_to_wait.total_seconds() == pytest.approx(49, 0.1)
+
+    def test_update_available_calls_zero_without_reset_ts_unchanged(self):
+        with freeze_time("2024-01-01 00:00:00"):
+            policy = MovingWindowCallRatePolicy(rates=[Rate(10, timedelta(minutes=1))], matchers=[])
+            for _ in range(3):
+                policy.try_acquire("call", weight=1)
+
+            policy.update(available_calls=0, call_reset_ts=None)
+
+            assert policy._reset_ts is None
+            assert policy._bucket.count() == 4
+
+    def test_update_positive_available_calls_with_reset_ts_is_noop(self):
+        with freeze_time("2024-01-01 00:00:00"):
+            policy = MovingWindowCallRatePolicy(
+                rates=[Rate(100, timedelta(minutes=1))], matchers=[]
+            )
+            policy.update(
+                available_calls=5,
+                call_reset_ts=datetime.now() + timedelta(seconds=60),
+            )
+
+            policy.try_acquire("call", weight=1)
+
     def test_limit_rate(self):
         """try_acquire must respect configured call rate and throw CallRateLimitHit when hit the limit."""
         policy = MovingWindowCallRatePolicy(rates=[Rate(10, timedelta(minutes=1))], matchers=[])
@@ -361,6 +439,36 @@ class TestHttpStreamIntegration:
             assert next(records) == {"data": "some_data"}
 
         assert MovingWindowCallRatePolicy.try_acquire.call_count == 1
+
+    def test_http_api_budget_honors_server_reset(self):
+        with freeze_time("2024-01-01 00:00:00") as frozen:
+            url = "https://api.example.com/x"
+            request = Request("GET", url).prepare()
+            budget = HttpAPIBudget(
+                policies=[
+                    MovingWindowCallRatePolicy(
+                        rates=[Rate(100, timedelta(minutes=1))],
+                        matchers=[HttpRequestMatcher(url=url)],
+                    )
+                ]
+            )
+
+            budget.acquire_call(request, block=False)
+
+            response = requests.Response()
+            response.status_code = 429
+            response.headers = {
+                "ratelimit-remaining": "0",
+                "ratelimit-reset": str(int(time.time()) + 60),
+            }
+            budget.update_from_response(request, response)
+
+            with pytest.raises(CallRateLimitHit) as excinfo:
+                budget.acquire_call(request, block=False)
+            assert excinfo.value.time_to_wait.total_seconds() == pytest.approx(60, 0.1)
+
+            frozen.tick(61)
+            budget.acquire_call(request, block=False)
 
 
 class TestWeightBasedRateLimiting:

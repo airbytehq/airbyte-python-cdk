@@ -442,6 +442,7 @@ class MovingWindowCallRatePolicy(BaseCallRatePolicy):
             for rate in rates
         ]
         self._bucket = InMemoryBucket(pyrate_rates)
+        self._reset_ts: Optional[datetime.datetime] = None
         # Limiter will create the background task that clears old requests in the bucket
         self._limiter = Limiter(self._bucket)
         super().__init__(matchers=matchers)
@@ -454,6 +455,19 @@ class MovingWindowCallRatePolicy(BaseCallRatePolicy):
             raise ValueError(
                 f"Weight can not exceed the lowest configured rate limit ({lowest_limit})"
             )
+
+        with self._limiter.lock:
+            if self._reset_ts is not None:
+                now = datetime.datetime.now()
+                if now < self._reset_ts:
+                    raise CallRateLimitHit(
+                        error=f"API call budget exhausted until {self._reset_ts.isoformat()}",
+                        item=request,
+                        weight=weight,
+                        rate="api-reset",
+                        time_to_wait=self._reset_ts - now,
+                    )
+                self._reset_ts = None
 
         try:
             self._limiter.try_acquire(request, weight=weight)
@@ -476,12 +490,22 @@ class MovingWindowCallRatePolicy(BaseCallRatePolicy):
     def update(
         self, available_calls: Optional[int], call_reset_ts: Optional[datetime.datetime]
     ) -> None:
-        """Adjust call bucket to reflect the state of the API server
+        """Adjust the call bucket to reflect the state of the API server.
 
         :param available_calls:
         :param call_reset_ts:
         :return:
         """
+        if available_calls == 0 and call_reset_ts is not None:
+            with self._limiter.lock:
+                if call_reset_ts > datetime.datetime.now():
+                    logger.debug(
+                        "got rate limit update from api, no calls available until %s",
+                        call_reset_ts,
+                    )
+                    self._reset_ts = call_reset_ts
+            return
+
         if (
             available_calls is not None and call_reset_ts is None
         ):  # we do our best to sync buckets with API
@@ -505,6 +529,7 @@ class MovingWindowCallRatePolicy(BaseCallRatePolicy):
         matcher_str = ", ".join(f"{matcher}" for matcher in self._matchers)
         return (
             f"MovingWindowCallRatePolicy(rates=[{rates_info}], current_bucket_count={current_bucket_count}, "
+            f"reset_ts={self._reset_ts}, "
             f"matchers=[{matcher_str}])"
         )
 
