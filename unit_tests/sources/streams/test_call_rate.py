@@ -13,6 +13,7 @@ from requests import Request
 
 from airbyte_cdk.models import SyncMode
 from airbyte_cdk.sources.streams.call_rate import (
+    AbstractCallRatePolicy,
     APIBudget,
     CallRateLimitHit,
     FixedWindowCallRatePolicy,
@@ -212,6 +213,57 @@ class TestUnlimitedCallRatePolicy:
         policy.update(available_calls=10, call_reset_ts=datetime.now())
         policy.update(available_calls=None, call_reset_ts=datetime.now())
         policy.update(available_calls=10, call_reset_ts=None)
+
+
+class TestAPIBudgetMaximumAttempts:
+    @staticmethod
+    def _exhausted_policy() -> FixedWindowCallRatePolicy:
+        policy = FixedWindowCallRatePolicy(
+            matchers=[],
+            next_reset_ts=datetime.now() + timedelta(hours=1),
+            period=timedelta(hours=1),
+            call_limit=1,
+        )
+        policy.try_acquire(Request("GET", "https://example.com"), weight=1)
+        return policy
+
+    @pytest.mark.parametrize("maximum_attempts_to_acquire", [0, -1])
+    def test_rejects_values_below_one(self, maximum_attempts_to_acquire):
+        with pytest.raises(ValueError, match="maximum_attempts_to_acquire must be at least 1"):
+            APIBudget(policies=[], maximum_attempts_to_acquire=maximum_attempts_to_acquire)
+
+    def test_single_attempt_non_blocking_raises_when_exhausted(self):
+        budget = APIBudget(policies=[self._exhausted_policy()], maximum_attempts_to_acquire=1)
+        with pytest.raises(CallRateLimitHit):
+            budget.acquire_call(Request("GET", "https://example.com"), block=False)
+
+    def test_single_attempt_blocking_raises_without_sleeping(self, mocker):
+        sleep_mock = mocker.patch("airbyte_cdk.sources.streams.call_rate.time.sleep")
+        budget = APIBudget(policies=[self._exhausted_policy()], maximum_attempts_to_acquire=1)
+        with pytest.raises(CallRateLimitHit):
+            budget.acquire_call(Request("GET", "https://example.com"), block=True)
+        sleep_mock.assert_not_called()
+
+    @pytest.mark.parametrize("maximum_attempts_to_acquire", [1, 2, 5])
+    def test_try_acquire_called_exactly_maximum_attempts_times(
+        self, mocker, maximum_attempts_to_acquire
+    ):
+        sleep_mock = mocker.patch("airbyte_cdk.sources.streams.call_rate.time.sleep")
+        policy = mocker.Mock(spec=AbstractCallRatePolicy)
+        policy.matches.return_value = True
+        policy.try_acquire.side_effect = CallRateLimitHit(
+            error="limit hit", item=None, weight=1, rate="1/s", time_to_wait=timedelta(seconds=1)
+        )
+        budget = APIBudget(
+            policies=[policy], maximum_attempts_to_acquire=maximum_attempts_to_acquire
+        )
+
+        with pytest.raises(CallRateLimitHit):
+            budget.acquire_call(Request("GET", "https://example.com"), block=True)
+
+        assert policy.try_acquire.call_count == maximum_attempts_to_acquire
+        # no sleep after the final failed attempt
+        assert sleep_mock.call_count == maximum_attempts_to_acquire - 1
 
 
 class TestFixedWindowCallRatePolicy:
