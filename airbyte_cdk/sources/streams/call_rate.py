@@ -727,7 +727,13 @@ class LimiterMixin(MIXIN_BASE):
         """Send a request with rate-limiting."""
         self._api_budget.acquire_call(request)
         response = super().send(request, **kwargs)
-        self._api_budget.update_from_response(request, response)
+        # When redirects are followed, each hop is sent through this method with
+        # ``allow_redirects=False`` and updates the budget for its own request/response.
+        # The outer call must therefore pair ``request`` with the response it actually
+        # produced (the first one), not with the final response of the redirect chain.
+        response_history = getattr(response, "history", [])
+        own_response = response_history[0] if response_history else response
+        self._api_budget.update_from_response(request, own_response)
         return response
 
 

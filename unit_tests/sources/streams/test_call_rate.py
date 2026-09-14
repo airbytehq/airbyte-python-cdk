@@ -16,8 +16,10 @@ from airbyte_cdk.sources.streams.call_rate import (
     APIBudget,
     CallRateLimitHit,
     FixedWindowCallRatePolicy,
+    HttpAPIBudget,
     HttpRequestMatcher,
     HttpRequestRegexMatcher,
+    LimiterSession,
     MovingWindowCallRatePolicy,
     Rate,
     UnlimitedCallRatePolicy,
@@ -475,6 +477,118 @@ class TestWeightBasedRateLimiting:
             ValueError, match="Weight can not exceed the lowest configured rate limit"
         ):
             policy.try_acquire(req, weight=50)
+
+
+class TestLimiterSessionRedirects:
+    @staticmethod
+    def _build_budget(policies):
+        return HttpAPIBudget(
+            ratelimit_remaining_header="ratelimit-remaining",
+            ratelimit_reset_header="ratelimit-reset",
+            policies=policies,
+        )
+
+    @staticmethod
+    def _policy(matchers):
+        return FixedWindowCallRatePolicy(
+            next_reset_ts=datetime.now() + timedelta(minutes=1),
+            period=timedelta(minutes=1),
+            call_limit=100,
+            matchers=matchers,
+        )
+
+    @staticmethod
+    def _response(request, status_code, headers):
+        response = requests.Response()
+        response.status_code = status_code
+        response.headers.update(headers)
+        response.url = request.url
+        response.request = request
+        response._content = b""
+        return response
+
+    def test_redirect_updates_only_target_policy(self, mocker):
+        responses = [
+            (302, {"Location": "https://api.example.com/b", "ratelimit-remaining": "99"}),
+            (200, {"ratelimit-remaining": "0"}),
+        ]
+
+        def fake_send(_adapter, request, **_kwargs):
+            status_code, headers = responses.pop(0)
+            return self._response(request, status_code, headers)
+
+        adapter_send = mocker.patch.object(
+            requests.adapters.HTTPAdapter, "send", autospec=True, side_effect=fake_send
+        )
+        budget = self._build_budget(
+            [
+                self._policy([HttpRequestMatcher(url="https://api.example.com/a")]),
+                self._policy([HttpRequestMatcher(url="https://api.example.com/b")]),
+            ]
+        )
+
+        LimiterSession(api_budget=budget).get("https://api.example.com/a")
+
+        with pytest.raises(CallRateLimitHit):
+            budget.acquire_call(Request("GET", "https://api.example.com/b").prepare(), block=False)
+        budget.acquire_call(Request("GET", "https://api.example.com/a").prepare(), block=False)
+        assert adapter_send.call_count == 2
+
+    def test_redirect_with_shared_policy(self, mocker):
+        responses = [
+            (302, {"Location": "https://api.example.com/b", "ratelimit-remaining": "50"}),
+            (200, {"ratelimit-remaining": "0"}),
+        ]
+
+        def fake_send(_adapter, request, **_kwargs):
+            status_code, headers = responses.pop(0)
+            return self._response(request, status_code, headers)
+
+        mocker.patch.object(
+            requests.adapters.HTTPAdapter, "send", autospec=True, side_effect=fake_send
+        )
+        matcher = HttpRequestRegexMatcher(
+            url_base="https://api.example.com", url_path_pattern=r"^/(a|b)$"
+        )
+        budget = self._build_budget([self._policy([matcher])])
+
+        LimiterSession(api_budget=budget).get("https://api.example.com/a")
+
+        with pytest.raises(CallRateLimitHit):
+            budget.acquire_call(Request("GET", "https://api.example.com/a").prepare(), block=False)
+        with pytest.raises(CallRateLimitHit):
+            budget.acquire_call(Request("GET", "https://api.example.com/b").prepare(), block=False)
+
+        responses.extend(
+            [
+                (302, {"Location": "https://api.example.com/b", "ratelimit-remaining": "50"}),
+                (200, {"ratelimit-remaining": "10"}),
+            ]
+        )
+        budget = self._build_budget([self._policy([matcher])])
+        LimiterSession(api_budget=budget).get("https://api.example.com/a")
+        budget.acquire_call(Request("GET", "https://api.example.com/b").prepare(), block=False)
+
+    def test_no_redirect_unchanged(self, mocker):
+        def fake_send(_adapter, request, **_kwargs):
+            return self._response(request, 200, {"ratelimit-remaining": "0"})
+
+        adapter_send = mocker.patch.object(
+            requests.adapters.HTTPAdapter, "send", autospec=True, side_effect=fake_send
+        )
+        budget = self._build_budget(
+            [
+                self._policy([HttpRequestMatcher(url="https://api.example.com/a")]),
+                self._policy([HttpRequestMatcher(url="https://api.example.com/b")]),
+            ]
+        )
+
+        LimiterSession(api_budget=budget).get("https://api.example.com/a")
+
+        with pytest.raises(CallRateLimitHit):
+            budget.acquire_call(Request("GET", "https://api.example.com/a").prepare(), block=False)
+        budget.acquire_call(Request("GET", "https://api.example.com/b").prepare(), block=False)
+        assert adapter_send.call_count == 1
 
 
 class TestHttpRequestRegexMatcher:
