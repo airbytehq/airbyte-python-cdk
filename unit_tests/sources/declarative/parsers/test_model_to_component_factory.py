@@ -54,7 +54,13 @@ from airbyte_cdk.sources.declarative.checks import CheckStream
 from airbyte_cdk.sources.declarative.concurrency_level import ConcurrencyLevel
 from airbyte_cdk.sources.declarative.datetime.min_max_datetime import MinMaxDatetime
 from airbyte_cdk.sources.declarative.decoders import JsonDecoder, PaginationDecoderDecorator
-from airbyte_cdk.sources.declarative.extractors import DpathExtractor, RecordFilter, RecordSelector
+from airbyte_cdk.sources.declarative.extractors import (
+    CombinedExtractor,
+    CombineMode,
+    DpathExtractor,
+    RecordFilter,
+    RecordSelector,
+)
 from airbyte_cdk.sources.declarative.extractors.record_extractor import RecordExtractor
 from airbyte_cdk.sources.declarative.extractors.record_filter import (
     ClientSideIncrementalRecordFilterDecorator,
@@ -6555,3 +6561,100 @@ def test_incremental_dependency_without_incremental_sync_warns(
         for record in caplog.records
     )
     assert warning_emitted == expected_warning
+
+
+def test_create_combined_extractor_through_the_record_selector():
+    """A manifest-level test: it exercises the schema, the generated model and the factory registration."""
+    content = """
+    selector:
+      type: RecordSelector
+      extractor:
+        type: CombinedExtractor
+        mode: first_match
+        extractors:
+          - type: DpathExtractor
+            field_path: ["data", "boards", "*", "items_page", "items"]
+          - type: CombinedExtractor
+            mode: union
+            extractors:
+              - type: DpathExtractor
+                field_path: ["data", "next_items_page", "items"]
+              - type: DpathExtractor
+                field_path: ["data", "{{ parameters['name'] }}"]
+      $parameters:
+        name: "lists"
+    """
+    parsed_manifest = YamlDeclarativeSource._parse(content)
+    resolved_manifest = resolver.preprocess_manifest(parsed_manifest)
+    selector_manifest = transformer.propagate_types_and_parameters(
+        "", resolved_manifest["selector"], {}
+    )
+
+    selector = factory.create_component(
+        model_type=RecordSelectorModel,
+        name="test_stream",
+        component_definition=selector_manifest,
+        decoder=None,
+        transformations=[],
+        config=input_config,
+    )
+
+    assert isinstance(selector, RecordSelector)
+    extractor = selector.extractor
+    assert isinstance(extractor, CombinedExtractor)
+    assert extractor.mode == CombineMode.first_match
+    assert len(extractor.extractors) == 2
+    assert isinstance(extractor.extractors[0], DpathExtractor)
+    assert [fp.eval(input_config) for fp in extractor.extractors[0]._field_path] == [
+        "data",
+        "boards",
+        "*",
+        "items_page",
+        "items",
+    ]
+
+    nested = extractor.extractors[1]
+    assert isinstance(nested, CombinedExtractor)
+    assert nested.mode == CombineMode.union
+    assert [fp.eval(input_config) for fp in nested.extractors[1]._field_path] == ["data", "lists"]
+
+    response = requests.Response()
+    response._content = json.dumps(
+        {"data": {"next_items_page": {"items": [{"id": 1}]}, "lists": [{"id": 2}]}}
+    ).encode("utf-8")
+    assert list(extractor.extract_records(response)) == [{"id": 1}, {"id": 2}]
+
+
+def test_create_combined_extractor_defaults_to_union():
+    content = """
+    selector:
+      type: RecordSelector
+      extractor:
+        type: CombinedExtractor
+        extractors:
+          - type: DpathExtractor
+            field_path: ["a"]
+          - type: DpathExtractor
+            field_path: ["b"]
+    """
+    parsed_manifest = YamlDeclarativeSource._parse(content)
+    resolved_manifest = resolver.preprocess_manifest(parsed_manifest)
+    selector_manifest = transformer.propagate_types_and_parameters(
+        "", resolved_manifest["selector"], {}
+    )
+
+    selector = factory.create_component(
+        model_type=RecordSelectorModel,
+        name="test_stream",
+        component_definition=selector_manifest,
+        decoder=None,
+        transformations=[],
+        config=input_config,
+    )
+
+    assert isinstance(selector.extractor, CombinedExtractor)
+    assert selector.extractor.mode == CombineMode.union
+
+    response = requests.Response()
+    response._content = json.dumps({"a": [{"id": 1}], "b": [{"id": 2}]}).encode("utf-8")
+    assert list(selector.extractor.extract_records(response)) == [{"id": 1}, {"id": 2}]

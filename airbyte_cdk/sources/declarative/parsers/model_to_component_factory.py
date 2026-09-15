@@ -112,6 +112,8 @@ from airbyte_cdk.sources.declarative.expanders.record_expander import (
     RecordExpander,
 )
 from airbyte_cdk.sources.declarative.extractors import (
+    CombinedExtractor,
+    CombineMode,
     DpathExtractor,
     RecordFilter,
     RecordSelector,
@@ -167,6 +169,9 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     CheckStream as CheckStreamModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    CombinedExtractor as CombinedExtractorModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     ComplexFieldType as ComplexFieldTypeModel,
@@ -784,6 +789,7 @@ class ModelToComponentFactory:
             DeclarativeStreamModel: self.create_default_stream,
             DefaultErrorHandlerModel: self.create_default_error_handler,
             DefaultPaginatorModel: self.create_default_paginator,
+            CombinedExtractorModel: self.create_combined_extractor,
             DpathExtractorModel: self.create_dpath_extractor,
             DpathValidatorModel: self.create_dpath_validator,
             ResponseToFileExtractorModel: self.create_response_to_file_extractor,
@@ -2471,6 +2477,23 @@ class ModelToComponentFactory:
         if self._limit_pages_fetched_per_slice:
             return PaginatorTestReadDecorator(paginator, self._limit_pages_fetched_per_slice)
         return paginator
+
+    def create_combined_extractor(
+        self,
+        model: CombinedExtractorModel,
+        config: Config,
+        decoder: Optional[Decoder] = None,
+        **kwargs: Any,
+    ) -> CombinedExtractor:
+        extractors = [
+            self._create_component_from_model(model=sub_extractor, config=config, decoder=decoder)
+            for sub_extractor in model.extractors
+        ]
+        return CombinedExtractor(
+            extractors=extractors,
+            mode=CombineMode(model.mode.value) if model.mode else CombineMode.union,
+            parameters=model.parameters or {},
+        )
 
     def create_dpath_extractor(
         self,

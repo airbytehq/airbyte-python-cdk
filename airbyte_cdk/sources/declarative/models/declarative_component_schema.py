@@ -2517,6 +2517,27 @@ class DpathExtractor(BaseModel):
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
 
+class CombineMode(Enum):
+    union = "union"
+    first_match = "first_match"
+    zip_merge = "zip_merge"
+
+
+class CombinedExtractor(BaseModel):
+    type: Literal["CombinedExtractor"]
+    extractors: List[Union[DpathExtractor, CustomRecordExtractor, CombinedExtractor]] = Field(
+        ...,
+        description="The record extractors to combine. At least one is required. Each sub-extractor is given the same HTTP response, so they must not rely on a streaming decoder (CsvDecoder, JsonlDecoder, JsonItemsDecoder, GzipDecoder), whose response body can only be read once.",
+        title="Extractors",
+    )
+    mode: Optional[CombineMode] = Field(
+        CombineMode.union,
+        description='How the records of the sub-extractors are combined. "union" (default) yields every record of every sub-extractor, in the order the extractors are declared. "first_match" yields the records of the first sub-extractor that produces at least one record and skips the remaining ones; nothing is yielded if none of them produces a record. "zip_merge" merges the i-th record of every sub-extractor into a single record, with later sub-extractors overwriting the fields set by earlier ones, and stops at the shortest sub-extractor.',
+        title="Combine Mode",
+    )
+    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
+
+
 class ZipfileDecoder(BaseModel):
     class Config:
         extra = Extra.allow
@@ -2531,7 +2552,7 @@ class ZipfileDecoder(BaseModel):
 
 class RecordSelector(BaseModel):
     type: Literal["RecordSelector"]
-    extractor: Union[DpathExtractor, CustomRecordExtractor]
+    extractor: Union[DpathExtractor, CustomRecordExtractor, CombinedExtractor]
     record_filter: Optional[Union[RecordFilter, CustomRecordFilter]] = Field(
         None,
         description="Responsible for filtering records to be emitted by the Source.",
@@ -2776,9 +2797,11 @@ class FileUploader(BaseModel):
         ...,
         description="Requester component that describes how to prepare HTTP requests to send to the source API.",
     )
-    download_target_extractor: Union[DpathExtractor, CustomRecordExtractor] = Field(
-        ...,
-        description="Responsible for fetching the url where the file is located. This is applied on each records and not on the HTTP response",
+    download_target_extractor: Union[DpathExtractor, CustomRecordExtractor, CombinedExtractor] = (
+        Field(
+            ...,
+            description="Responsible for fetching the url where the file is located. This is applied on each records and not on the HTTP response",
+        )
     )
     file_extractor: Optional[Union[DpathExtractor, CustomRecordExtractor]] = Field(
         None,
@@ -3260,15 +3283,17 @@ class AsyncRetriever(BaseModel):
     status_mapping: AsyncJobStatusMap = Field(
         ..., description="Async Job Status to Airbyte CDK Async Job Status mapping."
     )
-    status_extractor: Union[DpathExtractor, CustomRecordExtractor] = Field(
+    status_extractor: Union[DpathExtractor, CustomRecordExtractor, CombinedExtractor] = Field(
         ..., description="Responsible for fetching the actual status of the async job."
     )
-    download_target_extractor: Optional[Union[DpathExtractor, CustomRecordExtractor]] = Field(
+    download_target_extractor: Optional[
+        Union[DpathExtractor, CustomRecordExtractor, CombinedExtractor]
+    ] = Field(
         None,
         description="Responsible for fetching the final result `urls` provided by the completed / finished / ready async job.",
     )
     download_extractor: Optional[
-        Union[DpathExtractor, CustomRecordExtractor, ResponseToFileExtractor]
+        Union[DpathExtractor, CustomRecordExtractor, ResponseToFileExtractor, CombinedExtractor]
     ] = Field(None, description="Responsible for fetching the records from provided urls.")
     creation_requester: Union[HttpRequester, CustomRequester] = Field(
         ...,
@@ -3477,6 +3502,7 @@ class DynamicDeclarativeStream(BaseModel):
 
 ComplexFieldType.update_forward_refs()
 GzipDecoder.update_forward_refs()
+CombinedExtractor.update_forward_refs()
 CompositeErrorHandler.update_forward_refs()
 DeclarativeSource1.update_forward_refs()
 DeclarativeSource2.update_forward_refs()

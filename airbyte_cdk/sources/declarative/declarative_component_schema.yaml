@@ -1900,6 +1900,7 @@ definitions:
             anyOf:
               - "$ref": "#/definitions/DpathExtractor"
               - "$ref": "#/definitions/CustomRecordExtractor"
+              - "$ref": "#/definitions/CombinedExtractor"
           file_extractor:
             description: Responsible for fetching the content of the file. If not defined, the assumption is that the whole response body is the file content
             anyOf:
@@ -2172,6 +2173,60 @@ definitions:
       $parameters:
         type: object
         additionalProperties: true
+  CombinedExtractor:
+    title: Combined Extractor
+    description: Record extractor that combines the output of several sub-extractors. Use it when a single response holds records under more than one path, when the records can be found under one of several alternative paths, or when a record has to be assembled from several parallel lists.
+    type: object
+    required:
+      - type
+      - extractors
+    properties:
+      type:
+        type: string
+        enum: [CombinedExtractor]
+      extractors:
+        title: Extractors
+        description: The record extractors to combine. At least one is required. Each sub-extractor is given the same HTTP response, so they must not rely on a streaming decoder (CsvDecoder, JsonlDecoder, JsonItemsDecoder, GzipDecoder), whose response body can only be read once.
+        type: array
+        items:
+          anyOf:
+            - "$ref": "#/definitions/DpathExtractor"
+            - "$ref": "#/definitions/CustomRecordExtractor"
+            - "$ref": "#/definitions/CombinedExtractor"
+      mode:
+        title: Combine Mode
+        description: 'How the records of the sub-extractors are combined. "union" (default) yields every record of every sub-extractor, in the order the extractors are declared. "first_match" yields the records of the first sub-extractor that produces at least one record and skips the remaining ones; nothing is yielded if none of them produces a record. "zip_merge" merges the i-th record of every sub-extractor into a single record, with later sub-extractors overwriting the fields set by earlier ones, and stops at the shortest sub-extractor.'
+        type: string
+        enum:
+          - union
+          - first_match
+          - zip_merge
+        default: union
+      $parameters:
+        type: object
+        additionalProperties: true
+    examples:
+      - type: CombinedExtractor
+        mode: union
+        extractors:
+          - type: DpathExtractor
+            field_path: ["data", "repository", "issues", "nodes"]
+          - type: DpathExtractor
+            field_path: ["data", "repository", "pullRequests", "nodes"]
+      - type: CombinedExtractor
+        mode: first_match
+        extractors:
+          - type: DpathExtractor
+            field_path: ["data", "boards", "*", "items_page", "items"]
+          - type: DpathExtractor
+            field_path: ["data", "next_items_page", "items"]
+      - type: CombinedExtractor
+        mode: zip_merge
+        extractors:
+          - type: DpathExtractor
+            field_path: ["reports", "*", "dimensions"]
+          - type: DpathExtractor
+            field_path: ["reports", "*", "metrics"]
   DpathExtractor:
     title: Dpath Extractor
     description: Record extractor that searches a decoded response over a path defined as an array of fields.
@@ -3949,6 +4004,7 @@ definitions:
         anyOf:
           - "$ref": "#/definitions/DpathExtractor"
           - "$ref": "#/definitions/CustomRecordExtractor"
+          - "$ref": "#/definitions/CombinedExtractor"
       record_filter:
         title: Record Filter
         description: Responsible for filtering records to be emitted by the Source.
@@ -4377,17 +4433,20 @@ definitions:
         anyOf:
           - "$ref": "#/definitions/DpathExtractor"
           - "$ref": "#/definitions/CustomRecordExtractor"
+          - "$ref": "#/definitions/CombinedExtractor"
       download_target_extractor:
         description: Responsible for fetching the final result `urls` provided by the completed / finished / ready async job.
         anyOf:
           - "$ref": "#/definitions/DpathExtractor"
           - "$ref": "#/definitions/CustomRecordExtractor"
+          - "$ref": "#/definitions/CombinedExtractor"
       download_extractor:
         description: Responsible for fetching the records from provided urls.
         anyOf:
           - "$ref": "#/definitions/DpathExtractor"
           - "$ref": "#/definitions/CustomRecordExtractor"
           - "$ref": "#/definitions/ResponseToFileExtractor"
+          - "$ref": "#/definitions/CombinedExtractor"
       creation_requester:
         description: Requester component that describes how to prepare HTTP requests to send to the source API to create the async server-side job.
         anyOf:
