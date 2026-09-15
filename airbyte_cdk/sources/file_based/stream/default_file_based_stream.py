@@ -303,17 +303,21 @@ class DefaultFileBasedStream(AbstractFileBasedStream, IncrementalMixin):
             self._discovery_policy.get_max_n_files_for_schema_inference(self.get_parser())
         )
 
+        newest_first = sorted(files, key=lambda x: x.last_modified, reverse=True)[:first_n_files]
+
         if first_n_files > max_n_files_for_schema_inference:
             # Use the most recent files for schema inference, so we pick up schema changes during discovery.
             self.logger.warning(
                 msg=f"Refusing to infer schema for {first_n_files} files; using {max_n_files_for_schema_inference} files."
             )
-            files = self._select_files_for_schema_inference(files, max_n_files_for_schema_inference)
+            files = self._select_files_for_schema_inference(
+                newest_first, max_n_files_for_schema_inference
+            )
             self.logger.info(
                 msg=f"Files selected for schema inference for stream {self.name}: {[file.uri for file in files]}"
             )
         else:
-            files = sorted(files, key=lambda x: x.last_modified, reverse=True)[:first_n_files]
+            files = newest_first
 
         inferred_schema = self.infer_schema(files)
 

@@ -340,6 +340,37 @@ class DefaultFileBasedStreamTest(unittest.TestCase):
         assert "allguides.avro" in [file.uri for file in selected_files]
         assert schema == {"type": "object", "properties": {"a": {"type": "string"}}}
 
+    def test_when_recent_n_files_exceeds_cap_then_selection_stays_within_recent_window(
+        self,
+    ) -> None:
+        self._stream_config.input_schema = None
+        self._stream_config.schemaless = False
+        self._stream_config.use_first_found_file_for_schema_discovery = False
+        self._stream_config.recent_n_files_to_read_for_schema_discovery = 20
+        self._discovery_policy.get_max_n_files_for_schema_inference.return_value = 10
+        self._stream_reader.get_matching_files.return_value = [
+            *[
+                RemoteFile(
+                    uri=f"matchedEvents/Page/Page-{i}.avro",
+                    last_modified=self._NOW - timedelta(minutes=i),
+                )
+                for i in range(25)
+            ],
+            RemoteFile(
+                uri="allguides.avro",
+                last_modified=self._NOW - timedelta(minutes=100),
+            ),
+        ]
+        self._stream.infer_schema = Mock(return_value={"a": {"type": "string"}})
+
+        self._stream._get_raw_json_schema()
+
+        self._stream.infer_schema.assert_called_once()
+        selected_uris = {file.uri for file in self._stream.infer_schema.call_args.args[0]}
+        assert len(selected_uris) == 10
+        assert "allguides.avro" not in selected_uris
+        assert selected_uris <= {f"matchedEvents/Page/Page-{i}.avro" for i in range(20)}
+
     def test_use_first_found_file_for_schema_discovery(self) -> None:
         self._stream.config.use_first_found_file_for_schema_discovery = True
 
