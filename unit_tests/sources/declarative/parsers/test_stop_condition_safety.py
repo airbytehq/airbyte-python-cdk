@@ -189,6 +189,60 @@ from airbyte_cdk.sources.declarative.parsers.stop_condition_safety import (
             StopConditionSafety.UNKNOWN,
             id="requested_page_size_with_arithmetic",
         ),
+        # A threshold merely built from `page_size` can hold the configured size again - `max(50, 100)` is 100 -
+        # so mentioning the variable is not enough for the threshold to follow the reduction.
+        pytest.param(
+            "{{ last_page_size < [page_size, 100] | max }}",
+            1,
+            StopConditionSafety.UNKNOWN,
+            id="requested_page_size_inside_a_list",
+        ),
+        pytest.param(
+            "{{ last_page_size < page_size + 50 }}",
+            1,
+            StopConditionSafety.UNKNOWN,
+            id="requested_page_size_plus_a_literal",
+        ),
+        # A `{% if %}` renders truthy text exactly when its test holds, so the test decides the condition.
+        pytest.param(
+            "{% if last_page_size < 100 %}true{% endif %}",
+            1,
+            StopConditionSafety.TRUNCATES,
+            id="literal_threshold_in_an_if_block",
+        ),
+        pytest.param(
+            "{% if last_page_size == 0 %}true{% endif %}",
+            1,
+            StopConditionSafety.SAFE,
+            id="emptiness_test_in_an_if_block",
+        ),
+        # ... but only while the guarded branch is the whole story: an `else` branch, or a body the CDK reads
+        # as false, breaks the equivalence between the test and what the condition renders.
+        pytest.param(
+            "{% if last_page_size < 100 %}true{% else %}also true{% endif %}",
+            1,
+            StopConditionSafety.UNKNOWN,
+            id="literal_threshold_in_an_if_block_with_an_else",
+        ),
+        pytest.param(
+            "{% if last_page_size < 100 %}false{% endif %}",
+            1,
+            StopConditionSafety.UNKNOWN,
+            id="if_block_rendering_a_false_value",
+        ),
+        pytest.param(
+            "{% if last_page_size < 100 %}{% endif %}",
+            1,
+            StopConditionSafety.UNKNOWN,
+            id="if_block_rendering_nothing",
+        ),
+        # Text rendered next to the comparison makes the condition truthy whatever the comparison decided.
+        pytest.param(
+            "{{ last_page_size < 100 }} records",
+            1,
+            StopConditionSafety.UNKNOWN,
+            id="comparison_rendered_next_to_text",
+        ),
     ],
 )
 def test_classify_stop_condition(stop_condition, minimum_page_size, expected):

@@ -24,27 +24,30 @@ number, so:
   `minimum_page_size` is at least 1.
 - `last_page_size > x` and `last_page_size >= x` can only stop being true as the page shrinks, so a reduction
   cannot introduce a stop that would not have happened anyway.
-- `last_page_size < x` and `last_page_size <= x` are the dangerous shape. They are safe only when `x` follows
-  the reduction (it references the `page_size` variable) or when `x` is a literal at or below
-  `minimum_page_size`, which makes the comparison a rewrite of "the page is empty".
+- `last_page_size < x` and `last_page_size <= x` are the dangerous shape. They are safe only when `x` is the
+  `page_size` variable, which follows the reduction, or when `x` is a literal at or below `minimum_page_size`,
+  which makes the comparison a rewrite of "the page is empty". An expression merely built from `page_size`,
+  such as `[page_size, 100] | max` or `page_size + 50`, does not count: it can hold the configured size again.
 
 Each verdict above reads the comparison on its own, which is only sound while the comparison decides the
 condition in its own polarity. `{{ not (last_page_size >= 100) }}` means `last_page_size < 100`, and
 `{{ last_page_size - 100 < 0 }}` means the same again, so the operator and the operands of the comparison no
-longer say what the condition does. A comparison is therefore only classified when it is reached from the root
-of the expression through `and`/`or` alone, and when `last_page_size` is compared bare rather than transformed
-first; anything else is unclassifiable.
+longer say what the condition does. A comparison is therefore only classified when the truth of the condition follows its own: reached from the
+root through `and`/`or`, or as the test of a `{% if %}` that renders truthy text and nothing else, and with
+`last_page_size` compared bare rather than transformed first. Anything else is unclassifiable.
 
 Anything else is reported as unclassifiable rather than as a truncation: this analysis rejects a manifest at
 stream construction, so a shape it does not understand must not be treated as a defect.
 """
 
 from enum import Enum
-from typing import Iterator, List, Tuple
+from typing import Iterator, List, Optional, Tuple
 
 from jinja2 import nodes
 from jinja2.environment import Environment
 from jinja2.exceptions import TemplateSyntaxError
+
+from airbyte_cdk.sources.declarative.interpolation.interpolated_boolean import FALSE_VALUES
 
 LAST_PAGE_SIZE_VARIABLE = "last_page_size"
 REQUESTED_PAGE_SIZE_VARIABLE = "page_size"
@@ -155,11 +158,49 @@ def _comparisons(
             yield from _comparisons(operand_node, False)
         return
 
-    children_decide = decides_condition and isinstance(
-        node, (nodes.Template, nodes.Output, nodes.And, nodes.Or)
-    )
+    if isinstance(node, nodes.If):
+        # `{% if last_page_size < 100 %}true{% endif %}` renders truthy text exactly when its test holds, so
+        # the test decides the condition. That only follows while the branch it guards is the whole story:
+        # an `else`, an `elif`, or a body rendering something the CDK reads as false breaks the equivalence.
+        test_decides = decides_condition and _if_follows_its_test(node)
+        yield from _comparisons(node.test, test_decides)
+        for branch in [*node.body, *node.elif_, *node.else_]:
+            yield from _comparisons(branch, False)
+        return
+
+    children_decide = decides_condition and _passes_truth_through(node)
     for child in node.iter_child_nodes():
         yield from _comparisons(child, children_decide)
+
+
+def _passes_truth_through(node: nodes.Node) -> bool:
+    """Whether the truth of the condition follows the truth of this node's children."""
+    if isinstance(node, (nodes.And, nodes.Or)):
+        return True
+    if isinstance(node, nodes.Template):
+        # Anything rendered next to the comparison is text of its own, which makes the rendered condition
+        # truthy whatever the comparison decided.
+        return len(node.body) == 1
+    if isinstance(node, nodes.Output):
+        return len(node.nodes) == 1
+    return False
+
+
+def _if_follows_its_test(node: nodes.If) -> bool:
+    if node.elif_ or node.else_:
+        return False
+    rendered = ""
+    for statement in node.body:
+        if not isinstance(statement, nodes.Output):
+            return False
+        for output in statement.nodes:
+            if isinstance(output, nodes.TemplateData):
+                rendered += output.data
+            elif isinstance(output, nodes.Const):
+                rendered += str(output.value)
+            else:
+                return False
+    return rendered not in FALSE_VALUES
 
 
 def _classify_comparison(
@@ -218,6 +259,15 @@ def _classify_comparison(
                 f"`{LAST_PAGE_SIZE_VARIABLE}` takes part in arithmetic before being compared",
             )
         if _references(right, REQUESTED_PAGE_SIZE_VARIABLE):
+            if not _is_requested_page_size(right):
+                # `[page_size, 100] | max` and `page_size + 50` both mention the variable while holding a
+                # value a reduction does not lower, so the threshold does not follow the reduction after all.
+                return (
+                    StopConditionSafety.UNKNOWN,
+                    f"it compares `{LAST_PAGE_SIZE_VARIABLE}` against an expression built from "
+                    f"`{REQUESTED_PAGE_SIZE_VARIABLE}` rather than against `{REQUESTED_PAGE_SIZE_VARIABLE}` "
+                    f"itself, so the threshold may not follow the reduction",
+                )
             return (
                 StopConditionSafety.SAFE,
                 f"it compares `{LAST_PAGE_SIZE_VARIABLE}` against `{REQUESTED_PAGE_SIZE_VARIABLE}`, "
@@ -242,6 +292,14 @@ def _classify_comparison(
         StopConditionSafety.UNKNOWN,
         f"it uses `{LAST_PAGE_SIZE_VARIABLE}` with the `{operator}` operator",
     )
+
+
+def _is_requested_page_size(node: nodes.Node) -> bool:
+    """Whether the node is the `page_size` variable itself, filters aside."""
+    unfiltered: Optional[nodes.Node] = node
+    while isinstance(unfiltered, nodes.Filter):
+        unfiltered = unfiltered.node
+    return isinstance(unfiltered, nodes.Name) and unfiltered.name == REQUESTED_PAGE_SIZE_VARIABLE
 
 
 def _references(node: nodes.Node, name: str) -> bool:
