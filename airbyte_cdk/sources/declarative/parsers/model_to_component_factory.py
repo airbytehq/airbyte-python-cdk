@@ -289,6 +289,9 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
     FlattenFields as FlattenFieldsModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    ForEach as ForEachModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     GroupByKeyMergeStrategy as GroupByKeyMergeStrategyModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
@@ -624,6 +627,9 @@ from airbyte_cdk.sources.declarative.transformations.dpath_flatten_fields import
 from airbyte_cdk.sources.declarative.transformations.flatten_fields import (
     FlattenFields,
 )
+from airbyte_cdk.sources.declarative.transformations.for_each import (
+    ForEach,
+)
 from airbyte_cdk.sources.declarative.transformations.keys_replace_transformation import (
     KeysReplaceTransformation,
 )
@@ -803,6 +809,7 @@ class ModelToComponentFactory:
             KeysReplaceModel: self.create_keys_replace_transformation,
             FlattenFieldsModel: self.create_flatten_fields,
             DpathFlattenFieldsModel: self.create_dpath_flatten_fields,
+            ForEachModel: self.create_for_each,
             IterableDecoderModel: self.create_iterable_decoder,
             XmlDecoderModel: self.create_xml_decoder,
             JsonFileSchemaLoaderModel: self.create_json_file_schema_loader,
@@ -1064,6 +1071,20 @@ class ModelToComponentFactory:
     ) -> FlattenFields:
         return FlattenFields(
             flatten_lists=model.flatten_lists if model.flatten_lists is not None else True
+        )
+
+    def create_for_each(self, model: ForEachModel, config: Config, **kwargs: Any) -> ForEach:
+        transformations: List[RecordTransformation] = []
+        for transformation_model in model.transformations:
+            transformations.append(
+                self._create_component_from_model(model=transformation_model, config=config)
+            )
+
+        return ForEach(
+            config=config,
+            field_path=[x for x in model.field_path],
+            transformations=transformations,
+            parameters=model.parameters or {},
         )
 
     def create_dpath_flatten_fields(

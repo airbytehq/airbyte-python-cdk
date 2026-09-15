@@ -2331,6 +2331,49 @@ class SessionTokenRequestApiKeyAuthenticator(BaseModel):
     )
 
 
+class ForEach(BaseModel):
+    type: Literal["ForEach"]
+    field_path: List[str] = Field(
+        ...,
+        description="Path to the collection whose elements the nested transformations are applied to. If the path does not resolve, or resolves to a scalar or null, the transformation is a no-op. If it resolves to an object, that object is treated as a collection of one. A `*` wildcard segment is supported, in which case every matching value is iterated over. An element that is not an object raises an error, because it cannot be transformed in place.",
+        examples=[
+            ["column_values"],
+            ["data", "assets"],
+            ["data", "*", "items"],
+            ["{{ parameters['collection_field'] }}"],
+        ],
+        title="Field Path",
+    )
+    transformations: List[
+        Union[
+            AddFields,
+            RemoveFields,
+            KeysToLower,
+            KeysToSnakeCase,
+            FlattenFields,
+            DpathFlattenFields,
+            KeysReplace,
+            ForEach,
+            CustomTransformation,
+        ]
+    ] = Field(
+        ...,
+        description="A list of transformations applied to each element of the collection. Inside these transformations, `record` refers to the current element of the collection, while `config`, `stream_state` and `stream_slice` still refer to the enclosing stream.",
+        examples=[
+            [
+                {
+                    "type": "AddFields",
+                    "condition": "{{ record.get('display_value') and not record.get('text') }}",
+                    "fields": [{"path": ["text"], "value": "{{ record['display_value'] }}"}],
+                }
+            ],
+            [{"type": "RemoveFields", "field_pointers": [["uploader"]]}],
+        ],
+        title="Transformations",
+    )
+    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
+
+
 class JsonSchemaPropertySelector(BaseModel):
     type: Literal["JsonSchemaPropertySelector"]
     transformations: Optional[
@@ -2343,6 +2386,7 @@ class JsonSchemaPropertySelector(BaseModel):
                 FlattenFields,
                 DpathFlattenFields,
                 KeysReplace,
+                ForEach,
                 CustomTransformation,
             ]
         ]
@@ -2842,6 +2886,7 @@ class DeclarativeStream(BaseModel):
                 FlattenFields,
                 DpathFlattenFields,
                 KeysReplace,
+                ForEach,
                 CustomTransformation,
             ]
         ]
@@ -3074,6 +3119,7 @@ class DynamicSchemaLoader(BaseModel):
                 FlattenFields,
                 DpathFlattenFields,
                 KeysReplace,
+                ForEach,
                 CustomTransformation,
             ]
         ]
@@ -3476,6 +3522,7 @@ class DynamicDeclarativeStream(BaseModel):
 
 
 ComplexFieldType.update_forward_refs()
+ForEach.update_forward_refs()
 GzipDecoder.update_forward_refs()
 CompositeErrorHandler.update_forward_refs()
 DeclarativeSource1.update_forward_refs()
