@@ -2,12 +2,24 @@
 # Copyright (c) 2025 Airbyte, Inc., all rights reserved.
 #
 
+import copy
+import time
 from typing import Any, Mapping
+from unittest.mock import patch
 
 import pytest
+from jsonschema import ValidationError, validate
 
 from airbyte_cdk.models import FailureType
-from airbyte_cdk.sources.declarative.transformations import AddFields, ForEach, RemoveFields
+from airbyte_cdk.sources.declarative.concurrent_declarative_source import (
+    _get_declarative_component_schema,
+)
+from airbyte_cdk.sources.declarative.transformations import (
+    AddFields,
+    ForEach,
+    RecordTransformation,
+    RemoveFields,
+)
 from airbyte_cdk.sources.declarative.transformations.add_fields import AddedFieldDefinition
 from airbyte_cdk.sources.declarative.transformations.keys_to_lower_transformation import (
     KeysToLowerTransformation,
@@ -148,7 +160,7 @@ def test_unresolvable_or_non_collection_field_path_is_a_no_op(record):
     transformation = _for_each(
         field_path=["items"], transformations=[_add_fields(["added"], "value")]
     )
-    expected = {key: value for key, value in record.items()}
+    expected = copy.deepcopy(record)
 
     transformation.transform(record)
 
@@ -177,35 +189,118 @@ def test_object_target_is_treated_as_a_collection_of_one():
     assert record == {"item": {"id": 1, "added": "value"}}
 
 
-def test_non_object_element_raises_a_config_error_naming_the_field_path():
+def test_null_element_inside_the_collection_is_skipped():
+    """
+    A `null` in an array is ordinary API payload, not a manifest mistake. The Python transformations
+    this component replaces (for example `MondayTransformation`) skip it, so ForEach must too.
+    """
+    transformation = _for_each(
+        field_path=["items"], transformations=[_add_fields(["added"], "value")]
+    )
+    record = {"items": [{"id": 1}, None, {"id": 2}]}
+
+    transformation.transform(record)
+
+    assert record == {"items": [{"id": 1, "added": "value"}, None, {"id": 2, "added": "value"}]}
+
+
+def test_collection_of_only_nulls_is_a_no_op():
+    transformation = _for_each(
+        field_path=["items"], transformations=[_add_fields(["added"], "value")]
+    )
+    record = {"items": [None, None]}
+
+    transformation.transform(record)
+
+    assert record == {"items": [None, None]}
+
+
+@pytest.mark.parametrize(
+    "collection, expected_type_name",
+    [
+        pytest.param(["a", "b"], "str", id="strings"),
+        pytest.param([1], "int", id="ints"),
+        pytest.param([[{"id": 1}]], "list", id="nested_lists"),
+    ],
+)
+def test_non_object_element_raises_a_system_error_naming_the_field_path(
+    collection, expected_type_name
+):
+    """
+    Unlike a `null`, a string or a number in the collection means `field_path` points at the wrong
+    thing. That is a connector-development fault, so it is a `system_error` rather than something the
+    user is told to fix in their connection configuration.
+    """
+    transformation = _for_each(
+        field_path=["tags"], transformations=[_add_fields(["added"], "value")]
+    )
+    record = {"tags": collection}
+
+    with pytest.raises(AirbyteTracedException) as exc_info:
+        transformation.transform(record)
+
+    assert exc_info.value.failure_type == FailureType.system_error
+    assert "['tags']" in exc_info.value.message
+    assert expected_type_name in exc_info.value.message
+    assert record == {"tags": collection}
+
+
+def test_the_error_message_does_not_promise_a_stream_name():
+    """
+    `name` is a DeclarativeStream field, not a `$parameter`, so a stream name sourced from
+    `$parameters` never materialises for a modern manifest. The message must not claim one.
+    """
     transformation = _for_each(
         field_path=["tags"],
         transformations=[_add_fields(["added"], "value")],
         parameters={"name": "the_stream"},
     )
-    record = {"tags": ["a", "b"]}
 
     with pytest.raises(AirbyteTracedException) as exc_info:
-        transformation.transform(record)
+        transformation.transform({"tags": ["a"]})
 
-    assert exc_info.value.failure_type == FailureType.config_error
-    assert "the_stream" in exc_info.value.message
-    assert "['tags']" in exc_info.value.message
-    assert "str" in exc_info.value.message
-    # nothing was mutated before the error was raised
-    assert record == {"tags": ["a", "b"]}
+    assert "the_stream" not in exc_info.value.message
+    assert "stream" not in exc_info.value.message
 
 
-def test_non_object_element_error_without_a_stream_name():
+def test_nothing_is_mutated_when_a_later_element_of_the_same_collection_is_invalid():
     transformation = _for_each(
         field_path=["tags"], transformations=[_add_fields(["added"], "value")]
     )
+    record = {"tags": [{"id": 1}, "bad"]}
 
-    with pytest.raises(AirbyteTracedException) as exc_info:
-        transformation.transform({"tags": [1]})
+    with pytest.raises(AirbyteTracedException):
+        transformation.transform(record)
 
-    assert "['tags']" in exc_info.value.message
-    assert "int" in exc_info.value.message
+    assert record == {"tags": [{"id": 1}, "bad"]}
+
+
+def test_nothing_is_mutated_when_a_later_collection_under_a_wildcard_is_invalid():
+    """
+    The whole-record pre-pass has to cover every collection the glob expands to, not just the one
+    currently being iterated, or the record is left half-transformed.
+    """
+    transformation = _for_each(
+        field_path=["data", "*", "items"], transformations=[_add_fields(["added"], "value")]
+    )
+    record = {
+        "data": {
+            "first": {"items": [{"id": 1}]},
+            "second": {"items": [{"id": 2}]},
+            "third": {"items": ["bad"]},
+        }
+    }
+
+    with pytest.raises(AirbyteTracedException):
+        transformation.transform(record)
+
+    assert record == {
+        "data": {
+            "first": {"items": [{"id": 1}]},
+            "second": {"items": [{"id": 2}]},
+            "third": {"items": ["bad"]},
+        }
+    }
 
 
 def test_nested_transformations_receive_config_and_stream_slice():
@@ -306,3 +401,223 @@ def test_multiple_nested_transformations_are_applied_in_order():
     transformation.transform(record)
 
     assert record == {"items": [{"first": "a", "second": "ab"}]}
+
+
+def test_empty_field_path_applies_the_transformations_to_the_record_itself():
+    transformation = _for_each(field_path=[], transformations=[_add_fields(["added"], "value")])
+    record = {"id": 1}
+
+    transformation.transform(record)
+
+    assert record == {"id": 1, "added": "value"}
+
+
+class _RecordingTransformation(RecordTransformation):
+    def __init__(self):
+        self.calls = []
+
+    def transform(self, record, config=None, stream_state=None, stream_slice=None) -> None:
+        self.calls.append(
+            {
+                "record": record,
+                "config": config,
+                "stream_state": stream_state,
+                "stream_slice": stream_slice,
+            }
+        )
+
+
+def test_stream_state_and_stream_slice_are_forwarded_to_the_nested_transformations():
+    recorder = _RecordingTransformation()
+    transformation = _for_each(field_path=["items"], transformations=[recorder], config={"a": 1})
+    element = {"id": 1}
+    stream_slice = StreamSlice(partition={"partition_id": "p1"}, cursor_slice={})
+
+    transformation.transform(
+        {"items": [element]}, stream_state={"cursor": "2024-01-01"}, stream_slice=stream_slice
+    )
+
+    assert recorder.calls == [
+        {
+            "record": element,
+            "config": {"a": 1},
+            "stream_state": {"cursor": "2024-01-01"},
+            "stream_slice": stream_slice,
+        }
+    ]
+
+
+def test_field_path_is_interpolated_from_parameters():
+    transformation = _for_each(
+        field_path=["{{ parameters['collection_field'] }}"],
+        transformations=[_add_fields(["added"], "value")],
+        parameters={"collection_field": "items"},
+    )
+    record = {"items": [{"id": 1}]}
+
+    transformation.transform(record)
+
+    assert record == {"items": [{"id": 1, "added": "value"}]}
+
+
+@pytest.mark.parametrize(
+    "config",
+    [
+        pytest.param({}, id="segment_interpolates_to_an_empty_string"),
+        pytest.param({"collection_field": 5}, id="segment_interpolates_to_a_number"),
+    ],
+)
+def test_a_field_path_segment_that_is_not_a_non_empty_string_is_a_config_error(config):
+    """
+    Without this check the component is a silent no-op for the entire sync, which is the hardest
+    failure mode to diagnose.
+    """
+    transformation = _for_each(
+        field_path=["{{ config['collection_field'] }}"],
+        transformations=[_add_fields(["added"], "value")],
+        config=config,
+    )
+
+    with pytest.raises(AirbyteTracedException) as exc_info:
+        transformation.transform({"items": [{"id": 1}]})
+
+    assert exc_info.value.failure_type == FailureType.config_error
+
+
+@pytest.mark.parametrize(
+    "field_path",
+    [
+        pytest.param(["**", "items"], id="recursive_glob"),
+        pytest.param(["data", "?", "items"], id="single_character_glob"),
+        pytest.param(["data", "item*"], id="partial_glob"),
+    ],
+)
+def test_non_star_globs_match_several_collections_instead_of_raising(field_path):
+    """
+    `dpath.get` raises a bare `ValueError` as soon as a glob matches more than one leaf. Routing every
+    glob through `dpath.values` keeps the multi-match case working.
+    """
+    transformation = _for_each(
+        field_path=field_path, transformations=[_add_fields(["added"], "value")]
+    )
+    record = {"data": {"a": {"items": [{"id": 1}]}, "items": [{"id": 2}], "itemz": [{"id": 3}]}}
+
+    transformation.transform(record)
+
+    assert any(
+        element.get("added") == "value"
+        for collection in (
+            record["data"]["a"]["items"],
+            record["data"]["items"],
+            record["data"]["itemz"],
+        )
+        for element in collection
+    )
+
+
+def test_a_path_without_a_glob_never_goes_through_dpath():
+    """
+    `dpath` resolves by folding over the whole object graph, so it costs O(total nodes in the record)
+    per call. The plain-walk fast path is what keeps a large unrelated sibling from dominating.
+    """
+    transformation = _for_each(
+        field_path=["data", "items"], transformations=[_add_fields(["added"], "value")]
+    )
+    record = {"data": {"items": [{"id": 1}]}, "junk": [{"n": n} for n in range(100)]}
+
+    with patch("airbyte_cdk.sources.declarative.transformations.for_each.dpath") as mocked_dpath:
+        transformation.transform(record)
+
+    mocked_dpath.get.assert_not_called()
+    mocked_dpath.values.assert_not_called()
+    assert record["data"]["items"] == [{"id": 1, "added": "value"}]
+
+
+def test_a_large_unrelated_sibling_does_not_slow_down_the_lookup():
+    transformation = _for_each(
+        field_path=["items"], transformations=[_add_fields(["added"], "value")]
+    )
+    junk = [{"n": n} for n in range(20_000)]
+
+    started_at = time.perf_counter()
+    for _ in range(500):
+        transformation.transform({"items": [{"id": 1}], "junk": junk})
+    elapsed = time.perf_counter() - started_at
+
+    # Resolving through `dpath.get` takes ~35 ms per record here, so the same loop takes ~17 s.
+    assert elapsed < 2.0, (
+        f"resolving `field_path` scaled with the unrelated sibling: {elapsed:.2f}s"
+    )
+
+
+def test_equality_compares_the_configured_fields_and_tolerates_foreign_types():
+    def build(field_path):
+        return _for_each(field_path=field_path, transformations=[_add_fields(["added"], "value")])
+
+    assert build(["items"]) == build(["items"])
+    assert build(["items"]) != build(["other"])
+    assert build(["items"]) != 1
+
+
+_FOR_EACH_MANIFEST_FRAGMENT = {
+    "type": "ForEach",
+    "field_path": ["column_values"],
+    "transformations": [
+        {
+            "type": "AddFields",
+            "fields": [{"type": "AddedFieldDefinition", "path": ["text"], "value": "a value"}],
+        },
+        {
+            "type": "ForEach",
+            "field_path": ["nested"],
+            "transformations": [{"type": "RemoveFields", "field_pointers": [["uploader"]]}],
+        },
+        {"type": "CustomTransformation", "class_name": "source_x.components.MyTransformation"},
+    ],
+}
+
+
+def _definition_schema(definition_name: str) -> dict[str, Any]:
+    schema = _get_declarative_component_schema()
+    # The nested `$ref`s are all `#/definitions/...`, so they resolve as long as `definitions` sits
+    # at the root of the schema handed to `validate`.
+    return {**schema["definitions"][definition_name], "definitions": schema["definitions"]}
+
+
+def test_a_for_each_component_validates_against_the_declarative_component_schema():
+    validate(instance=_FOR_EACH_MANIFEST_FRAGMENT, schema=_definition_schema("ForEach"))
+
+
+@pytest.mark.parametrize(
+    "definition_name, transformations_field",
+    [
+        pytest.param("DeclarativeStream", "transformations", id="declarative_stream"),
+        pytest.param("DynamicSchemaLoader", "schema_transformations", id="dynamic_schema_loader"),
+        pytest.param(
+            "JsonSchemaPropertySelector", "transformations", id="json_schema_property_selector"
+        ),
+        pytest.param("ForEach", "transformations", id="for_each"),
+    ],
+)
+def test_for_each_is_accepted_by_every_transformations_slot(definition_name, transformations_field):
+    """
+    Regression guard for the four `$ref` sites. `create_component` never validates against the JSON
+    schema, so dropping `ForEach` from one of these `anyOf` lists would otherwise only surface in a
+    real connector.
+    """
+    schema = _get_declarative_component_schema()
+    property_schema = {
+        **schema["definitions"][definition_name]["properties"][transformations_field],
+        "definitions": schema["definitions"],
+    }
+
+    validate(instance=[_FOR_EACH_MANIFEST_FRAGMENT], schema=property_schema)
+
+
+def test_a_for_each_without_a_field_path_is_rejected_by_the_schema():
+    invalid = {
+        key: value for key, value in _FOR_EACH_MANIFEST_FRAGMENT.items() if key != "field_path"
+    }
+
+    with pytest.raises(ValidationError):
+        validate(instance=invalid, schema=_definition_schema("ForEach"))

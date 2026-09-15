@@ -226,6 +226,7 @@ from airbyte_cdk.utils import AirbyteTracedException
 from airbyte_cdk.utils.datetime_helpers import AirbyteDateTime, ab_datetime_now, ab_datetime_parse
 from unit_tests.sources.declarative.parsers.testing_components import (
     TestingCustomSubstreamPartitionRouter,
+    TestingCustomTransformation,
     TestingSomeComponent,
 )
 
@@ -3487,6 +3488,35 @@ class TestCreateTransformations:
         record = {"items": [{"column_values": [{"id": 1}]}]}
         outer.transform(record, config=input_config)
         assert record == {"items": [{"column_values": [{"id": 1, "added": "a value"}]}]}
+
+    def test_for_each_with_a_class_name_only_custom_transformation(self):
+        """
+        `class_name`-only custom transformations work at stream level thanks to
+        CUSTOM_COMPONENTS_MAPPING. `ForEach.transformations` needs its own entry or the nested
+        component never gets a `type` and fails to parse.
+        """
+        content = f"""
+        the_stream:
+            type: DeclarativeStream
+            $parameters:
+                {self.base_parameters}
+                transformations:
+                    - type: ForEach
+                      field_path: ["items"]
+                      transformations:
+                        - class_name: unit_tests.sources.declarative.parsers.testing_components.TestingCustomTransformation
+                          marker: "from the manifest"
+        """
+        transformations = self._get_transformations(content)
+
+        assert len(transformations) == 1
+        for_each = transformations[0]
+        assert isinstance(for_each, ForEach)
+        assert isinstance(for_each.transformations[0], TestingCustomTransformation)
+
+        record = {"items": [{"id": 1}]}
+        for_each.transform(record, config=input_config)
+        assert record == {"items": [{"id": 1, "marker": "from the manifest"}]}
 
 
 @pytest.mark.parametrize(

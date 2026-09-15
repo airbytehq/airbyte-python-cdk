@@ -3,7 +3,7 @@
 #
 
 from dataclasses import InitVar, dataclass
-from typing import Any, Dict, List, Mapping, Optional, Union, cast
+from typing import Any, Dict, List, Mapping, Optional, Union
 
 import dpath
 
@@ -12,6 +12,11 @@ from airbyte_cdk.sources.declarative.interpolation.interpolated_string import In
 from airbyte_cdk.sources.declarative.transformations import RecordTransformation
 from airbyte_cdk.sources.types import Config, StreamSlice, StreamState
 from airbyte_cdk.utils.traced_exception import AirbyteTracedException
+
+# Segments containing any of these need `dpath` glob matching. Everything else is resolved by a
+# plain walk, because `dpath` traverses the whole record to glob-match and that cost is paid per
+# record.
+_GLOB_CHARACTERS = ("*", "?", "[")
 
 
 @dataclass
@@ -25,9 +30,11 @@ class ForEach(RecordTransformation):
     be written back.
 
     Behavior of `field_path` resolution:
-      * The path entries are interpolated strings, like every other dpath-based component.
-      * A `*` wildcard segment is supported. When the path contains a `*`, every value matching the glob is
-        treated as its own collection to iterate over.
+      * The path entries are interpolated strings, like every other dpath-based component. A segment that
+        interpolates to something other than a non-empty string is a configuration error, because it would
+        otherwise turn the whole transformation into a silent no-op.
+      * Glob segments (`*`, `?`, `[...]`) are supported. When the path contains one, every value matching the
+        glob is treated as its own collection to iterate over.
       * If the path does not resolve, the transformation is a no-op. A collection missing from some records is
         expected and must not fail the sync.
       * If the resolved value is a list, the nested transformations are applied to each element.
@@ -36,9 +43,13 @@ class ForEach(RecordTransformation):
       * If the resolved value is a scalar or `None`, the transformation is a no-op.
       * An empty `field_path` resolves to the record itself, the same way `DpathExtractor` treats an empty
         `field_path`.
-      * If an element of the resolved list is not an object (for example a list of strings), an error is
-        raised. Such an element cannot be mutated in place, and silently skipping it would hide a manifest
-        mistake behind missing data.
+      * A `null` element inside the collection is skipped. A `null` in an array is ordinary API payload, not a
+        manifest mistake, and the Python transformations this component replaces skip it too.
+      * Any other non-object element (a string, a number) raises. Such an element cannot be mutated in place,
+        and silently skipping it would hide a mis-pointed `field_path` behind missing data.
+
+    Every collection the path matches is resolved and validated before any element is transformed, so a bad
+    element anywhere under a glob leaves the whole record untouched.
 
     Example:
     ```yaml
@@ -78,56 +89,92 @@ class ForEach(RecordTransformation):
         stream_slice: Optional[StreamSlice] = None,
     ) -> None:
         effective_config = config if config is not None else self.config
-        path = [path.eval(effective_config) for path in self._field_path]
+        path = self._evaluate_path(effective_config)
 
-        for collection in self._resolve_collections(record, path):
-            for element in self._iterate(collection, path):
-                for transformation in self.transformations:
-                    transformation.transform(
-                        element,
-                        config=effective_config,
-                        stream_state=stream_state,
-                        stream_slice=stream_slice,
-                    )
+        # Resolving and validating every matched collection up front is what makes the documented
+        # "a bad element leaves the record untouched" contract hold across a glob, not just within a
+        # single collection.
+        elements = [
+            element
+            for collection in self._resolve_collections(record, path)
+            for element in self._elements_of(collection, path)
+        ]
+
+        for element in elements:
+            for transformation in self.transformations:
+                transformation.transform(
+                    element,
+                    config=effective_config,
+                    stream_state=stream_state,
+                    stream_slice=stream_slice,
+                )
+
+    def _evaluate_path(self, config: Config) -> List[str]:
+        path = []
+        for interpolated_segment in self._field_path:
+            segment = interpolated_segment.eval(config)
+            if not isinstance(segment, str) or not segment:
+                raise AirbyteTracedException(
+                    message=(
+                        f"ForEach cannot resolve `field_path` {self.field_path}: a path segment "
+                        f"evaluated to {segment!r} instead of a non-empty string. Check the "
+                        f"configuration values it interpolates."
+                    ),
+                    internal_message=(
+                        f"ForEach field_path segment evaluated to {segment!r} "
+                        f"({type(segment).__name__}) for field_path {self.field_path}"
+                    ),
+                    failure_type=FailureType.config_error,
+                )
+            path.append(segment)
+        return path
 
     @staticmethod
     def _resolve_collections(record: Dict[str, Any], path: List[str]) -> List[Any]:
         """
-        Resolve `path` to the collections to iterate over. `dpath` returns references to the nested objects,
-        never copies, which is what makes the in-place mutation work.
+        Resolve `path` to the collections to iterate over. Both the plain walk and `dpath` return
+        references to the nested objects, never copies, which is what makes the in-place mutation work.
         """
         if not path:
             return [record]
-        if "*" in path:
+        if any(character in segment for segment in path for character in _GLOB_CHARACTERS):
             return list(dpath.values(record, path))
-        resolved = dpath.get(record, path, default=None)
-        return [] if resolved is None else [resolved]
 
-    def _iterate(self, collection: Any, path: List[str]) -> List[Dict[str, Any]]:
+        node: Any = record
+        for segment in path:
+            if isinstance(node, dict):
+                if segment not in node:
+                    return []
+                node = node[segment]
+            elif isinstance(node, list) and segment.isdigit() and int(segment) < len(node):
+                node = node[int(segment)]
+            else:
+                return []
+        return [] if node is None else [node]
+
+    @staticmethod
+    def _elements_of(collection: Any, path: List[str]) -> List[Dict[str, Any]]:
         if isinstance(collection, dict):
             return [collection]
         if not isinstance(collection, list):
             # A scalar cannot hold nested records, so there is nothing to transform.
             return []
 
+        elements = []
         for element in collection:
-            if not isinstance(element, dict):
-                stream_name = self._parameters.get("name")
-                stream_context = f" of stream `{stream_name}`" if stream_name else ""
+            if isinstance(element, dict):
+                elements.append(element)
+            elif element is not None:
                 raise AirbyteTracedException(
                     message=(
-                        f"The ForEach transformation{stream_context} could not be applied because the "
-                        f"collection at field_path {path} contains an element of type "
-                        f"`{type(element).__name__}` instead of an object. ForEach can only transform "
-                        f"collections of objects. Please point `field_path` at a list of objects."
+                        f"ForEach cannot transform the collection at field_path {path}: it holds a "
+                        f"non-object element ({type(element).__name__}). Set `field_path` to a list "
+                        f"of objects."
                     ),
                     internal_message=(
                         f"ForEach transformation received a non-object element of type "
                         f"{type(element).__name__} at field_path {path}"
                     ),
-                    failure_type=FailureType.config_error,
+                    failure_type=FailureType.system_error,
                 )
-        return cast(List[Dict[str, Any]], collection)
-
-    def __eq__(self, other: Any) -> bool:
-        return bool(self.__dict__ == other.__dict__)
+        return elements

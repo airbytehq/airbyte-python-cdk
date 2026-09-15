@@ -2335,7 +2335,7 @@ class ForEach(BaseModel):
     type: Literal["ForEach"]
     field_path: List[str] = Field(
         ...,
-        description="Path to the collection whose elements the nested transformations are applied to. If the path does not resolve, or resolves to a scalar or null, the transformation is a no-op. If it resolves to an object, that object is treated as a collection of one. A `*` wildcard segment is supported, in which case every matching value is iterated over. An element that is not an object raises an error, because it cannot be transformed in place.",
+        description="Path to the collection whose elements the nested transformations are applied to. If the path does not resolve, or resolves to a scalar or null, the transformation is a no-op. If it resolves to an object, that object is treated as a collection of one. Glob segments (`*`, `?`, `[...]`) are supported, in which case every matching value is iterated over. A `null` element inside the collection is skipped, because a null in an array is ordinary payload; any other non-object element raises an error, because it cannot be transformed in place.",
         examples=[
             ["column_values"],
             ["data", "assets"],
