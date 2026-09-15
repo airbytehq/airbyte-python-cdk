@@ -19,6 +19,20 @@ from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 _GLOB_CHARACTERS = ("*", "?", "[")
 
 
+def _as_list_index(segment: str, length: int) -> Optional[int]:
+    """
+    Resolve `segment` against a list of `length` elements exactly the way `dpath` does: `int()` is
+    what decides whether a segment is an index at all (`dpath.segments.match`), and a negative index
+    counts from the end (`dpath.types.ListIndex.__eq__`). A segment `int()` rejects, or an index
+    outside the list, matches nothing -- the empty result `dpath.values` returns.
+    """
+    try:
+        index = int(segment)
+    except ValueError:
+        return None
+    return index if -length <= index < length else None
+
+
 @dataclass
 class ForEach(RecordTransformation):
     """
@@ -31,8 +45,11 @@ class ForEach(RecordTransformation):
 
     Behavior of `field_path` resolution:
       * The path entries are interpolated strings, like every other dpath-based component. A segment that
-        interpolates to something other than a non-empty string is a configuration error, because it would
-        otherwise turn the whole transformation into a silent no-op.
+        interpolates to something other than a non-empty string or an integer is a configuration error,
+        because it would otherwise turn the whole transformation into a silent no-op. An empty segment
+        written literally in the manifest is rejected at construction time instead, as a manifest error.
+      * A segment addressing a list is resolved the way `dpath` resolves it: any value `int()` accepts is
+        an index, and a negative index counts from the end. An index outside the list matches nothing.
       * Glob segments (`*`, `?`, `[...]`) are supported. When the path contains one, every value matching the
         glob is treated as its own collection to iterate over.
       * If the path does not resolve, the transformation is a no-op. A collection missing from some records is
@@ -76,10 +93,23 @@ class ForEach(RecordTransformation):
     parameters: InitVar[Mapping[str, Any]]
 
     def __post_init__(self, parameters: Mapping[str, Any]) -> None:
-        self._parameters = parameters
         self._field_path: List[InterpolatedString] = [
             InterpolatedString.create(path, parameters=parameters) for path in self.field_path
         ]
+        # An empty segment cannot be a template, so it can only come from the manifest. Catching it
+        # here rather than per record keeps it classified as the manifest error it is.
+        if any(not segment.string for segment in self._field_path):
+            raise AirbyteTracedException(
+                message=(
+                    f"ForEach cannot resolve `field_path` {self.field_path}: it contains an empty "
+                    f"path segment. Remove the empty segment, or set `field_path` to `[]` to target "
+                    f"the record itself."
+                ),
+                internal_message=(
+                    f"ForEach field_path contains an empty literal segment: {self.field_path}"
+                ),
+                failure_type=FailureType.system_error,
+            )
 
     def transform(
         self,
@@ -113,6 +143,10 @@ class ForEach(RecordTransformation):
         path = []
         for interpolated_segment in self._field_path:
             segment = interpolated_segment.eval(config)
+            # Jinja renders a numeric segment as an `int`, and `dpath` accepts an integer list
+            # index, so a number is a valid path element rather than a broken one.
+            if isinstance(segment, int) and not isinstance(segment, bool):
+                segment = str(segment)
             if not isinstance(segment, str) or not segment:
                 raise AirbyteTracedException(
                     message=(
@@ -146,8 +180,11 @@ class ForEach(RecordTransformation):
                 if segment not in node:
                     return []
                 node = node[segment]
-            elif isinstance(node, list) and segment.isdigit() and int(segment) < len(node):
-                node = node[int(segment)]
+            elif isinstance(node, list):
+                index = _as_list_index(segment, len(node))
+                if index is None:
+                    return []
+                node = node[index]
             else:
                 return []
         return [] if node is None else [node]

@@ -7,6 +7,7 @@ import time
 from typing import Any, Mapping
 from unittest.mock import patch
 
+import dpath
 import pytest
 from jsonschema import ValidationError, validate
 
@@ -464,7 +465,10 @@ def test_field_path_is_interpolated_from_parameters():
     "config",
     [
         pytest.param({}, id="segment_interpolates_to_an_empty_string"),
-        pytest.param({"collection_field": 5}, id="segment_interpolates_to_a_number"),
+        pytest.param({"collection_field": 1.5}, id="segment_interpolates_to_a_float"),
+        pytest.param({"collection_field": True}, id="segment_interpolates_to_a_boolean"),
+        pytest.param({"collection_field": None}, id="segment_interpolates_to_null"),
+        pytest.param({"collection_field": ["items"]}, id="segment_interpolates_to_a_list"),
     ],
 )
 def test_a_field_path_segment_that_is_not_a_non_empty_string_is_a_config_error(config):
@@ -513,6 +517,112 @@ def test_non_star_globs_match_several_collections_instead_of_raising(field_path)
         )
         for element in collection
     )
+
+
+@pytest.mark.parametrize(
+    "index, expected_position",
+    [
+        pytest.param("-1", 2, id="minus_one_is_the_last_element"),
+        pytest.param("-2", 1, id="minus_two_is_the_second_to_last_element"),
+        pytest.param("-3", 0, id="minus_three_is_the_first_element"),
+        pytest.param("-0", 0, id="minus_zero_is_the_first_element"),
+        pytest.param("0", 0, id="zero_is_the_first_element"),
+        pytest.param("2", 2, id="a_positive_index_still_works"),
+    ],
+)
+def test_a_list_index_segment_selects_a_single_element(index, expected_position):
+    """
+    `dpath` supports negative list indices, so the plain-walk fast path has to as well, or the same
+    `field_path` resolves differently depending on whether the path happens to contain a glob.
+    """
+    transformation = _for_each(
+        field_path=["a", index], transformations=[_add_fields(["added"], "value")]
+    )
+    record = {"a": [{"id": 0}, {"id": 1}, {"id": 2}]}
+
+    transformation.transform(record)
+
+    assert record["a"][expected_position] == {"id": expected_position, "added": "value"}
+    assert [element for element in record["a"] if "added" in element] == [
+        {"id": expected_position, "added": "value"}
+    ]
+
+
+@pytest.mark.parametrize(
+    "segment",
+    [
+        pytest.param("-4", id="negative_index_past_the_start"),
+        pytest.param("3", id="positive_index_past_the_end"),
+        pytest.param("\u00b2", id="superscript_two_is_a_digit_that_int_rejects"),
+        pytest.param("\u2155", id="vulgar_fraction_is_numeric_but_not_an_index"),
+        pytest.param("abc", id="a_plain_word_against_a_list"),
+    ],
+)
+def test_a_segment_that_is_not_an_in_range_list_index_is_a_no_op(segment):
+    """
+    `"\u00b2".isdigit()` is `True` but `int("\u00b2")` raises, so classifying list segments with
+    `isdigit()` turned a documented no-op into an uncaught `ValueError`.
+    """
+    transformation = _for_each(
+        field_path=["a", segment], transformations=[_add_fields(["added"], "value")]
+    )
+    record = {"a": [{"id": 0}, {"id": 1}, {"id": 2}]}
+    expected = copy.deepcopy(record)
+
+    transformation.transform(record)
+
+    assert record == expected
+
+
+@pytest.mark.parametrize(
+    "segment",
+    [
+        "-4",
+        "-3",
+        "-1",
+        "-0",
+        "0",
+        "2",
+        "3",
+        "+1",
+        " 1",
+        "1_0",
+        "\u00b2",
+        "\u2155",
+        "abc",
+        "",
+    ],
+)
+def test_the_plain_walk_resolves_a_list_segment_exactly_like_dpath(segment):
+    record = {"a": [{"id": index} for index in range(3)]}
+
+    assert ForEach._resolve_collections(record, ["a", segment]) == list(
+        dpath.values(copy.deepcopy(record), ["a", segment])
+    )
+
+
+def test_a_literal_empty_field_path_segment_is_a_manifest_error():
+    """
+    An empty segment cannot be the render of a template, so it is the manifest's fault, not the
+    config's -- the same call `_elements_of` makes for a mis-pointed `field_path`.
+    """
+    with pytest.raises(AirbyteTracedException) as exc_info:
+        _for_each(field_path=["items", ""], transformations=[_add_fields(["added"], "value")])
+
+    assert exc_info.value.failure_type == FailureType.system_error
+
+
+def test_a_numeric_config_value_is_a_valid_list_index_rather_than_a_config_error():
+    transformation = _for_each(
+        field_path=["a", "{{ config['index'] }}"],
+        transformations=[_add_fields(["added"], "value")],
+        config={"index": -1},
+    )
+    record = {"a": [{"id": 0}, {"id": 1}]}
+
+    transformation.transform(record)
+
+    assert record == {"a": [{"id": 0}, {"id": 1, "added": "value"}]}
 
 
 def test_a_path_without_a_glob_never_goes_through_dpath():
