@@ -152,3 +152,60 @@ def test_interpolated_page_size_raises_on_non_integer():
             config={"page_size": "invalid"},
             parameters={},
         )
+
+
+def test_given_page_size_override_then_token_is_unchanged():
+    strategy = CursorPaginationStrategy(
+        page_size=100, cursor_value="{{ response.next }}", config={}, parameters={}
+    )
+    response = requests.Response()
+    response._content = json.dumps({"next": "a token"}).encode("utf-8")
+
+    assert (
+        strategy.next_page_token(response, 50, None, None, page_size_override=50)
+        == strategy.next_page_token(response, 100, None, None)
+        == "a token"
+    )
+
+
+def test_given_stop_condition_uses_page_size_and_page_is_full_at_the_reduced_size_then_keep_paginating():
+    """
+    Regression test for the silent truncation a page size reduction used to cause: a full page at the reduced
+    size satisfies `last_page_size < 100` and would end the pagination, dropping the rest of the partition.
+    `page_size` holds the size that was actually requested, so the same condition keeps paginating.
+    """
+    strategy = CursorPaginationStrategy(
+        page_size=100,
+        cursor_value="{{ response.next }}",
+        stop_condition="{{ last_page_size < page_size }}",
+        config={},
+        parameters={},
+    )
+    response = requests.Response()
+    response._content = json.dumps({"next": "a token"}).encode("utf-8")
+
+    assert strategy.next_page_token(response, 50, None, None, page_size_override=50) == "a token"
+    assert strategy.next_page_token(response, 100, None, None) == "a token"
+
+
+def test_given_stop_condition_uses_page_size_and_page_is_short_then_stop():
+    strategy = CursorPaginationStrategy(
+        page_size=100,
+        cursor_value="{{ response.next }}",
+        stop_condition="{{ last_page_size < page_size }}",
+        config={},
+        parameters={},
+    )
+    response = requests.Response()
+    response._content = json.dumps({"next": "a token"}).encode("utf-8")
+
+    assert strategy.next_page_token(response, 49, None, None, page_size_override=50) is None
+    assert strategy.next_page_token(response, 99, None, None) is None
+
+
+def test_given_no_page_size_then_page_size_interpolates_to_none():
+    strategy = CursorPaginationStrategy(cursor_value="{{ page_size }}", config={}, parameters={})
+    response = requests.Response()
+    response._content = json.dumps({}).encode("utf-8")
+
+    assert strategy.next_page_token(response, 10, None, None) is None

@@ -1,5 +1,6 @@
 # Copyright (c) 2024 Airbyte, Inc., all rights reserved.
 
+import json
 import logging
 import os
 import time
@@ -11,7 +12,9 @@ import requests
 from pympler import asizeof
 from requests_cache import CachedRequest
 
-from airbyte_cdk.models import FailureType
+from airbyte_cdk.models import FailureType, Level
+from airbyte_cdk.sources.http_logger import format_http_message
+from airbyte_cdk.sources.message import InMemoryMessageRepository
 from airbyte_cdk.sources.streams.call_rate import CachedLimiterSession, LimiterSession
 from airbyte_cdk.sources.streams.http import HttpClient
 from airbyte_cdk.sources.streams.http.error_handlers import (
@@ -27,6 +30,9 @@ from airbyte_cdk.sources.streams.http.exceptions import (
     UserDefinedBackoffException,
 )
 from airbyte_cdk.sources.streams.http.http_client import MessageRepresentationAirbyteTracedErrors
+from airbyte_cdk.sources.streams.http.page_size_reduction_exception import (
+    PageSizeReductionRequiredException,
+)
 from airbyte_cdk.sources.streams.http.requests_native_auth import TokenAuthenticator
 from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 
@@ -1441,3 +1447,110 @@ def test_deprecated_alias_is_catchable_as_airbyte_traced_exception():
             internal_message="test",
             message="test user message",
         )
+
+
+def test_send_raises_page_size_reduction_required_exception_with_reduce_page_size_response_action():
+    mocked_session = MagicMock(spec=requests.Session)
+    http_client = HttpClient(
+        name="test",
+        logger=MagicMock(),
+        error_handler=HttpStatusErrorHandler(
+            logger=MagicMock(),
+            error_mapping={
+                502: ErrorResolution(
+                    ResponseAction.REDUCE_PAGE_SIZE,
+                    FailureType.transient_error,
+                    "test reduce page size message",
+                )
+            },
+        ),
+        session=mocked_session,
+    )
+    mocked_response = requests.Response()
+    mocked_response.status_code = 502
+    mocked_session.send.return_value = mocked_response
+
+    # the retriever is responsible for retrying with a smaller page, so the backoff handlers must not retry
+    with pytest.raises(PageSizeReductionRequiredException) as exception:
+        http_client.send_request(http_method="get", url="https://airbyte.io", request_kwargs={})
+
+    assert http_client._session.send.call_count == 1
+    assert "test" in exception.value.internal_message
+    # the exception is raised on every reduction, including the ones a correctly configured connector makes,
+    # so its message must describe the event rather than accuse the connector of a bug
+    assert "should be reported" not in exception.value.message
+    assert exception.value.message == (
+        "The API rejected a page of stream test. The connector is requesting the same page again with a "
+        "smaller page size."
+    )
+
+
+def test_given_reduce_page_size_action_then_log_the_response_as_an_auxiliary_request():
+    """
+    The Connector Builder builds one page per non-auxiliary HTTP log and bounds a slice by the number of those
+    pages. A response resolving to REDUCE_PAGE_SIZE never becomes a page - the retriever re-issues it - so
+    counting it would report "limit reached" on a read that only retried.
+    """
+    message_repository = InMemoryMessageRepository(Level.DEBUG)
+    mocked_session = MagicMock(spec=requests.Session)
+    http_client = HttpClient(
+        name="test",
+        logger=MagicMock(),
+        error_handler=HttpStatusErrorHandler(
+            logger=MagicMock(),
+            error_mapping={
+                502: ErrorResolution(
+                    ResponseAction.REDUCE_PAGE_SIZE,
+                    FailureType.transient_error,
+                    "test reduce page size message",
+                )
+            },
+        ),
+        session=mocked_session,
+        message_repository=message_repository,
+    )
+    mocked_response = requests.Response()
+    mocked_response.status_code = 502
+    mocked_response.request = requests.Request(method="GET", url="https://airbyte.io").prepare()
+    mocked_session.send.return_value = mocked_response
+
+    with pytest.raises(PageSizeReductionRequiredException):
+        http_client.send_request(
+            http_method="get",
+            url="https://airbyte.io",
+            request_kwargs={},
+            log_formatter=lambda response: format_http_message(
+                response, "a title", "a description", "test"
+            ),
+        )
+
+    logged = [json.loads(message.log.message) for message in message_repository.consume_queue()]
+    assert [entry["http"]["is_auxiliary"] for entry in logged] == [True]
+
+
+def test_given_no_reduce_page_size_action_then_log_the_response_as_a_page():
+    message_repository = InMemoryMessageRepository(Level.DEBUG)
+    mocked_session = MagicMock(spec=requests.Session)
+    http_client = HttpClient(
+        name="test",
+        logger=MagicMock(),
+        error_handler=HttpStatusErrorHandler(logger=MagicMock()),
+        session=mocked_session,
+        message_repository=message_repository,
+    )
+    mocked_response = requests.Response()
+    mocked_response.status_code = 200
+    mocked_response.request = requests.Request(method="GET", url="https://airbyte.io").prepare()
+    mocked_session.send.return_value = mocked_response
+
+    http_client.send_request(
+        http_method="get",
+        url="https://airbyte.io",
+        request_kwargs={},
+        log_formatter=lambda response: format_http_message(
+            response, "a title", "a description", "test"
+        ),
+    )
+
+    logged = [json.loads(message.log.message) for message in message_repository.consume_queue()]
+    assert [entry["http"].get("is_auxiliary") for entry in logged] == [None]

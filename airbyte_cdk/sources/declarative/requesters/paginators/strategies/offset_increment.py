@@ -74,6 +74,7 @@ class OffsetIncrement(PaginationStrategy):
         last_page_size: int,
         last_record: Optional[Record],
         last_page_token_value: Optional[Any] = None,
+        page_size_override: Optional[int] = None,
     ) -> Optional[Any]:
         decoded_response = next(self.decoder.decode(response))
 
@@ -85,11 +86,20 @@ class OffsetIncrement(PaginationStrategy):
                 page_size_from_response if page_size_from_response is not None else last_page_size
             )
 
-        # Stop paginating when there are fewer records than the page size or the current page has no records
-        if (
-            self._page_size
-            and last_page_size < self._page_size.eval(self.config, response=decoded_response)
-        ) or last_page_size == 0:
+        # Stop paginating when there are fewer records than the page size or the current page has no records.
+        # The comparison uses the page size that was actually requested: after a `REDUCE_PAGE_SIZE` reduction, a
+        # full page is smaller than the configured page size and comparing against the latter would end the
+        # pagination early and skip records.
+        requested_page_size = (
+            page_size_override
+            if page_size_override is not None
+            else (
+                self._page_size.eval(self.config, response=decoded_response)
+                if self._page_size
+                else None
+            )
+        )
+        if (requested_page_size and last_page_size < requested_page_size) or last_page_size == 0:
             return None
         elif last_page_token_value is None:
             # If the OffsetIncrement strategy does not inject on the first request, the incoming last_page_token_value

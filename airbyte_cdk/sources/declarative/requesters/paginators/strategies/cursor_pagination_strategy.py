@@ -77,7 +77,16 @@ class CursorPaginationStrategy(PaginationStrategy):
         last_page_size: int,
         last_record: Optional[Record],
         last_page_token_value: Optional[Any] = None,
+        page_size_override: Optional[int] = None,
     ) -> Optional[Any]:
+        # The next page is a cursor read from the response, so `page_size_override` does not change how the token
+        # is computed. It is still exposed to the interpolation context as `page_size` because a `stop_condition`
+        # comparing `last_page_size` to a hardcoded page size would read a full reduced page as a short page and
+        # end the pagination early, silently dropping the rest of the partition. Writing the condition as
+        # `{{ last_page_size < page_size }}` keeps it correct while a reduction is in effect.
+        requested_page_size = (
+            page_size_override if page_size_override is not None else self._page_size
+        )
         decoded_response = next(self.decoder.decode(response))
         # The default way that link is presented in requests.Response is a string of various links (last, next, etc). This
         # is not indexable or useful for parsing the cursor, so we replace it with the link dictionary from response.links
@@ -90,6 +99,7 @@ class CursorPaginationStrategy(PaginationStrategy):
                 headers=headers,
                 last_record=last_record,
                 last_page_size=last_page_size,
+                page_size=requested_page_size,
             )
             if should_stop:
                 return None
@@ -99,6 +109,7 @@ class CursorPaginationStrategy(PaginationStrategy):
             headers=headers,
             last_record=last_record,
             last_page_size=last_page_size,
+            page_size=requested_page_size,
         )
         return token if token else None
 

@@ -60,6 +60,7 @@ from airbyte_cdk.sources.declarative.partition_routers import AsyncJobPartitionR
 from airbyte_cdk.sources.declarative.resolvers.http_components_resolver import (
     HttpComponentsResolver,
 )
+from airbyte_cdk.sources.declarative.retrievers.page_size_reducer import PageSizeReducer
 from airbyte_cdk.sources.declarative.retrievers.simple_retriever import SimpleRetriever
 from airbyte_cdk.sources.declarative.stream_slicers.declarative_partition_generator import (
     StreamSlicerPartitionGenerator,
@@ -4979,6 +4980,189 @@ def test_given_response_action_is_pagination_reset_when_read_then_reset_paginati
         )
 
     assert len(list(filter(lambda message: message.type == Type.RECORD, messages)))
+
+
+def _page_size_reduction_manifest(pagination_strategy, page_token_option=None):
+    paginator = {
+        "type": "DefaultPaginator",
+        "pagination_strategy": pagination_strategy,
+        "page_size_option": {
+            "type": "RequestOption",
+            "inject_into": "request_parameter",
+            "field_name": "first",
+        },
+    }
+    if page_token_option:
+        paginator["page_token_option"] = page_token_option
+    return {
+        "version": "0.34.2",
+        "type": "DeclarativeSource",
+        "check": {"type": "CheckStream", "stream_names": ["Test"]},
+        "streams": [
+            {
+                "type": "DeclarativeStream",
+                "name": "Test",
+                "schema_loader": {
+                    "type": "InlineSchemaLoader",
+                    "schema": {"type": "object"},
+                },
+                "retriever": {
+                    "type": "SimpleRetriever",
+                    "page_size_reduction": {"type": "PageSizeReduction"},
+                    "requester": {
+                        "type": "HttpRequester",
+                        "url_base": "https://example.org",
+                        "path": "/test",
+                        "authenticator": {"type": "NoAuth"},
+                        "error_handler": {
+                            "type": "DefaultErrorHandler",
+                            "response_filters": [
+                                {
+                                    "type": "HttpResponseFilter",
+                                    "http_codes": [502],
+                                    # no `failure_type`: HttpResponseFilter only applies it to the FAIL
+                                    # action, and the failure the user sees comes from PageSizeReducer
+                                    "action": "REDUCE_PAGE_SIZE",
+                                },
+                            ],
+                        },
+                    },
+                    "paginator": paginator,
+                    "record_selector": {
+                        "type": "RecordSelector",
+                        "extractor": {"type": "DpathExtractor", "field_path": ["items"]},
+                    },
+                },
+            }
+        ],
+        "spec": {
+            "type": "Spec",
+            "documentation_url": "https://example.org",
+            "connection_specification": {},
+        },
+    }
+
+
+def _read_page_size_reduction_source(manifest):
+    catalog = create_catalog("Test")
+    source = ConcurrentDeclarativeSource(
+        source_config=manifest,
+        config={},
+        catalog=catalog,
+        state=None,
+    )
+    # the reducer waits before each reduction retry; taking those waits for real adds seconds to every CI run
+    with patch.object(PageSizeReducer, "BACKOFF_SECONDS", 0):
+        yield from source.read(logger=source.logger, config={}, catalog=catalog, state=[])
+
+
+def test_given_reduce_page_size_action_when_read_then_retry_page_with_smaller_page_size():
+    """
+    The call counts are asserted explicitly: the context-manager form of `HttpMocker` does not validate that
+    every matcher was called, so without them the test would also pass if the connector had started at the
+    reduced page size and never requested the configured one.
+    """
+    manifest = _page_size_reduction_manifest(
+        {
+            "type": "CursorPagination",
+            "page_size": 100,
+            "cursor_value": "{{ response.next }}",
+            "stop_condition": "{{ not response.next }}",
+        }
+    )
+    full_page_request = HttpRequest("https://example.org/test", query_params={"first": "100"})
+    reduced_page_request = HttpRequest("https://example.org/test", query_params={"first": "50"})
+
+    with HttpMocker() as http_mocker:
+        http_mocker.get(full_page_request, HttpResponse("", 502))
+        http_mocker.get(reduced_page_request, HttpResponse(json.dumps({"items": [{"id": 1}]}), 200))
+
+        messages = list(_read_page_size_reduction_source(manifest))
+
+        http_mocker.assert_number_of_calls(full_page_request, 1)
+        http_mocker.assert_number_of_calls(reduced_page_request, 1)
+
+    assert [message.record.data["id"] for message in messages if message.type == Type.RECORD] == [1]
+
+
+def test_given_offset_increment_and_reduce_page_size_action_when_read_then_keep_paginating():
+    """
+    `OffsetIncrement` is the only strategy whose stop condition depends on the page size. A page that is full
+    for the reduced size is smaller than the configured size, so comparing against the configured size would
+    end the pagination there and silently drop the tail of the partition.
+    """
+    manifest = _page_size_reduction_manifest(
+        {"type": "OffsetIncrement", "page_size": 100},
+        page_token_option={
+            "type": "RequestOption",
+            "inject_into": "request_parameter",
+            "field_name": "offset",
+        },
+    )
+    full_page_request = HttpRequest("https://example.org/test", query_params={"first": "100"})
+    first_reduced_page_request = HttpRequest(
+        "https://example.org/test", query_params={"first": "50"}
+    )
+    second_reduced_page_request = HttpRequest(
+        "https://example.org/test", query_params={"first": "50", "offset": "50"}
+    )
+    with HttpMocker() as http_mocker:
+        http_mocker.get(full_page_request, HttpResponse("", 502))
+        http_mocker.get(
+            first_reduced_page_request,
+            HttpResponse(json.dumps({"items": [{"id": index} for index in range(50)]}), 200),
+        )
+        http_mocker.get(
+            second_reduced_page_request,
+            HttpResponse(json.dumps({"items": [{"id": 50 + index} for index in range(20)]}), 200),
+        )
+
+        messages = list(_read_page_size_reduction_source(manifest))
+
+        http_mocker.assert_number_of_calls(full_page_request, 1)
+        http_mocker.assert_number_of_calls(first_reduced_page_request, 1)
+        http_mocker.assert_number_of_calls(second_reduced_page_request, 1)
+
+    assert [
+        message.record.data["id"] for message in messages if message.type == Type.RECORD
+    ] == list(range(70))
+
+
+def test_given_reductions_exhausted_when_read_then_emit_a_transient_error():
+    """
+    The failure type decides whether the platform retries the whole job, and an endpoint that refuses every
+    page size is the case the reduction budget exists for.
+    """
+    manifest = _page_size_reduction_manifest(
+        {
+            "type": "CursorPagination",
+            "page_size": 100,
+            "cursor_value": "{{ response.next }}",
+            "stop_condition": "{{ not response.next }}",
+        }
+    )
+    manifest["streams"][0]["retriever"]["page_size_reduction"]["max_attempts"] = 2
+
+    messages = []
+    with HttpMocker() as http_mocker:
+        for page_size in ("100", "50", "25"):
+            http_mocker.get(
+                HttpRequest("https://example.org/test", query_params={"first": page_size}),
+                HttpResponse("", 502),
+            )
+
+        # the read fails, which is the point: the messages emitted before it are what the platform sees
+        with pytest.raises(AirbyteTracedException):
+            messages.extend(_read_page_size_reduction_source(manifest))
+
+    errors = [
+        message.trace.error
+        for message in messages
+        if message.type == Type.TRACE and message.trace.type == TraceType.ERROR
+    ]
+    assert errors
+    assert all(error.failure_type == FailureType.transient_error for error in errors)
+    assert any("smaller and smaller pages" in error.message for error in errors)
 
 
 def test_given_pagination_limit_reached_when_read_then_reset_pagination():

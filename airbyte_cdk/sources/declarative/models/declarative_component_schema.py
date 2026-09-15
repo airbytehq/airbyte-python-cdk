@@ -140,10 +140,11 @@ class CursorPagination(BaseModel):
     )
     stop_condition: Optional[str] = Field(
         None,
-        description="Template string evaluating when to stop paginating.",
+        description="Template string evaluating when to stop paginating. Compare last_page_size against page_size rather than against a hardcoded number: page_size is the page size that was actually requested, so the condition stays correct when page_size_reduction shrinks it.",
         examples=[
             "{{ response.data.has_more is false }}",
             "{{ 'next' not in headers['link'] }}",
+            "{{ last_page_size < page_size }}",
         ],
         title="Stop Condition",
     )
@@ -714,6 +715,7 @@ class Action(Enum):
     RESET_PAGINATION = "RESET_PAGINATION"
     RATE_LIMITED = "RATE_LIMITED"
     REFRESH_TOKEN_THEN_RETRY = "REFRESH_TOKEN_THEN_RETRY"
+    REDUCE_PAGE_SIZE = "REDUCE_PAGE_SIZE"
 
 
 class FailureType(Enum):
@@ -735,6 +737,7 @@ class HttpResponseFilter(BaseModel):
             "RESET_PAGINATION",
             "RATE_LIMITED",
             "REFRESH_TOKEN_THEN_RETRY",
+            "REDUCE_PAGE_SIZE",
         ],
         title="Action",
     )
@@ -1408,6 +1411,41 @@ class Action1(Enum):
 class PaginationResetLimits(BaseModel):
     type: Literal["PaginationResetLimits"]
     number_of_records: Optional[int] = None
+
+
+class ResetPolicy(Enum):
+    NEVER = "NEVER"
+    AFTER_SUCCESSFUL_PAGE = "AFTER_SUCCESSFUL_PAGE"
+
+
+class PageSizeReduction(BaseModel):
+    type: Literal["PageSizeReduction"]
+    reduction_factor: Optional[float] = Field(
+        2,
+        description="Divisor applied to the page size on each reduction. The new page size is floor(current page size / reduction factor).",
+        examples=[2, 4],
+        gt=1.0,
+        title="Reduction Factor",
+    )
+    minimum_page_size: Optional[int] = Field(
+        1,
+        description="Page size below which the connector stops reducing and fails the sync. It must be smaller than the page size configured on the pagination strategy, otherwise no reduction could ever be applied.",
+        examples=[1, 10],
+        ge=1,
+        title="Minimum Page Size",
+    )
+    max_attempts: Optional[int] = Field(
+        5,
+        description="Maximum number of consecutive page size reductions allowed before the sync fails with a transient error. Every reduction follows a request that failed, so at most max_attempts + 1 failing requests are issued before giving up. With reset_policy NEVER this bounds the reductions for the whole partition; with AFTER_SUCCESSFUL_PAGE the budget restarts after every page that succeeds, so it bounds the reductions needed to get a single page through.",
+        examples=[5, 10],
+        ge=1,
+        title="Maximum Reduction Attempts",
+    )
+    reset_policy: Optional[ResetPolicy] = Field(
+        ResetPolicy.NEVER,
+        description="When to restore the page size configured on the pagination strategy. NEVER keeps the reduced page size for the rest of the partition. AFTER_SUCCESSFUL_PAGE restores it as soon as one page succeeds, which means hitting the same error again on every page - use it only when the reduction is worth one extra request per page, for instance because the configured page size usually works and only some pages are too heavy.",
+        title="Reset Policy",
+    )
 
 
 class CsvDecoder(BaseModel):
@@ -3221,6 +3259,10 @@ class SimpleRetriever(BaseModel):
     pagination_reset: Optional[PaginationReset] = Field(
         None,
         description="Describes what triggers pagination reset and how to handle it.",
+    )
+    page_size_reduction: Optional[PageSizeReduction] = Field(
+        None,
+        description="Describes how the page size is reduced when an error handler resolves to the REDUCE_PAGE_SIZE action. Requires a DefaultPaginator that defines both page_size_option and a pagination strategy with a page_size. Cannot be combined with query properties, a file uploader, or a parent stream read lazily through lazy_read_pointer, because in those cases records of the failing page have already been emitted and re-issuing the page would emit them twice.",
     )
     ignore_stream_slicer_parameters_on_paginated_requests: Optional[bool] = Field(
         False,

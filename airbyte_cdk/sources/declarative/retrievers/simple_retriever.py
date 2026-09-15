@@ -23,6 +23,7 @@ from typing import (
 import requests
 from typing_extensions import deprecated
 
+from airbyte_cdk.models import FailureType
 from airbyte_cdk.sources.declarative.extractors.http_selector import HttpSelector
 from airbyte_cdk.sources.declarative.extractors.record_filter import (
     ClientSideIncrementalRecordFilterDecorator,
@@ -32,23 +33,35 @@ from airbyte_cdk.sources.declarative.partition_routers.single_partition_router i
     SinglePartitionRouter,
 )
 from airbyte_cdk.sources.declarative.requesters.paginators.no_pagination import NoPagination
-from airbyte_cdk.sources.declarative.requesters.paginators.paginator import Paginator
+from airbyte_cdk.sources.declarative.requesters.paginators.paginator import (
+    Paginator,
+    page_size_override_kwargs,
+)
 from airbyte_cdk.sources.declarative.requesters.query_properties import QueryProperties
 from airbyte_cdk.sources.declarative.requesters.request_options import (
     DefaultRequestOptionsProvider,
     RequestOptionsProvider,
 )
 from airbyte_cdk.sources.declarative.requesters.requester import Requester
+from airbyte_cdk.sources.declarative.retrievers.page_size_reducer import (
+    PageSizeReducer,
+    PageSizeReduction,
+)
 from airbyte_cdk.sources.declarative.retrievers.pagination_tracker import PaginationTracker
 from airbyte_cdk.sources.declarative.retrievers.retriever import Retriever
 from airbyte_cdk.sources.declarative.stream_slicers.stream_slicer import StreamSlicer
 from airbyte_cdk.sources.source import ExperimentalClassWarning
 from airbyte_cdk.sources.streams.core import StreamData
+from airbyte_cdk.sources.streams.http.page_size_reduction_exception import (
+    PageSizeReductionNotSupportedException,
+    PageSizeReductionRequiredException,
+)
 from airbyte_cdk.sources.streams.http.pagination_reset_exception import (
     PaginationResetRequiredException,
 )
 from airbyte_cdk.sources.types import Config, Record, StreamSlice
 from airbyte_cdk.utils.mapping_helpers import combine_mappings
+from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 
 FULL_REFRESH_SYNC_COMPLETE_KEY = "__ab_full_refresh_sync_complete"
 LOGGER = logging.getLogger("airbyte")
@@ -77,6 +90,8 @@ class SimpleRetriever(Retriever):
         parameters (Mapping[str, Any]): Additional runtime parameters to be used for string interpolation
         post_pagination_filter (Optional[ClientSideIncrementalRecordFilterDecorator]): Set for data feed streams only.
             Records the cursor considers already synced are dropped once pagination has observed them
+        page_size_reduction (Optional[PageSizeReduction]): How much to shrink the page size when an error handler
+            resolves to `ResponseAction.REDUCE_PAGE_SIZE`. `None` disables page size reduction entirely
     """
 
     requester: Requester
@@ -101,6 +116,7 @@ class SimpleRetriever(Retriever):
         default_factory=lambda: lambda: PaginationTracker()
     )
     post_pagination_filter: Optional[ClientSideIncrementalRecordFilterDecorator] = None
+    page_size_reduction: Optional[PageSizeReduction] = None
 
     def __post_init__(self, parameters: Mapping[str, Any]) -> None:
         self._paginator = self.paginator or NoPagination(parameters=parameters)
@@ -145,6 +161,7 @@ class SimpleRetriever(Retriever):
         next_page_token: Optional[Mapping[str, Any]],
         paginator_method: Callable[..., Optional[Union[Mapping[str, Any], str]]],
         stream_slicer_method: Callable[..., Optional[Union[Mapping[str, Any], str]]],
+        page_size_override: Optional[int] = None,
     ) -> Union[Mapping[str, Any], str]:
         """
         Get the request_option from the paginator and the stream slicer.
@@ -157,6 +174,7 @@ class SimpleRetriever(Retriever):
             paginator_method(
                 stream_slice=stream_slice,
                 next_page_token=next_page_token,
+                **page_size_override_kwargs(page_size_override),
             ),
         ]
         if not next_page_token or not self.ignore_stream_slicer_parameters_on_paginated_requests:
@@ -172,6 +190,7 @@ class SimpleRetriever(Retriever):
         self,
         stream_slice: Optional[StreamSlice] = None,
         next_page_token: Optional[Mapping[str, Any]] = None,
+        page_size_override: Optional[int] = None,
     ) -> Mapping[str, Any]:
         """
         Specifies request headers.
@@ -182,6 +201,7 @@ class SimpleRetriever(Retriever):
             next_page_token,
             self._paginator.get_request_headers,
             self.request_option_provider.get_request_headers,
+            **page_size_override_kwargs(page_size_override),
         )
         if isinstance(headers, str):
             raise ValueError("Request headers cannot be a string")
@@ -191,6 +211,7 @@ class SimpleRetriever(Retriever):
         self,
         stream_slice: Optional[StreamSlice] = None,
         next_page_token: Optional[Mapping[str, Any]] = None,
+        page_size_override: Optional[int] = None,
     ) -> Mapping[str, Any]:
         """
         Specifies the query parameters that should be set on an outgoing HTTP request given the inputs.
@@ -202,6 +223,7 @@ class SimpleRetriever(Retriever):
             next_page_token,
             self._paginator.get_request_params,
             self.request_option_provider.get_request_params,
+            **page_size_override_kwargs(page_size_override),
         )
         if isinstance(params, str):
             raise ValueError("Request params cannot be a string")
@@ -211,6 +233,7 @@ class SimpleRetriever(Retriever):
         self,
         stream_slice: Optional[StreamSlice] = None,
         next_page_token: Optional[Mapping[str, Any]] = None,
+        page_size_override: Optional[int] = None,
     ) -> Union[Mapping[str, Any], str]:
         """
         Specifies how to populate the body of the request with a non-JSON payload.
@@ -226,12 +249,14 @@ class SimpleRetriever(Retriever):
             next_page_token,
             self._paginator.get_request_body_data,
             self.request_option_provider.get_request_body_data,
+            **page_size_override_kwargs(page_size_override),
         )
 
     def _request_body_json(
         self,
         stream_slice: Optional[StreamSlice] = None,
         next_page_token: Optional[Mapping[str, Any]] = None,
+        page_size_override: Optional[int] = None,
     ) -> Optional[Mapping[str, Any]]:
         """
         Specifies how to populate the body of the request with a JSON payload.
@@ -243,6 +268,7 @@ class SimpleRetriever(Retriever):
             next_page_token,
             self._paginator.get_request_body_json,
             self.request_option_provider.get_request_body_json,
+            **page_size_override_kwargs(page_size_override),
         )
         if isinstance(body_json, str):
             raise ValueError("Request body json cannot be a string")
@@ -298,6 +324,7 @@ class SimpleRetriever(Retriever):
         last_page_size: int,
         last_record: Optional[Record],
         last_page_token_value: Optional[Any],
+        page_size_override: Optional[int] = None,
     ) -> Optional[Mapping[str, Any]]:
         """
         Specifies a pagination strategy.
@@ -311,12 +338,14 @@ class SimpleRetriever(Retriever):
             last_page_size=last_page_size,
             last_record=last_record,
             last_page_token_value=last_page_token_value,
+            **page_size_override_kwargs(page_size_override),
         )
 
     def _fetch_next_page(
         self,
         stream_slice: StreamSlice,
         next_page_token: Optional[Mapping[str, Any]] = None,
+        page_size_override: Optional[int] = None,
     ) -> Optional[requests.Response]:
         return self.requester.send_request(
             path=self._paginator_path(
@@ -329,18 +358,22 @@ class SimpleRetriever(Retriever):
             request_headers=self._request_headers(
                 stream_slice=stream_slice,
                 next_page_token=next_page_token,
+                **page_size_override_kwargs(page_size_override),
             ),
             request_params=self._request_params(
                 stream_slice=stream_slice,
                 next_page_token=next_page_token,
+                **page_size_override_kwargs(page_size_override),
             ),
             request_body_data=self._request_body_data(
                 stream_slice=stream_slice,
                 next_page_token=next_page_token,
+                **page_size_override_kwargs(page_size_override),
             ),
             request_body_json=self._request_body_json(
                 stream_slice=stream_slice,
                 next_page_token=next_page_token,
+                **page_size_override_kwargs(page_size_override),
             ),
             log_formatter=self.log_formatter,
         )
@@ -353,9 +386,20 @@ class SimpleRetriever(Retriever):
     ) -> Iterable[Record]:
         original_stream_slice = stream_slice
         pagination_tracker = self.pagination_tracker_factory()
+        page_size_reducer = (
+            PageSizeReducer(
+                self.page_size_reduction,
+                self._paginator.get_page_size(),
+                stream_name=self.name,
+            )
+            if self.page_size_reduction
+            else None
+        )
         reset_pagination = False
+        reduce_page_size = False
         next_page_token = self._get_initial_next_page_token()
         while True:
+            page_size_override = page_size_reducer.page_size_override if page_size_reducer else None
             merged_records: MutableMapping[str, Any] = defaultdict(dict)
             last_page_size = 0
             last_record: Optional[Record] = None
@@ -371,7 +415,11 @@ class SimpleRetriever(Retriever):
                             cursor_slice=stream_slice.cursor_slice or {},
                             extra_fields={"query_properties": properties},
                         )
-                        response = self._fetch_next_page(stream_slice, next_page_token)
+                        response = self._fetch_next_page(
+                            stream_slice,
+                            next_page_token,
+                            **page_size_override_kwargs(page_size_override),
+                        )
 
                         for current_record in records_generator_fn(response):
                             if self.additional_query_properties.property_chunking:
@@ -401,7 +449,11 @@ class SimpleRetriever(Retriever):
                         last_record = record
                         yield record
                 else:
-                    response = self._fetch_next_page(stream_slice, next_page_token)
+                    response = self._fetch_next_page(
+                        stream_slice,
+                        next_page_token,
+                        **page_size_override_kwargs(page_size_override),
+                    )
                     for current_record in records_generator_fn(response):
                         pagination_tracker.observe(current_record)
                         last_page_size += 1
@@ -409,9 +461,37 @@ class SimpleRetriever(Retriever):
                         yield current_record
             except PaginationResetRequiredException:
                 reset_pagination = True
+            except PageSizeReductionRequiredException:
+                if page_size_reducer is None:
+                    # The action can be attached to a requester we cannot validate at config time, such as one
+                    # built by a custom error handler or a CustomRequester. Re-raise as the misconfiguration it
+                    # is: the exception being handled is the neutral "the API asked for a smaller page" signal.
+                    raise PageSizeReductionNotSupportedException(stream_name=self.name)
+                if last_page_size:
+                    # The reduction is safe only because it re-issues a page whose records were not emitted.
+                    # Every in-CDK way of reaching this raises from `_fetch_next_page`, before the record loop,
+                    # and the factory rejects the manifest constructs that would not, but a custom extractor,
+                    # filter or transformation can issue its own request from inside the record generator.
+                    # Re-issuing the page then duplicates the records already yielded, so fail instead.
+                    raise AirbyteTracedException(
+                        internal_message=f"Stream {self.name} requested a page size reduction after {last_page_size} records of the page had already been emitted",
+                        message=f"Stream {self.name} asked for a smaller page size in the middle of a page. The page cannot be requested again without duplicating the records already read from it. Move the REDUCE_PAGE_SIZE action to the error handler of the stream's main requester.",
+                        failure_type=FailureType.config_error,
+                    )
+                # Raises once the page size cannot be reduced any further, which is what stops the loop when
+                # the API keeps failing.
+                page_size_reducer.reduce()
+                reduce_page_size = True
             else:
+                if page_size_reducer:
+                    page_size_reducer.on_successful_page()
                 if not response:
                     break
+
+            if reduce_page_size:
+                # Retry the very same page: neither the token nor the slice change, only the page size does.
+                reduce_page_size = False
+                continue
 
             if reset_pagination or pagination_tracker.has_reached_limit():
                 next_page_token = self._get_initial_next_page_token()
@@ -432,6 +512,7 @@ class SimpleRetriever(Retriever):
                     last_page_size=last_page_size,
                     last_record=last_record,
                     last_page_token_value=last_page_token_value,
+                    **page_size_override_kwargs(page_size_override),
                 )
                 if not next_page_token:
                     break

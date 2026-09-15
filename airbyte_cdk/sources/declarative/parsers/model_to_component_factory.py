@@ -139,6 +139,9 @@ from airbyte_cdk.sources.declarative.models.base_model_with_deprecations import 
     BaseModelWithDeprecations,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    Action as HttpResponseFilterActionModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     Action1 as PaginationResetActionModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
@@ -385,6 +388,9 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
     PageIncrement as PageIncrementModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    PageSizeReduction as PageSizeReductionModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     PaginationReset as PaginationResetModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
@@ -578,6 +584,10 @@ from airbyte_cdk.sources.declarative.retrievers.file_uploader import (
     FileUploader,
     LocalFileSystemFileWriter,
     NoopFileWriter,
+)
+from airbyte_cdk.sources.declarative.retrievers.page_size_reducer import (
+    PageSizeReduction,
+    PageSizeResetPolicy,
 )
 from airbyte_cdk.sources.declarative.retrievers.pagination_tracker import PaginationTracker
 from airbyte_cdk.sources.declarative.schema import (
@@ -1197,6 +1207,9 @@ class ModelToComponentFactory:
     def create_session_token_authenticator(
         self, model: SessionTokenAuthenticatorModel, config: Config, name: str, **kwargs: Any
     ) -> Union[ApiKeyAuthenticator, BearerAuthenticator]:
+        self._reject_reduce_page_size_action(
+            model.login_requester, f"`login_requester` of the SessionTokenAuthenticator of {name}"
+        )
         decoder = (
             self._create_component_from_model(model=model.decoder, config=config)
             if model.decoder
@@ -3614,14 +3627,30 @@ class ModelToComponentFactory:
             model.ignore_stream_slicer_parameters_on_paginated_requests or False
         )
 
-        if (
+        reads_parent_stream_lazily = bool(
             model.partition_router
             and isinstance(model.partition_router, SubstreamPartitionRouterModel)
-            and not bool(self._connector_state_manager.get_stream_state(name, None))
             and any(
                 parent_stream_config.lazy_read_pointer
                 for parent_stream_config in model.partition_router.parent_stream_configs
             )
+        )
+        if reads_parent_stream_lazily and (
+            model.page_size_reduction
+            or self._uses_reduce_page_size_action(getattr(model.requester, "error_handler", None))
+        ):
+            # Checked outside of the LazySimpleRetriever branch below, which only applies on the first
+            # sync of a stream: gating it on the absence of state would accept the same manifest from the
+            # second sync onwards. LazySimpleRetriever paginates the parent's embedded pages, so there is
+            # no page of its own to re-issue with a smaller page size.
+            raise ValueError(
+                f"`page_size_reduction` and the REDUCE_PAGE_SIZE response action are not supported when "
+                f"reading a parent stream lazily. Remove either the page size reduction or the parent "
+                f"stream's `lazy_read_pointer` for stream {name}."
+            )
+
+        if reads_parent_stream_lazily and not bool(
+            self._connector_state_manager.get_stream_state(name, None)
         ):
             if incremental_sync:
                 if incremental_sync.type != "DatetimeBasedCursor":
@@ -3675,9 +3704,244 @@ class ModelToComponentFactory:
             pagination_tracker_factory=self._create_pagination_tracker_factory(
                 model.pagination_reset, cursor
             ),
+            page_size_reduction=self._create_page_size_reduction(
+                model, name, query_properties, file_uploader
+            ),
             post_pagination_filter=post_pagination_filter,
             parameters=model.parameters or {},
         )
+
+    def _create_page_size_reduction(
+        self,
+        model: SimpleRetrieverModel,
+        name: str,
+        query_properties: Optional[QueryProperties],
+        file_uploader: Optional[DefaultFileUploader] = None,
+    ) -> Optional[PageSizeReduction]:
+        # A CustomRequester does not necessarily define an error handler. A CustomRequester that does define
+        # one keeps it as a raw dict rather than a typed model, so this returns False for it as well.
+        error_handler = getattr(model.requester, "error_handler", None)
+        uses_action = self._uses_reduce_page_size_action(error_handler)
+        if uses_action and not model.page_size_reduction:
+            raise ValueError(
+                f"Stream {name} has a response filter with the REDUCE_PAGE_SIZE action but the retriever does not "
+                f"define `page_size_reduction`. Add a `page_size_reduction` block to the retriever."
+            )
+
+        if not model.page_size_reduction:
+            return None
+
+        if not uses_action:
+            # Not raised: a CustomErrorHandler can resolve to REDUCE_PAGE_SIZE without us being able to see
+            # it, so the only safe reaction to a block we cannot tie to an action is a warning. Without it a
+            # misspelled action leaves the feature silently dead on a stream that only exists because it
+            # would otherwise fail.
+            LOGGER.warning(
+                f"Stream {name} defines `page_size_reduction` but no response filter with the "
+                f"REDUCE_PAGE_SIZE action was found on its requester. The page size will never be reduced "
+                f"unless a custom error handler resolves to that action."
+            )
+
+        self._validate_page_size_reduction_is_supported(
+            model, name, query_properties, file_uploader
+        )
+
+        reset_policy = model.page_size_reduction.reset_policy
+        return PageSizeReduction(
+            reduction_factor=model.page_size_reduction.reduction_factor,  # type: ignore[arg-type]  # the schema defines a default
+            minimum_page_size=model.page_size_reduction.minimum_page_size,  # type: ignore[arg-type]  # the schema defines a default
+            max_attempts=model.page_size_reduction.max_attempts,  # type: ignore[arg-type]  # the schema defines a default
+            reset_policy=PageSizeResetPolicy(reset_policy.value)
+            if reset_policy is not None
+            else PageSizeResetPolicy.NEVER,
+        )
+
+    def _validate_page_size_reduction_is_supported(
+        self,
+        model: SimpleRetrieverModel,
+        name: str,
+        query_properties: Optional[QueryProperties],
+        file_uploader: Optional[DefaultFileUploader] = None,
+    ) -> None:
+        """
+        Page size reduction re-issues the same page with a smaller page size. That is only correct when the next
+        page does not depend on the page size, and it only has an effect when the paginator injects the page size
+        in the request. A custom pagination strategy is accepted when it can receive the reduced page size, which
+        is checked by inspecting its signature rather than by recognizing its type.
+        """
+        if query_properties:
+            raise ValueError(
+                f"`page_size_reduction` cannot be used together with query properties on stream {name}. Records "
+                f"from the earlier property chunks have already been emitted when a chunk asks for a smaller page, "
+                f"so retrying the page would emit them twice."
+            )
+
+        if file_uploader:
+            raise ValueError(
+                f"`page_size_reduction` cannot be used together with a `file_uploader` on stream {name}. The "
+                f"file uploader sends one request per record from inside the page's record generator, so a "
+                f"reduction asked for halfway through a page would re-emit the records already yielded by it."
+            )
+
+        if not isinstance(model.paginator, DefaultPaginatorModel):
+            raise ValueError(
+                f"`page_size_reduction` requires a DefaultPaginator on stream {name} so that the connector can "
+                f"send a smaller page size."
+            )
+
+        if not model.paginator.page_size_option:
+            raise ValueError(
+                f"`page_size_reduction` requires `page_size_option` on the paginator of stream {name}: without it "
+                f"the connector cannot tell the API to send a smaller page."
+            )
+
+        strategy = model.paginator.pagination_strategy
+        if isinstance(strategy, PageIncrementModel):
+            raise ValueError(
+                f"`page_size_reduction` does not support the PageIncrement pagination strategy used by stream "
+                f"{name}. Pages are addressed as page number * page size, so a smaller page size shifts every "
+                f"following page boundary and would skip records. Use OffsetIncrement or CursorPagination."
+            )
+        if isinstance(strategy, CustomPaginationStrategyModel):
+            # A custom strategy is written by the same person enabling the reduction, so the
+            # question is not whether we recognize it but whether it can be told the reduced
+            # page size. Checking the signature keeps a strategy that would raise TypeError
+            # mid-sync from being accepted at config time.
+            custom_class = self._get_class_from_fully_qualified_class_name(strategy.class_name)
+            if isinstance(custom_class, type) and issubclass(custom_class, PageIncrement):
+                # `PageIncrement.next_page_token` declares `page_size_override` only to reject it, so a
+                # subclass that does not override the method would pass the signature check below and only
+                # fail once the first reduction is requested, mid-sync.
+                raise ValueError(
+                    f"`page_size_reduction` does not support the PageIncrement pagination strategy that the "
+                    f"custom pagination strategy {strategy.class_name} used by stream {name} inherits from. "
+                    f"Pages are addressed as page number * page size, so a smaller page size shifts every "
+                    f"following page boundary and would skip records. Use OffsetIncrement or CursorPagination."
+                )
+            try:
+                parameters = inspect.signature(custom_class.next_page_token).parameters
+            except (AttributeError, TypeError, ValueError) as exception:
+                raise ValueError(
+                    f"`page_size_reduction` could not check the signature of `next_page_token` on the custom "
+                    f"pagination strategy {strategy.class_name} used by stream {name}: {exception}. Make sure "
+                    f"`class_name` points at a PaginationStrategy subclass whose `next_page_token` accepts a "
+                    f"`page_size_override` keyword argument."
+                )
+            accepts_override = "page_size_override" in parameters or any(
+                parameter.kind == inspect.Parameter.VAR_KEYWORD for parameter in parameters.values()
+            )
+            if not accepts_override:
+                raise ValueError(
+                    f"`page_size_reduction` requires the custom pagination strategy "
+                    f"{strategy.class_name} used by stream {name} to accept a `page_size_override` keyword "
+                    f"argument in `next_page_token`, so that it can honor the reduced page size. Add "
+                    f"`page_size_override: Optional[int] = None` to its signature; a strategy that does not "
+                    f"use its page size as a stop condition can ignore the value."
+                )
+        elif not isinstance(strategy, (CursorPaginationModel, OffsetIncrementModel)):
+            raise ValueError(
+                f"`page_size_reduction` only supports the CursorPagination, OffsetIncrement and "
+                f"CustomPaginationStrategy pagination strategies. Stream {name} uses "
+                f"{type(strategy).__name__}."
+            )
+        else:
+            # A CustomPaginationStrategy carries its page size in its own code, so this is only checkable
+            # for the strategies the CDK defines. `page_size` is optional on both of them, and without it
+            # `get_page_size` returns None, the paginator injects nothing, and the reduction is a dead end
+            # that only surfaces on the first failing response - after records have been emitted.
+            self._validate_page_size_is_reducible(strategy, model.page_size_reduction, name)
+            if isinstance(strategy, CursorPaginationModel):
+                self._validate_stop_condition_is_reduction_aware(strategy, name)
+
+    @staticmethod
+    def _validate_stop_condition_is_reduction_aware(
+        strategy: CursorPaginationModel, name: str
+    ) -> None:
+        """
+        A `stop_condition` comparing `last_page_size` to a hardcoded page size reads a full reduced page as a
+        short page and ends the pagination early, dropping the rest of the partition without failing. The
+        strategy exposes the page size that was actually requested as `page_size`, so the condition can be
+        written correctly - but only if it is, which is what this checks.
+        """
+        stop_condition = strategy.stop_condition
+        if not stop_condition:
+            return
+
+        # `\b` does not match between the `_` and the `p` of `last_page_size`, so the second pattern only
+        # matches a standalone `page_size` reference.
+        uses_last_page_size = re.search(r"\blast_page_size\b", stop_condition)
+        uses_requested_page_size = re.search(r"\bpage_size\b", stop_condition)
+        if uses_last_page_size and not uses_requested_page_size:
+            raise ValueError(
+                f"`page_size_reduction` on stream {name} cannot be used with the `stop_condition` "
+                f"{stop_condition!r}: it compares `last_page_size` to a value that does not follow the "
+                f"reduction, so a full page at the reduced size would read as a short page and end the "
+                f"pagination early, silently dropping the rest of the partition. Compare against the "
+                f"`page_size` interpolation variable instead, which holds the page size that was actually "
+                f"requested (for example `{{{{ last_page_size < page_size }}}}`)."
+            )
+
+    @staticmethod
+    def _validate_page_size_is_reducible(
+        strategy: Union[CursorPaginationModel, OffsetIncrementModel],
+        page_size_reduction: Optional[PageSizeReductionModel],
+        name: str,
+    ) -> None:
+        page_size = strategy.page_size
+        if page_size is None:
+            raise ValueError(
+                f"`page_size_reduction` requires `page_size` on the pagination strategy of stream {name}: "
+                f"without it the paginator does not send a page size, so there is nothing to reduce."
+            )
+
+        # The schema allows a string so that the page size can be interpolated. `page_size` is
+        # `Optional[Union[int, str]]` and pydantic v1 tries `int` first, so both `100` and `"100"` arrive as
+        # an int and only a genuinely non-numeric template stays a str. Such a template is only known once
+        # the config is available, so it is left to the runtime check in `PageSizeReducer.reduce`.
+        try:
+            configured_page_size: Optional[int] = int(page_size)
+        except ValueError:
+            configured_page_size = None
+
+        minimum_page_size = (
+            page_size_reduction.minimum_page_size if page_size_reduction else None
+        ) or 1
+        if configured_page_size is not None and configured_page_size <= minimum_page_size:
+            raise ValueError(
+                f"`page_size_reduction` on stream {name} can never reduce its page size: the pagination "
+                f"strategy's `page_size` is {configured_page_size} and `minimum_page_size` is "
+                f"{minimum_page_size}. Lower `minimum_page_size` or raise `page_size`."
+            )
+
+    def _reject_reduce_page_size_action(self, requester: Any, description: str) -> None:
+        """
+        `error_handler` is defined on `HttpRequester`, which is referenced by requesters that have no page of
+        their own, so REDUCE_PAGE_SIZE is schema-legal in places where nothing can honor it. Only
+        `SimpleRetriever._read_pages` re-issues a page, so every other requester is rejected here rather than
+        surfacing the exception mid-sync as a generic failure.
+        """
+        if requester is None:
+            return
+        if self._uses_reduce_page_size_action(getattr(requester, "error_handler", None)):
+            raise ValueError(
+                f"The REDUCE_PAGE_SIZE response action is not supported on the {description}: only the main "
+                f"requester of a SimpleRetriever can re-issue its page with a smaller page size. Use a "
+                f"different action on that error handler."
+            )
+
+    def _uses_reduce_page_size_action(self, error_handler: Any) -> bool:
+        if isinstance(error_handler, CompositeErrorHandlerModel):
+            return any(
+                self._uses_reduce_page_size_action(nested)
+                for nested in error_handler.error_handlers
+            )
+        if isinstance(error_handler, DefaultErrorHandlerModel):
+            return any(
+                response_filter.action == HttpResponseFilterActionModel.REDUCE_PAGE_SIZE
+                for response_filter in error_handler.response_filters or []
+            )
+        # A CustomErrorHandler can return any action and we cannot inspect it, so we do not validate it.
+        return False
 
     def _create_pagination_tracker_factory(
         self, model: Optional[PaginationResetModel], cursor: Cursor
@@ -3944,6 +4208,19 @@ class ModelToComponentFactory:
         if model.download_target_requester and not model.download_target_extractor:
             raise ValueError(
                 f"`download_target_extractor` required if using a `download_target_requester`"
+            )
+
+        for requester_field in (
+            "creation_requester",
+            "polling_requester",
+            "download_requester",
+            "download_target_requester",
+            "abort_requester",
+            "delete_requester",
+        ):
+            self._reject_reduce_page_size_action(
+                getattr(model, requester_field, None),
+                f"`{requester_field}` of the AsyncRetriever of stream {name}",
             )
 
         def _get_download_retriever(
@@ -4559,6 +4836,7 @@ class ModelToComponentFactory:
     def create_file_uploader(
         self, model: FileUploaderModel, config: Config, **kwargs: Any
     ) -> FileUploader:
+        self._reject_reduce_page_size_action(model.requester, "requester of a `file_uploader`")
         name = "File Uploader"
         requester = self._create_component_from_model(
             model=model.requester,
