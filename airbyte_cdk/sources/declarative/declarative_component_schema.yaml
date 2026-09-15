@@ -2186,8 +2186,9 @@ definitions:
         enum: [CombinedExtractor]
       extractors:
         title: Extractors
-        description: The record extractors to combine. At least one is required. Each sub-extractor is given the same HTTP response, so they must not rely on a streaming decoder (CsvDecoder, JsonlDecoder, JsonItemsDecoder, GzipDecoder), whose response body can only be read once.
+        description: The record extractors to combine. At least one is required. Each sub-extractor is given the same HTTP response and decodes it independently, so the response is parsed once per sub-extractor. Streaming decoders (CsvDecoder, JsonlDecoder, JsonItemsDecoder, GzipDecoder, IterableDecoder) can only read the response body once and are rejected.
         type: array
+        minItems: 1
         items:
           anyOf:
             - "$ref": "#/definitions/DpathExtractor"
@@ -2195,13 +2196,17 @@ definitions:
             - "$ref": "#/definitions/CombinedExtractor"
       mode:
         title: Combine Mode
-        description: 'How the records of the sub-extractors are combined. "union" (default) yields every record of every sub-extractor, in the order the extractors are declared. "first_match" yields the records of the first sub-extractor that produces at least one record and skips the remaining ones; nothing is yielded if none of them produces a record. "zip_merge" merges the i-th record of every sub-extractor into a single record, with later sub-extractors overwriting the fields set by earlier ones, and stops at the shortest sub-extractor.'
+        description: 'How the records of the sub-extractors are combined. "union" (default) yields every record of every sub-extractor, in the order the extractors are declared. "first_match" yields the records of the first sub-extractor that produces at least one record and skips the remaining ones; nothing is yielded if none of them produces a record. "zip_merge" merges the i-th record of every sub-extractor into a single record, with later sub-extractors overwriting the fields set by earlier ones, and stops at the shortest sub-extractor, discarding the trailing records of the longer ones. Note that an OffsetIncrement or PageIncrement paginator counts the combined records, which under "first_match" and "zip_merge" is not the number of records the API returned for the page.'
         type: string
         enum:
           - union
           - first_match
           - zip_merge
         default: union
+        examples:
+          - union
+          - first_match
+          - zip_merge
       $parameters:
         type: object
         additionalProperties: true

@@ -2517,7 +2517,7 @@ class DpathExtractor(BaseModel):
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
 
-class CombineMode(Enum):
+class Mode(Enum):
     union = "union"
     first_match = "first_match"
     zip_merge = "zip_merge"
@@ -2527,12 +2527,13 @@ class CombinedExtractor(BaseModel):
     type: Literal["CombinedExtractor"]
     extractors: List[Union[DpathExtractor, CustomRecordExtractor, CombinedExtractor]] = Field(
         ...,
-        description="The record extractors to combine. At least one is required. Each sub-extractor is given the same HTTP response, so they must not rely on a streaming decoder (CsvDecoder, JsonlDecoder, JsonItemsDecoder, GzipDecoder), whose response body can only be read once.",
+        description="The record extractors to combine. At least one is required. Each sub-extractor is given the same HTTP response and decodes it independently, so the response is parsed once per sub-extractor. Streaming decoders (CsvDecoder, JsonlDecoder, JsonItemsDecoder, GzipDecoder, IterableDecoder) can only read the response body once and are rejected.",
         title="Extractors",
     )
-    mode: Optional[CombineMode] = Field(
-        CombineMode.union,
-        description='How the records of the sub-extractors are combined. "union" (default) yields every record of every sub-extractor, in the order the extractors are declared. "first_match" yields the records of the first sub-extractor that produces at least one record and skips the remaining ones; nothing is yielded if none of them produces a record. "zip_merge" merges the i-th record of every sub-extractor into a single record, with later sub-extractors overwriting the fields set by earlier ones, and stops at the shortest sub-extractor.',
+    mode: Optional[Mode] = Field(
+        Mode.union,
+        description='How the records of the sub-extractors are combined. "union" (default) yields every record of every sub-extractor, in the order the extractors are declared. "first_match" yields the records of the first sub-extractor that produces at least one record and skips the remaining ones; nothing is yielded if none of them produces a record. "zip_merge" merges the i-th record of every sub-extractor into a single record, with later sub-extractors overwriting the fields set by earlier ones, and stops at the shortest sub-extractor, discarding the trailing records of the longer ones. Note that an OffsetIncrement or PageIncrement paginator counts the combined records, which under "first_match" and "zip_merge" is not the number of records the API returned for the page.',
+        examples=["union", "first_match", "zip_merge"],
         title="Combine Mode",
     )
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
@@ -3502,8 +3503,8 @@ class DynamicDeclarativeStream(BaseModel):
 
 ComplexFieldType.update_forward_refs()
 GzipDecoder.update_forward_refs()
-CombinedExtractor.update_forward_refs()
 CompositeErrorHandler.update_forward_refs()
+CombinedExtractor.update_forward_refs()
 DeclarativeSource1.update_forward_refs()
 DeclarativeSource2.update_forward_refs()
 SelectiveAuthenticator.update_forward_refs()

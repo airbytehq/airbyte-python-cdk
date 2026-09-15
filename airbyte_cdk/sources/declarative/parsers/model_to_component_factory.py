@@ -692,6 +692,7 @@ from airbyte_cdk.sources.streams.concurrent.state_converters.incrementing_count_
 from airbyte_cdk.sources.streams.http.error_handlers.response_models import ResponseAction
 from airbyte_cdk.sources.types import Config
 from airbyte_cdk.sources.utils.transform import TransformConfig, TypeTransformer
+from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 
 ComponentDefinition = Mapping[str, Any]
 
@@ -2434,7 +2435,9 @@ class ModelToComponentFactory:
         config: Config,
         *,
         url_base: str,
-        extractor_model: Optional[Union[CustomRecordExtractorModel, DpathExtractorModel]] = None,
+        extractor_model: Optional[
+            Union[CustomRecordExtractorModel, DpathExtractorModel, CombinedExtractorModel]
+        ] = None,
         decoder: Optional[Decoder] = None,
         cursor_used_for_stop_condition: Optional[Cursor] = None,
     ) -> Union[DefaultPaginator, PaginatorTestReadDecorator]:
@@ -2478,6 +2481,46 @@ class ModelToComponentFactory:
             return PaginatorTestReadDecorator(paginator, self._limit_pages_fetched_per_slice)
         return paginator
 
+    def _reject_combined_extractor_over_streaming_decoder(self, decoder: Optional[Decoder]) -> None:
+        """Refuse to build a `CombinedExtractor` whose response body can only be read once.
+
+        Every sub-extractor is handed the same `requests.Response`. A streaming decoder consumes
+        and closes `response.raw`, so every sub-extractor after the first reads a closed
+        `urllib3.HTTPResponse`, which returns an empty body instead of raising: `union` emits only
+        the first sub-extractor's records and `first_match` emits nothing when the first path
+        misses. Rejecting the manifest is the only way to make that loud.
+
+        The Connector Builder downgrades those same decoders to `stream_response=False` so a test
+        read can be replayed, which would let a manifest look correct in the Builder and lose
+        records once published. The downgraded decoders are therefore rejected in the Builder too.
+        """
+        if decoder is None:
+            return
+        inner_decoder = (
+            decoder.decoder if isinstance(decoder, PaginationDecoderDecorator) else decoder
+        )
+        streams_in_production = inner_decoder.is_stream_response() or (
+            # The four decoders the Builder downgrades are the only bare `CompositeRawDecoder`s
+            # this factory builds; every buffered decoder is a distinct class.
+            self._emit_connector_builder_messages and isinstance(inner_decoder, CompositeRawDecoder)
+        )
+        if not streams_in_production:
+            return
+        raise AirbyteTracedException(
+            message=(
+                "CombinedExtractor is not supported with a streaming decoder (CsvDecoder, "
+                "JsonlDecoder, JsonItemsDecoder, GzipDecoder, IterableDecoder), which reads the "
+                "response body only once. Use JsonDecoder, XmlDecoder or ZipfileDecoder, or "
+                "declare a single extractor."
+            ),
+            internal_message=(
+                f"CombinedExtractor was configured with {type(inner_decoder).__name__}, which "
+                f"streams the response. Sub-extractors after the first would read a closed "
+                f"response and silently return no records."
+            ),
+            failure_type=FailureType.config_error,
+        )
+
     def create_combined_extractor(
         self,
         model: CombinedExtractorModel,
@@ -2485,6 +2528,7 @@ class ModelToComponentFactory:
         decoder: Optional[Decoder] = None,
         **kwargs: Any,
     ) -> CombinedExtractor:
+        self._reject_combined_extractor_over_streaming_decoder(decoder)
         extractors = [
             self._create_component_from_model(model=sub_extractor, config=config, decoder=decoder)
             for sub_extractor in model.extractors
@@ -3095,7 +3139,9 @@ class ModelToComponentFactory:
         model: OffsetIncrementModel,
         config: Config,
         decoder: Decoder,
-        extractor_model: Optional[Union[CustomRecordExtractorModel, DpathExtractorModel]] = None,
+        extractor_model: Optional[
+            Union[CustomRecordExtractorModel, DpathExtractorModel, CombinedExtractorModel]
+        ] = None,
         **kwargs: Any,
     ) -> OffsetIncrement:
         if isinstance(decoder, PaginationDecoderDecorator):
@@ -3144,7 +3190,9 @@ class ModelToComponentFactory:
         model: PageIncrementModel,
         config: Config,
         decoder: Optional[Decoder] = None,
-        extractor_model: Optional[Union[CustomRecordExtractorModel, DpathExtractorModel]] = None,
+        extractor_model: Optional[
+            Union[CustomRecordExtractorModel, DpathExtractorModel, CombinedExtractorModel]
+        ] = None,
         **kwargs: Any,
     ) -> PageIncrement:
         # Like OffsetIncrement, we instantiate a separate extractor with identical behavior to the
