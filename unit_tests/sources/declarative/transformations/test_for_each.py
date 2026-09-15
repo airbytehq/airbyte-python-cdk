@@ -601,6 +601,112 @@ def test_the_plain_walk_resolves_a_list_segment_exactly_like_dpath(segment):
     )
 
 
+class _CountingTransformation(RecordTransformation):
+    """Counts how many times each object it is handed has been transformed."""
+
+    def transform(self, record, config=None, stream_state=None, stream_slice=None) -> None:
+        record["applied"] = record.get("applied", 0) + 1
+
+
+def test_a_glob_match_that_is_not_an_object_is_skipped_instead_of_raising():
+    """
+    A glob selects rather than addresses, so it routinely lands on scalars that have nothing to do
+    with the intended collection. Raising on those would make `*` unusable, so globs are lenient --
+    unlike `["items"]`, which addresses the list itself and does raise on a scalar element.
+    """
+    transformation = _for_each(
+        field_path=["items", "*"], transformations=[_add_fields(["added"], "value")]
+    )
+    record = {"items": ["a", "b"]}
+
+    transformation.transform(record)
+
+    assert record == {"items": ["a", "b"]}
+
+    with pytest.raises(AirbyteTracedException):
+        _for_each(
+            field_path=["items"], transformations=[_add_fields(["added"], "value")]
+        ).transform({"items": ["a", "b"]})
+
+
+def test_overlapping_glob_matches_transform_each_object_exactly_once():
+    """
+    `dpath.values(record, ["**"])` yields every container at every depth, so a nested object comes
+    back both on its own and as a member of its parent list. Without the identity de-duplication a
+    non-idempotent nested transformation would be applied twice to the same object.
+    """
+    transformation = _for_each(field_path=["**"], transformations=[_CountingTransformation()])
+    record = {"a": [{"id": 1, "b": [{"id": 2}]}]}
+
+    transformation.transform(record)
+
+    assert record == {"a": [{"id": 1, "applied": 1, "b": [{"id": 2, "applied": 1}]}]}
+
+
+def test_the_plain_walk_matches_an_integer_dict_key_like_dpath():
+    """
+    `dpath` glob-matches a segment against `str(key)`, so a string segment addresses an integer dict
+    key too. The plain walk has to agree, or adding a glob elsewhere in the path would change which
+    values the same manifest resolves.
+    """
+    record = {"a": {1: [{"id": 1}]}}
+
+    assert ForEach._resolve_collections(record, ["a", "1"]) == list(
+        dpath.values(copy.deepcopy(record), ["a", "1"])
+    )
+
+    transformation = _for_each(
+        field_path=["a", "1"], transformations=[_add_fields(["added"], "value")]
+    )
+    transformation.transform(record)
+
+    assert record == {"a": {1: [{"id": 1, "added": "value"}]}}
+
+
+def test_a_key_that_literally_contains_a_glob_character_cannot_be_addressed():
+    """
+    Documented limitation, inherited from `dpath` itself rather than introduced here: the segment is
+    glob-matched, and neither `dpath` nor `fnmatch` offers an escape syntax. `DpathExtractor` and
+    `DpathFlattenFields` behave identically.
+    """
+    record = {"a[0]": [{"id": 1}]}
+
+    assert list(dpath.values(copy.deepcopy(record), ["a[0]"])) == []
+
+    transformation = _for_each(
+        field_path=["a[0]"], transformations=[_add_fields(["added"], "value")]
+    )
+    transformation.transform(record)
+
+    assert record == {"a[0]": [{"id": 1}]}
+
+
+def test_a_nested_transformation_that_raises_leaves_the_earlier_elements_mutated():
+    """
+    The up-front validation covers element *shape* only. Nothing in the transformation pipeline is
+    atomic, and `ForEach` does not pretend otherwise.
+    """
+
+    class _RaisesOnTheSecondElement(RecordTransformation):
+        def __init__(self):
+            self.calls = 0
+
+        def transform(self, record, config=None, stream_state=None, stream_slice=None) -> None:
+            self.calls += 1
+            if self.calls == 2:
+                raise RuntimeError("boom")
+            record["added"] = "value"
+
+    record = {"items": [{"id": 1}, {"id": 2}]}
+
+    with pytest.raises(RuntimeError):
+        _for_each(field_path=["items"], transformations=[_RaisesOnTheSecondElement()]).transform(
+            record
+        )
+
+    assert record == {"items": [{"id": 1, "added": "value"}, {"id": 2}]}
+
+
 def test_a_literal_empty_field_path_segment_is_a_manifest_error():
     """
     An empty segment cannot be the render of a template, so it is the manifest's fault, not the
