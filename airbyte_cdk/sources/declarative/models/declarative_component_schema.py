@@ -507,6 +507,12 @@ class HttpRequestRegexMatcher(BaseModel):
     )
 
 
+class CombineMode(Enum):
+    union = "union"
+    first_match = "first_match"
+    zip_merge = "zip_merge"
+
+
 class ResponseToFileExtractor(BaseModel):
     type: Literal["ResponseToFileExtractor"]
     preserve_na_values: Optional[bool] = Field(
@@ -2517,12 +2523,6 @@ class DpathExtractor(BaseModel):
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
 
-class Mode(Enum):
-    union = "union"
-    first_match = "first_match"
-    zip_merge = "zip_merge"
-
-
 class CombinedExtractor(BaseModel):
     type: Literal["CombinedExtractor"]
     extractors: List[Union[DpathExtractor, CustomRecordExtractor, CombinedExtractor]] = Field(
@@ -2530,10 +2530,9 @@ class CombinedExtractor(BaseModel):
         description="The record extractors to combine. At least one is required. Each sub-extractor is given the same HTTP response and decodes it independently, so the response is parsed once per sub-extractor. Streaming decoders (CsvDecoder, JsonlDecoder, JsonItemsDecoder, GzipDecoder, IterableDecoder) can only read the response body once and are rejected.",
         title="Extractors",
     )
-    mode: Optional[Mode] = Field(
-        Mode.union,
-        description='How the records of the sub-extractors are combined. "union" (default) yields every record of every sub-extractor, in the order the extractors are declared. "first_match" yields the records of the first sub-extractor that produces at least one record and skips the remaining ones; nothing is yielded if none of them produces a record. "zip_merge" merges the i-th record of every sub-extractor into a single record, with later sub-extractors overwriting the fields set by earlier ones, and stops at the shortest sub-extractor, discarding the trailing records of the longer ones. Note that an OffsetIncrement or PageIncrement paginator counts the combined records, which under "first_match" and "zip_merge" is not the number of records the API returned for the page.',
-        examples=["union", "first_match", "zip_merge"],
+    mode: Optional[CombineMode] = Field(
+        CombineMode.union,
+        description='How the records of the sub-extractors are combined. "union" (default) yields every record of every sub-extractor, in the order the extractors are declared. "first_match" yields the records of the first sub-extractor that produces at least one record and skips the remaining ones; nothing is yielded if none of them produces a record. "zip_merge" merges the i-th record of every sub-extractor into a single record, with later sub-extractors overwriting the fields set by earlier ones, and stops at the shortest sub-extractor, discarding the trailing records of the longer ones. Note that a paginator which counts the records of a page counts the combined records: under "union" that is the sum over all sub-extractors, which overshoots the API page size, so "union" is rejected with an OffsetIncrement paginator because the offset would skip records. Under "first_match" the count is the count of the winning sub-extractor and under "zip_merge" the count of the shortest one, which are usually the number of records the API returned for the page.',
         title="Combine Mode",
     )
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")

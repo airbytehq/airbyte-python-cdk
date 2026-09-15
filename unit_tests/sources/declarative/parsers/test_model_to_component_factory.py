@@ -54,6 +54,10 @@ from airbyte_cdk.sources.declarative.checks import CheckStream
 from airbyte_cdk.sources.declarative.concurrency_level import ConcurrencyLevel
 from airbyte_cdk.sources.declarative.datetime.min_max_datetime import MinMaxDatetime
 from airbyte_cdk.sources.declarative.decoders import JsonDecoder, PaginationDecoderDecorator
+from airbyte_cdk.sources.declarative.decoders.composite_raw_decoder import (
+    CompositeRawDecoder,
+    JsonParser,
+)
 from airbyte_cdk.sources.declarative.extractors import (
     CombinedExtractor,
     CombineMode,
@@ -6695,6 +6699,10 @@ def _combined_extractor_selector_definition() -> Mapping[str, Any]:
     return transformer.propagate_types_and_parameters("", resolved_manifest["selector"], {})
 
 
+class _BufferedCompositeRawDecoderSubclass(CompositeRawDecoder):
+    """Stands in for a `CustomDecoder` that subclasses `CompositeRawDecoder` and buffers."""
+
+
 _STREAMING_DECODERS = {
     "CsvDecoder": (CsvDecoderModel, {"type": "CsvDecoder"}),
     "JsonlDecoder": (JsonlDecoderModel, {"type": "JsonlDecoder"}),
@@ -6759,6 +6767,42 @@ def test_combined_extractor_over_a_buffered_decoder_is_accepted(decoder_type: st
     )
 
     selector = factory.create_component(
+        model_type=RecordSelectorModel,
+        name="test_stream",
+        component_definition=_combined_extractor_selector_definition(),
+        decoder=decoder,
+        transformations=[],
+        config=input_config,
+    )
+
+    assert isinstance(selector.extractor, CombinedExtractor)
+
+
+@pytest.mark.parametrize(
+    "decoder",
+    [
+        pytest.param(
+            CompositeRawDecoder(parser=JsonParser(), stream_response=False),
+            id="buffered_composite_raw_decoder",
+        ),
+        pytest.param(
+            _BufferedCompositeRawDecoderSubclass(parser=JsonParser(), stream_response=False),
+            id="buffered_composite_raw_decoder_subclass",
+        ),
+    ],
+)
+def test_combined_extractor_over_a_buffered_composite_raw_decoder_is_accepted_in_the_builder(
+    decoder: CompositeRawDecoder,
+):
+    """The Builder rejection only covers the decoders the Builder itself downgrades.
+
+    A `CompositeRawDecoder` that reads `response.content` in production too - a custom decoder
+    subclassing it, or one built around a buffering parser - can be read by every sub-extractor and
+    must not be rejected just because the Builder is emitting messages.
+    """
+    local_factory = ModelToComponentFactory(emit_connector_builder_messages=True)
+
+    selector = local_factory.create_component(
         model_type=RecordSelectorModel,
         name="test_stream",
         component_definition=_combined_extractor_selector_definition(),
@@ -6847,9 +6891,10 @@ def test_combined_extractor_is_rejected_through_a_simple_retriever_with_a_stream
     assert exc_info.value.failure_type == FailureType.config_error
 
 
-def test_combined_extractor_is_accepted_by_an_offset_increment_paginator():
-    """`OffsetIncrement` builds a second copy of the extractor behind a `PaginationDecoderDecorator`."""
-    content = """
+def _retriever_manifest_with_paginator(
+    extractor_definition: str, pagination_strategy: str
+) -> Mapping[str, Any]:
+    content = f"""
     retriever:
       type: SimpleRetriever
       requester:
@@ -6860,25 +6905,50 @@ def test_combined_extractor_is_accepted_by_an_offset_increment_paginator():
       paginator:
         type: DefaultPaginator
         pagination_strategy:
-          type: OffsetIncrement
-          page_size: 10
+{pagination_strategy}
       record_selector:
         type: RecordSelector
         extractor:
-          type: CombinedExtractor
+{extractor_definition}
+    """
+    parsed_manifest = YamlDeclarativeSource._parse(content)
+    resolved_manifest = resolver.preprocess_manifest(parsed_manifest)
+    return transformer.propagate_types_and_parameters("", resolved_manifest["retriever"], {})
+
+
+_OFFSET_INCREMENT = """          type: OffsetIncrement
+          page_size: 2"""
+_PAGE_INCREMENT = """          type: PageIncrement
+          page_size: 2"""
+_UNION_EXTRACTOR_DEFAULT_MODE = """          type: CombinedExtractor
           extractors:
             - type: DpathExtractor
               field_path: ["a"]
             - type: DpathExtractor
-              field_path: ["b"]
-    """
-    parsed_manifest = YamlDeclarativeSource._parse(content)
-    resolved_manifest = resolver.preprocess_manifest(parsed_manifest)
-    retriever_manifest = transformer.propagate_types_and_parameters(
-        "", resolved_manifest["retriever"], {}
-    )
+              field_path: ["b"]"""
+_UNION_EXTRACTOR_EXPLICIT_MODE = """          type: CombinedExtractor
+          mode: union
+          extractors:
+            - type: DpathExtractor
+              field_path: ["a"]
+            - type: DpathExtractor
+              field_path: ["b"]"""
+_NESTED_UNION_EXTRACTOR = """          type: CombinedExtractor
+          mode: first_match
+          extractors:
+            - type: CombinedExtractor
+              mode: union
+              extractors:
+                - type: DpathExtractor
+                  field_path: ["a"]
+                - type: DpathExtractor
+                  field_path: ["b"]
+            - type: DpathExtractor
+              field_path: ["c"]"""
 
-    retriever = factory.create_component(
+
+def _build_retriever(retriever_manifest: Mapping[str, Any]) -> SimpleRetriever:
+    return factory.create_component(
         model_type=SimpleRetrieverModel,
         component_definition=retriever_manifest,
         config=input_config,
@@ -6888,12 +6958,111 @@ def test_combined_extractor_is_accepted_by_an_offset_increment_paginator():
         transformations=[],
     )
 
+
+def _json_response(body: Mapping[str, Any]) -> requests.Response:
+    response = requests.Response()
+    response.status_code = 200
+    response._content = json.dumps(body).encode("utf-8")
+    return response
+
+
+@pytest.mark.parametrize(
+    "extractor_definition",
+    [
+        pytest.param(_UNION_EXTRACTOR_DEFAULT_MODE, id="union_by_default"),
+        pytest.param(_UNION_EXTRACTOR_EXPLICIT_MODE, id="union_declared"),
+        pytest.param(_NESTED_UNION_EXTRACTOR, id="union_nested_under_first_match"),
+    ],
+)
+def test_union_combined_extractor_is_rejected_by_an_offset_increment_paginator(
+    extractor_definition: str,
+):
+    """`OffsetIncrement` advances the offset by the record count of its extractor.
+
+    Under `union` that count is the sum over all sub-extractors, so the offset overshoots the page
+    the API returned and the records in between are never requested. A `union` nested anywhere in
+    the tree inflates the count of the node above it, so it is rejected as well.
+    """
+    with pytest.raises(AirbyteTracedException) as exc_info:
+        _build_retriever(
+            _retriever_manifest_with_paginator(extractor_definition, _OFFSET_INCREMENT)
+        )
+
+    assert exc_info.value.failure_type == FailureType.config_error
+    assert "union" in exc_info.value.message
+    assert "OffsetIncrement" in exc_info.value.message
+
+
+def test_first_match_combined_extractor_counts_only_the_winning_sub_extractor_for_the_offset():
+    """`first_match` is accepted because the count it reports is the winner's, not a sum."""
+    extractor_definition = """          type: CombinedExtractor
+          mode: first_match
+          extractors:
+            - type: DpathExtractor
+              field_path: ["a"]
+            - type: DpathExtractor
+              field_path: ["b"]"""
+
+    retriever = _build_retriever(
+        _retriever_manifest_with_paginator(extractor_definition, _OFFSET_INCREMENT)
+    )
+
     assert isinstance(retriever.record_selector.extractor, CombinedExtractor)
     pagination_strategy = retriever.paginator.pagination_strategy
     assert isinstance(pagination_strategy, OffsetIncrement)
     # The paginator counts records with its own copy, so the response is traversed twice per page.
     assert isinstance(pagination_strategy.extractor, CombinedExtractor)
     assert pagination_strategy.extractor is not retriever.record_selector.extractor
+
+    # `a` misses, so the winner is `b` with its two records: the offset advances by 2, not by 4.
+    response = _json_response({"a": [], "b": [{"id": 1}, {"id": 2}]})
+    assert (
+        pagination_strategy.next_page_token(
+            response=response, last_page_size=2, last_record=None, last_page_token_value=0
+        )
+        == 2
+    )
+
+
+def test_zip_merge_combined_extractor_counts_the_shortest_sub_extractor_for_the_offset():
+    extractor_definition = """          type: CombinedExtractor
+          mode: zip_merge
+          extractors:
+            - type: DpathExtractor
+              field_path: ["a"]
+            - type: DpathExtractor
+              field_path: ["b"]"""
+
+    retriever = _build_retriever(
+        _retriever_manifest_with_paginator(extractor_definition, _OFFSET_INCREMENT)
+    )
+
+    pagination_strategy = retriever.paginator.pagination_strategy
+    assert isinstance(pagination_strategy, OffsetIncrement)
+
+    # Two merged records, not the four records the two sub-extractors yield together.
+    response = _json_response({"a": [{"x": 1}, {"x": 2}], "b": [{"y": 1}, {"y": 2}]})
+    assert (
+        pagination_strategy.next_page_token(
+            response=response, last_page_size=2, last_record=None, last_page_token_value=0
+        )
+        == 2
+    )
+
+
+def test_union_combined_extractor_is_accepted_by_a_page_increment_paginator():
+    """`PageIncrement` only compares the count against `page_size`, so an inflated count is not lossy.
+
+    It can cost one extra request when the summed count of the last page equals `page_size`, which
+    is documented on the component rather than rejected.
+    """
+    retriever = _build_retriever(
+        _retriever_manifest_with_paginator(_UNION_EXTRACTOR_DEFAULT_MODE, _PAGE_INCREMENT)
+    )
+
+    pagination_strategy = retriever.paginator.pagination_strategy
+    assert isinstance(pagination_strategy, PageIncrement)
+    assert isinstance(pagination_strategy.extractor, CombinedExtractor)
 
 
 def test_create_async_retriever_with_combined_extractors():

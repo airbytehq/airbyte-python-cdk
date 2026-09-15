@@ -97,7 +97,8 @@ class CombinedExtractor(RecordExtractor):
     `first_match` emits nothing at all when the first path misses.
 
     Because of that, `ModelToComponentFactory.create_combined_extractor` refuses to build this
-    component over a streaming decoder and raises a configuration error naming the decoder. The
+    component over a streaming decoder and raises a configuration error, naming the decoder in the
+    internal message. The
     Connector Builder forces those same decoders to `stream_response=False`, so the rejection is
     applied there too rather than letting a manifest test-read correctly and lose records once
     published.
@@ -110,9 +111,23 @@ class CombinedExtractor(RecordExtractor):
     extractors over a large response costs roughly three times the decode time of a single one.
 
     Note that an `OffsetIncrement` or `PageIncrement` paginator builds its own copy of the
-    extractor to count the records of a page, which doubles that cost, and the count it obtains is
-    the combined count: the winner's record count under `first_match` and the shortest
-    sub-extractor's count under `zip_merge`, neither of which is the API's page size.
+    extractor to count the records of a page, which doubles that cost.
+
+    ## Record-counting paginators
+
+    The count those paginators obtain is the combined count, not the API's page size:
+
+    - `union` returns the SUM over all sub-extractors. An `OffsetIncrement` advances the offset by
+      that sum, so the next page starts past the records that were never read — two sub-extractors
+      returning two records each with `page_size: 2` request offsets 0, 4, 8 instead of 0, 2, 4 and
+      silently drop two thirds of the records. `ModelToComponentFactory.create_offset_increment`
+      therefore rejects a `union` `CombinedExtractor` (nested ones included) with a configuration
+      error. A `PageIncrement` only compares the count against `page_size` to decide whether to
+      stop, so it loses nothing, but it issues one extra request whenever the summed count of the
+      last page happens to equal `page_size`.
+    - `first_match` returns the count of the winning sub-extractor and `zip_merge` the count of the
+      shortest one. Neither inflates the count, so both work with either paginator, as long as the
+      path the count comes from is the one the API paginates over.
 
     Attributes:
         extractors (List[RecordExtractor]): The sub-extractors to combine. At least one is required.

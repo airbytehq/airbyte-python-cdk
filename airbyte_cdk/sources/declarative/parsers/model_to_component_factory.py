@@ -2481,6 +2481,25 @@ class ModelToComponentFactory:
             return PaginatorTestReadDecorator(paginator, self._limit_pages_fetched_per_slice)
         return paginator
 
+    @staticmethod
+    def _is_decoder_downgraded_by_connector_builder(decoder: Decoder) -> bool:
+        """Is this the buffered stand-in the Connector Builder builds for a streaming decoder?
+
+        `create_csv_decoder`, `create_jsonl_decoder`, `create_json_items_decoder` and
+        `create_gzip_decoder` build a `CompositeRawDecoder` with `stream_response=False` when
+        `_emit_connector_builder_messages` is set, so a Builder test read can be replayed. Those
+        four instances are the only ones that stream in production while reporting
+        `is_stream_response() == False` in the Builder.
+
+        The match is on the exact class and on the parser, not on `isinstance`: a `CustomDecoder`
+        subclassing `CompositeRawDecoder` with `stream_response=False`, or a buffered
+        `CompositeRawDecoder` built around a `JsonParser`, reads the body from `response.content`
+        in production too and must not be rejected.
+        """
+        return type(decoder) is CompositeRawDecoder and isinstance(
+            decoder.parser, (CsvParser, JsonLineParser, JsonItemsParser, GzipParser)
+        )
+
     def _reject_combined_extractor_over_streaming_decoder(self, decoder: Optional[Decoder]) -> None:
         """Refuse to build a `CombinedExtractor` whose response body can only be read once.
 
@@ -2500,23 +2519,20 @@ class ModelToComponentFactory:
             decoder.decoder if isinstance(decoder, PaginationDecoderDecorator) else decoder
         )
         streams_in_production = inner_decoder.is_stream_response() or (
-            # The four decoders the Builder downgrades are the only bare `CompositeRawDecoder`s
-            # this factory builds; every buffered decoder is a distinct class.
-            self._emit_connector_builder_messages and isinstance(inner_decoder, CompositeRawDecoder)
+            self._emit_connector_builder_messages
+            and self._is_decoder_downgraded_by_connector_builder(inner_decoder)
         )
         if not streams_in_production:
             return
         raise AirbyteTracedException(
-            message=(
-                "CombinedExtractor is not supported with a streaming decoder (CsvDecoder, "
-                "JsonlDecoder, JsonItemsDecoder, GzipDecoder, IterableDecoder), which reads the "
-                "response body only once. Use JsonDecoder, XmlDecoder or ZipfileDecoder, or "
-                "declare a single extractor."
-            ),
+            message="CombinedExtractor is not supported with a streaming decoder.",
             internal_message=(
                 f"CombinedExtractor was configured with {type(inner_decoder).__name__}, which "
-                f"streams the response. Sub-extractors after the first would read a closed "
-                f"response and silently return no records."
+                f"streams the response and can only be read once. Sub-extractors after the first "
+                f"would read a closed response and silently return no records. The streaming "
+                f"decoders are CsvDecoder, JsonlDecoder, JsonItemsDecoder, GzipDecoder and "
+                f"IterableDecoder; use JsonDecoder, XmlDecoder or ZipfileDecoder, or declare a "
+                f"single extractor."
             ),
             failure_type=FailureType.config_error,
         )
@@ -3134,6 +3150,52 @@ class ModelToComponentFactory:
         # returning default values we think cover most cases
         return (400,), "error", ("invalid_grant", "invalid_permissions")
 
+    @staticmethod
+    def _reject_union_combined_extractor_for_offset_increment(
+        extractor_model: Optional[BaseModel],
+    ) -> None:
+        """Refuse an `OffsetIncrement` paginator driven by a `union` `CombinedExtractor`.
+
+        `OffsetIncrement.next_page_token` advances the offset by the number of records its
+        extractor returns for the page. Under `union` that number is the sum over all
+        sub-extractors, so the offset overshoots the API page size and every page after the first
+        starts past the records that were never read: with two sub-extractors returning two records
+        each and `page_size: 2`, the requested offsets are 0, 4, 8 instead of 0, 2, 4 and two
+        thirds of the records are silently dropped.
+
+        `first_match` (the winning sub-extractor's count) and `zip_merge` (the shortest
+        sub-extractor's count) do not inflate the count and are left alone. A `union` nested
+        anywhere in the tree inflates the count of the node above it, so the whole tree is walked.
+        """
+        if not isinstance(extractor_model, CombinedExtractorModel):
+            return
+        if not ModelToComponentFactory._combined_extractor_tree_contains_union(extractor_model):
+            return
+        raise AirbyteTracedException(
+            message=(
+                'CombinedExtractor mode "union" is not supported with an OffsetIncrement paginator.'
+            ),
+            internal_message=(
+                "OffsetIncrement counts the records of its extractor to advance the offset. A "
+                "`union` CombinedExtractor returns the sum of its sub-extractors' records, which "
+                "overshoots the page the API returned, so records would be skipped. Use the "
+                "`first_match` or `zip_merge` mode, a CursorPagination or PageIncrement "
+                "paginator, or a single extractor."
+            ),
+            failure_type=FailureType.config_error,
+        )
+
+    @staticmethod
+    def _combined_extractor_tree_contains_union(model: CombinedExtractorModel) -> bool:
+        mode = CombineMode(model.mode.value) if model.mode else CombineMode.union
+        if mode == CombineMode.union:
+            return True
+        return any(
+            isinstance(sub_extractor, CombinedExtractorModel)
+            and ModelToComponentFactory._combined_extractor_tree_contains_union(sub_extractor)
+            for sub_extractor in model.extractors
+        )
+
     def create_offset_increment(
         self,
         model: OffsetIncrementModel,
@@ -3156,6 +3218,8 @@ class ModelToComponentFactory:
             raise ValueError(
                 self._UNSUPPORTED_DECODER_ERROR.format(decoder_type=type(inner_decoder))
             )
+
+        self._reject_union_combined_extractor_for_offset_increment(extractor_model)
 
         # Ideally we would instantiate the runtime extractor from highest most level (in this case the SimpleRetriever)
         # so that it can be shared by OffSetIncrement and RecordSelector. However, due to how we instantiate the

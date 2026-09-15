@@ -2173,6 +2173,18 @@ definitions:
       $parameters:
         type: object
         additionalProperties: true
+  CombineMode:
+    title: Combine Mode
+    description: 'How the records of the sub-extractors of a CombinedExtractor are combined. "union" (default) yields every record of every sub-extractor, in the order the extractors are declared. "first_match" yields the records of the first sub-extractor that produces at least one record and skips the remaining ones; nothing is yielded if none of them produces a record. "zip_merge" merges the i-th record of every sub-extractor into a single record, with later sub-extractors overwriting the fields set by earlier ones, and stops at the shortest sub-extractor, discarding the trailing records of the longer ones.'
+    type: string
+    enum:
+      - union
+      - first_match
+      - zip_merge
+    examples:
+      - union
+      - first_match
+      - zip_merge
   CombinedExtractor:
     title: Combined Extractor
     description: Record extractor that combines the output of several sub-extractors. Use it when a single response holds records under more than one path, when the records can be found under one of several alternative paths, or when a record has to be assembled from several parallel lists.
@@ -2196,17 +2208,9 @@ definitions:
             - "$ref": "#/definitions/CombinedExtractor"
       mode:
         title: Combine Mode
-        description: 'How the records of the sub-extractors are combined. "union" (default) yields every record of every sub-extractor, in the order the extractors are declared. "first_match" yields the records of the first sub-extractor that produces at least one record and skips the remaining ones; nothing is yielded if none of them produces a record. "zip_merge" merges the i-th record of every sub-extractor into a single record, with later sub-extractors overwriting the fields set by earlier ones, and stops at the shortest sub-extractor, discarding the trailing records of the longer ones. Note that an OffsetIncrement or PageIncrement paginator counts the combined records, which under "first_match" and "zip_merge" is not the number of records the API returned for the page.'
-        type: string
-        enum:
-          - union
-          - first_match
-          - zip_merge
+        description: 'How the records of the sub-extractors are combined. "union" (default) yields every record of every sub-extractor, in the order the extractors are declared. "first_match" yields the records of the first sub-extractor that produces at least one record and skips the remaining ones; nothing is yielded if none of them produces a record. "zip_merge" merges the i-th record of every sub-extractor into a single record, with later sub-extractors overwriting the fields set by earlier ones, and stops at the shortest sub-extractor, discarding the trailing records of the longer ones. Note that a paginator which counts the records of a page counts the combined records: under "union" that is the sum over all sub-extractors, which overshoots the API page size, so "union" is rejected with an OffsetIncrement paginator because the offset would skip records. Under "first_match" the count is the count of the winning sub-extractor and under "zip_merge" the count of the shortest one, which are usually the number of records the API returned for the page.'
+        "$ref": "#/definitions/CombineMode"
         default: union
-        examples:
-          - union
-          - first_match
-          - zip_merge
       $parameters:
         type: object
         additionalProperties: true
