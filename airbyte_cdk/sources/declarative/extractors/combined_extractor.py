@@ -103,6 +103,25 @@ class CombinedExtractor(RecordExtractor):
     applied there too rather than letting a manifest test-read correctly and lose records once
     published.
 
+    ## Empty records
+
+    `skip_empty_records` drops falsy records — `None`, `{}`, `[]`, `""` — before any of the modes
+    sees them. It is off by default, so a sub-extractor's output is passed through verbatim.
+
+    Turn it on when an API can answer with nulls in the middle of a record list. A GraphQL API
+    that returns a partial response puts `null` in the `data` array for the fields it failed to
+    resolve and describes the failure in a sibling `errors` field; without this flag those nulls
+    reach the record stream and fail schema validation downstream.
+
+    Under `first_match` the flag also changes which sub-extractor wins: a sub-extractor whose
+    records are all empty no longer counts as a match, so the next sub-extractor is tried. That is
+    the behaviour of `source-monday`'s `MondayIncrementalItemsExtractor`, where a page of nulls
+    must fall through to the pagination path rather than lock in the primary path.
+
+    Under `zip_merge` the flag shifts alignment: dropping the i-th record of one sub-extractor
+    pairs its i+1-th record with the i-th record of the others. Only enable it there if the
+    sub-extractors drop records in lockstep.
+
     ## Cost
 
     Each sub-extractor decodes the response independently — `CompositeRawDecoder` re-parses the
@@ -132,11 +151,14 @@ class CombinedExtractor(RecordExtractor):
     Attributes:
         extractors (List[RecordExtractor]): The sub-extractors to combine. At least one is required.
         mode (CombineMode): How the sub-extractor outputs are combined. Defaults to `union`.
+        skip_empty_records (bool): Whether falsy records are dropped before they are combined.
+            Defaults to `False`.
     """
 
     extractors: List[RecordExtractor]
     parameters: InitVar[Mapping[str, Any]]
     mode: CombineMode = CombineMode.union
+    skip_empty_records: bool = False
 
     def __post_init__(self, parameters: Mapping[str, Any]) -> None:
         if not self.extractors:
@@ -155,12 +177,12 @@ class CombinedExtractor(RecordExtractor):
             yield from self._extract_union(response)
 
     def _extract_union(self, response: requests.Response) -> Iterable[Mapping[str, Any]]:
-        for extractor in self.extractors:
-            yield from extractor.extract_records(response)
+        for index in range(len(self.extractors)):
+            yield from self._records_of(index, response)
 
     def _extract_first_match(self, response: requests.Response) -> Iterable[Mapping[str, Any]]:
-        for extractor in self.extractors:
-            records: Iterator[Mapping[str, Any]] = iter(extractor.extract_records(response))
+        for index in range(len(self.extractors)):
+            records: Iterator[Mapping[str, Any]] = iter(self._records_of(index, response))
             first_record: Union[Mapping[str, Any], _NoRecord] = next(records, _NO_RECORD)
             if isinstance(first_record, _NoRecord):
                 continue
@@ -173,7 +195,9 @@ class CombinedExtractor(RecordExtractor):
         # Iteration stops at the shortest sub-extractor, matching the behavior this component
         # replaces. Unlike plain `zip`, the round in which a sub-extractor runs out is completed so
         # that an uneven number of records can be reported instead of silently truncated.
-        iterators = [iter(extractor.extract_records(response)) for extractor in self.extractors]
+        iterators = [
+            iter(self._records_of(index, response)) for index in range(len(self.extractors))
+        ]
         emitted = 0
         while True:
             round_records = [next(iterator, _NO_RECORD) for iterator in iterators]
@@ -193,6 +217,34 @@ class CombinedExtractor(RecordExtractor):
                 return
             yield self._merge(round_records)
             emitted += 1
+
+    def _records_of(
+        self, extractor_index: int, response: requests.Response
+    ) -> Iterable[Mapping[str, Any]]:
+        records = self.extractors[extractor_index].extract_records(response)
+        if not self.skip_empty_records:
+            return records
+        return self._without_empty_records(records, extractor_index)
+
+    def _without_empty_records(
+        self, records: Iterable[Mapping[str, Any]], extractor_index: int
+    ) -> Iterator[Mapping[str, Any]]:
+        dropped = 0
+        for record in records:
+            if not record:
+                dropped += 1
+                continue
+            yield record
+        if dropped:
+            logger.warning(
+                "CombinedExtractor dropped %s empty record(s) yielded by sub-extractor %s (%s) "
+                "because `skip_empty_records` is enabled. An API that returns empty records "
+                "alongside real ones usually reports the reason in an error field of the "
+                "response body.",
+                dropped,
+                extractor_index,
+                type(self.extractors[extractor_index]).__name__,
+            )
 
     def _merge(self, records: Sequence[Any]) -> Mapping[str, Any]:
         merged: Dict[str, Any] = {}

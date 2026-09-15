@@ -39,6 +39,27 @@ GRAPHQL_BODY = {
     }
 }
 
+# The source-monday shape: a GraphQL partial response puts nulls where it failed to resolve an
+# item and explains itself in a sibling `errors` field. The primary path therefore holds records
+# that are all null, and the connector has to fall through to the pagination path.
+MONDAY_NULL_PAGE_BODY = {
+    "data": {
+        "boards": [{"items_page": {"items": [None, None]}}],
+        "next_items_page": {"items": [{"id": "item_1"}]},
+    },
+    "errors": [{"message": "Item not found"}],
+}
+
+# The same shape, but the primary path resolved one of its two items. The primary path wins and
+# the pagination path is never read.
+MONDAY_PARTIAL_PAGE_BODY = {
+    "data": {
+        "boards": [{"items_page": {"items": [{"id": "item_1"}, None]}}],
+        "next_items_page": {"items": [{"id": "item_9"}]},
+    },
+    "errors": [{"message": "Item not found"}],
+}
+
 # The GA4 report shape: dimensions and metrics come back as two parallel lists that have to be
 # merged position by position.
 REPORT_BODY = {
@@ -423,3 +444,139 @@ def test_zip_merge_names_the_sub_extractor_that_yielded_a_non_object():
     assert "zip_merge" in message
     assert "sub-extractor 1" in message
     assert "_CountingExtractor" in message
+
+
+def _monday_extractor(skip_empty_records: bool) -> CombinedExtractor:
+    return CombinedExtractor(
+        extractors=[
+            dpath("data", "boards", "*", "items_page", "items", "*"),
+            dpath("data", "next_items_page", "items", "*"),
+        ],
+        mode=CombineMode.first_match,
+        skip_empty_records=skip_empty_records,
+        parameters=parameters,
+    )
+
+
+def test_skip_empty_records_is_off_by_default():
+    extractor = CombinedExtractor(
+        extractors=[_CountingExtractor(records=[{"id": 1}, None, {}])],
+        parameters=parameters,
+    )
+
+    assert extractor.skip_empty_records is False
+    assert list(extractor.extract_records(create_response(GRAPHQL_BODY))) == [{"id": 1}, None, {}]
+
+
+def test_skip_empty_records_drops_falsy_records_under_union():
+    extractor = CombinedExtractor(
+        extractors=[
+            _CountingExtractor(records=[{"id": 1}, None, {}]),
+            _CountingExtractor(records=[[], "", {"id": 2}]),
+        ],
+        mode=CombineMode.union,
+        skip_empty_records=True,
+        parameters=parameters,
+    )
+
+    assert list(extractor.extract_records(create_response(GRAPHQL_BODY))) == [{"id": 1}, {"id": 2}]
+
+
+def test_first_match_locks_in_a_page_of_nulls_without_skip_empty_records():
+    """Pins the behaviour `skip_empty_records` exists to change.
+
+    Without the flag a null counts as a record, so the primary path wins with nothing usable and
+    the pagination path is never tried.
+    """
+    records = list(
+        _monday_extractor(skip_empty_records=False).extract_records(
+            create_response(MONDAY_NULL_PAGE_BODY)
+        )
+    )
+
+    assert records == [None, None]
+
+
+def test_first_match_falls_through_a_page_of_nulls_with_skip_empty_records():
+    records = list(
+        _monday_extractor(skip_empty_records=True).extract_records(
+            create_response(MONDAY_NULL_PAGE_BODY)
+        )
+    )
+
+    assert records == [{"id": "item_1"}]
+
+
+def test_first_match_keeps_the_winner_when_some_of_its_records_survive():
+    records = list(
+        _monday_extractor(skip_empty_records=True).extract_records(
+            create_response(MONDAY_PARTIAL_PAGE_BODY)
+        )
+    )
+
+    assert records == [{"id": "item_1"}]
+
+
+def test_skip_empty_records_does_not_touch_extractors_after_the_winner():
+    loser = _CountingExtractor(records=[{"id": 99}])
+    extractor = CombinedExtractor(
+        extractors=[_CountingExtractor(records=[None, {"id": 1}]), loser],
+        mode=CombineMode.first_match,
+        skip_empty_records=True,
+        parameters=parameters,
+    )
+
+    assert list(extractor.extract_records(create_response(GRAPHQL_BODY))) == [{"id": 1}]
+    assert loser.calls == []
+
+
+def test_skip_empty_records_warns_and_names_the_sub_extractor(caplog):
+    extractor = CombinedExtractor(
+        extractors=[_CountingExtractor(records=[{"id": 1}, None, None])],
+        mode=CombineMode.union,
+        skip_empty_records=True,
+        parameters=parameters,
+    )
+
+    with caplog.at_level(logging.WARNING, logger="airbyte"):
+        assert list(extractor.extract_records(create_response(GRAPHQL_BODY))) == [{"id": 1}]
+
+    warnings = [record.message for record in caplog.records if record.levelno == logging.WARNING]
+    assert len(warnings) == 1
+    assert "dropped 2 empty record(s)" in warnings[0]
+    assert "sub-extractor 0 (_CountingExtractor)" in warnings[0]
+
+
+def test_skip_empty_records_does_not_warn_when_nothing_is_dropped(caplog):
+    extractor = CombinedExtractor(
+        extractors=[dpath("data", "repository", "issues", "nodes")],
+        mode=CombineMode.union,
+        skip_empty_records=True,
+        parameters=parameters,
+    )
+
+    with caplog.at_level(logging.WARNING, logger="airbyte"):
+        assert list(extractor.extract_records(create_response(GRAPHQL_BODY))) == [
+            {"id": "I_1", "title": "first issue"}
+        ]
+
+    assert [record.message for record in caplog.records if record.levelno == logging.WARNING] == []
+
+
+def test_skip_empty_records_shifts_zip_merge_alignment():
+    """Documents the caveat the schema description warns about.
+
+    Dropping the first sub-extractor's null pairs its next record with the other sub-extractor's
+    first record, so the merge is off by one rather than skipping a row.
+    """
+    extractor = CombinedExtractor(
+        extractors=[
+            _CountingExtractor(records=[None, {"a": 2}]),
+            _CountingExtractor(records=[{"b": 1}, {"b": 2}]),
+        ],
+        mode=CombineMode.zip_merge,
+        skip_empty_records=True,
+        parameters=parameters,
+    )
+
+    assert list(extractor.extract_records(create_response(REPORT_BODY))) == [{"a": 2, "b": 1}]

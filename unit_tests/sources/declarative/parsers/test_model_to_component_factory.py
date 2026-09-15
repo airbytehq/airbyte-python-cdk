@@ -6682,6 +6682,80 @@ def test_create_combined_extractor_defaults_to_union():
     assert list(selector.extractor.extract_records(response)) == [{"id": 1}, {"id": 2}]
 
 
+def test_create_combined_extractor_defaults_to_not_skipping_empty_records():
+    content = """
+    selector:
+      type: RecordSelector
+      extractor:
+        type: CombinedExtractor
+        extractors:
+          - type: DpathExtractor
+            field_path: ["a"]
+    """
+    parsed_manifest = YamlDeclarativeSource._parse(content)
+    resolved_manifest = resolver.preprocess_manifest(parsed_manifest)
+    selector_manifest = transformer.propagate_types_and_parameters(
+        "", resolved_manifest["selector"], {}
+    )
+
+    selector = factory.create_component(
+        model_type=RecordSelectorModel,
+        name="test_stream",
+        component_definition=selector_manifest,
+        decoder=None,
+        transformations=[],
+        config=input_config,
+    )
+
+    assert selector.extractor.skip_empty_records is False
+
+
+def test_create_combined_extractor_with_skip_empty_records():
+    """The source-monday shape: a page of nulls must fall through to the pagination path."""
+    content = """
+    selector:
+      type: RecordSelector
+      extractor:
+        type: CombinedExtractor
+        mode: first_match
+        skip_empty_records: true
+        extractors:
+          - type: DpathExtractor
+            field_path: ["data", "boards", "*", "items_page", "items", "*"]
+          - type: DpathExtractor
+            field_path: ["data", "next_items_page", "items", "*"]
+    """
+    parsed_manifest = YamlDeclarativeSource._parse(content)
+    resolved_manifest = resolver.preprocess_manifest(parsed_manifest)
+    selector_manifest = transformer.propagate_types_and_parameters(
+        "", resolved_manifest["selector"], {}
+    )
+
+    selector = factory.create_component(
+        model_type=RecordSelectorModel,
+        name="test_stream",
+        component_definition=selector_manifest,
+        decoder=None,
+        transformations=[],
+        config=input_config,
+    )
+
+    assert isinstance(selector.extractor, CombinedExtractor)
+    assert selector.extractor.skip_empty_records is True
+
+    response = requests.Response()
+    response._content = json.dumps(
+        {
+            "data": {
+                "boards": [{"items_page": {"items": [None, None]}}],
+                "next_items_page": {"items": [{"id": "item_1"}]},
+            },
+            "errors": [{"message": "Item not found"}],
+        }
+    ).encode("utf-8")
+    assert list(selector.extractor.extract_records(response)) == [{"id": "item_1"}]
+
+
 def _combined_extractor_selector_definition() -> Mapping[str, Any]:
     content = """
     selector:

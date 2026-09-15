@@ -2552,6 +2552,7 @@ class ModelToComponentFactory:
         return CombinedExtractor(
             extractors=extractors,
             mode=CombineMode(model.mode.value) if model.mode else CombineMode.union,
+            skip_empty_records=bool(model.skip_empty_records),
             parameters=model.parameters or {},
         )
 
