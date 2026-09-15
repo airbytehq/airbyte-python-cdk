@@ -507,6 +507,23 @@ class HttpRequestRegexMatcher(BaseModel):
     )
 
 
+class ParentFieldPath(BaseModel):
+    parent_path: List[str] = Field(
+        ...,
+        description="List of potentially nested fields describing the full path of the field to read on the parent record.",
+        examples=[["url"], ["id"], ["author", "login"]],
+        min_items=1,
+        title="Parent Path",
+    )
+    record_path: List[str] = Field(
+        ...,
+        description="List of potentially nested fields describing where to write the value on the extracted record. Intermediate objects are created as needed.",
+        examples=[["pull_request_url"], ["comment_id"], ["parent", "id"]],
+        min_items=1,
+        title="Record Path",
+    )
+
+
 class ResponseToFileExtractor(BaseModel):
     type: Literal["ResponseToFileExtractor"]
     preserve_na_values: Optional[bool] = Field(
@@ -2517,6 +2534,32 @@ class DpathExtractor(BaseModel):
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
 
+class NestedRecordExtractor(BaseModel):
+    type: Literal["NestedRecordExtractor"]
+    parent_extractor: Union[DpathExtractor, NestedRecordExtractor, CustomRecordExtractor] = Field(
+        ...,
+        description="Extractor producing the records that contain the nested collection. Nest another NestedRecordExtractor here to reach a collection more than one level down, or to copy fields from more than one ancestor.",
+        title="Parent Extractor",
+    )
+    child_field_path: List[str] = Field(
+        ...,
+        description='List of potentially nested fields describing the full path of the nested collection on each parent record. The collection may be a list or a single object. A path that does not resolve yields no records. The "*" wildcard is not supported here; flatten across several collections in the parent extractor instead.',
+        examples=[
+            ["reviews", "nodes"],
+            ["comments"],
+            ["{{ parameters.child_connection }}", "nodes"],
+        ],
+        min_items=1,
+        title="Child Field Path",
+    )
+    parent_fields: Optional[List[ParentFieldPath]] = Field(
+        None,
+        description="Fields to copy from the parent record onto every record extracted from the nested collection. A parent path that is absent on the parent copies null, and a key already present on the child record is overwritten.",
+        title="Parent Fields",
+    )
+    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
+
+
 class ZipfileDecoder(BaseModel):
     class Config:
         extra = Extra.allow
@@ -2531,7 +2574,7 @@ class ZipfileDecoder(BaseModel):
 
 class RecordSelector(BaseModel):
     type: Literal["RecordSelector"]
-    extractor: Union[DpathExtractor, CustomRecordExtractor]
+    extractor: Union[DpathExtractor, NestedRecordExtractor, CustomRecordExtractor]
     record_filter: Optional[Union[RecordFilter, CustomRecordFilter]] = Field(
         None,
         description="Responsible for filtering records to be emitted by the Source.",
@@ -3476,6 +3519,7 @@ class DynamicDeclarativeStream(BaseModel):
 
 
 ComplexFieldType.update_forward_refs()
+NestedRecordExtractor.update_forward_refs()
 GzipDecoder.update_forward_refs()
 CompositeErrorHandler.update_forward_refs()
 DeclarativeSource1.update_forward_refs()

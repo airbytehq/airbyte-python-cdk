@@ -2203,6 +2203,81 @@ definitions:
       $parameters:
         type: object
         additionalProperties: true
+  NestedRecordExtractor:
+    title: Nested Record Extractor
+    description: Record extractor that yields the records of a collection nested inside another record, while carrying fields down from the record that contains it. For every record the parent extractor yields, the nested collection is read from the child field path and each of its elements is emitted, with the configured parent fields copied onto it first.
+    type: object
+    required:
+      - type
+      - parent_extractor
+      - child_field_path
+    properties:
+      type:
+        type: string
+        enum: [NestedRecordExtractor]
+      parent_extractor:
+        title: Parent Extractor
+        description: Extractor producing the records that contain the nested collection. Nest another NestedRecordExtractor here to reach a collection more than one level down, or to copy fields from more than one ancestor.
+        anyOf:
+          - "$ref": "#/definitions/DpathExtractor"
+          - "$ref": "#/definitions/NestedRecordExtractor"
+          - "$ref": "#/definitions/CustomRecordExtractor"
+      child_field_path:
+        title: Child Field Path
+        description: List of potentially nested fields describing the full path of the nested collection on each parent record. The collection may be a list or a single object. A path that does not resolve yields no records. The "*" wildcard is not supported here; flatten across several collections in the parent extractor instead.
+        type: array
+        minItems: 1
+        items:
+          type: string
+        interpolation_context:
+          - config
+        examples:
+          - ["reviews", "nodes"]
+          - ["comments"]
+          - ["{{ parameters.child_connection }}", "nodes"]
+      parent_fields:
+        title: Parent Fields
+        description: Fields to copy from the parent record onto every record extracted from the nested collection. A parent path that is absent on the parent copies null, and a key already present on the child record is overwritten.
+        type: array
+        items:
+          "$ref": "#/definitions/ParentFieldPath"
+      $parameters:
+        type: object
+        additionalProperties: true
+  ParentFieldPath:
+    title: Parent Field Path
+    description: A single copy instruction, reading a field from the parent record and writing it onto every record extracted from the nested collection.
+    type: object
+    required:
+      - parent_path
+      - record_path
+    properties:
+      parent_path:
+        title: Parent Path
+        description: List of potentially nested fields describing the full path of the field to read on the parent record.
+        type: array
+        minItems: 1
+        items:
+          type: string
+        interpolation_context:
+          - config
+        examples:
+          - ["url"]
+          - ["id"]
+          - ["author", "login"]
+      record_path:
+        title: Record Path
+        description: List of potentially nested fields describing where to write the value on the extracted record. Intermediate objects are created as needed.
+        type: array
+        minItems: 1
+        items:
+          type: string
+        interpolation_context:
+          - config
+        examples:
+          - ["pull_request_url"]
+          - ["comment_id"]
+          - ["parent", "id"]
   ResponseToFileExtractor:
     title: CSV To File Extractor
     description: A record extractor designed for handling large responses that may exceed memory limits (to prevent OOM issues). It downloads a CSV file to disk, reads the data from disk, and deletes the file once it has been fully processed.
@@ -3948,6 +4023,7 @@ definitions:
       extractor:
         anyOf:
           - "$ref": "#/definitions/DpathExtractor"
+          - "$ref": "#/definitions/NestedRecordExtractor"
           - "$ref": "#/definitions/CustomRecordExtractor"
       record_filter:
         title: Record Filter

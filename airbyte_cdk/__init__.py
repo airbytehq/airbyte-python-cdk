@@ -103,7 +103,7 @@ from .sources.declarative.auth.token import (
 from .sources.declarative.datetime.min_max_datetime import MinMaxDatetime
 from .sources.declarative.decoders import Decoder, JsonDecoder
 from .sources.declarative.exceptions import ReadException
-from .sources.declarative.extractors import DpathExtractor, RecordSelector
+from .sources.declarative.extractors import DpathExtractor, NestedRecordExtractor, RecordSelector
 from .sources.declarative.extractors.record_extractor import RecordExtractor
 from .sources.declarative.extractors.record_filter import RecordFilter
 from .sources.declarative.interpolation import InterpolatedBoolean, InterpolatedString
@@ -254,6 +254,7 @@ __all__ = [
     "JsonFileSchemaLoader",
     "LegacyToPerPartitionStateMigration",
     "MinMaxDatetime",
+    "NestedRecordExtractor",
     "NoAuth",
     "OffsetIncrement",
     "PageIncrement",

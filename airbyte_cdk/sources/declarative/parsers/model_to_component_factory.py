@@ -113,6 +113,8 @@ from airbyte_cdk.sources.declarative.expanders.record_expander import (
 )
 from airbyte_cdk.sources.declarative.extractors import (
     DpathExtractor,
+    NestedRecordExtractor,
+    ParentFieldPath,
     RecordFilter,
     RecordSelector,
     ResponseToFileExtractor,
@@ -370,6 +372,9 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
     MovingWindowCallRatePolicy as MovingWindowCallRatePolicyModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    NestedRecordExtractor as NestedRecordExtractorModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     NoAuth as NoAuthModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
@@ -389,6 +394,9 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     ParametrizedComponentsResolver as ParametrizedComponentsResolverModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    ParentFieldPath as ParentFieldPathModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     ParentStreamConfig as ParentStreamConfigModel,
@@ -786,6 +794,7 @@ class ModelToComponentFactory:
             DefaultPaginatorModel: self.create_default_paginator,
             DpathExtractorModel: self.create_dpath_extractor,
             DpathValidatorModel: self.create_dpath_validator,
+            NestedRecordExtractorModel: self.create_nested_record_extractor,
             ResponseToFileExtractorModel: self.create_response_to_file_extractor,
             ExponentialBackoffStrategyModel: self.create_exponential_backoff_strategy,
             SessionTokenAuthenticatorModel: self.create_session_token_authenticator,
@@ -2498,6 +2507,53 @@ class ModelToComponentFactory:
             config=config,
             parameters=model.parameters or {},
             record_expander=record_expander,
+        )
+
+    def create_nested_record_extractor(
+        self,
+        model: NestedRecordExtractorModel,
+        config: Config,
+        decoder: Optional[Decoder] = None,
+        **kwargs: Any,
+    ) -> NestedRecordExtractor:
+        # The decoder is forwarded so the parent extractor reads the response the same way it would
+        # if it were the stream's extractor. This component never reads the response itself.
+        parent_extractor = self._create_component_from_model(
+            model=model.parent_extractor,
+            config=config,
+            decoder=decoder,
+        )
+        model_child_field_path: List[Union[InterpolatedString, str]] = [
+            x for x in model.child_field_path
+        ]
+        parent_fields = [
+            self.create_parent_field_path(
+                model=parent_field, config=config, parameters=model.parameters or {}
+            )
+            for parent_field in model.parent_fields or []
+        ]
+
+        return NestedRecordExtractor(
+            parent_extractor=parent_extractor,
+            child_field_path=model_child_field_path,
+            parent_fields=parent_fields,
+            config=config,
+            parameters=model.parameters or {},
+        )
+
+    @staticmethod
+    def create_parent_field_path(
+        model: ParentFieldPathModel,
+        config: Config,
+        parameters: Optional[Mapping[str, Any]] = None,
+        **kwargs: Any,
+    ) -> ParentFieldPath:
+        model_parent_path: List[Union[InterpolatedString, str]] = [x for x in model.parent_path]
+        model_record_path: List[Union[InterpolatedString, str]] = [x for x in model.record_path]
+        return ParentFieldPath(
+            parent_path=model_parent_path,
+            record_path=model_record_path,
+            parameters=parameters or {},
         )
 
     def create_record_expander(

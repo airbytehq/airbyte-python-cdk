@@ -53,8 +53,17 @@ from airbyte_cdk.sources.declarative.auth.token_provider import (
 from airbyte_cdk.sources.declarative.checks import CheckStream
 from airbyte_cdk.sources.declarative.concurrency_level import ConcurrencyLevel
 from airbyte_cdk.sources.declarative.datetime.min_max_datetime import MinMaxDatetime
-from airbyte_cdk.sources.declarative.decoders import JsonDecoder, PaginationDecoderDecorator
-from airbyte_cdk.sources.declarative.extractors import DpathExtractor, RecordFilter, RecordSelector
+from airbyte_cdk.sources.declarative.decoders import (
+    IterableDecoder,
+    JsonDecoder,
+    PaginationDecoderDecorator,
+)
+from airbyte_cdk.sources.declarative.extractors import (
+    DpathExtractor,
+    NestedRecordExtractor,
+    RecordFilter,
+    RecordSelector,
+)
 from airbyte_cdk.sources.declarative.extractors.record_extractor import RecordExtractor
 from airbyte_cdk.sources.declarative.extractors.record_filter import (
     ClientSideIncrementalRecordFilterDecorator,
@@ -2030,6 +2039,153 @@ def test_create_record_selector(test_name, record_selector, expected_runtime_sel
     ]
     assert isinstance(selector.record_filter, RecordFilter)
     assert selector.record_filter.condition == "{{ record['id'] > stream_state['id'] }}"
+
+
+def test_create_nested_record_extractor():
+    content = """
+    selector:
+      type: RecordSelector
+      $parameters:
+        child_connection: "reviews"
+      extractor:
+        type: NestedRecordExtractor
+        parent_extractor:
+          type: DpathExtractor
+          field_path: ["data", "repository", "pullRequests", "nodes"]
+        child_field_path: ["{{ parameters['child_connection'] }}", "nodes"]
+        parent_fields:
+          - parent_path: ["url"]
+            record_path: ["pull_request_url"]
+    """
+    parsed_manifest = YamlDeclarativeSource._parse(content)
+    resolved_manifest = resolver.preprocess_manifest(parsed_manifest)
+    selector_manifest = transformer.propagate_types_and_parameters(
+        "", resolved_manifest["selector"], {}
+    )
+
+    selector = factory.create_component(
+        model_type=RecordSelectorModel,
+        name="test_stream",
+        component_definition=selector_manifest,
+        decoder=None,
+        transformations=[],
+        config=input_config,
+    )
+
+    assert isinstance(selector, RecordSelector)
+    extractor = selector.extractor
+    assert isinstance(extractor, NestedRecordExtractor)
+    assert isinstance(extractor.parent_extractor, DpathExtractor)
+    assert [fp.eval(input_config) for fp in extractor.parent_extractor._field_path] == [
+        "data",
+        "repository",
+        "pullRequests",
+        "nodes",
+    ]
+    # `$parameters` reaches the paths, so one YAML block can serve several streams.
+    assert [fp.eval(input_config) for fp in extractor._child_field_path] == ["reviews", "nodes"]
+    assert len(extractor.parent_fields) == 1
+    assert extractor.parent_fields[0].eval_parent_path(input_config) == ["url"]
+    assert extractor.parent_fields[0].eval_record_path(input_config) == ["pull_request_url"]
+
+
+def test_create_nested_record_extractor_nested_in_itself():
+    content = """
+    selector:
+      type: RecordSelector
+      extractor:
+        type: NestedRecordExtractor
+        parent_extractor:
+          type: NestedRecordExtractor
+          parent_extractor:
+            type: DpathExtractor
+            field_path: ["data", "repository", "pullRequests", "nodes"]
+          child_field_path: ["reviews", "nodes"]
+        child_field_path: ["comments", "nodes"]
+        parent_fields:
+          - parent_path: ["id"]
+            record_path: ["review_id"]
+    """
+    parsed_manifest = YamlDeclarativeSource._parse(content)
+    resolved_manifest = resolver.preprocess_manifest(parsed_manifest)
+    selector_manifest = transformer.propagate_types_and_parameters(
+        "", resolved_manifest["selector"], {}
+    )
+
+    selector = factory.create_component(
+        model_type=RecordSelectorModel,
+        name="test_stream",
+        component_definition=selector_manifest,
+        decoder=None,
+        transformations=[],
+        config=input_config,
+    )
+
+    extractor = selector.extractor
+    assert isinstance(extractor, NestedRecordExtractor)
+    assert isinstance(extractor.parent_extractor, NestedRecordExtractor)
+    assert isinstance(extractor.parent_extractor.parent_extractor, DpathExtractor)
+
+
+def test_create_nested_record_extractor_rejects_empty_child_field_path():
+    content = """
+    selector:
+      type: RecordSelector
+      extractor:
+        type: NestedRecordExtractor
+        parent_extractor:
+          type: DpathExtractor
+          field_path: ["data"]
+        child_field_path: []
+    """
+    parsed_manifest = YamlDeclarativeSource._parse(content)
+    resolved_manifest = resolver.preprocess_manifest(parsed_manifest)
+    selector_manifest = transformer.propagate_types_and_parameters(
+        "", resolved_manifest["selector"], {}
+    )
+
+    # Rejected at config time by the schema's `minItems: 1`, before any record is read. The
+    # component also guards its own constructor, see
+    # unit_tests/sources/declarative/extractors/test_nested_record_extractor.py.
+    with pytest.raises(ValidationError, match="child_field_path"):
+        factory.create_component(
+            model_type=RecordSelectorModel,
+            name="test_stream",
+            component_definition=selector_manifest,
+            decoder=None,
+            transformations=[],
+            config=input_config,
+        )
+
+
+def test_nested_record_extractor_forwards_the_decoder_to_its_parent_extractor():
+    content = """
+    selector:
+      type: RecordSelector
+      extractor:
+        type: NestedRecordExtractor
+        parent_extractor:
+          type: DpathExtractor
+          field_path: ["data"]
+        child_field_path: ["children"]
+    """
+    parsed_manifest = YamlDeclarativeSource._parse(content)
+    resolved_manifest = resolver.preprocess_manifest(parsed_manifest)
+    selector_manifest = transformer.propagate_types_and_parameters(
+        "", resolved_manifest["selector"], {}
+    )
+    decoder = IterableDecoder(parameters={})
+
+    selector = factory.create_component(
+        model_type=RecordSelectorModel,
+        name="test_stream",
+        component_definition=selector_manifest,
+        decoder=decoder,
+        transformations=[],
+        config=input_config,
+    )
+
+    assert selector.extractor.parent_extractor.decoder is decoder
 
 
 @pytest.mark.parametrize(
