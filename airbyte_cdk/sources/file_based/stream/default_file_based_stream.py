@@ -4,6 +4,7 @@
 
 import asyncio
 import itertools
+import re
 import traceback
 from collections import defaultdict
 from copy import deepcopy
@@ -307,9 +308,12 @@ class DefaultFileBasedStream(AbstractFileBasedStream, IncrementalMixin):
             self.logger.warning(
                 msg=f"Refusing to infer schema for {first_n_files} files; using {max_n_files_for_schema_inference} files."
             )
-            first_n_files = max_n_files_for_schema_inference
-
-        files = sorted(files, key=lambda x: x.last_modified, reverse=True)[:first_n_files]
+            files = self._select_files_for_schema_inference(files, max_n_files_for_schema_inference)
+            self.logger.info(
+                msg=f"Files selected for schema inference for stream {self.name}: {[file.uri for file in files]}"
+            )
+        else:
+            files = sorted(files, key=lambda x: x.last_modified, reverse=True)[:first_n_files]
 
         inferred_schema = self.infer_schema(files)
 
@@ -323,6 +327,47 @@ class DefaultFileBasedStream(AbstractFileBasedStream, IncrementalMixin):
         schema = {"type": "object", "properties": inferred_schema}
 
         return schema
+
+    @staticmethod
+    def _schema_inference_group_key(uri: str) -> str:
+        """
+        Collapse a file URI to its path shape: directory segments containing digits (dates, ids, uuids, hashes)
+        become "*", and the file name is reduced to its leading alphabetic prefix plus extension.
+        """
+        segments = uri.strip("/").split("/")
+        directory = ["*" if re.search(r"\d", segment) else segment for segment in segments[:-1]]
+        stem, ext = path.splitext(segments[-1])
+        prefix_match = re.match(r"[A-Za-z]*", stem)
+        prefix = prefix_match.group(0) if prefix_match else ""
+        return "/".join(directory + [prefix + ext])
+
+    @staticmethod
+    def _select_files_for_schema_inference(files: List[RemoteFile], n: int) -> List[RemoteFile]:
+        """
+        Pick up to n files for schema inference, newest first, preferring one file per distinct path shape
+        so heterogeneous file sets contribute all of their columns. Remaining slots are filled with the next-newest files.
+        """
+        newest_first = sorted(files, key=lambda x: x.last_modified, reverse=True)
+        if len(newest_first) <= n:
+            return newest_first
+        selected: List[RemoteFile] = []
+        seen_groups: Set[str] = set()
+        for file in newest_first:
+            group = DefaultFileBasedStream._schema_inference_group_key(file.uri)
+            if group in seen_groups:
+                continue
+            seen_groups.add(group)
+            selected.append(file)
+            if len(selected) == n:
+                return selected
+        selected_uris = {file.uri for file in selected}
+        for file in newest_first:
+            if len(selected) == n:
+                break
+            if file.uri not in selected_uris:
+                selected.append(file)
+                selected_uris.add(file.uri)
+        return selected
 
     def get_files(self) -> Iterable[RemoteFile]:
         """

@@ -5,7 +5,7 @@
 import traceback
 import unittest
 from copy import deepcopy
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Iterable, Iterator, Mapping
 from unittest import mock
 from unittest.mock import Mock
@@ -86,6 +86,90 @@ class MockFormat:
 )
 def test_fill_nulls(input_schema: Mapping[str, Any], expected_output: Mapping[str, Any]) -> None:
     assert DefaultFileBasedStream._fill_nulls(input_schema) == expected_output
+
+
+@pytest.mark.parametrize(
+    "uri, expected_group_key",
+    [
+        (
+            "sync/datasync/6723152521986048/-323232/fcb7eea7-c953-4971-a493-56dbcfa3326b/matchedEvents/Page/Page-yyeAFHOyeip34fjJKnI58_LUqEw.avro",
+            "sync/datasync/*/*/*/matchedEvents/Page/Page.avro",
+        ),
+        (
+            "sync/datasync/6723152521986048/-323232/fcb7eea7-c953-4971-a493-56dbcfa3326b/allguides.avro",
+            "sync/datasync/*/*/*/allguides.avro",
+        ),
+        ("data/2024/01/05/events_20240105.csv", "data/*/*/*/events.csv"),
+        ("customers.csv", "customers.csv"),
+        ("/bucket/2024-01-01.jsonl", "bucket/.jsonl"),
+    ],
+)
+def test_schema_inference_group_key(uri: str, expected_group_key: str) -> None:
+    assert DefaultFileBasedStream._schema_inference_group_key(uri) == expected_group_key
+
+
+def test_select_files_for_schema_inference_prefers_one_file_per_path_shape() -> None:
+    files = [
+        RemoteFile(
+            uri=f"matchedEvents/Page/Page-{i}.avro",
+            last_modified=datetime(2022, 10, 22, tzinfo=timezone.utc) - timedelta(minutes=i),
+        )
+        for i in range(30)
+    ]
+    files.extend(
+        RemoteFile(
+            uri=f"matchedEvents/Feature/Feature-{i}.avro",
+            last_modified=datetime(2022, 10, 22, tzinfo=timezone.utc) - timedelta(minutes=30 + i),
+        )
+        for i in range(3)
+    )
+    files.append(
+        RemoteFile(
+            uri="allguides.avro",
+            last_modified=datetime(2022, 10, 22, tzinfo=timezone.utc) - timedelta(minutes=100),
+        )
+    )
+
+    selected = DefaultFileBasedStream._select_files_for_schema_inference(files, n=5)
+    selected_uris = [file.uri for file in selected]
+
+    assert len(selected) == 5
+    assert len(selected_uris) == len(set(selected_uris))
+    assert selected_uris == [
+        "matchedEvents/Page/Page-0.avro",
+        "matchedEvents/Feature/Feature-0.avro",
+        "allguides.avro",
+        "matchedEvents/Page/Page-1.avro",
+        "matchedEvents/Page/Page-2.avro",
+    ]
+
+
+def test_select_files_for_schema_inference_falls_back_to_newest_when_homogeneous() -> None:
+    files = [
+        RemoteFile(
+            uri=f"data/2024/01/{i:02d}/events_{i}.csv",
+            last_modified=datetime(2022, 10, 22, tzinfo=timezone.utc) + timedelta(minutes=i),
+        )
+        for i in range(20)
+    ]
+
+    selected = DefaultFileBasedStream._select_files_for_schema_inference(files, n=10)
+
+    assert selected == list(reversed(files[-10:]))
+
+
+def test_select_files_for_schema_inference_returns_all_when_under_limit() -> None:
+    files = [
+        RemoteFile(
+            uri=f"file-{i}.csv",
+            last_modified=datetime(2022, 10, 22, tzinfo=timezone.utc) + timedelta(minutes=i),
+        )
+        for i in range(3)
+    ]
+
+    selected = DefaultFileBasedStream._select_files_for_schema_inference(files, n=10)
+
+    assert selected == list(reversed(files))
 
 
 class DefaultFileBasedStreamTest(unittest.TestCase):
@@ -226,6 +310,35 @@ class DefaultFileBasedStreamTest(unittest.TestCase):
             },
         }
         assert self._parser.infer_schema.call_count == 3
+
+    def test_when_too_many_files_then_schema_inference_covers_each_path_shape(self) -> None:
+        self._stream_config.input_schema = None
+        self._stream_config.schemaless = False
+        self._stream_config.use_first_found_file_for_schema_discovery = False
+        self._stream_config.recent_n_files_to_read_for_schema_discovery = None
+        self._discovery_policy.get_max_n_files_for_schema_inference.return_value = 10
+        self._stream_reader.get_matching_files.return_value = [
+            *[
+                RemoteFile(
+                    uri=f"matchedEvents/Page/Page-{i}.avro",
+                    last_modified=self._NOW - timedelta(minutes=i),
+                )
+                for i in range(11)
+            ],
+            RemoteFile(
+                uri="allguides.avro",
+                last_modified=self._NOW - timedelta(minutes=100),
+            ),
+        ]
+        self._stream.infer_schema = Mock(return_value={"a": {"type": "string"}})
+
+        schema = self._stream._get_raw_json_schema()
+
+        self._stream.infer_schema.assert_called_once()
+        selected_files = self._stream.infer_schema.call_args.args[0]
+        assert len(selected_files) == 10
+        assert "allguides.avro" in [file.uri for file in selected_files]
+        assert schema == {"type": "object", "properties": {"a": {"type": "string"}}}
 
     def test_use_first_found_file_for_schema_discovery(self) -> None:
         self._stream.config.use_first_found_file_for_schema_discovery = True
