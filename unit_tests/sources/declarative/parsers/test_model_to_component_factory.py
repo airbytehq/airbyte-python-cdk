@@ -6736,6 +6736,102 @@ def test_given_stop_condition_does_not_mention_last_page_size_then_create_retrie
     assert retriever.page_size_reduction is not None
 
 
+@pytest.mark.parametrize(
+    "condition",
+    [
+        # the three literal forms in the monorepo today: source-discord x3
+        pytest.param("{{ last_page_size < 100 }}", id="literal_100"),
+        pytest.param("{{ last_page_size < 200 }}", id="literal_200"),
+        pytest.param("{{ last_page_size < 1000 }}", id="literal_1000"),
+        # the form the string-matching gate let through: `\bpage_size\b` matches inside `config['page_size']`
+        pytest.param("{{ last_page_size < config['page_size'] }}", id="config_reference"),
+        pytest.param("{{ last_page_size < config.page_size }}", id="config_attribute_reference"),
+        pytest.param("{{ last_page_size < parameters['page_size'] }}", id="parameters_reference"),
+        pytest.param("{{ last_page_size <= 99 }}", id="less_than_or_equal_to_a_literal"),
+        pytest.param("{{ 100 > last_page_size }}", id="reversed_operands"),
+        pytest.param(
+            "{{ last_page_size < 100 or not response.next }}", id="inside_a_larger_expression"
+        ),
+        pytest.param("{{ last_page_size | int < 100 }}", id="through_a_filter"),
+    ],
+)
+def test_given_stop_condition_compares_last_page_size_to_a_value_that_does_not_follow_the_reduction_then_raise(
+    condition,
+):
+    """
+    A full page at the reduced size satisfies each of these, so the pagination would end early and silently
+    drop the rest of the partition. `config['page_size']` is the one the previous string-matching gate
+    accepted: it contains the substring `page_size` but holds the configured size, not the requested one.
+    """
+    with pytest.raises(ValueError, match="last_page_size"):
+        _page_size_reduction_stream(
+            pagination_strategy=_CURSOR_PAGINATION_WITH_STOP_CONDITION.format(condition=condition)
+        )
+
+
+@pytest.mark.parametrize(
+    "condition",
+    [
+        # 11 of the 14 `last_page_size` stop conditions in the monorepo, including all 6 in
+        # source-zendesk-support and all 5 in source-trello. A reduction cannot make an empty page non-empty.
+        pytest.param("{{ last_page_size == 0 }}", id="emptiness_test"),
+        pytest.param("{{ 0 == last_page_size }}", id="emptiness_test_reversed"),
+        pytest.param(
+            "{{ last_page_size == 0 or not response.next }}", id="emptiness_test_or_no_cursor"
+        ),
+        # equivalent to emptiness, because `minimum_page_size` defaults to 1
+        pytest.param("{{ last_page_size < 1 }}", id="less_than_the_minimum_page_size"),
+        pytest.param("{{ last_page_size <= 0 }}", id="at_most_zero"),
+        # the sanctioned form, and variations on it that still follow the reduction
+        pytest.param("{{ last_page_size < page_size }}", id="requested_page_size"),
+        pytest.param(
+            "{{ last_page_size < page_size | int }}", id="requested_page_size_through_a_filter"
+        ),
+        pytest.param("{{ page_size > last_page_size }}", id="requested_page_size_reversed"),
+        # a reduction only makes a page smaller, so a lower bound can only stop being satisfied
+        pytest.param("{{ last_page_size > 1000 }}", id="lower_bound"),
+    ],
+)
+def test_given_reduction_safe_stop_condition_then_create_retriever(condition):
+    retriever = get_retriever(
+        _page_size_reduction_stream(
+            pagination_strategy=_CURSOR_PAGINATION_WITH_STOP_CONDITION.format(condition=condition)
+        )
+    )
+
+    assert retriever.page_size_reduction is not None
+
+
+@pytest.mark.parametrize(
+    "condition",
+    [
+        pytest.param(
+            "{{ last_page_size == config['page_size'] }}", id="equality_against_a_config_value"
+        ),
+        pytest.param("{{ last_page_size is lt(100) }}", id="jinja_test_rather_than_a_comparison"),
+        pytest.param("{{ last_page_size < }}", id="not_a_valid_jinja_expression"),
+    ],
+)
+def test_given_stop_condition_shape_cannot_be_classified_then_warn_and_create_retriever(
+    caplog, condition
+):
+    """
+    The gate runs at stream construction, so rejecting a manifest it merely does not understand would take
+    `check` and `discover` down with `read`. A shape outside the analysis warns instead.
+    """
+    with caplog.at_level(logging.WARNING):
+        retriever = get_retriever(
+            _page_size_reduction_stream(
+                pagination_strategy=_CURSOR_PAGINATION_WITH_STOP_CONDITION.format(
+                    condition=condition
+                )
+            )
+        )
+
+    assert retriever.page_size_reduction is not None
+    assert "could not be checked against the reduction" in caplog.text
+
+
 def test_given_no_paginator_and_page_size_reduction_then_raise():
     content = """
 type: DeclarativeStream

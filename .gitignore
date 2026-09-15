@@ -13,6 +13,8 @@ node_modules
 # sqlite file that requests_cache creates on macOS for the `file::memory:?cache=shared` URI
 file::memory:?cache=shared
 unit_tests/sources/declarative/extractors/test_response.csv
+# ResponseToFileExtractor names its temporary file after a uuid4 and writes it to the working directory
+/????????-????-????-????-????????????
 
 dist
 .ruff_cache

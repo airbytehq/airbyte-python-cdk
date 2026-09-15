@@ -17,7 +17,12 @@ class PageSizeReductionRequiredException(AirbyteTracedException):
     connector is expected to make, so the message describes what happened and nothing else - it must not read
     as a bug report when it surfaces as the `__context__` of a later failure.
 
-    A reduction the connector cannot honor raises `PageSizeReductionNotSupportedException` instead.
+    A reduction the connector cannot honor raises `PageSizeReductionNotSupportedException` instead, but only on
+    the `SimpleRetriever` path, which is the only one that knows a reduction was impossible. A `CustomRetriever`,
+    or a plain Python-CDK `HttpStream` whose error handler returns `ResponseAction.REDUCE_PAGE_SIZE`, never
+    catches this and lets it escape. That escape is kept deliberately - it is the only signal such a stream gets
+    - and it is typed `config_error` because nothing retries the page there, so a job-level retry would fail the
+    same way forever. On the `SimpleRetriever` path the type is inert, since the exception never leaves the loop.
     """
 
     def __init__(
@@ -29,8 +34,8 @@ class PageSizeReductionRequiredException(AirbyteTracedException):
         detail = f": {error_message}" if error_message else ""
         super().__init__(
             internal_message=f"An error handler{stream} resolved to REDUCE_PAGE_SIZE{detail}",
-            message=f"The API rejected a page{stream}. The connector is requesting the same page again with a smaller page size.",
-            failure_type=FailureType.transient_error,
+            message=f"The API rejected a page{stream} and asked the connector for a smaller one. If this message ends a sync, the stream is not set up to request a smaller page: add `page_size_reduction` to its retriever, or remove the REDUCE_PAGE_SIZE action from its error handler.",
+            failure_type=FailureType.config_error,
         )
 
 

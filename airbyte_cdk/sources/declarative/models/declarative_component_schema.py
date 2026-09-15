@@ -140,7 +140,7 @@ class CursorPagination(BaseModel):
     )
     stop_condition: Optional[str] = Field(
         None,
-        description="Template string evaluating when to stop paginating. Compare last_page_size against page_size rather than against a hardcoded number: page_size is the page size that was actually requested, so the condition stays correct when page_size_reduction shrinks it.",
+        description="Template string evaluating when to stop paginating. Compare last_page_size against page_size rather than against a hardcoded number: page_size is the page size that was actually requested, so the condition stays correct when page_size_reduction shrinks it. Testing the page for emptiness with last_page_size == 0 is equally safe. A stream that enables page_size_reduction is rejected when its stop condition compares last_page_size against anything else, since a full page at a reduced size would then read as a short page.",
         examples=[
             "{{ response.data.has_more is false }}",
             "{{ 'next' not in headers['link'] }}",
@@ -1436,14 +1436,14 @@ class PageSizeReduction(BaseModel):
     )
     max_attempts: Optional[int] = Field(
         5,
-        description="Maximum number of consecutive page size reductions allowed before the sync fails with a transient error. Every reduction follows a request that failed, so at most max_attempts + 1 failing requests are issued before giving up. With reset_policy NEVER this bounds the reductions for the whole partition; with AFTER_SUCCESSFUL_PAGE the budget restarts after every page that succeeds, so it bounds the reductions needed to get a single page through.",
+        description="Maximum number of page size reductions made in a row without a single page succeeding, before the sync fails with a transient error. Every reduction follows a request that failed, so at most max_attempts + 1 failing requests are issued before giving up. With reset_policy NEVER this bounds the reductions for the whole partition, since the reduced page size is never restored; with AFTER_SUCCESSFUL_PAGE the budget restarts after every page that succeeds, so it bounds the reductions needed to get a single page through and not the number of pages a partition may have.",
         examples=[5, 10],
         ge=1,
         title="Maximum Reduction Attempts",
     )
     reset_policy: Optional[ResetPolicy] = Field(
         ResetPolicy.NEVER,
-        description="When to restore the page size configured on the pagination strategy. NEVER keeps the reduced page size for the rest of the partition. AFTER_SUCCESSFUL_PAGE restores it as soon as one page succeeds, which means hitting the same error again on every page - use it only when the reduction is worth one extra request per page, for instance because the configured page size usually works and only some pages are too heavy.",
+        description="When to restore the page size configured on the pagination strategy. NEVER keeps the reduced page size for the rest of the partition. AFTER_SUCCESSFUL_PAGE restores it as soon as one page succeeds, which means hitting the same error again on every page - use it only when the reduction is worth one extra request per page, for instance because the configured page size usually works and only some pages are too heavy. AFTER_SUCCESSFUL_PAGE also restarts the max_attempts budget on every page that succeeds, so there is no limit on how many reductions a partition may make in total: a stream that needs one reduction per page reads to the end however many pages it has. What is bounded is the reductions that get no page through.",
         title="Reset Policy",
     )
 

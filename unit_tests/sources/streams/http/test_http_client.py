@@ -1475,14 +1475,19 @@ def test_send_raises_page_size_reduction_required_exception_with_reduce_page_siz
         http_client.send_request(http_method="get", url="https://airbyte.io", request_kwargs={})
 
     assert http_client._session.send.call_count == 1
-    assert "test" in exception.value.internal_message
+    # the error handler's own error_message has no other outlet, so it must reach the internal message. The
+    # stream is also called "test", so this asserts the mapping's text rather than any occurrence of "test".
+    assert "test reduce page size message" in exception.value.internal_message
     # the exception is raised on every reduction, including the ones a correctly configured connector makes,
     # so its message must describe the event rather than accuse the connector of a bug
     assert "should be reported" not in exception.value.message
     assert exception.value.message == (
-        "The API rejected a page of stream test. The connector is requesting the same page again with a "
-        "smaller page size."
+        "The API rejected a page of stream test and asked the connector for a smaller one. If this message "
+        "ends a sync, the stream is not set up to request a smaller page: add `page_size_reduction` to its "
+        "retriever, or remove the REDUCE_PAGE_SIZE action from its error handler."
     )
+    # a retriever that cannot re-issue the page never retries it, so a job-level retry cannot help
+    assert exception.value.failure_type == FailureType.config_error
 
 
 def test_given_reduce_page_size_action_then_log_the_response_as_an_auxiliary_request():

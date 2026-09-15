@@ -61,13 +61,6 @@ class PageSizeReducer:
     # that fails whatever page size we ask for degrades to a slow retry instead of a burst of requests.
     BACKOFF_SECONDS: float = 0.5
 
-    # Backstop that bounds the reductions for the whole partition regardless of the reset policy. Under
-    # `AFTER_SUCCESSFUL_PAGE` the `max_attempts` budget restarts on every successful page, which is what lets a
-    # long partition complete when the API needs one reduction per page - so something else has to guarantee
-    # that the partition cannot spend reductions forever. It is deliberately far above any sane `max_attempts`
-    # because reaching it is a pathology, not a tuning problem, and it is therefore not exposed in the schema.
-    MAX_TOTAL_REDUCTIONS: int = 1000
-
     def __init__(
         self,
         config: PageSizeReduction,
@@ -120,12 +113,13 @@ class PageSizeReducer:
 
         self._attempts += 1
         self._total_reductions += 1
-        if (
-            self._attempts > self._config.max_attempts
-            or self._total_reductions > self.MAX_TOTAL_REDUCTIONS
-        ):
+        if self._attempts > self._config.max_attempts:
+            # The budget counts the reductions that did *not* get a page through, which is what separates a
+            # partition that is stuck from one that is merely expensive. A partition where every page succeeds
+            # after a reduction resets this counter on each page and reads to the end, however many pages it
+            # has; a partition where nothing gets through burns the budget and fails here.
             raise AirbyteTracedException(
-                internal_message=f"Stream {self._stream_name} reduced its page size {self._total_reductions - 1} times while reading a single partition ({self._attempts - 1} of them since the last successful page), which is the maximum allowed",
+                internal_message=f"Stream {self._stream_name} reduced its page size {self._attempts - 1} times in a row without a single page succeeding, which is the configured maximum of {self._config.max_attempts} ({self._total_reductions - 1} reductions so far while reading this partition)",
                 message=f"The source kept failing while the connector requested smaller and smaller pages (down to {current_page_size} records per page). The API is likely unable to serve these requests. Try syncing fewer streams at once, or contact the API provider.",
                 failure_type=FailureType.transient_error,
             )
@@ -165,11 +159,17 @@ class PageSizeReducer:
         Under `NEVER` nothing happens: the reduced page size stays in effect and `max_attempts` keeps bounding
         the reductions for the whole partition, which is the right budget when reductions are one-off.
 
-        Under `AFTER_SUCCESSFUL_PAGE` the page size is restored and the `max_attempts` budget restarts. The
-        reduction count has to restart with it: this policy exists for an API that rejects the configured page
-        size on every page, so every page legitimately costs one reduction, and a budget spanning the whole
-        partition would fail the sync at page `max_attempts + 1` no matter how healthy the reads are.
-        `MAX_TOTAL_REDUCTIONS` still bounds the partition, so the sync cannot run forever.
+        Under `AFTER_SUCCESSFUL_PAGE` the page size is restored and the `max_attempts` budget restarts. This
+        policy exists for an API that rejects the configured page size on every page, so every page legitimately
+        costs one reduction, and a budget spanning the whole partition would fail the sync at page
+        `max_attempts + 1` no matter how healthy the reads are. There is deliberately no partition-wide cap on
+        top of it: a stream where every page gets through is healthy and has to sync to completion, and a cap
+        would only move the same cliff further out.
+
+        The budget still terminates the read, because only a page that succeeded can restart it and only
+        `_read_pages` calls this, once per page it consumed. So between any two restarts the partition made one
+        page of progress, and the reductions that make no progress are bounded by `max_attempts`. Under `NEVER`
+        the reduced page size is also never restored, so `minimum_page_size` bounds the reductions on its own.
         """
         if self._config.reset_policy != PageSizeResetPolicy.AFTER_SUCCESSFUL_PAGE:
             return

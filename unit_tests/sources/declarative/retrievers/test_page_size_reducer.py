@@ -148,7 +148,7 @@ def test_given_reset_policy_after_successful_page_when_on_successful_page_then_a
 
 def test_given_reset_policy_after_successful_page_when_no_page_succeeds_then_max_attempts_still_applies():
     """The budget restarts on a successful page, not on a reduction, so an endpoint that fails whatever we ask
-    for still terminates."""
+    for still terminates. This is the genuinely-stuck case: nothing got through, so the read has to end."""
     reducer = _reducer(max_attempts=2, reset_policy=PageSizeResetPolicy.AFTER_SUCCESSFUL_PAGE)
     reducer.reduce()
     reducer.reduce()
@@ -157,6 +157,9 @@ def test_given_reset_policy_after_successful_page_when_no_page_succeeds_then_max
         reducer.reduce()
 
     assert exception.value.failure_type == FailureType.transient_error
+    # the size named is the one that was just requested and failed, not the configured one
+    assert "down to 25 records per page" in exception.value.message
+    assert "2 times in a row without a single page succeeding" in exception.value.internal_message
 
 
 def test_given_reset_policy_never_when_pages_succeed_then_attempts_are_not_reset():
@@ -170,24 +173,23 @@ def test_given_reset_policy_never_when_pages_succeed_then_attempts_are_not_reset
         reducer.reduce()
 
 
-def test_given_reset_policy_after_successful_page_then_total_reductions_are_still_bounded():
-    """`max_attempts` restarting on every successful page cannot be the only bound, or a partition could spend
-    reductions forever."""
+def test_given_reset_policy_after_successful_page_when_every_page_succeeds_then_never_fail():
+    """
+    A partition where every page gets through after one reduction is healthy, however long it is: this policy
+    exists for an API that rejects the configured page size on every page. There is no partition-wide cap on
+    the number of reductions, because any such cap would fail this stream at the page it happens to sit on.
+    """
     reducer = _reducer(
         configured_page_size=1000,
         max_attempts=2,
         reset_policy=PageSizeResetPolicy.AFTER_SUCCESSFUL_PAGE,
     )
-    reducer.MAX_TOTAL_REDUCTIONS = 3
 
-    for _ in range(3):
+    for _ in range(5_000):
         reducer.reduce()
+        assert reducer.page_size_override == 500
         reducer.on_successful_page()
-
-    with pytest.raises(AirbyteTracedException) as exception:
-        reducer.reduce()
-
-    assert exception.value.failure_type == FailureType.transient_error
+        assert reducer.page_size_override is None
 
 
 @pytest.mark.parametrize(

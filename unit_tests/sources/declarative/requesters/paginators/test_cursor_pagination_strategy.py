@@ -203,9 +203,28 @@ def test_given_stop_condition_uses_page_size_and_page_is_short_then_stop():
     assert strategy.next_page_token(response, 99, None, None) is None
 
 
-def test_given_no_page_size_then_page_size_interpolates_to_none():
-    strategy = CursorPaginationStrategy(cursor_value="{{ page_size }}", config={}, parameters={})
+@pytest.mark.parametrize(
+    "page_size,page_size_override,expected_token",
+    [
+        pytest.param(100, None, 100, id="test_configured_page_size_is_bound"),
+        pytest.param(100, 50, 50, id="test_reduced_page_size_is_bound"),
+        pytest.param(None, None, None, id="test_no_page_size_interpolates_to_none"),
+    ],
+)
+def test_page_size_is_bound_in_the_cursor_value_interpolation_context(
+    page_size, page_size_override, expected_token
+):
+    """
+    `page_size` has to resolve to the size that was actually requested. The None case alone would also pass if
+    the variable were never bound at all, so the two positive cases are what pin it.
+    """
+    strategy = CursorPaginationStrategy(
+        page_size=page_size, cursor_value="{{ page_size }}", config={}, parameters={}
+    )
     response = requests.Response()
     response._content = json.dumps({}).encode("utf-8")
 
-    assert strategy.next_page_token(response, 10, None, None) is None
+    assert (
+        strategy.next_page_token(response, 10, None, None, page_size_override=page_size_override)
+        == expected_token
+    )

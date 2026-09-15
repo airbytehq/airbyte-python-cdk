@@ -499,6 +499,10 @@ from airbyte_cdk.sources.declarative.parsers.custom_code_compiler import (
     AirbyteCustomCodeNotPermittedError,
     custom_code_execution_permitted,
 )
+from airbyte_cdk.sources.declarative.parsers.stop_condition_safety import (
+    StopConditionSafety,
+    classify_stop_condition,
+)
 from airbyte_cdk.sources.declarative.partition_routers import (
     CartesianProductStreamSlicer,
     GroupingPartitionRouter,
@@ -3851,34 +3855,52 @@ class ModelToComponentFactory:
             # that only surfaces on the first failing response - after records have been emitted.
             self._validate_page_size_is_reducible(strategy, model.page_size_reduction, name)
             if isinstance(strategy, CursorPaginationModel):
-                self._validate_stop_condition_is_reduction_aware(strategy, name)
+                self._validate_stop_condition_is_reduction_aware(
+                    strategy, model.page_size_reduction, name
+                )
 
     @staticmethod
     def _validate_stop_condition_is_reduction_aware(
-        strategy: CursorPaginationModel, name: str
+        strategy: CursorPaginationModel,
+        page_size_reduction: Optional[PageSizeReductionModel],
+        name: str,
     ) -> None:
         """
         A `stop_condition` comparing `last_page_size` to a hardcoded page size reads a full reduced page as a
         short page and ends the pagination early, dropping the rest of the partition without failing. The
         strategy exposes the page size that was actually requested as `page_size`, so the condition can be
         written correctly - but only if it is, which is what this checks.
+
+        The condition is parsed as a Jinja expression rather than matched as a string: only the AST tells
+        `page_size`, which follows the reduction, apart from `config['page_size']`, which does not, and only the
+        AST tells an inequality, which a reduction can invalidate, apart from `last_page_size == 0`, which it
+        cannot. A shape the analysis does not understand is warned about rather than rejected - this runs at
+        stream construction, so a false rejection takes `check`, `discover` and `read` down with it.
         """
         stop_condition = strategy.stop_condition
         if not stop_condition:
             return
 
-        # `\b` does not match between the `_` and the `p` of `last_page_size`, so the second pattern only
-        # matches a standalone `page_size` reference.
-        uses_last_page_size = re.search(r"\blast_page_size\b", stop_condition)
-        uses_requested_page_size = re.search(r"\bpage_size\b", stop_condition)
-        if uses_last_page_size and not uses_requested_page_size:
+        minimum_page_size = (
+            page_size_reduction.minimum_page_size if page_size_reduction else None
+        ) or 1
+        verdict, reason = classify_stop_condition(stop_condition, minimum_page_size)
+        if verdict is StopConditionSafety.TRUNCATES:
             raise ValueError(
                 f"`page_size_reduction` on stream {name} cannot be used with the `stop_condition` "
-                f"{stop_condition!r}: it compares `last_page_size` to a value that does not follow the "
-                f"reduction, so a full page at the reduced size would read as a short page and end the "
-                f"pagination early, silently dropping the rest of the partition. Compare against the "
-                f"`page_size` interpolation variable instead, which holds the page size that was actually "
-                f"requested (for example `{{{{ last_page_size < page_size }}}}`)."
+                f"{stop_condition!r}: {reason}. The pagination would then end early, silently dropping the "
+                f"rest of the partition. Compare against the `page_size` interpolation variable instead, "
+                f"which holds the page size that was actually requested (for example "
+                f"`{{{{ last_page_size < page_size }}}}`), or test the page for emptiness with "
+                f"`{{{{ last_page_size == 0 }}}}`."
+            )
+        if verdict is StopConditionSafety.UNKNOWN:
+            LOGGER.warning(
+                f"Stream {name} uses `page_size_reduction` with the `stop_condition` {stop_condition!r}, "
+                f"which could not be checked against the reduction because {reason}. Make sure a page that is "
+                f"full at a reduced page size does not satisfy it, otherwise the pagination ends early and the "
+                f"rest of the partition is silently dropped. Comparing against the `page_size` interpolation "
+                f"variable, which holds the page size that was actually requested, is always safe."
             )
 
     @staticmethod
