@@ -5162,7 +5162,10 @@ def test_given_reductions_exhausted_when_read_then_emit_a_transient_error():
     ]
     assert errors
     assert all(error.failure_type == FailureType.transient_error for error in errors)
-    assert any("smaller and smaller pages" in error.message for error in errors)
+    assert any(
+        "keeps rejecting pages of stream" in error.message and "records per page" in error.message
+        for error in errors
+    )
 
 
 def test_given_pagination_limit_reached_when_read_then_reset_pagination():

@@ -237,3 +237,50 @@ def test_when_reduce_then_wait_before_the_retry():
         PageSizeReducer.BACKOFF_SECONDS * 2,
     ]
     assert all(wait > 0 for wait in sleeps)
+
+
+@pytest.mark.parametrize(
+    "reducer_kwargs,reductions",
+    [
+        pytest.param({"configured_page_size": 4, "minimum_page_size": 2}, 1, id="minimum_reached"),
+        pytest.param(
+            {"configured_page_size": 1000, "max_attempts": 2}, 2, id="max_attempts_exhausted"
+        ),
+    ],
+)
+def test_given_reduction_fails_then_message_names_the_stream_and_leaves_out_remediation(
+    reducer_kwargs, reductions
+):
+    # The user cannot act on a `transient_error`, so the message states the failure alone. Naming the stream
+    # is what makes it actionable for whoever reads the sync, since a sync reduces per stream.
+    reducer = _reducer(**reducer_kwargs)
+    for _ in range(reductions):
+        reducer.reduce()
+
+    with pytest.raises(AirbyteTracedException) as exception:
+        reducer.reduce()
+
+    assert exception.value.failure_type == FailureType.transient_error
+    assert A_STREAM_NAME in exception.value.message
+    assert "contact the API provider" not in exception.value.message
+    assert "Try syncing fewer streams" not in exception.value.message
+
+
+@pytest.mark.parametrize(
+    "reducer_kwargs",
+    [
+        pytest.param({"configured_page_size": 1, "minimum_page_size": 1}, id="never_reducible"),
+        pytest.param({"configured_page_size": None}, id="no_page_size_at_all"),
+        pytest.param({"configured_page_size": "100"}, id="page_size_is_not_a_number"),
+    ],
+)
+def test_given_misconfiguration_then_message_names_the_stream_and_keeps_remediation(reducer_kwargs):
+    # A `config_error` is the user's to fix, so the remediation stays in the message.
+    reducer = _reducer(**reducer_kwargs)
+
+    with pytest.raises(AirbyteTracedException) as exception:
+        reducer.reduce()
+
+    assert exception.value.failure_type == FailureType.config_error
+    assert A_STREAM_NAME in exception.value.message
+    assert exception.value.message.rstrip().endswith(".")

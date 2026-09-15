@@ -142,6 +142,53 @@ from airbyte_cdk.sources.declarative.parsers.stop_condition_safety import (
             StopConditionSafety.TRUNCATES,
             id="upper_bound_through_a_filter",
         ),
+        # A negation flips what the comparison decides, so a lower bound that is safe on its own becomes the
+        # dangerous upper bound: `not (last_page_size >= 100)` is `last_page_size < 100`. The comparison alone
+        # no longer says what the condition does, so it cannot be classified.
+        pytest.param(
+            "{{ not (last_page_size >= 100) }}",
+            1,
+            StopConditionSafety.UNKNOWN,
+            id="negated_lower_bound",
+        ),
+        pytest.param(
+            "{{ not last_page_size >= 100 }}",
+            1,
+            StopConditionSafety.UNKNOWN,
+            id="negated_lower_bound_without_parentheses",
+        ),
+        pytest.param(
+            "{{ not (last_page_size == 0) }}",
+            1,
+            StopConditionSafety.UNKNOWN,
+            id="negated_emptiness_test",
+        ),
+        pytest.param(
+            "{{ 1 if last_page_size == 0 else 0 }}",
+            1,
+            StopConditionSafety.UNKNOWN,
+            id="comparison_inside_a_conditional_expression",
+        ),
+        # Arithmetic moves the threshold out of the comparison: `last_page_size - 100 < 0` is another way to
+        # write `last_page_size < 100`, so neither the literal on the right nor `minimum_page_size` bounds it.
+        pytest.param(
+            "{{ last_page_size - 100 < 0 }}",
+            1,
+            StopConditionSafety.UNKNOWN,
+            id="upper_bound_with_arithmetic",
+        ),
+        pytest.param(
+            "{{ 0 > last_page_size - 100 }}",
+            1,
+            StopConditionSafety.UNKNOWN,
+            id="upper_bound_with_arithmetic_reversed",
+        ),
+        pytest.param(
+            "{{ last_page_size * 2 < page_size }}",
+            1,
+            StopConditionSafety.UNKNOWN,
+            id="requested_page_size_with_arithmetic",
+        ),
     ],
 )
 def test_classify_stop_condition(stop_condition, minimum_page_size, expected):
@@ -163,3 +210,19 @@ def test_reason_names_the_value_the_page_size_is_compared_against():
     _, reason = classify_stop_condition("{{ last_page_size < config['page_size'] }}", 1)
 
     assert "config['page_size']" in reason
+
+
+def test_given_negated_comparison_then_reason_points_at_the_shape():
+    verdict, reason = classify_stop_condition("{{ not (last_page_size >= 100) }}", 1)
+
+    assert verdict is StopConditionSafety.UNKNOWN
+    assert "does not decide the condition on its own" in reason
+
+
+def test_given_truncating_comparison_next_to_a_negated_one_then_truncates():
+    # The negated comparison is only warned about, so it must not mask a sibling that does truncate.
+    verdict, _ = classify_stop_condition(
+        "{{ not (last_page_size >= 100) or last_page_size < 500 }}", 1
+    )
+
+    assert verdict is StopConditionSafety.TRUNCATES

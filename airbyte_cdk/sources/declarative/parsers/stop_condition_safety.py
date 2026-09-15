@@ -28,6 +28,13 @@ number, so:
   the reduction (it references the `page_size` variable) or when `x` is a literal at or below
   `minimum_page_size`, which makes the comparison a rewrite of "the page is empty".
 
+Each verdict above reads the comparison on its own, which is only sound while the comparison decides the
+condition in its own polarity. `{{ not (last_page_size >= 100) }}` means `last_page_size < 100`, and
+`{{ last_page_size - 100 < 0 }}` means the same again, so the operator and the operands of the comparison no
+longer say what the condition does. A comparison is therefore only classified when it is reached from the root
+of the expression through `and`/`or` alone, and when `last_page_size` is compared bare rather than transformed
+first; anything else is unclassifiable.
+
 Anything else is reported as unclassifiable rather than as a truncation: this analysis rejects a manifest at
 stream construction, so a shape it does not understand must not be treated as a defect.
 """
@@ -93,10 +100,18 @@ def classify_stop_condition(
 
     unclassifiable: List[str] = []
     understood = 0
-    for left, operator, right in _comparisons(template):
+    for left, operator, right, decides_condition in _comparisons(template):
         if not _references(left, LAST_PAGE_SIZE_VARIABLE) and not _references(
             right, LAST_PAGE_SIZE_VARIABLE
         ):
+            continue
+        if not decides_condition:
+            # The comparison is negated or is an operand of a larger expression, so its own operator no longer
+            # says what the condition does and neither verdict below would be about the right question.
+            unclassifiable.append(
+                f"it uses `{LAST_PAGE_SIZE_VARIABLE}` in a comparison that does not decide the condition on "
+                f"its own, such as one under a `not` or inside a larger expression"
+            )
             continue
         verdict, reason = _classify_comparison(left, operator, right, minimum_page_size)
         if verdict is StopConditionSafety.TRUNCATES:
@@ -119,13 +134,32 @@ def classify_stop_condition(
     )
 
 
-def _comparisons(template: nodes.Template) -> Iterator[Tuple[nodes.Node, str, nodes.Node]]:
-    """Flatten every comparison, including the chained ones, into (left, operator, right) triples."""
-    for comparison in template.find_all(nodes.Compare):
-        left = comparison.expr
-        for operand in comparison.ops:
-            yield left, operand.op, operand.expr
+def _comparisons(
+    node: nodes.Node, decides_condition: bool = True
+) -> Iterator[Tuple[nodes.Node, str, nodes.Node, bool]]:
+    """
+    Flatten every comparison, including the chained ones, into (left, operator, right, decides_condition).
+
+    `decides_condition` is true only for a comparison the truth of the whole condition follows directly:
+    reached from the root through `and`/`or` alone. Under a `not`, inside a conditional expression, piped
+    through a filter or used as an operand of another expression, the comparison's own operator says nothing
+    about what the condition decides, so it is flagged and left unclassified.
+    """
+    if isinstance(node, nodes.Compare):
+        left = node.expr
+        for operand in node.ops:
+            yield left, operand.op, operand.expr, decides_condition
             left = operand.expr
+        # A comparison nested inside an operand of this one is an ordinary sub-expression, not a decider.
+        for operand_node in [node.expr, *(operand.expr for operand in node.ops)]:
+            yield from _comparisons(operand_node, False)
+        return
+
+    children_decide = decides_condition and isinstance(
+        node, (nodes.Template, nodes.Output, nodes.And, nodes.Or)
+    )
+    for child in node.iter_child_nodes():
+        yield from _comparisons(child, children_decide)
 
 
 def _classify_comparison(
@@ -144,7 +178,12 @@ def _classify_comparison(
     is_bare = isinstance(left, nodes.Name) and left.name == LAST_PAGE_SIZE_VARIABLE
 
     if operator in ("eq", "ne"):
-        if is_bare and isinstance(right, nodes.Const) and right.value == 0:
+        if not is_bare:
+            return (
+                StopConditionSafety.UNKNOWN,
+                f"`{LAST_PAGE_SIZE_VARIABLE}` is transformed before being compared",
+            )
+        if isinstance(right, nodes.Const) and right.value == 0:
             # A page that is full at the requested size holds at least `minimum_page_size` records, which is
             # at least 1, so no reduction can make an emptiness test fire.
             return (
@@ -170,6 +209,14 @@ def _classify_comparison(
         )
 
     if operator in ("lt", "lteq"):
+        if isinstance(left, nodes.BinExpr):
+            # `last_page_size - 100 < 0` is `last_page_size < 100` in disguise: with arithmetic on the left the
+            # threshold on the right is no longer the page size the condition really stops at, so neither the
+            # `page_size` reading nor the `minimum_page_size` reading below applies.
+            return (
+                StopConditionSafety.UNKNOWN,
+                f"`{LAST_PAGE_SIZE_VARIABLE}` takes part in arithmetic before being compared",
+            )
         if _references(right, REQUESTED_PAGE_SIZE_VARIABLE):
             return (
                 StopConditionSafety.SAFE,

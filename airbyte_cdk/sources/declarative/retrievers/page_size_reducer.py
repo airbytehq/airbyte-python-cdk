@@ -91,7 +91,8 @@ class PageSizeReducer:
         if self._configured_page_size is None:
             raise AirbyteTracedException(
                 internal_message=f"Stream {self._stream_name} received a REDUCE_PAGE_SIZE response action but its paginator does not inject a page size",
-                message="The connector is set up to reduce its page size on error but does not define one. Set `page_size` on the pagination strategy and `page_size_option` on the paginator.",
+                message=f"Stream {self._stream_name} is set up to reduce its page size on error but does not define "
+                f"one. Set `page_size` on the pagination strategy and `page_size_option` on the paginator.",
                 failure_type=FailureType.config_error,
             )
 
@@ -106,8 +107,8 @@ class PageSizeReducer:
             # the middle of a sync.
             raise AirbyteTracedException(
                 internal_message=f"Stream {self._stream_name} has a page size of type {type(current_page_size).__name__}: {current_page_size!r}",
-                message="The connector is set up to reduce its page size on error but its page size is not a whole number. "
-                "Make sure the pagination strategy's `get_page_size` returns an integer.",
+                message=f"The page size of stream {self._stream_name} is not a whole number, so the connector cannot "
+                f"reduce it. Make sure the pagination strategy's `page_size` is a number.",
                 failure_type=FailureType.config_error,
             )
 
@@ -120,7 +121,8 @@ class PageSizeReducer:
             # has; a partition where nothing gets through burns the budget and fails here.
             raise AirbyteTracedException(
                 internal_message=f"Stream {self._stream_name} reduced its page size {self._attempts - 1} times in a row without a single page succeeding, which is the configured maximum of {self._config.max_attempts} ({self._total_reductions - 1} reductions so far while reading this partition)",
-                message=f"The source kept failing while the connector requested smaller and smaller pages (down to {current_page_size} records per page). The API is likely unable to serve these requests. Try syncing fewer streams at once, or contact the API provider.",
+                # `transient_error`, so no remediation: the sync has nothing for the user to act on.
+                message=f"The source keeps rejecting pages of stream {self._stream_name} at every page size the connector requested, down to {current_page_size} records per page.",
                 failure_type=FailureType.transient_error,
             )
 
@@ -135,12 +137,16 @@ class PageSizeReducer:
                 # rather than something the platform should retry the whole job for.
                 raise AirbyteTracedException(
                     internal_message=f"Stream {self._stream_name} has a configured page size of {current_page_size} which is not greater than the configured minimum page size of {self._config.minimum_page_size}, so it can never be reduced",
-                    message=f"The connector is set up to reduce its page size on error but its page size ({current_page_size}) is already at or below the configured minimum of {self._config.minimum_page_size}. Lower `minimum_page_size` or raise the pagination strategy's `page_size`.",
+                    message=f"The page size of stream {self._stream_name} ({current_page_size}) is already at or below "
+                    f"the configured minimum of {self._config.minimum_page_size}, so the connector cannot reduce it. "
+                    f"Raise the page size of the stream, or lower `minimum_page_size`.",
                     failure_type=FailureType.config_error,
                 )
             raise AirbyteTracedException(
                 internal_message=f"Stream {self._stream_name} still fails with a page size of {current_page_size}, which is the smallest page size allowed by the configured minimum of {self._config.minimum_page_size}",
-                message=f"The source is still failing with the smallest page the connector is allowed to request ({current_page_size} records per page). The API is likely unable to serve this request. Try syncing fewer streams at once, or contact the API provider.",
+                # `transient_error`, so no remediation: the sync has nothing for the user to act on.
+                message=f"The source keeps rejecting pages of stream {self._stream_name} at the smallest page size the "
+                f"connector is allowed to request ({current_page_size} records per page).",
                 failure_type=FailureType.transient_error,
             )
 
