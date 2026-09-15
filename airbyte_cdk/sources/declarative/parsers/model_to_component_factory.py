@@ -2507,7 +2507,7 @@ class ModelToComponentFactory:
         **kwargs: Any,
     ) -> RecordExpander:
         truncated_list_retriever = None
-        suppress_incomplete_fetch_warning = bool(self._limit_pages_fetched_per_slice)
+        suppress_incomplete_fetch_warning = False
         if model.truncated_list_retriever:
             retriever_model = model.truncated_list_retriever
             name = "record_expander_truncated_list"
@@ -2525,23 +2525,21 @@ class ModelToComponentFactory:
                 name,
                 is_auxiliary=True,
             )
-            if isinstance(retriever_model, SimpleRetrieverModel):
-                truncated_list_retriever = self._create_component_from_model(
-                    model=retriever_model,
-                    config=config,
-                    name=name,
-                    primary_key=None,
-                    transformations=[],
-                    log_formatter=log_formatter,
-                )
-                # Only a capped paginator makes a shortfall expected; `NoPagination` is never capped.
-                suppress_incomplete_fetch_warning = isinstance(
-                    truncated_list_retriever.paginator, PaginatorTestReadDecorator
-                )
-            else:
-                truncated_list_retriever = self._create_component_from_model(
-                    model=retriever_model, config=config, log_formatter=log_formatter
-                )
+            # `name`/`primary_key`/`transformations` are also what a `CustomRetriever` forwards to its
+            # nested `requester`/`record_selector`, so they are passed for both retriever types.
+            truncated_list_retriever = self._create_component_from_model(
+                model=retriever_model,
+                config=config,
+                name=name,
+                primary_key=None,
+                transformations=[],
+                log_formatter=log_formatter,
+            )
+            # Only a capped paginator makes a shortfall expected; `NoPagination` and retrievers
+            # without a paginator are never capped.
+            suppress_incomplete_fetch_warning = isinstance(
+                truncated_list_retriever, SimpleRetriever
+            ) and isinstance(truncated_list_retriever.paginator, PaginatorTestReadDecorator)
         return RecordExpander(
             expand_records_from_field=model.expand_records_from_field,
             config=config,

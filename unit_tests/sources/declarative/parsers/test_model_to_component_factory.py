@@ -1994,8 +1994,6 @@ def test_create_record_expander_with_truncated_list_retriever():
     content = """
     selector:
       type: RecordSelector
-      $parameters:
-        name: "lists"
       extractor:
         type: DpathExtractor
         field_path: ["data"]
@@ -2041,13 +2039,12 @@ def test_create_record_expander_with_truncated_list_retriever():
     assert expander.suppress_incomplete_fetch_warning is False
 
 
-@pytest.mark.parametrize(
-    "paginator_yaml, expected_suppressed",
-    [
-        pytest.param(
-            """
+# `$parameters.url_base` is how a `CustomRetriever` shares the requester's `url_base` with a nested paginator.
+_CURSOR_PAGINATOR_YAML = """
             paginator:
               type: DefaultPaginator
+              $parameters:
+                url_base: "https://api.test.com/"
               page_token_option:
                 type: RequestOption
                 inject_into: request_parameter
@@ -2056,19 +2053,32 @@ def test_create_record_expander_with_truncated_list_retriever():
                 type: CursorPagination
                 cursor_value: "{{ last_record['id'] }}"
                 stop_condition: "{{ not response['has_more'] }}"
-            """,
-            True,
-            id="capped_default_paginator_suppresses_warning",
+"""
+
+
+@pytest.mark.parametrize(
+    "paginator_yaml, expected_suppressed",
+    [
+        pytest.param(
+            _CURSOR_PAGINATOR_YAML, True, id="capped_default_paginator_suppresses_warning"
         ),
         pytest.param("", False, id="no_pagination_is_not_capped_so_warning_stays"),
     ],
 )
+@pytest.mark.parametrize(
+    "retriever_type",
+    [
+        "type: SimpleRetriever",
+        "type: CustomRetriever\n            class_name: unit_tests.sources.declarative.parsers.testing_components.TestingCustomRetriever",
+    ],
+    ids=["simple_retriever", "custom_retriever"],
+)
 def test_create_record_expander_suppresses_incomplete_fetch_warning_only_for_capped_paginator(
-    paginator_yaml, expected_suppressed
+    retriever_type, paginator_yaml, expected_suppressed
 ):
     content = _record_expander_selector(
         f"""
-            type: SimpleRetriever
+            {retriever_type}
             requester:
               type: HttpRequester
               url_base: "https://api.test.com/"
@@ -2110,8 +2120,6 @@ def _record_expander_selector(retriever_yaml: str) -> str:
     return f"""
     selector:
       type: RecordSelector
-      $parameters:
-        name: "lists"
       extractor:
         type: DpathExtractor
         field_path: ["data"]
@@ -2147,8 +2155,6 @@ def test_create_record_expander_with_custom_truncated_list_retriever():
             """
             type: CustomRetriever
             class_name: unit_tests.sources.declarative.parsers.testing_components.TestingCustomRetriever
-            name: "custom_lines"
-            primary_key: "id"
             requester:
               type: HttpRequester
               url_base: "https://api.test.com/"
@@ -2164,8 +2170,10 @@ def test_create_record_expander_with_custom_truncated_list_retriever():
     )
     retriever = expander.truncated_list_retriever
     assert isinstance(retriever, TestingCustomRetriever)
-    assert retriever.name == "custom_lines"
-    assert retriever.primary_key == "id"
+    assert retriever.name == "record_expander_truncated_list"
+    assert isinstance(retriever.requester, HttpRequester)
+    assert isinstance(retriever.record_selector, RecordSelector)
+    assert expander.suppress_incomplete_fetch_warning is False
 
     request = requests.PreparedRequest()
     request.headers = {}
