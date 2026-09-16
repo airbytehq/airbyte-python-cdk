@@ -156,7 +156,10 @@ from airbyte_cdk.sources.declarative.requesters.error_handlers.backoff_strategie
     WaitUntilTimeFromHeaderBackoffStrategy,
 )
 from airbyte_cdk.sources.declarative.requesters.http_job_repository import AsyncHttpJobRepository
-from airbyte_cdk.sources.declarative.requesters.paginators import DefaultPaginator
+from airbyte_cdk.sources.declarative.requesters.paginators import (
+    DefaultPaginator,
+    PaginatorTestReadDecorator,
+)
 from airbyte_cdk.sources.declarative.requesters.paginators.strategies import (
     CursorPaginationStrategy,
     OffsetIncrement,
@@ -225,6 +228,7 @@ from airbyte_cdk.sources.types import StreamSlice
 from airbyte_cdk.utils import AirbyteTracedException
 from airbyte_cdk.utils.datetime_helpers import AirbyteDateTime, ab_datetime_now, ab_datetime_parse
 from unit_tests.sources.declarative.parsers.testing_components import (
+    TestingCustomRetriever,
     TestingCustomSubstreamPartitionRouter,
     TestingSomeComponent,
 )
@@ -1984,6 +1988,254 @@ list_stream:
         retriever.record_selector.record_filter._cursor,
         ConcurrentPerPartitionCursor,
     )
+
+
+def test_create_record_expander_with_truncated_list_retriever():
+    content = """
+    selector:
+      type: RecordSelector
+      extractor:
+        type: DpathExtractor
+        field_path: ["data"]
+        record_expander:
+          type: RecordExpander
+          expand_records_from_field: ["data", "object", "lines", "data"]
+          remain_original_record: true
+          truncation_indicator_path: ["data", "object", "lines", "has_more"]
+          truncated_list_retriever:
+            type: SimpleRetriever
+            requester:
+              type: HttpRequester
+              url_base: "https://api.stripe.com/v1/"
+              path: "invoices/{{ stream_slice['parent_record']['data']['object']['id'] }}/lines"
+              http_method: "GET"
+            record_selector:
+              type: RecordSelector
+              extractor:
+                type: DpathExtractor
+                field_path: ["data"]
+    """
+    parsed_manifest = YamlDeclarativeSource._parse(content)
+    resolved_manifest = resolver.preprocess_manifest(parsed_manifest)
+    selector_manifest = transformer.propagate_types_and_parameters(
+        "", resolved_manifest["selector"], {}
+    )
+
+    selector = factory.create_component(
+        model_type=RecordSelectorModel,
+        name="test_stream",
+        component_definition=selector_manifest,
+        decoder=None,
+        transformations=[],
+        config=input_config,
+    )
+
+    expander = selector.extractor.record_expander
+    assert expander is not None
+    assert expander.truncation_indicator_path == ["data", "object", "lines", "has_more"]
+    assert isinstance(expander.truncated_list_retriever, SimpleRetriever)
+    assert expander.truncated_list_retriever.name == "record_expander_truncated_list"
+    assert expander.message_repository is factory._message_repository
+    assert expander.suppress_incomplete_fetch_warning is False
+
+
+# `$parameters.url_base` is how a `CustomRetriever` shares the requester's `url_base` with a nested paginator.
+_CURSOR_PAGINATOR_YAML = """
+            paginator:
+              type: DefaultPaginator
+              $parameters:
+                url_base: "https://api.test.com/"
+              page_token_option:
+                type: RequestOption
+                inject_into: request_parameter
+                field_name: starting_after
+              pagination_strategy:
+                type: CursorPagination
+                cursor_value: "{{ last_record['id'] }}"
+                stop_condition: "{{ not response['has_more'] }}"
+"""
+
+
+@pytest.mark.parametrize(
+    "paginator_yaml, expected_suppressed",
+    [
+        pytest.param(
+            _CURSOR_PAGINATOR_YAML, True, id="capped_default_paginator_suppresses_warning"
+        ),
+        pytest.param("", False, id="no_pagination_is_not_capped_so_warning_stays"),
+    ],
+)
+@pytest.mark.parametrize(
+    "retriever_type",
+    [
+        "type: SimpleRetriever",
+        "type: CustomRetriever\n            class_name: unit_tests.sources.declarative.parsers.testing_components.TestingCustomRetriever",
+    ],
+    ids=["simple_retriever", "custom_retriever"],
+)
+def test_create_record_expander_suppresses_incomplete_fetch_warning_only_for_capped_paginator(
+    retriever_type, paginator_yaml, expected_suppressed
+):
+    content = _record_expander_selector(
+        f"""
+            {retriever_type}
+            requester:
+              type: HttpRequester
+              url_base: "https://api.test.com/"
+              path: "invoices/{{{{ stream_slice['parent_record']['id'] }}}}/lines"
+              http_method: "GET"
+            record_selector:
+              type: RecordSelector
+              extractor:
+                type: DpathExtractor
+                field_path: ["data"]
+            {paginator_yaml}
+        """
+    )
+    parsed_manifest = YamlDeclarativeSource._parse(content)
+    resolved_manifest = resolver.preprocess_manifest(parsed_manifest)
+    selector_manifest = transformer.propagate_types_and_parameters(
+        "", resolved_manifest["selector"], {}
+    )
+    test_read_factory = ModelToComponentFactory(limit_pages_fetched_per_slice=2)
+
+    selector = test_read_factory.create_component(
+        model_type=RecordSelectorModel,
+        name="test_stream",
+        component_definition=selector_manifest,
+        decoder=None,
+        transformations=[],
+        config=input_config,
+    )
+
+    expander = selector.extractor.record_expander
+    assert expander.suppress_incomplete_fetch_warning is expected_suppressed
+    assert (
+        isinstance(expander.truncated_list_retriever.paginator, PaginatorTestReadDecorator)
+        is expected_suppressed
+    )
+
+
+def _record_expander_selector(retriever_yaml: str) -> str:
+    return f"""
+    selector:
+      type: RecordSelector
+      extractor:
+        type: DpathExtractor
+        field_path: ["data"]
+        record_expander:
+          type: RecordExpander
+          expand_records_from_field: ["lines", "data"]
+          truncation_indicator_path: ["lines", "has_more"]
+          truncated_list_retriever:
+{retriever_yaml}
+    """
+
+
+def _create_record_expander(content: str):
+    parsed_manifest = YamlDeclarativeSource._parse(content)
+    resolved_manifest = resolver.preprocess_manifest(parsed_manifest)
+    selector_manifest = transformer.propagate_types_and_parameters(
+        "", resolved_manifest["selector"], {}
+    )
+    selector = factory.create_component(
+        model_type=RecordSelectorModel,
+        name="test_stream",
+        component_definition=selector_manifest,
+        decoder=None,
+        transformations=[],
+        config=input_config,
+    )
+    return selector.extractor.record_expander
+
+
+def test_create_record_expander_with_custom_truncated_list_retriever():
+    expander = _create_record_expander(
+        _record_expander_selector(
+            """
+            type: CustomRetriever
+            class_name: unit_tests.sources.declarative.parsers.testing_components.TestingCustomRetriever
+            requester:
+              type: HttpRequester
+              url_base: "https://api.test.com/"
+              path: "invoices/{{ stream_slice['parent_record']['id'] }}/lines"
+              http_method: "GET"
+            record_selector:
+              type: RecordSelector
+              extractor:
+                type: DpathExtractor
+                field_path: ["data"]
+            """
+        )
+    )
+    retriever = expander.truncated_list_retriever
+    assert isinstance(retriever, TestingCustomRetriever)
+    assert retriever.name == "record_expander_truncated_list"
+    assert isinstance(retriever.requester, HttpRequester)
+    assert isinstance(retriever.record_selector, RecordSelector)
+    assert expander.suppress_incomplete_fetch_warning is False
+
+    request = requests.PreparedRequest()
+    request.headers = {}
+    request.url = "https://api.test.com/invoices/in_1/lines"
+    response = requests.Response()
+    response.request = request
+    response.status_code = 200
+    assert retriever.log_formatter is not None
+    assert retriever.log_formatter(response)["http"]["is_auxiliary"] is True
+
+
+@pytest.mark.parametrize(
+    "unsupported_option",
+    [
+        pytest.param(
+            """
+            partition_router:
+              type: ListPartitionRouter
+              values: ["a", "b"]
+              cursor_field: "partition"
+            """,
+            id="partition_router",
+        ),
+        pytest.param(
+            """
+            pagination_reset:
+              type: PaginationReset
+              action: RESET
+            """,
+            id="pagination_reset",
+        ),
+    ],
+)
+@pytest.mark.parametrize(
+    "retriever_type",
+    [
+        "type: SimpleRetriever",
+        "type: CustomRetriever\n            class_name: unit_tests.sources.declarative.parsers.testing_components.TestingCustomRetriever",
+    ],
+    ids=["simple_retriever", "custom_retriever"],
+)
+def test_create_record_expander_rejects_unsupported_retriever_options(
+    unsupported_option, retriever_type
+):
+    content = _record_expander_selector(
+        f"""
+            {retriever_type}
+            requester:
+              type: HttpRequester
+              url_base: "https://api.test.com/"
+              path: "lines"
+              http_method: "GET"
+            record_selector:
+              type: RecordSelector
+              extractor:
+                type: DpathExtractor
+                field_path: ["data"]
+        """
+        + unsupported_option
+    )
+    with pytest.raises(ValueError, match="not supported on `truncated_list_retriever`"):
+        _create_record_expander(content)
 
 
 @pytest.mark.parametrize(
