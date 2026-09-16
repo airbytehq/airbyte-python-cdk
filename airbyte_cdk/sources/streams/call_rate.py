@@ -15,7 +15,7 @@ from urllib import parse
 
 import requests
 import requests_cache
-from pyrate_limiter import InMemoryBucket, Limiter, RateItem, TimeClock
+from pyrate_limiter import InMemoryBucket, Limiter, RateItem, TimeClock, binary_search
 from pyrate_limiter import Rate as PyRateRate
 from pyrate_limiter.exceptions import BucketFullException
 
@@ -429,6 +429,11 @@ class MovingWindowCallRatePolicy(BaseCallRatePolicy):
     This strategy requires saving of timestamps of all requests within a window.
     """
 
+    # Header-driven updates must not induce waits longer than this; sources heartbeat well above it.
+    # Policies with longer windows are left unchanged rather than parking a worker for the whole window.
+    MAX_HEADER_DRIVEN_WAIT = timedelta(minutes=10)
+    _MAX_HEADER_DRIVEN_WAIT_MS = int(MAX_HEADER_DRIVEN_WAIT.total_seconds() * 1000)
+
     def __init__(self, rates: list[Rate], matchers: list[RequestMatcher]):
         """Constructor
 
@@ -478,22 +483,64 @@ class MovingWindowCallRatePolicy(BaseCallRatePolicy):
     ) -> None:
         """Adjust call bucket to reflect the state of the API server
 
-        :param available_calls:
-        :param call_reset_ts:
+        The bucket is filled with dummy calls until what it still allows matches what the API
+        reports as available. Updates only ever lower the local allowance: when the API reports
+        more available calls than the configured rates allow, the configured rates win.
+
+        `call_reset_ts` is not used. A moving window has no reset point, so the only actionable
+        part of the API feedback is the number of calls left; the window length stays the one
+        the rates were configured with.
+
+        When several rates are configured, the update applies to the most constraining one. A
+        header describing a coarser window only starts to bite near the end of that window;
+        mapping headers to a specific rate is deliberately out of scope.
+
+        The subtraction below compares `_calls_left`, which counts bucket entries (weight units;
+        `put` stores `weight` copies), with `available_calls`, which counts requests. They
+        coincide for unweighted policies but diverge when weighted matchers are used with a
+        remaining header.
+
+        :param available_calls: number of calls the API reports as still available
+        :param call_reset_ts: unused, see above
         :return:
         """
-        if (
-            available_calls is not None and call_reset_ts is None
-        ):  # we do our best to sync buckets with API
-            if available_calls == 0:
-                with self._limiter.lock:
-                    items_to_add = self._bucket.count() < self._bucket.rates[0].limit
-                    if items_to_add > 0:
-                        now: int = TimeClock().now()  # type: ignore[no-untyped-call]
-                        self._bucket.put(RateItem(name="dummy", timestamp=now, weight=items_to_add))
-        # TODO: add support if needed, it might be that it is not possible to make a good solution for this case
-        # if available_calls is not None and call_reset_ts is not None:
-        #     ts = call_reset_ts.timestamp()
+        if available_calls is None:
+            return
+
+        available_calls = max(0, available_calls)
+        with self._limiter.lock:
+            now: int = TimeClock().now()  # type: ignore[no-untyped-call]
+            calls_left = self._calls_left(now)
+            if calls_left is None:
+                return
+
+            items_to_add = calls_left - available_calls
+            if items_to_add > 0:
+                logger.debug(
+                    "got rate limit update from api, adjusting available calls from %s to %s",
+                    calls_left,
+                    available_calls,
+                )
+                if not self._bucket.put(RateItem(name="dummy", timestamp=now, weight=items_to_add)):
+                    logger.warning(
+                        "could not adjust available calls: calls_left=%s, available_calls=%s, "
+                        "rejected_weight=%s",
+                        calls_left,
+                        available_calls,
+                        items_to_add,
+                    )
+
+    def _calls_left(self, now: int) -> Optional[int]:
+        """Number of calls the bucket still allows, i.e. the most constraining of all rates."""
+        items = self._bucket.items
+        calls_left = []
+        for rate in self._bucket.rates:
+            if rate.interval > self._MAX_HEADER_DRIVEN_WAIT_MS:
+                continue
+            lower_bound_idx = binary_search(items, now - rate.interval)
+            calls_used = len(items) - lower_bound_idx if lower_bound_idx >= 0 else 0
+            calls_left.append(rate.limit - calls_used)
+        return min(calls_left) if calls_left else None
 
     def __str__(self) -> str:
         """Return a human-friendly description of the moving window rate policy for logging purposes."""
