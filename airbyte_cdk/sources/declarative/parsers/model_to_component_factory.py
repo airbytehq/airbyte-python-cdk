@@ -2556,6 +2556,7 @@ class ModelToComponentFactory:
             ]
             if model.parent_fields
             else None,
+            merge_parent=model.merge_parent or False,
             on_no_records=OnNoRecords(model.on_no_records.value)
             if model.on_no_records
             else OnNoRecords.skip,

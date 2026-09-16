@@ -790,3 +790,184 @@ def test_parent_field_paths_interpolate_config():
     parent_field.copy_onto({"url": "https://example.com/7"}, child)
 
     assert child == {"pull_request_url": "https://example.com/7"}
+
+
+def _mailchimp_parent():
+    return {
+        "email_id": "e1",
+        "list_id": "l1",
+        "activity": [
+            {"action": "open", "timestamp": "t1"},
+            {"action": "click", "timestamp": "t2"},
+        ],
+    }
+
+
+def _merge_expander(expand_records_from_field, **kwargs):
+    return RecordExpander(
+        expand_records_from_field=expand_records_from_field,
+        merge_parent=True,
+        config=config,
+        parameters=parameters,
+        **kwargs,
+    )
+
+
+def test_merge_parent_flattens_the_parent_into_every_item():
+    """The source-mailchimp `email_activity` shape: `{**record, **activity_item}` per item."""
+    expander = _merge_expander(["activity"])
+
+    records = list(expander.expand_record(_mailchimp_parent()))
+
+    assert records == [
+        {"email_id": "e1", "list_id": "l1", "action": "open", "timestamp": "t1"},
+        {"email_id": "e1", "list_id": "l1", "action": "click", "timestamp": "t2"},
+    ]
+    assert all("activity" not in record for record in records)
+
+
+def test_merge_parent_lets_the_item_win_on_collision():
+    expander = _merge_expander(["items"])
+
+    assert list(expander.expand_record({"id": "parent", "items": [{"id": "child"}]})) == [
+        {"id": "child"}
+    ]
+
+
+def test_merge_parent_removes_only_the_expanded_list_on_a_multi_segment_path():
+    expander = _merge_expander(["reviews", "nodes"])
+    parent = {
+        "number": 7,
+        "reviews": {"nodes": [{"id": "PRR_1"}], "totalCount": 1},
+    }
+
+    assert list(expander.expand_record(parent)) == [
+        {"number": 7, "reviews": {"totalCount": 1}, "id": "PRR_1"}
+    ]
+
+
+def test_merge_parent_removes_every_list_matched_by_a_glob_path():
+    expander = _merge_expander(["sections", "*", "items"])
+    parent = {
+        "id": 1,
+        "sections": {
+            "a": {"items": [{"n": 1}], "title": "A"},
+            "b": {"items": [{"n": 2}], "title": "B"},
+        },
+    }
+
+    assert list(expander.expand_record(parent)) == [
+        {"id": 1, "sections": {"a": {"title": "A"}, "b": {"title": "B"}}, "n": 1},
+        {"id": 1, "sections": {"a": {"title": "A"}, "b": {"title": "B"}}, "n": 2},
+    ]
+
+
+def test_merge_parent_removes_lists_nested_in_a_list_of_sections():
+    expander = _merge_expander(["sections", "*", "items"])
+    parent = {"sections": [{"items": [{"n": 1}], "k": "s0"}, {"items": [{"n": 2}], "k": "s1"}]}
+
+    assert list(expander.expand_record(parent)) == [
+        {"sections": [{"k": "s0"}, {"k": "s1"}], "n": 1},
+        {"sections": [{"k": "s0"}, {"k": "s1"}], "n": 2},
+    ]
+
+
+def test_parent_fields_applied_after_merge_parent_overwrite_a_merged_value():
+    expander = _merge_expander(
+        ["items"],
+        parent_fields=[_parent_field(["id"], ["id"])],
+    )
+
+    assert list(expander.expand_record({"id": "parent", "items": [{"id": "child"}]})) == [
+        {"id": "parent"}
+    ]
+
+
+def test_merge_parent_and_remain_original_record_are_independent():
+    expander = _merge_expander(["activity"], remain_original_record=True)
+
+    records = list(expander.expand_record(_mailchimp_parent()))
+
+    assert records == [
+        {
+            "email_id": "e1",
+            "list_id": "l1",
+            "action": "open",
+            "timestamp": "t1",
+            "original_record": _mailchimp_parent(),
+        },
+        {
+            "email_id": "e1",
+            "list_id": "l1",
+            "action": "click",
+            "timestamp": "t2",
+            "original_record": _mailchimp_parent(),
+        },
+    ]
+
+
+def test_merge_parent_wraps_scalar_items():
+    expander = _merge_expander(["items"])
+
+    assert list(expander.expand_record({"id": 9, "items": ["a", "b"]})) == [
+        {"id": 9, "value": "a"},
+        {"id": 9, "value": "b"},
+    ]
+
+
+def test_merge_parent_does_not_mutate_the_parent_record():
+    expander = _merge_expander(["reviews", "nodes"])
+    parent = _reviews_parent()
+
+    records = list(expander.expand_record(parent))
+
+    assert parent == _reviews_parent()
+    assert records[0]["reviews"] == {}
+
+
+def test_merge_parent_shares_untouched_nested_values_rather_than_deep_copying_them():
+    expander = _merge_expander(["items"])
+    metadata = {"k": "v"}
+
+    records = list(expander.expand_record({"metadata": metadata, "items": [{"id": 1}]}))
+
+    assert records[0]["metadata"] is metadata
+
+
+def test_merge_parent_applies_to_items_fetched_by_the_truncated_list_retriever():
+    expander = _merge_expander(
+        ["reviews", "nodes"],
+        truncation_indicator_path=["reviews", "has_more"],
+        truncated_list_retriever=_make_retriever([{"id": "PRR_9"}, "scalar"]),
+    )
+    parent = {
+        "url": "https://github.com/airbytehq/airbyte/pull/7",
+        "reviews": {"nodes": [{"id": "PRR_1"}], "has_more": True},
+    }
+
+    assert list(expander.expand_record(parent)) == [
+        {
+            "url": "https://github.com/airbytehq/airbyte/pull/7",
+            "reviews": {"has_more": True},
+            "id": "PRR_9",
+        },
+        {
+            "url": "https://github.com/airbytehq/airbyte/pull/7",
+            "reviews": {"has_more": True},
+            "value": "scalar",
+        },
+    ]
+
+
+def test_merge_parent_unset_leaves_items_unchanged():
+    expander = RecordExpander(
+        expand_records_from_field=["activity"],
+        config=config,
+        parameters=parameters,
+    )
+
+    assert expander.merge_parent is False
+    assert list(expander.expand_record(_mailchimp_parent())) == [
+        {"action": "open", "timestamp": "t1"},
+        {"action": "click", "timestamp": "t2"},
+    ]

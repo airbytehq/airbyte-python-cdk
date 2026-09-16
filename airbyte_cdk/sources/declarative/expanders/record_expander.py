@@ -115,6 +115,10 @@ class RecordExpander:
     deep-copying the whole parent once per item, which matters when the parent is large and the
     nested list is long.
 
+    Set `merge_parent: true` to flatten the parent into each item instead: the parent's fields,
+    minus the expanded list, are shallow-merged underneath the item's own fields, so the item wins
+    on any key both have.
+
     The expand_records_from_field path supports wildcards (*) for matching multiple arrays.
     When wildcards are used, items from all matched arrays are extracted and emitted.
 
@@ -143,6 +147,14 @@ class RecordExpander:
       record_expander:
         type: RecordExpander
         expand_records_from_field:
+          - "activity"
+        merge_parent: true
+    ```
+
+    ```
+      record_expander:
+        type: RecordExpander
+        expand_records_from_field:
           - "sections"
           - "*"
           - "items"
@@ -162,6 +174,13 @@ class RecordExpander:
             named fields is the cheaper way to carry parent context. Applies to items fetched
             through `truncated_list_retriever` as well as to embedded ones. Glob metacharacters
             are rejected in both paths.
+        merge_parent: If True, each expanded item is the parent record shallow-merged with the
+            item, the item's own keys winning on collision, and the expanded list removed from
+            the parent's copy. Only the value at `expand_records_from_field` is removed: for a
+            multi-segment path the top-level key stays with its other fields. The merge happens
+            before `parent_fields` are copied and before `original_record` is embedded, so both
+            can overwrite merged values. Applies to items fetched through
+            `truncated_list_retriever` as well as to embedded ones. Defaults to False.
         on_no_records: Behavior when expansion produces no records. "skip" (default)
             emits nothing. "emit_parent" emits the original parent record unchanged.
         truncation_indicator_path: Path within each record to a field indicating that the
@@ -200,6 +219,7 @@ class RecordExpander:
     parameters: InitVar[Mapping[str, Any]]
     remain_original_record: bool = False
     parent_fields: Optional[Sequence[ParentFieldPath]] = None
+    merge_parent: bool = False
     on_no_records: OnNoRecords = OnNoRecords.skip
     truncation_indicator_path: Optional[Sequence[str]] = None
     truncated_list_retriever: Optional["Retriever"] = None
@@ -259,13 +279,18 @@ class RecordExpander:
 
         expand_path = self._evaluated_expand_path()
         truncated = bool(self._truncation_indicator_path) and self._is_truncated(parent_record)
+        # Built once per parent, not once per item: the walk that finds the expanded list costs
+        # as much as extracting it does.
+        merge_base = (
+            self._without_expanded_list(parent_record, expand_path) if self.merge_parent else None
+        )
 
         if truncated and self.truncated_list_retriever:
             # Streamed, so the shortfall is only known once the retriever is exhausted. If the
             # consumer stops early the fetch was cut short by it, not by the API, and no warning
             # would be accurate anyway.
             fetched_count = 0
-            for fetched in self._fetch_complete_list(parent_record):
+            for fetched in self._fetch_complete_list(parent_record, merge_base):
                 fetched_count += 1
                 yield fetched
             self._warn_if_fetch_incomplete(parent_record, expand_path, fetched_count)
@@ -288,13 +313,9 @@ class RecordExpander:
         for items in embedded_lists:
             for item in items:
                 if isinstance(item, dict):
-                    expanded_record = dict(item)
-                    self._apply_parent_context(parent_record, expanded_record)
-                    yield expanded_record
+                    yield self._apply_parent_context(parent_record, dict(item), merge_base)
                 elif self._carries_parent_context():
-                    wrapped: MutableMapping[str, Any] = {"value": item}
-                    self._apply_parent_context(parent_record, wrapped)
-                    yield wrapped
+                    yield self._apply_parent_context(parent_record, {"value": item}, merge_base)
                 else:
                     yield item
 
@@ -376,7 +397,9 @@ class RecordExpander:
         except (KeyError, ValueError):
             return False
 
-    def _fetch_complete_list(self, parent_record: Mapping[str, Any]) -> Iterable[Any]:
+    def _fetch_complete_list(
+        self, parent_record: Mapping[str, Any], merge_base: Optional[Mapping[str, Any]]
+    ) -> Iterable[Any]:
         if not self.truncated_list_retriever:
             return
         stream_slice = StreamSlice(partition={"parent_record": parent_record}, cursor_slice={})
@@ -394,24 +417,73 @@ class RecordExpander:
             else:
                 data = item
             if isinstance(data, Mapping):
-                expanded_record = dict(data)
-                self._apply_parent_context(parent_record, expanded_record)
-                yield expanded_record
+                yield self._apply_parent_context(parent_record, dict(data), merge_base)
             elif self._carries_parent_context():
-                wrapped: MutableMapping[str, Any] = {"value": data}
-                self._apply_parent_context(parent_record, wrapped)
-                yield wrapped
+                yield self._apply_parent_context(parent_record, {"value": data}, merge_base)
             else:
                 yield data
 
     def _apply_parent_context(
-        self, parent_record: Mapping[str, Any], child_record: MutableMapping[str, Any]
-    ) -> None:
-        """Apply parent context to a child record."""
-        if self.remain_original_record:
-            child_record["original_record"] = copy.deepcopy(parent_record)
+        self,
+        parent_record: Mapping[str, Any],
+        child_record: MutableMapping[str, Any],
+        merge_base: Optional[Mapping[str, Any]],
+    ) -> MutableMapping[str, Any]:
+        """Return the child record carrying the configured parent context.
+
+        The order is fixed: the parent is merged underneath the child first, then `parent_fields`
+        are copied on top, then `original_record` is embedded. A named copy can therefore
+        overwrite a merged value.
+        """
+        if merge_base is not None:
+            child_record = {**merge_base, **child_record}
         for parent_field in self.parent_fields or []:
             parent_field.copy_onto(parent_record, child_record)
+        if self.remain_original_record:
+            child_record["original_record"] = copy.deepcopy(parent_record)
+        return child_record
 
     def _carries_parent_context(self) -> bool:
-        return bool(self.remain_original_record or self.parent_fields)
+        return bool(self.remain_original_record or self.parent_fields or self.merge_parent)
+
+    @classmethod
+    def _without_expanded_list(
+        cls, parent_record: Mapping[str, Any], expand_path: list[Any]
+    ) -> Mapping[str, Any]:
+        """Copy of the parent with only the value at `expand_path` removed.
+
+        The containers on the way to the list are copied and the rest of the parent is shared,
+        so siblings of the list are kept and the parent itself is never mutated. Every match of
+        the path is removed, which covers glob paths that select several lists.
+        """
+        matched_paths = [
+            path
+            for path, _ in dpath.segments.walk(parent_record)  # type: ignore[no-untyped-call]
+            if dpath.segments.match(path, expand_path)
+        ]
+        stripped: Any = parent_record
+        # Deepest and right-most first, so removing a list element never shifts the index of a
+        # match still to be removed, and a match nested inside another match goes first.
+        for path in sorted(matched_paths, key=cls._path_sort_key, reverse=True):
+            stripped = cls._without_path(stripped, path)
+        return dict(stripped)
+
+    @staticmethod
+    def _path_sort_key(path: Sequence[Any]) -> list[tuple[int, Any]]:
+        # Integers and strings are not mutually comparable, so tag each segment by kind.
+        return [(0, segment) if isinstance(segment, int) else (1, str(segment)) for segment in path]
+
+    @classmethod
+    def _without_path(cls, container: Any, path: Sequence[Any]) -> Any:
+        head, rest = path[0], path[1:]
+        if isinstance(container, Mapping):
+            copied: Any = dict(container)
+        elif isinstance(container, list):
+            copied = list(container)
+        else:
+            return container
+        if rest:
+            copied[head] = cls._without_path(copied[head], rest)
+        else:
+            del copied[head]
+        return copied

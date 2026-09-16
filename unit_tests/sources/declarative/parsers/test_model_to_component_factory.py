@@ -2084,6 +2084,93 @@ def test_create_record_expander_without_parent_fields_leaves_them_unset():
     assert selector.extractor.record_expander.parent_fields is None
 
 
+def test_create_record_expander_with_merge_parent():
+    """The source-mailchimp `email_activity` shape: the parent flattened into each activity item."""
+    content = """
+    selector:
+      type: RecordSelector
+      extractor:
+        type: DpathExtractor
+        field_path: ["emails"]
+        record_expander:
+          type: RecordExpander
+          expand_records_from_field: ["activity"]
+          merge_parent: true
+    """
+    parsed_manifest = YamlDeclarativeSource._parse(content)
+    resolved_manifest = resolver.preprocess_manifest(parsed_manifest)
+    selector_manifest = transformer.propagate_types_and_parameters(
+        "", resolved_manifest["selector"], {}
+    )
+
+    selector = factory.create_component(
+        model_type=RecordSelectorModel,
+        name="test_stream",
+        component_definition=selector_manifest,
+        decoder=None,
+        transformations=[],
+        config=input_config,
+    )
+
+    expander = selector.extractor.record_expander
+    assert expander is not None
+    assert expander.merge_parent is True
+    assert expander.remain_original_record is False
+    assert expander.parent_fields is None
+
+    response = requests.Response()
+    response._content = json.dumps(
+        {
+            "emails": [
+                {
+                    "email_id": "e1",
+                    "list_id": "l1",
+                    "activity": [
+                        {"action": "open", "timestamp": "t1"},
+                        {"action": "click", "timestamp": "t2"},
+                    ],
+                },
+                {"email_id": "e2", "list_id": "l1", "activity": [{"action": "bounce"}]},
+            ]
+        }
+    ).encode("utf-8")
+
+    assert list(selector.extractor.extract_records(response)) == [
+        {"email_id": "e1", "list_id": "l1", "action": "open", "timestamp": "t1"},
+        {"email_id": "e1", "list_id": "l1", "action": "click", "timestamp": "t2"},
+        {"email_id": "e2", "list_id": "l1", "action": "bounce"},
+    ]
+
+
+def test_create_record_expander_without_merge_parent_defaults_to_false():
+    content = """
+    selector:
+      type: RecordSelector
+      extractor:
+        type: DpathExtractor
+        field_path: ["data"]
+        record_expander:
+          type: RecordExpander
+          expand_records_from_field: ["items"]
+    """
+    parsed_manifest = YamlDeclarativeSource._parse(content)
+    resolved_manifest = resolver.preprocess_manifest(parsed_manifest)
+    selector_manifest = transformer.propagate_types_and_parameters(
+        "", resolved_manifest["selector"], {}
+    )
+
+    selector = factory.create_component(
+        model_type=RecordSelectorModel,
+        name="test_stream",
+        component_definition=selector_manifest,
+        decoder=None,
+        transformations=[],
+        config=input_config,
+    )
+
+    assert selector.extractor.record_expander.merge_parent is False
+
+
 def test_create_record_expander_with_truncated_list_retriever():
     content = """
     selector:
