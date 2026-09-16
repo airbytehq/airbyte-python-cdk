@@ -4240,7 +4240,8 @@ definitions:
           Requires a DefaultPaginator that defines both page_size_option and a pagination strategy with a page_size.
           Cannot be combined with query properties, a file uploader, or a parent stream read lazily through
           lazy_read_pointer, because in those cases records of the failing page have already been emitted and
-          re-issuing the page would emit them twice.
+          re-issuing the page would emit them twice. A page_token_option of type RequestPath is rejected as
+          well, because the next page is then a URL built by the API which already carries the page size.
         "$ref": "#/definitions/PageSizeReduction"
       ignore_stream_slicer_parameters_on_paginated_requests:
         description: If true, the partition router and incremental request options will be ignored when paginating requests. Request options set directly on the requester will not be ignored.
@@ -4307,7 +4308,9 @@ definitions:
       next_page_token accepts a page_size_override keyword argument. PageIncrement is not supported because a
       smaller page size moves every following page boundary and would skip records. It is also rejected when the
       stream uses query properties, a file uploader, or reads its parent stream lazily through lazy_read_pointer,
-      since re-issuing a page whose records were already emitted would duplicate them. Each reduction waits a
+      since re-issuing a page whose records were already emitted would duplicate them. A page_token_option of
+      type RequestPath is rejected too: the next page is then a URL built by the API which already carries the
+      page size, so the reduced page size would be sent next to the original one. Each reduction waits a
       short, growing amount of time before re-issuing the page so that an endpoint failing at every page size
       is not hit in a burst.
     type: object
@@ -4352,6 +4355,18 @@ definitions:
         examples:
           - 5
           - 10
+      failure_message:
+        title: Failure Message
+        description: >-
+          Sentence appended to the error message shown to the user when the connector runs out of reductions,
+          either because max_attempts was reached or because the page size is already at minimum_page_size. Use
+          it to tell the user what they can do about it in terms of this specific API, for instance which
+          filter narrows the query down. Without it the message only states that the API kept rejecting every
+          page size the connector asked for.
+        type: string
+        examples:
+          - Narrow the sync down by selecting fewer fields on this stream.
+          - Set a more recent start date so that each page covers less data.
       reset_policy:
         title: Reset Policy
         description: >-

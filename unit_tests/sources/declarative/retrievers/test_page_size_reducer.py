@@ -284,3 +284,50 @@ def test_given_misconfiguration_then_message_names_the_stream_and_keeps_remediat
     assert exception.value.failure_type == FailureType.config_error
     assert A_STREAM_NAME in exception.value.message
     assert exception.value.message.rstrip().endswith(".")
+
+
+@pytest.mark.parametrize(
+    "reducer_kwargs,reductions",
+    [
+        pytest.param({"configured_page_size": 4, "minimum_page_size": 2}, 1, id="minimum_reached"),
+        pytest.param(
+            {"configured_page_size": 1000, "max_attempts": 2}, 2, id="max_attempts_exhausted"
+        ),
+    ],
+)
+def test_given_failure_message_when_reduction_fails_then_append_it(reducer_kwargs, reductions):
+    # The CDK only knows that the API rejected every page size it asked for; what narrows a query down is
+    # API-specific, so the connector supplies that sentence.
+    reducer = _reducer(failure_message="Select fewer fields on this stream.", **reducer_kwargs)
+    for _ in range(reductions):
+        reducer.reduce()
+
+    with pytest.raises(AirbyteTracedException) as exception:
+        reducer.reduce()
+
+    assert exception.value.failure_type == FailureType.transient_error
+    assert exception.value.message.endswith(" Select fewer fields on this stream.")
+
+
+def test_given_no_failure_message_when_reduction_fails_then_message_ends_with_the_cdk_sentence():
+    reducer = _reducer(configured_page_size=4, minimum_page_size=2)
+    reducer.reduce()
+
+    with pytest.raises(AirbyteTracedException) as exception:
+        reducer.reduce()
+
+    assert exception.value.message.endswith("records per page).")
+
+
+def test_given_failure_message_when_misconfigured_then_do_not_append_it():
+    # A `config_error` is about the manifest, not about the API rejecting a page size, so the connector's
+    # sentence about narrowing the query down would be misleading there.
+    reducer = _reducer(
+        configured_page_size=None, failure_message="Select fewer fields on this stream."
+    )
+
+    with pytest.raises(AirbyteTracedException) as exception:
+        reducer.reduce()
+
+    assert exception.value.failure_type == FailureType.config_error
+    assert "Select fewer fields" not in exception.value.message

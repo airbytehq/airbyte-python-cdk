@@ -1961,7 +1961,13 @@ _PAGE_SIZE_REDUCTION_MANIFEST = {
                         "inject_into": "request_parameter",
                         "field_name": "first",
                     },
-                    "page_token_option": {"type": "RequestPath"},
+                    # `page_size_reduction` rejects a RequestPath page token: the next-page URL built by the
+                    # API already carries the page size, so the reduced one would be sent next to it.
+                    "page_token_option": {
+                        "type": "RequestOption",
+                        "inject_into": "request_parameter",
+                        "field_name": "after",
+                    },
                     "pagination_strategy": {
                         "type": "CursorPagination",
                         "page_size": 100,

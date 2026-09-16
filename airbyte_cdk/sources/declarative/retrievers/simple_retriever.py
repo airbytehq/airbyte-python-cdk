@@ -91,7 +91,11 @@ class SimpleRetriever(Retriever):
         post_pagination_filter (Optional[ClientSideIncrementalRecordFilterDecorator]): Set for data feed streams only.
             Records the cursor considers already synced are dropped once pagination has observed them
         page_size_reduction (Optional[PageSizeReduction]): How much to shrink the page size when an error handler
-            resolves to `ResponseAction.REDUCE_PAGE_SIZE`. `None` disables page size reduction entirely
+            resolves to `ResponseAction.REDUCE_PAGE_SIZE`. `None` disables page size reduction entirely.
+            It is immutable configuration; the page size in effect lives in a `PageSizeReducer` that
+            `_read_pages` creates per call, so the retriever and its paginator - both shared by every
+            partition of the stream, read concurrently - stay stateless. When `page_size_reduction` is
+            `None` no reducer is created and `_read_pages` keeps its previous behaviour
     """
 
     requester: Requester

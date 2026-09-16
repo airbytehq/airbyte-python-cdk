@@ -1441,6 +1441,15 @@ class PageSizeReduction(BaseModel):
         ge=1,
         title="Maximum Reduction Attempts",
     )
+    failure_message: Optional[str] = Field(
+        None,
+        description="Sentence appended to the error message shown to the user when the connector runs out of reductions, either because max_attempts was reached or because the page size is already at minimum_page_size. Use it to tell the user what they can do about it in terms of this specific API, for instance which filter narrows the query down. Without it the message only states that the API kept rejecting every page size the connector asked for.",
+        examples=[
+            "Narrow the sync down by selecting fewer fields on this stream.",
+            "Set a more recent start date so that each page covers less data.",
+        ],
+        title="Failure Message",
+    )
     reset_policy: Optional[ResetPolicy] = Field(
         ResetPolicy.NEVER,
         description="When to restore the page size configured on the pagination strategy. NEVER keeps the reduced page size for the rest of the partition. AFTER_SUCCESSFUL_PAGE restores it as soon as one page succeeds, which means hitting the same error again on every page - use it only when the reduction is worth one extra request per page, for instance because the configured page size usually works and only some pages are too heavy. AFTER_SUCCESSFUL_PAGE also restarts the max_attempts budget on every page that succeeds, so there is no limit on how many reductions a partition may make in total: a stream that needs one reduction per page reads to the end however many pages it has. What is bounded is the reductions that get no page through.",
@@ -3262,7 +3271,7 @@ class SimpleRetriever(BaseModel):
     )
     page_size_reduction: Optional[PageSizeReduction] = Field(
         None,
-        description="Describes how the page size is reduced when an error handler resolves to the REDUCE_PAGE_SIZE action. Requires a DefaultPaginator that defines both page_size_option and a pagination strategy with a page_size. Cannot be combined with query properties, a file uploader, or a parent stream read lazily through lazy_read_pointer, because in those cases records of the failing page have already been emitted and re-issuing the page would emit them twice.",
+        description="Describes how the page size is reduced when an error handler resolves to the REDUCE_PAGE_SIZE action. Requires a DefaultPaginator that defines both page_size_option and a pagination strategy with a page_size. Cannot be combined with query properties, a file uploader, or a parent stream read lazily through lazy_read_pointer, because in those cases records of the failing page have already been emitted and re-issuing the page would emit them twice. A page_token_option of type RequestPath is rejected as well, because the next page is then a URL built by the API which already carries the page size.",
     )
     ignore_stream_slicer_parameters_on_paginated_requests: Optional[bool] = Field(
         False,

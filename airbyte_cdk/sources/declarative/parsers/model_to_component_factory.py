@@ -3755,6 +3755,7 @@ class ModelToComponentFactory:
             reduction_factor=model.page_size_reduction.reduction_factor,  # type: ignore[arg-type]  # the schema defines a default
             minimum_page_size=model.page_size_reduction.minimum_page_size,  # type: ignore[arg-type]  # the schema defines a default
             max_attempts=model.page_size_reduction.max_attempts,  # type: ignore[arg-type]  # the schema defines a default
+            failure_message=model.page_size_reduction.failure_message,
             reset_policy=PageSizeResetPolicy(reset_policy.value)
             if reset_policy is not None
             else PageSizeResetPolicy.NEVER,
@@ -3797,6 +3798,19 @@ class ModelToComponentFactory:
             raise ValueError(
                 f"`page_size_reduction` requires `page_size_option` on the paginator of stream {name}: without it "
                 f"the connector cannot tell the API to send a smaller page."
+            )
+
+        if isinstance(model.paginator.page_token_option, RequestPathModel):
+            # A RequestPath page token is a full URL built by the API, and it already carries the page size the
+            # API echoed back. The reduced page size is injected as a request option on top of that URL, so the
+            # request goes out with the page size twice - the original one from the URL and the reduced one -
+            # and which of the two the API honors is up to the API. Every page after the first would then keep
+            # asking for the page size that just failed.
+            raise ValueError(
+                f"`page_size_reduction` does not support a `page_token_option` of type RequestPath on stream "
+                f"{name}. The next page is then requested through a URL returned by the API, which already "
+                f"carries the page size, so the reduced page size would be sent alongside the original one. Use "
+                f"a CursorPagination strategy with a `page_token_option` of type RequestOption instead."
             )
 
         strategy = model.paginator.pagination_strategy

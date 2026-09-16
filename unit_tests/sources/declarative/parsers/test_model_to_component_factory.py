@@ -6462,6 +6462,7 @@ retriever:
     pagination_strategy:
       {pagination_strategy}
     {page_size_option}
+    {page_token_option}
   record_selector:
     type: RecordSelector
     extractor:
@@ -6483,12 +6484,14 @@ def _page_size_reduction_stream(
     action="REDUCE_PAGE_SIZE",
     pagination_strategy=_CURSOR_PAGINATION_STRATEGY,
     page_size_option=_PAGE_SIZE_OPTION,
+    page_token_option="",
 ):
     content = _PAGE_SIZE_REDUCTION_STREAM.format(
         page_size_reduction=page_size_reduction,
         action=action,
         pagination_strategy=pagination_strategy,
         page_size_option=page_size_option,
+        page_token_option=page_token_option,
     )
     stream_manifest = transformer.propagate_types_and_parameters(
         "", resolver.preprocess_manifest(YamlDeclarativeSource._parse(content)), {}
@@ -6556,6 +6559,44 @@ def test_given_no_page_size_option_and_page_size_reduction_then_raise():
         _page_size_reduction_stream(page_size_option="")
 
     assert "page_size_option" in str(exception.value)
+
+
+def test_given_request_path_page_token_option_and_page_size_reduction_then_raise():
+    # The next page is then a URL built by the API which already carries the page size it echoed back, so the
+    # reduced page size would be sent next to the original one and the API picks which one it honors.
+    with pytest.raises(ValueError) as exception:
+        _page_size_reduction_stream(page_token_option="page_token_option:\n      type: RequestPath")
+
+    assert "RequestPath" in str(exception.value)
+
+
+def test_given_request_option_page_token_option_and_page_size_reduction_then_create_retriever():
+    retriever = get_retriever(
+        _page_size_reduction_stream(
+            page_token_option=(
+                "page_token_option:\n"
+                "      type: RequestOption\n"
+                "      inject_into: request_parameter\n"
+                "      field_name: after"
+            )
+        )
+    )
+
+    assert retriever.page_size_reduction is not None
+
+
+def test_given_failure_message_then_create_retriever_with_that_message():
+    retriever = get_retriever(
+        _page_size_reduction_stream(
+            page_size_reduction=(
+                "page_size_reduction:\n"
+                "    type: PageSizeReduction\n"
+                "    failure_message: Select fewer fields on this stream."
+            )
+        )
+    )
+
+    assert retriever.page_size_reduction.failure_message == "Select fewer fields on this stream."
 
 
 class _StrategyHonoringOverride(PaginationStrategy):
@@ -7007,6 +7048,7 @@ def test_given_query_properties_and_page_size_reduction_then_raise():
         action="REDUCE_PAGE_SIZE",
         pagination_strategy=_CURSOR_PAGINATION_STRATEGY,
         page_size_option=_PAGE_SIZE_OPTION,
+        page_token_option="",
     ).replace(
         "    http_method: POST\n",
         "    http_method: POST\n"
@@ -7169,6 +7211,7 @@ def test_given_file_uploader_and_page_size_reduction_then_raise():
             action="REDUCE_PAGE_SIZE",
             pagination_strategy=_CURSOR_PAGINATION_STRATEGY,
             page_size_option=_PAGE_SIZE_OPTION,
+            page_token_option="",
         )
         + """file_uploader:
   type: FileUploader

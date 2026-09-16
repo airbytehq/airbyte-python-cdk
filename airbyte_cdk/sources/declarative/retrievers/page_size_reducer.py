@@ -30,6 +30,10 @@ class PageSizeReduction:
     minimum_page_size: int = 1
     max_attempts: int = 5
     reset_policy: PageSizeResetPolicy = PageSizeResetPolicy.NEVER
+    # Appended to the two messages raised once the page size cannot be reduced any further. Those are
+    # `transient_error`s the CDK has no remediation for - it only knows that the API rejected every page size
+    # asked for - while the connector knows what narrows a query down on this particular API.
+    failure_message: Optional[str] = None
 
     def __post_init__(self) -> None:
         if self.reduction_factor <= 1:
@@ -121,8 +125,11 @@ class PageSizeReducer:
             # has; a partition where nothing gets through burns the budget and fails here.
             raise AirbyteTracedException(
                 internal_message=f"Stream {self._stream_name} reduced its page size {self._attempts - 1} times in a row without a single page succeeding, which is the configured maximum of {self._config.max_attempts} ({self._total_reductions - 1} reductions so far while reading this partition)",
-                # `transient_error`, so no remediation: the sync has nothing for the user to act on.
-                message=f"The source keeps rejecting pages of stream {self._stream_name} at every page size the connector requested, down to {current_page_size} records per page.",
+                # `transient_error`, so the only remediation is the connector's own, if it defined one.
+                message=self._with_failure_message(
+                    f"The source keeps rejecting pages of stream {self._stream_name} at every page size the "
+                    f"connector requested, down to {current_page_size} records per page."
+                ),
                 failure_type=FailureType.transient_error,
             )
 
@@ -144,9 +151,11 @@ class PageSizeReducer:
                 )
             raise AirbyteTracedException(
                 internal_message=f"Stream {self._stream_name} still fails with a page size of {current_page_size}, which is the smallest page size allowed by the configured minimum of {self._config.minimum_page_size}",
-                # `transient_error`, so no remediation: the sync has nothing for the user to act on.
-                message=f"The source keeps rejecting pages of stream {self._stream_name} at the smallest page size the "
-                f"connector is allowed to request ({current_page_size} records per page).",
+                # `transient_error`, so the only remediation is the connector's own, if it defined one.
+                message=self._with_failure_message(
+                    f"The source keeps rejecting pages of stream {self._stream_name} at the smallest page size "
+                    f"the connector is allowed to request ({current_page_size} records per page)."
+                ),
                 failure_type=FailureType.transient_error,
             )
 
@@ -157,6 +166,15 @@ class PageSizeReducer:
         )
         self._current_page_size = reduced_page_size
         self._sleep(backoff)
+
+    def _with_failure_message(self, message: str) -> str:
+        """
+        :return: the message followed by the connector's `failure_message`, when it defined one
+        """
+        failure_message = (self._config.failure_message or "").strip()
+        if not failure_message:
+            return message
+        return f"{message} {failure_message}"
 
     def on_successful_page(self) -> None:
         """
