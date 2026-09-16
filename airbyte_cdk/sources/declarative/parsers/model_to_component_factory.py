@@ -795,6 +795,7 @@ class ModelToComponentFactory:
             DpathExtractorModel: self.create_dpath_extractor,
             DpathValidatorModel: self.create_dpath_validator,
             NestedRecordExtractorModel: self.create_nested_record_extractor,
+            ParentFieldPathModel: self.create_parent_field_path,
             ResponseToFileExtractorModel: self.create_response_to_file_extractor,
             ExponentialBackoffStrategyModel: self.create_exponential_backoff_strategy,
             SessionTokenAuthenticatorModel: self.create_session_token_authenticator,
@@ -2431,13 +2432,34 @@ class ModelToComponentFactory:
             parameters=model.parameters or {},
         )
 
+    @staticmethod
+    def _extractor_model_for_page_size(
+        extractor_model: Optional[
+            Union[CustomRecordExtractorModel, DpathExtractorModel, NestedRecordExtractorModel]
+        ],
+    ) -> Optional[Union[CustomRecordExtractorModel, DpathExtractorModel]]:
+        """
+        Resolve the extractor a pagination strategy should count with.
+
+        `OffsetIncrement` and `PageIncrement` advance by the number of records the response held, so
+        the count has to be over the items the API's `offset`/`page` addresses. A
+        `NestedRecordExtractor` emits one record per element of a nested collection, so counting with
+        it over-advances the offset and skips records; the collection the API paginates is the one
+        its innermost `parent_extractor` reads.
+        """
+        while isinstance(extractor_model, NestedRecordExtractorModel):
+            extractor_model = extractor_model.parent_extractor
+        return extractor_model
+
     def create_default_paginator(
         self,
         model: DefaultPaginatorModel,
         config: Config,
         *,
         url_base: str,
-        extractor_model: Optional[Union[CustomRecordExtractorModel, DpathExtractorModel]] = None,
+        extractor_model: Optional[
+            Union[CustomRecordExtractorModel, DpathExtractorModel, NestedRecordExtractorModel]
+        ] = None,
         decoder: Optional[Decoder] = None,
         cursor_used_for_stop_condition: Optional[Cursor] = None,
     ) -> Union[DefaultPaginator, PaginatorTestReadDecorator]:
@@ -2462,7 +2484,7 @@ class ModelToComponentFactory:
             model=model.pagination_strategy,
             config=config,
             decoder=decoder_to_use,
-            extractor_model=extractor_model,
+            extractor_model=self._extractor_model_for_page_size(extractor_model),
         )
         if cursor_used_for_stop_condition:
             pagination_strategy = StopConditionPaginationStrategyDecorator(
@@ -2523,6 +2545,7 @@ class ModelToComponentFactory:
             config=config,
             decoder=decoder,
         )
+        self._reject_wildcard_path(model.child_field_path, "child_field_path")
         model_child_field_path: List[Union[InterpolatedString, str]] = [
             x for x in model.child_field_path
         ]
@@ -2542,12 +2565,28 @@ class ModelToComponentFactory:
         )
 
     @staticmethod
+    def _reject_wildcard_path(path: List[str], field_name: str) -> None:
+        """
+        Reject a literal `*` in a `NestedRecordExtractor` path, which the schema documents as
+        unsupported. Rejecting at parse time is what `lazy_read_pointer` does, and it turns a
+        data-dependent read-time failure into an error raised before the first request. A `*` that
+        arrives through interpolation is caught by the component itself.
+        """
+        if any("*" in segment for segment in path):
+            raise ValueError(
+                f"The '*' wildcard in a NestedRecordExtractor '{field_name}' is not supported — only direct paths are allowed. "
+                f"Flatten across several collections in the 'parent_extractor' instead."
+            )
+
+    @staticmethod
     def create_parent_field_path(
         model: ParentFieldPathModel,
         config: Config,
         parameters: Optional[Mapping[str, Any]] = None,
         **kwargs: Any,
     ) -> ParentFieldPath:
+        ModelToComponentFactory._reject_wildcard_path(model.parent_path, "parent_path")
+        ModelToComponentFactory._reject_wildcard_path(model.record_path, "record_path")
         model_parent_path: List[Union[InterpolatedString, str]] = [x for x in model.parent_path]
         model_record_path: List[Union[InterpolatedString, str]] = [x for x in model.record_path]
         return ParentFieldPath(
@@ -3128,7 +3167,9 @@ class ModelToComponentFactory:
         model: OffsetIncrementModel,
         config: Config,
         decoder: Decoder,
-        extractor_model: Optional[Union[CustomRecordExtractorModel, DpathExtractorModel]] = None,
+        extractor_model: Optional[
+            Union[CustomRecordExtractorModel, DpathExtractorModel, NestedRecordExtractorModel]
+        ] = None,
         **kwargs: Any,
     ) -> OffsetIncrement:
         if isinstance(decoder, PaginationDecoderDecorator):
@@ -3177,7 +3218,9 @@ class ModelToComponentFactory:
         model: PageIncrementModel,
         config: Config,
         decoder: Optional[Decoder] = None,
-        extractor_model: Optional[Union[CustomRecordExtractorModel, DpathExtractorModel]] = None,
+        extractor_model: Optional[
+            Union[CustomRecordExtractorModel, DpathExtractorModel, NestedRecordExtractorModel]
+        ] = None,
         **kwargs: Any,
     ) -> PageIncrement:
         # Like OffsetIncrement, we instantiate a separate extractor with identical behavior to the

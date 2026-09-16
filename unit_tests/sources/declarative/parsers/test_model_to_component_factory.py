@@ -2189,6 +2189,155 @@ def test_nested_record_extractor_forwards_the_decoder_to_its_parent_extractor():
 
 
 @pytest.mark.parametrize(
+    "child_field_path, parent_fields, expected_field",
+    [
+        pytest.param('["a", "*", "n"]', "", "child_field_path", id="child_field_path"),
+        pytest.param(
+            '["children"]',
+            """
+        parent_fields:
+          - parent_path: ["a", "*"]
+            record_path: ["v"]""",
+            "parent_path",
+            id="parent_path",
+        ),
+        pytest.param(
+            '["children"]',
+            """
+        parent_fields:
+          - parent_path: ["a"]
+            record_path: ["*"]""",
+            "record_path",
+            id="record_path",
+        ),
+    ],
+)
+def test_create_nested_record_extractor_rejects_the_wildcard(
+    child_field_path, parent_fields, expected_field
+):
+    content = f"""
+    selector:
+      type: RecordSelector
+      extractor:
+        type: NestedRecordExtractor
+        parent_extractor:
+          type: DpathExtractor
+          field_path: ["data"]
+        child_field_path: {child_field_path}{parent_fields}
+    """
+    parsed_manifest = YamlDeclarativeSource._parse(content)
+    resolved_manifest = resolver.preprocess_manifest(parsed_manifest)
+    selector_manifest = transformer.propagate_types_and_parameters(
+        "", resolved_manifest["selector"], {}
+    )
+
+    # A wildcard fails on the data rather than the manifest — one match resolves and two do not —
+    # so it is rejected before the first request instead.
+    with pytest.raises(ValueError, match=expected_field):
+        factory.create_component(
+            model_type=RecordSelectorModel,
+            name="test_stream",
+            component_definition=selector_manifest,
+            decoder=None,
+            transformations=[],
+            config=input_config,
+        )
+
+
+def test_nested_record_extractor_paginates_over_parents_not_children():
+    content = """
+    retriever:
+      type: SimpleRetriever
+      requester:
+        type: HttpRequester
+        url_base: "https://example.com"
+        path: "/"
+      record_selector:
+        type: RecordSelector
+        extractor:
+          type: NestedRecordExtractor
+          parent_extractor:
+            type: NestedRecordExtractor
+            parent_extractor:
+              type: DpathExtractor
+              field_path: ["data"]
+            child_field_path: ["reviews"]
+          child_field_path: ["comments"]
+      paginator:
+        type: DefaultPaginator
+        pagination_strategy:
+          type: OffsetIncrement
+          page_size: 2
+        page_token_option:
+          type: RequestOption
+          field_name: "offset"
+          inject_into: "request_parameter"
+    """
+    parsed_manifest = YamlDeclarativeSource._parse(content)
+    resolved_manifest = resolver.preprocess_manifest(parsed_manifest)
+    retriever_manifest = transformer.propagate_types_and_parameters(
+        "", resolved_manifest["retriever"], {}
+    )
+
+    retriever = factory.create_component(
+        model_type=SimpleRetrieverModel,
+        component_definition=retriever_manifest,
+        config=input_config,
+        name="test_stream",
+        primary_key=None,
+        stream_slicer=None,
+        request_options_provider=None,
+        transformations=[],
+    )
+
+    # `OffsetIncrement` advances by the number of records the response held, so it has to count the
+    # items the API's `offset` addresses. Counting with the `NestedRecordExtractor` counts the
+    # nested collection instead, which over-advances the offset and skips records.
+    strategy = retriever.paginator.pagination_strategy
+    assert isinstance(strategy.extractor, DpathExtractor)
+
+    response = requests.Response()
+    response.raw = io.BytesIO(
+        json.dumps(
+            {
+                "data": [
+                    {"reviews": [{"comments": [{"id": 1}, {"id": 2}, {"id": 3}]}]},
+                    {"reviews": [{"comments": [{"id": 4}]}]},
+                ]
+            }
+        ).encode("utf-8")
+    )
+
+    assert (
+        strategy.next_page_token(
+            response=response, last_page_size=0, last_record=None, last_page_token_value=0
+        )
+        == 2
+    )
+
+
+def test_nested_record_extractor_accepts_a_class_name_only_parent_extractor():
+    content = """
+    selector:
+      type: RecordSelector
+      extractor:
+        type: NestedRecordExtractor
+        parent_extractor:
+          class_name: unit_tests.sources.declarative.parsers.testing_components.TestingSomeComponent
+        child_field_path: ["children"]
+    """
+    parsed_manifest = YamlDeclarativeSource._parse(content)
+    resolved_manifest = resolver.preprocess_manifest(parsed_manifest)
+    selector_manifest = transformer.propagate_types_and_parameters(
+        "", resolved_manifest["selector"], {}
+    )
+
+    # `RecordSelector.extractor` is in `CUSTOM_COMPONENTS_MAPPING`, so a custom extractor declared
+    # with only a `class_name` works as a stream extractor. It has to keep working when wrapped.
+    assert selector_manifest["extractor"]["parent_extractor"]["type"] == "CustomRecordExtractor"
+
+
+@pytest.mark.parametrize(
     "test_name, error_handler, expected_backoff_strategy_type",
     [
         (

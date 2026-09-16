@@ -510,14 +510,14 @@ class HttpRequestRegexMatcher(BaseModel):
 class ParentFieldPath(BaseModel):
     parent_path: List[str] = Field(
         ...,
-        description="List of potentially nested fields describing the full path of the field to read on the parent record.",
+        description='List of potentially nested fields describing the full path of the field to read on the parent record. The "*" wildcard is not supported and is rejected rather than read as a field name.',
         examples=[["url"], ["id"], ["author", "login"]],
         min_items=1,
         title="Parent Path",
     )
     record_path: List[str] = Field(
         ...,
-        description="List of potentially nested fields describing where to write the value on the extracted record. Intermediate objects are created as needed.",
+        description="List of potentially nested fields describing where to write the value on the extracted record. Intermediate objects are created as needed, and an intermediate that is present but is not an object is replaced by one. Every segment is an object key, so a numeric segment does not create a list.",
         examples=[["pull_request_url"], ["comment_id"], ["parent", "id"]],
         min_items=1,
         title="Record Path",
@@ -2538,12 +2538,12 @@ class NestedRecordExtractor(BaseModel):
     type: Literal["NestedRecordExtractor"]
     parent_extractor: Union[DpathExtractor, NestedRecordExtractor, CustomRecordExtractor] = Field(
         ...,
-        description="Extractor producing the records that contain the nested collection. Nest another NestedRecordExtractor here to reach a collection more than one level down, or to copy fields from more than one ancestor.",
+        description="Extractor producing the records that contain the nested collection. Nest another NestedRecordExtractor here to reach a collection more than one level down, or to copy fields from more than one ancestor. The type is required here, because this field accepts a NestedRecordExtractor as readily as a DpathExtractor.",
         title="Parent Extractor",
     )
     child_field_path: List[str] = Field(
         ...,
-        description='List of potentially nested fields describing the full path of the nested collection on each parent record. The collection may be a list or a single object. A path that does not resolve yields no records. The "*" wildcard is not supported here; flatten across several collections in the parent extractor instead.',
+        description='List of potentially nested fields describing the full path of the nested collection on each parent record. The collection may be a list or a single object. A path that does not resolve yields no records. The "*" wildcard is not supported and is rejected rather than read as a field name; flatten across several collections in the parent extractor instead. Every other character addresses the field that spells it.',
         examples=[
             ["reviews", "nodes"],
             ["comments"],
@@ -2554,7 +2554,17 @@ class NestedRecordExtractor(BaseModel):
     )
     parent_fields: Optional[List[ParentFieldPath]] = Field(
         None,
-        description="Fields to copy from the parent record onto every record extracted from the nested collection. A parent path that is absent on the parent copies null, and a key already present on the child record is overwritten.",
+        description="Fields to copy from the parent record onto every record extracted from the nested collection. A parent path that is absent on the parent, or that runs into a null, copies null; one that runs into a value holding no such field fails the sync rather than copying null silently. A key already present on the child record is overwritten.",
+        examples=[
+            [{"parent_path": ["url"], "record_path": ["pull_request_url"]}],
+            [
+                {"parent_path": ["id"], "record_path": ["pull_request_id"]},
+                {
+                    "parent_path": ["author", "login"],
+                    "record_path": ["pull_request_author"],
+                },
+            ],
+        ],
         title="Parent Fields",
     )
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")

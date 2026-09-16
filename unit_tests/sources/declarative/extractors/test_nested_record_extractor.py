@@ -1,19 +1,23 @@
 #
-# Copyright (c) 2025 Airbyte, Inc., all rights reserved.
+# Copyright (c) 2026 Airbyte, Inc., all rights reserved.
 #
 import io
 import json
+import logging
+from types import MappingProxyType
 from typing import Any, Dict, Iterable, List, Mapping, MutableMapping, Union
 
 import pytest
 import requests
 
+from airbyte_cdk.models import FailureType
 from airbyte_cdk.sources.declarative.extractors.dpath_extractor import DpathExtractor
 from airbyte_cdk.sources.declarative.extractors.nested_record_extractor import (
     NestedRecordExtractor,
     ParentFieldPath,
 )
 from airbyte_cdk.sources.declarative.extractors.record_extractor import RecordExtractor
+from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 
 config = {"child_connection": "reviews"}
 
@@ -355,106 +359,8 @@ def test_nested_parent_extractor():
 
 
 # ---------------------------------------------------------------------------------------------
-# The two source-github shapes, end to end.
-#
-# Both come from `NestedGraphQLRecordExtractor` and `DeepNestedGraphQLRecordExtractor` in
-# airbyte-integrations/connectors/source-github/source_github/components.py on the unmerged
-# branch tolik0/source-github/graphql-streams.
+# A realistic GraphQL document, end to end, and the deepest nesting the component supports.
 # ---------------------------------------------------------------------------------------------
-
-REVIEWS_LISTING_RESPONSE = {
-    "data": {
-        "repository": {
-            "name": "airbyte",
-            "owner": {"login": "airbytehq"},
-            "pullRequests": {
-                "pageInfo": {"hasNextPage": False, "endCursor": "Y3Vy"},
-                "nodes": [
-                    {
-                        "number": 1,
-                        "url": "https://github.com/airbytehq/airbyte/pull/1",
-                        "reviews": {
-                            "pageInfo": {"hasNextPage": False, "endCursor": None},
-                            "nodes": [
-                                {"id": "PRR_1", "state": "APPROVED"},
-                                {"id": "PRR_2", "state": "COMMENTED"},
-                            ],
-                        },
-                    },
-                    {
-                        "number": 2,
-                        "url": "https://github.com/airbytehq/airbyte/pull/2",
-                        "reviews": {"pageInfo": {"hasNextPage": False}, "nodes": []},
-                    },
-                ],
-            },
-        }
-    }
-}
-
-REVIEWS_DRILLDOWN_RESPONSE = {
-    "data": {
-        "repository": {
-            "name": "airbyte",
-            "owner": {"login": "airbytehq"},
-            "pullRequest": {
-                "number": 1,
-                "url": "https://github.com/airbytehq/airbyte/pull/1",
-                "reviews": {
-                    "pageInfo": {"hasNextPage": False, "endCursor": None},
-                    "nodes": [{"id": "PRR_3", "state": "APPROVED"}],
-                },
-            },
-        }
-    }
-}
-
-
-def reviews_extractor(*parent_field_path: str) -> NestedRecordExtractor:
-    return nested(
-        dpath(*parent_field_path),
-        ["reviews", "nodes"],
-        [{"parent_path": ["url"], "record_path": ["pull_request_url"]}],
-    )
-
-
-def test_source_github_reviews_listing_document():
-    records = list(
-        reviews_extractor("data", "repository", "pullRequests", "nodes").extract_records(
-            create_response(REVIEWS_LISTING_RESPONSE)
-        )
-    )
-
-    assert records == [
-        {
-            "id": "PRR_1",
-            "state": "APPROVED",
-            "pull_request_url": "https://github.com/airbytehq/airbyte/pull/1",
-        },
-        {
-            "id": "PRR_2",
-            "state": "COMMENTED",
-            "pull_request_url": "https://github.com/airbytehq/airbyte/pull/1",
-        },
-    ]
-
-
-def test_source_github_reviews_drilldown_document():
-    # `pullRequest` is a single object, not a connection. `DpathExtractor` wraps it into a
-    # one-element list, so the same `child_field_path` works against both documents.
-    records = list(
-        reviews_extractor("data", "repository", "pullRequest").extract_records(
-            create_response(REVIEWS_DRILLDOWN_RESPONSE)
-        )
-    )
-
-    assert records == [
-        {
-            "id": "PRR_3",
-            "state": "APPROVED",
-            "pull_request_url": "https://github.com/airbytehq/airbyte/pull/1",
-        }
-    ]
 
 
 def _reaction(identifier: str) -> Dict[str, Any]:
@@ -487,23 +393,64 @@ def _pull_request(number: int, *reviews: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def reactions_extractor(parent_extractor: RecordExtractor) -> NestedRecordExtractor:
-    return nested(
-        parent_extractor,
-        ["reactions", "nodes"],
-        [{"parent_path": ["id"], "record_path": ["comment_id"]}],
-    )
-
-
-def test_source_github_reactions_from_repository_listing_root():
-    # `data.repository.pullRequests.nodes[*].reviews.nodes[*].comments.nodes[*].reactions.nodes[*]`.
-    # Three nested levels reach the comment, and only the last hop needs the parent kept in scope.
+def test_graphql_connection_document():
+    # A connection: `nodes` is a list, and the sibling `pageInfo` is not a record.
     response = create_response(
         {
             "data": {
                 "repository": {
-                    "name": "airbyte",
-                    "owner": {"login": "airbytehq"},
+                    "pullRequests": {
+                        "pageInfo": {"hasNextPage": False, "endCursor": "Y3Vy"},
+                        "nodes": [
+                            {
+                                "number": 1,
+                                "url": "https://github.com/airbytehq/airbyte/pull/1",
+                                "reviews": {
+                                    "pageInfo": {"hasNextPage": False},
+                                    "nodes": [
+                                        {"id": "PRR_1", "state": "APPROVED"},
+                                        {"id": "PRR_2", "state": "COMMENTED"},
+                                    ],
+                                },
+                            },
+                            {
+                                "number": 2,
+                                "url": "https://github.com/airbytehq/airbyte/pull/2",
+                                "reviews": {"pageInfo": {"hasNextPage": False}, "nodes": []},
+                            },
+                        ],
+                    }
+                }
+            }
+        }
+    )
+    extractor = nested(
+        dpath("data", "repository", "pullRequests", "nodes"),
+        ["reviews", "nodes"],
+        [{"parent_path": ["url"], "record_path": ["pull_request_url"]}],
+    )
+
+    assert list(extractor.extract_records(response)) == [
+        {
+            "id": "PRR_1",
+            "state": "APPROVED",
+            "pull_request_url": "https://github.com/airbytehq/airbyte/pull/1",
+        },
+        {
+            "id": "PRR_2",
+            "state": "COMMENTED",
+            "pull_request_url": "https://github.com/airbytehq/airbyte/pull/1",
+        },
+    ]
+
+
+def test_three_levels_of_nesting():
+    # `...pullRequests.nodes[*].reviews.nodes[*].comments.nodes[*].reactions.nodes[*]`. Three
+    # `NestedRecordExtractor`s reach the comment, and only the last hop keeps a parent in scope.
+    response = create_response(
+        {
+            "data": {
+                "repository": {
                     "pullRequests": {
                         "pageInfo": {"hasNextPage": False},
                         "nodes": [
@@ -514,16 +461,18 @@ def test_source_github_reactions_from_repository_listing_root():
                             ),
                             _pull_request(2),
                         ],
-                    },
+                    }
                 }
             }
         }
     )
-    extractor = reactions_extractor(
+    extractor = nested(
         nested(
             nested(dpath("data", "repository", "pullRequests", "nodes"), ["reviews", "nodes"]),
             ["comments", "nodes"],
-        )
+        ),
+        ["reactions", "nodes"],
+        [{"parent_path": ["id"], "record_path": ["comment_id"]}],
     )
 
     assert [
@@ -534,109 +483,417 @@ def test_source_github_reactions_from_repository_listing_root():
     ]
 
 
-def test_source_github_reactions_from_pull_request_node_root():
+# ---------------------------------------------------------------------------------------------
+# Copied values are never shared between records.
+# ---------------------------------------------------------------------------------------------
+
+
+def test_copied_object_is_not_shared_between_records():
+    # Sharing one object across the collection means a later transformation writing into it rewrites
+    # records that were already emitted — they are queued unserialized downstream.
     response = create_response(
         {
-            "data": {
-                "node": {
-                    "__typename": "PullRequest",
-                    "repository": {"name": "airbyte", "owner": {"login": "airbytehq"}},
-                    **_pull_request(1, _review("PRR_1", _comment("PRRC_1", "RE_1"))),
+            "data": [
+                {
+                    "author": {"login": "octocat"},
+                    "children": [{"id": "c1"}, {"id": "c2"}, {"id": "c3"}],
                 }
-            }
+            ]
         }
     )
-    extractor = reactions_extractor(
-        nested(nested(dpath("data", "node"), ["reviews", "nodes"]), ["comments", "nodes"])
+    extractor = nested(
+        dpath("data"),
+        ["children"],
+        [{"parent_path": ["author"], "record_path": ["author"]}],
     )
 
-    assert [
-        (record["id"], record["comment_id"]) for record in extractor.extract_records(response)
-    ] == [("RE_1", "PRRC_1")]
+    records = list(extractor.extract_records(response))
+    assert records[0]["author"] is not records[1]["author"]
+
+    # What a downstream `AddFields` writing `["author", "child_id"]` would do.
+    for record in records:
+        record["author"]["child_id"] = record["id"]
+    assert [record["author"]["child_id"] for record in records] == ["c1", "c2", "c3"]
 
 
-def test_source_github_reactions_from_review_node_root():
+def test_copied_list_is_not_shared_between_records():
     response = create_response(
-        {
-            "data": {
-                "node": {
-                    "__typename": "PullRequestReview",
-                    "repository": {"name": "airbyte", "owner": {"login": "airbytehq"}},
-                    **_review("PRR_1", _comment("PRRC_1", "RE_1"), _comment("PRRC_2", "RE_2")),
-                }
-            }
-        }
+        {"data": [{"labels": ["bug"], "children": [{"id": "c1"}, {"id": "c2"}]}]}
     )
-    extractor = reactions_extractor(nested(dpath("data", "node"), ["comments", "nodes"]))
+    extractor = nested(
+        dpath("data"), ["children"], [{"parent_path": ["labels"], "record_path": ["labels"]}]
+    )
 
-    assert [
-        (record["id"], record["comment_id"]) for record in extractor.extract_records(response)
-    ] == [
-        ("RE_1", "PRRC_1"),
-        ("RE_2", "PRRC_2"),
-    ]
+    records = list(extractor.extract_records(response))
+    assert records[0]["labels"] is not records[1]["labels"]
+
+    records[0]["labels"].append("added")
+    assert records[1]["labels"] == ["bug"]
 
 
-def test_source_github_reactions_from_comment_node_root():
+def test_copied_scalar_is_not_copied():
+    # Scalars are immutable, so every child shares the parent's object. Nothing can observe the
+    # difference, and copying per child would be the extractor's per-record cost for nothing.
+    response = create_response({"data": [{"url": "u", "children": [{"id": "c1"}, {"id": "c2"}]}]})
+    extractor = nested(
+        dpath("data"), ["children"], [{"parent_path": ["url"], "record_path": ["url"]}]
+    )
+
+    records = list(extractor.extract_records(response))
+    assert records[0]["url"] is records[1]["url"]
+
+
+def test_copied_object_is_not_shared_with_the_parent():
+    parent = {"author": {"login": "octocat"}, "children": [{"id": "c1"}]}
+    extractor = nested(
+        CountingExtractor([parent]),
+        ["children"],
+        [{"parent_path": ["author"], "record_path": ["author"]}],
+    )
+
+    record = next(iter(extractor.extract_records(create_response({}))))
+    record["author"]["login"] = "rewritten"
+    assert parent["author"] == {"login": "octocat"}
+
+
+# ---------------------------------------------------------------------------------------------
+# The parent is read once per parent, not once per child.
+# ---------------------------------------------------------------------------------------------
+
+
+class RecordingMapping(Dict[str, Any]):
+    """A record that counts how many times each of its keys has been read."""
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self.reads: List[str] = []
+
+    def __getitem__(self, key: str) -> Any:
+        self.reads.append(key)
+        return super().__getitem__(key)
+
+
+def test_parent_is_read_once_per_parent():
+    # Reading the parent per child makes the extractor quadratic in the size of the collection,
+    # because each read walks a parent that contains that collection.
+    parent = RecordingMapping(
+        {"id": "p1", "children": [{"id": f"c{index}"} for index in range(25)]}
+    )
+    extractor = nested(
+        CountingExtractor([parent]),
+        ["children"],
+        [
+            {"parent_path": ["id"], "record_path": ["parent_id"]},
+            {"parent_path": ["id"], "record_path": ["also_parent_id"]},
+        ],
+    )
+
+    records = list(extractor.extract_records(create_response({})))
+
+    assert len(records) == 25
+    # One read per `parent_fields` entry, plus the one that resolves `child_field_path`.
+    assert parent.reads == ["id", "id", "children"]
+
+
+# ---------------------------------------------------------------------------------------------
+# `record_path` writes, including over a segment that is already taken.
+# ---------------------------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "child,expected",
+    [
+        pytest.param({"i": 1}, {"i": 1, "parent": {"id": "p1"}}, id="absent"),
+        pytest.param(
+            {"parent": {"other": 1}},
+            {"parent": {"other": 1, "id": "p1"}},
+            id="existing_object_is_merged_into",
+        ),
+        pytest.param({"parent": 7}, {"parent": {"id": "p1"}}, id="scalar_is_replaced"),
+        pytest.param({"parent": [{"a": 1}]}, {"parent": {"id": "p1"}}, id="list_is_replaced"),
+        pytest.param({"parent": None}, {"parent": {"id": "p1"}}, id="null_is_replaced"),
+    ],
+)
+def test_nested_record_path_over_an_existing_key(child, expected):
+    # The documented "a key already present on the child is overwritten" holds for a nested
+    # `record_path` too: an intermediate that is not an object is replaced by one.
+    response = create_response({"data": [{"id": "p1", "children": [child]}]})
+    extractor = nested(
+        dpath("data"),
+        ["children"],
+        [{"parent_path": ["id"], "record_path": ["parent", "id"]}],
+    )
+
+    assert list(extractor.extract_records(response)) == [expected]
+
+
+def test_numeric_record_path_segment_creates_an_object():
+    # Every segment is an object key. A numeric segment creating a list would emit an array where
+    # the declared schema says object.
+    response = create_response({"data": [{"id": "p1", "children": [{"id": "c1"}]}]})
+    extractor = nested(
+        dpath("data"), ["children"], [{"parent_path": ["id"], "record_path": ["hist", "0"]}]
+    )
+
+    assert list(extractor.extract_records(response)) == [{"id": "c1", "hist": {"0": "p1"}}]
+
+
+# ---------------------------------------------------------------------------------------------
+# Paths that cannot address a field are rejected rather than read as field names.
+# ---------------------------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "child_field_path,parent_fields",
+    [
+        pytest.param(["a", "*", "n"], None, id="child_field_path"),
+        pytest.param(
+            ["children"], [{"parent_path": ["a", "*"], "record_path": ["v"]}], id="parent_path"
+        ),
+        pytest.param(
+            ["children"], [{"parent_path": ["a"], "record_path": ["*"]}], id="record_path"
+        ),
+    ],
+)
+def test_wildcard_in_a_path_is_rejected(child_field_path, parent_fields):
+    # The wildcard fails on the data rather than the manifest: a body with one match under `a`
+    # would work, and the next page with two would not. It is rejected outright instead.
     response = create_response(
-        {
-            "data": {
-                "node": {
-                    "__typename": "PullRequestReviewComment",
-                    "repository": {"name": "airbyte", "owner": {"login": "airbytehq"}},
-                    **_comment("PRRC_1", "RE_1", "RE_2"),
-                }
-            }
-        }
+        {"data": [{"a": {"x": {"n": 1}}, "children": [{"id": "c1"}]}]},
     )
-    extractor = reactions_extractor(dpath("data", "node"))
+    extractor = nested(dpath("data"), child_field_path, parent_fields)
 
-    assert [
-        (record["id"], record["comment_id"]) for record in extractor.extract_records(response)
-    ] == [
-        ("RE_1", "PRRC_1"),
-        ("RE_2", "PRRC_1"),
-    ]
+    with pytest.raises(AirbyteTracedException) as exception_info:
+        list(extractor.extract_records(response))
+
+    assert exception_info.value.failure_type == FailureType.config_error
+    assert "'*' wildcard" in str(exception_info.value.internal_message)
 
 
-def test_typename_dispatch_equivalence_is_query_dependent():
-    """Pin why the `__typename` dispatch in `DeepNestedGraphQLRecordExtractor` is not redundant.
-
-    Expressing the four reaction roots as four separate `NestedRecordExtractor` chains looks
-    equivalent to dispatching on `__typename`, because a `PullRequestReview` has no `reviews` field
-    and a `PullRequest` has no `comments` field *in the documents source-github actually sends*.
-    `PullRequest.comments` is a real GraphQL connection though, so the equivalence holds only
-    because the drill-down documents do not select it.
-
-    A path-based extractor is purely structural: given a node that carries both `reviews` and
-    `comments`, the `PullRequest`-rooted chain still only walks `reviews.nodes.comments.nodes`, and
-    a chain rooted at `comments.nodes` would walk the top-level `comments` instead. A future reader
-    changing the query to select `PullRequest.comments` has to add a root, not rely on this holding.
-    """
-    node = {
-        "__typename": "PullRequest",
-        **_pull_request(1, _review("PRR_1", _comment("PRRC_review", "RE_review"))),
-        # A real connection on PullRequest that the current source-github documents do not select.
-        "comments": {
-            "pageInfo": {"hasNextPage": False},
-            "nodes": [_comment("PRRC_issue", "RE_issue")],
-        },
-    }
-
-    via_reviews = reactions_extractor(
-        nested(nested(dpath("data", "node"), ["reviews", "nodes"]), ["comments", "nodes"])
-    )
-    via_top_level_comments = reactions_extractor(
-        nested(dpath("data", "node"), ["comments", "nodes"])
+def test_other_glob_characters_are_literal_field_names():
+    # Unlike the `dpath`-based extractors, this component walks paths itself, so `?` and `[...]`
+    # address the fields that spell them rather than matching several.
+    response = create_response({"data": [{"a?b": "v1", "c[1]": "v2", "children": [{"id": "c1"}]}]})
+    extractor = nested(
+        dpath("data"),
+        ["children"],
+        [
+            {"parent_path": ["a?b"], "record_path": ["q"]},
+            {"parent_path": ["c[1]"], "record_path": ["b"]},
+        ],
     )
 
-    assert [
-        (record["id"], record["comment_id"])
-        for record in via_reviews.extract_records(create_response({"data": {"node": node}}))
-    ] == [("RE_review", "PRRC_review")]
-    assert [
-        (record["id"], record["comment_id"])
-        for record in via_top_level_comments.extract_records(
-            create_response({"data": {"node": node}})
-        )
-    ] == [("RE_issue", "PRRC_issue")]
+    assert list(extractor.extract_records(response)) == [{"id": "c1", "q": "v1", "b": "v2"}]
+
+
+@pytest.mark.parametrize(
+    "child_field_path,parent_fields,expected_field",
+    [
+        pytest.param(["{{ parameters.missing }}"], None, "child_field_path", id="child_field_path"),
+        pytest.param(
+            ["children"],
+            [{"parent_path": ["{{ parameters.missing }}"], "record_path": ["v"]}],
+            "parent_path",
+            id="parent_path",
+        ),
+        pytest.param(
+            ["children"],
+            [{"parent_path": ["id"], "record_path": ["{{ parameters.missing }}"]}],
+            "record_path",
+            id="record_path",
+        ),
+    ],
+)
+def test_segment_that_resolves_to_nothing_is_rejected(
+    child_field_path, parent_fields, expected_field
+):
+    # An unbound parameter evaluates to "", and writing a field literally named "" is rejected by
+    # most destinations with an error that names the destination rather than the manifest.
+    response = create_response({"data": [{"id": "p1", "children": [{"id": "c1"}]}]})
+    extractor = nested(dpath("data"), child_field_path, parent_fields)
+
+    with pytest.raises(AirbyteTracedException) as exception_info:
+        list(extractor.extract_records(response))
+
+    assert exception_info.value.failure_type == FailureType.config_error
+    assert expected_field in str(exception_info.value.internal_message)
+
+
+def test_parent_path_addressing_the_child_collection_is_rejected():
+    # The child records are not copied out of the parent, so such a path would give every record a
+    # snapshot of its whole sibling collection.
+    response = create_response({"data": [{"children": [{"id": "c1"}]}]})
+    extractor = nested(
+        dpath("data"), ["children"], [{"parent_path": ["children"], "record_path": ["ctx"]}]
+    )
+
+    with pytest.raises(AirbyteTracedException) as exception_info:
+        list(extractor.extract_records(response))
+
+    assert exception_info.value.failure_type == FailureType.config_error
+
+
+def test_parent_path_addressing_an_ancestor_of_the_child_collection_is_rejected():
+    response = create_response({"data": [{"a": {"children": [{"id": "c1"}]}}]})
+    extractor = nested(
+        dpath("data"), ["a", "children"], [{"parent_path": ["a"], "record_path": ["ctx"]}]
+    )
+
+    with pytest.raises(AirbyteTracedException) as exception_info:
+        list(extractor.extract_records(response))
+
+    assert exception_info.value.failure_type == FailureType.config_error
+
+
+# ---------------------------------------------------------------------------------------------
+# Reading a `parent_path` that does not match the response.
+# ---------------------------------------------------------------------------------------------
+
+
+def test_parent_path_through_a_value_holding_no_fields_raises():
+    # Copying `None` here would be indistinguishable from the documented absent-key case, and a
+    # stamped field is a legitimate primary key or cursor.
+    response = create_response({"data": [{"tags": [{"name": "t1"}], "children": [{"id": "c1"}]}]})
+    extractor = nested(
+        dpath("data"), ["children"], [{"parent_path": ["tags", "name"], "record_path": ["tag"]}]
+    )
+
+    with pytest.raises(AirbyteTracedException) as exception_info:
+        list(extractor.extract_records(response))
+
+    assert exception_info.value.failure_type == FailureType.system_error
+    assert "tags" in str(exception_info.value.internal_message)
+
+
+def test_parent_path_through_a_null_copies_none():
+    # A null is data, not a misconfigured path, so it is treated as the absent-key case.
+    response = create_response({"data": [{"a": None, "children": [{"id": "c1"}]}]})
+    extractor = nested(
+        dpath("data"), ["children"], [{"parent_path": ["a", "b"], "record_path": ["v"]}]
+    )
+
+    assert list(extractor.extract_records(response)) == [{"id": "c1", "v": None}]
+
+
+@pytest.mark.parametrize(
+    "parent_path,expected",
+    [
+        pytest.param(["tags", "0", "name"], "t1", id="index"),
+        pytest.param(["tags", "-1", "name"], "t2", id="negative_index"),
+    ],
+)
+def test_list_positions_can_be_addressed(parent_path, expected):
+    response = create_response(
+        {"data": [{"tags": [{"name": "t1"}, {"name": "t2"}], "children": [{"id": "c1"}]}]}
+    )
+    extractor = nested(
+        dpath("data"), ["children"], [{"parent_path": parent_path, "record_path": ["tag"]}]
+    )
+
+    assert list(extractor.extract_records(response)) == [{"id": "c1", "tag": expected}]
+
+
+def test_out_of_range_list_position_copies_none():
+    response = create_response({"data": [{"tags": [], "children": [{"id": "c1"}]}]})
+    extractor = nested(
+        dpath("data"), ["children"], [{"parent_path": ["tags", "0"], "record_path": ["tag"]}]
+    )
+
+    assert list(extractor.extract_records(response)) == [{"id": "c1", "tag": None}]
+
+
+# ---------------------------------------------------------------------------------------------
+# The `RecordExtractor` contract is `Mapping`, not `MutableMapping`.
+# ---------------------------------------------------------------------------------------------
+
+
+class ReadOnlyExtractor(RecordExtractor):
+    """A parent extractor honouring the declared `Iterable[Mapping[str, Any]]` return type."""
+
+    def __init__(self, parents: List[Mapping[str, Any]]) -> None:
+        self._parents = parents
+
+    def extract_records(self, response: requests.Response) -> Iterable[Mapping[str, Any]]:
+        yield from self._parents
+
+
+@pytest.mark.parametrize(
+    "parent",
+    [
+        pytest.param(
+            MappingProxyType({"id": "p1", "children": [{"id": "c1"}]}), id="read_only_parent"
+        ),
+        pytest.param(
+            {"id": "p1", "children": [MappingProxyType({"id": "c1"})]}, id="read_only_child"
+        ),
+        pytest.param(
+            MappingProxyType({"id": "p1", "children": [MappingProxyType({"id": "c1"})]}),
+            id="read_only_throughout",
+        ),
+    ],
+)
+def test_read_only_mappings_are_not_dropped(parent):
+    # The ABC declares `Iterable[Mapping[str, Any]]`, and the schema admits a
+    # `CustomRecordExtractor` as a `parent_extractor`, so a custom extractor honouring the declared
+    # contract must not silently produce an empty stream.
+    extractor = nested(
+        ReadOnlyExtractor([parent]),
+        ["children"],
+        [{"parent_path": ["id"], "record_path": ["parent_id"]}],
+    )
+
+    records = list(extractor.extract_records(create_response({})))
+
+    assert records == [{"id": "c1", "parent_id": "p1"}]
+    # Downstream transformations mutate records in place, so what is yielded has to be mutable.
+    assert all(isinstance(record, MutableMapping) for record in records)
+
+
+def test_read_only_child_is_copied_rather_than_mutated():
+    child = MappingProxyType({"id": "c1"})
+    extractor = nested(
+        ReadOnlyExtractor([{"id": "p1", "children": [child]}]),
+        ["children"],
+        [{"parent_path": ["id"], "record_path": ["parent_id"]}],
+    )
+
+    assert list(extractor.extract_records(create_response({}))) == [{"id": "c1", "parent_id": "p1"}]
+    assert dict(child) == {"id": "c1"}
+
+
+# ---------------------------------------------------------------------------------------------
+# Every skip path leaves a trace.
+# ---------------------------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "body, child_field_path, expected_log",
+    [
+        pytest.param(
+            {"data": ["scalar", {"id": "p1", "children": [{"id": "c1"}]}]},
+            ["children"],
+            "skipped a parent record that is not an object (str)",
+            id="non_object_parent",
+        ),
+        pytest.param(
+            {"data": [{"id": "p1", "children": [7, {"id": "c1"}]}]},
+            ["children"],
+            "skipped a child element that is not an object (int)",
+            id="non_object_child",
+        ),
+        pytest.param(
+            {"data": [{"id": "p1", "children": "not-a-collection"}]},
+            ["children"],
+            "to a str, which holds no records",
+            id="child_field_path_resolves_to_a_scalar",
+        ),
+    ],
+)
+def test_skipped_records_are_logged(body, child_field_path, expected_log, caplog):
+    # A connector whose API shape shifts should not lose records with no signal at all.
+    extractor = nested(dpath("data"), child_field_path)
+
+    with caplog.at_level(logging.DEBUG, logger="airbyte"):
+        list(extractor.extract_records(create_response(body)))
+
+    assert expected_log in caplog.text

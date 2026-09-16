@@ -79,6 +79,7 @@ CUSTOM_COMPONENTS_MAPPING: Mapping[str, str] = {
     "DefaultPaginator.pagination_strategy": "CustomPaginationStrategy",
     "HttpRequester.authenticator": "CustomAuthenticator",
     "HttpRequester.error_handler": "CustomErrorHandler",
+    "NestedRecordExtractor.parent_extractor": "CustomRecordExtractor",
     "RecordSelector.extractor": "CustomRecordExtractor",
     "SimpleRetriever.partition_router": "CustomPartitionRouter",
 }

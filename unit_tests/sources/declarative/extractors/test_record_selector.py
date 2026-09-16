@@ -10,9 +10,17 @@ import requests
 
 from airbyte_cdk.sources.declarative.decoders.json_decoder import JsonDecoder
 from airbyte_cdk.sources.declarative.extractors.dpath_extractor import DpathExtractor
+from airbyte_cdk.sources.declarative.extractors.nested_record_extractor import (
+    NestedRecordExtractor,
+    ParentFieldPath,
+)
 from airbyte_cdk.sources.declarative.extractors.record_filter import RecordFilter
 from airbyte_cdk.sources.declarative.extractors.record_selector import RecordSelector
 from airbyte_cdk.sources.declarative.transformations import RecordTransformation
+from airbyte_cdk.sources.declarative.transformations.add_fields import (
+    AddedFieldDefinition,
+    AddFields,
+)
 from airbyte_cdk.sources.types import Record, StreamSlice
 from airbyte_cdk.sources.utils.transform import TransformConfig, TypeTransformer
 
@@ -312,3 +320,65 @@ def test_transform_before_filtering(transform_before_filtering):
     else:
         assert final_record_data[0]["id"] == 2
         assert final_record_data[0]["myfield"] == 999
+
+
+def test_nested_record_extractor_survives_a_transformation_that_writes_into_a_copied_field():
+    """A parent field copied onto several records must not be one object shared by all of them.
+
+    `AddFields` mutates the record in place, and records are queued unserialized downstream, so a
+    shared object means writing into one record rewrites records that were already emitted.
+    """
+    body = {
+        "data": [
+            {
+                "author": {"login": "octocat"},
+                "children": [{"id": "c1"}, {"id": "c2"}, {"id": "c3"}],
+            }
+        ]
+    }
+    response = requests.Response()
+    response._content = json.dumps(body).encode("utf-8")
+
+    record_selector = RecordSelector(
+        extractor=NestedRecordExtractor(
+            parent_extractor=DpathExtractor(field_path=["data"], config={}, parameters={}),
+            child_field_path=["children"],
+            parent_fields=[
+                ParentFieldPath(parent_path=["author"], record_path=["author"], parameters={})
+            ],
+            config={},
+            parameters={},
+        ),
+        record_filter=None,
+        transformations=[
+            AddFields(
+                fields=[
+                    AddedFieldDefinition(
+                        path=["author", "child_id"],
+                        value="{{ record['id'] }}",
+                        value_type=str,
+                        parameters={},
+                    )
+                ],
+                parameters={},
+            )
+        ],
+        schema_normalization=TypeTransformer(TransformConfig.NoTransform),
+        config={},
+        parameters={},
+    )
+
+    records = list(
+        record_selector.select_records(
+            response=response,
+            stream_state={},
+            records_schema={},
+            stream_slice=StreamSlice(partition={}, cursor_slice={}),
+        )
+    )
+
+    assert [(record["id"], record["author"]["child_id"]) for record in records] == [
+        ("c1", "c1"),
+        ("c2", "c2"),
+        ("c3", "c3"),
+    ]
