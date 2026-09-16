@@ -51,6 +51,57 @@ class OnNoRecords(Enum):
 
 
 @dataclass
+class ParentFieldPath:
+    """One field to copy from the record being expanded onto each expanded item.
+
+    `parent_path` locates the value on the parent, `record_path` says where to put it on the
+    child. Both are lists, so a value nested inside the parent can be copied into a nested
+    position on the child. Glob metacharacters are rejected: each path must identify a single
+    field.
+    """
+
+    parent_path: Sequence[str]
+    record_path: Sequence[str]
+    config: Config
+    parameters: InitVar[Mapping[str, Any]]
+
+    def __post_init__(self, parameters: Mapping[str, Any]) -> None:
+        if not self.parent_path:
+            raise ValueError("`parent_path` cannot be empty.")
+        if not self.record_path:
+            raise ValueError("`record_path` cannot be empty.")
+        self._parent_path: list[InterpolatedString] = [
+            InterpolatedString.create(path, parameters=parameters) for path in self.parent_path
+        ]
+        self._record_path: list[InterpolatedString] = [
+            InterpolatedString.create(path, parameters=parameters) for path in self.record_path
+        ]
+        RecordExpander._reject_globs(self.evaluated_parent_path(), "parent_path")
+        RecordExpander._reject_globs(self.evaluated_record_path(), "record_path")
+
+    def evaluated_parent_path(self) -> list[Any]:
+        return [segment.eval(self.config) for segment in self._parent_path]
+
+    def evaluated_record_path(self) -> list[Any]:
+        return [segment.eval(self.config) for segment in self._record_path]
+
+    def copy_onto(
+        self, parent_record: Mapping[str, Any], child_record: MutableMapping[str, Any]
+    ) -> None:
+        """Copy the parent value onto the child, overwriting whatever was there.
+
+        A `parent_path` that the parent does not have copies `None`, which is what the custom
+        connector classes this replaces do (`parent.get(field)`). Distinguishing "absent" from
+        "present and null" would need a third option and no connector needs one.
+        """
+        try:
+            value = dpath.get(dict(parent_record), self.evaluated_parent_path())
+        except (KeyError, ValueError):
+            value = None
+        dpath.new(child_record, self.evaluated_record_path(), value)
+
+
+@dataclass
 class RecordExpander:
     """Expands records by extracting items from a nested array field.
 
@@ -58,6 +109,11 @@ class RecordExpander:
     within each record and emits each item as a separate record. Set `remain_original_record: true`
     to embed the full parent record under `original_record` in each expanded item when you need
     downstream transformations to access parent context.
+
+    When only a few parent fields are needed, prefer `parent_fields` over
+    `remain_original_record`: it copies the named values onto each expanded item instead of
+    deep-copying the whole parent once per item, which matters when the parent is large and the
+    nested list is long.
 
     The expand_records_from_field path supports wildcards (*) for matching multiple arrays.
     When wildcards are used, items from all matched arrays are extracted and emitted.
@@ -76,6 +132,17 @@ class RecordExpander:
       record_expander:
         type: RecordExpander
         expand_records_from_field:
+          - "reviews"
+          - "nodes"
+        parent_fields:
+          - parent_path: ["url"]
+            record_path: ["pull_request_url"]
+    ```
+
+    ```
+      record_expander:
+        type: RecordExpander
+        expand_records_from_field:
           - "sections"
           - "*"
           - "items"
@@ -88,6 +155,13 @@ class RecordExpander:
             Supports wildcards (*).
         remain_original_record: If True, each expanded record will include the original
             parent record in an "original_record" field. Defaults to False.
+        parent_fields: Named values to copy from the record being expanded onto each expanded
+            item. Each entry has a `parent_path` and a `record_path`; an existing value at
+            `record_path` is overwritten, and a `parent_path` the parent does not have copies
+            `None`. Independent of `remain_original_record` - both may be set, though copying
+            named fields is the cheaper way to carry parent context. Applies to items fetched
+            through `truncated_list_retriever` as well as to embedded ones. Glob metacharacters
+            are rejected in both paths.
         on_no_records: Behavior when expansion produces no records. "skip" (default)
             emits nothing. "emit_parent" emits the original parent record unchanged.
         truncation_indicator_path: Path within each record to a field indicating that the
@@ -125,6 +199,7 @@ class RecordExpander:
     config: Config
     parameters: InitVar[Mapping[str, Any]]
     remain_original_record: bool = False
+    parent_fields: Optional[Sequence[ParentFieldPath]] = None
     on_no_records: OnNoRecords = OnNoRecords.skip
     truncation_indicator_path: Optional[Sequence[str]] = None
     truncated_list_retriever: Optional["Retriever"] = None
@@ -216,11 +291,10 @@ class RecordExpander:
                     expanded_record = dict(item)
                     self._apply_parent_context(parent_record, expanded_record)
                     yield expanded_record
-                elif self.remain_original_record:
-                    yield {
-                        "value": item,
-                        "original_record": copy.deepcopy(parent_record),
-                    }
+                elif self._carries_parent_context():
+                    wrapped: MutableMapping[str, Any] = {"value": item}
+                    self._apply_parent_context(parent_record, wrapped)
+                    yield wrapped
                 else:
                     yield item
 
@@ -323,8 +397,10 @@ class RecordExpander:
                 expanded_record = dict(data)
                 self._apply_parent_context(parent_record, expanded_record)
                 yield expanded_record
-            elif self.remain_original_record:
-                yield {"value": data, "original_record": copy.deepcopy(parent_record)}
+            elif self._carries_parent_context():
+                wrapped: MutableMapping[str, Any] = {"value": data}
+                self._apply_parent_context(parent_record, wrapped)
+                yield wrapped
             else:
                 yield data
 
@@ -334,3 +410,8 @@ class RecordExpander:
         """Apply parent context to a child record."""
         if self.remain_original_record:
             child_record["original_record"] = copy.deepcopy(parent_record)
+        for parent_field in self.parent_fields or []:
+            parent_field.copy_onto(parent_record, child_record)
+
+    def _carries_parent_context(self) -> bool:
+        return bool(self.remain_original_record or self.parent_fields)

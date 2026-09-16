@@ -8,7 +8,10 @@ from unittest.mock import MagicMock
 import pytest
 
 from airbyte_cdk.models import AirbyteLogMessage, AirbyteMessage, AirbyteRecordMessage, Level, Type
-from airbyte_cdk.sources.declarative.expanders.record_expander import RecordExpander
+from airbyte_cdk.sources.declarative.expanders.record_expander import (
+    ParentFieldPath,
+    RecordExpander,
+)
 from airbyte_cdk.sources.message import InMemoryMessageRepository
 from airbyte_cdk.sources.types import Record, StreamSlice
 
@@ -572,3 +575,218 @@ def test_no_warning_when_retriever_configured(caplog):
 
     assert len(records) == 15
     assert not [r for r in caplog.records if r.levelname == "WARNING"]
+
+
+def _parent_field(parent_path, record_path):
+    return ParentFieldPath(
+        parent_path=parent_path,
+        record_path=record_path,
+        config=config,
+        parameters=parameters,
+    )
+
+
+def _reviews_parent():
+    return {
+        "number": 7,
+        "url": "https://github.com/airbytehq/airbyte/pull/7",
+        "reviews": {"nodes": [{"id": "PRR_1"}, {"id": "PRR_2"}]},
+    }
+
+
+def test_parent_fields_copies_the_named_value_onto_every_item():
+    expander = RecordExpander(
+        expand_records_from_field=["reviews", "nodes"],
+        parent_fields=[_parent_field(["url"], ["pull_request_url"])],
+        config=config,
+        parameters=parameters,
+    )
+
+    assert list(expander.expand_record(_reviews_parent())) == [
+        {"id": "PRR_1", "pull_request_url": "https://github.com/airbytehq/airbyte/pull/7"},
+        {"id": "PRR_2", "pull_request_url": "https://github.com/airbytehq/airbyte/pull/7"},
+    ]
+
+
+def test_parent_fields_does_not_embed_the_parent():
+    """The reason to use `parent_fields`: no `original_record`, so no deep copy per item."""
+    expander = RecordExpander(
+        expand_records_from_field=["reviews", "nodes"],
+        parent_fields=[_parent_field(["url"], ["pull_request_url"])],
+        config=config,
+        parameters=parameters,
+    )
+
+    for record in expander.expand_record(_reviews_parent()):
+        assert "original_record" not in record
+
+
+def test_parent_fields_and_remain_original_record_are_independent():
+    expander = RecordExpander(
+        expand_records_from_field=["reviews", "nodes"],
+        remain_original_record=True,
+        parent_fields=[_parent_field(["number"], ["pull_request_number"])],
+        config=config,
+        parameters=parameters,
+    )
+
+    records = list(expander.expand_record(_reviews_parent()))
+
+    assert [record["pull_request_number"] for record in records] == [7, 7]
+    assert all(record["original_record"]["number"] == 7 for record in records)
+
+
+def test_parent_fields_reads_and_writes_nested_paths():
+    expander = RecordExpander(
+        expand_records_from_field=["items"],
+        parent_fields=[_parent_field(["repository", "name"], ["parent", "repository_name"])],
+        config=config,
+        parameters=parameters,
+    )
+
+    parent = {"repository": {"name": "airbyte"}, "items": [{"id": 1}]}
+
+    assert list(expander.expand_record(parent)) == [
+        {"id": 1, "parent": {"repository_name": "airbyte"}}
+    ]
+
+
+def test_parent_fields_overwrites_an_existing_value_on_the_item():
+    expander = RecordExpander(
+        expand_records_from_field=["items"],
+        parent_fields=[_parent_field(["id"], ["id"])],
+        config=config,
+        parameters=parameters,
+    )
+
+    assert list(expander.expand_record({"id": "parent", "items": [{"id": "child"}]})) == [
+        {"id": "parent"}
+    ]
+
+
+def test_parent_fields_copies_none_when_the_parent_lacks_the_field():
+    """Matches `parent.get(field)` in the connector classes this replaces."""
+    expander = RecordExpander(
+        expand_records_from_field=["items"],
+        parent_fields=[_parent_field(["missing"], ["copied"])],
+        config=config,
+        parameters=parameters,
+    )
+
+    assert list(expander.expand_record({"items": [{"id": 1}]})) == [{"id": 1, "copied": None}]
+
+
+def test_parent_fields_copies_a_present_null_the_same_way():
+    expander = RecordExpander(
+        expand_records_from_field=["items"],
+        parent_fields=[_parent_field(["maybe"], ["copied"])],
+        config=config,
+        parameters=parameters,
+    )
+
+    assert list(expander.expand_record({"maybe": None, "items": [{"id": 1}]})) == [
+        {"id": 1, "copied": None}
+    ]
+
+
+def test_several_parent_fields_are_applied_in_order():
+    expander = RecordExpander(
+        expand_records_from_field=["items"],
+        parent_fields=[
+            _parent_field(["a"], ["copied"]),
+            _parent_field(["b"], ["copied"]),
+        ],
+        config=config,
+        parameters=parameters,
+    )
+
+    assert list(expander.expand_record({"a": 1, "b": 2, "items": [{}]})) == [{"copied": 2}]
+
+
+def test_parent_fields_does_not_mutate_the_parent_record():
+    expander = RecordExpander(
+        expand_records_from_field=["reviews", "nodes"],
+        parent_fields=[_parent_field(["url"], ["pull_request_url"])],
+        config=config,
+        parameters=parameters,
+    )
+    parent = _reviews_parent()
+
+    list(expander.expand_record(parent))
+
+    assert parent == _reviews_parent()
+
+
+def test_parent_fields_wraps_scalar_items():
+    expander = RecordExpander(
+        expand_records_from_field=["items"],
+        parent_fields=[_parent_field(["id"], ["parent_id"])],
+        config=config,
+        parameters=parameters,
+    )
+
+    assert list(expander.expand_record({"id": 9, "items": ["a", "b"]})) == [
+        {"value": "a", "parent_id": 9},
+        {"value": "b", "parent_id": 9},
+    ]
+
+
+def test_scalar_items_stay_bare_without_parent_context():
+    expander = RecordExpander(
+        expand_records_from_field=["items"],
+        config=config,
+        parameters=parameters,
+    )
+
+    assert list(expander.expand_record({"items": ["a", "b"]})) == ["a", "b"]
+
+
+def test_parent_fields_apply_to_items_fetched_by_the_truncated_list_retriever():
+    expander = RecordExpander(
+        expand_records_from_field=["reviews", "nodes"],
+        truncation_indicator_path=["reviews", "has_more"],
+        truncated_list_retriever=_make_retriever([{"id": "PRR_9"}]),
+        parent_fields=[_parent_field(["url"], ["pull_request_url"])],
+        config=config,
+        parameters=parameters,
+    )
+    parent = {
+        "url": "https://github.com/airbytehq/airbyte/pull/7",
+        "reviews": {"nodes": [{"id": "PRR_1"}], "has_more": True},
+    }
+
+    assert list(expander.expand_record(parent)) == [
+        {"id": "PRR_9", "pull_request_url": "https://github.com/airbytehq/airbyte/pull/7"}
+    ]
+
+
+@pytest.mark.parametrize("path", [["*"], ["a", "?"], ["a[0]"]])
+def test_globs_are_rejected_in_parent_path(path):
+    with pytest.raises(ValueError, match="Glob characters"):
+        _parent_field(path, ["copied"])
+
+
+@pytest.mark.parametrize("path", [["*"], ["a", "?"], ["a[0]"]])
+def test_globs_are_rejected_in_record_path(path):
+    with pytest.raises(ValueError, match="Glob characters"):
+        _parent_field(["id"], path)
+
+
+@pytest.mark.parametrize("parent_path,record_path", [([], ["a"]), (["a"], [])])
+def test_empty_paths_are_rejected(parent_path, record_path):
+    with pytest.raises(ValueError, match="cannot be empty"):
+        _parent_field(parent_path, record_path)
+
+
+def test_parent_field_paths_interpolate_config():
+    parent_field = ParentFieldPath(
+        parent_path=["{{ config['from'] }}"],
+        record_path=["{{ config['to'] }}"],
+        config={"from": "url", "to": "pull_request_url"},
+        parameters=parameters,
+    )
+    child = {}
+
+    parent_field.copy_onto({"url": "https://example.com/7"}, child)
+
+    assert child == {"pull_request_url": "https://example.com/7"}
