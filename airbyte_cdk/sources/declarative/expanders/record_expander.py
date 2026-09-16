@@ -41,6 +41,13 @@ _BARE_PROTOCOL_MESSAGES = (
 )
 
 
+def _detached(value: Any) -> Any:
+    """Copy of `value` sharing nothing with the record it came from; scalars are returned as-is."""
+    if isinstance(value, (Mapping, list, set, tuple)):
+        return copy.deepcopy(value)
+    return value
+
+
 class OnNoRecords(Enum):
     """
     Behavior when record expansion produces no records.
@@ -93,12 +100,16 @@ class ParentFieldPath:
         A `parent_path` that the parent does not have copies `None`, which is what the custom
         connector classes this replaces do (`parent.get(field)`). Distinguishing "absent" from
         "present and null" would need a third option and no connector needs one.
+
+        A container value is deep-copied, so that a downstream transformation writing inside it
+        cannot reach the parent record or the items expanded from it alongside this one. The copy
+        costs proportionally to the named value, not to the whole parent.
         """
         try:
             value = dpath.get(dict(parent_record), self.evaluated_parent_path())
         except (KeyError, ValueError):
             value = None
-        dpath.new(child_record, self.evaluated_record_path(), value)
+        dpath.new(child_record, self.evaluated_record_path(), _detached(value))
 
 
 @dataclass
@@ -170,17 +181,20 @@ class RecordExpander:
         parent_fields: Named values to copy from the record being expanded onto each expanded
             item. Each entry has a `parent_path` and a `record_path`; an existing value at
             `record_path` is overwritten, and a `parent_path` the parent does not have copies
-            `None`. Independent of `remain_original_record` - both may be set, though copying
-            named fields is the cheaper way to carry parent context. Applies to items fetched
-            through `truncated_list_retriever` as well as to embedded ones. Glob metacharacters
-            are rejected in both paths.
+            `None`. A copied container is deep-copied, so writing into it downstream does not
+            reach the parent or the sibling items. Independent of `remain_original_record` -
+            both may be set, though copying named fields is the cheaper way to carry parent
+            context. Applies to items fetched through `truncated_list_retriever` as well as to
+            embedded ones. Glob metacharacters are rejected in both paths.
         merge_parent: If True, each expanded item is the parent record shallow-merged with the
             item, the item's own keys winning on collision, and the expanded list removed from
             the parent's copy. Only the value at `expand_records_from_field` is removed: for a
-            multi-segment path the top-level key stays with its other fields. The merge happens
-            before `parent_fields` are copied and before `original_record` is embedded, so both
-            can overwrite merged values. Applies to items fetched through
-            `truncated_list_retriever` as well as to embedded ones. Defaults to False.
+            multi-segment path the top-level key stays with its other fields. Each item gets its
+            own deep copy of the merged parent, so a downstream transformation writing into a
+            nested value affects only that item. The merge happens before `parent_fields` are
+            copied and before `original_record` is embedded, so both can overwrite merged
+            values. Applies to items fetched through `truncated_list_retriever` as well as to
+            embedded ones. Defaults to False.
         on_no_records: Behavior when expansion produces no records. "skip" (default)
             emits nothing. "emit_parent" emits the original parent record unchanged.
         truncation_indicator_path: Path within each record to a field indicating that the
@@ -254,8 +268,8 @@ class RecordExpander:
             for segment in path
         ):
             raise ValueError(
-                f"Glob characters {_GLOB_METACHARACTERS} are not supported in `{field_name}` when "
-                "truncation handling is configured: the path must identify a single field."
+                f"Glob characters {_GLOB_METACHARACTERS} are not supported in `{field_name}`: "
+                "the path must identify a single field."
             )
 
     def _evaluated_indicator_path(self) -> list[Any]:
@@ -436,7 +450,12 @@ class RecordExpander:
         overwrite a merged value.
         """
         if merge_base is not None:
-            child_record = {**merge_base, **child_record}
+            # Deep-copied per item: a shallow merge would alias every nested container of the
+            # parent into every item, so a downstream transformation writing into one of them
+            # would reach the parent record and the items already yielded. The expanded list is
+            # already stripped from `merge_base`, so the copy costs less than
+            # `remain_original_record` does.
+            child_record = {**copy.deepcopy(merge_base), **child_record}
         for parent_field in self.parent_fields or []:
             parent_field.copy_onto(parent_record, child_record)
         if self.remain_original_record:
@@ -453,8 +472,10 @@ class RecordExpander:
         """Copy of the parent with only the value at `expand_path` removed.
 
         The containers on the way to the list are copied and the rest of the parent is shared,
-        so siblings of the list are kept and the parent itself is never mutated. Every match of
-        the path is removed, which covers glob paths that select several lists.
+        so siblings of the list are kept and the parent itself is not mutated here. This base is
+        built once per parent record and then deep-copied per item in `_apply_parent_context`,
+        which is what keeps the parent and the sibling items isolated from one another. Every
+        match of the path is removed, which covers glob paths that select several lists.
         """
         matched_paths = [
             path

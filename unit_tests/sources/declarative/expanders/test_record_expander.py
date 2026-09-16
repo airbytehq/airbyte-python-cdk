@@ -772,6 +772,14 @@ def test_globs_are_rejected_in_record_path(path):
         _parent_field(["id"], path)
 
 
+def test_glob_rejection_message_does_not_mention_truncation_handling():
+    with pytest.raises(ValueError) as error:
+        _parent_field(["*"], ["copied"])
+
+    assert "truncation" not in str(error.value)
+    assert "`parent_path`" in str(error.value)
+
+
 @pytest.mark.parametrize("parent_path,record_path", [([], ["a"]), (["a"], [])])
 def test_empty_paths_are_rejected(parent_path, record_path):
     with pytest.raises(ValueError, match="cannot be empty"):
@@ -925,13 +933,38 @@ def test_merge_parent_does_not_mutate_the_parent_record():
     assert records[0]["reviews"] == {}
 
 
-def test_merge_parent_shares_untouched_nested_values_rather_than_deep_copying_them():
+def test_merge_parent_gives_each_item_its_own_copy_of_nested_values():
     expander = _merge_expander(["items"])
     metadata = {"k": "v"}
+    parent = {"metadata": metadata, "items": [{"id": 1}, {"id": 2}]}
 
-    records = list(expander.expand_record({"metadata": metadata, "items": [{"id": 1}]}))
+    records = list(expander.expand_record(parent))
 
-    assert records[0]["metadata"] is metadata
+    assert records[0]["metadata"] is not metadata
+    assert records[0]["metadata"] is not records[1]["metadata"]
+    # A downstream transformation writing into one item cannot reach the parent or its siblings.
+    records[0]["metadata"]["written"] = True
+    assert records[1]["metadata"] == {"k": "v"}
+    assert metadata == {"k": "v"}
+
+
+def test_parent_fields_gives_each_item_its_own_copy_of_a_copied_container():
+    expander = RecordExpander(
+        expand_records_from_field=["reviews", "nodes"],
+        parent_fields=[_parent_field(["repository"], ["repository"])],
+        config=config,
+        parameters=parameters,
+    )
+    repository = {"name": "airbyte"}
+    parent = {"repository": repository, "reviews": {"nodes": [{"id": 1}, {"id": 2}]}}
+
+    records = list(expander.expand_record(parent))
+
+    assert records[0]["repository"] is not repository
+    assert records[0]["repository"] is not records[1]["repository"]
+    records[0]["repository"]["review_id"] = 1
+    assert records[1]["repository"] == {"name": "airbyte"}
+    assert repository == {"name": "airbyte"}
 
 
 def test_merge_parent_applies_to_items_fetched_by_the_truncated_list_retriever():
