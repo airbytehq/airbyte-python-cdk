@@ -487,13 +487,28 @@ class MovingWindowCallRatePolicy(BaseCallRatePolicy):
         ):  # we do our best to sync buckets with API
             if available_calls == 0:
                 with self._limiter.lock:
-                    items_to_add = self._bucket.count() < self._bucket.rates[0].limit
+                    now: int = TimeClock().now()  # type: ignore[no-untyped-call]
+                    items_to_add = self._get_available_calls(now)
                     if items_to_add > 0:
-                        now: int = TimeClock().now()  # type: ignore[no-untyped-call]
-                        self._bucket.put(RateItem(name="dummy", timestamp=now, weight=items_to_add))
+                        added = self._bucket.put(
+                            RateItem(name="dummy", timestamp=now, weight=items_to_add)
+                        )
+                        if not added:
+                            logger.warning(
+                                "Failed to sync rate limit bucket with API: could not add %s items",
+                                items_to_add,
+                            )
         # TODO: add support if needed, it might be that it is not possible to make a good solution for this case
         # if available_calls is not None and call_reset_ts is not None:
         #     ts = call_reset_ts.timestamp()
+
+    def _get_available_calls(self, now: int) -> int:
+        """Return the number of calls still allowed by the strictest configured rate at the given timestamp (ms)."""
+        return min(
+            rate.limit
+            - sum(1 for item in self._bucket.items if item.timestamp >= now - rate.interval)
+            for rate in self._bucket.rates
+        )
 
     def __str__(self) -> str:
         """Return a human-friendly description of the moving window rate policy for logging purposes."""
