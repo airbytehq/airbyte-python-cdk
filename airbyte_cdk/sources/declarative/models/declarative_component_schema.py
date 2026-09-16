@@ -510,7 +510,6 @@ class HttpRequestRegexMatcher(BaseModel):
 class CombineMode(Enum):
     union = "union"
     first_match = "first_match"
-    zip_merge = "zip_merge"
 
 
 class ResponseToFileExtractor(BaseModel):
@@ -2532,12 +2531,12 @@ class CombinedExtractor(BaseModel):
     )
     mode: Optional[CombineMode] = Field(
         CombineMode.union,
-        description='How the records of the sub-extractors are combined. "union" (default) yields every record of every sub-extractor, in the order the extractors are declared. "first_match" yields the records of the first sub-extractor that produces at least one record and skips the remaining ones; nothing is yielded if none of them produces a record. "zip_merge" merges the i-th record of every sub-extractor into a single record, with later sub-extractors overwriting the fields set by earlier ones, and stops at the shortest sub-extractor, discarding the trailing records of the longer ones. Note that a paginator which counts the records of a page counts the combined records: under "union" that is the sum over all sub-extractors, which overshoots the API page size, so "union" is rejected with an OffsetIncrement paginator because the offset would skip records. Under "first_match" the count is the count of the winning sub-extractor and under "zip_merge" the count of the shortest one, which are usually the number of records the API returned for the page.',
+        description='How the records of the sub-extractors are combined. "union" (default) yields every record of every sub-extractor, in the order the extractors are declared. "first_match" yields the records of the first sub-extractor that produces at least one record and skips the remaining ones; nothing is yielded if none of them produces a record. Note that a paginator which counts the records of a page counts the combined records: under "union" that is the sum over all sub-extractors, which overshoots the API page size, so "union" is rejected with an OffsetIncrement paginator because the offset would skip records. Under "first_match" the count is the count of the winning sub-extractor, which is usually the number of records the API returned for the page.',
         title="Combine Mode",
     )
     skip_empty_records: Optional[bool] = Field(
         False,
-        description='Whether to drop empty records - null, {}, [], "" - yielded by a sub-extractor before the records are combined. Off by default, so the output of a sub-extractor is passed through as it is. Turn it on when the API can return nulls in the middle of a record list, which a GraphQL API does when it answers a partial response and reports the failure in a sibling error field. Under "first_match" this also changes which sub-extractor wins: a sub-extractor whose records are all empty no longer counts as a match, so the next one is tried, and the record count a paginator obtains is the count after the empty records were dropped. Under "zip_merge" it shifts the alignment of the merged records, because dropping the i-th record of one sub-extractor pairs its next record with the i-th record of the others.',
+        description='Whether to drop empty records - null, {}, [], "" - yielded by a sub-extractor before the records are combined. Off by default, so the output of a sub-extractor is passed through as it is. Turn it on when the API can return nulls in the middle of a record list, which a GraphQL API does when it answers a partial response and reports the failure in a sibling error field. Under "first_match" this also changes which sub-extractor wins: a sub-extractor whose records are all empty no longer counts as a match, so the next one is tried, and the record count a paginator obtains is the count after the empty records were dropped.',
         title="Skip Empty Records",
     )
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")

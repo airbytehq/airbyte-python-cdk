@@ -6,7 +6,7 @@ import logging
 from dataclasses import InitVar, dataclass
 from enum import Enum
 from itertools import chain
-from typing import Any, Dict, Iterable, Iterator, List, Mapping, Sequence, Union
+from typing import Any, Iterable, Iterator, List, Mapping, Union
 
 import requests
 
@@ -22,7 +22,6 @@ class CombineMode(Enum):
 
     union = "union"
     first_match = "first_match"
-    zip_merge = "zip_merge"
 
 
 class _NoRecord:
@@ -38,7 +37,7 @@ class CombinedExtractor(RecordExtractor):
 
     A single `DpathExtractor` can only describe one path into the response. Several connectors need
     more than that and reach for a custom `components.py` today, which keeps them out of the
-    Connector Builder. This component covers the three shapes those connectors implement:
+    Connector Builder. This component covers the two shapes those connectors implement:
 
     - `union` (default) — yield every record of every sub-extractor, in sub-extractor order. Use it
       when one response carries records under several paths, for example a GraphQL document that
@@ -49,12 +48,6 @@ class CombinedExtractor(RecordExtractor):
       sub-extractor is only peeked at, never restarted: the peeked record is chained back in front
       of the remaining ones, so large responses are still streamed lazily and no sub-extractor is
       ever materialized into a list.
-    - `zip_merge` — merge the i-th record of every sub-extractor into a single dictionary, with
-      later sub-extractors overwriting keys set by earlier ones. Iteration stops at the SHORTEST
-      sub-extractor (plain `zip` semantics, not `zip_longest`): records past the end of the
-      shortest sequence are dropped rather than padded with empty values, and a warning is logged
-      when that happens. This matches the hand-rolled `CombinedExtractor` of
-      `source-google-analytics-data-api`, which this component is meant to replace.
 
     Examples of instantiating this component:
     ```
@@ -98,10 +91,9 @@ class CombinedExtractor(RecordExtractor):
 
     Because of that, `ModelToComponentFactory.create_combined_extractor` refuses to build this
     component over a streaming decoder and raises a configuration error, naming the decoder in the
-    internal message. The
-    Connector Builder forces those same decoders to `stream_response=False`, so the rejection is
-    applied there too rather than letting a manifest test-read correctly and lose records once
-    published.
+    internal message. The Connector Builder forces those same decoders to `stream_response=False`,
+    so the rejection is applied there too rather than letting a manifest test-read correctly and
+    lose records once published.
 
     ## Empty records
 
@@ -118,16 +110,12 @@ class CombinedExtractor(RecordExtractor):
     the behaviour of `source-monday`'s `MondayIncrementalItemsExtractor`, where a page of nulls
     must fall through to the pagination path rather than lock in the primary path.
 
-    Under `zip_merge` the flag shifts alignment: dropping the i-th record of one sub-extractor
-    pairs its i+1-th record with the i-th record of the others. Only enable it there if the
-    sub-extractors drop records in lockstep.
-
     ## Cost
 
     Each sub-extractor decodes the response independently — `CompositeRawDecoder` re-parses the
-    cached body on every `decode()` call — so a response is parsed once per sub-extractor. Under
-    `zip_merge` all sub-extractor outputs are also alive at the same time. Combining three
-    extractors over a large response costs roughly three times the decode time of a single one.
+    cached body on every `decode()` call — so a response is parsed once per sub-extractor.
+    Combining three extractors over a large response costs roughly three times the decode time of
+    a single one.
 
     Note that an `OffsetIncrement` or `PageIncrement` paginator builds its own copy of the
     extractor to count the records of a page, which doubles that cost.
@@ -144,9 +132,9 @@ class CombinedExtractor(RecordExtractor):
       error. A `PageIncrement` only compares the count against `page_size` to decide whether to
       stop, so it loses nothing, but it issues one extra request whenever the summed count of the
       last page happens to equal `page_size`.
-    - `first_match` returns the count of the winning sub-extractor and `zip_merge` the count of the
-      shortest one. Neither inflates the count, so both work with either paginator, as long as the
-      path the count comes from is the one the API paginates over.
+    - `first_match` returns the count of the winning sub-extractor, which does not inflate the
+      count, so it works with either paginator as long as the path the count comes from is the one
+      the API paginates over.
 
     Attributes:
         extractors (List[RecordExtractor]): The sub-extractors to combine. At least one is required.
@@ -171,8 +159,6 @@ class CombinedExtractor(RecordExtractor):
     def extract_records(self, response: requests.Response) -> Iterable[Mapping[str, Any]]:
         if self.mode == CombineMode.first_match:
             yield from self._extract_first_match(response)
-        elif self.mode == CombineMode.zip_merge:
-            yield from self._extract_zip_merge(response)
         else:
             yield from self._extract_union(response)
 
@@ -190,33 +176,6 @@ class CombinedExtractor(RecordExtractor):
             # records stay lazy and the response is never read twice.
             yield from chain([first_record], records)
             return
-
-    def _extract_zip_merge(self, response: requests.Response) -> Iterable[Mapping[str, Any]]:
-        # Iteration stops at the shortest sub-extractor, matching the behavior this component
-        # replaces. Unlike plain `zip`, the round in which a sub-extractor runs out is completed so
-        # that an uneven number of records can be reported instead of silently truncated.
-        iterators = [
-            iter(self._records_of(index, response)) for index in range(len(self.extractors))
-        ]
-        emitted = 0
-        while True:
-            round_records = [next(iterator, _NO_RECORD) for iterator in iterators]
-            exhausted = [
-                index for index, record in enumerate(round_records) if isinstance(record, _NoRecord)
-            ]
-            if exhausted:
-                if len(exhausted) != len(iterators):
-                    logger.warning(
-                        "CombinedExtractor in `zip_merge` mode discarded the records of the "
-                        "sub-extractors that outlasted the shortest one: sub-extractors "
-                        "%s ran out after %s record(s) while the others still had records. "
-                        "`zip_merge` stops at the shortest sub-extractor.",
-                        exhausted,
-                        emitted,
-                    )
-                return
-            yield self._merge(round_records)
-            emitted += 1
 
     def _records_of(
         self, extractor_index: int, response: requests.Response
@@ -245,17 +204,3 @@ class CombinedExtractor(RecordExtractor):
                 extractor_index,
                 type(self.extractors[extractor_index]).__name__,
             )
-
-    def _merge(self, records: Sequence[Any]) -> Mapping[str, Any]:
-        merged: Dict[str, Any] = {}
-        for index, record in enumerate(records):
-            if not isinstance(record, Mapping):
-                raise ValueError(
-                    f"CombinedExtractor in `zip_merge` mode can only merge records that are "
-                    f"objects, but sub-extractor {index} "
-                    f"({type(self.extractors[index]).__name__}) yielded a "
-                    f"{type(record).__name__}. Point that sub-extractor at a path that holds "
-                    f"objects, or use the `union` mode."
-                )
-            merged.update(record)
-        return merged

@@ -6160,7 +6160,7 @@ def test_combined_extractor_manifest_passes_schema_validation():
     manifest = _combined_extractor_manifest(
         {
             "type": "CombinedExtractor",
-            "mode": "zip_merge",
+            "mode": "first_match",
             "extractors": [
                 {"type": "DpathExtractor", "field_path": ["rows", "*", "dimensions"]},
                 {

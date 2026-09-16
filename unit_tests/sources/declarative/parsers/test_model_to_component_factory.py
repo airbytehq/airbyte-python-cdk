@@ -7098,32 +7098,6 @@ def test_first_match_combined_extractor_counts_only_the_winning_sub_extractor_fo
     )
 
 
-def test_zip_merge_combined_extractor_counts_the_shortest_sub_extractor_for_the_offset():
-    extractor_definition = """          type: CombinedExtractor
-          mode: zip_merge
-          extractors:
-            - type: DpathExtractor
-              field_path: ["a"]
-            - type: DpathExtractor
-              field_path: ["b"]"""
-
-    retriever = _build_retriever(
-        _retriever_manifest_with_paginator(extractor_definition, _OFFSET_INCREMENT)
-    )
-
-    pagination_strategy = retriever.paginator.pagination_strategy
-    assert isinstance(pagination_strategy, OffsetIncrement)
-
-    # Two merged records, not the four records the two sub-extractors yield together.
-    response = _json_response({"a": [{"x": 1}, {"x": 2}], "b": [{"y": 1}, {"y": 2}]})
-    assert (
-        pagination_strategy.next_page_token(
-            response=response, last_page_size=2, last_record=None, last_page_token_value=0
-        )
-        == 2
-    )
-
-
 def test_union_combined_extractor_is_accepted_by_a_page_increment_paginator():
     """`PageIncrement` only compares the count against `page_size`, so an inflated count is not lossy.
 

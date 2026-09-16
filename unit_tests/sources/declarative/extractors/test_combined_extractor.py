@@ -60,15 +60,6 @@ MONDAY_PARTIAL_PAGE_BODY = {
     "errors": [{"message": "Item not found"}],
 }
 
-# The GA4 report shape: dimensions and metrics come back as two parallel lists that have to be
-# merged position by position.
-REPORT_BODY = {
-    "rows": [
-        {"dimensions": {"date": "20240101"}, "metrics": {"activeUsers": 1}},
-        {"dimensions": {"date": "20240102"}, "metrics": {"activeUsers": 2}},
-    ]
-}
-
 
 def create_response(body: Union[Dict, List, bytes]) -> requests.Response:
     """A response whose `raw` is a real `urllib3.HTTPResponse`, which is what `requests` builds.
@@ -215,64 +206,9 @@ def test_first_match_yields_nothing_when_every_extractor_is_empty():
     assert list(extractor.extract_records(create_response(GRAPHQL_BODY))) == []
 
 
-def test_zip_merge_merges_the_ith_record_of_every_extractor():
-    extractor = CombinedExtractor(
-        extractors=[dpath("rows", "*", "dimensions"), dpath("rows", "*", "metrics")],
-        mode=CombineMode.zip_merge,
-        parameters=parameters,
-    )
-
-    assert list(extractor.extract_records(create_response(REPORT_BODY))) == [
-        {"date": "20240101", "activeUsers": 1},
-        {"date": "20240102", "activeUsers": 2},
-    ]
-
-
-def test_zip_merge_later_extractors_win_on_key_collision():
-    extractor = CombinedExtractor(
-        extractors=[
-            _CountingExtractor(records=[{"id": 1, "source": "first", "only_first": True}]),
-            _CountingExtractor(records=[{"id": 1, "source": "second"}]),
-        ],
-        mode=CombineMode.zip_merge,
-        parameters=parameters,
-    )
-
-    assert list(extractor.extract_records(create_response(REPORT_BODY))) == [
-        {"id": 1, "source": "second", "only_first": True}
-    ]
-
-
-def test_zip_merge_stops_at_the_shortest_sub_extractor():
-    """`zip`, not `zip_longest`: the trailing records of the longer extractor are dropped, not padded."""
-    extractor = CombinedExtractor(
-        extractors=[
-            _CountingExtractor(records=[{"a": 1}, {"a": 2}, {"a": 3}]),
-            _CountingExtractor(records=[{"b": 1}, {"b": 2}]),
-        ],
-        mode=CombineMode.zip_merge,
-        parameters=parameters,
-    )
-
-    assert list(extractor.extract_records(create_response(REPORT_BODY))) == [
-        {"a": 1, "b": 1},
-        {"a": 2, "b": 2},
-    ]
-
-
-def test_zip_merge_yields_nothing_when_one_extractor_is_empty():
-    extractor = CombinedExtractor(
-        extractors=[dpath("rows", "*", "dimensions"), dpath("rows", "*", "does_not_exist")],
-        mode=CombineMode.zip_merge,
-        parameters=parameters,
-    )
-
-    assert list(extractor.extract_records(create_response(REPORT_BODY))) == []
-
-
 @pytest.mark.parametrize(
     "mode",
-    [CombineMode.union, CombineMode.first_match, CombineMode.zip_merge],
+    [CombineMode.union, CombineMode.first_match],
 )
 def test_a_single_sub_extractor_behaves_like_that_extractor_alone(mode: CombineMode):
     field_path = ["data", "repository", "pullRequests", "nodes"]
@@ -391,61 +327,6 @@ def test_first_match_over_a_streaming_decoder_silently_returns_the_wrong_answer(
     assert list(buffered.extract_records(create_response(body))) == [{"id": 1}, {"id": 2}]
 
 
-def test_zip_merge_warns_when_a_sub_extractor_runs_out_early(caplog):
-    extractor = CombinedExtractor(
-        extractors=[
-            _CountingExtractor(records=[{"a": 1}, {"a": 2}, {"a": 3}]),
-            _CountingExtractor(records=[{"b": 1}, {"b": 2}]),
-        ],
-        mode=CombineMode.zip_merge,
-        parameters=parameters,
-    )
-
-    with caplog.at_level(logging.WARNING, logger="airbyte"):
-        assert list(extractor.extract_records(create_response(REPORT_BODY))) == [
-            {"a": 1, "b": 1},
-            {"a": 2, "b": 2},
-        ]
-
-    assert any(
-        "zip_merge" in record.message and record.levelno == logging.WARNING
-        for record in caplog.records
-    )
-
-
-def test_zip_merge_does_not_warn_when_every_sub_extractor_has_the_same_length(caplog):
-    extractor = CombinedExtractor(
-        extractors=[dpath("rows", "*", "dimensions"), dpath("rows", "*", "metrics")],
-        mode=CombineMode.zip_merge,
-        parameters=parameters,
-    )
-
-    with caplog.at_level(logging.WARNING, logger="airbyte"):
-        assert len(list(extractor.extract_records(create_response(REPORT_BODY)))) == 2
-
-    assert [record.message for record in caplog.records] == []
-
-
-def test_zip_merge_names_the_sub_extractor_that_yielded_a_non_object():
-    extractor = CombinedExtractor(
-        extractors=[
-            _CountingExtractor(records=[{"a": 1}]),
-            _CountingExtractor(records=["not-an-object"]),
-        ],
-        mode=CombineMode.zip_merge,
-        parameters=parameters,
-    )
-
-    with pytest.raises(ValueError) as exc_info:
-        list(extractor.extract_records(create_response(REPORT_BODY)))
-
-    message = str(exc_info.value)
-    assert "CombinedExtractor" in message
-    assert "zip_merge" in message
-    assert "sub-extractor 1" in message
-    assert "_CountingExtractor" in message
-
-
 def _monday_extractor(skip_empty_records: bool) -> CombinedExtractor:
     return CombinedExtractor(
         extractors=[
@@ -561,22 +442,3 @@ def test_skip_empty_records_does_not_warn_when_nothing_is_dropped(caplog):
         ]
 
     assert [record.message for record in caplog.records if record.levelno == logging.WARNING] == []
-
-
-def test_skip_empty_records_shifts_zip_merge_alignment():
-    """Documents the caveat the schema description warns about.
-
-    Dropping the first sub-extractor's null pairs its next record with the other sub-extractor's
-    first record, so the merge is off by one rather than skipping a row.
-    """
-    extractor = CombinedExtractor(
-        extractors=[
-            _CountingExtractor(records=[None, {"a": 2}]),
-            _CountingExtractor(records=[{"b": 1}, {"b": 2}]),
-        ],
-        mode=CombineMode.zip_merge,
-        skip_empty_records=True,
-        parameters=parameters,
-    )
-
-    assert list(extractor.extract_records(create_response(REPORT_BODY))) == [{"a": 2, "b": 1}]

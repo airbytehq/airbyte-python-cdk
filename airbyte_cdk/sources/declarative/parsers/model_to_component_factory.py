@@ -3164,9 +3164,9 @@ class ModelToComponentFactory:
         each and `page_size: 2`, the requested offsets are 0, 4, 8 instead of 0, 2, 4 and two
         thirds of the records are silently dropped.
 
-        `first_match` (the winning sub-extractor's count) and `zip_merge` (the shortest
-        sub-extractor's count) do not inflate the count and are left alone. A `union` nested
-        anywhere in the tree inflates the count of the node above it, so the whole tree is walked.
+        `first_match` returns the winning sub-extractor's count, which does not inflate the count,
+        and is left alone. A `union` nested anywhere in the tree inflates the count of the node
+        above it, so the whole tree is walked.
         """
         if not isinstance(extractor_model, CombinedExtractorModel):
             return
@@ -3180,8 +3180,8 @@ class ModelToComponentFactory:
                 "OffsetIncrement counts the records of its extractor to advance the offset. A "
                 "`union` CombinedExtractor returns the sum of its sub-extractors' records, which "
                 "overshoots the page the API returned, so records would be skipped. Use the "
-                "`first_match` or `zip_merge` mode, a CursorPagination or PageIncrement "
-                "paginator, or a single extractor."
+                "`first_match` mode, a CursorPagination or PageIncrement paginator, or a single "
+                "extractor."
             ),
             failure_type=FailureType.config_error,
         )
