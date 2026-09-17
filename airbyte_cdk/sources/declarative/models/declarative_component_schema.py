@@ -507,6 +507,11 @@ class HttpRequestRegexMatcher(BaseModel):
     )
 
 
+class CombineMode(Enum):
+    union = "union"
+    first_match = "first_match"
+
+
 class ResponseToFileExtractor(BaseModel):
     type: Literal["ResponseToFileExtractor"]
     preserve_na_values: Optional[bool] = Field(
@@ -2528,6 +2533,26 @@ class DpathExtractor(BaseModel):
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
 
+class CombinedExtractor(BaseModel):
+    type: Literal["CombinedExtractor"]
+    extractors: List[Union[DpathExtractor, CustomRecordExtractor, CombinedExtractor]] = Field(
+        ...,
+        description="The record extractors to combine. At least one is required. Each sub-extractor is given the same HTTP response and decodes it independently, so the response is parsed once per sub-extractor. Streaming decoders (CsvDecoder, JsonlDecoder, JsonItemsDecoder, GzipDecoder, IterableDecoder) can only read the response body once and are rejected.",
+        title="Extractors",
+    )
+    mode: Optional[CombineMode] = Field(
+        CombineMode.union,
+        description='How the records of the sub-extractors are combined. "union" (default) yields every record of every sub-extractor, in the order the extractors are declared. "first_match" yields the records of the first sub-extractor that produces at least one record and skips the remaining ones; nothing is yielded if none of them produces a record. Note that a paginator which counts the records of a page counts the combined records: under "union" that is the sum over all sub-extractors, which overshoots the API page size, so "union" is rejected with an OffsetIncrement paginator because the offset would skip records. Under "first_match" the count is the count of the winning sub-extractor, which is usually the number of records the API returned for the page.',
+        title="Combine Mode",
+    )
+    skip_empty_records: Optional[bool] = Field(
+        False,
+        description='Whether to drop empty records - null, {}, [], "" - yielded by a sub-extractor before the records are combined. Off by default, so the output of a sub-extractor is passed through as it is. Turn it on when the API can return nulls in the middle of a record list, which a GraphQL API does when it answers a partial response and reports the failure in a sibling error field. Under "first_match" this also changes which sub-extractor wins: a sub-extractor whose records are all empty no longer counts as a match, so the next one is tried, and the record count a paginator obtains is the count after the empty records were dropped.',
+        title="Skip Empty Records",
+    )
+    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
+
+
 class ZipfileDecoder(BaseModel):
     class Config:
         extra = Extra.allow
@@ -2542,7 +2567,7 @@ class ZipfileDecoder(BaseModel):
 
 class RecordSelector(BaseModel):
     type: Literal["RecordSelector"]
-    extractor: Union[DpathExtractor, CustomRecordExtractor]
+    extractor: Union[DpathExtractor, CustomRecordExtractor, CombinedExtractor]
     record_filter: Optional[Union[RecordFilter, CustomRecordFilter]] = Field(
         None,
         description="Responsible for filtering records to be emitted by the Source.",
@@ -2787,9 +2812,11 @@ class FileUploader(BaseModel):
         ...,
         description="Requester component that describes how to prepare HTTP requests to send to the source API.",
     )
-    download_target_extractor: Union[DpathExtractor, CustomRecordExtractor] = Field(
-        ...,
-        description="Responsible for fetching the url where the file is located. This is applied on each records and not on the HTTP response",
+    download_target_extractor: Union[DpathExtractor, CustomRecordExtractor, CombinedExtractor] = (
+        Field(
+            ...,
+            description="Responsible for fetching the url where the file is located. This is applied on each records and not on the HTTP response",
+        )
     )
     file_extractor: Optional[Union[DpathExtractor, CustomRecordExtractor]] = Field(
         None,
@@ -3271,15 +3298,17 @@ class AsyncRetriever(BaseModel):
     status_mapping: AsyncJobStatusMap = Field(
         ..., description="Async Job Status to Airbyte CDK Async Job Status mapping."
     )
-    status_extractor: Union[DpathExtractor, CustomRecordExtractor] = Field(
+    status_extractor: Union[DpathExtractor, CustomRecordExtractor, CombinedExtractor] = Field(
         ..., description="Responsible for fetching the actual status of the async job."
     )
-    download_target_extractor: Optional[Union[DpathExtractor, CustomRecordExtractor]] = Field(
+    download_target_extractor: Optional[
+        Union[DpathExtractor, CustomRecordExtractor, CombinedExtractor]
+    ] = Field(
         None,
         description="Responsible for fetching the final result `urls` provided by the completed / finished / ready async job.",
     )
     download_extractor: Optional[
-        Union[DpathExtractor, CustomRecordExtractor, ResponseToFileExtractor]
+        Union[DpathExtractor, CustomRecordExtractor, ResponseToFileExtractor, CombinedExtractor]
     ] = Field(None, description="Responsible for fetching the records from provided urls.")
     creation_requester: Union[HttpRequester, CustomRequester] = Field(
         ...,
@@ -3489,6 +3518,7 @@ class DynamicDeclarativeStream(BaseModel):
 ComplexFieldType.update_forward_refs()
 GzipDecoder.update_forward_refs()
 CompositeErrorHandler.update_forward_refs()
+CombinedExtractor.update_forward_refs()
 DeclarativeSource1.update_forward_refs()
 DeclarativeSource2.update_forward_refs()
 SelectiveAuthenticator.update_forward_refs()

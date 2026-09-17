@@ -54,7 +54,17 @@ from airbyte_cdk.sources.declarative.checks import CheckStream
 from airbyte_cdk.sources.declarative.concurrency_level import ConcurrencyLevel
 from airbyte_cdk.sources.declarative.datetime.min_max_datetime import MinMaxDatetime
 from airbyte_cdk.sources.declarative.decoders import JsonDecoder, PaginationDecoderDecorator
-from airbyte_cdk.sources.declarative.extractors import DpathExtractor, RecordFilter, RecordSelector
+from airbyte_cdk.sources.declarative.decoders.composite_raw_decoder import (
+    CompositeRawDecoder,
+    JsonParser,
+)
+from airbyte_cdk.sources.declarative.extractors import (
+    CombinedExtractor,
+    CombineMode,
+    DpathExtractor,
+    RecordFilter,
+    RecordSelector,
+)
 from airbyte_cdk.sources.declarative.extractors.record_extractor import RecordExtractor
 from airbyte_cdk.sources.declarative.extractors.record_filter import (
     ClientSideIncrementalRecordFilterDecorator,
@@ -109,7 +119,22 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
     ExponentialBackoffStrategy as ExponentialBackoffStrategyModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    FileUploader as FileUploaderModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     GzipDecoder as GzipDecoderModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    IterableDecoder as IterableDecoderModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    JsonDecoder as JsonDecoderModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    JsonItemsDecoder as JsonItemsDecoderModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    JsonlDecoder as JsonlDecoderModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     OffsetIncrement as OffsetIncrementModel,
@@ -119,6 +144,9 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     SelectiveAuthenticator,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    XmlDecoder as XmlDecoderModel,
 )
 from airbyte_cdk.sources.declarative.parsers.custom_code_compiler import (
     ENV_VAR_ALLOW_CUSTOM_CODE,
@@ -6807,3 +6835,624 @@ def test_incremental_dependency_without_incremental_sync_warns(
         for record in caplog.records
     )
     assert warning_emitted == expected_warning
+
+
+def test_create_combined_extractor_through_the_record_selector():
+    """A manifest-level test: it exercises the schema, the generated model and the factory registration."""
+    content = """
+    selector:
+      type: RecordSelector
+      extractor:
+        type: CombinedExtractor
+        mode: first_match
+        extractors:
+          - type: DpathExtractor
+            field_path: ["data", "boards", "*", "items_page", "items"]
+          - type: CombinedExtractor
+            mode: union
+            extractors:
+              - type: DpathExtractor
+                field_path: ["data", "next_items_page", "items"]
+              - type: DpathExtractor
+                field_path: ["data", "{{ parameters['name'] }}"]
+      $parameters:
+        name: "lists"
+    """
+    parsed_manifest = YamlDeclarativeSource._parse(content)
+    resolved_manifest = resolver.preprocess_manifest(parsed_manifest)
+    selector_manifest = transformer.propagate_types_and_parameters(
+        "", resolved_manifest["selector"], {}
+    )
+
+    selector = factory.create_component(
+        model_type=RecordSelectorModel,
+        name="test_stream",
+        component_definition=selector_manifest,
+        decoder=None,
+        transformations=[],
+        config=input_config,
+    )
+
+    assert isinstance(selector, RecordSelector)
+    extractor = selector.extractor
+    assert isinstance(extractor, CombinedExtractor)
+    assert extractor.mode == CombineMode.first_match
+    assert len(extractor.extractors) == 2
+    assert isinstance(extractor.extractors[0], DpathExtractor)
+    assert [fp.eval(input_config) for fp in extractor.extractors[0]._field_path] == [
+        "data",
+        "boards",
+        "*",
+        "items_page",
+        "items",
+    ]
+
+    nested = extractor.extractors[1]
+    assert isinstance(nested, CombinedExtractor)
+    assert nested.mode == CombineMode.union
+    assert [fp.eval(input_config) for fp in nested.extractors[1]._field_path] == ["data", "lists"]
+
+    response = requests.Response()
+    response._content = json.dumps(
+        {"data": {"next_items_page": {"items": [{"id": 1}]}, "lists": [{"id": 2}]}}
+    ).encode("utf-8")
+    assert list(extractor.extract_records(response)) == [{"id": 1}, {"id": 2}]
+
+
+def test_create_combined_extractor_defaults_to_union():
+    content = """
+    selector:
+      type: RecordSelector
+      extractor:
+        type: CombinedExtractor
+        extractors:
+          - type: DpathExtractor
+            field_path: ["a"]
+          - type: DpathExtractor
+            field_path: ["b"]
+    """
+    parsed_manifest = YamlDeclarativeSource._parse(content)
+    resolved_manifest = resolver.preprocess_manifest(parsed_manifest)
+    selector_manifest = transformer.propagate_types_and_parameters(
+        "", resolved_manifest["selector"], {}
+    )
+
+    selector = factory.create_component(
+        model_type=RecordSelectorModel,
+        name="test_stream",
+        component_definition=selector_manifest,
+        decoder=None,
+        transformations=[],
+        config=input_config,
+    )
+
+    assert isinstance(selector.extractor, CombinedExtractor)
+    assert selector.extractor.mode == CombineMode.union
+
+    response = requests.Response()
+    response._content = json.dumps({"a": [{"id": 1}], "b": [{"id": 2}]}).encode("utf-8")
+    assert list(selector.extractor.extract_records(response)) == [{"id": 1}, {"id": 2}]
+
+
+def test_create_combined_extractor_defaults_to_not_skipping_empty_records():
+    content = """
+    selector:
+      type: RecordSelector
+      extractor:
+        type: CombinedExtractor
+        extractors:
+          - type: DpathExtractor
+            field_path: ["a"]
+    """
+    parsed_manifest = YamlDeclarativeSource._parse(content)
+    resolved_manifest = resolver.preprocess_manifest(parsed_manifest)
+    selector_manifest = transformer.propagate_types_and_parameters(
+        "", resolved_manifest["selector"], {}
+    )
+
+    selector = factory.create_component(
+        model_type=RecordSelectorModel,
+        name="test_stream",
+        component_definition=selector_manifest,
+        decoder=None,
+        transformations=[],
+        config=input_config,
+    )
+
+    assert selector.extractor.skip_empty_records is False
+
+
+def test_create_combined_extractor_with_skip_empty_records():
+    """The source-monday shape: a page of nulls must fall through to the pagination path."""
+    content = """
+    selector:
+      type: RecordSelector
+      extractor:
+        type: CombinedExtractor
+        mode: first_match
+        skip_empty_records: true
+        extractors:
+          - type: DpathExtractor
+            field_path: ["data", "boards", "*", "items_page", "items", "*"]
+          - type: DpathExtractor
+            field_path: ["data", "next_items_page", "items", "*"]
+    """
+    parsed_manifest = YamlDeclarativeSource._parse(content)
+    resolved_manifest = resolver.preprocess_manifest(parsed_manifest)
+    selector_manifest = transformer.propagate_types_and_parameters(
+        "", resolved_manifest["selector"], {}
+    )
+
+    selector = factory.create_component(
+        model_type=RecordSelectorModel,
+        name="test_stream",
+        component_definition=selector_manifest,
+        decoder=None,
+        transformations=[],
+        config=input_config,
+    )
+
+    assert isinstance(selector.extractor, CombinedExtractor)
+    assert selector.extractor.skip_empty_records is True
+
+    response = requests.Response()
+    response._content = json.dumps(
+        {
+            "data": {
+                "boards": [{"items_page": {"items": [None, None]}}],
+                "next_items_page": {"items": [{"id": "item_1"}]},
+            },
+            "errors": [{"message": "Item not found"}],
+        }
+    ).encode("utf-8")
+    assert list(selector.extractor.extract_records(response)) == [{"id": "item_1"}]
+
+
+def _combined_extractor_selector_definition() -> Mapping[str, Any]:
+    content = """
+    selector:
+      type: RecordSelector
+      extractor:
+        type: CombinedExtractor
+        extractors:
+          - type: DpathExtractor
+            field_path: ["a"]
+          - type: DpathExtractor
+            field_path: ["b"]
+    """
+    parsed_manifest = YamlDeclarativeSource._parse(content)
+    resolved_manifest = resolver.preprocess_manifest(parsed_manifest)
+    return transformer.propagate_types_and_parameters("", resolved_manifest["selector"], {})
+
+
+class _BufferedCompositeRawDecoderSubclass(CompositeRawDecoder):
+    """Stands in for a `CustomDecoder` that subclasses `CompositeRawDecoder` and buffers."""
+
+
+_STREAMING_DECODERS = {
+    "CsvDecoder": (CsvDecoderModel, {"type": "CsvDecoder"}),
+    "JsonlDecoder": (JsonlDecoderModel, {"type": "JsonlDecoder"}),
+    "JsonItemsDecoder": (
+        JsonItemsDecoderModel,
+        {"type": "JsonItemsDecoder", "items_path": "items.item"},
+    ),
+    "GzipDecoder": (
+        GzipDecoderModel,
+        {"type": "GzipDecoder", "decoder": {"type": "JsonlDecoder"}},
+    ),
+    "IterableDecoder": (IterableDecoderModel, {"type": "IterableDecoder"}),
+}
+
+
+@pytest.mark.parametrize("decoder_type", list(_STREAMING_DECODERS))
+@pytest.mark.parametrize("emit_connector_builder_messages", [False, True])
+def test_combined_extractor_over_a_streaming_decoder_is_rejected(
+    decoder_type: str, emit_connector_builder_messages: bool
+):
+    """A streaming decoder lets every sub-extractor after the first read a closed response body.
+
+    That loss is silent in production - see
+    `test_union_over_a_streaming_decoder_silently_drops_the_later_sub_extractors` - so the manifest
+    is rejected while it is being parsed. The Connector Builder downgrades these decoders to
+    `stream_response=False`, so it is rejected there too rather than letting the Builder test-read
+    a manifest that loses records once published.
+    """
+    local_factory = ModelToComponentFactory(
+        emit_connector_builder_messages=emit_connector_builder_messages
+    )
+    decoder_model, decoder_definition = _STREAMING_DECODERS[decoder_type]
+    decoder = local_factory.create_component(
+        model_type=decoder_model,
+        component_definition=decoder_definition,
+        config=input_config,
+    )
+
+    with pytest.raises(AirbyteTracedException) as exc_info:
+        local_factory.create_component(
+            model_type=RecordSelectorModel,
+            name="test_stream",
+            component_definition=_combined_extractor_selector_definition(),
+            decoder=decoder,
+            transformations=[],
+            config=input_config,
+        )
+
+    assert exc_info.value.failure_type == FailureType.config_error
+    assert "CombinedExtractor" in exc_info.value.message
+    assert decoder_type in exc_info.value.internal_message or "CompositeRawDecoder" in (
+        exc_info.value.internal_message
+    )
+
+
+@pytest.mark.parametrize("decoder_type", ["JsonDecoder", "XmlDecoder"])
+def test_combined_extractor_over_a_buffered_decoder_is_accepted(decoder_type: str):
+    decoder = factory.create_component(
+        model_type=JsonDecoderModel if decoder_type == "JsonDecoder" else XmlDecoderModel,
+        component_definition={"type": decoder_type},
+        config=input_config,
+    )
+
+    selector = factory.create_component(
+        model_type=RecordSelectorModel,
+        name="test_stream",
+        component_definition=_combined_extractor_selector_definition(),
+        decoder=decoder,
+        transformations=[],
+        config=input_config,
+    )
+
+    assert isinstance(selector.extractor, CombinedExtractor)
+
+
+@pytest.mark.parametrize(
+    "decoder",
+    [
+        pytest.param(
+            CompositeRawDecoder(parser=JsonParser(), stream_response=False),
+            id="buffered_composite_raw_decoder",
+        ),
+        pytest.param(
+            _BufferedCompositeRawDecoderSubclass(parser=JsonParser(), stream_response=False),
+            id="buffered_composite_raw_decoder_subclass",
+        ),
+    ],
+)
+def test_combined_extractor_over_a_buffered_composite_raw_decoder_is_accepted_in_the_builder(
+    decoder: CompositeRawDecoder,
+):
+    """The Builder rejection only covers the decoders the Builder itself downgrades.
+
+    A `CompositeRawDecoder` that reads `response.content` in production too - a custom decoder
+    subclassing it, or one built around a buffering parser - can be read by every sub-extractor and
+    must not be rejected just because the Builder is emitting messages.
+    """
+    local_factory = ModelToComponentFactory(emit_connector_builder_messages=True)
+
+    selector = local_factory.create_component(
+        model_type=RecordSelectorModel,
+        name="test_stream",
+        component_definition=_combined_extractor_selector_definition(),
+        decoder=decoder,
+        transformations=[],
+        config=input_config,
+    )
+
+    assert isinstance(selector.extractor, CombinedExtractor)
+
+
+def test_combined_extractor_is_rejected_when_nested_under_another_combined_extractor():
+    """Sub-extractors inherit the retriever's decoder, so the guard has to fire at every level."""
+    content = """
+    selector:
+      type: RecordSelector
+      extractor:
+        type: CombinedExtractor
+        extractors:
+          - type: CombinedExtractor
+            extractors:
+              - type: DpathExtractor
+                field_path: ["a"]
+    """
+    parsed_manifest = YamlDeclarativeSource._parse(content)
+    resolved_manifest = resolver.preprocess_manifest(parsed_manifest)
+    selector_manifest = transformer.propagate_types_and_parameters(
+        "", resolved_manifest["selector"], {}
+    )
+    streaming_decoder = factory.create_component(
+        model_type=JsonlDecoderModel,
+        component_definition={"type": "JsonlDecoder"},
+        config=input_config,
+    )
+
+    with pytest.raises(AirbyteTracedException):
+        factory.create_component(
+            model_type=RecordSelectorModel,
+            name="test_stream",
+            component_definition=selector_manifest,
+            decoder=streaming_decoder,
+            transformations=[],
+            config=input_config,
+        )
+
+
+def test_combined_extractor_is_rejected_through_a_simple_retriever_with_a_streaming_decoder():
+    """The decoder is never `None` on a manifest path, so the guard is reachable end to end."""
+    content = """
+    retriever:
+      type: SimpleRetriever
+      decoder:
+        type: JsonlDecoder
+      requester:
+        type: HttpRequester
+        url_base: "https://api.test.com"
+        path: "/records"
+        http_method: GET
+      record_selector:
+        type: RecordSelector
+        extractor:
+          type: CombinedExtractor
+          extractors:
+            - type: DpathExtractor
+              field_path: ["a"]
+            - type: DpathExtractor
+              field_path: ["b"]
+    """
+    parsed_manifest = YamlDeclarativeSource._parse(content)
+    resolved_manifest = resolver.preprocess_manifest(parsed_manifest)
+    retriever_manifest = transformer.propagate_types_and_parameters(
+        "", resolved_manifest["retriever"], {}
+    )
+
+    with pytest.raises(AirbyteTracedException) as exc_info:
+        factory.create_component(
+            model_type=SimpleRetrieverModel,
+            component_definition=retriever_manifest,
+            config=input_config,
+            name="test_stream",
+            primary_key="id",
+            stream_slicer=None,
+            transformations=[],
+        )
+
+    assert exc_info.value.failure_type == FailureType.config_error
+
+
+def _retriever_manifest_with_paginator(
+    extractor_definition: str, pagination_strategy: str
+) -> Mapping[str, Any]:
+    content = f"""
+    retriever:
+      type: SimpleRetriever
+      requester:
+        type: HttpRequester
+        url_base: "https://api.test.com"
+        path: "/records"
+        http_method: GET
+      paginator:
+        type: DefaultPaginator
+        pagination_strategy:
+{pagination_strategy}
+      record_selector:
+        type: RecordSelector
+        extractor:
+{extractor_definition}
+    """
+    parsed_manifest = YamlDeclarativeSource._parse(content)
+    resolved_manifest = resolver.preprocess_manifest(parsed_manifest)
+    return transformer.propagate_types_and_parameters("", resolved_manifest["retriever"], {})
+
+
+_OFFSET_INCREMENT = """          type: OffsetIncrement
+          page_size: 2"""
+_PAGE_INCREMENT = """          type: PageIncrement
+          page_size: 2"""
+_UNION_EXTRACTOR_DEFAULT_MODE = """          type: CombinedExtractor
+          extractors:
+            - type: DpathExtractor
+              field_path: ["a"]
+            - type: DpathExtractor
+              field_path: ["b"]"""
+_UNION_EXTRACTOR_EXPLICIT_MODE = """          type: CombinedExtractor
+          mode: union
+          extractors:
+            - type: DpathExtractor
+              field_path: ["a"]
+            - type: DpathExtractor
+              field_path: ["b"]"""
+_NESTED_UNION_EXTRACTOR = """          type: CombinedExtractor
+          mode: first_match
+          extractors:
+            - type: CombinedExtractor
+              mode: union
+              extractors:
+                - type: DpathExtractor
+                  field_path: ["a"]
+                - type: DpathExtractor
+                  field_path: ["b"]
+            - type: DpathExtractor
+              field_path: ["c"]"""
+
+
+def _build_retriever(retriever_manifest: Mapping[str, Any]) -> SimpleRetriever:
+    return factory.create_component(
+        model_type=SimpleRetrieverModel,
+        component_definition=retriever_manifest,
+        config=input_config,
+        name="test_stream",
+        primary_key="id",
+        stream_slicer=None,
+        transformations=[],
+    )
+
+
+def _json_response(body: Mapping[str, Any]) -> requests.Response:
+    response = requests.Response()
+    response.status_code = 200
+    response._content = json.dumps(body).encode("utf-8")
+    return response
+
+
+@pytest.mark.parametrize(
+    "extractor_definition",
+    [
+        pytest.param(_UNION_EXTRACTOR_DEFAULT_MODE, id="union_by_default"),
+        pytest.param(_UNION_EXTRACTOR_EXPLICIT_MODE, id="union_declared"),
+        pytest.param(_NESTED_UNION_EXTRACTOR, id="union_nested_under_first_match"),
+    ],
+)
+def test_union_combined_extractor_is_rejected_by_an_offset_increment_paginator(
+    extractor_definition: str,
+):
+    """`OffsetIncrement` advances the offset by the record count of its extractor.
+
+    Under `union` that count is the sum over all sub-extractors, so the offset overshoots the page
+    the API returned and the records in between are never requested. A `union` nested anywhere in
+    the tree inflates the count of the node above it, so it is rejected as well.
+    """
+    with pytest.raises(AirbyteTracedException) as exc_info:
+        _build_retriever(
+            _retriever_manifest_with_paginator(extractor_definition, _OFFSET_INCREMENT)
+        )
+
+    assert exc_info.value.failure_type == FailureType.config_error
+    assert "union" in exc_info.value.message
+    assert "OffsetIncrement" in exc_info.value.message
+
+
+def test_first_match_combined_extractor_counts_only_the_winning_sub_extractor_for_the_offset():
+    """`first_match` is accepted because the count it reports is the winner's, not a sum."""
+    extractor_definition = """          type: CombinedExtractor
+          mode: first_match
+          extractors:
+            - type: DpathExtractor
+              field_path: ["a"]
+            - type: DpathExtractor
+              field_path: ["b"]"""
+
+    retriever = _build_retriever(
+        _retriever_manifest_with_paginator(extractor_definition, _OFFSET_INCREMENT)
+    )
+
+    assert isinstance(retriever.record_selector.extractor, CombinedExtractor)
+    pagination_strategy = retriever.paginator.pagination_strategy
+    assert isinstance(pagination_strategy, OffsetIncrement)
+    # The paginator counts records with its own copy, so the response is traversed twice per page.
+    assert isinstance(pagination_strategy.extractor, CombinedExtractor)
+    assert pagination_strategy.extractor is not retriever.record_selector.extractor
+
+    # `a` misses, so the winner is `b` with its two records: the offset advances by 2, not by 4.
+    response = _json_response({"a": [], "b": [{"id": 1}, {"id": 2}]})
+    assert (
+        pagination_strategy.next_page_token(
+            response=response, last_page_size=2, last_record=None, last_page_token_value=0
+        )
+        == 2
+    )
+
+
+def test_union_combined_extractor_is_accepted_by_a_page_increment_paginator():
+    """`PageIncrement` only compares the count against `page_size`, so an inflated count is not lossy.
+
+    It can cost one extra request when the summed count of the last page equals `page_size`, which
+    is documented on the component rather than rejected.
+    """
+    retriever = _build_retriever(
+        _retriever_manifest_with_paginator(_UNION_EXTRACTOR_DEFAULT_MODE, _PAGE_INCREMENT)
+    )
+
+    pagination_strategy = retriever.paginator.pagination_strategy
+    assert isinstance(pagination_strategy, PageIncrement)
+    assert isinstance(pagination_strategy.extractor, CombinedExtractor)
+
+
+def test_create_async_retriever_with_combined_extractors():
+    """Covers the three `AsyncRetriever` unions widened by `CombinedExtractor`."""
+    combined = {
+        "type": "CombinedExtractor",
+        "mode": "first_match",
+        "extractors": [
+            {"type": "DpathExtractor", "field_path": ["primary"]},
+            {"type": "DpathExtractor", "field_path": ["fallback"]},
+        ],
+    }
+    definition = {
+        "type": "AsyncRetriever",
+        "status_mapping": {
+            "failed": ["failed"],
+            "running": ["pending"],
+            "timeout": ["timeout"],
+            "completed": ["ready"],
+        },
+        "status_extractor": combined,
+        "download_target_extractor": combined,
+        "download_extractor": combined,
+        "record_selector": {
+            "type": "RecordSelector",
+            "extractor": {"type": "DpathExtractor", "field_path": ["data"]},
+        },
+        "polling_requester": {
+            "type": "HttpRequester",
+            "path": "/exports/{{ creation_response['id'] }}",
+            "url_base": "https://api.test.com",
+            "http_method": "GET",
+        },
+        "creation_requester": {
+            "type": "HttpRequester",
+            "path": "/exports",
+            "url_base": "https://api.test.com",
+            "http_method": "POST",
+        },
+        "download_requester": {
+            "type": "HttpRequester",
+            "path": "{{download_target}}",
+            "url_base": "",
+            "http_method": "GET",
+        },
+    }
+
+    component = factory.create_component(
+        model_type=AsyncRetrieverModel,
+        component_definition=definition,
+        name="test_stream",
+        primary_key="id",
+        stream_slicer=None,
+        transformations=[],
+        config={},
+    )
+
+    job_repository = component.stream_slicer.job_orchestrator_factory(
+        [StreamSlice(partition={}, cursor_slice={})]
+    )._job_repository
+    assert isinstance(job_repository.status_extractor, CombinedExtractor)
+    assert isinstance(job_repository.download_target_extractor, CombinedExtractor)
+    assert isinstance(
+        job_repository.download_retriever.record_selector.extractor, CombinedExtractor
+    )
+
+
+def test_create_file_uploader_with_a_combined_download_target_extractor():
+    definition = {
+        "type": "FileUploader",
+        "requester": {
+            "type": "HttpRequester",
+            "url_base": "https://api.test.com",
+            "path": "/download",
+            "http_method": "GET",
+        },
+        "download_target_extractor": {
+            "type": "CombinedExtractor",
+            "mode": "first_match",
+            "extractors": [
+                {"type": "DpathExtractor", "field_path": ["url"]},
+                {"type": "DpathExtractor", "field_path": ["download_url"]},
+            ],
+        },
+    }
+
+    file_uploader = factory.create_component(
+        model_type=FileUploaderModel,
+        component_definition=definition,
+        config=input_config,
+    )
+
+    assert isinstance(file_uploader.download_target_extractor, CombinedExtractor)

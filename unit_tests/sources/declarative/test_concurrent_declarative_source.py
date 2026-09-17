@@ -6113,3 +6113,99 @@ def test_dynamic_stream_discovery_http_requests_use_api_budget():
         "HttpComponentsResolver's requester should have api_budget set during dynamic stream "
         "discovery, but it was None. This means discovery HTTP requests are not rate-limited."
     )
+
+
+def _validation_messages(error: ValidationError) -> Iterable[str]:
+    """Flattens a jsonschema error tree; the top-level message of an `anyOf` miss carries no detail."""
+    yield error.message
+    for sub_error in error.context or []:
+        yield from _validation_messages(sub_error)
+
+
+def _combined_extractor_manifest(extractor: Mapping[str, Any]) -> Dict[str, Any]:
+    return {
+        "version": "6.0.0",
+        "type": "DeclarativeSource",
+        "check": {"type": "CheckStream", "stream_names": ["lists"]},
+        "streams": [
+            {
+                "type": "DeclarativeStream",
+                "name": "lists",
+                "primary_key": [],
+                "schema_loader": {
+                    "type": "InlineSchemaLoader",
+                    "schema": {
+                        "$schema": "http://json-schema.org/schema#",
+                        "type": "object",
+                        "properties": {},
+                    },
+                },
+                "retriever": {
+                    "type": "SimpleRetriever",
+                    "requester": {
+                        "type": "HttpRequester",
+                        "url_base": "https://api.test.com",
+                        "path": "/lists",
+                        "http_method": "GET",
+                    },
+                    "record_selector": {"type": "RecordSelector", "extractor": extractor},
+                },
+            }
+        ],
+    }
+
+
+def test_combined_extractor_manifest_passes_schema_validation():
+    """Covers the CombinedExtractor JSON-Schema definition, which the factory tests never reach."""
+    manifest = _combined_extractor_manifest(
+        {
+            "type": "CombinedExtractor",
+            "mode": "first_match",
+            "extractors": [
+                {"type": "DpathExtractor", "field_path": ["rows", "*", "dimensions"]},
+                {
+                    "type": "CombinedExtractor",
+                    "extractors": [
+                        {"type": "DpathExtractor", "field_path": ["rows", "*", "metrics"]}
+                    ],
+                },
+            ],
+        }
+    )
+
+    source = ConcurrentDeclarativeSource(
+        source_config=manifest, config={}, catalog=create_catalog("lists"), state=None
+    )
+
+    assert len(source.streams(config={})) == 1
+
+
+def test_combined_extractor_with_an_unknown_mode_fails_schema_validation():
+    manifest = _combined_extractor_manifest(
+        {
+            "type": "CombinedExtractor",
+            "mode": "concatenate",
+            "extractors": [{"type": "DpathExtractor", "field_path": ["rows"]}],
+        }
+    )
+
+    with pytest.raises(ValidationError):
+        ConcurrentDeclarativeSource(
+            source_config=manifest, config={}, catalog=create_catalog("lists"), state=None
+        )
+
+
+def test_combined_extractor_with_an_empty_extractors_list_fails_schema_validation():
+    """`minItems: 1` turns what used to be a runtime `ValueError` into a field-level schema error."""
+    manifest = _combined_extractor_manifest({"type": "CombinedExtractor", "extractors": []})
+
+    with pytest.raises(ValidationError) as exc_info:
+        ConcurrentDeclarativeSource(
+            source_config=manifest, config={}, catalog=create_catalog("lists"), state=None
+        )
+
+    # `_validate_source` re-raises a generic message; the field-level error is in the cause tree.
+    assert any(
+        "should be non-empty" in message
+        for message in _validation_messages(exc_info.value.__cause__)
+    )
