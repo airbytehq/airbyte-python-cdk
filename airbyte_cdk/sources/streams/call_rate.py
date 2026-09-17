@@ -120,7 +120,7 @@ class HttpRequestMatcher(RequestMatcher):
         if url:
             parsed_url = parse.urlsplit(url)
             url_base = f"{parsed_url.scheme}://{parsed_url.netloc}"
-            url_path = parsed_url.path if parsed_url.path != "/" else None
+            url_path = parsed_url.path.rstrip("/") or None
         else:
             url_base = None
             url_path = None
@@ -129,7 +129,7 @@ class HttpRequestMatcher(RequestMatcher):
         self._regex_matcher = HttpRequestRegexMatcher(
             method=method,
             url_base=url_base,
-            url_path_pattern=re.escape(url_path) if url_path else None,
+            url_path_pattern=re.escape(url_path) + r"(?=/|$)" if url_path else None,
             params=params,
             headers=headers,
         )
@@ -171,7 +171,7 @@ class HttpRequestRegexMatcher(RequestMatcher):
         """
         :param method: HTTP method (e.g. "GET", "POST"); compared case-insensitively.
         :param url_base: Base URL (scheme://host) that must match.
-        :param url_path_pattern: A regex pattern that will be applied to the path portion of the URL.
+        :param url_path_pattern: A regex pattern matched against the path with any trailing slash removed, and also against the original path so patterns requiring a trailing slash still work.
         :param params: Dictionary of query parameters that must be present in the request.
         :param headers: Dictionary of headers that must be present (header keys are compared case-insensitively).
         :param weight: The weight of a request matching this matcher. If set, this value is used
@@ -224,7 +224,8 @@ class HttpRequestRegexMatcher(RequestMatcher):
         # Reconstruct the base: scheme://netloc
         request_url_base = f"{str(parsed_url.scheme)}://{str(parsed_url.netloc)}"
         # The path (without query parameters)
-        request_path = str(parsed_url.path).rstrip("/")
+        request_path = str(parsed_url.path)
+        normalized_path = request_path.rstrip("/")
 
         # If a base URL is provided, check that it matches.
         if self._url_base is not None:
@@ -233,7 +234,10 @@ class HttpRequestRegexMatcher(RequestMatcher):
 
         # If a URL path pattern is provided, ensure the path matches the regex.
         if self._url_path_pattern is not None:
-            if not self._url_path_pattern.search(request_path):
+            if not (
+                self._url_path_pattern.search(normalized_path)
+                or (request_path != normalized_path and self._url_path_pattern.search(request_path))
+            ):
                 return False
 
         # Check query parameters.
