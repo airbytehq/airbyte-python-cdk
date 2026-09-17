@@ -178,10 +178,10 @@ from airbyte_cdk.sources.streams.http.error_handlers.response_models import (
             {"status_code": 500},
             ErrorResolution(
                 response_action=ResponseAction.RETRY,
-                failure_type=FailureType.transient_error,
+                failure_type=FailureType.config_error,
                 error_message="rate limits",
             ),
-            id="test_http_code_matches_failure_type_config_error_action_retry_uses_default_failure_type",
+            id="test_http_code_matches_failure_type_config_error_action_retry_uses_configured_failure_type",
         ),
         pytest.param(
             ResponseAction.RATE_LIMITED,
