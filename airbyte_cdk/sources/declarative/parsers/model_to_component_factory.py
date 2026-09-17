@@ -3963,14 +3963,13 @@ class ModelToComponentFactory:
             page_size_reduction.reduction_factor if page_size_reduction else None
         ) or 2.0
         max_attempts = (page_size_reduction.max_attempts if page_size_reduction else None) or 5
-        # Only when the floor was asked for: the default of 1 is out of reach of the default budget on any page
-        # size above 32, so warning about a floor the author never set would fire on nearly every stream.
-        floor_was_set = bool(
-            page_size_reduction and "minimum_page_size" in page_size_reduction.__fields_set__
-        )
+        # Only when there is a floor worth reaching. The default of 1 is out of reach of the default budget on
+        # any page size above 32, so this would otherwise fire on nearly every stream that opts in - and
+        # `__fields_set__` would not help, since it records that a value was supplied and not that it differs
+        # from the default, so spelling `minimum_page_size: 1` out longhand would earn the warning.
         if (
             configured_page_size is not None
-            and floor_was_set
+            and minimum_page_size > 1
             and reduction_factor**max_attempts < configured_page_size / minimum_page_size
         ):
             reachable_page_size = max(

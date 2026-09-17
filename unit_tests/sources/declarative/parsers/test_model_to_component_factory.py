@@ -7078,11 +7078,23 @@ def test_given_minimum_page_size_within_reach_of_max_attempts_then_do_not_warn(c
     assert "minimum_page_size" not in caplog.text
 
 
-def test_given_default_minimum_page_size_then_do_not_warn_about_its_reachability(caplog):
-    # The default floor of 1 is out of reach of the default budget on any page size above 32, so warning about
-    # a floor the author never set would fire on nearly every stream that opts in.
+@pytest.mark.parametrize(
+    "page_size_reduction",
+    [
+        pytest.param("page_size_reduction:\n    type: PageSizeReduction", id="floor_left_default"),
+        pytest.param(
+            "page_size_reduction:\n    type: PageSizeReduction\n    minimum_page_size: 1",
+            id="floor_set_to_the_default_value",
+        ),
+    ],
+)
+def test_given_no_floor_worth_reaching_then_do_not_warn_about_its_reachability(
+    page_size_reduction, caplog
+):
+    # A floor of 1 is out of reach of the default budget on any page size above 32, so warning about it would
+    # fire on nearly every stream that opts in - including one that only spells the default out longhand.
     with caplog.at_level(logging.WARNING, logger="airbyte.model_to_component_factory"):
-        get_retriever(_page_size_reduction_stream())
+        get_retriever(_page_size_reduction_stream(page_size_reduction=page_size_reduction))
 
     assert "minimum_page_size" not in caplog.text
 

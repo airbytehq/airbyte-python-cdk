@@ -105,16 +105,16 @@ from airbyte_cdk.sources.declarative.parsers.stop_condition_safety import (
             "{{ response.next is none }}", 1, StopConditionSafety.SAFE, id="a_test_on_the_response"
         ),
         pytest.param(
-            "{{ response.page >= response.total_pages }}",
-            1,
-            StopConditionSafety.SAFE,
-            id="a_lower_bound_on_a_response_value",
-        ),
-        pytest.param(
             "{{ 100 < response.count }}",
             1,
             StopConditionSafety.SAFE,
-            id="a_lower_bound_on_a_response_value_reversed",
+            id="a_literal_bounded_from_above",
+        ),
+        pytest.param(
+            "{{ response.count > 100 }}",
+            1,
+            StopConditionSafety.SAFE,
+            id="a_literal_bounded_from_above_reversed",
         ),
         # `last_page_size` is not the only way to count the records of a page: the response body carries the
         # same number, and these are `{{ last_page_size < 100 }}` counted one layer out. Which response field
@@ -155,6 +155,27 @@ from airbyte_cdk.sources.declarative.parsers.stop_condition_safety import (
             1,
             StopConditionSafety.UNKNOWN,
             id="a_negated_lower_bound_on_a_response_value",
+        ),
+        # Both operator directions are mirrored: every one of the four ordering operators bounds one of its
+        # operands from above, and only a literal is certain not to be a page length. Reading `lt`/`lteq` in
+        # full while `gt`/`gteq` only counted a literal threshold left the first two of these classified safe.
+        pytest.param(
+            "{{ config['page_size'] > response['data'] | length }}",
+            1,
+            StopConditionSafety.UNKNOWN,
+            id="a_page_length_under_a_config_threshold_on_the_left",
+        ),
+        pytest.param(
+            "{{ response.total > response['data'] | length }}",
+            1,
+            StopConditionSafety.UNKNOWN,
+            id="a_page_length_under_a_response_threshold_on_the_left",
+        ),
+        pytest.param(
+            "{{ response.page >= response.total_pages }}",
+            1,
+            StopConditionSafety.UNKNOWN,
+            id="two_response_values_compared",
         ),
         # Shapes the analysis cannot reason about are reported as unknown so the caller can warn rather than
         # reject: this runs at stream construction, where a false rejection also breaks `check` and `discover`.

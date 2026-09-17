@@ -181,16 +181,23 @@ def _bounded_from_above(
     that are not short at all. A lower bound can only stop being satisfied as pages get smaller. When the
     comparison does not decide the condition in its own polarity, which of the two it is cannot be read off
     the operator, so it counts as an upper bound.
+
+    Every comparison with one of these four operators bounds one of its operands from above - `a < b` bounds
+    `a`, `b > a` bounds `a` too - and a literal cannot be a page length, so the bounded side only escapes when
+    it is one. The two operator directions are therefore mirrored, the way `_MIRRORED_OPERATORS` mirrors them
+    on the `last_page_size` path: reading only `lt`/`lteq` in full left
+    `{{ config['page_size'] > response['data'] | length }}` classified as safe while
+    `{{ response['data'] | length < config['page_size'] }}` was warned about.
     """
     if operator not in ("lt", "lteq", "gt", "gteq"):
         return None
     if not decides_condition:
         return left if not isinstance(left, nodes.Const) else right
     if operator in ("lt", "lteq"):
-        # `x < 100` bounds x from above; `100 < x` is a lower bound on x.
+        # `x < 100` bounds x from above; `100 < x` bounds the literal, which is not a page length.
         return None if isinstance(left, nodes.Const) else left
-    # `100 > x` is the mirror of `x < 100`; `x > 100` is a lower bound on x.
-    return right if isinstance(left, nodes.Const) else None
+    # `100 > x` is the mirror of `x < 100`; `x > 100` bounds the literal again.
+    return None if isinstance(right, nodes.Const) else right
 
 
 def _comparisons(
