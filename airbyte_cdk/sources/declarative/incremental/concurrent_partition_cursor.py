@@ -13,6 +13,7 @@ from datetime import timedelta
 from typing import Any, Callable, Iterable, List, Mapping, MutableMapping, Optional, TypeVar
 
 from airbyte_cdk.models import (
+    AirbyteMessage,
     AirbyteStateBlob,
     AirbyteStateMessage,
     AirbyteStateType,
@@ -268,10 +269,11 @@ class ConcurrentPerPartitionCursor(Cursor):
         if last_closed_state is not None:
             self._parent_state = last_closed_state
 
-    def ensure_at_least_one_state_emitted(self) -> None:
+    def ensure_at_least_one_state_emitted(self) -> Iterable[AirbyteMessage]:
         """
         The platform expects at least one state message on successful syncs. Hence, whatever happens, we expect this method to be
         called.
+        Returns the state message directly instead of putting it on the shared queue.
         """
         if not any(
             semaphore_item[1]._value for semaphore_item in self._semaphore_per_partition.items()
@@ -281,7 +283,7 @@ class ConcurrentPerPartitionCursor(Cursor):
                 self._global_cursor = self._new_global_cursor
                 self._lookback_window = self._timer.finish()
             self._parent_state = self._partition_router.get_stream_state()
-        self._emit_state_message(throttle=False)
+        yield from self._create_state_message(throttle=False)
 
     def _throttle_state_message(self) -> Optional[float]:
         """
@@ -292,7 +294,33 @@ class ConcurrentPerPartitionCursor(Cursor):
             return None
         return current_time
 
+    def _create_state_message(self, throttle: bool = True) -> Iterable[AirbyteMessage]:
+        """
+        Build and return the state message directly instead of emitting through the message repository.
+        Used by ensure_at_least_one_state_emitted() to avoid deadlock when the main thread
+        would otherwise call queue.put() on a full queue.
+        """
+        if throttle:
+            current_time = self._throttle_state_message()
+            if current_time is None:
+                return
+            self._last_emission_time = current_time
+            # Skip state emit for global cursor if parent state is empty
+            if self._use_global_cursor and not self._parent_state:
+                return
+
+        self._connector_state_manager.update_state_for_stream(
+            self._stream_name,
+            self._stream_namespace,
+            self.state,
+        )
+        state_message = self._connector_state_manager.create_state_message(
+            self._stream_name, self._stream_namespace
+        )
+        yield state_message
+
     def _emit_state_message(self, throttle: bool = True) -> None:
+        """Emit state message via message repository. Used by close_partition() on worker threads."""
         if throttle:
             current_time = self._throttle_state_message()
             if current_time is None:

@@ -145,8 +145,8 @@ class MockConcurrentCursor(Cursor):
             )
         )
 
-    def ensure_at_least_one_state_emitted(self) -> None:
-        pass
+    def ensure_at_least_one_state_emitted(self):
+        yield from []
 
     def should_be_synced(self, record: Record) -> bool:
         return True
