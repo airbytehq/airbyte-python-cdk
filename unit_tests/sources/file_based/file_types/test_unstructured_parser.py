@@ -12,6 +12,7 @@ import requests
 from unstructured.documents.elements import ElementMetadata, Formula, ListItem, Text, Title
 from unstructured.file_utils.filetype import FileType
 
+import airbyte_cdk.sources.file_based.file_types.unstructured_parser as unstructured_parser_module
 from airbyte_cdk.models import FailureType
 from airbyte_cdk.sources.file_based.config.file_based_stream_config import FileBasedStreamConfig
 from airbyte_cdk.sources.file_based.config.unstructured_format import (
@@ -108,6 +109,19 @@ def test_infer_schema(mock_detect_filetype, filetype, format_config, raises):
         }
     loop.close()
     asyncio.set_event_loop(main_loop)
+
+
+@patch("airbyte_cdk.sources.file_based.file_types.unstructured_parser.detect_filetype")
+def test_get_filetype_falls_back_when_mime_type_is_unknown(mock_detect_filetype):
+    mock_detect_filetype.return_value = FileType.PDF
+    file = MagicMock()
+    remote_file = RemoteFile(
+        uri="sample.pdf",
+        mime_type="application/octet-stream",
+        last_modified=datetime.now(),
+    )
+
+    assert UnstructuredParser()._get_filetype(file, remote_file) == FileType.PDF
 
 
 @pytest.mark.parametrize(
@@ -227,22 +241,31 @@ def test_infer_schema(mock_detect_filetype, filetype, format_config, raises):
         ),
     ],
 )
-@patch("unstructured.partition.pdf.partition_pdf")
-@patch("unstructured.partition.pptx.partition_pptx")
-@patch("unstructured.partition.docx.partition_docx")
+@patch("airbyte_cdk.sources.file_based.file_types.unstructured_parser._import_unstructured")
 @patch("airbyte_cdk.sources.file_based.file_types.unstructured_parser.detect_filetype")
 def test_parse_records(
     mock_detect_filetype,
-    mock_partition_docx,
-    mock_partition_pptx,
-    mock_partition_pdf,
+    mock_import_unstructured,
     filetype,
     format_config,
     parse_result,
     raises,
     expected_records,
     parsing_error,
+    monkeypatch,
 ):
+    mock_partition_pdf = MagicMock()
+    mock_partition_docx = MagicMock()
+    mock_partition_pptx = MagicMock()
+    monkeypatch.setattr(
+        unstructured_parser_module, "unstructured_partition_pdf", mock_partition_pdf
+    )
+    monkeypatch.setattr(
+        unstructured_parser_module, "unstructured_partition_docx", mock_partition_docx
+    )
+    monkeypatch.setattr(
+        unstructured_parser_module, "unstructured_partition_pptx", mock_partition_pptx
+    )
     stream_reader = MagicMock()
     mock_open(stream_reader.open_file, read_data=bytes(str(parse_result), "utf-8"))
     fake_file = RemoteFile(uri=FILE_URI, last_modified=datetime.now())
