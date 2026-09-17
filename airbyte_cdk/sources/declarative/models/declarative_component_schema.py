@@ -1450,7 +1450,7 @@ class PageSizeReduction(BaseModel):
     )
     retries_at_minimum_page_size: Optional[int] = Field(
         0,
-        description="Number of times the same page is re-issued unchanged, each after the backoff wait, once the page size cannot be shrunk any further, before the sync fails with a transient error. The default of 0 fails on the first response received at minimum_page_size. Raise it when the API returns the same error for a page that is too big and for a server-side hiccup: at the floor, reducing is no longer an option but waiting still is, and without this budget those responses end the stream on the first one. This budget is separate from max_attempts, which only counts reductions, and it restarts on every page that succeeds.",
+        description="Number of times the same page is re-issued unchanged, each after the backoff wait, once the page size cannot be shrunk any further, before the sync fails with a transient error. The default of 0 fails on the first response received at minimum_page_size. Raise it when the API returns the same error for a page that is too big and for a server-side hiccup: at the floor, reducing is no longer an option but waiting still is, and without this budget those responses end the stream on the first one. This budget is separate from max_attempts, which only counts reductions, and it restarts on every page that succeeds. It applies however the page size arrived at the floor, whether by reduction or because page_size was already there; a page size that minimum_page_size blocks from ever being reduced is still reported as a configuration error, but only once this budget is spent.",
         examples=[0, 3],
         ge=0,
         title="Retries At Minimum Page Size",

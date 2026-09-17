@@ -323,6 +323,61 @@ def test_given_retries_at_minimum_page_size_when_at_the_floor_then_retry_the_sam
     assert sleeps == [1, 1, 2], "the reduction, then the two retries at the floor"
 
 
+def test_given_page_size_configured_at_a_floor_above_one_then_retry_before_reporting_the_misconfiguration():
+    """
+    The retry budget cannot depend on how the page size arrived at the floor: the same manifest would then give
+    a partition three retries when the reduction walked down to the floor and none when the user's `page_size`
+    was already there. The misconfiguration is still reported, once the retries the manifest asked for are
+    spent.
+    """
+    sleeps: list = []
+    reducer = _reducer(
+        configured_page_size=10,
+        sleeps=sleeps,
+        minimum_page_size=10,
+        backoff_seconds=1,
+        retries_at_minimum_page_size=2,
+    )
+
+    reducer.reduce()
+    reducer.reduce()
+    assert reducer.page_size_override is None, "there was never a reduction to apply"
+
+    with pytest.raises(AirbyteTracedException) as exception:
+        reducer.reduce()
+
+    assert sleeps == [1, 2]
+    assert exception.value.failure_type == FailureType.config_error
+    assert "already at or below the configured minimum" in exception.value.message
+    assert "2 retries at that size were spent first" in exception.value.internal_message
+
+
+def test_given_page_size_configured_at_a_floor_above_one_and_no_retries_then_report_the_misconfiguration():
+    reducer = _reducer(configured_page_size=10, minimum_page_size=10)
+
+    with pytest.raises(AirbyteTracedException) as exception:
+        reducer.reduce()
+
+    assert exception.value.failure_type == FailureType.config_error
+
+
+def test_given_no_sleep_override_when_reduce_then_wait_through_time_sleep(monkeypatch):
+    """
+    The reducer resolves `time.sleep` per call rather than binding it as a default argument. Bound, a suite
+    that patches `time.sleep` to keep a run of reductions from taking its minutes for real has no effect - and
+    every other test here passes its own `sleep`, so this is the only one that exercises the default path.
+    """
+    waits: list = []
+    monkeypatch.setattr(
+        "airbyte_cdk.sources.declarative.retrievers.page_size_reducer.time.sleep", waits.append
+    )
+    reducer = PageSizeReducer(PageSizeReduction(backoff_seconds=7), 100, stream_name=A_STREAM_NAME)
+
+    reducer.reduce()
+
+    assert waits == [7]
+
+
 def test_given_retries_at_minimum_page_size_do_not_count_against_max_attempts():
     """
     The two budgets measure different things: `max_attempts` bounds the reductions that got no page through,

@@ -184,19 +184,15 @@ class PageSizeReducer:
         the two apart. `REDUCE_PAGE_SIZE` bypasses the HTTP retry budget, so without this budget the second
         kind of 502 ends the stream on the first response once the floor is reached - fewer attempts than the
         same connector got before it adopted the reduction.
-        """
-        if self._current_page_size is None and self._config.minimum_page_size > 1:
-            # No reduction was ever applied and the connector's own floor is what blocks it, so the page size
-            # can never be reduced on this stream however the API behaves. That is a configuration error, and
-            # it is actionable: both numbers in the message are the connector's to change.
-            raise AirbyteTracedException(
-                internal_message=f"Stream {self._stream_name} has a configured page size of {current_page_size} which is not greater than the configured minimum page size of {self._config.minimum_page_size}, so it can never be reduced",
-                message=f"The page size of stream {self._stream_name} ({current_page_size}) is already at or below "
-                f"the configured minimum of {self._config.minimum_page_size}, so the connector cannot reduce it. "
-                f"Raise the page size of the stream, or lower `minimum_page_size`.",
-                failure_type=FailureType.config_error,
-            )
 
+        The budget applies however the page size arrived at the floor, whether by reduction or because the
+        configured page size was already there. Only once it is spent does the failure depend on that: a page
+        size the connector's own floor blocks from ever being reduced is a configuration error, while a floor
+        the reduction walked down to means the API kept rejecting every size, which is transient.
+        """
+        # The retries come first, including on a stream whose page size started at the floor. How the page size
+        # arrived there says nothing about the response, so letting the misconfiguration branch below decide it
+        # would give the same manifest a retry budget or none depending on the user's `page_size`.
         if self._retries_at_minimum_page_size < self._config.retries_at_minimum_page_size:
             self._retries_at_minimum_page_size += 1
             backoff = self._config.backoff_seconds * self._retries_at_minimum_page_size
@@ -207,6 +203,24 @@ class PageSizeReducer:
             )
             self._sleep(backoff)
             return
+
+        if self._current_page_size is None and self._config.minimum_page_size > 1:
+            # No reduction was ever applied and the connector's own floor is what blocks it, so the page size
+            # can never be reduced on this stream however the API behaves. That is a configuration error, and
+            # it is actionable: both numbers in the message are the connector's to change. It is reported once
+            # the retries above are spent, so a manifest that asked for them still gets them.
+            raise AirbyteTracedException(
+                internal_message=f"Stream {self._stream_name} has a configured page size of {current_page_size} which is not greater than the configured minimum page size of {self._config.minimum_page_size}, so it can never be reduced"
+                + (
+                    f" ({self._retries_at_minimum_page_size} retries at that size were spent first)"
+                    if self._retries_at_minimum_page_size
+                    else ""
+                ),
+                message=f"The page size of stream {self._stream_name} ({current_page_size}) is already at or below "
+                f"the configured minimum of {self._config.minimum_page_size}, so the connector cannot reduce it. "
+                f"Raise the page size of the stream, or lower `minimum_page_size`.",
+                failure_type=FailureType.config_error,
+            )
 
         raise AirbyteTracedException(
             internal_message=f"Stream {self._stream_name} still fails with a page size of {current_page_size}, which is the smallest page size allowed by the configured minimum of {self._config.minimum_page_size}"
