@@ -6,7 +6,7 @@ from unittest.mock import Mock
 
 import pytest
 
-from airbyte_cdk.sources.declarative.models import FailureType
+from airbyte_cdk.models import FailureType
 from airbyte_cdk.sources.declarative.retrievers.pagination_tracker import PaginationTracker
 from airbyte_cdk.sources.declarative.types import Record, StreamSlice
 from airbyte_cdk.sources.streams.concurrent.cursor import ConcurrentCursor
@@ -66,8 +66,14 @@ class TestPaginationTracker(TestCase):
         original_slice = StreamSlice(partition={}, cursor_slice={})
 
         tracker.reduce_slice_range_if_possible(original_slice, original_slice)
-        with pytest.raises(AirbyteTracedException):
+        with pytest.raises(AirbyteTracedException) as exc_info:
             tracker.reduce_slice_range_if_possible(original_slice, original_slice)
+
+        assert exc_info.value.message == "Pagination reset cannot narrow the stream slice."
+        assert exc_info.value.internal_message == (
+            "There were 2 attempts with the same slice already while the max allowed is 2"
+        )
+        assert exc_info.value.failure_type == FailureType.system_error
 
     def test_given_cursor_when_reduce_slice_range_then_return_cursor_stream_slice(self):
         tracker = PaginationTracker(cursor=self._cursor)
@@ -84,8 +90,14 @@ class TestPaginationTracker(TestCase):
         original_slice = StreamSlice(partition={}, cursor_slice={})
         self._cursor.reduce_slice_range.return_value = _A_STREAM_SLICE
 
-        with pytest.raises(AirbyteTracedException):
+        with pytest.raises(AirbyteTracedException) as exc_info:
             tracker.reduce_slice_range_if_possible(_A_STREAM_SLICE, original_slice)
+
+        assert exc_info.value.message == "Pagination reset cannot narrow the stream slice."
+        assert exc_info.value.internal_message == (
+            "There were 1 attempts with the same slice already while the max allowed is 1"
+        )
+        assert exc_info.value.failure_type == FailureType.system_error
 
     def test_cursor_called_with_original_slice_when_reduce_slice_range(self):
         tracker = PaginationTracker(cursor=self._cursor)
