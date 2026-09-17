@@ -459,6 +459,17 @@ single_csv_scenario: TestScenario[InMemoryFilesSource] = (
                                                         },
                                                     ],
                                                 },
+                                                "output_format": {
+                                                    "title": "Output Format",
+                                                    "description": "The output format for parsed document content. `markdown_text` renders the document as flat Markdown text. `markdown_json` outputs a JSON array of structured elements with type, text, and metadata fields, preserving document structure for easier downstream processing.",
+                                                    "default": "markdown_text",
+                                                    "always_show": True,
+                                                    "enum": [
+                                                        "markdown_text",
+                                                        "markdown_json",
+                                                    ],
+                                                    "type": "string",
+                                                },
                                             },
                                             "description": "Extract text from document formats (.pdf, .docx, .md, .pptx) and emit as one record per file.",
                                             "required": ["filetype"],
