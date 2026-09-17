@@ -6,7 +6,11 @@ import datetime
 
 import pytest
 
-from airbyte_cdk.sources.declarative.datetime.datetime_parser import DatetimeParser
+from airbyte_cdk.models import FailureType
+from airbyte_cdk.sources.declarative.datetime.datetime_parser import (
+    DatetimeFormatMismatchError,
+    DatetimeParser,
+)
 
 
 @pytest.mark.parametrize(
@@ -125,3 +129,33 @@ def test_format_datetime(input_dt: datetime.datetime, datetimeformat: str, expec
     parser = DatetimeParser()
     output_date = parser.format(input_dt, datetimeformat)
     assert output_date == expected_output
+
+
+def test_given_value_not_matching_format_when_parse_then_raise_traced_error():
+    with pytest.raises(DatetimeFormatMismatchError) as exc_info:
+        DatetimeParser().parse("2025-06-28T18:35:16Z", "%Y-%m-%dT%H:%M:%S.%fZ")
+
+    assert isinstance(exc_info.value, ValueError)
+    assert (
+        exc_info.value.message == "Datetime value matches none of the configured datetime formats."
+    )
+    assert exc_info.value.failure_type == FailureType.system_error
+    assert (
+        exc_info.value.internal_message
+        == "No format in ['%Y-%m-%dT%H:%M:%S.%fZ'] matching 2025-06-28T18:35:16Z"
+    )
+
+
+def test_given_context_when_with_context_then_message_names_stream_and_cursor_field():
+    error = DatetimeFormatMismatchError(
+        value="2025-06-28T18:35:16Z", formats=["%Y-%m-%dT%H:%M:%S.%fZ"]
+    ).with_context(cursor_field="updated_at", stream_name="items")
+
+    assert error.message == (
+        'Cursor field "updated_at" of stream "items" matches none of the configured datetime '
+        "formats."
+    )
+    assert (
+        error.internal_message
+        == "No format in ['%Y-%m-%dT%H:%M:%S.%fZ'] matching 2025-06-28T18:35:16Z"
+    )
