@@ -32,7 +32,10 @@ from airbyte_cdk.sources.declarative.async_job.status import AsyncJobStatus
 from airbyte_cdk.sources.message import MessageRepository
 from airbyte_cdk.sources.types import StreamSlice
 from airbyte_cdk.utils.airbyte_secrets_utils import filter_secrets
-from airbyte_cdk.utils.traced_exception import AirbyteTracedException
+from airbyte_cdk.utils.traced_exception import (
+    AirbyteTracedException,
+    RateLimitBudgetExhaustedException,
+)
 
 LOGGER = logging.getLogger("airbyte")
 _NO_TIMEOUT = timedelta.max
@@ -561,9 +564,13 @@ class AsyncJobOrchestrator:
         self._running_partitions = []
 
     def _is_breaking_exception(self, exception: Exception) -> bool:
-        return isinstance(exception, self._exceptions_to_break_on) or (
-            isinstance(exception, AirbyteTracedException)
-            and exception.failure_type == FailureType.config_error
+        return (
+            isinstance(exception, self._exceptions_to_break_on)
+            or (
+                isinstance(exception, AirbyteTracedException)
+                and exception.failure_type == FailureType.config_error
+            )
+            or isinstance(exception, RateLimitBudgetExhaustedException)
         )
 
     def fetch_records(self, async_jobs: Iterable[AsyncJob]) -> Iterable[Mapping[str, Any]]:
