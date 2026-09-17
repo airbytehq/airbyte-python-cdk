@@ -12,6 +12,7 @@ from airbyte_cdk.sources.declarative.decoders import (
     JsonDecoder,
     PaginationDecoderDecorator,
 )
+from airbyte_cdk.sources.declarative.extractors.record_extractor import RecordExtractor
 from airbyte_cdk.sources.declarative.interpolation.interpolated_boolean import InterpolatedBoolean
 from airbyte_cdk.sources.declarative.interpolation.interpolated_string import InterpolatedString
 from airbyte_cdk.sources.declarative.requesters.paginators.strategies.pagination_strategy import (
@@ -41,6 +42,7 @@ class CursorPaginationStrategy(PaginationStrategy):
     decoder: Decoder = field(
         default_factory=lambda: PaginationDecoderDecorator(decoder=JsonDecoder(parameters={}))
     )
+    extractor: Optional[RecordExtractor] = None
 
     def __post_init__(self, parameters: Mapping[str, Any]) -> None:
         if isinstance(self.cursor_value, str):
@@ -83,6 +85,13 @@ class CursorPaginationStrategy(PaginationStrategy):
         # is not indexable or useful for parsing the cursor, so we replace it with the link dictionary from response.links
         headers: Dict[str, Any] = dict(response.headers)
         headers["link"] = response.links
+
+        if self.extractor:
+            # The incoming last_page_size is the number of records emitted after the RecordSelector ran, so a
+            # record filter (e.g. client-side incremental) can make it smaller than the page the API returned.
+            # Stop conditions like `{{ last_page_size < page_size }}` would then stop pagination prematurely.
+            # Re-counting the raw records in the response keeps pagination driven by the API's page size.
+            last_page_size = len(list(self.extractor.extract_records(response=response)))
         if self._stop_condition:
             should_stop = self._stop_condition.eval(
                 self.config,
