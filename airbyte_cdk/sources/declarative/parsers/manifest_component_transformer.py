@@ -77,6 +77,7 @@ CUSTOM_COMPONENTS_MAPPING: Mapping[str, str] = {
     "DeclarativeStream.transformations": "CustomTransformation",
     "DefaultErrorHandler.backoff_strategies": "CustomBackoffStrategy",
     "DefaultPaginator.pagination_strategy": "CustomPaginationStrategy",
+    "ForEach.transformations": "CustomTransformation",
     "HttpRequester.authenticator": "CustomAuthenticator",
     "HttpRequester.error_handler": "CustomErrorHandler",
     "RecordSelector.extractor": "CustomRecordExtractor",

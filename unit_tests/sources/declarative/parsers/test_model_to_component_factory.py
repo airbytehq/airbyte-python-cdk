@@ -201,7 +201,7 @@ from airbyte_cdk.sources.declarative.schema.caching_schema_loader_decorator impo
 from airbyte_cdk.sources.declarative.schema.composite_schema_loader import CompositeSchemaLoader
 from airbyte_cdk.sources.declarative.schema.schema_loader import SchemaLoader
 from airbyte_cdk.sources.declarative.spec import Spec
-from airbyte_cdk.sources.declarative.transformations import AddFields, RemoveFields
+from airbyte_cdk.sources.declarative.transformations import AddFields, ForEach, RemoveFields
 from airbyte_cdk.sources.declarative.transformations.add_fields import AddedFieldDefinition
 from airbyte_cdk.sources.declarative.transformations.keys_replace_transformation import (
     KeysReplaceTransformation,
@@ -230,6 +230,7 @@ from airbyte_cdk.utils.datetime_helpers import AirbyteDateTime, ab_datetime_now,
 from unit_tests.sources.declarative.parsers.testing_components import (
     TestingCustomRetriever,
     TestingCustomSubstreamPartitionRouter,
+    TestingCustomTransformation,
     TestingSomeComponent,
 )
 
@@ -3658,6 +3659,116 @@ class TestCreateTransformations:
             schema_loader.default_loader._get_json_filepath().split("/")[-1]
             == f"{stream.name}.json"
         )
+
+    def _get_transformations(self, content):
+        parsed_manifest = YamlDeclarativeSource._parse(content)
+        resolved_manifest = resolver.preprocess_manifest(parsed_manifest)
+        resolved_manifest["type"] = "DeclarativeSource"
+        stream_manifest = transformer.propagate_types_and_parameters(
+            "", resolved_manifest["the_stream"], {}
+        )
+
+        stream = factory.create_component(
+            model_type=DeclarativeStreamModel,
+            component_definition=stream_manifest,
+            config=input_config,
+        )
+
+        return get_retriever(stream).record_selector.transformations
+
+    def test_for_each(self):
+        content = f"""
+        the_stream:
+            type: DeclarativeStream
+            $parameters:
+                {self.base_parameters}
+                transformations:
+                    - type: ForEach
+                      field_path: ["column_values"]
+                      transformations:
+                        - type: AddFields
+                          condition: "{{{{ record.get('display_value') and not record.get('text') }}}}"
+                          fields:
+                            - path: ["text"]
+                              value: "{{{{ record['display_value'] }}}}"
+                        - type: RemoveFields
+                          field_pointers:
+                            - ["display_value"]
+        """
+        transformations = self._get_transformations(content)
+
+        assert len(transformations) == 1
+        for_each = transformations[0]
+        assert isinstance(for_each, ForEach)
+        assert for_each.field_path == ["column_values"]
+        assert len(for_each.transformations) == 2
+        assert isinstance(for_each.transformations[0], AddFields)
+        assert isinstance(for_each.transformations[1], RemoveFields)
+
+        record = {"column_values": [{"text": None, "display_value": "a value"}]}
+        for_each.transform(record, config=input_config)
+        assert record == {"column_values": [{"text": "a value"}]}
+
+    def test_for_each_nested_in_for_each(self):
+        content = f"""
+        the_stream:
+            type: DeclarativeStream
+            $parameters:
+                {self.base_parameters}
+                transformations:
+                    - type: ForEach
+                      field_path: ["items"]
+                      transformations:
+                        - type: ForEach
+                          field_path: ["column_values"]
+                          transformations:
+                            - type: AddFields
+                              fields:
+                                - path: ["added"]
+                                  value: "a value"
+        """
+        transformations = self._get_transformations(content)
+
+        assert len(transformations) == 1
+        outer = transformations[0]
+        assert isinstance(outer, ForEach)
+        inner = outer.transformations[0]
+        assert isinstance(inner, ForEach)
+        assert inner.field_path == ["column_values"]
+        assert isinstance(inner.transformations[0], AddFields)
+
+        record = {"items": [{"column_values": [{"id": 1}]}]}
+        outer.transform(record, config=input_config)
+        assert record == {"items": [{"column_values": [{"id": 1, "added": "a value"}]}]}
+
+    def test_for_each_with_a_class_name_only_custom_transformation(self):
+        """
+        `class_name`-only custom transformations work at stream level thanks to
+        CUSTOM_COMPONENTS_MAPPING. `ForEach.transformations` needs its own entry or the nested
+        component never gets a `type` and fails to parse.
+        """
+        content = f"""
+        the_stream:
+            type: DeclarativeStream
+            $parameters:
+                {self.base_parameters}
+                transformations:
+                    - type: ForEach
+                      field_path: ["items"]
+                      transformations:
+                        - class_name: unit_tests.sources.declarative.parsers.testing_components.TestingCustomTransformation
+                          marker: "from the manifest"
+        """
+        transformations = self._get_transformations(content)
+
+        assert len(transformations) == 1
+        for_each = transformations[0]
+        assert isinstance(for_each, ForEach)
+        assert isinstance(for_each.transformations[0], TestingCustomTransformation)
+
+        record = {"items": [{"id": 1}]}
+        for_each.transform(record, config=input_config)
+        assert record == {"items": [{"id": 1, "marker": "from the manifest"}]}
 
 
 @pytest.mark.parametrize(

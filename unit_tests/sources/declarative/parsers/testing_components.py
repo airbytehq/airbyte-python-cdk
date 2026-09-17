@@ -21,6 +21,8 @@ from airbyte_cdk.sources.declarative.requesters.request_options.interpolated_req
     RequestInput,
 )
 from airbyte_cdk.sources.declarative.retrievers import SimpleRetriever
+from airbyte_cdk.sources.declarative.transformations import RecordTransformation
+from airbyte_cdk.sources.types import Config, StreamSlice, StreamState
 
 
 @dataclass
@@ -121,3 +123,24 @@ class TestingRequesterWithDefaultBudget(TestingRequester):
     def __post_init__(self, parameters: Mapping[str, Any]) -> None:
         self.api_budget = None
         super().__post_init__(parameters)
+
+
+@dataclass
+class TestingCustomTransformation(RecordTransformation):
+    """
+    A test class used for manifests that declare a custom transformation by `class_name` only.
+    """
+
+    __test__: ClassVar[bool] = False  # Tell Pytest this is not a Pytest class, despite its name
+
+    config: Config = field(default_factory=dict)
+    marker: str = "custom"
+
+    def transform(
+        self,
+        record: Mapping[str, Any],
+        config: Optional[Config] = None,
+        stream_state: Optional[StreamState] = None,
+        stream_slice: Optional[StreamSlice] = None,
+    ) -> None:
+        record["marker"] = self.marker
