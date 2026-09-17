@@ -6,6 +6,7 @@ from unittest.mock import MagicMock
 
 import pytest
 import requests
+from requests.exceptions import ReadTimeout
 
 from airbyte_cdk.sources.declarative.requesters.error_handlers.backoff_strategies.constant_backoff_strategy import (
     ConstantBackoffStrategy,
@@ -289,6 +290,15 @@ def test_default_error_handler_with_unmapped_http_code():
     assert actual_error_resolution
     assert actual_error_resolution.failure_type == FailureType.system_error
     assert actual_error_resolution.response_action == ResponseAction.RETRY
+
+
+def test_default_error_handler_with_read_timeout():
+    error_handler = DefaultErrorHandler(config={}, parameters={})
+
+    actual_error_resolution = error_handler.interpret_response(ReadTimeout())
+
+    assert actual_error_resolution.response_action == ResponseAction.RETRY
+    assert actual_error_resolution.failure_type == FailureType.transient_error
 
 
 def test_predicate_takes_precedent_over_default_mapped_error():

@@ -72,6 +72,21 @@ from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 MessageRepresentationAirbyteTracedErrors = AirbyteTracedException
 
 BODY_REQUEST_METHODS = ("GET", "POST", "PUT", "PATCH")
+DEFAULT_CONNECT_TIMEOUT_SECONDS: float = 30.0
+DEFAULT_READ_TIMEOUT_SECONDS: float = 300.0
+ENV_HTTP_CONNECT_TIMEOUT_SECONDS = "AIRBYTE_HTTP_CONNECT_TIMEOUT_SECONDS"
+ENV_HTTP_READ_TIMEOUT_SECONDS = "AIRBYTE_HTTP_READ_TIMEOUT_SECONDS"
+
+
+def default_request_timeout() -> Tuple[float, float]:
+    """Returns the `(connect, read)` timeout in seconds applied to requests that do not set their own.
+
+    Both values can be overridden with the `AIRBYTE_HTTP_CONNECT_TIMEOUT_SECONDS` and
+    `AIRBYTE_HTTP_READ_TIMEOUT_SECONDS` environment variables.
+    """
+    connect = float(os.getenv(ENV_HTTP_CONNECT_TIMEOUT_SECONDS, DEFAULT_CONNECT_TIMEOUT_SECONDS))
+    read = float(os.getenv(ENV_HTTP_READ_TIMEOUT_SECONDS, DEFAULT_READ_TIMEOUT_SECONDS))
+    return (connect, read)
 
 
 def monkey_patched_get_item(self, key):  # type: ignore # this interface is a copy/paste from the requests_cache lib
@@ -121,7 +136,13 @@ class HttpClient:
         error_message_parser: Optional[ErrorMessageParser] = None,
         disable_retries: bool = False,
         message_repository: Optional[MessageRepository] = None,
+        request_timeout: Optional[Union[float, Tuple[float, float]]] = None,
     ):
+        """Initialize the HTTP client.
+
+        Args:
+            request_timeout: The default connect/read timeout in seconds for requests.
+        """
         self._name = name
         self._api_budget: APIBudget = api_budget or APIBudget(policies=[])
         if session:
@@ -151,6 +172,9 @@ class HttpClient:
         self._disable_retries = disable_retries
         self._message_repository = message_repository
         self._authenticator_update_failed = False
+        self._request_timeout: Union[float, Tuple[float, float]] = (
+            request_timeout if request_timeout is not None else default_request_timeout()
+        )
 
     @property
     def cache_filename(self) -> str:
@@ -411,6 +435,8 @@ class HttpClient:
         exc: Optional[requests.RequestException] = None
 
         try:
+            if "timeout" not in request_kwargs:
+                request_kwargs = {**request_kwargs, "timeout": self._request_timeout}
             response = self._session.send(request, **request_kwargs)
         except requests.RequestException as e:
             exc = e
