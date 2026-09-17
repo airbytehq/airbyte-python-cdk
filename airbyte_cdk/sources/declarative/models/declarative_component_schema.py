@@ -522,6 +522,23 @@ class OnNoRecords(Enum):
     emit_parent = "emit_parent"
 
 
+class ParentFieldPath(BaseModel):
+    type: Literal["ParentFieldPath"]
+    parent_path: List[str] = Field(
+        ...,
+        description="Path to the value on the record being expanded.",
+        examples=[["url"], ["id"], ["repository", "name"]],
+        title="Parent Path",
+    )
+    record_path: List[str] = Field(
+        ...,
+        description="Path on the expanded item to write the value to. An existing value is overwritten. Intermediate objects are created as needed, so a path may not pass through a value the item already holds as a scalar, and a numeric path segment creates an array rather than an object - the same behavior as `AddFields`.",
+        examples=[["pull_request_url"], ["comment_id"], ["parent", "id"]],
+        title="Record Path",
+    )
+    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
+
+
 class ExponentialBackoffStrategy(BaseModel):
     type: Literal["ExponentialBackoffStrategy"]
     factor: Optional[Union[float, str]] = Field(
@@ -2299,6 +2316,16 @@ class RecordExpander(BaseModel):
         False,
         description='If true, each expanded record will include the original parent record in an "original_record" field. Defaults to false.',
         title="Remain Original Record",
+    )
+    parent_fields: Optional[List[ParentFieldPath]] = Field(
+        None,
+        description="Named values to copy from the record being expanded onto each expanded item. Use this instead of `remain_original_record` when only a few parent fields are needed: it copies the named values rather than deep-copying the whole parent once per item, which matters when the parent record is large and the nested list is long. An existing value at `record_path` is overwritten, and a `parent_path` the parent does not have copies null. A copied object or array is deep-copied, so a transformation that writes inside it affects only that item. Independent of `remain_original_record`; both may be set. Applies to items fetched through `truncated_list_retriever` as well as to embedded ones. This field is ignored by CDK versions that predate it, so pin the connector to a CDK version that supports it.",
+        title="Parent Fields",
+    )
+    merge_parent: Optional[bool] = Field(
+        False,
+        description="If true, each expanded item is the parent record shallow-merged with the item, the item's own keys winning on collision, and the expanded list removed from the parent's copy. Only the value at `expand_records_from_field` is removed, so for a multi-segment path the top-level key stays with its other fields. Each item receives its own deep copy of the merged parent fields, so a transformation that writes into a nested value affects only that item. The merge happens first, then `parent_fields` are copied, then `original_record` is embedded when `remain_original_record` is set; all three may be combined. Applies to items fetched through `truncated_list_retriever` as well as to embedded ones. This field is ignored by CDK versions that predate it, so pin the connector to a CDK version that supports it.",
+        title="Merge Parent",
     )
     on_no_records: Optional[OnNoRecords] = Field(
         OnNoRecords.skip,

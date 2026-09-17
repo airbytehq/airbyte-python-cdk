@@ -2250,6 +2250,17 @@ definitions:
         description: If true, each expanded record will include the original parent record in an "original_record" field. Defaults to false.
         type: boolean
         default: false
+      parent_fields:
+        title: Parent Fields
+        description: 'Named values to copy from the record being expanded onto each expanded item. Use this instead of `remain_original_record` when only a few parent fields are needed: it copies the named values rather than deep-copying the whole parent once per item, which matters when the parent record is large and the nested list is long. An existing value at `record_path` is overwritten, and a `parent_path` the parent does not have copies null. A copied object or array is deep-copied, so a transformation that writes inside it affects only that item. Independent of `remain_original_record`; both may be set. Applies to items fetched through `truncated_list_retriever` as well as to embedded ones. This field is ignored by CDK versions that predate it, so pin the connector to a CDK version that supports it.'
+        type: array
+        items:
+          "$ref": "#/definitions/ParentFieldPath"
+      merge_parent:
+        title: Merge Parent
+        description: If true, each expanded item is the parent record shallow-merged with the item, the item's own keys winning on collision, and the expanded list removed from the parent's copy. Only the value at `expand_records_from_field` is removed, so for a multi-segment path the top-level key stays with its other fields. Each item receives its own deep copy of the merged parent fields, so a transformation that writes into a nested value affects only that item. The merge happens first, then `parent_fields` are copied, then `original_record` is embedded when `remain_original_record` is set; all three may be combined. Applies to items fetched through `truncated_list_retriever` as well as to embedded ones. This field is ignored by CDK versions that predate it, so pin the connector to a CDK version that supports it.
+        type: boolean
+        default: false
       on_no_records:
         title: On No Records
         description: Behavior when the expansion path is missing, not a list, or an empty list. "skip" (default) emits nothing. "emit_parent" emits the original parent record unchanged.
@@ -2274,6 +2285,45 @@ definitions:
         anyOf:
           - "$ref": "#/definitions/SimpleRetriever"
           - "$ref": "#/definitions/CustomRetriever"
+      $parameters:
+        type: object
+        additionalProperties: true
+  ParentFieldPath:
+    title: Parent Field Path
+    description: One value to copy from the record being expanded onto each expanded item. Both paths are lists, so a value nested inside the parent can be copied into a nested position on the item; intermediate objects on `record_path` are created as needed. Glob characters (`*`, `?`, `[`) are not supported in either path, since each must identify a single field; this is enforced on the interpolated values.
+    type: object
+    required:
+      - type
+      - parent_path
+      - record_path
+    properties:
+      type:
+        type: string
+        enum: [ParentFieldPath]
+      parent_path:
+        title: Parent Path
+        description: Path to the value on the record being expanded.
+        type: array
+        items:
+          type: string
+        interpolation_context:
+          - config
+        examples:
+          - ["url"]
+          - ["id"]
+          - ["repository", "name"]
+      record_path:
+        title: Record Path
+        description: Path on the expanded item to write the value to. An existing value is overwritten. Intermediate objects are created as needed, so a path may not pass through a value the item already holds as a scalar, and a numeric path segment creates an array rather than an object - the same behavior as `AddFields`.
+        type: array
+        items:
+          type: string
+        interpolation_context:
+          - config
+        examples:
+          - ["pull_request_url"]
+          - ["comment_id"]
+          - ["parent", "id"]
       $parameters:
         type: object
         additionalProperties: true
