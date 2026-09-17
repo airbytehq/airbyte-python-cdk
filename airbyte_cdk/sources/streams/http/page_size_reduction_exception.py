@@ -1,0 +1,2 @@
+class PageSizeReductionRequiredException(Exception):
+    pass
