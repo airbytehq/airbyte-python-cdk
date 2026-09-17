@@ -83,16 +83,25 @@ class PageSizeReducer:
         config: PageSizeReduction,
         configured_page_size: Optional[int],
         stream_name: str = "",
-        sleep: Callable[[float], None] = time.sleep,
+        sleep: Optional[Callable[[float], None]] = None,
     ) -> None:
         self._config = config
         self._configured_page_size = configured_page_size
         self._stream_name = stream_name
-        self._sleep = sleep
+        # Resolved on each call rather than bound here: a default of `time.sleep` would capture
+        # the function object, and a test that patches `time.sleep` to keep a run of reductions
+        # from taking its two minutes for real would have no effect on an already-bound default.
+        self._sleep_override = sleep
         self._current_page_size: Optional[int] = None
         self._attempts = 0
         self._total_reductions = 0
         self._retries_at_minimum_page_size = 0
+
+    def _sleep(self, seconds: float) -> None:
+        if self._sleep_override is not None:
+            self._sleep_override(seconds)
+            return
+        time.sleep(seconds)
 
     @property
     def page_size_override(self) -> Optional[int]:
