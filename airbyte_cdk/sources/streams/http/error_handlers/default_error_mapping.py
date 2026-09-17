@@ -4,7 +4,14 @@
 
 from typing import Mapping, Type, Union
 
-from requests.exceptions import InvalidSchema, InvalidURL, RequestException
+from requests.exceptions import (
+    ConnectTimeout,
+    InvalidSchema,
+    InvalidURL,
+    ReadTimeout,
+    RequestException,
+    Timeout,
+)
 
 from airbyte_cdk.models import FailureType
 from airbyte_cdk.sources.streams.http.error_handlers.response_models import (
@@ -22,6 +29,21 @@ DEFAULT_ERROR_MAPPING: Mapping[Union[int, str, Type[Exception]], ErrorResolution
         response_action=ResponseAction.RETRY,
         failure_type=FailureType.transient_error,
         error_message="Invalid URL specified or DNS error occurred: The endpoint that data is being requested from is not a valid URL. Exception: requests.exceptions.InvalidURL",
+    ),
+    ConnectTimeout: ErrorResolution(
+        response_action=ResponseAction.RETRY,
+        failure_type=FailureType.transient_error,
+        error_message="The request timed out while connecting to the server. Exception: requests.exceptions.ConnectTimeout",
+    ),
+    ReadTimeout: ErrorResolution(
+        response_action=ResponseAction.RETRY,
+        failure_type=FailureType.transient_error,
+        error_message="The request timed out while waiting for the server to respond. Exception: requests.exceptions.ReadTimeout",
+    ),
+    Timeout: ErrorResolution(
+        response_action=ResponseAction.RETRY,
+        failure_type=FailureType.transient_error,
+        error_message="The request timed out. Exception: requests.exceptions.Timeout",
     ),
     RequestException: ErrorResolution(
         response_action=ResponseAction.RETRY,

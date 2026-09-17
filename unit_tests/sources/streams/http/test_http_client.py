@@ -2,9 +2,11 @@
 
 import logging
 import os
+import socket
+import threading
 import time
 from datetime import timedelta
-from unittest.mock import MagicMock, patch
+from unittest.mock import ANY, MagicMock, patch
 
 import pytest
 import requests
@@ -26,7 +28,13 @@ from airbyte_cdk.sources.streams.http.exceptions import (
     RequestBodyException,
     UserDefinedBackoffException,
 )
-from airbyte_cdk.sources.streams.http.http_client import MessageRepresentationAirbyteTracedErrors
+from airbyte_cdk.sources.streams.http.http_client import (
+    DEFAULT_CONNECT_TIMEOUT_SECONDS,
+    DEFAULT_READ_TIMEOUT_SECONDS,
+    ENV_HTTP_CONNECT_TIMEOUT_SECONDS,
+    ENV_HTTP_READ_TIMEOUT_SECONDS,
+    MessageRepresentationAirbyteTracedErrors,
+)
 from airbyte_cdk.sources.streams.http.requests_native_auth import TokenAuthenticator
 from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 
@@ -196,6 +204,164 @@ def test_valid_basic_send_request(mocker):
 
     assert isinstance(returned_request, requests.PreparedRequest)
     assert returned_response == mocked_response
+
+
+def _mock_success_session():
+    session = MagicMock(spec=requests.Session)
+    session.merge_environment_settings.return_value = {}
+    session.prepare_request.return_value = requests.Request("GET", "https://test.example").prepare()
+    response = MagicMock(spec=requests.Response)
+    response.status_code = 200
+    response.ok = True
+    response.headers = {}
+    session.send.return_value = response
+    return session
+
+
+def test_send_applies_default_timeout():
+    session = _mock_success_session()
+    client = HttpClient(name="test", logger=MagicMock(), session=session)
+
+    client.send_request("GET", "https://test.example", request_kwargs={})
+
+    session.send.assert_called_once_with(
+        ANY,
+        timeout=(DEFAULT_CONNECT_TIMEOUT_SECONDS, DEFAULT_READ_TIMEOUT_SECONDS),
+    )
+
+
+def test_request_kwargs_timeout_overrides_default():
+    session = _mock_success_session()
+    client = HttpClient(name="test", logger=MagicMock(), session=session)
+
+    client.send_request("GET", "https://test.example", request_kwargs={"timeout": 7})
+    client.send_request("GET", "https://test.example", request_kwargs={"timeout": None})
+
+    assert session.send.call_args_list[0].kwargs["timeout"] == 7
+    assert session.send.call_args_list[1].kwargs["timeout"] is None
+
+
+def test_constructor_request_timeout_overrides_default():
+    session = _mock_success_session()
+    client = HttpClient(
+        name="test",
+        logger=MagicMock(),
+        session=session,
+        request_timeout=(1, 2),
+    )
+
+    client.send_request("GET", "https://test.example", request_kwargs={})
+
+    assert session.send.call_args.kwargs["timeout"] == (1, 2)
+
+
+def test_env_vars_override_default_timeout(monkeypatch):
+    monkeypatch.setenv(ENV_HTTP_CONNECT_TIMEOUT_SECONDS, "5")
+    monkeypatch.setenv(ENV_HTTP_READ_TIMEOUT_SECONDS, "9")
+    session = _mock_success_session()
+    client = HttpClient(name="test", logger=MagicMock(), session=session)
+
+    client.send_request("GET", "https://test.example", request_kwargs={})
+
+    assert session.send.call_args.kwargs["timeout"] == (5.0, 9.0)
+
+
+def test_hanging_server_times_out_retries_and_raises():
+    server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    server.bind(("127.0.0.1", 0))
+    server.listen()
+    server.settimeout(0.1)
+    port = server.getsockname()[1]
+    stop_server = threading.Event()
+    accepted_connections = []
+    accepted_three_connections = threading.Event()
+
+    def accept_connections():
+        while not stop_server.is_set():
+            try:
+                connection, _ = server.accept()
+            except TimeoutError:
+                continue
+            except OSError:
+                break
+            accepted_connections.append(connection)
+            if len(accepted_connections) >= 3:
+                accepted_three_connections.set()
+
+    server_thread = threading.Thread(target=accept_connections, daemon=True)
+    server_thread.start()
+
+    try:
+        client = HttpClient(
+            name="test",
+            logger=MagicMock(),
+            error_handler=HttpStatusErrorHandler(logger=MagicMock(), max_retries=2),
+            backoff_strategy=CustomBackoffStrategy(backoff_time_value=0.01),
+            request_timeout=(5, 0.3),
+        )
+        started_at = time.monotonic()
+
+        with pytest.raises(AirbyteTracedException) as exc_info:
+            client.send_request("GET", f"http://127.0.0.1:{port}/", request_kwargs={})
+
+        elapsed = time.monotonic() - started_at
+        accepted_three_connections.wait(timeout=1)
+        assert elapsed < 10
+        assert len(accepted_connections) >= 3
+        assert exc_info.value.failure_type == FailureType.transient_error
+        assert "ReadTimeout" in (exc_info.value.internal_message or "")
+    finally:
+        stop_server.set()
+        server.close()
+        server_thread.join(timeout=1)
+        for connection in accepted_connections:
+            connection.close()
+
+
+def test_slow_but_responding_server_succeeds():
+    server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    server.bind(("127.0.0.1", 0))
+    server.listen()
+    port = server.getsockname()[1]
+    accepted_connections = []
+    response_body = b'{"ok": true}'
+    response = (
+        b"HTTP/1.1 200 OK\r\n"
+        b"Content-Type: application/json\r\n"
+        + f"Content-Length: {len(response_body)}\r\n".encode()
+        + b"Connection: close\r\n"
+        + b"\r\n"
+        + response_body
+    )
+
+    def respond_slowly():
+        connection, _ = server.accept()
+        accepted_connections.append(connection)
+        connection.recv(65536)
+        time.sleep(1.0)
+        connection.sendall(response)
+
+    server_thread = threading.Thread(target=respond_slowly, daemon=True)
+    server_thread.start()
+
+    try:
+        client = HttpClient(
+            name="test",
+            logger=MagicMock(),
+            request_timeout=(5, 5),
+        )
+        _, returned_response = client.send_request(
+            "GET", f"http://127.0.0.1:{port}/", request_kwargs={}
+        )
+
+        assert returned_response.status_code == 200
+        assert returned_response.json() == {"ok": True}
+        assert len(accepted_connections) == 1
+    finally:
+        server.close()
+        server_thread.join(timeout=2)
+        for connection in accepted_connections:
+            connection.close()
 
 
 def test_send_raises_airbyte_traced_exception_with_fail_response_action():
