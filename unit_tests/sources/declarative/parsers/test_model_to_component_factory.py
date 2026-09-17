@@ -7038,6 +7038,55 @@ def test_given_page_size_reduction_without_reduce_page_size_action_then_warn(cap
     assert "REDUCE_PAGE_SIZE" in caplog.text
 
 
+def test_given_minimum_page_size_out_of_reach_of_max_attempts_then_warn(caplog):
+    """
+    Each reduction divides the page size by `reduction_factor` and spends one attempt, so the two settings are
+    two bounds and the tighter one wins. A floor the budget cannot reach in one run of failing pages is inert
+    there, and the error branch written for hitting it never fires on that run.
+    """
+    with caplog.at_level(logging.WARNING, logger="airbyte.model_to_component_factory"):
+        retriever = get_retriever(
+            _page_size_reduction_stream(
+                page_size_reduction=(
+                    "page_size_reduction:\n"
+                    "    type: PageSizeReduction\n"
+                    "    minimum_page_size: 10\n"
+                    "    max_attempts: 2"
+                )
+            )
+        )
+
+    assert retriever.page_size_reduction.minimum_page_size == 10
+    assert "minimum_page_size" in caplog.text
+    assert "25 records per page" in caplog.text
+    assert "`max_attempts` of at least 4" in caplog.text
+
+
+def test_given_minimum_page_size_within_reach_of_max_attempts_then_do_not_warn(caplog):
+    with caplog.at_level(logging.WARNING, logger="airbyte.model_to_component_factory"):
+        get_retriever(
+            _page_size_reduction_stream(
+                page_size_reduction=(
+                    "page_size_reduction:\n"
+                    "    type: PageSizeReduction\n"
+                    "    minimum_page_size: 10\n"
+                    "    max_attempts: 5"
+                )
+            )
+        )
+
+    assert "minimum_page_size" not in caplog.text
+
+
+def test_given_default_minimum_page_size_then_do_not_warn_about_its_reachability(caplog):
+    # The default floor of 1 is out of reach of the default budget on any page size above 32, so warning about
+    # a floor the author never set would fire on nearly every stream that opts in.
+    with caplog.at_level(logging.WARNING, logger="airbyte.model_to_component_factory"):
+        get_retriever(_page_size_reduction_stream())
+
+    assert "minimum_page_size" not in caplog.text
+
+
 def test_given_query_properties_and_page_size_reduction_then_raise():
     """
     Records of the earlier property chunks were already emitted when a later chunk asks for a smaller page, so

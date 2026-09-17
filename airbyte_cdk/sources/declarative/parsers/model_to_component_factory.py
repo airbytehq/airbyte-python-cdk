@@ -9,6 +9,7 @@ import importlib
 import inspect
 import json
 import logging
+import math
 import re
 from functools import partial
 from typing import (
@@ -3888,8 +3889,11 @@ class ModelToComponentFactory:
         The condition is parsed as a Jinja expression rather than matched as a string: only the AST tells
         `page_size`, which follows the reduction, apart from `config['page_size']`, which does not, and only the
         AST tells an inequality, which a reduction can invalidate, apart from `last_page_size == 0`, which it
-        cannot. A shape the analysis does not understand is warned about rather than rejected - this runs at
-        stream construction, so a false rejection takes `check`, `discover` and `read` down with it.
+        cannot. A condition that never names `last_page_size` is not waved through: a count read from the
+        response body - `{{ response['data'] | length < 100 }}` - truncates in exactly the same way, and which
+        response field counts the records of a page is not knowable here. A shape the analysis does not
+        understand is warned about rather than rejected - this runs at stream construction, so a false
+        rejection takes `check`, `discover` and `read` down with it.
         """
         stop_condition = strategy.stop_condition
         if not stop_condition:
@@ -3947,6 +3951,39 @@ class ModelToComponentFactory:
                 f"`page_size_reduction` on stream {name} can never reduce its page size: the pagination "
                 f"strategy's `page_size` is {configured_page_size} and `minimum_page_size` is "
                 f"{minimum_page_size}. Lower `minimum_page_size` or raise `page_size`."
+            )
+
+        # Each reduction divides the page size by `reduction_factor` and spends one attempt, so an unbroken
+        # run of failures bottoms out at `page_size / reduction_factor ** max_attempts` whatever
+        # `minimum_page_size` says. Only warned about, and not raised: pages that succeed in between restart
+        # the budget while `NEVER` keeps the page size, so the floor is reachable over a partition even when
+        # it is out of reach of a single run - and a manifest that deliberately gives up earlier than its
+        # floor is not wrong, only worth pointing out.
+        reduction_factor = (
+            page_size_reduction.reduction_factor if page_size_reduction else None
+        ) or 2.0
+        max_attempts = (page_size_reduction.max_attempts if page_size_reduction else None) or 5
+        # Only when the floor was asked for: the default of 1 is out of reach of the default budget on any page
+        # size above 32, so warning about a floor the author never set would fire on nearly every stream.
+        floor_was_set = bool(
+            page_size_reduction and "minimum_page_size" in page_size_reduction.__fields_set__
+        )
+        if (
+            configured_page_size is not None
+            and floor_was_set
+            and reduction_factor**max_attempts < configured_page_size / minimum_page_size
+        ):
+            reachable_page_size = max(
+                minimum_page_size, int(configured_page_size // reduction_factor**max_attempts)
+            )
+            LOGGER.warning(
+                f"Stream {name} sets `minimum_page_size` to {minimum_page_size}, which `page_size_reduction` "
+                f"cannot reach in one run of failing pages: `max_attempts` is {max_attempts} and "
+                f"`reduction_factor` is {reduction_factor}, so {max_attempts} reductions of a page size of "
+                f"{configured_page_size} stop at {reachable_page_size} records per page and the sync then "
+                f"fails with a transient error. Whichever of the two bounds is tighter wins; reaching "
+                f"{minimum_page_size} in one run needs `max_attempts` of at least "
+                f"{math.ceil(math.log(configured_page_size / minimum_page_size, reduction_factor))}."
             )
 
     def _reject_reduce_page_size_action(self, requester: Any, description: str) -> None:

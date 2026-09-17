@@ -5,6 +5,7 @@
 import pytest
 
 from airbyte_cdk.sources.declarative.parsers.stop_condition_safety import (
+    LAST_PAGE_SIZE_VARIABLE,
     StopConditionSafety,
     classify_stop_condition,
 )
@@ -95,9 +96,65 @@ from airbyte_cdk.sources.declarative.parsers.stop_condition_safety import (
         pytest.param(
             "{{ last_page_size >= 1000 }}", 1, StopConditionSafety.SAFE, id="inclusive_lower_bound"
         ),
-        # A condition that never looks at the page size is unaffected by the reduction.
+        # A condition that cannot observe the length of a page is unaffected by the reduction, whatever else
+        # it reads from the response.
         pytest.param(
             "{{ not response.next }}", 1, StopConditionSafety.SAFE, id="no_last_page_size"
+        ),
+        pytest.param(
+            "{{ response.next is none }}", 1, StopConditionSafety.SAFE, id="a_test_on_the_response"
+        ),
+        pytest.param(
+            "{{ response.page >= response.total_pages }}",
+            1,
+            StopConditionSafety.SAFE,
+            id="a_lower_bound_on_a_response_value",
+        ),
+        pytest.param(
+            "{{ 100 < response.count }}",
+            1,
+            StopConditionSafety.SAFE,
+            id="a_lower_bound_on_a_response_value_reversed",
+        ),
+        # `last_page_size` is not the only way to count the records of a page: the response body carries the
+        # same number, and these are `{{ last_page_size < 100 }}` counted one layer out. Which response field
+        # holds a page length is not knowable here, so an upper bound on any value is warned about rather than
+        # assumed to be safe. All four shapes below are live in the fleet today.
+        pytest.param(
+            "{{ response['values']|length < 1000 }}",
+            1,
+            StopConditionSafety.UNKNOWN,
+            id="a_page_length_read_from_the_response",
+        ),
+        pytest.param(
+            '{{ response.get("count", 0) < 1000 }}',
+            1,
+            StopConditionSafety.UNKNOWN,
+            id="a_count_read_from_the_response",
+        ),
+        pytest.param(
+            "{{ response.data | length < config['page_size'] }}",
+            1,
+            StopConditionSafety.UNKNOWN,
+            id="a_page_length_against_a_config_value",
+        ),
+        pytest.param(
+            "{{ not response.result.emailClick or response.result.emailClick|length < 200 }}",
+            1,
+            StopConditionSafety.UNKNOWN,
+            id="a_page_length_in_a_larger_expression",
+        ),
+        pytest.param(
+            "{{ 100 > response.data | length }}",
+            1,
+            StopConditionSafety.UNKNOWN,
+            id="a_page_length_read_from_the_response_reversed",
+        ),
+        pytest.param(
+            "{{ not (response.data | length >= 100) }}",
+            1,
+            StopConditionSafety.UNKNOWN,
+            id="a_negated_lower_bound_on_a_response_value",
         ),
         # Shapes the analysis cannot reason about are reported as unknown so the caller can warn rather than
         # reject: this runs at stream construction, where a false rejection also breaks `check` and `discover`.
@@ -280,3 +337,10 @@ def test_given_truncating_comparison_next_to_a_negated_one_then_truncates():
     )
 
     assert verdict is StopConditionSafety.TRUNCATES
+
+
+def test_given_page_length_read_from_the_response_then_reason_names_the_expression():
+    verdict, reason = classify_stop_condition("{{ response['values']|length < 1000 }}", 1)
+
+    assert verdict is StopConditionSafety.UNKNOWN
+    assert LAST_PAGE_SIZE_VARIABLE in reason

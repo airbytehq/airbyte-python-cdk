@@ -1429,14 +1429,14 @@ class PageSizeReduction(BaseModel):
     )
     minimum_page_size: Optional[int] = Field(
         1,
-        description="Page size below which the connector stops reducing and fails the sync. It must be smaller than the page size configured on the pagination strategy, otherwise no reduction could ever be applied.",
+        description="Page size below which the connector stops reducing and fails the sync. It must be smaller than the page size configured on the pagination strategy, otherwise no reduction could ever be applied. It is one of two bounds on the reduction and whichever is tighter wins: an unbroken run of failing pages divides the page size by reduction_factor at most max_attempts times, so reaching this floor in a single run needs max_attempts of at least log(page_size / minimum_page_size) / log(reduction_factor) - with the defaults, a page size of 1000 bottoms out at 31 records per page and a floor of 10 is never reached. Pages that succeed in between restart the max_attempts budget, so the floor is still reachable over a partition.",
         examples=[1, 10],
         ge=1,
         title="Minimum Page Size",
     )
     max_attempts: Optional[int] = Field(
         5,
-        description="Maximum number of page size reductions made in a row without a single page succeeding, before the sync fails with a transient error. Every reduction follows a request that failed, so at most max_attempts + 1 failing requests are issued before giving up. With reset_policy NEVER this bounds the reductions for the whole partition, since the reduced page size is never restored; with AFTER_SUCCESSFUL_PAGE the budget restarts after every page that succeeds, so it bounds the reductions needed to get a single page through and not the number of pages a partition may have.",
+        description="Maximum number of page size reductions made in a row without a single page succeeding, before the sync fails with a transient error. Every reduction follows a request that failed, so at most max_attempts + 1 failing requests are issued before giving up. The budget restarts after every page that succeeds, under either reset_policy, so it bounds the reductions needed to get a single page through and not the number of pages a partition may have: a stream that needs a reduction every now and then reads to the end however long it is. Under NEVER the page size also strictly decreases, so minimum_page_size bounds the reductions of the whole partition on its own. The wait between reduction attempts is the CDK's own - it grows with each attempt - and does not consult the error handler's backoff_strategies or a Retry-After header.",
         examples=[5, 10],
         ge=1,
         title="Maximum Reduction Attempts",
@@ -1452,7 +1452,7 @@ class PageSizeReduction(BaseModel):
     )
     reset_policy: Optional[ResetPolicy] = Field(
         ResetPolicy.NEVER,
-        description="When to restore the page size configured on the pagination strategy. NEVER keeps the reduced page size for the rest of the partition. AFTER_SUCCESSFUL_PAGE restores it as soon as one page succeeds, which means hitting the same error again on every page - use it only when the reduction is worth one extra request per page, for instance because the configured page size usually works and only some pages are too heavy. AFTER_SUCCESSFUL_PAGE also restarts the max_attempts budget on every page that succeeds, so there is no limit on how many reductions a partition may make in total: a stream that needs one reduction per page reads to the end however many pages it has. What is bounded is the reductions that get no page through.",
+        description="When to restore the page size configured on the pagination strategy. NEVER keeps the reduced page size for the rest of the partition. AFTER_SUCCESSFUL_PAGE restores it as soon as one page succeeds, which means hitting the same error again on every page - use it only when the reduction is worth one extra request per page, for instance because the configured page size usually works and only some pages are too heavy. It only controls the page size: the max_attempts budget restarts on every page that succeeds under both policies, so there is no limit on how many reductions a partition may make in total. What is bounded is the reductions that get no page through.",
         title="Reset Policy",
     )
 

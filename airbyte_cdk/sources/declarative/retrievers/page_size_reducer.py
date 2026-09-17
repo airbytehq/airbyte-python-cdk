@@ -120,9 +120,9 @@ class PageSizeReducer:
         self._total_reductions += 1
         if self._attempts > self._config.max_attempts:
             # The budget counts the reductions that did *not* get a page through, which is what separates a
-            # partition that is stuck from one that is merely expensive. A partition where every page succeeds
-            # after a reduction resets this counter on each page and reads to the end, however many pages it
-            # has; a partition where nothing gets through burns the budget and fails here.
+            # partition that is stuck from one that is merely expensive. A partition where pages keep
+            # succeeding restarts this counter on each of them, under either reset policy, and reads to the
+            # end however many pages it has; a partition where nothing gets through burns the budget here.
             raise AirbyteTracedException(
                 internal_message=f"Stream {self._stream_name} reduced its page size {self._attempts - 1} times in a row without a single page succeeding, which is the configured maximum of {self._config.max_attempts} ({self._total_reductions - 1} reductions so far while reading this partition)",
                 # `transient_error`, so the only remediation is the connector's own, if it defined one.
@@ -180,25 +180,29 @@ class PageSizeReducer:
         """
         Called after each page that did not require a reduction.
 
-        Under `NEVER` nothing happens: the reduced page size stays in effect and `max_attempts` keeps bounding
-        the reductions for the whole partition, which is the right budget when reductions are one-off.
+        The `max_attempts` budget restarts under both policies. It counts the reductions made *in a row*
+        without a single page succeeding, which is what separates a partition that is stuck from one that is
+        merely expensive: on a stream whose per-page cost varies - the GraphQL case this feature exists for -
+        a handful of heavy pages spread over a long partition is a healthy read, and a budget spanning the
+        whole partition would fail it at the `max_attempts + 1`-th heavy page while every reduction so far had
+        been followed by a successful page. The terminal message says the source rejected every page size the
+        connector asked for, so the budget has to mean exactly that.
 
-        Under `AFTER_SUCCESSFUL_PAGE` the page size is restored and the `max_attempts` budget restarts. This
-        policy exists for an API that rejects the configured page size on every page, so every page legitimately
-        costs one reduction, and a budget spanning the whole partition would fail the sync at page
-        `max_attempts + 1` no matter how healthy the reads are. There is deliberately no partition-wide cap on
-        top of it: a stream where every page gets through is healthy and has to sync to completion, and a cap
-        would only move the same cliff further out.
-
-        The budget still terminates the read, because only a page that succeeded can restart it and only
+        The budget still terminates the read, because only a page that succeeded restarts it and only
         `_read_pages` calls this, once per page it consumed. So between any two restarts the partition made one
         page of progress, and the reductions that make no progress are bounded by `max_attempts`. Under `NEVER`
-        the reduced page size is also never restored, so `minimum_page_size` bounds the reductions on its own.
+        the reduced page size is never restored either, so it strictly decreases and `minimum_page_size` bounds
+        the reductions of the whole partition on its own.
+
+        Only `AFTER_SUCCESSFUL_PAGE` restores the page size. That policy is for an API that rejects the
+        configured page size on every page, so every page legitimately costs one reduction; `NEVER` keeps the
+        reduced size for the rest of the partition, which is the right behaviour when reductions are one-off.
         """
+        self._attempts = 0
+
         if self._config.reset_policy != PageSizeResetPolicy.AFTER_SUCCESSFUL_PAGE:
             return
 
-        self._attempts = 0
         if self._current_page_size is not None:
             LOGGER.info(
                 f"Restoring the page size of stream {self._stream_name} from {self._current_page_size} to {self._configured_page_size}."

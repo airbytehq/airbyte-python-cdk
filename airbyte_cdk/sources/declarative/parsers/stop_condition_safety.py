@@ -36,6 +36,12 @@ longer say what the condition does. A comparison is therefore only classified wh
 root through `and`/`or`, or as the test of a `{% if %}` that renders truthy text and nothing else, and with
 `last_page_size` compared bare rather than transformed first. Anything else is unclassifiable.
 
+A condition that never names `last_page_size` is not safe by default either: the response body carries the
+same count, so `{{ response['data'] | length < 100 }}` truncates in exactly the same way. Which of a
+connector's own response fields counts the records of a page is not knowable here, so any comparison that
+bounds something from above is reported as unclassifiable. A condition with no such comparison, such as
+`{{ not response.next }}`, cannot read a page length by comparison and is safe.
+
 Anything else is reported as unclassifiable rather than as a truncation: this analysis rejects a manifest at
 stream construction, so a shape it does not understand must not be treated as a defect.
 """
@@ -96,10 +102,7 @@ def classify_stop_condition(
         )
 
     if not _references(template, LAST_PAGE_SIZE_VARIABLE):
-        return (
-            StopConditionSafety.SAFE,
-            f"it does not use `{LAST_PAGE_SIZE_VARIABLE}`, so the page size it was requested with is irrelevant",
-        )
+        return _classify_without_last_page_size(template)
 
     unclassifiable: List[str] = []
     understood = 0
@@ -135,6 +138,59 @@ def classify_stop_condition(
         StopConditionSafety.UNKNOWN,
         f"it uses `{LAST_PAGE_SIZE_VARIABLE}` outside of a comparison",
     )
+
+
+def _classify_without_last_page_size(
+    template: nodes.Template,
+) -> Tuple[StopConditionSafety, str]:
+    """
+    Classify a condition that never names `last_page_size`.
+
+    `last_page_size` is not the only way to observe how many records a page held: the response body carries
+    the same number, and `{{ response['data'] | length < 100 }}` is the comparison `{{ last_page_size < 100 }}`
+    counted one layer out. The CDK cannot tell which of a connector's own response fields counts the records
+    of the page, so a condition that bounds *anything* from above is reported as unclassifiable and warned
+    about rather than assumed to be safe. A condition that makes no such comparison - the common
+    `{{ not response.next }}` shape - cannot read a page length by comparison at all, so it stays safe.
+    """
+    for left, operator, right, decides_condition in _comparisons(template):
+        bounded = _bounded_from_above(left, operator, right, decides_condition)
+        if bounded is not None:
+            return (
+                StopConditionSafety.UNKNOWN,
+                f"it stops when {_describe(bounded)} stays below a threshold. `{LAST_PAGE_SIZE_VARIABLE}` is "
+                f"not the only way to count the records of a page - a count read from the response body is "
+                f"another - and the connector cannot tell whether this one does, so a full page at a reduced "
+                f"size may read as a short page here",
+            )
+    return (
+        StopConditionSafety.SAFE,
+        f"it does not use `{LAST_PAGE_SIZE_VARIABLE}` and makes no comparison that could be bounding the "
+        f"number of records in a page from above",
+    )
+
+
+def _bounded_from_above(
+    left: nodes.Node, operator: str, right: nodes.Node, decides_condition: bool
+) -> Optional[nodes.Node]:
+    """
+    :return: the operand the comparison bounds from above, or None when it bounds nothing from above
+
+    An upper bound is the shape a reduction can invalidate, for the same reason it can invalidate
+    `last_page_size < 100`: the reduction lowers what a full page holds, so the bound starts holding for pages
+    that are not short at all. A lower bound can only stop being satisfied as pages get smaller. When the
+    comparison does not decide the condition in its own polarity, which of the two it is cannot be read off
+    the operator, so it counts as an upper bound.
+    """
+    if operator not in ("lt", "lteq", "gt", "gteq"):
+        return None
+    if not decides_condition:
+        return left if not isinstance(left, nodes.Const) else right
+    if operator in ("lt", "lteq"):
+        # `x < 100` bounds x from above; `100 < x` is a lower bound on x.
+        return None if isinstance(left, nodes.Const) else left
+    # `100 > x` is the mirror of `x < 100`; `x > 100` is a lower bound on x.
+    return right if isinstance(left, nodes.Const) else None
 
 
 def _comparisons(

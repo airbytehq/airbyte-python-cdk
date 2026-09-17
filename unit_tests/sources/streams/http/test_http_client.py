@@ -1531,6 +1531,12 @@ def test_given_reduce_page_size_action_then_log_the_response_as_an_auxiliary_req
 
     logged = [json.loads(message.log.message) for message in message_repository.consume_queue()]
     assert [entry["http"]["is_auxiliary"] for entry in logged] == [True]
+    # The Builder labels its auxiliary panel from these two, and the formatter filled them with the wording of
+    # an ordinary page, so a rejected request would otherwise be indistinguishable from a successful fetch.
+    assert logged[0]["http"]["title"] == (
+        "Stream 'test' page rejected, retrying with a smaller page size"
+    )
+    assert "no records" in logged[0]["http"]["description"]
 
 
 def test_given_no_reduce_page_size_action_then_log_the_response_as_a_page():

@@ -162,15 +162,51 @@ def test_given_reset_policy_after_successful_page_when_no_page_succeeds_then_max
     assert "2 times in a row without a single page succeeding" in exception.value.internal_message
 
 
-def test_given_reset_policy_never_when_pages_succeed_then_attempts_are_not_reset():
+def test_given_reset_policy_never_when_pages_succeed_then_attempts_are_reset():
+    """
+    `max_attempts` counts the reductions made in a row without a page getting through, which is what the
+    terminal error claims happened, so a page that succeeded has to restart it under this policy too. A stream
+    whose per-page cost varies - the GraphQL case this feature exists for - would otherwise fail at the
+    `max_attempts + 1`-th heavy page of a long partition in which every reduction was followed by a page.
+    """
+    reducer = _reducer(configured_page_size=1000, max_attempts=2)
+
+    for expected_page_size in [500, 250, 125, 62, 31, 15, 7, 3, 1]:
+        reducer.reduce()
+        assert reducer.page_size_override == expected_page_size
+        # the page size is not restored under NEVER, only the budget is
+        reducer.on_successful_page()
+        assert reducer.page_size_override == expected_page_size
+
+
+def test_given_reset_policy_never_when_pages_succeed_then_minimum_page_size_still_ends_the_read():
+    """
+    With the budget restarting, `minimum_page_size` is what bounds a NEVER partition: the page size strictly
+    decreases, so the read cannot go on forever.
+    """
+    reducer = _reducer(configured_page_size=100, minimum_page_size=10, max_attempts=2)
+
+    for expected_page_size in [50, 25, 12, 10]:
+        reducer.reduce()
+        assert reducer.page_size_override == expected_page_size
+        reducer.on_successful_page()
+
+    with pytest.raises(AirbyteTracedException) as exception:
+        reducer.reduce()
+
+    assert exception.value.failure_type == FailureType.transient_error
+    assert "smallest page size" in exception.value.message
+
+
+def test_given_no_page_succeeds_then_attempts_are_not_reset():
     reducer = _reducer(max_attempts=2)
     reducer.reduce()
-    reducer.on_successful_page()
     reducer.reduce()
-    reducer.on_successful_page()
 
-    with pytest.raises(AirbyteTracedException):
+    with pytest.raises(AirbyteTracedException) as exception:
         reducer.reduce()
+
+    assert "2 times in a row without a single page succeeding" in exception.value.internal_message
 
 
 def test_given_reset_policy_after_successful_page_when_every_page_succeeds_then_never_fail():

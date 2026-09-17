@@ -98,19 +98,27 @@ def monkey_patched_get_item(self, key):  # type: ignore # this interface is a co
 requests_cache.SQLiteDict.__getitem__ = monkey_patched_get_item  # type: ignore # see the method doc for more information
 
 
-def _as_auxiliary_request_log(log_message: Any) -> Any:
+def _as_auxiliary_request_log(
+    log_message: Any, title: Optional[str] = None, description: Optional[str] = None
+) -> Any:
     """
     Flag an already-formatted request/response log as an auxiliary request.
 
     The Connector Builder builds one page per non-auxiliary HTTP log and bounds a slice by the number of those
-    pages, so a request that will not produce a page has to be marked here or it inflates that count. The log
-    formatter is connector-supplied and only the CDK's own one is guaranteed to have an `http` object, hence
-    the defensive check.
+    pages, so a request that will not produce a page has to be marked here or it inflates that count. The
+    Builder also labels its side panel from the log's `title` and `description`, which the formatter filled
+    with the wording of an ordinary page, so a caller that knows why the request is auxiliary passes its own
+    and the panel does not read as a successful page fetch. The log formatter is connector-supplied and only
+    the CDK's own one is guaranteed to have an `http` object, hence the defensive check.
     """
     if isinstance(log_message, dict):
         http = log_message.get("http")
         if isinstance(http, dict):
             http["is_auxiliary"] = True
+            if title is not None:
+                http["title"] = title
+            if description is not None:
+                http["description"] = description
     return log_message
 
 
@@ -473,7 +481,15 @@ class HttpClient:
             log_as_auxiliary = error_resolution.response_action == ResponseAction.REDUCE_PAGE_SIZE
             self._message_repository.log_message(
                 Level.DEBUG,
-                lambda: _as_auxiliary_request_log(formatter(response))
+                lambda: _as_auxiliary_request_log(
+                    formatter(response),
+                    title=f"Stream '{self._name}' page rejected, retrying with a smaller page size",
+                    description=(
+                        f"Request for stream '{self._name}' whose response asked for a smaller page. The "
+                        f"same page is requested again with a reduced page size, so this request produced "
+                        f"no records."
+                    ),
+                )
                 if log_as_auxiliary
                 else formatter(response),
             )
