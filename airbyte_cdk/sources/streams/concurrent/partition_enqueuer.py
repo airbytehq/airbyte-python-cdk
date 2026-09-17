@@ -3,10 +3,12 @@
 #
 import time
 from queue import Queue
+from typing import Optional
 
 from airbyte_cdk.sources.concurrent_source.partition_generation_completed_sentinel import (
     PartitionGenerationCompletedSentinel,
 )
+from airbyte_cdk.sources.concurrent_source.stream_abort_registry import StreamAbortRegistry
 from airbyte_cdk.sources.concurrent_source.stream_thread_exception import StreamThreadException
 from airbyte_cdk.sources.concurrent_source.thread_pool_manager import ThreadPoolManager
 from airbyte_cdk.sources.streams.concurrent.abstract_stream import AbstractStream
@@ -23,14 +25,18 @@ class PartitionEnqueuer:
         queue: Queue[QueueItem],
         thread_pool_manager: ThreadPoolManager,
         sleep_time_in_seconds: float = 0.1,
+        stream_abort_registry: Optional[StreamAbortRegistry] = None,
     ) -> None:
         """
         :param queue:  The queue to put the partitions in.
         :param throttler: The throttler to use to throttle the partition generation.
+        :param stream_abort_registry: Optional registry of streams that failed fatally. Partition
+            generation stops early for a stream once it has been aborted.
         """
         self._queue = queue
         self._thread_pool_manager = thread_pool_manager
         self._sleep_time_in_seconds = sleep_time_in_seconds
+        self._stream_abort_registry = stream_abort_registry
 
     def generate_partitions(self, stream: AbstractStream) -> None:
         """
@@ -44,6 +50,12 @@ class PartitionEnqueuer:
         """
         try:
             for partition in stream.generate_partitions():
+                # If the stream already failed fatally on another partition, stop generating new
+                # ones. Remaining partitions would only repeat the same doomed request.
+                if self._stream_abort_registry and self._stream_abort_registry.is_aborted(
+                    stream.name
+                ):
+                    break
                 # Adding partitions to the queue generates futures. To avoid having too many futures, we throttle here. We understand that
                 # we might add more futures than the limit by throttling in the threads while it is the main thread that actual adds the
                 # future but we expect the delta between the max futures length and the actual to be small enough that it would not be an

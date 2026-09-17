@@ -4,6 +4,7 @@ import logging
 from queue import Queue
 from typing import Optional
 
+from airbyte_cdk.sources.concurrent_source.stream_abort_registry import StreamAbortRegistry
 from airbyte_cdk.sources.concurrent_source.stream_thread_exception import StreamThreadException
 from airbyte_cdk.sources.message.repository import MessageRepository
 from airbyte_cdk.sources.streams.concurrent.cursor import Cursor
@@ -53,12 +54,17 @@ class PartitionReader:
         self,
         queue: Queue[QueueItem],
         partition_logger: Optional[PartitionLogger] = None,
+        stream_abort_registry: Optional[StreamAbortRegistry] = None,
     ) -> None:
         """
         :param queue: The queue to put the records in.
+        :param partition_logger: Optional logger used to emit a slice log message per partition.
+        :param stream_abort_registry: Optional registry of streams that failed fatally. Partitions
+            belonging to an aborted stream are skipped instead of being read.
         """
         self._queue = queue
         self._partition_logger = partition_logger
+        self._stream_abort_registry = stream_abort_registry
 
     def process_partition(self, partition: Partition, cursor: Cursor) -> None:
         """
@@ -72,6 +78,15 @@ class PartitionReader:
         :param partition: The partition to read data from
         :return: None
         """
+        # If the stream already failed fatally on another partition, skip this one instead of
+        # repeating the same doomed request. We do not close the partition on the cursor so that
+        # state is not advanced past the failure.
+        if self._stream_abort_registry and self._stream_abort_registry.is_aborted(
+            partition.stream_name()
+        ):
+            self._queue.put(PartitionCompleteSentinel(partition, not self._IS_SUCCESSFUL))
+            return
+
         try:
             if self._partition_logger:
                 self._partition_logger.log(partition)
