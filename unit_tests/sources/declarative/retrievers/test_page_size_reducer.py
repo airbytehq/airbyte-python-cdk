@@ -72,13 +72,18 @@ def test_given_minimum_page_size_above_configured_page_size_when_reduce_then_rai
     assert "already at or below the configured minimum" in exception.value.message
 
 
-def test_given_page_size_cannot_be_reduced_when_reduce_then_raise_config_error():
+def test_given_page_size_of_one_when_reduce_then_raise_transient_error():
+    """
+    Unlike a `minimum_page_size` above the configured page size, there is nothing to configure differently
+    here: one record per page is as small as a page gets. The API rejecting it is about the API, not about
+    the connector's setup, so the platform gets a transient error rather than a config error.
+    """
     reducer = _reducer(configured_page_size=1)
 
     with pytest.raises(AirbyteTracedException) as exception:
         reducer.reduce()
 
-    assert exception.value.failure_type == FailureType.config_error
+    assert exception.value.failure_type == FailureType.transient_error
 
 
 def test_given_already_at_minimum_when_reduce_then_raise_transient_error():
@@ -234,6 +239,10 @@ def test_given_reset_policy_after_successful_page_when_every_page_succeeds_then_
         pytest.param({"reduction_factor": 1}, id="reduction_factor_does_not_reduce"),
         pytest.param({"minimum_page_size": 0}, id="minimum_page_size_is_not_positive"),
         pytest.param({"max_attempts": 0}, id="max_attempts_is_not_positive"),
+        pytest.param({"backoff_seconds": -1}, id="backoff_seconds_is_negative"),
+        pytest.param(
+            {"retries_at_minimum_page_size": -1}, id="retries_at_minimum_page_size_is_negative"
+        ),
     ],
 )
 def test_given_invalid_configuration_then_raise_value_error(kwargs):
@@ -269,10 +278,77 @@ def test_when_reduce_then_wait_before_the_retry():
     reducer.reduce()
 
     assert sleeps == [
-        PageSizeReducer.BACKOFF_SECONDS,
-        PageSizeReducer.BACKOFF_SECONDS * 2,
+        PageSizeReduction().backoff_seconds,
+        PageSizeReduction().backoff_seconds * 2,
     ]
     assert all(wait > 0 for wait in sleeps)
+
+
+def test_given_backoff_seconds_when_reduce_then_wait_that_long():
+    sleeps: list = []
+    reducer = _reducer(configured_page_size=1000, sleeps=sleeps, backoff_seconds=10)
+
+    reducer.reduce()
+    reducer.reduce()
+
+    assert sleeps == [10, 20]
+
+
+def test_given_retries_at_minimum_page_size_when_at_the_floor_then_retry_the_same_page():
+    """
+    At the floor the page size cannot answer the error any more, but an API that returns the same status for
+    "your page is too big" and for a passing hiccup still can. Without this budget the first such response
+    ends the stream, which is fewer attempts than the same error handler gave before the reduction existed.
+    """
+    sleeps: list = []
+    reducer = _reducer(
+        configured_page_size=2,
+        sleeps=sleeps,
+        minimum_page_size=1,
+        backoff_seconds=1,
+        retries_at_minimum_page_size=2,
+    )
+
+    reducer.reduce()
+    assert reducer.page_size_override == 1
+
+    reducer.reduce()
+    reducer.reduce()
+    assert reducer.page_size_override == 1, "the page size is already at the minimum"
+
+    with pytest.raises(AirbyteTracedException) as exception:
+        reducer.reduce()
+
+    assert exception.value.failure_type == FailureType.transient_error
+    assert sleeps == [1, 1, 2], "the reduction, then the two retries at the floor"
+
+
+def test_given_retries_at_minimum_page_size_do_not_count_against_max_attempts():
+    """
+    The two budgets measure different things: `max_attempts` bounds the reductions that got no page through,
+    while this one bounds the waiting done once there is nothing left to reduce.
+    """
+    reducer = _reducer(configured_page_size=2, max_attempts=1, retries_at_minimum_page_size=3)
+
+    reducer.reduce()
+    reducer.reduce()
+    reducer.reduce()
+    reducer.reduce()
+
+    with pytest.raises(AirbyteTracedException):
+        reducer.reduce()
+
+
+def test_given_successful_page_then_restart_the_retries_at_minimum_page_size():
+    reducer = _reducer(configured_page_size=1, retries_at_minimum_page_size=1)
+    reducer.reduce()
+
+    reducer.on_successful_page()
+
+    reducer.reduce()  # would raise if the budget had not restarted
+
+    with pytest.raises(AirbyteTracedException):
+        reducer.reduce()
 
 
 @pytest.mark.parametrize(
@@ -305,7 +381,7 @@ def test_given_reduction_fails_then_message_names_the_stream_and_leaves_out_reme
 @pytest.mark.parametrize(
     "reducer_kwargs",
     [
-        pytest.param({"configured_page_size": 1, "minimum_page_size": 1}, id="never_reducible"),
+        pytest.param({"configured_page_size": 5, "minimum_page_size": 10}, id="never_reducible"),
         pytest.param({"configured_page_size": None}, id="no_page_size_at_all"),
         pytest.param({"configured_page_size": "100"}, id="page_size_is_not_a_number"),
     ],

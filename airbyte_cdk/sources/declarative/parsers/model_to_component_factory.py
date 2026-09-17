@@ -3756,6 +3756,8 @@ class ModelToComponentFactory:
             reduction_factor=model.page_size_reduction.reduction_factor,  # type: ignore[arg-type]  # the schema defines a default
             minimum_page_size=model.page_size_reduction.minimum_page_size,  # type: ignore[arg-type]  # the schema defines a default
             max_attempts=model.page_size_reduction.max_attempts,  # type: ignore[arg-type]  # the schema defines a default
+            backoff_seconds=model.page_size_reduction.backoff_seconds,  # type: ignore[arg-type]  # the schema defines a default
+            retries_at_minimum_page_size=model.page_size_reduction.retries_at_minimum_page_size,  # type: ignore[arg-type]  # the schema defines a default
             failure_message=model.page_size_reduction.failure_message,
             reset_policy=PageSizeResetPolicy(reset_policy.value)
             if reset_policy is not None

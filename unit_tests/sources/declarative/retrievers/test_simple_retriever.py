@@ -1445,7 +1445,9 @@ def test_given_reach_pagination_limit_after_two_pages_when_read_records_than_red
 @pytest.fixture(autouse=True)
 def _no_page_size_reduction_backoff(monkeypatch):
     """The reducer waits between reduction retries; taking those waits for real adds seconds to every CI run."""
-    monkeypatch.setattr(PageSizeReducer, "BACKOFF_SECONDS", 0)
+    monkeypatch.setattr(
+        "airbyte_cdk.sources.declarative.retrievers.page_size_reducer.time.sleep", lambda _: None
+    )
 
 
 def _page_size_reduction_retriever(
@@ -1500,6 +1502,61 @@ def test_given_page_size_reduction_when_read_records_then_retry_same_page_with_r
         call.kwargs.get("page_size_override")
         for call in paginator.get_request_params.call_args_list
     ] == [None, 50]
+
+
+def test_given_retries_at_minimum_page_size_when_at_the_floor_then_re_issue_the_same_page():
+    """The page size stays at the floor: what the retry buys is the wait, not a smaller request."""
+    requester = Mock(spec=Requester)
+    requester.send_request.side_effect = [
+        PageSizeReductionRequiredException(),
+        [{"id": 1}],
+    ]
+    record_selector = Mock(spec=HttpSelector)
+    record_selector.select_records.return_value = [{"id": 1}]
+    paginator = _mock_paginator()
+    paginator.get_page_size.return_value = 1
+    paginator.get_initial_token.return_value = None
+    paginator.next_page_token.return_value = None
+
+    retriever = _page_size_reduction_retriever(
+        requester,
+        paginator,
+        record_selector,
+        PageSizeReduction(retries_at_minimum_page_size=1),
+    )
+
+    records = list(retriever.read_records(A_RECORD_SCHEMA, A_STREAM_SLICE))
+
+    assert records == [{"id": 1}]
+    assert requester.send_request.call_count == 2, (
+        "the page that could not be reduced was issued twice"
+    )
+    assert [
+        call.kwargs.get("page_size_override")
+        for call in paginator.get_request_params.call_args_list
+    ] == [None, None]
+
+
+def test_given_retries_at_minimum_page_size_are_spent_then_raise_transient_error():
+    requester = Mock(spec=Requester)
+    requester.send_request.side_effect = PageSizeReductionRequiredException()
+    record_selector = Mock(spec=HttpSelector)
+    paginator = _mock_paginator()
+    paginator.get_page_size.return_value = 1
+    paginator.get_initial_token.return_value = None
+
+    retriever = _page_size_reduction_retriever(
+        requester,
+        paginator,
+        record_selector,
+        PageSizeReduction(retries_at_minimum_page_size=1),
+    )
+
+    with pytest.raises(AirbyteTracedException) as exception:
+        list(retriever.read_records(A_RECORD_SCHEMA, A_STREAM_SLICE))
+
+    assert exception.value.failure_type == FailureType.transient_error
+    assert requester.send_request.call_count == 2
 
 
 def test_given_page_size_reduction_when_read_records_then_next_page_token_not_computed_for_failed_page():

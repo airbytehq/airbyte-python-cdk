@@ -2000,10 +2000,7 @@ def _create_502_page_response():
     return response
 
 
-@patch(
-    "airbyte_cdk.sources.declarative.retrievers.page_size_reducer.PageSizeReducer.BACKOFF_SECONDS",
-    0,
-)
+@patch("airbyte_cdk.sources.declarative.retrievers.page_size_reducer.time.sleep", lambda _: None)
 @patch.object(
     requests.Session,
     "send",

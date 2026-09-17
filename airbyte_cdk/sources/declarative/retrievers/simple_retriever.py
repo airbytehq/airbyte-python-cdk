@@ -482,8 +482,8 @@ class SimpleRetriever(Retriever):
                         message=f"Stream {self.name} asked for a smaller page size in the middle of a page. The page cannot be requested again without duplicating the records already read from it. Move the REDUCE_PAGE_SIZE action to the error handler of the stream's main requester.",
                         failure_type=FailureType.config_error,
                     )
-                # Raises once the page size cannot be reduced any further, which is what stops the loop when
-                # the API keeps failing.
+                # Raises once the page size cannot be reduced any further and the retries allowed at that
+                # floor are spent, which is what stops the loop when the API keeps failing.
                 page_size_reducer.reduce()
                 reduce_page_size = True
             else:
@@ -493,7 +493,8 @@ class SimpleRetriever(Retriever):
                     break
 
             if reduce_page_size:
-                # Retry the very same page: neither the token nor the slice change, only the page size does.
+                # Retry the very same page: neither the token nor the slice change, only the page size does -
+                # and not even that once the reducer is at its floor and only waiting is left.
                 reduce_page_size = False
                 continue
 

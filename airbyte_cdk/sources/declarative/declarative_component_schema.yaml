@@ -4313,7 +4313,8 @@ definitions:
       page size, so the reduced page size would be sent next to the original one. Each reduction waits a
       short, growing amount of time before re-issuing the page so that an endpoint failing at every page size
       is not hit in a burst. That wait is the CDK's own: the error handler's backoff_strategies and any
-      Retry-After header are not consulted on this path, the same way they are not for RESET_PAGINATION.
+      Retry-After header are not consulted on this path, the same way they are not for RESET_PAGINATION, and
+      backoff_seconds is what sets its length.
     type: object
     required:
       - type
@@ -4364,6 +4365,35 @@ definitions:
         examples:
           - 5
           - 10
+      backoff_seconds:
+        title: Backoff Seconds
+        description: >-
+          Base number of seconds to wait before the page is re-issued, multiplied by the number of attempts made in
+          a row, so the second attempt waits twice as long as the first. A REDUCE_PAGE_SIZE response never reaches
+          the error handler's retry budget, backoff_strategies or a Retry-After header, so this is the only thing
+          spacing those requests out. Raise it on an API whose error also means "we are briefly unwell" rather than
+          only "your page is too big", since the default spaces the whole run of attempts over a few seconds.
+        type: number
+        default: 0.5
+        minimum: 0
+        examples:
+          - 0.5
+          - 5
+      retries_at_minimum_page_size:
+        title: Retries At Minimum Page Size
+        description: >-
+          Number of times the same page is re-issued unchanged, each after the backoff wait, once the page size
+          cannot be shrunk any further, before the sync fails with a transient error. The default of 0 fails on the
+          first response received at minimum_page_size. Raise it when the API returns the same error for a page that
+          is too big and for a server-side hiccup: at the floor, reducing is no longer an option but waiting still
+          is, and without this budget those responses end the stream on the first one. This budget is separate from
+          max_attempts, which only counts reductions, and it restarts on every page that succeeds.
+        type: integer
+        default: 0
+        minimum: 0
+        examples:
+          - 0
+          - 3
       failure_message:
         title: Failure Message
         description: >-

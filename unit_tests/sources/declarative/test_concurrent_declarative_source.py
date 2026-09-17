@@ -60,7 +60,6 @@ from airbyte_cdk.sources.declarative.partition_routers import AsyncJobPartitionR
 from airbyte_cdk.sources.declarative.resolvers.http_components_resolver import (
     HttpComponentsResolver,
 )
-from airbyte_cdk.sources.declarative.retrievers.page_size_reducer import PageSizeReducer
 from airbyte_cdk.sources.declarative.retrievers.simple_retriever import SimpleRetriever
 from airbyte_cdk.sources.declarative.stream_slicers.declarative_partition_generator import (
     StreamSlicerPartitionGenerator,
@@ -5052,7 +5051,7 @@ def _read_page_size_reduction_source(manifest):
         state=None,
     )
     # the reducer waits before each reduction retry; taking those waits for real adds seconds to every CI run
-    with patch.object(PageSizeReducer, "BACKOFF_SECONDS", 0):
+    with patch("airbyte_cdk.sources.declarative.retrievers.page_size_reducer.time.sleep"):
         yield from source.read(logger=source.logger, config={}, catalog=catalog, state=[])
 
 

@@ -1441,6 +1441,20 @@ class PageSizeReduction(BaseModel):
         ge=1,
         title="Maximum Reduction Attempts",
     )
+    backoff_seconds: Optional[float] = Field(
+        0.5,
+        description='Base number of seconds to wait before the page is re-issued, multiplied by the number of attempts made in a row, so the second attempt waits twice as long as the first. A REDUCE_PAGE_SIZE response never reaches the error handler\'s retry budget, backoff_strategies or a Retry-After header, so this is the only thing spacing those requests out. Raise it on an API whose error also means "we are briefly unwell" rather than only "your page is too big", since the default spaces the whole run of attempts over a few seconds.',
+        examples=[0.5, 5],
+        ge=0.0,
+        title="Backoff Seconds",
+    )
+    retries_at_minimum_page_size: Optional[int] = Field(
+        0,
+        description="Number of times the same page is re-issued unchanged, each after the backoff wait, once the page size cannot be shrunk any further, before the sync fails with a transient error. The default of 0 fails on the first response received at minimum_page_size. Raise it when the API returns the same error for a page that is too big and for a server-side hiccup: at the floor, reducing is no longer an option but waiting still is, and without this budget those responses end the stream on the first one. This budget is separate from max_attempts, which only counts reductions, and it restarts on every page that succeeds.",
+        examples=[0, 3],
+        ge=0,
+        title="Retries At Minimum Page Size",
+    )
     failure_message: Optional[str] = Field(
         None,
         description="Sentence appended to the error message shown to the user when the connector runs out of reductions, either because max_attempts was reached or because the page size is already at minimum_page_size. Use it to tell the user what they can do about it in terms of this specific API, for instance which filter narrows the query down. Without it the message only states that the API kept rejecting every page size the connector asked for.",
