@@ -178,10 +178,10 @@ from airbyte_cdk.sources.streams.http.error_handlers.response_models import (
             {"status_code": 500},
             ErrorResolution(
                 response_action=ResponseAction.RETRY,
-                failure_type=FailureType.transient_error,
+                failure_type=FailureType.config_error,
                 error_message="rate limits",
             ),
-            id="test_http_code_matches_failure_type_config_error_action_retry_uses_default_failure_type",
+            id="test_configured_failure_type_is_honored_for_non_fail_action",
         ),
         pytest.param(
             ResponseAction.RATE_LIMITED,
@@ -197,6 +197,21 @@ from airbyte_cdk.sources.streams.http.error_handlers.response_models import (
                 error_message="rate limits",
             ),
             id="test_http_code_matches_response_action_rate_limited",
+        ),
+        pytest.param(
+            ResponseAction.RATE_LIMITED,
+            None,
+            None,
+            "{{ response.code == 40100 }}",
+            "",
+            "vendor rate limit message",
+            {"status_code": 200, "json": {"code": 40100}},
+            ErrorResolution(
+                response_action=ResponseAction.RATE_LIMITED,
+                failure_type=FailureType.transient_error,
+                error_message="vendor rate limit message",
+            ),
+            id="test_body_coded_rate_limit_on_http_200_defaults_to_transient_error",
         ),
     ],
 )
