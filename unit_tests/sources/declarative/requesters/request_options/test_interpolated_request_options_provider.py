@@ -141,6 +141,15 @@ def test_interpolated_request_json(test_name, input_request_json, expected_reque
 @pytest.mark.parametrize(
     "test_name, input_request_json, expected_request_json",
     [
+        pytest.param(
+            "test_static_digit_only_string",
+            RequestBodyJsonObject(
+                type="RequestBodyJsonObject",
+                value={"clientId": "478"},
+            ),
+            {"clientId": "478"},
+            id="static_digit_only_string",
+        ),
         (
             "test_static_json",
             RequestBodyJsonObject(
