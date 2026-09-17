@@ -1469,6 +1469,11 @@ class PageSizeReduction(BaseModel):
         description="When to restore the page size configured on the pagination strategy. NEVER keeps the reduced page size for the rest of the partition. AFTER_SUCCESSFUL_PAGE restores it as soon as one page succeeds, which means hitting the same error again on every page - use it only when the reduction is worth one extra request per page, for instance because the configured page size usually works and only some pages are too heavy. It only controls the page size: the max_attempts budget restarts on every page that succeeds under both policies, so there is no limit on how many reductions a partition may make in total. What is bounded is the reductions that get no page through.",
         title="Reset Policy",
     )
+    rewrite_page_size_in_page_token_url: Optional[bool] = Field(
+        False,
+        description="Allows page size reduction on a paginator whose page_token_option is a RequestPath, by rewriting the page size inside the URL the API returned for the next page instead of sending the reduced page size next to the one that URL already carries. The parameter rewritten is the one named by page_size_option, which must inject into request_parameter; the rest of the URL is left untouched, and a URL that does not carry that parameter is left alone since the reduced page size is then added to the request as usual. Set it only when re-requesting that URL with a smaller page size returns the same records from the same place - true of a URL addressing records by cursor or by timestamp, false of one carrying a page number, where a smaller page size moves every following page boundary and skips records the same way PageIncrement does. The CDK cannot tell the two apart, because a RequestPath token is opaque to it, so this is an assertion about the API being made by the connector.",
+        title="Rewrite Page Size In Page Token URL",
+    )
 
 
 class CsvDecoder(BaseModel):

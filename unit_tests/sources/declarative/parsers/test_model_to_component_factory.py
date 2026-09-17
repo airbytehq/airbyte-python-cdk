@@ -6568,6 +6568,70 @@ def test_given_request_path_page_token_option_and_page_size_reduction_then_raise
         _page_size_reduction_stream(page_token_option="page_token_option:\n      type: RequestPath")
 
     assert "RequestPath" in str(exception.value)
+    assert "rewrite_page_size_in_page_token_url" in str(exception.value)
+
+
+def test_given_request_path_page_token_option_and_rewrite_then_create_retriever():
+    retriever = get_retriever(
+        _page_size_reduction_stream(
+            page_size_reduction=(
+                "page_size_reduction:\n"
+                "    type: PageSizeReduction\n"
+                "    rewrite_page_size_in_page_token_url: true"
+            ),
+            page_token_option="page_token_option:\n      type: RequestPath",
+        )
+    )
+
+    assert retriever.page_size_reduction == PageSizeReduction(
+        reduction_factor=2,
+        minimum_page_size=1,
+        max_attempts=5,
+        reset_policy=PageSizeResetPolicy.NEVER,
+    )
+
+
+def test_given_rewrite_without_request_path_page_token_option_then_raise():
+    # There is no URL returned by the API to rewrite anything in, so the field can only be a mistake.
+    with pytest.raises(ValueError) as exception:
+        _page_size_reduction_stream(
+            page_size_reduction=(
+                "page_size_reduction:\n"
+                "    type: PageSizeReduction\n"
+                "    rewrite_page_size_in_page_token_url: true"
+            ),
+            page_token_option=(
+                "page_token_option:\n"
+                "      type: RequestOption\n"
+                "      inject_into: request_parameter\n"
+                "      field_name: after"
+            ),
+        )
+
+    assert "rewrite_page_size_in_page_token_url" in str(exception.value)
+    assert "RequestPath" in str(exception.value)
+
+
+def test_given_rewrite_and_page_size_option_not_a_request_parameter_then_raise():
+    # Only a query parameter of the URL the API returned can be rewritten.
+    with pytest.raises(ValueError) as exception:
+        _page_size_reduction_stream(
+            page_size_reduction=(
+                "page_size_reduction:\n"
+                "    type: PageSizeReduction\n"
+                "    rewrite_page_size_in_page_token_url: true"
+            ),
+            page_size_option=(
+                "page_size_option:\n"
+                "      type: RequestOption\n"
+                "      inject_into: header\n"
+                "      field_name: first"
+            ),
+            page_token_option="page_token_option:\n      type: RequestPath",
+        )
+
+    assert "rewrite_page_size_in_page_token_url" in str(exception.value)
+    assert "request_parameter" in str(exception.value)
 
 
 def test_given_request_option_page_token_option_and_page_size_reduction_then_create_retriever():

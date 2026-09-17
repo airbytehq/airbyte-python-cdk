@@ -3,6 +3,7 @@
 #
 
 import json
+import logging
 from unittest.mock import MagicMock, Mock
 
 import pytest
@@ -28,6 +29,7 @@ from airbyte_cdk.sources.declarative.requesters.paginators.strategies.page_incre
 )
 from airbyte_cdk.sources.declarative.requesters.request_path import RequestPath
 from airbyte_cdk.sources.declarative.types import Record, StreamSlice, StreamState
+from airbyte_cdk.sources.streams.http.http_client import HttpClient
 
 
 @pytest.mark.parametrize(
@@ -539,6 +541,179 @@ def test_path_returns_none_when_option_not_request_path() -> None:
     )
     result = paginator.path(next_page_token)
     assert result is None
+
+
+def _request_path_paginator(
+    page_size=100,
+    inject_into=RequestOptionType.request_parameter,
+    page_size_field="per_page",
+    config=None,
+):
+    return DefaultPaginator(
+        page_size_option=RequestOption(
+            inject_into=inject_into, field_name=page_size_field, parameters={}
+        ),
+        page_token_option=RequestPath(parameters={}),
+        pagination_strategy=CursorPaginationStrategy(
+            page_size=page_size, cursor_value="{{ response.next }}", config={}, parameters={}
+        ),
+        config=config if config is not None else {},
+        url_base="https://airbyte.io",
+        parameters={},
+    )
+
+
+def test_given_request_path_and_no_page_size_override_then_token_url_is_untouched():
+    paginator = _request_path_paginator()
+    token = "https://airbyte.io/incremental/ticket_events.json?per_page=100&start_time=1234"
+
+    assert paginator.path({"next_page_token": token}) == token
+
+
+def test_given_request_path_and_page_size_override_then_rewrite_it_in_the_token_url():
+    """
+    The API echoes the page size back into the URL it returns for the next page. Sending the reduced page size
+    next to it would leave the API to pick between the two, and `_dedupe_query_params` only drops the injected
+    one when both values agree - which is exactly when there is nothing to reduce.
+    """
+    paginator = _request_path_paginator()
+    token = "https://airbyte.io/incremental/ticket_events.json?per_page=100&start_time=1234"
+
+    assert (
+        paginator.path({"next_page_token": token}, page_size_override=50)
+        == "https://airbyte.io/incremental/ticket_events.json?per_page=50&start_time=1234"
+    )
+
+
+def test_given_token_url_without_the_page_size_then_it_is_left_alone():
+    # `get_request_params` adds the reduced page size the usual way, so there is nothing to rewrite here and
+    # appending it to the path would send it twice.
+    paginator = _request_path_paginator()
+    token = "https://airbyte.io/incremental/ticket_events.json?start_time=1234"
+
+    assert paginator.path({"next_page_token": token}, page_size_override=50) == token
+    assert paginator.get_request_params(page_size_override=50) == {"per_page": 50}
+
+
+def test_given_token_url_without_a_query_then_it_is_left_alone():
+    paginator = _request_path_paginator()
+    token = "https://airbyte.io/incremental/ticket_events.json"
+
+    assert paginator.path({"next_page_token": token}, page_size_override=50) == token
+
+
+def test_given_page_size_not_injected_as_a_request_parameter_then_token_url_is_untouched():
+    # A header or a body carries no page size into the URL, so there is nothing there to rewrite.
+    paginator = _request_path_paginator(inject_into=RequestOptionType.header)
+    token = "https://airbyte.io/incremental/ticket_events.json?per_page=100"
+
+    assert paginator.path({"next_page_token": token}, page_size_override=50) == token
+
+
+def test_given_other_query_params_then_they_are_returned_byte_for_byte():
+    """
+    The token URL is built by the API and handed back to it. Parsing and re-encoding its parameters would
+    rewrite percent-encoding the API chose, so only the page size pair is edited.
+    """
+    paginator = _request_path_paginator()
+    token = (
+        "https://airbyte.io/incremental/ticket_events.json"
+        "?cursor=MTIzNDU2%3D%3D&filter=a%2Cb&per_page=100&empty=&flag"
+    )
+
+    assert paginator.path({"next_page_token": token}, page_size_override=50) == (
+        "https://airbyte.io/incremental/ticket_events.json"
+        "?cursor=MTIzNDU2%3D%3D&filter=a%2Cb&per_page=50&empty=&flag"
+    )
+
+
+def test_given_the_page_size_repeated_in_the_token_url_then_only_one_is_kept():
+    paginator = _request_path_paginator()
+    token = "https://airbyte.io/events?per_page=100&start_time=1234&per_page=200"
+
+    assert (
+        paginator.path({"next_page_token": token}, page_size_override=50)
+        == "https://airbyte.io/events?per_page=50&start_time=1234"
+    )
+
+
+def test_given_a_param_whose_name_starts_with_the_page_size_field_then_it_is_not_rewritten():
+    paginator = _request_path_paginator()
+    token = "https://airbyte.io/events?per_page_size=100&per_page=100"
+
+    assert (
+        paginator.path({"next_page_token": token}, page_size_override=50)
+        == "https://airbyte.io/events?per_page_size=100&per_page=50"
+    )
+
+
+def test_given_an_interpolated_page_size_field_name_then_it_is_evaluated():
+    paginator = _request_path_paginator(
+        page_size_field="{{ config['size_field'] }}", config={"size_field": "per_page"}
+    )
+    token = "https://airbyte.io/events?per_page=100"
+
+    assert (
+        paginator.path({"next_page_token": token}, page_size_override=50)
+        == "https://airbyte.io/events?per_page=50"
+    )
+
+
+def test_given_the_token_url_has_a_fragment_then_it_is_preserved():
+    paginator = _request_path_paginator()
+    token = "https://airbyte.io/events?per_page=100#anchor"
+
+    assert (
+        paginator.path({"next_page_token": token}, page_size_override=50)
+        == "https://airbyte.io/events?per_page=50#anchor"
+    )
+
+
+def test_given_rewritten_token_url_then_the_request_carries_one_page_size():
+    """
+    The whole point of the rewrite: what reaches the API. `HttpClient._dedupe_query_params` drops the injected
+    page size only because the rewritten URL now agrees with it - without the rewrite the two disagree and
+    both are sent.
+    """
+    paginator = _request_path_paginator()
+    token = "https://airbyte.io/events?per_page=100&start_time=1234"
+
+    url = paginator.path({"next_page_token": token}, page_size_override=50)
+    params = paginator.get_request_params(page_size_override=50)
+    prepared_request = HttpClient(
+        name="test", logger=logging.getLogger("test")
+    )._create_prepared_request(http_method="GET", url=url, params=params, dedupe_query_params=True)
+
+    assert prepared_request.url == "https://airbyte.io/events?per_page=50&start_time=1234"
+
+    without_rewrite = HttpClient(
+        name="test", logger=logging.getLogger("test")
+    )._create_prepared_request(
+        http_method="GET", url=token, params=params, dedupe_query_params=True
+    )
+
+    assert (
+        without_rewrite.url == "https://airbyte.io/events?per_page=100&start_time=1234&per_page=50"
+    )
+
+
+def test_test_read_decorator_forwards_page_size_override_to_path():
+    decorated = Mock()
+    decorated.path.return_value = "a path"
+    paginator = PaginatorTestReadDecorator(decorated, 5)
+
+    assert paginator.path({"next_page_token": "a token"}, page_size_override=50) == "a path"
+    assert decorated.path.call_args.kwargs["page_size_override"] == 50
+
+
+def test_test_read_decorator_omits_page_size_override_on_path_when_there_is_none():
+    # A paginator defined outside of the CDK does not have to accept the argument.
+    decorated = Mock()
+    paginator = PaginatorTestReadDecorator(decorated, 5)
+
+    paginator.path({"next_page_token": "a token"})
+
+    assert "page_size_override" not in decorated.path.call_args.kwargs
 
 
 def _paginator_with_page_size(page_size=100, inject_into=RequestOptionType.request_parameter):

@@ -320,6 +320,9 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
     IncrementingCountCursor as IncrementingCountCursorModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    InjectInto as InjectIntoModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     InlineSchemaLoader as InlineSchemaLoaderModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
@@ -3803,17 +3806,45 @@ class ModelToComponentFactory:
                 f"the connector cannot tell the API to send a smaller page."
             )
 
-        if isinstance(model.paginator.page_token_option, RequestPathModel):
+        rewrites_page_token_url = bool(
+            model.page_size_reduction
+            and model.page_size_reduction.rewrite_page_size_in_page_token_url
+        )
+        uses_request_path_token = isinstance(model.paginator.page_token_option, RequestPathModel)
+
+        if rewrites_page_token_url and not uses_request_path_token:
+            raise ValueError(
+                f"`rewrite_page_size_in_page_token_url` is set on stream {name} but its `page_token_option` is "
+                f"not of type RequestPath. There is no URL returned by the API to rewrite the page size in: "
+                f"the reduced page size is already sent as a request option. Remove the field."
+            )
+
+        if rewrites_page_token_url and (
+            model.paginator.page_size_option.inject_into != InjectIntoModel.request_parameter
+        ):
+            raise ValueError(
+                f"`rewrite_page_size_in_page_token_url` is set on stream {name} but its `page_size_option` "
+                f"injects into {model.paginator.page_size_option.inject_into.value} rather than into "
+                f"request_parameter. Only a query parameter of the URL the API returned can be rewritten."
+            )
+
+        if uses_request_path_token and not rewrites_page_token_url:
             # A RequestPath page token is a full URL built by the API, and it already carries the page size the
             # API echoed back. The reduced page size is injected as a request option on top of that URL, so the
             # request goes out with the page size twice - the original one from the URL and the reduced one -
             # and which of the two the API honors is up to the API. Every page after the first would then keep
-            # asking for the page size that just failed.
+            # asking for the page size that just failed. Rewriting the page size inside that URL avoids this,
+            # but only the connector knows whether the URL can be re-requested at a smaller page size at all,
+            # so it is opted into rather than assumed.
             raise ValueError(
                 f"`page_size_reduction` does not support a `page_token_option` of type RequestPath on stream "
-                f"{name}. The next page is then requested through a URL returned by the API, which already "
-                f"carries the page size, so the reduced page size would be sent alongside the original one. Use "
-                f"a CursorPagination strategy with a `page_token_option` of type RequestOption instead."
+                f"{name} unless `rewrite_page_size_in_page_token_url` is set. The next page is then requested "
+                f"through a URL returned by the API, which already carries the page size, so the reduced page "
+                f"size would be sent alongside the original one. Set "
+                f"`rewrite_page_size_in_page_token_url: true` if re-requesting that URL with a smaller page "
+                f"size returns the same records from the same place - it does when the URL addresses records "
+                f"by cursor or timestamp, and it does not when the URL carries a page number. Otherwise use a "
+                f"CursorPagination strategy with a `page_token_option` of type RequestOption instead."
             )
 
         strategy = model.paginator.pagination_strategy

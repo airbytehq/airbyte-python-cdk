@@ -4311,8 +4311,9 @@ definitions:
       smaller page size moves every following page boundary and would skip records. It is also rejected when the
       stream uses query properties, a file uploader, or reads its parent stream lazily through lazy_read_pointer,
       since re-issuing a page whose records were already emitted would duplicate them. A page_token_option of
-      type RequestPath is rejected too: the next page is then a URL built by the API which already carries the
-      page size, so the reduced page size would be sent next to the original one. Each reduction waits a
+      type RequestPath is rejected unless rewrite_page_size_in_page_token_url is set: the next page is then a
+      URL built by the API which already carries the page size, so the reduced page size would otherwise be
+      sent next to the original one. Each reduction waits a
       short, growing amount of time before re-issuing the page so that an endpoint failing at every page size
       is not hit in a burst. That wait is the CDK's own: the error handler's backoff_strategies and any
       Retry-After header are not consulted on this path, the same way they are not for RESET_PAGINATION, and
@@ -4425,6 +4426,21 @@ definitions:
           - NEVER
           - AFTER_SUCCESSFUL_PAGE
         default: NEVER
+      rewrite_page_size_in_page_token_url:
+        title: Rewrite Page Size In Page Token URL
+        description: >-
+          Allows page size reduction on a paginator whose page_token_option is a RequestPath, by rewriting the
+          page size inside the URL the API returned for the next page instead of sending the reduced page size
+          next to the one that URL already carries. The parameter rewritten is the one named by
+          page_size_option, which must inject into request_parameter; the rest of the URL is left untouched,
+          and a URL that does not carry that parameter is left alone since the reduced page size is then added
+          to the request as usual. Set it only when re-requesting that URL with a smaller page size returns the
+          same records from the same place - true of a URL addressing records by cursor or by timestamp, false
+          of one carrying a page number, where a smaller page size moves every following page boundary and
+          skips records the same way PageIncrement does. The CDK cannot tell the two apart, because a
+          RequestPath token is opaque to it, so this is an assertion about the API being made by the connector.
+        type: boolean
+        default: false
   GzipDecoder:
     title: gzip
     description: Select 'gzip' for response data that is compressed with gzip. Requires specifying an inner data type/decoder to parse the decompressed data.

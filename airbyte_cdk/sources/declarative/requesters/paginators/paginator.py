@@ -77,12 +77,16 @@ class Paginator(ABC, RequestOptionsProvider):
         next_page_token: Optional[Mapping[str, Any]],
         stream_state: Optional[Mapping[str, Any]] = None,
         stream_slice: Optional[StreamSlice] = None,
+        page_size_override: Optional[int] = None,
     ) -> Optional[str]:
         """
         Returns the URL path to hit to fetch the next page of records
 
         e.g: if you wanted to hit https://myapi.com/v1/some_entity then this will return "some_entity"
 
+        :param page_size_override: the page size that was actually requested, when it differs from the
+            configured one because of a `REDUCE_PAGE_SIZE` response action. It is only passed when the page
+            size was reduced, so a paginator defined outside of the CDK that does not accept it keeps working.
         :return: path to hit to fetch the next request. Returning None means the path is not defined by the next_page_token
         """
         pass
