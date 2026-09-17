@@ -138,10 +138,11 @@ class HttpClient:
         message_repository: Optional[MessageRepository] = None,
         request_timeout: Optional[Union[float, Tuple[float, float]]] = None,
     ):
-        """Initialize the HTTP client.
+        """Initializes the HTTP client.
 
-        Args:
-            request_timeout: The default connect/read timeout in seconds for requests.
+        `request_timeout` is the `(connect, read)` timeout in seconds (or a single value for both)
+        applied to every request whose `request_kwargs` do not set `timeout`; it defaults to
+        `default_request_timeout()`.
         """
         self._name = name
         self._api_budget: APIBudget = api_budget or APIBudget(policies=[])
