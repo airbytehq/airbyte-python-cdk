@@ -8,6 +8,7 @@ from airbyte_cdk.sources.declarative.parsers.stop_condition_safety import (
     LAST_PAGE_SIZE_VARIABLE,
     StopConditionSafety,
     classify_stop_condition,
+    references_requested_page_size,
 )
 
 
@@ -365,3 +366,24 @@ def test_given_page_length_read_from_the_response_then_reason_names_the_expressi
 
     assert verdict is StopConditionSafety.UNKNOWN
     assert LAST_PAGE_SIZE_VARIABLE in reason
+
+
+@pytest.mark.parametrize(
+    "template,expected",
+    [
+        pytest.param("{{ last_page_size < page_size }}", True, id="bare_variable"),
+        pytest.param("{{ page_size }}", True, id="rendered_on_its_own"),
+        pytest.param("{{ [page_size, 100] | max }}", True, id="passed_through_a_filter"),
+        pytest.param("{{ last_page_size < config['page_size'] }}", False, id="config_lookup"),
+        pytest.param("{{ response['page_size'] }}", False, id="response_lookup"),
+        pytest.param("{{ last_page_size == 0 }}", False, id="unrelated_expression"),
+        pytest.param("page_size", False, id="plain_text_naming_it"),
+        pytest.param("{{ last_page_size < page_size", False, id="does_not_parse"),
+    ],
+)
+def test_references_requested_page_size(template, expected):
+    """
+    The distinction that matters is the bare `page_size` variable, which only exists when the strategy declares
+    a page size, against `config['page_size']`, which is bound whatever the strategy declares.
+    """
+    assert references_requested_page_size(template) is expected

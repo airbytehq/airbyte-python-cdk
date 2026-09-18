@@ -776,9 +776,11 @@ definitions:
         description: >-
           Template string evaluating when to stop paginating. Compare last_page_size against page_size rather than
           against a hardcoded number: page_size is the page size that was actually requested, so the condition stays
-          correct when page_size_reduction shrinks it. Testing the page for emptiness with last_page_size == 0 is
-          equally safe. A stream that enables page_size_reduction is rejected when its stop condition compares
-          last_page_size against anything else, since a full page at a reduced size would then read as a short page.
+          correct when page_size_reduction shrinks it. It is only bound when this strategy declares page_size, and a
+          condition that reads it without one is rejected, so add page_size alongside the condition. Testing the page
+          for emptiness with last_page_size == 0 is equally safe and needs no page_size. A stream that enables
+          page_size_reduction is rejected when its stop condition compares last_page_size against anything else,
+          since a full page at a reduced size would then read as a short page.
         type: string
         interpolation_context:
           - config

@@ -365,6 +365,25 @@ def _is_requested_page_size(node: nodes.Node) -> bool:
     return isinstance(unfiltered, nodes.Name) and unfiltered.name == REQUESTED_PAGE_SIZE_VARIABLE
 
 
+def references_requested_page_size(template: str) -> bool:
+    """
+    Whether an expression reads the `page_size` interpolation variable.
+
+    The variable is only bound to a number when the strategy declares a `page_size`, and a comparison against
+    an unbound one does not fail: Jinja raises, the interpolation falls back to the raw template string, and a
+    non-empty string is truthy - so `{{ last_page_size < page_size }}` would stop the pagination after the
+    first page. Reading it off the AST is what tells the variable apart from `config['page_size']`, which is a
+    `Getitem` on `config` rather than a `Name` and is bound whatever the strategy declares.
+    """
+    try:
+        parsed = _PARSING_ENVIRONMENT.parse(template)
+    except TemplateSyntaxError:
+        # An expression that does not parse is not this function's to report on. The interpolation layer
+        # renders it as the literal string it is, and it names no variable either way.
+        return False
+    return _references(parsed, REQUESTED_PAGE_SIZE_VARIABLE)
+
+
 def _references(node: nodes.Node, name: str) -> bool:
     if isinstance(node, nodes.Name):
         return bool(node.name == name)
