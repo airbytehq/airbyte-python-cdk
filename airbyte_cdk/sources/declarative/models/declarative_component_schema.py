@@ -3290,7 +3290,7 @@ class SimpleRetriever(BaseModel):
     )
     page_size_reduction: Optional[PageSizeReduction] = Field(
         None,
-        description="Describes how the page size is reduced when an error handler resolves to the REDUCE_PAGE_SIZE action. Requires a DefaultPaginator that defines both page_size_option and a pagination strategy with a page_size. Cannot be combined with query properties, a file uploader, or a parent stream read lazily through lazy_read_pointer, because in those cases records of the failing page have already been emitted and re-issuing the page would emit them twice. A page_token_option of type RequestPath is rejected as well, because the next page is then a URL built by the API which already carries the page size.",
+        description="Describes how the page size is reduced when an error handler resolves to the REDUCE_PAGE_SIZE action. Requires a DefaultPaginator that defines both page_size_option and a pagination strategy with a page_size. Cannot be combined with query properties, a file uploader, or a parent stream read lazily through lazy_read_pointer, because in those cases records of the failing page have already been emitted and re-issuing the page would emit them twice. A page_token_option of type RequestPath is rejected unless rewrite_page_size_in_page_token_url is set, because the next page is then a URL built by the API which already carries the page size.",
     )
     ignore_stream_slicer_parameters_on_paginated_requests: Optional[bool] = Field(
         False,
