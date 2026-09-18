@@ -3,7 +3,8 @@
 #
 
 from dataclasses import InitVar, dataclass, field
-from typing import Any, Mapping, MutableMapping, Optional, Union
+from typing import Any, List, Mapping, MutableMapping, Optional, Union
+from urllib.parse import unquote, urlsplit, urlunsplit
 
 import requests
 
@@ -164,12 +165,80 @@ class DefaultPaginator(Paginator):
         next_page_token: Optional[Mapping[str, Any]],
         stream_state: Optional[Mapping[str, Any]] = None,
         stream_slice: Optional[StreamSlice] = None,
+        page_size_override: Optional[int] = None,
     ) -> Optional[str]:
         token = next_page_token.get("next_page_token") if next_page_token else None
         if token and self.page_token_option and isinstance(self.page_token_option, RequestPath):
-            return str(token)
+            return self._with_reduced_page_size(str(token), page_size_override)
         else:
             return None
+
+    def _with_reduced_page_size(self, url: str, page_size_override: Optional[int]) -> str:
+        """
+        Rewrite the page size the API encoded in the URL it returned for the next page.
+
+        A RequestPath page token is a full URL built by the API, and an API that echoes the page size back
+        into it would otherwise receive the reduced page size next to the original one - which of the two it
+        then honors is up to it, and `HttpClient._dedupe_query_params` only drops the injected one when the
+        two values are equal. Rewriting it in place leaves a single page size in the request.
+
+        Only the parameter named by `page_size_option` is touched, and only when the URL already carries it:
+        a URL without it is left alone, since `get_request_params` then adds the reduced page size the usual
+        way. Whether re-requesting this URL with a smaller page size is meaningful at all is the connector's
+        assertion, made with `rewrite_page_size_in_page_token_url` and checked when the manifest is parsed.
+        """
+        if page_size_override is None:
+            return url
+        if (
+            not self.page_size_option
+            or self.page_size_option.inject_into != RequestOptionType.request_parameter
+        ):
+            return url
+
+        field_name = self.page_size_option.field_name
+        page_size_field = str(
+            field_name.eval(config=self.config)
+            if isinstance(field_name, InterpolatedString)
+            else field_name
+        )
+
+        parts = urlsplit(url)
+        rewritten_query = self._rewrite_query_param(
+            parts.query, page_size_field, str(page_size_override)
+        )
+        if rewritten_query is None:
+            return url
+
+        return urlunsplit((parts.scheme, parts.netloc, parts.path, rewritten_query, parts.fragment))
+
+    @staticmethod
+    def _rewrite_query_param(query: str, name: str, value: str) -> Optional[str]:
+        """
+        Set `name` to `value` in a raw query string, keeping every other parameter byte for byte.
+
+        The pairs are edited as they were received rather than parsed and re-encoded, so that a token URL
+        whose other parameters carry percent-encoded or non-standard values is handed back to the API
+        unchanged. Returns None when the parameter is absent, which is the caller's signal to leave the URL
+        alone rather than to append it here.
+        """
+        if not query:
+            return None
+
+        pairs: List[str] = []
+        found = False
+        for pair in query.split("&"):
+            key = unquote(pair.split("=", 1)[0])
+            if key != name:
+                pairs.append(pair)
+                continue
+            if found:
+                # An API repeating the page size in its own URL is already ambiguous; keeping one
+                # occurrence is the only reading that leaves a single page size in the request.
+                continue
+            found = True
+            pairs.append(f"{pair.split('=', 1)[0]}={value}")
+
+        return "&".join(pairs) if found else None
 
     def get_request_params(
         self,
@@ -310,11 +379,13 @@ class PaginatorTestReadDecorator(Paginator):
         next_page_token: Optional[Mapping[str, Any]],
         stream_state: Optional[Mapping[str, Any]] = None,
         stream_slice: Optional[StreamSlice] = None,
+        page_size_override: Optional[int] = None,
     ) -> Optional[str]:
         return self._decorated.path(
             next_page_token=next_page_token,
             stream_state=stream_state,
             stream_slice=stream_slice,
+            **page_size_override_kwargs(page_size_override),
         )
 
     def get_request_params(

@@ -282,16 +282,21 @@ class SimpleRetriever(Retriever):
         self,
         next_page_token: Optional[Mapping[str, Any]] = None,
         stream_slice: Optional[StreamSlice] = None,
+        page_size_override: Optional[int] = None,
     ) -> Optional[str]:
         """
         If the paginator points to a path, follow it, else return nothing so the requester is used.
         :param next_page_token:
+        :param page_size_override: the reduced page size, when a `REDUCE_PAGE_SIZE` response action shrank it.
+            The path is the only place a `RequestPath` page token can carry the page size, so the paginator
+            needs it here to rewrite what the API put in that URL.
         :return:
         """
         return self._paginator.path(
             next_page_token=next_page_token,
             stream_state={},  # stream_state as an interpolation context is deprecated
             stream_slice=stream_slice,
+            **page_size_override_kwargs(page_size_override),
         )
 
     def _parse_response(
@@ -355,6 +360,7 @@ class SimpleRetriever(Retriever):
             path=self._paginator_path(
                 next_page_token=next_page_token,
                 stream_slice=stream_slice,
+                page_size_override=page_size_override,
             ),
             stream_state={},  # stream_state as an interpolation context is deprecated
             stream_slice=stream_slice,

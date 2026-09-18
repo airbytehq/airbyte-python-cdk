@@ -45,6 +45,7 @@ from airbyte_cdk.sources.declarative.requesters.request_option import (
     RequestOption,
     RequestOptionType,
 )
+from airbyte_cdk.sources.declarative.requesters.request_path import RequestPath
 from airbyte_cdk.sources.declarative.requesters.requester import HttpMethod, Requester
 from airbyte_cdk.sources.declarative.retrievers.page_size_reducer import (
     PageSizeReducer,
@@ -437,6 +438,76 @@ def test_path(test_name, requester_path, paginator_path, expected_path):
 
     actual_path = retriever._paginator_path(next_page_token=None)
     assert actual_path == expected_path
+
+
+def _retriever_with_paginator(paginator):
+    return SimpleRetriever(
+        name="stream_name",
+        primary_key=primary_key,
+        requester=MagicMock(use_cache=False),
+        record_selector=MagicMock(),
+        paginator=paginator,
+        parameters={},
+        config={},
+    )
+
+
+def test_given_page_size_override_then_paginator_path_receives_it():
+    """
+    The path is where a `RequestPath` page token carries the page size the API echoed back, so a reduced page
+    size that stopped at the request options would leave that URL asking for the size that just failed.
+    """
+    paginator = MagicMock()
+    retriever = _retriever_with_paginator(paginator)
+
+    retriever._paginator_path(next_page_token={"next_page_token": "a token"}, page_size_override=25)
+
+    assert paginator.path.call_args.kwargs["page_size_override"] == 25
+
+
+def test_given_no_page_size_override_then_paginator_path_is_called_without_the_argument():
+    # A paginator defined outside of the CDK does not have to accept the argument.
+    paginator = MagicMock()
+    retriever = _retriever_with_paginator(paginator)
+
+    retriever._paginator_path(next_page_token={"next_page_token": "a token"})
+
+    assert "page_size_override" not in paginator.path.call_args.kwargs
+
+
+def test_given_page_size_override_when_fetch_next_page_then_the_request_path_carries_it():
+    """
+    End to end through the retriever: the page size the API wrote into its own next-page URL is the one that
+    goes back out, so it has to be rewritten there rather than only in the request options.
+    """
+    retriever = _retriever_with_paginator(
+        DefaultPaginator(
+            page_size_option=RequestOption(
+                inject_into=RequestOptionType.request_parameter,
+                field_name="per_page",
+                parameters={},
+            ),
+            page_token_option=RequestPath(parameters={}),
+            pagination_strategy=CursorPaginationStrategy(
+                page_size=100, cursor_value="{{ response.next }}", config={}, parameters={}
+            ),
+            config={},
+            url_base="https://airbyte.io",
+            parameters={},
+        )
+    )
+    token = "https://airbyte.io/events?per_page=100&start_time=1234"
+
+    retriever._fetch_next_page(
+        stream_slice=StreamSlice(cursor_slice={}, partition={}),
+        next_page_token={"next_page_token": token},
+        page_size_override=25,
+    )
+
+    assert (
+        retriever.requester.send_request.call_args.kwargs["path"]
+        == "https://airbyte.io/events?per_page=25&start_time=1234"
+    )
 
 
 def test_given_stream_data_is_not_record_when_read_records_then_update_slice_with_optional_record():
