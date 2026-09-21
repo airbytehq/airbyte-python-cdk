@@ -9,6 +9,7 @@ from typing import Any, Iterable, Mapping, Optional
 
 import pytest
 import requests
+from freezegun import freeze_time
 from requests import Request
 
 from airbyte_cdk.models import SyncMode
@@ -390,6 +391,80 @@ class TestMovingWindowCallRatePolicy:
 
         with pytest.raises(CallRateLimitHit):
             policy.try_acquire("call", weight=1)
+
+    def test_update_available_calls_zero_exhausts_bucket(self):
+        with freeze_time("2024-01-01 00:00:00") as frozen:
+            policy = MovingWindowCallRatePolicy(rates=[Rate(10, timedelta(minutes=1))], matchers=[])
+            for _ in range(3):
+                policy.try_acquire("call", weight=1)
+
+            policy.update(available_calls=0, call_reset_ts=None)
+
+            assert policy._bucket.count() == 10
+            with pytest.raises(CallRateLimitHit):
+                policy.try_acquire("call", weight=1)
+
+            frozen.tick(61)
+            policy.try_acquire("call", weight=1)
+
+    def test_update_available_calls_zero_when_bucket_full_is_noop(self):
+        with freeze_time("2024-01-01 00:00:00"):
+            policy = MovingWindowCallRatePolicy(rates=[Rate(3, timedelta(minutes=1))], matchers=[])
+            for _ in range(3):
+                policy.try_acquire("call", weight=1)
+
+            policy.update(available_calls=0, call_reset_ts=None)
+
+            assert policy._bucket.count() == 3
+            with pytest.raises(CallRateLimitHit):
+                policy.try_acquire("call", weight=1)
+
+    def test_update_available_calls_zero_ignores_expired_entries(self):
+        with freeze_time("2024-01-01 00:00:00") as frozen:
+            policy = MovingWindowCallRatePolicy(
+                rates=[
+                    Rate(5, timedelta(seconds=10)),
+                    Rate(10, timedelta(minutes=1)),
+                ],
+                matchers=[],
+            )
+            for _ in range(5):
+                policy.try_acquire("call", weight=1)
+
+            frozen.tick(11)
+            policy.update(available_calls=0, call_reset_ts=None)
+
+            assert policy._bucket.count() == 10
+            with pytest.raises(CallRateLimitHit):
+                policy.try_acquire("call", weight=1)
+
+    def test_update_skipped_when_over_cap_rate_blocks_fill(self):
+        with freeze_time("2024-01-01 00:00:00"):
+            policy = MovingWindowCallRatePolicy(
+                rates=[
+                    Rate(10, timedelta(minutes=10)),
+                    Rate(3, timedelta(seconds=10)),
+                    Rate(2, timedelta(hours=1)),
+                ],
+                matchers=[],
+            )
+            policy.try_acquire("call", weight=1)
+
+            policy.update(available_calls=0, call_reset_ts=None)
+
+            # The 1-hour rate exceeds MAX_HEADER_DRIVEN_WAIT, so it is excluded from
+            # _calls_left, but put() still validates the fill against it. The fill is
+            # rejected when it would exhaust that rate, leaving the policy unchanged.
+            assert policy._bucket.count() == 1
+
+    def test_update_does_not_raise_allowance(self):
+        with freeze_time("2024-01-01 00:00:00"):
+            policy = MovingWindowCallRatePolicy(rates=[Rate(10, timedelta(minutes=1))], matchers=[])
+            for _ in range(3):
+                policy.try_acquire("call", weight=1)
+
+            policy.update(available_calls=50, call_reset_ts=None)
+            assert policy._bucket.count() == 3
 
 
 class TestHttpAPIBudget:

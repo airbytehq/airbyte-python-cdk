@@ -42,6 +42,9 @@ from airbyte_cdk.sources.streams.http.exceptions import (
     RequestBodyException,
     UserDefinedBackoffException,
 )
+from airbyte_cdk.sources.streams.http.page_size_reduction_exception import (
+    PageSizeReductionRequiredException,
+)
 from airbyte_cdk.sources.streams.http.pagination_reset_exception import (
     PaginationResetRequiredException,
 )
@@ -93,6 +96,30 @@ def monkey_patched_get_item(self, key):  # type: ignore # this interface is a co
 
 
 requests_cache.SQLiteDict.__getitem__ = monkey_patched_get_item  # type: ignore # see the method doc for more information
+
+
+def _as_auxiliary_request_log(
+    log_message: Any, title: Optional[str] = None, description: Optional[str] = None
+) -> Any:
+    """
+    Flag an already-formatted request/response log as an auxiliary request.
+
+    The Connector Builder builds one page per non-auxiliary HTTP log and bounds a slice by the number of those
+    pages, so a request that will not produce a page has to be marked here or it inflates that count. The
+    Builder also labels its side panel from the log's `title` and `description`, which the formatter filled
+    with the wording of an ordinary page, so a caller that knows why the request is auxiliary passes its own
+    and the panel does not read as a successful page fetch. The log formatter is connector-supplied and only
+    the CDK's own one is guaranteed to have an `http` object, hence the defensive check.
+    """
+    if isinstance(log_message, dict):
+        http = log_message.get("http")
+        if isinstance(http, dict):
+            http["is_auxiliary"] = True
+            if title is not None:
+                http["title"] = title
+            if description is not None:
+                http["description"] = description
+    return log_message
 
 
 class HttpClient:
@@ -447,9 +474,24 @@ class HttpClient:
             and self._message_repository is not None
         ):
             formatter = log_formatter
+            # A response resolving to REDUCE_PAGE_SIZE is not a page of the stream: the retriever discards it
+            # and re-issues the same page with a smaller page size. Logging it as an auxiliary request keeps it
+            # visible in the Connector Builder while keeping it out of the per-slice page count, which would
+            # otherwise report "limit reached" on a read that only retried.
+            log_as_auxiliary = error_resolution.response_action == ResponseAction.REDUCE_PAGE_SIZE
             self._message_repository.log_message(
                 Level.DEBUG,
-                lambda: formatter(response),
+                lambda: _as_auxiliary_request_log(
+                    formatter(response),
+                    title=f"Stream '{self._name}' page rejected, retrying with a smaller page size",
+                    description=(
+                        f"Request for stream '{self._name}' whose response asked for a smaller page. The "
+                        f"same page is requested again with a reduced page size, so this request produced "
+                        f"no records."
+                    ),
+                )
+                if log_as_auxiliary
+                else formatter(response),
             )
 
         self._handle_error_resolution(
@@ -509,6 +551,11 @@ class HttpClient:
 
         if error_resolution.response_action == ResponseAction.RESET_PAGINATION:
             raise PaginationResetRequiredException()
+
+        if error_resolution.response_action == ResponseAction.REDUCE_PAGE_SIZE:
+            raise PageSizeReductionRequiredException(
+                stream_name=self._name, error_message=error_resolution.error_message
+            )
 
         # Emit stream status RUNNING with the reason RATE_LIMITED to log that the rate limit has been reached
         if error_resolution.response_action == ResponseAction.RATE_LIMITED:
