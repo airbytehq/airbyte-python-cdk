@@ -349,3 +349,26 @@ def test_composite_error_handler_always_uses_first_strategy():
     assert len(composite_handler.backoff_strategies) == 2
     assert isinstance(composite_handler.backoff_strategies[0], ConstantBackoffStrategy)
     assert composite_handler.backoff_strategies[1], ConstantBackoffStrategy
+
+
+def test_given_reduce_page_size_when_interpret_response_then_stop_at_the_matching_handler():
+    """
+    Without the short circuit, a later handler resolving to FAIL would win over the page size reduction.
+    """
+    reducing_handler = MagicMock()
+    reducing_handler.interpret_response.return_value = ErrorResolution(
+        response_action=ResponseAction.REDUCE_PAGE_SIZE,
+        failure_type=FailureType.transient_error,
+    )
+    failing_handler = MagicMock()
+    failing_handler.interpret_response.return_value = ErrorResolution(
+        response_action=ResponseAction.FAIL, failure_type=FailureType.system_error
+    )
+    error_handler = CompositeErrorHandler(
+        error_handlers=[reducing_handler, failing_handler], parameters={}
+    )
+
+    error_resolution = error_handler.interpret_response(MagicMock())
+
+    assert error_resolution.response_action == ResponseAction.REDUCE_PAGE_SIZE
+    assert failing_handler.interpret_response.call_count == 0
