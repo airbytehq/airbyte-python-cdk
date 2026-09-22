@@ -2,9 +2,16 @@
 # Copyright (c) 2026 Airbyte, Inc., all rights reserved.
 #
 
+from dataclasses import dataclass
+from enum import Enum
 from typing import List, Optional, Protocol, runtime_checkable
 
 from airbyte_cdk.sources.types import StreamSlice
+
+
+class OnPartialResponse(Enum):
+    FAIL = "FAIL"
+    ALLOW_REPLAY = "ALLOW_REPLAY"
 
 
 @runtime_checkable
@@ -30,3 +37,18 @@ class WindowReducible(Protocol):
         `None` as a terminal condition, not retry with the same slice.
         """
         ...
+
+
+@dataclass(frozen=True)
+class RequestWindowReduction:
+    """
+    Configuration for the `request_window_reduction` retriever field - created once per stream and shared,
+    mirroring `PageSizeReduction`. There is no per-partition mutable counterpart to instantiate the way
+    `PageSizeReducer` is: reducing a window does not accumulate attempts across sibling requests the way
+    reducing a page size does, since a reduced window is never retried at the same size twice - it is either
+    split again (recursion) or the sync fails. All state needed to decide that lives in the `StreamSlice` being
+    read and the `WindowReducible.reduce_window` result for it, so a plain config object is enough.
+    """
+
+    on_partial_response: OnPartialResponse = OnPartialResponse.FAIL
+    failure_message: Optional[str] = None

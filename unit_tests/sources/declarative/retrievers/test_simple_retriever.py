@@ -53,11 +53,20 @@ from airbyte_cdk.sources.declarative.retrievers.page_size_reducer import (
 )
 from airbyte_cdk.sources.declarative.retrievers.pagination_tracker import PaginationTracker
 from airbyte_cdk.sources.declarative.retrievers.simple_retriever import SimpleRetriever
+from airbyte_cdk.sources.declarative.retrievers.window_reducible import (
+    OnPartialResponse,
+    RequestWindowReduction,
+    WindowReducible,
+)
 from airbyte_cdk.sources.streams.http.page_size_reduction_exception import (
     PageSizeReductionRequiredException,
 )
 from airbyte_cdk.sources.streams.http.pagination_reset_exception import (
     PaginationResetRequiredException,
+)
+from airbyte_cdk.sources.streams.http.request_window_reduction_exception import (
+    RequestWindowReductionNotSupportedException,
+    RequestWindowReductionRequiredException,
 )
 from airbyte_cdk.sources.types import Record, StreamSlice
 from airbyte_cdk.sources.utils.transform import TransformConfig, TypeTransformer
@@ -2002,3 +2011,368 @@ def test_given_no_data_feed_when_read_records_then_emit_every_record():
         )
 
     assert actual_records == page
+
+
+# --- request_window_reduction ---
+
+A_WINDOW_SLICE = StreamSlice(
+    cursor_slice={"start_time": "2024-01-01T00:00:00Z", "end_time": "2024-01-01T23:59:59Z"},
+    partition={},
+)
+A_FIRST_HALF_SLICE = StreamSlice(
+    cursor_slice={"start_time": "2024-01-01T00:00:00Z", "end_time": "2024-01-01T11:59:59Z"},
+    partition={},
+)
+A_SECOND_HALF_SLICE = StreamSlice(
+    cursor_slice={"start_time": "2024-01-01T12:00:00Z", "end_time": "2024-01-01T23:59:59Z"},
+    partition={},
+)
+
+
+def _request_window_reduction_retriever(
+    requester: Requester,
+    paginator: Paginator,
+    record_selector: HttpSelector,
+    window_reducer: WindowReducible,
+    request_window_reduction: Optional[RequestWindowReduction] = None,
+) -> SimpleRetriever:
+    return SimpleRetriever(
+        name=A_STREAM_NAME,
+        primary_key=primary_key,
+        requester=requester,
+        record_selector=record_selector,
+        paginator=paginator,
+        request_window_reduction=request_window_reduction or RequestWindowReduction(),
+        window_reducer=window_reducer,
+        parameters={},
+        config={},
+    )
+
+
+def test_given_request_window_reduction_when_read_records_then_split_and_read_both_children():
+    requester = Mock(spec=Requester)
+    requester.send_request.side_effect = [
+        RequestWindowReductionRequiredException(),
+        [{"id": 1}],
+        [{"id": 2}],
+    ]
+    record_selector = Mock(spec=HttpSelector)
+    record_selector.select_records.side_effect = [[{"id": 1}], [{"id": 2}]]
+    paginator = _mock_paginator()
+    paginator.get_initial_token.return_value = None
+    paginator.next_page_token.return_value = None
+
+    window_reducer = Mock(spec=WindowReducible)
+    window_reducer.reduce_window.return_value = [A_FIRST_HALF_SLICE, A_SECOND_HALF_SLICE]
+
+    retriever = _request_window_reduction_retriever(
+        requester, paginator, record_selector, window_reducer
+    )
+
+    records = list(retriever.read_records(A_RECORD_SCHEMA, A_WINDOW_SLICE))
+
+    assert records == [{"id": 1}, {"id": 2}]
+    window_reducer.reduce_window.assert_called_once_with(A_WINDOW_SLICE)
+    assert requester.send_request.call_count == 3
+    assert [call.kwargs["stream_slice"] for call in requester.send_request.call_args_list] == [
+        A_WINDOW_SLICE,
+        A_FIRST_HALF_SLICE,
+        A_SECOND_HALF_SLICE,
+    ]
+
+
+def test_given_only_one_child_needs_further_reduction_when_read_records_then_recurse_asymmetrically():
+    """
+    Nested/asymmetric reduction: the first child is itself rejected and split again, while the second
+    child (read after the first child's full recursive read completes) succeeds on the first try.
+    """
+    requester = Mock(spec=Requester)
+    requester.send_request.side_effect = [
+        RequestWindowReductionRequiredException(),  # top-level window
+        RequestWindowReductionRequiredException(),  # first half, rejected again
+        [{"id": 1}],  # first quarter of the first half
+        [{"id": 2}],  # second quarter of the first half
+        [{"id": 3}],  # second half, succeeds directly
+    ]
+    record_selector = Mock(spec=HttpSelector)
+    record_selector.select_records.side_effect = [[{"id": 1}], [{"id": 2}], [{"id": 3}]]
+    paginator = _mock_paginator()
+    paginator.get_initial_token.return_value = None
+    paginator.next_page_token.return_value = None
+
+    a_quarter_slice = StreamSlice(
+        cursor_slice={"start_time": "2024-01-01T00:00:00Z", "end_time": "2024-01-01T05:59:59Z"},
+        partition={},
+    )
+    another_quarter_slice = StreamSlice(
+        cursor_slice={"start_time": "2024-01-01T06:00:00Z", "end_time": "2024-01-01T11:59:59Z"},
+        partition={},
+    )
+    window_reducer = Mock(spec=WindowReducible)
+    window_reducer.reduce_window.side_effect = [
+        [A_FIRST_HALF_SLICE, A_SECOND_HALF_SLICE],
+        [a_quarter_slice, another_quarter_slice],
+    ]
+
+    retriever = _request_window_reduction_retriever(
+        requester, paginator, record_selector, window_reducer
+    )
+
+    records = list(retriever.read_records(A_RECORD_SCHEMA, A_WINDOW_SLICE))
+
+    assert records == [{"id": 1}, {"id": 2}, {"id": 3}]
+    assert window_reducer.reduce_window.call_args_list == [
+        ((A_WINDOW_SLICE,),),
+        ((A_FIRST_HALF_SLICE,),),
+    ]
+    assert [call.kwargs["stream_slice"] for call in requester.send_request.call_args_list] == [
+        A_WINDOW_SLICE,
+        A_FIRST_HALF_SLICE,
+        a_quarter_slice,
+        another_quarter_slice,
+        A_SECOND_HALF_SLICE,
+    ]
+
+
+def test_given_no_request_window_reduction_configured_when_reduction_required_then_raise_not_supported():
+    requester = Mock(spec=Requester)
+    requester.send_request.side_effect = RequestWindowReductionRequiredException()
+    record_selector = Mock(spec=HttpSelector)
+    paginator = _mock_paginator()
+    paginator.get_initial_token.return_value = None
+
+    retriever = SimpleRetriever(
+        name=A_STREAM_NAME,
+        primary_key=primary_key,
+        requester=requester,
+        record_selector=record_selector,
+        paginator=paginator,
+        parameters={},
+        config={},
+    )
+
+    with pytest.raises(RequestWindowReductionNotSupportedException):
+        list(retriever.read_records(A_RECORD_SCHEMA, A_WINDOW_SLICE))
+
+
+def test_given_no_window_reducer_when_reduction_required_then_raise_not_supported():
+    requester = Mock(spec=Requester)
+    requester.send_request.side_effect = RequestWindowReductionRequiredException()
+    record_selector = Mock(spec=HttpSelector)
+    paginator = _mock_paginator()
+    paginator.get_initial_token.return_value = None
+
+    retriever = SimpleRetriever(
+        name=A_STREAM_NAME,
+        primary_key=primary_key,
+        requester=requester,
+        record_selector=record_selector,
+        paginator=paginator,
+        request_window_reduction=RequestWindowReduction(),
+        window_reducer=None,
+        parameters={},
+        config={},
+    )
+
+    with pytest.raises(RequestWindowReductionNotSupportedException):
+        list(retriever.read_records(A_RECORD_SCHEMA, A_WINDOW_SLICE))
+
+
+def test_given_records_already_emitted_and_fail_policy_when_reduction_requested_then_raise_config_error():
+    """
+    A later page of the same window fails after an earlier page already emitted records: with the default
+    `FAIL` policy, reducing and re-reading the window from scratch would duplicate those records, so this
+    must raise a hard config_error instead of silently reducing.
+    """
+    requester = Mock(spec=Requester)
+    requester.send_request.side_effect = [Mock(), RequestWindowReductionRequiredException()]
+    record_selector = Mock(spec=HttpSelector)
+    record_selector.select_records.return_value = [{"id": 1}]
+    paginator = _mock_paginator()
+    paginator.get_initial_token.return_value = None
+    paginator.next_page_token.return_value = {"next_page_token": "page2"}
+
+    window_reducer = Mock(spec=WindowReducible)
+
+    retriever = _request_window_reduction_retriever(
+        requester,
+        paginator,
+        record_selector,
+        window_reducer,
+        request_window_reduction=RequestWindowReduction(on_partial_response=OnPartialResponse.FAIL),
+    )
+
+    with pytest.raises(AirbyteTracedException) as exception:
+        list(retriever.read_records(A_RECORD_SCHEMA, A_WINDOW_SLICE))
+
+    assert exception.value.failure_type == FailureType.config_error
+    window_reducer.reduce_window.assert_not_called()
+
+
+def test_given_records_already_emitted_and_allow_replay_policy_when_reduction_requested_then_reduce_anyway():
+    """
+    The opt-in `ALLOW_REPLAY` policy accepts at-least-once delivery: unlike the FAIL case above, this must
+    proceed to split and re-read the window even though the first page already emitted a record.
+    """
+    requester = Mock(spec=Requester)
+    requester.send_request.side_effect = [
+        Mock(),
+        RequestWindowReductionRequiredException(),
+        [{"id": 2}],
+        [{"id": 3}],
+    ]
+    record_selector = Mock(spec=HttpSelector)
+    record_selector.select_records.side_effect = [[{"id": 1}], [{"id": 2}], [{"id": 3}]]
+    paginator = _mock_paginator()
+    paginator.get_initial_token.return_value = None
+    paginator.next_page_token.side_effect = [{"next_page_token": "page2"}, None, None]
+
+    window_reducer = Mock(spec=WindowReducible)
+    window_reducer.reduce_window.return_value = [A_FIRST_HALF_SLICE, A_SECOND_HALF_SLICE]
+
+    retriever = _request_window_reduction_retriever(
+        requester,
+        paginator,
+        record_selector,
+        window_reducer,
+        request_window_reduction=RequestWindowReduction(
+            on_partial_response=OnPartialResponse.ALLOW_REPLAY
+        ),
+    )
+
+    records = list(retriever.read_records(A_RECORD_SCHEMA, A_WINDOW_SLICE))
+
+    # the record from the page emitted before the reduction signal is included once more: ALLOW_REPLAY
+    # accepts this at-least-once duplication rather than silently dropping it or failing the sync.
+    assert records == [{"id": 1}, {"id": 2}, {"id": 3}]
+    window_reducer.reduce_window.assert_called_once_with(A_WINDOW_SLICE)
+
+
+def test_given_window_reducer_returns_none_when_reduction_requested_then_raise_terminal_error():
+    """
+    `WindowReducible.reduce_window` returning `None` means the window cannot be split any further - either
+    the granularity floor was reached or reducing would not make progress. Either way this must terminate
+    the sync deterministically rather than loop or silently drop the window.
+    """
+    requester = Mock(spec=Requester)
+    requester.send_request.side_effect = RequestWindowReductionRequiredException(
+        failure_type=FailureType.transient_error
+    )
+    record_selector = Mock(spec=HttpSelector)
+    paginator = _mock_paginator()
+    paginator.get_initial_token.return_value = None
+
+    window_reducer = Mock(spec=WindowReducible)
+    window_reducer.reduce_window.return_value = None
+
+    retriever = _request_window_reduction_retriever(
+        requester,
+        paginator,
+        record_selector,
+        window_reducer,
+        request_window_reduction=RequestWindowReduction(
+            failure_message="Lower time_window so that each request covers less data."
+        ),
+    )
+
+    with pytest.raises(AirbyteTracedException) as exception:
+        list(retriever.read_records(A_RECORD_SCHEMA, A_WINDOW_SLICE))
+
+    # the classifying error's own failure_type is preserved rather than defaulting to config_error
+    assert exception.value.failure_type == FailureType.transient_error
+    assert "Lower time_window so that each request covers less data." in exception.value.message
+    window_reducer.reduce_window.assert_called_once_with(A_WINDOW_SLICE)
+
+
+def test_given_empty_children_list_when_reduction_requested_then_emit_no_records_and_do_not_loop():
+    requester = Mock(spec=Requester)
+    requester.send_request.side_effect = RequestWindowReductionRequiredException()
+    record_selector = Mock(spec=HttpSelector)
+    paginator = _mock_paginator()
+    paginator.get_initial_token.return_value = None
+
+    window_reducer = Mock(spec=WindowReducible)
+    window_reducer.reduce_window.return_value = []
+
+    retriever = _request_window_reduction_retriever(
+        requester, paginator, record_selector, window_reducer
+    )
+
+    records = list(retriever.read_records(A_RECORD_SCHEMA, A_WINDOW_SLICE))
+
+    assert records == []
+    window_reducer.reduce_window.assert_called_once_with(A_WINDOW_SLICE)
+
+
+def test_given_a_later_child_fails_when_read_records_then_the_failure_propagates():
+    """
+    The first child reads fully and its records are emitted before the second child fails; the failure of a
+    later child must still surface as a real error, not be silently swallowed after the first child's success.
+    """
+    requester = Mock(spec=Requester)
+    requester.send_request.side_effect = [
+        RequestWindowReductionRequiredException(),
+        [{"id": 1}],
+        RequestWindowReductionRequiredException(),
+    ]
+    record_selector = Mock(spec=HttpSelector)
+    record_selector.select_records.return_value = [{"id": 1}]
+    paginator = _mock_paginator()
+    paginator.get_initial_token.return_value = None
+    paginator.next_page_token.return_value = None
+
+    window_reducer = Mock(spec=WindowReducible)
+    window_reducer.reduce_window.side_effect = [
+        [A_FIRST_HALF_SLICE, A_SECOND_HALF_SLICE],
+        None,
+    ]
+
+    retriever = _request_window_reduction_retriever(
+        requester, paginator, record_selector, window_reducer
+    )
+
+    emitted = []
+    with pytest.raises(AirbyteTracedException):
+        for record in retriever.read_records(A_RECORD_SCHEMA, A_WINDOW_SLICE):
+            emitted.append(record)
+
+    # the first child's records were already emitted to the caller before the second child failed
+    assert emitted == [{"id": 1}]
+    assert window_reducer.reduce_window.call_args_list == [
+        ((A_WINDOW_SLICE,),),
+        ((A_SECOND_HALF_SLICE,),),
+    ]
+
+
+def test_given_request_window_reduction_when_read_records_then_each_child_gets_fresh_pagination_state():
+    """
+    Each recursive call re-enters read_records/_read_pages from scratch for its child slice, so the
+    paginator's initial token is requested again for every child rather than resuming from wherever the
+    failed parent window left off.
+    """
+    requester = Mock(spec=Requester)
+    requester.send_request.side_effect = [
+        RequestWindowReductionRequiredException(),
+        [{"id": 1}],
+        [{"id": 2}],
+    ]
+    record_selector = Mock(spec=HttpSelector)
+    record_selector.select_records.side_effect = [[{"id": 1}], [{"id": 2}]]
+    paginator = _mock_paginator()
+    paginator.get_initial_token.return_value = "initial token"
+    paginator.next_page_token.return_value = None
+
+    window_reducer = Mock(spec=WindowReducible)
+    window_reducer.reduce_window.return_value = [A_FIRST_HALF_SLICE, A_SECOND_HALF_SLICE]
+
+    retriever = _request_window_reduction_retriever(
+        requester, paginator, record_selector, window_reducer
+    )
+
+    list(retriever.read_records(A_RECORD_SCHEMA, A_WINDOW_SLICE))
+
+    assert [call.kwargs["next_page_token"] for call in requester.send_request.call_args_list] == [
+        {"next_page_token": "initial token"},
+        {"next_page_token": "initial token"},
+        {"next_page_token": "initial token"},
+    ]

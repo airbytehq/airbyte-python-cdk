@@ -5167,6 +5167,118 @@ def test_given_reductions_exhausted_when_read_then_emit_a_transient_error():
     )
 
 
+def _request_window_reduction_manifest():
+    return {
+        "version": "0.34.2",
+        "type": "DeclarativeSource",
+        "check": {"type": "CheckStream", "stream_names": ["Test"]},
+        "streams": [
+            {
+                "type": "DeclarativeStream",
+                "name": "Test",
+                "schema_loader": {
+                    "type": "InlineSchemaLoader",
+                    "schema": {"type": "object"},
+                },
+                "incremental_sync": {
+                    "type": "DatetimeBasedCursor",
+                    "start_datetime": "2024-01-01T00:00:00Z",
+                    "end_datetime": "2024-01-01T23:59:59Z",
+                    "step": "P1D",
+                    "cursor_field": "updated_at",
+                    "cursor_granularity": "PT1S",
+                    "datetime_format": "%Y-%m-%dT%H:%M:%SZ",
+                    "start_time_option": {
+                        "type": "RequestOption",
+                        "inject_into": "request_parameter",
+                        "field_name": "start",
+                    },
+                    "end_time_option": {
+                        "type": "RequestOption",
+                        "inject_into": "request_parameter",
+                        "field_name": "end",
+                    },
+                },
+                "retriever": {
+                    "type": "SimpleRetriever",
+                    "request_window_reduction": {"type": "RequestWindowReduction"},
+                    "requester": {
+                        "type": "HttpRequester",
+                        "url_base": "https://example.org",
+                        "path": "/test",
+                        "authenticator": {"type": "NoAuth"},
+                        "error_handler": {
+                            "type": "DefaultErrorHandler",
+                            "response_filters": [
+                                {
+                                    "type": "HttpResponseFilter",
+                                    "http_codes": [400],
+                                    "action": "REDUCE_REQUEST_WINDOW",
+                                },
+                            ],
+                        },
+                    },
+                    "record_selector": {
+                        "type": "RecordSelector",
+                        "extractor": {"type": "DpathExtractor", "field_path": ["items"]},
+                    },
+                },
+            }
+        ],
+        "spec": {
+            "type": "Spec",
+            "documentation_url": "https://example.org",
+            "connection_specification": {},
+        },
+    }
+
+
+def _read_request_window_reduction_source(manifest):
+    catalog = create_catalog("Test")
+    source = ConcurrentDeclarativeSource(
+        source_config=manifest,
+        config={},
+        catalog=catalog,
+        state=None,
+    )
+    yield from source.read(logger=source.logger, config={}, catalog=catalog, state=[])
+
+
+def test_given_reduce_request_window_action_when_read_then_split_and_read_both_halves():
+    """
+    Mirrors the real PayPal `RESULTSET_TOO_LARGE` incident this feature exists to generalize: a request for
+    the full day is rejected outright, and the connector reads it back as two half-day requests instead, with
+    a complete, gap-free, non-duplicated record set.
+    """
+    full_window_request = HttpRequest(
+        "https://example.org/test",
+        query_params={"start": "2024-01-01T00:00:00Z", "end": "2024-01-01T23:59:59Z"},
+    )
+    first_half_request = HttpRequest(
+        "https://example.org/test",
+        query_params={"start": "2024-01-01T00:00:00Z", "end": "2024-01-01T11:59:59Z"},
+    )
+    second_half_request = HttpRequest(
+        "https://example.org/test",
+        query_params={"start": "2024-01-01T12:00:00Z", "end": "2024-01-01T23:59:59Z"},
+    )
+
+    with HttpMocker() as http_mocker:
+        http_mocker.get(full_window_request, HttpResponse("", 400))
+        http_mocker.get(first_half_request, HttpResponse(json.dumps({"items": [{"id": 1}]}), 200))
+        http_mocker.get(second_half_request, HttpResponse(json.dumps({"items": [{"id": 2}]}), 200))
+
+        messages = list(_read_request_window_reduction_source(_request_window_reduction_manifest()))
+
+        http_mocker.assert_number_of_calls(full_window_request, 1)
+        http_mocker.assert_number_of_calls(first_half_request, 1)
+        http_mocker.assert_number_of_calls(second_half_request, 1)
+
+    assert sorted(
+        message.record.data["id"] for message in messages if message.type == Type.RECORD
+    ) == [1, 2]
+
+
 def test_given_pagination_limit_reached_when_read_then_reset_pagination():
     input_config = {}
     manifest = {

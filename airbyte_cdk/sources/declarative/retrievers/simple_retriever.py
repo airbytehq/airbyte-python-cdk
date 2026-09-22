@@ -49,6 +49,11 @@ from airbyte_cdk.sources.declarative.retrievers.page_size_reducer import (
 )
 from airbyte_cdk.sources.declarative.retrievers.pagination_tracker import PaginationTracker
 from airbyte_cdk.sources.declarative.retrievers.retriever import Retriever
+from airbyte_cdk.sources.declarative.retrievers.window_reducible import (
+    OnPartialResponse,
+    RequestWindowReduction,
+    WindowReducible,
+)
 from airbyte_cdk.sources.declarative.stream_slicers.stream_slicer import StreamSlicer
 from airbyte_cdk.sources.source import ExperimentalClassWarning
 from airbyte_cdk.sources.streams.core import StreamData
@@ -58,6 +63,10 @@ from airbyte_cdk.sources.streams.http.page_size_reduction_exception import (
 )
 from airbyte_cdk.sources.streams.http.pagination_reset_exception import (
     PaginationResetRequiredException,
+)
+from airbyte_cdk.sources.streams.http.request_window_reduction_exception import (
+    RequestWindowReductionNotSupportedException,
+    RequestWindowReductionRequiredException,
 )
 from airbyte_cdk.sources.types import Config, Record, StreamSlice
 from airbyte_cdk.utils.mapping_helpers import combine_mappings
@@ -96,6 +105,15 @@ class SimpleRetriever(Retriever):
             `_read_pages` creates per call, so the retriever and its paginator - both shared by every
             partition of the stream, read concurrently - stay stateless. When `page_size_reduction` is
             `None` no reducer is created and `_read_pages` keeps its previous behaviour
+        request_window_reduction (Optional[RequestWindowReduction]): Policy applied when an error handler
+            resolves to `ResponseAction.REDUCE_REQUEST_WINDOW`, or when `RequestWindowReductionRequiredException`
+            is raised directly by custom code. `None` disables request-window reduction entirely: `read_records`
+            converts the exception into `RequestWindowReductionNotSupportedException` instead of attempting a
+            reduction it cannot perform.
+        window_reducer (Optional[WindowReducible]): The component - normally the stream's own cursor - asked to
+            replace a failing `StreamSlice` with smaller children. `None` has the same effect as
+            `request_window_reduction` being `None`: reduction is not attempted, and a
+            `RequestWindowReductionRequiredException` is re-raised as `RequestWindowReductionNotSupportedException`.
     """
 
     requester: Requester
@@ -121,6 +139,8 @@ class SimpleRetriever(Retriever):
     )
     post_pagination_filter: Optional[ClientSideIncrementalRecordFilterDecorator] = None
     page_size_reduction: Optional[PageSizeReduction] = None
+    request_window_reduction: Optional[RequestWindowReduction] = None
+    window_reducer: Optional[WindowReducible] = None
 
     def __post_init__(self, parameters: Mapping[str, Any]) -> None:
         self._paginator = self.paginator or NoPagination(parameters=parameters)
@@ -543,27 +563,92 @@ class SimpleRetriever(Retriever):
         :return: The records read from the API source
         """
         _slice = stream_slice or StreamSlice(partition={}, cursor_slice={})  # None-check
+        yield from self._read_records_or_reduce_window(records_schema, _slice)
 
+    def _read_records_or_reduce_window(
+        self,
+        records_schema: Mapping[str, Any],
+        stream_slice: StreamSlice,
+    ) -> Iterable[StreamData]:
+        """
+        Read `stream_slice` to completion, replacing it with smaller children and recursing into each of them in
+        turn when a `RequestWindowReductionRequiredException` is raised while reading it.
+
+        Each recursive call re-enters this method - and, through it, `_read_pages` - from scratch for the child
+        slice it is given, so every child gets its own paginator token, `PaginationTracker`, and
+        `PageSizeReducer` for free: nothing here needs to reset that state explicitly. Because the whole
+        recursion lives inside the single generator `DeclarativePartition.read()` consumes,
+        `PartitionReader.process_partition()` only calls `cursor.close_partition()` once, after this generator is
+        fully exhausted - so a failure anywhere in the recursion (a child that cannot be read, or a window that
+        cannot be reduced any further) propagates out without ever checkpointing the original partition.
+        """
         record_generator = partial(
             self._parse_records,
             stream_slice=stream_slice,
             records_schema=records_schema,
         )
-        records: Iterable[Mapping[str, Any]] = self._read_pages(record_generator, _slice)
-        if self.post_pagination_filter:
-            # A data feed paginates until it reaches a record older than the cursor, so the page that triggers the stop
-            # condition still holds already-synced records. Those are filtered here rather than in the record selector
-            # so that the paginator keeps seeing the whole page: the stop condition is evaluated on the last record of
-            # the page, which is precisely one of the records being dropped. Two consequences of filtering this late:
-            # the pagination tracker observes the dropped records, and a `file_uploader` on the record selector has
-            # already uploaded their files by the time they are dropped.
-            records = self.post_pagination_filter.filter_records(
-                records,
-                # the filter is only used for its cursor comparison, which does not read the stream state
-                stream_state={},
-                stream_slice=_slice,
-            )
-        yield from records
+
+        emitted_any = False
+        try:
+            records: Iterable[Mapping[str, Any]] = self._read_pages(record_generator, stream_slice)
+            if self.post_pagination_filter:
+                # A data feed paginates until it reaches a record older than the cursor, so the page that triggers the stop
+                # condition still holds already-synced records. Those are filtered here rather than in the record selector
+                # so that the paginator keeps seeing the whole page: the stop condition is evaluated on the last record of
+                # the page, which is precisely one of the records being dropped. Two consequences of filtering this late:
+                # the pagination tracker observes the dropped records, and a `file_uploader` on the record selector has
+                # already uploaded their files by the time they are dropped.
+                records = self.post_pagination_filter.filter_records(
+                    records,
+                    # the filter is only used for its cursor comparison, which does not read the stream state
+                    stream_state={},
+                    stream_slice=stream_slice,
+                )
+            for record in records:
+                emitted_any = True
+                yield record
+        except RequestWindowReductionRequiredException as exception:
+            if self.request_window_reduction is None or self.window_reducer is None:
+                raise RequestWindowReductionNotSupportedException(
+                    stream_name=self.name
+                ) from exception
+
+            if (
+                emitted_any
+                and self.request_window_reduction.on_partial_response == OnPartialResponse.FAIL
+            ):
+                # The reduction is safe only because it re-reads a window whose records were not emitted yet.
+                # Re-reading it as smaller children here would duplicate the records already yielded above.
+                raise AirbyteTracedException(
+                    internal_message=f"Stream {self.name} requested a request window reduction after records of the current window had already been emitted",
+                    message=(
+                        f"Stream {self.name} asked to reduce its request window after some records of it were "
+                        f"already read. Reducing and re-reading the window would duplicate those records. Set "
+                        f"`on_partial_response: ALLOW_REPLAY` on `request_window_reduction` if duplicate records "
+                        f"are acceptable for this stream, or move the REDUCE_REQUEST_WINDOW action so it only "
+                        f"triggers before any record of the window has been read."
+                    ),
+                    failure_type=FailureType.config_error,
+                ) from exception
+
+            children = self.window_reducer.reduce_window(stream_slice)
+            if children is None:
+                failure_message = (
+                    f"The API kept rejecting stream {self.name}'s request window even at the smallest window "
+                    f"its cursor allows, or reducing the window further would not make progress."
+                )
+                if self.request_window_reduction.failure_message:
+                    failure_message = (
+                        f"{failure_message} {self.request_window_reduction.failure_message}"
+                    )
+                raise AirbyteTracedException(
+                    internal_message=f"Stream {self.name} could not reduce its request window {stream_slice} any further",
+                    message=failure_message,
+                    failure_type=exception.failure_type or FailureType.config_error,
+                ) from exception
+
+            for child in children:
+                yield from self._read_records_or_reduce_window(records_schema, child)
 
     def _parse_records(
         self,
