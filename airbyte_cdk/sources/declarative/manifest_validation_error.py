@@ -56,12 +56,15 @@ def _merge_branch_errors(
             f"value {_short_repr(candidates[0].instance)} is not one of {_format_options(allowed)}",
         )
     if validators == {"required"}:
-        missing = [
-            sub_error.message.split(" is a required property")[0] for sub_error in candidates
-        ]
+        present = candidates[0].instance if isinstance(candidates[0].instance, dict) else {}
+        missing: List[str] = []
+        for sub_error in candidates:
+            for prop in sub_error.validator_value:
+                if prop not in present and prop not in missing:
+                    missing.append(prop)
         return (
             _format_path(base_path + list(shallowest)),
-            f"one of the following properties is required: {', '.join(missing)}",
+            f"one of the following properties is required: {', '.join(repr(prop) for prop in missing)}",
         )
     return None
 

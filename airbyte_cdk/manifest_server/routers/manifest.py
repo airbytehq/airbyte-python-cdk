@@ -56,7 +56,9 @@ def safe_build_source(
             slice_limit,
         )
     except jsonschema.exceptions.ValidationError as e:
-        raise HTTPException(status_code=400, detail=f"Invalid manifest: {e.message}")
+        raise HTTPException(
+            status_code=400, detail=filter_secrets(f"Invalid manifest: {e.message}")
+        )
 
 
 router = APIRouter(
