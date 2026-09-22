@@ -7629,7 +7629,8 @@ def test_given_request_window_reduction_values_then_create_retriever_with_those_
                 "request_window_reduction:\n"
                 "    type: RequestWindowReduction\n"
                 "    on_partial_response: ALLOW_REPLAY\n"
-                "    failure_message: Lower time_window so that each request covers less data."
+                "    failure_message: Lower time_window so that each request covers less data.\n"
+                "    max_split_depth: 20"
             )
         )
     )
@@ -7637,6 +7638,7 @@ def test_given_request_window_reduction_values_then_create_retriever_with_those_
     assert retriever.request_window_reduction == RequestWindowReduction(
         on_partial_response=OnPartialResponse.ALLOW_REPLAY,
         failure_message="Lower time_window so that each request covers less data.",
+        max_split_depth=20,
     )
 
 

@@ -563,12 +563,14 @@ class SimpleRetriever(Retriever):
         :return: The records read from the API source
         """
         _slice = stream_slice or StreamSlice(partition={}, cursor_slice={})  # None-check
-        yield from self._read_records_or_reduce_window(records_schema, _slice)
+        yield from self._read_records_or_reduce_window(records_schema, _slice, _slice, depth=0)
 
     def _read_records_or_reduce_window(
         self,
         records_schema: Mapping[str, Any],
         stream_slice: StreamSlice,
+        original_slice: StreamSlice,
+        depth: int,
     ) -> Iterable[StreamData]:
         """
         Read `stream_slice` to completion, replacing it with smaller children and recursing into each of them in
@@ -581,6 +583,13 @@ class SimpleRetriever(Retriever):
         `PartitionReader.process_partition()` only calls `cursor.close_partition()` once, after this generator is
         fully exhausted - so a failure anywhere in the recursion (a child that cannot be read, or a window that
         cannot be reduced any further) propagates out without ever checkpointing the original partition.
+
+        `original_slice` is threaded through the recursion unchanged so every record yielded, however deep the
+        recursion went to produce it, is re-stamped with the partition's own slice rather than the child slice it
+        was actually read against - see `_reassociate_with_original_slice`. `depth` bounds the recursion
+        independently of `WindowReducible.reduce_window`'s own no-progress guard: it is enforced here so a
+        misbehaving custom cursor cannot recurse indefinitely regardless of what that guard does or does not
+        catch.
         """
         record_generator = partial(
             self._parse_records,
@@ -606,7 +615,7 @@ class SimpleRetriever(Retriever):
                 )
             for record in records:
                 emitted_any = True
-                yield record
+                yield self._reassociate_with_original_slice(record, original_slice)
         except RequestWindowReductionRequiredException as exception:
             if self.request_window_reduction is None or self.window_reducer is None:
                 raise RequestWindowReductionNotSupportedException(
@@ -631,6 +640,20 @@ class SimpleRetriever(Retriever):
                     failure_type=FailureType.config_error,
                 ) from exception
 
+            if depth >= self.request_window_reduction.max_split_depth:
+                raise AirbyteTracedException(
+                    internal_message=f"Stream {self.name} exceeded the maximum request window split depth of {self.request_window_reduction.max_split_depth} while reducing {original_slice}",
+                    message=(
+                        f"Stream {self.name} could not reduce its request window to a size the API accepts "
+                        f"within {self.request_window_reduction.max_split_depth} splits. This usually means the "
+                        f"stream's cursor is not actually shrinking the window on each split; if it uses a "
+                        f"custom cursor, check its `reduce_window` implementation. Raise "
+                        f"`request_window_reduction.max_split_depth` only if this stream's cursor granularity "
+                        f"genuinely requires more splits than that."
+                    ),
+                    failure_type=FailureType.config_error,
+                ) from exception
+
             children = self.window_reducer.reduce_window(stream_slice)
             if children is None:
                 failure_message = (
@@ -648,7 +671,33 @@ class SimpleRetriever(Retriever):
                 ) from exception
 
             for child in children:
-                yield from self._read_records_or_reduce_window(records_schema, child)
+                yield from self._read_records_or_reduce_window(
+                    records_schema, child, original_slice, depth + 1
+                )
+
+    @staticmethod
+    def _reassociate_with_original_slice(
+        record: StreamData, original_slice: StreamSlice
+    ) -> StreamData:
+        """
+        Records read while recursing into a reduced child window are parsed against that child's `StreamSlice`,
+        so `RecordSelector` stamps them with the child as `associated_slice`. `DeclarativePartition.read()`
+        passes an already-built `Record` through unchanged rather than re-wrapping it, so left uncorrected the
+        child slice - not the partition's own slice - is what `ConcurrentCursor.observe()` would key its
+        per-partition bookkeeping by. `close_partition()` always looks that bookkeeping up by the partition's own
+        slice, so it would never find it, silently losing the precise most-recently-observed cursor value for a
+        split partition (recoverable in practice today only because callers of that lookup fall back to the
+        slice's end boundary when it is missing). Re-stamping every record with `original_slice` here restores
+        the same tracking a non-split read already gets, rather than relying on that fallback.
+        """
+        if isinstance(record, Record) and record.associated_slice is not original_slice:
+            return Record(
+                data=record.data,
+                stream_name=record.stream_name,
+                associated_slice=original_slice,
+                file_reference=record.file_reference,
+            )
+        return record
 
     def _parse_records(
         self,

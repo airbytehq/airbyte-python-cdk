@@ -5279,6 +5279,59 @@ def test_given_reduce_request_window_action_when_read_then_split_and_read_both_h
     ) == [1, 2]
 
 
+def test_given_reduce_request_window_action_when_read_then_final_state_reflects_full_original_window():
+    """
+    Regression coverage for a bug where records read from a split child window carried the child's own slice
+    as `Record.associated_slice`, which `ConcurrentCursor.observe()` keys its bookkeeping by - a key
+    `close_partition()` (which always looks up by the *original* partition's slice) could never find. Left
+    unfixed, `_get_latest_complete_time`'s `first_interval.get("most_recent_cursor_value") or
+    first_interval[START_KEY]` fallback would silently commit the window's *start* boundary as the emitted
+    state instead of the actual highest cursor value observed across the two split children - reverting the
+    cursor all the way back to the beginning of the (already fully synced) day on the very next sync, rather
+    than a merely imprecise-but-safe value.
+    """
+    full_window_request = HttpRequest(
+        "https://example.org/test",
+        query_params={"start": "2024-01-01T00:00:00Z", "end": "2024-01-01T23:59:59Z"},
+    )
+    first_half_request = HttpRequest(
+        "https://example.org/test",
+        query_params={"start": "2024-01-01T00:00:00Z", "end": "2024-01-01T11:59:59Z"},
+    )
+    second_half_request = HttpRequest(
+        "https://example.org/test",
+        query_params={"start": "2024-01-01T12:00:00Z", "end": "2024-01-01T23:59:59Z"},
+    )
+
+    with HttpMocker() as http_mocker:
+        http_mocker.get(full_window_request, HttpResponse("", 400))
+        http_mocker.get(
+            first_half_request,
+            HttpResponse(
+                json.dumps({"items": [{"id": 1, "updated_at": "2024-01-01T05:00:00Z"}]}), 200
+            ),
+        )
+        http_mocker.get(
+            second_half_request,
+            # the higher cursor value lives in the *second* half, so a fallback to the slice's end boundary
+            # instead of the true observed maximum would be easy to miss if it happened to match by accident
+            HttpResponse(
+                json.dumps({"items": [{"id": 2, "updated_at": "2024-01-01T20:00:00Z"}]}), 200
+            ),
+        )
+
+        messages = list(_read_request_window_reduction_source(_request_window_reduction_manifest()))
+
+    states = get_states_for_stream(stream_name="Test", messages=messages)
+    assert states
+    # the declarative DatetimeBasedCursor emits sequential-format state (a flat {cursor_field: value} dict) by
+    # default; every emitted state must show the true observed maximum, never the window's start boundary
+    assert all(
+        state.stream.stream_state.__dict__ == {"updated_at": "2024-01-01T20:00:00Z"}
+        for state in states
+    )
+
+
 def test_given_pagination_limit_reached_when_read_then_reset_pagination():
     input_config = {}
     manifest = {

@@ -1614,3 +1614,17 @@ class ConcurrentCursorReduceWindowTest(TestCase):
             self._slice("2024-01-01 00:00:00", "2024-01-01 11:59:59"),
             self._slice("2024-01-01 12:00:00", "2024-01-01 23:59:59"),
         ]
+
+    def test_given_non_utc_timezone_offset_when_reduce_then_preserve_offset_in_round_trip(
+        self,
+    ) -> None:
+        cursor = self._cursor(datetime_format="%Y-%m-%dT%H:%M:%S%z")
+
+        children = cursor.reduce_window(
+            self._slice("2024-01-01T00:00:00+0530", "2024-01-01T23:59:59+0530")
+        )
+
+        assert children == [
+            self._slice("2024-01-01T00:00:00+0530", "2024-01-01T11:59:59+0530"),
+            self._slice("2024-01-01T12:00:00+0530", "2024-01-01T23:59:59+0530"),
+        ]

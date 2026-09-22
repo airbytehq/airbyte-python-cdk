@@ -52,3 +52,13 @@ class RequestWindowReduction:
 
     on_partial_response: OnPartialResponse = OnPartialResponse.FAIL
     failure_message: Optional[str] = None
+    # A defense-in-depth bound independent of any specific WindowReducible's own no-progress guard: the retriever
+    # enforces this itself so a misbehaving custom cursor (returning children that do not actually shrink) fails
+    # deterministically rather than recursing indefinitely. Each reduction bisects a single already-generated
+    # slice - bounded by the cursor's own `step`, not the whole sync range - and real-world APIs that reject
+    # oversized windows are typically satisfied well before reaching sub-day granularity: a one-year step
+    # bisected down to a 12-hour floor needs ~10 halvings (log2(hours in a year / 12) ~= 9.5), which already
+    # covers a wider window than the request-window failures this feature targets in practice tend to involve
+    # (on the order of days to a few months). A connector whose cursor genuinely needs finer-than-half-day
+    # granularity, or windows spanning multiple years, should raise this explicitly.
+    max_split_depth: int = 10

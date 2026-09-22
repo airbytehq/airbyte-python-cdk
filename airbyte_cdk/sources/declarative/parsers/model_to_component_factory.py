@@ -4137,6 +4137,9 @@ class ModelToComponentFactory:
             if on_partial_response is not None
             else OnPartialResponse.FAIL,
             failure_message=model.request_window_reduction.failure_message,
+            max_split_depth=model.request_window_reduction.max_split_depth  # type: ignore[arg-type]  # the schema defines a default
+            if model.request_window_reduction.max_split_depth is not None
+            else 10,
         )
 
     def _validate_request_window_reduction_is_supported(
