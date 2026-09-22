@@ -386,9 +386,6 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
     OffsetIncrement as OffsetIncrementModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
-    OnPartialResponse as OnPartialResponseModel,
-)
-from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     PageIncrement as PageIncrementModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
@@ -444,9 +441,6 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     RequestPath as RequestPathModel,
-)
-from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
-    RequestWindowReduction as RequestWindowReductionModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     ResponseToFileExtractor as ResponseToFileExtractorModel,

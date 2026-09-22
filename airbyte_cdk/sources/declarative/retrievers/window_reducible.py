@@ -36,7 +36,7 @@ class WindowReducible(Protocol):
         smaller than the parent (a no-progress guard independent of the granularity check). Callers should treat
         `None` as a terminal condition, not retry with the same slice.
         """
-        ...
+        raise NotImplementedError("WindowReducible.reduce_window must be implemented by protocol implementers")
 
 
 @dataclass(frozen=True)
