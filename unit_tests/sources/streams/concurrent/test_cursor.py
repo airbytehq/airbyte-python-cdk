@@ -1411,3 +1411,206 @@ def test_final_state_cursor_get_cursor_datetime_from_state_returns_now_for_no_cu
 
     result_with_empty_state = cursor.get_cursor_datetime_from_state({})
     assert result_with_empty_state is None
+
+
+class ConcurrentCursorReduceWindowTest(TestCase):
+    """
+    Covers ConcurrentCursor.reduce_window(), the WindowReducible implementation backing declarative
+    `request_window_reduction`. See airbyte_cdk.sources.declarative.retrievers.window_reducible.
+    """
+
+    def setUp(self) -> None:
+        self._message_repository = Mock(spec=MessageRepository)
+        self._state_manager = Mock(spec=ConnectorStateManager)
+
+    def _cursor(
+        self,
+        granularity: Optional[timedelta] = timedelta(seconds=1),
+        datetime_format: str = "%Y-%m-%dT%H:%M:%SZ",
+        slice_boundary_fields: Optional[tuple] = _SLICE_BOUNDARY_FIELDS,
+    ) -> ConcurrentCursor:
+        return ConcurrentCursor(
+            _A_STREAM_NAME,
+            _A_STREAM_NAMESPACE,
+            {},
+            self._message_repository,
+            self._state_manager,
+            CustomFormatConcurrentStreamStateConverter(
+                datetime_format, is_sequential_state=_NOT_SEQUENTIAL
+            ),
+            CursorField(_A_CURSOR_FIELD_KEY),
+            slice_boundary_fields,
+            datetime(2024, 1, 1, tzinfo=timezone.utc),
+            lambda: datetime(2024, 2, 1, tzinfo=timezone.utc),
+            cursor_granularity=granularity,
+        )
+
+    def _slice(self, start: str, end: str) -> StreamSlice:
+        return StreamSlice(
+            partition={},
+            cursor_slice={_LOWER_SLICE_BOUNDARY_FIELD: start, _UPPER_SLICE_BOUNDARY_FIELD: end},
+        )
+
+    def test_given_window_when_reduce_then_split_in_half_at_cursor_granularity_boundary(
+        self,
+    ) -> None:
+        cursor = self._cursor()
+
+        children = cursor.reduce_window(self._slice("2024-01-01T00:00:00Z", "2024-01-01T23:59:59Z"))
+
+        assert children == [
+            self._slice("2024-01-01T00:00:00Z", "2024-01-01T11:59:59Z"),
+            self._slice("2024-01-01T12:00:00Z", "2024-01-01T23:59:59Z"),
+        ]
+
+    def test_given_odd_number_of_granularity_units_when_reduce_then_children_still_cover_parent_exactly(
+        self,
+    ) -> None:
+        cursor = self._cursor()
+
+        # 3 whole seconds: [00:00:00, 00:00:02]
+        children = cursor.reduce_window(self._slice("2024-01-01T00:00:00Z", "2024-01-01T00:00:02Z"))
+
+        assert children == [
+            self._slice("2024-01-01T00:00:00Z", "2024-01-01T00:00:00Z"),
+            self._slice("2024-01-01T00:00:01Z", "2024-01-01T00:00:02Z"),
+        ]
+
+    def test_given_single_granularity_unit_window_when_reduce_then_return_none(self) -> None:
+        cursor = self._cursor()
+
+        assert (
+            cursor.reduce_window(self._slice("2024-01-01T00:00:00Z", "2024-01-01T00:00:00Z"))
+            is None
+        )
+
+    def test_given_repeated_reduction_when_reduce_then_eventually_reaches_granularity_floor(
+        self,
+    ) -> None:
+        cursor = self._cursor()
+        current = self._slice("2024-01-01T00:00:00Z", "2024-01-01T23:59:59Z")
+
+        depth = 0
+        while True:
+            children = cursor.reduce_window(current)
+            if children is None:
+                break
+            # exactly at the boundary
+            assert (
+                children[0].cursor_slice[_UPPER_SLICE_BOUNDARY_FIELD]
+                < current.cursor_slice[_UPPER_SLICE_BOUNDARY_FIELD]
+            )
+            current = children[0]
+            depth += 1
+            assert depth < 30, "reduce_window did not converge to the granularity floor"
+
+        assert (
+            current.cursor_slice[_LOWER_SLICE_BOUNDARY_FIELD]
+            == current.cursor_slice[_UPPER_SLICE_BOUNDARY_FIELD]
+            == "2024-01-01T00:00:00Z"
+        )
+
+    def test_given_reversed_boundaries_when_reduce_then_return_none(self) -> None:
+        cursor = self._cursor()
+
+        assert (
+            cursor.reduce_window(self._slice("2024-01-01T00:00:05Z", "2024-01-01T00:00:00Z"))
+            is None
+        )
+
+    def test_given_no_cursor_granularity_when_reduce_then_return_none(self) -> None:
+        cursor = self._cursor(granularity=None)
+
+        assert (
+            cursor.reduce_window(self._slice("2024-01-01T00:00:00Z", "2024-01-01T23:59:59Z"))
+            is None
+        )
+
+    def test_given_malformed_boundary_when_reduce_then_return_none(self) -> None:
+        cursor = self._cursor()
+
+        assert (
+            cursor.reduce_window(
+                StreamSlice(
+                    partition={},
+                    cursor_slice={
+                        _LOWER_SLICE_BOUNDARY_FIELD: "not-a-date",
+                        _UPPER_SLICE_BOUNDARY_FIELD: "2024-01-01T23:59:59Z",
+                    },
+                )
+            )
+            is None
+        )
+
+    def test_given_missing_boundary_field_when_reduce_then_return_none(self) -> None:
+        cursor = self._cursor()
+
+        assert (
+            cursor.reduce_window(StreamSlice(partition={}, cursor_slice={"only_one_field": "x"}))
+            is None
+        )
+
+    def test_reduce_window_preserves_partition_and_extra_fields(self) -> None:
+        cursor = self._cursor()
+        original = StreamSlice(
+            partition={"parent_id": "123"},
+            cursor_slice={
+                _LOWER_SLICE_BOUNDARY_FIELD: "2024-01-01T00:00:00Z",
+                _UPPER_SLICE_BOUNDARY_FIELD: "2024-01-01T23:59:59Z",
+            },
+            extra_fields={"some_extra": "value"},
+        )
+
+        children = cursor.reduce_window(original)
+
+        for child in children:
+            assert child.partition == {"parent_id": "123"}
+            assert child.extra_fields == {"some_extra": "value"}
+
+    def test_given_epoch_cursor_when_reduce_then_split_using_epoch_output_format(self) -> None:
+        cursor = ConcurrentCursor(
+            _A_STREAM_NAME,
+            _A_STREAM_NAMESPACE,
+            {},
+            self._message_repository,
+            self._state_manager,
+            EpochValueConcurrentStreamStateConverter(is_sequential_state=_NOT_SEQUENTIAL),
+            CursorField(_A_CURSOR_FIELD_KEY),
+            _SLICE_BOUNDARY_FIELDS,
+            0,
+            lambda: 1000,
+            cursor_granularity=timedelta(seconds=1),
+        )
+
+        children = cursor.reduce_window(
+            StreamSlice(
+                partition={},
+                cursor_slice={
+                    _LOWER_SLICE_BOUNDARY_FIELD: 0,
+                    _UPPER_SLICE_BOUNDARY_FIELD: 99,
+                },
+            )
+        )
+
+        assert children == [
+            StreamSlice(
+                partition={},
+                cursor_slice={_LOWER_SLICE_BOUNDARY_FIELD: 0, _UPPER_SLICE_BOUNDARY_FIELD: 49},
+            ),
+            StreamSlice(
+                partition={},
+                cursor_slice={_LOWER_SLICE_BOUNDARY_FIELD: 50, _UPPER_SLICE_BOUNDARY_FIELD: 99},
+            ),
+        ]
+
+    def test_given_multiple_datetime_formats_when_reduce_then_round_trip_format_correctly(
+        self,
+    ) -> None:
+        cursor = self._cursor(datetime_format="%Y-%m-%d %H:%M:%S")
+
+        children = cursor.reduce_window(self._slice("2024-01-01 00:00:00", "2024-01-01 23:59:59"))
+
+        assert children == [
+            self._slice("2024-01-01 00:00:00", "2024-01-01 11:59:59"),
+            self._slice("2024-01-01 12:00:00", "2024-01-01 23:59:59"),
+        ]
