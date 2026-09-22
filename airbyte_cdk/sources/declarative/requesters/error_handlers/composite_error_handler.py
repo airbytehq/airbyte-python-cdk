@@ -72,6 +72,7 @@ class CompositeErrorHandler(ErrorHandler):
                 ResponseAction.IGNORE,
                 ResponseAction.RESET_PAGINATION,
                 ResponseAction.REDUCE_PAGE_SIZE,
+                ResponseAction.REDUCE_REQUEST_WINDOW,
             ]:
                 return matched_error_resolution
 

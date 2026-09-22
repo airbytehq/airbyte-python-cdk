@@ -716,6 +716,7 @@ class Action(Enum):
     RATE_LIMITED = "RATE_LIMITED"
     REFRESH_TOKEN_THEN_RETRY = "REFRESH_TOKEN_THEN_RETRY"
     REDUCE_PAGE_SIZE = "REDUCE_PAGE_SIZE"
+    REDUCE_REQUEST_WINDOW = "REDUCE_REQUEST_WINDOW"
 
 
 class FailureType(Enum):
@@ -738,6 +739,7 @@ class HttpResponseFilter(BaseModel):
             "RATE_LIMITED",
             "REFRESH_TOKEN_THEN_RETRY",
             "REDUCE_PAGE_SIZE",
+            "REDUCE_REQUEST_WINDOW",
         ],
         title="Action",
     )
@@ -1468,6 +1470,29 @@ class PageSizeReduction(BaseModel):
         ResetPolicy.NEVER,
         description="When to restore the page size configured on the pagination strategy. NEVER keeps the reduced page size for the rest of the partition. AFTER_SUCCESSFUL_PAGE restores it as soon as one page succeeds, which means hitting the same error again on every page - use it only when the reduction is worth one extra request per page, for instance because the configured page size usually works and only some pages are too heavy. It only controls the page size: the max_attempts budget restarts on every page that succeeds under both policies, so there is no limit on how many reductions a partition may make in total. What is bounded is the reductions that get no page through.",
         title="Reset Policy",
+    )
+
+
+class OnPartialResponse(Enum):
+    FAIL = "FAIL"
+    ALLOW_REPLAY = "ALLOW_REPLAY"
+
+
+class RequestWindowReduction(BaseModel):
+    type: Literal["RequestWindowReduction"]
+    on_partial_response: Optional[OnPartialResponse] = Field(
+        OnPartialResponse.FAIL,
+        description="What to do when a REDUCE_REQUEST_WINDOW response arrives after the current window has already emitted a page or a record. FAIL stops the sync with a configuration error, since reducing and re-reading the window from scratch would emit those records a second time - this is correct for an API, such as PayPal's, that always rejects a window before returning its first page. ALLOW_REPLAY reduces and re-reads the window anyway, accepting at-least-once delivery of the records already emitted; use it only when the destination or a downstream deduplication step can tolerate duplicate records, for instance when adopting this action for a transport or streamed-decoding failure that can occur after some records of the window were already read.",
+        title="On Partial Response",
+    )
+    failure_message: Optional[str] = Field(
+        None,
+        description="Sentence appended to the error message shown to the user when the connector runs out of reductions, either because the window is already at the cursor's minimum granularity or because reducing it would not make progress. Use it to tell the user what they can do about it in terms of this specific API, for instance which filter narrows the query down. Without it the message only states that the API kept rejecting every window size the connector asked for.",
+        examples=[
+            "Narrow the sync down by selecting fewer fields on this stream.",
+            "Lower time_window so that each request covers less data.",
+        ],
+        title="Failure Message",
     )
 
 
@@ -3297,6 +3322,10 @@ class SimpleRetriever(BaseModel):
     page_size_reduction: Optional[PageSizeReduction] = Field(
         None,
         description="Describes how the page size is reduced when an error handler resolves to the REDUCE_PAGE_SIZE action. Requires a DefaultPaginator that defines both page_size_option and a pagination strategy with a page_size. Cannot be combined with query properties, a file uploader, or a parent stream read lazily through lazy_read_pointer, because in those cases records of the failing page have already been emitted and re-issuing the page would emit them twice. A page_token_option of type RequestPath is rejected as well, because the next page is then a URL built by the API which already carries the page size.",
+    )
+    request_window_reduction: Optional[RequestWindowReduction] = Field(
+        None,
+        description="Describes how the request window is reduced when an error handler resolves to the REDUCE_REQUEST_WINDOW action. Requires an incremental_sync cursor that defines cursor_granularity, since that is both the smallest window the connector will request and what keeps two child windows from overlapping at their shared edge. Distinct from page_size_reduction: an API can reject an entire date/time range as too large even though every individual page of it would be within the API's page size limit, and no page can be returned to page through in the first place. On such a response the connector replaces the failing window with two smaller, ordered windows covering the same range and reads each one fully, with its own pagination state, before checkpointing the original partition.",
     )
     ignore_stream_slicer_parameters_on_paginated_requests: Optional[bool] = Field(
         False,
