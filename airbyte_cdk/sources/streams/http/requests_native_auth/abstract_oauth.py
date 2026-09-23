@@ -136,9 +136,13 @@ class AbstractOauth2Authenticator(AuthBase):
         """Force refresh the access token and update internal state.
 
         Refreshes regardless of expiry, serialized on the class-level refresh lock. If another
-        thread replaced the access token while this one waited for the lock, the refresh is
-        skipped: the request will be retried with that token. Subclasses may override this to
-        handle additional state updates (e.g., persisting new refresh tokens).
+        thread using this same authenticator instance replaced the access token while this one
+        waited for the lock, the refresh is skipped and the request is retried with that token.
+        Across separate instances (e.g. one authenticator per declarative stream) the guard does
+        not apply; there, serialization plus config-backed refresh-token rotation
+        (`SingleUseRefreshTokenOauth2Authenticator`) is what keeps concurrent refreshes safe.
+        Subclasses may override this to handle additional state updates (e.g., persisting new
+        refresh tokens).
         """
         token_before_waiting = self._current_access_token_or_none()
         with self._token_refresh_lock:

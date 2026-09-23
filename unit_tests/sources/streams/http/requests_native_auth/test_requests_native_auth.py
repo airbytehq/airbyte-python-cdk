@@ -1434,14 +1434,21 @@ class TestConcurrentTokenRefresh:
 
         mocked_refresh = mocker.patch.object(oauth, "refresh_access_token")
 
+        snapshot_taken = threading.Event()
+        real_snapshot = oauth._current_access_token_or_none
+
+        def record_snapshot():
+            value = real_snapshot()
+            snapshot_taken.set()
+            return value
+
+        mocker.patch.object(oauth, "_current_access_token_or_none", side_effect=record_snapshot)
+
         with Oauth2Authenticator._token_refresh_lock:
             thread = threading.Thread(target=oauth.refresh_and_set_access_token)
             thread.start()
-            # Wait until the worker is blocked on the lock.
-            deadline = time.time() + 5
-            while not thread.is_alive() and time.time() < deadline:
-                time.sleep(0.01)
-            time.sleep(0.1)
+            # The worker took its pre-lock token snapshot and is now blocked on the lock.
+            assert snapshot_taken.wait(5)
             oauth.access_token = "winner"
         thread.join(timeout=5)
 
