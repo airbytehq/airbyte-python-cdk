@@ -2001,6 +2001,239 @@ list_stream:
     )
 
 
+def test_create_record_expander_with_parent_fields():
+    """The source-github `reviews` shape: children stamped with a field from the parent node."""
+    content = """
+    selector:
+      type: RecordSelector
+      extractor:
+        type: DpathExtractor
+        field_path: ["data", "repository", "pullRequests", "nodes"]
+        record_expander:
+          type: RecordExpander
+          expand_records_from_field: ["reviews", "nodes"]
+          parent_fields:
+            - type: ParentFieldPath
+              parent_path: ["url"]
+              record_path: ["pull_request_url"]
+    """
+    parsed_manifest = YamlDeclarativeSource._parse(content)
+    resolved_manifest = resolver.preprocess_manifest(parsed_manifest)
+    selector_manifest = transformer.propagate_types_and_parameters(
+        "", resolved_manifest["selector"], {}
+    )
+
+    selector = factory.create_component(
+        model_type=RecordSelectorModel,
+        name="test_stream",
+        component_definition=selector_manifest,
+        decoder=None,
+        transformations=[],
+        config=input_config,
+    )
+
+    expander = selector.extractor.record_expander
+    assert expander is not None
+    assert expander.remain_original_record is False
+    assert len(expander.parent_fields) == 1
+
+    response = requests.Response()
+    response._content = json.dumps(
+        {
+            "data": {
+                "repository": {
+                    "pullRequests": {
+                        "nodes": [
+                            {
+                                "url": "https://github.com/airbytehq/airbyte/pull/7",
+                                "reviews": {"nodes": [{"id": "PRR_1"}, {"id": "PRR_2"}]},
+                            },
+                            {
+                                "url": "https://github.com/airbytehq/airbyte/pull/8",
+                                "reviews": {"nodes": [{"id": "PRR_3"}]},
+                            },
+                        ]
+                    }
+                }
+            }
+        }
+    ).encode("utf-8")
+
+    assert list(selector.extractor.extract_records(response)) == [
+        {"id": "PRR_1", "pull_request_url": "https://github.com/airbytehq/airbyte/pull/7"},
+        {"id": "PRR_2", "pull_request_url": "https://github.com/airbytehq/airbyte/pull/7"},
+        {"id": "PRR_3", "pull_request_url": "https://github.com/airbytehq/airbyte/pull/8"},
+    ]
+
+
+def test_create_record_expander_with_parent_fields_without_explicit_type():
+    """`type: ParentFieldPath` is optional: the transformer fills it in, as it does for AddFields."""
+    content = """
+    selector:
+      type: RecordSelector
+      extractor:
+        type: DpathExtractor
+        field_path: ["nodes"]
+        record_expander:
+          type: RecordExpander
+          expand_records_from_field: ["reviews", "nodes"]
+          parent_fields:
+            - parent_path: ["url"]
+              record_path: ["pull_request_url"]
+    """
+    parsed_manifest = YamlDeclarativeSource._parse(content)
+    resolved_manifest = resolver.preprocess_manifest(parsed_manifest)
+    selector_manifest = transformer.propagate_types_and_parameters(
+        "", resolved_manifest["selector"], {}
+    )
+
+    assert (
+        selector_manifest["extractor"]["record_expander"]["parent_fields"][0]["type"]
+        == "ParentFieldPath"
+    )
+
+    selector = factory.create_component(
+        model_type=RecordSelectorModel,
+        name="test_stream",
+        component_definition=selector_manifest,
+        decoder=None,
+        transformations=[],
+        config=input_config,
+    )
+
+    response = requests.Response()
+    response._content = json.dumps(
+        {
+            "nodes": [
+                {
+                    "url": "https://github.com/airbytehq/airbyte/pull/7",
+                    "reviews": {"nodes": [{"id": "PRR_1"}]},
+                }
+            ]
+        }
+    ).encode("utf-8")
+
+    assert list(selector.extractor.extract_records(response)) == [
+        {"id": "PRR_1", "pull_request_url": "https://github.com/airbytehq/airbyte/pull/7"},
+    ]
+
+
+def test_create_record_expander_without_parent_fields_leaves_them_unset():
+    content = """
+    selector:
+      type: RecordSelector
+      extractor:
+        type: DpathExtractor
+        field_path: ["data"]
+        record_expander:
+          type: RecordExpander
+          expand_records_from_field: ["items"]
+    """
+    parsed_manifest = YamlDeclarativeSource._parse(content)
+    resolved_manifest = resolver.preprocess_manifest(parsed_manifest)
+    selector_manifest = transformer.propagate_types_and_parameters(
+        "", resolved_manifest["selector"], {}
+    )
+
+    selector = factory.create_component(
+        model_type=RecordSelectorModel,
+        name="test_stream",
+        component_definition=selector_manifest,
+        decoder=None,
+        transformations=[],
+        config=input_config,
+    )
+
+    assert selector.extractor.record_expander.parent_fields is None
+
+
+def test_create_record_expander_with_merge_parent():
+    """The source-mailchimp `email_activity` shape: the parent flattened into each activity item."""
+    content = """
+    selector:
+      type: RecordSelector
+      extractor:
+        type: DpathExtractor
+        field_path: ["emails"]
+        record_expander:
+          type: RecordExpander
+          expand_records_from_field: ["activity"]
+          merge_parent: true
+    """
+    parsed_manifest = YamlDeclarativeSource._parse(content)
+    resolved_manifest = resolver.preprocess_manifest(parsed_manifest)
+    selector_manifest = transformer.propagate_types_and_parameters(
+        "", resolved_manifest["selector"], {}
+    )
+
+    selector = factory.create_component(
+        model_type=RecordSelectorModel,
+        name="test_stream",
+        component_definition=selector_manifest,
+        decoder=None,
+        transformations=[],
+        config=input_config,
+    )
+
+    expander = selector.extractor.record_expander
+    assert expander is not None
+    assert expander.merge_parent is True
+    assert expander.remain_original_record is False
+    assert expander.parent_fields is None
+
+    response = requests.Response()
+    response._content = json.dumps(
+        {
+            "emails": [
+                {
+                    "email_id": "e1",
+                    "list_id": "l1",
+                    "activity": [
+                        {"action": "open", "timestamp": "t1"},
+                        {"action": "click", "timestamp": "t2"},
+                    ],
+                },
+                {"email_id": "e2", "list_id": "l1", "activity": [{"action": "bounce"}]},
+            ]
+        }
+    ).encode("utf-8")
+
+    assert list(selector.extractor.extract_records(response)) == [
+        {"email_id": "e1", "list_id": "l1", "action": "open", "timestamp": "t1"},
+        {"email_id": "e1", "list_id": "l1", "action": "click", "timestamp": "t2"},
+        {"email_id": "e2", "list_id": "l1", "action": "bounce"},
+    ]
+
+
+def test_create_record_expander_without_merge_parent_defaults_to_false():
+    content = """
+    selector:
+      type: RecordSelector
+      extractor:
+        type: DpathExtractor
+        field_path: ["data"]
+        record_expander:
+          type: RecordExpander
+          expand_records_from_field: ["items"]
+    """
+    parsed_manifest = YamlDeclarativeSource._parse(content)
+    resolved_manifest = resolver.preprocess_manifest(parsed_manifest)
+    selector_manifest = transformer.propagate_types_and_parameters(
+        "", resolved_manifest["selector"], {}
+    )
+
+    selector = factory.create_component(
+        model_type=RecordSelectorModel,
+        name="test_stream",
+        component_definition=selector_manifest,
+        decoder=None,
+        transformations=[],
+        config=input_config,
+    )
+
+    assert selector.extractor.record_expander.merge_parent is False
+
+
 def test_create_record_expander_with_truncated_list_retriever():
     content = """
     selector:

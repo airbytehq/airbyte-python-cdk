@@ -110,6 +110,7 @@ from airbyte_cdk.sources.declarative.decoders.composite_raw_decoder import (
 )
 from airbyte_cdk.sources.declarative.expanders.record_expander import (
     OnNoRecords,
+    ParentFieldPath,
     RecordExpander,
 )
 from airbyte_cdk.sources.declarative.extractors import (
@@ -396,6 +397,9 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     ParametrizedComponentsResolver as ParametrizedComponentsResolverModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    ParentFieldPath as ParentFieldPathModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     ParentStreamConfig as ParentStreamConfigModel,
@@ -839,6 +843,7 @@ class ModelToComponentFactory:
             PropertiesFromEndpointModel: self.create_properties_from_endpoint,
             PropertyChunkingModel: self.create_property_chunking,
             QueryPropertiesModel: self.create_query_properties,
+            ParentFieldPathModel: self.create_parent_field_path,
             RecordExpanderModel: self.create_record_expander,
             RecordFilterModel: self.create_record_filter,
             RecordSelectorModel: self.create_record_selector,
@@ -2563,6 +2568,13 @@ class ModelToComponentFactory:
             config=config,
             parameters=model.parameters or {},
             remain_original_record=model.remain_original_record or False,
+            parent_fields=[
+                self._create_component_from_model(model=parent_field, config=config)
+                for parent_field in model.parent_fields
+            ]
+            if model.parent_fields
+            else None,
+            merge_parent=model.merge_parent or False,
             on_no_records=OnNoRecords(model.on_no_records.value)
             if model.on_no_records
             else OnNoRecords.skip,
@@ -2570,6 +2582,19 @@ class ModelToComponentFactory:
             truncated_list_retriever=truncated_list_retriever,
             message_repository=self._message_repository,
             suppress_incomplete_fetch_warning=suppress_incomplete_fetch_warning,
+        )
+
+    @staticmethod
+    def create_parent_field_path(
+        model: ParentFieldPathModel,
+        config: Config,
+        **kwargs: Any,
+    ) -> ParentFieldPath:
+        return ParentFieldPath(
+            parent_path=model.parent_path,
+            record_path=model.record_path,
+            config=config,
+            parameters=model.parameters or {},
         )
 
     @staticmethod
