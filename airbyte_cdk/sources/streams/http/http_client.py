@@ -51,10 +51,6 @@ from airbyte_cdk.sources.streams.http.rate_limiting import (
     user_defined_backoff_handler,
 )
 from airbyte_cdk.sources.streams.http.request_timeout import (
-    DEFAULT_CONNECT_TIMEOUT_SECONDS,
-    DEFAULT_READ_TIMEOUT_SECONDS,
-    ENV_HTTP_CONNECT_TIMEOUT_SECONDS,
-    ENV_HTTP_READ_TIMEOUT_SECONDS,
     default_request_timeout,
 )
 

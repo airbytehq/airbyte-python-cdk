@@ -29,11 +29,13 @@ from airbyte_cdk.sources.streams.http.exceptions import (
     UserDefinedBackoffException,
 )
 from airbyte_cdk.sources.streams.http.http_client import (
+    MessageRepresentationAirbyteTracedErrors,
+)
+from airbyte_cdk.sources.streams.http.request_timeout import (
     DEFAULT_CONNECT_TIMEOUT_SECONDS,
     DEFAULT_READ_TIMEOUT_SECONDS,
     ENV_HTTP_CONNECT_TIMEOUT_SECONDS,
     ENV_HTTP_READ_TIMEOUT_SECONDS,
-    MessageRepresentationAirbyteTracedErrors,
 )
 from airbyte_cdk.sources.streams.http.requests_native_auth import TokenAuthenticator
 from airbyte_cdk.utils.traced_exception import AirbyteTracedException
