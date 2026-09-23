@@ -17,6 +17,7 @@ from requests.auth import AuthBase
 from airbyte_cdk.models import FailureType, Level
 from airbyte_cdk.sources.http_logger import format_http_message
 from airbyte_cdk.sources.message import MessageRepository, NoopMessageRepository
+from airbyte_cdk.sources.streams.http.request_timeout import default_request_timeout
 from airbyte_cdk.utils import AirbyteTracedException
 from airbyte_cdk.utils.airbyte_secrets_utils import add_to_secrets, filter_secrets
 from airbyte_cdk.utils.datetime_helpers import AirbyteDateTime, ab_datetime_now, ab_datetime_parse
@@ -414,6 +415,7 @@ class AbstractOauth2Authenticator(AuthBase):
                 data=self.build_refresh_request_body(),
                 headers=self.build_refresh_request_headers(),
                 params=self.build_refresh_request_query_params(),
+                timeout=default_request_timeout(),
             )
 
             if not response.ok:

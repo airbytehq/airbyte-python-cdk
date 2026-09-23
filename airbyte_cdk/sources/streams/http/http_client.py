@@ -50,6 +50,13 @@ from airbyte_cdk.sources.streams.http.rate_limiting import (
     rate_limit_default_backoff_handler,
     user_defined_backoff_handler,
 )
+from airbyte_cdk.sources.streams.http.request_timeout import (
+    DEFAULT_CONNECT_TIMEOUT_SECONDS,
+    DEFAULT_READ_TIMEOUT_SECONDS,
+    ENV_HTTP_CONNECT_TIMEOUT_SECONDS,
+    ENV_HTTP_READ_TIMEOUT_SECONDS,
+    default_request_timeout,
+)
 
 # Imported from the leaf module rather than the package: `protocols` pulls in nothing from the
 # CDK, so this import cannot cycle no matter what else lands in `requests_native_auth` -- an
@@ -72,21 +79,6 @@ from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 MessageRepresentationAirbyteTracedErrors = AirbyteTracedException
 
 BODY_REQUEST_METHODS = ("GET", "POST", "PUT", "PATCH")
-DEFAULT_CONNECT_TIMEOUT_SECONDS: float = 30.0
-DEFAULT_READ_TIMEOUT_SECONDS: float = 300.0
-ENV_HTTP_CONNECT_TIMEOUT_SECONDS = "AIRBYTE_HTTP_CONNECT_TIMEOUT_SECONDS"
-ENV_HTTP_READ_TIMEOUT_SECONDS = "AIRBYTE_HTTP_READ_TIMEOUT_SECONDS"
-
-
-def default_request_timeout() -> Tuple[float, float]:
-    """Returns the `(connect, read)` timeout in seconds applied to requests that do not set their own.
-
-    Both values can be overridden with the `AIRBYTE_HTTP_CONNECT_TIMEOUT_SECONDS` and
-    `AIRBYTE_HTTP_READ_TIMEOUT_SECONDS` environment variables.
-    """
-    connect = float(os.getenv(ENV_HTTP_CONNECT_TIMEOUT_SECONDS, DEFAULT_CONNECT_TIMEOUT_SECONDS))
-    read = float(os.getenv(ENV_HTTP_READ_TIMEOUT_SECONDS, DEFAULT_READ_TIMEOUT_SECONDS))
-    return (connect, read)
 
 
 def monkey_patched_get_item(self, key):  # type: ignore # this interface is a copy/paste from the requests_cache lib

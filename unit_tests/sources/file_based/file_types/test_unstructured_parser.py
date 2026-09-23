@@ -671,6 +671,32 @@ def test_parse_records_remotely(
         )
 
     if expected_requests:
-        requests_mock.post.assert_has_calls(expected_requests)
+        requests_mock.post.assert_has_calls(
+            [
+                call(
+                    *expected_call.args,
+                    **{**expected_call.kwargs, "timeout": (30.0, 300.0)},
+                )
+                if expected_call.args
+                else expected_call
+                for expected_call in expected_requests
+            ]
+        )
     else:
         requests_mock.post.assert_not_called()
+
+
+def test_read_file_remotely_applies_default_timeout(mocker):
+    response = mocker.Mock(status_code=200)
+    response.json.return_value = []
+    mocked_post = mocker.patch(
+        "airbyte_cdk.sources.file_based.file_types.unstructured_parser.requests.post",
+        return_value=response,
+    )
+    format_config = APIProcessingConfigModel(mode="api", api_key="test")
+
+    UnstructuredParser()._read_file_remotely(
+        MagicMock(), format_config, FileType.PDF, "auto", MagicMock()
+    )
+
+    assert mocked_post.call_args.kwargs["timeout"] == (30.0, 300.0)
