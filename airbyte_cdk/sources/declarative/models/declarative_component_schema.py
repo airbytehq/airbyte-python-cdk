@@ -140,10 +140,11 @@ class CursorPagination(BaseModel):
     )
     stop_condition: Optional[str] = Field(
         None,
-        description="Template string evaluating when to stop paginating.",
+        description="Template string evaluating when to stop paginating. Compare last_page_size against page_size rather than against a hardcoded number: page_size is the page size that was actually requested, so the condition stays correct when page_size_reduction shrinks it. It is only bound when this strategy declares page_size, and a condition that reads it without one is rejected, so add page_size alongside the condition. Testing the page for emptiness with last_page_size == 0 is equally safe and needs no page_size. A stream that enables page_size_reduction is rejected when its stop condition compares last_page_size against anything else, since a full page at a reduced size would then read as a short page.",
         examples=[
             "{{ response.data.has_more is false }}",
             "{{ 'next' not in headers['link'] }}",
+            "{{ last_page_size < page_size }}",
         ],
         title="Stop Condition",
     )
@@ -731,6 +732,7 @@ class Action(Enum):
     RESET_PAGINATION = "RESET_PAGINATION"
     RATE_LIMITED = "RATE_LIMITED"
     REFRESH_TOKEN_THEN_RETRY = "REFRESH_TOKEN_THEN_RETRY"
+    REDUCE_PAGE_SIZE = "REDUCE_PAGE_SIZE"
 
 
 class FailureType(Enum):
@@ -752,6 +754,7 @@ class HttpResponseFilter(BaseModel):
             "RESET_PAGINATION",
             "RATE_LIMITED",
             "REFRESH_TOKEN_THEN_RETRY",
+            "REDUCE_PAGE_SIZE",
         ],
         title="Action",
     )
@@ -1425,6 +1428,64 @@ class Action1(Enum):
 class PaginationResetLimits(BaseModel):
     type: Literal["PaginationResetLimits"]
     number_of_records: Optional[int] = None
+
+
+class ResetPolicy(Enum):
+    NEVER = "NEVER"
+    AFTER_SUCCESSFUL_PAGE = "AFTER_SUCCESSFUL_PAGE"
+
+
+class PageSizeReduction(BaseModel):
+    type: Literal["PageSizeReduction"]
+    reduction_factor: Optional[float] = Field(
+        2,
+        description="Divisor applied to the page size on each reduction. The new page size is floor(current page size / reduction factor).",
+        examples=[2, 4],
+        gt=1.0,
+        title="Reduction Factor",
+    )
+    minimum_page_size: Optional[int] = Field(
+        1,
+        description="Page size below which the connector stops reducing and fails the sync. It must be smaller than the page size configured on the pagination strategy, otherwise no reduction could ever be applied. It is one of two bounds on the reduction and whichever is tighter wins: an unbroken run of failing pages divides the page size by reduction_factor at most max_attempts times, so reaching this floor in a single run needs max_attempts of at least log(page_size / minimum_page_size) / log(reduction_factor) - with the defaults, a page size of 1000 bottoms out at 31 records per page and a floor of 10 is never reached. Pages that succeed in between restart the max_attempts budget, so the floor is still reachable over a partition.",
+        examples=[1, 10],
+        ge=1,
+        title="Minimum Page Size",
+    )
+    max_attempts: Optional[int] = Field(
+        5,
+        description="Maximum number of page size reductions made in a row without a single page succeeding, before the sync fails with a transient error. Every reduction follows a request that failed, so at most max_attempts + 1 failing requests are issued before giving up. The budget restarts after every page that succeeds, under either reset_policy, so it bounds the reductions needed to get a single page through and not the number of pages a partition may have: a stream that needs a reduction every now and then reads to the end however long it is. Under NEVER the page size also strictly decreases, so minimum_page_size bounds the reductions of the whole partition on its own. The wait between reduction attempts is the CDK's own - it grows with each attempt - and does not consult the error handler's backoff_strategies or a Retry-After header.",
+        examples=[5, 10],
+        ge=1,
+        title="Maximum Reduction Attempts",
+    )
+    backoff_seconds: Optional[float] = Field(
+        0.5,
+        description='Base number of seconds to wait before the page is re-issued, multiplied by the number of attempts made in a row, so the second attempt waits twice as long as the first. A REDUCE_PAGE_SIZE response never reaches the error handler\'s retry budget, backoff_strategies or a Retry-After header, so this is the only thing spacing those requests out. Raise it on an API whose error also means "we are briefly unwell" rather than only "your page is too big", since the default spaces the whole run of attempts over a few seconds.',
+        examples=[0.5, 5],
+        ge=0.0,
+        title="Backoff Seconds",
+    )
+    retries_at_minimum_page_size: Optional[int] = Field(
+        0,
+        description="Number of times the same page is re-issued unchanged, each after the backoff wait, once the page size cannot be shrunk any further, before the sync fails with a transient error. The default of 0 fails on the first response received at minimum_page_size. Raise it when the API returns the same error for a page that is too big and for a server-side hiccup: at the floor, reducing is no longer an option but waiting still is, and without this budget those responses end the stream on the first one. This budget is separate from max_attempts, which only counts reductions, and it restarts on every page that succeeds. It applies however the page size arrived at the floor, whether by reduction or because page_size was already there; a page size that minimum_page_size blocks from ever being reduced is still reported as a configuration error, but only once this budget is spent.",
+        examples=[0, 3],
+        ge=0,
+        title="Retries At Minimum Page Size",
+    )
+    failure_message: Optional[str] = Field(
+        None,
+        description="Sentence appended to the error message shown to the user when the connector runs out of reductions, either because max_attempts was reached or because the page size is already at minimum_page_size. Use it to tell the user what they can do about it in terms of this specific API, for instance which filter narrows the query down. Without it the message only states that the API kept rejecting every page size the connector asked for.",
+        examples=[
+            "Narrow the sync down by selecting fewer fields on this stream.",
+            "Set a more recent start date so that each page covers less data.",
+        ],
+        title="Failure Message",
+    )
+    reset_policy: Optional[ResetPolicy] = Field(
+        ResetPolicy.NEVER,
+        description="When to restore the page size configured on the pagination strategy. NEVER keeps the reduced page size for the rest of the partition. AFTER_SUCCESSFUL_PAGE restores it as soon as one page succeeds, which means hitting the same error again on every page - use it only when the reduction is worth one extra request per page, for instance because the configured page size usually works and only some pages are too heavy. It only controls the page size: the max_attempts budget restarts on every page that succeeds under both policies, so there is no limit on how many reductions a partition may make in total. What is bounded is the reductions that get no page through.",
+        title="Reset Policy",
+    )
 
 
 class CsvDecoder(BaseModel):
@@ -3259,6 +3320,10 @@ class SimpleRetriever(BaseModel):
     pagination_reset: Optional[PaginationReset] = Field(
         None,
         description="Describes what triggers pagination reset and how to handle it.",
+    )
+    page_size_reduction: Optional[PageSizeReduction] = Field(
+        None,
+        description="Describes how the page size is reduced when an error handler resolves to the REDUCE_PAGE_SIZE action. Requires a DefaultPaginator that defines both page_size_option and a pagination strategy with a page_size. Cannot be combined with query properties, a file uploader, or a parent stream read lazily through lazy_read_pointer, because in those cases records of the failing page have already been emitted and re-issuing the page would emit them twice. A page_token_option of type RequestPath is rejected as well, because the next page is then a URL built by the API which already carries the page size.",
     )
     ignore_stream_slicer_parameters_on_paginated_requests: Optional[bool] = Field(
         False,

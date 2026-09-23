@@ -146,3 +146,98 @@ def test_offset_increment_paginator_strategy_initial_token(
     )
 
     assert paginator_strategy.initial_token == expected_initial_token
+
+
+def _response(records):
+    response = requests.Response()
+    response._content = json.dumps({"results": records}).encode("utf-8")
+    return response
+
+
+def test_given_page_size_override_when_page_is_full_for_the_override_then_keep_paginating():
+    """
+    A page that is full for the reduced page size is not the last page, even though it is smaller than the
+    configured page size.
+    """
+    strategy = OffsetIncrement(page_size=100, extractor=None, config={}, parameters={})
+
+    next_page_token = strategy.next_page_token(
+        response=_response([{"id": index} for index in range(50)]),
+        last_page_size=50,
+        last_record=None,
+        last_page_token_value=0,
+        page_size_override=50,
+    )
+
+    assert next_page_token == 50
+
+
+def test_given_page_size_override_when_page_is_not_full_for_the_override_then_stop_paginating():
+    strategy = OffsetIncrement(page_size=100, extractor=None, config={}, parameters={})
+
+    next_page_token = strategy.next_page_token(
+        response=_response([{"id": index} for index in range(30)]),
+        last_page_size=30,
+        last_record=None,
+        last_page_token_value=0,
+        page_size_override=50,
+    )
+
+    assert next_page_token is None
+
+
+def test_given_page_size_override_then_offset_follows_the_records_actually_returned():
+    strategy = OffsetIncrement(page_size=100, extractor=None, config={}, parameters={})
+
+    assert (
+        strategy.next_page_token(
+            response=_response([{"id": index} for index in range(100)]),
+            last_page_size=100,
+            last_record=None,
+            last_page_token_value=0,
+        )
+        == 100
+    )
+    assert (
+        strategy.next_page_token(
+            response=_response([{"id": index} for index in range(50)]),
+            last_page_size=50,
+            last_record=None,
+            last_page_token_value=100,
+            page_size_override=50,
+        )
+        == 150
+    )
+
+
+def test_given_page_size_interpolates_to_empty_string_then_paginate_until_an_empty_page():
+    """
+    `page_size` interpolating to an empty string is the one behaviour change on the no-override path: the stop
+    condition used to compare the rendered value with `<`, which raised a TypeError for a string. It is now
+    treated as "no page size known", so pagination runs until a page comes back empty.
+
+    This is only reachable when the paginator has no `page_size_option`, since `get_page_size` raises for a
+    non-integer page size before the request is built.
+    """
+    strategy = OffsetIncrement(
+        page_size="{{ config['page_size'] }}", extractor=None, config={}, parameters={}
+    )
+
+    assert (
+        strategy.next_page_token(
+            response=_response([{"id": index} for index in range(30)]),
+            last_page_size=30,
+            last_record=None,
+            last_page_token_value=0,
+        )
+        == 30
+    )
+    assert (
+        strategy.next_page_token(
+            response=_response([]),
+            last_page_size=0,
+            last_record=None,
+            last_page_token_value=30,
+        )
+        is None
+    )
