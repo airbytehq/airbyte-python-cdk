@@ -33,7 +33,11 @@ from airbyte_cdk.sources.streams.http.http_client import MessageRepresentationAi
 from airbyte_cdk.sources.streams.http.page_size_reduction_exception import (
     PageSizeReductionRequiredException,
 )
-from airbyte_cdk.sources.streams.http.requests_native_auth import TokenAuthenticator
+from airbyte_cdk.sources.streams.http.requests_native_auth import (
+    Oauth2Authenticator,
+    TokenAuthenticator,
+)
+from airbyte_cdk.utils.datetime_helpers import ab_datetime_now
 from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 
 
@@ -1067,6 +1071,131 @@ def test_refresh_token_then_retry_action_retries_and_succeeds_after_token_refres
     assert mock_authenticator.access_token == "new_refreshed_token"
     assert returned_response == valid_response
     assert call_count == 2
+
+
+def _build_refresh_token_then_retry_http_client():
+    """An HttpClient backed by a real Oauth2Authenticator with a non-expired token, so the
+    first request does not itself trigger a refresh and only REFRESH_TOKEN_THEN_RETRY does."""
+    authenticator = Oauth2Authenticator(
+        token_refresh_endpoint="https://example.com/oauth/token",
+        client_id="client_id",
+        client_secret="client_secret",
+        refresh_token="refresh_token",
+        token_expiry_date=ab_datetime_now() + timedelta(days=1),
+        refresh_token_error_status_codes=(400,),
+        refresh_token_error_key="error",
+        refresh_token_error_values=("invalid_grant",),
+    )
+    http_client = HttpClient(
+        name="test",
+        logger=logging.getLogger("test"),
+        authenticator=authenticator,
+        error_handler=HttpStatusErrorHandler(
+            logger=logging.getLogger("test"),
+            max_retries=5,
+            error_mapping={
+                401: ErrorResolution(
+                    ResponseAction.REFRESH_TOKEN_THEN_RETRY,
+                    FailureType.transient_error,
+                    "Token rejected; refresh and retry",
+                )
+            },
+        ),
+    )
+    return http_client
+
+
+def _request_count(requests_mock, url, method="GET"):
+    return len([r for r in requests_mock.request_history if r.url == url and r.method == method])
+
+
+@pytest.mark.usefixtures("mock_sleep")
+def test_refresh_token_then_retry_refreshes_once_and_succeeds(requests_mock):
+    requests_mock.get(
+        "https://example.com/data",
+        [{"status_code": 401}, {"status_code": 200, "json": {"data": "ok"}}],
+    )
+    requests_mock.post(
+        "https://example.com/oauth/token",
+        json={"access_token": "new", "expires_in": 3600},
+    )
+    http_client = _build_refresh_token_then_retry_http_client()
+
+    _, response = http_client.send_request("GET", "https://example.com/data", request_kwargs={})
+
+    assert response.status_code == 200
+    assert _request_count(requests_mock, "https://example.com/oauth/token", "POST") == 1
+    assert _request_count(requests_mock, "https://example.com/data") == 2
+    second_request = [
+        r for r in requests_mock.request_history if r.url == "https://example.com/data"
+    ][1]
+    assert second_request.headers["Authorization"] == "Bearer new"
+
+
+@pytest.mark.usefixtures("mock_sleep")
+def test_refresh_token_then_retry_fails_fast_when_refresh_is_rejected(requests_mock):
+    requests_mock.get("https://example.com/data", status_code=401)
+    requests_mock.post(
+        "https://example.com/oauth/token",
+        status_code=400,
+        json={"error": "invalid_grant"},
+    )
+    http_client = _build_refresh_token_then_retry_http_client()
+
+    with patch("time.sleep") as mocked_sleep:
+        with pytest.raises(AirbyteTracedException) as exc_info:
+            http_client.send_request("GET", "https://example.com/data", request_kwargs={})
+
+    assert exc_info.value.failure_type == FailureType.config_error
+    assert _request_count(requests_mock, "https://example.com/oauth/token", "POST") == 1
+    assert _request_count(requests_mock, "https://example.com/data") == 1
+    mocked_sleep.assert_not_called()
+
+
+@pytest.mark.usefixtures("mock_sleep")
+def test_refresh_token_then_retry_does_not_refresh_twice_for_the_same_request(requests_mock):
+    requests_mock.get("https://example.com/data", status_code=401)
+    requests_mock.post(
+        "https://example.com/oauth/token",
+        json={"access_token": "new", "expires_in": 3600},
+    )
+    http_client = _build_refresh_token_then_retry_http_client()
+
+    with pytest.raises(AirbyteTracedException) as exc_info:
+        http_client.send_request("GET", "https://example.com/data", request_kwargs={})
+
+    assert exc_info.value.failure_type == FailureType.config_error
+    assert exc_info.value.message == "Token rejected; refresh and retry"
+    assert _request_count(requests_mock, "https://example.com/oauth/token", "POST") == 1
+    assert _request_count(requests_mock, "https://example.com/data") == 2
+
+
+@pytest.mark.usefixtures("mock_sleep")
+def test_refresh_token_then_retry_state_is_evicted_after_success(requests_mock):
+    requests_mock.get(
+        "https://example.com/data",
+        [{"status_code": 401}, {"status_code": 200, "json": {"data": "ok"}}],
+    )
+    requests_mock.get(
+        "https://example.com/other",
+        [{"status_code": 401}, {"status_code": 200, "json": {"data": "ok"}}],
+    )
+    requests_mock.post(
+        "https://example.com/oauth/token",
+        json={"access_token": "new", "expires_in": 3600},
+    )
+    http_client = _build_refresh_token_then_retry_http_client()
+
+    _, response = http_client.send_request("GET", "https://example.com/data", request_kwargs={})
+    assert response.status_code == 200
+    # A different URL for the second request: PreparedRequest instances are keyed by
+    # identity, but a distinct URL also keeps the two request histories easy to count.
+    _, second_response = http_client.send_request(
+        "GET", "https://example.com/other", request_kwargs={}
+    )
+    assert second_response.status_code == 200
+
+    assert _request_count(requests_mock, "https://example.com/oauth/token", "POST") == 2
 
 
 class _RecordingAuthenticator(TokenAuthenticator):

@@ -6,7 +6,7 @@ import logging
 import os
 import urllib
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Mapping, Optional, Tuple, Union
+from typing import Any, Callable, Dict, List, Mapping, Optional, Set, Tuple, Union
 
 import orjson
 import requests
@@ -175,6 +175,7 @@ class HttpClient:
             self._backoff_strategies = [DefaultBackoffStrategy()]
         self._error_message_parser = error_message_parser or JsonErrorMessageParser()
         self._request_attempt_count: Dict[requests.PreparedRequest, int] = {}
+        self._requests_with_refreshed_token: Set[requests.PreparedRequest] = set()
         self._disable_retries = disable_retries
         self._message_repository = message_repository
         self._authenticator_update_failed = False
@@ -537,6 +538,7 @@ class HttpClient:
         """
         if prepared_request in self._request_attempt_count:
             del self._request_attempt_count[prepared_request]
+        self._requests_with_refreshed_token.discard(prepared_request)
 
     def _handle_error_resolution(
         self,
@@ -575,20 +577,43 @@ class HttpClient:
             # backoff retry loop. Adding `\n` to the message and ignore 'end' ensure that few messages are printed at the same time.
             print(f"{message}\n", end="", flush=True)
 
-        # Handle REFRESH_TOKEN_THEN_RETRY: Force refresh the OAuth token before retry
-        # This is useful when the API returns 401 but the stored token expiry hasn't been reached yet
-        # Only OAuth authenticators have refresh_and_set_access_token method
-        # Non-OAuth auth types (e.g., BearerAuthenticator) will fall through to normal retry
+        # Handle REFRESH_TOKEN_THEN_RETRY: force refresh the OAuth token before retrying,
+        # at most once per request. If the OAuth provider rejects the refresh with a
+        # config error (e.g. bad credentials) or the request is rejected again after a
+        # refresh, the request fails fast with a config error instead of retrying forever.
+        # Non-OAuth auth types (e.g., BearerAuthenticator) fall through to normal retry.
         if error_resolution.response_action == ResponseAction.REFRESH_TOKEN_THEN_RETRY:
+            if request in self._requests_with_refreshed_token:
+                self._evict_key(request)
+                status = (
+                    f"status code '{response.status_code}'"
+                    if response is not None
+                    else f"exception '{exc}'"
+                )
+                internal_message = f"'{request.method}' request to '{request.url}' was rejected with {status} again after the OAuth token was refreshed; not refreshing again."
+                self._logger.error(internal_message)
+                raise AirbyteTracedException(
+                    internal_message=internal_message,
+                    message=error_resolution.error_message or internal_message,
+                    failure_type=FailureType.config_error,
+                )
             if (
                 hasattr(self._session, "auth")
                 and self._session.auth is not None
                 and hasattr(self._session.auth, "refresh_and_set_access_token")
             ):
+                self._requests_with_refreshed_token.add(request)
                 try:
                     self._session.auth.refresh_and_set_access_token()  # type: ignore[union-attr]
                     self._logger.info(
                         "Refreshed OAuth token due to REFRESH_TOKEN_THEN_RETRY response action"
+                    )
+                except AirbyteTracedException as refresh_error:
+                    if refresh_error.failure_type == FailureType.config_error:
+                        self._evict_key(request)
+                        raise
+                    self._logger.warning(
+                        f"Failed to refresh OAuth token: {refresh_error}. Proceeding with retry using existing token."
                     )
                 except Exception as refresh_error:
                     self._logger.warning(
