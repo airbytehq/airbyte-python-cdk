@@ -1878,6 +1878,7 @@ definitions:
             - "$ref": "#/definitions/FlattenFields"
             - "$ref": "#/definitions/DpathFlattenFields"
             - "$ref": "#/definitions/KeysReplace"
+            - "$ref": "#/definitions/ForEach"
             - "$ref": "#/definitions/CustomTransformation"
       state_migrations:
         title: State Migrations
@@ -2862,6 +2863,7 @@ definitions:
             - "$ref": "#/definitions/FlattenFields"
             - "$ref": "#/definitions/DpathFlattenFields"
             - "$ref": "#/definitions/KeysReplace"
+            - "$ref": "#/definitions/ForEach"
             - "$ref": "#/definitions/CustomTransformation"
       schema_type_identifier:
         "$ref": "#/definitions/SchemaTypeIdentifier"
@@ -2984,6 +2986,7 @@ definitions:
             - "$ref": "#/definitions/FlattenFields"
             - "$ref": "#/definitions/DpathFlattenFields"
             - "$ref": "#/definitions/KeysReplace"
+            - "$ref": "#/definitions/ForEach"
             - "$ref": "#/definitions/CustomTransformation"
       $parameters:
         type: object
@@ -3029,6 +3032,59 @@ definitions:
         description: Whether to flatten lists or leave it as is. Default is True.
         type: boolean
         default: true
+      $parameters:
+        type: object
+        additionalProperties: true
+  ForEach:
+    title: For Each
+    description: A transformation that applies a list of nested transformations to every element of a collection inside the record, instead of applying them to the record as a whole. Use it when an API returns a list of sub-objects that each need the same fix-up, which would otherwise require a custom Python transformation.
+    type: object
+    required:
+      - type
+      - field_path
+      - transformations
+    properties:
+      type:
+        type: string
+        enum: [ForEach]
+      field_path:
+        title: Field Path
+        description: Path to the collection whose elements the nested transformations are applied to. If the path does not resolve, or resolves to a scalar or null, the transformation is a no-op. If it resolves to an object, that object is treated as a collection of one. A `null` element inside the collection is skipped, because a null in an array is ordinary payload; any other non-object element raises an error, because it cannot be transformed in place. Glob segments (`*`, `?`, `[...]`) are supported, in which case every matching value is iterated over; because a glob selects rather than addresses a value, a match that is neither an object nor a list of objects is skipped instead of raising, and a value that the glob matches more than once (as `**` does) is still transformed only once.
+        type: array
+        items:
+          type: string
+        interpolation_context:
+          - config
+          - parameters
+        examples:
+          - ["column_values"]
+          - ["data", "assets"]
+          - ["data", "*", "items"]
+          - ["{{ parameters['collection_field'] }}"]
+      transformations:
+        title: Transformations
+        description: A list of transformations applied to each element of the collection. Inside these transformations, `record` refers to the current element of the collection, while `config`, `stream_state` and `stream_slice` still refer to the enclosing stream.
+        type: array
+        items:
+          anyOf:
+            - "$ref": "#/definitions/AddFields"
+            - "$ref": "#/definitions/RemoveFields"
+            - "$ref": "#/definitions/KeysToLower"
+            - "$ref": "#/definitions/KeysToSnakeCase"
+            - "$ref": "#/definitions/FlattenFields"
+            - "$ref": "#/definitions/DpathFlattenFields"
+            - "$ref": "#/definitions/KeysReplace"
+            - "$ref": "#/definitions/ForEach"
+            - "$ref": "#/definitions/CustomTransformation"
+        examples:
+          - - type: AddFields
+              condition: "{{ record.get('display_value') and not record.get('text') }}"
+              fields:
+                - path: ["text"]
+                  value: "{{ record['display_value'] }}"
+          - - type: RemoveFields
+              field_pointers:
+                - ["uploader"]
       $parameters:
         type: object
         additionalProperties: true
