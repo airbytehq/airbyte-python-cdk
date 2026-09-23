@@ -43,6 +43,28 @@ unstructured_partition_pdf = None
 unstructured_partition_docx = None
 unstructured_partition_pptx = None
 
+SEMANTIC_SEARCH_ANNOTATION: Dict[str, Any] = {
+    "content_type": "markdown",
+    "samples": [
+        {
+            "name": "chunk",
+            "windowed": True,
+            "sampling": {"sample_type": "whole", "unit_label": "chunk"},
+        }
+    ],
+    "windowing": {"context_max_chars": 2048, "context_boundary": "whole_unit"},
+    "embedding": {"model": "text-embedding-3-small"},
+    "metadata": [
+        {"name": "document_key", "path": "/document_key", "type": "string"},
+        {"name": "_ab_source_file_url", "path": "/_ab_source_file_url", "type": "string"},
+        {
+            "name": "_ab_source_file_last_modified",
+            "path": "/_ab_source_file_last_modified",
+            "type": "string",
+        },
+    ],
+}
+
 AIRBYTE_NLTK_DATA_DIR = "/airbyte/nltk_data"
 TMP_NLTK_DATA_DIR = "/tmp/nltk_data"
 
@@ -151,6 +173,7 @@ class UnstructuredParser(FileTypeParser):
                 "content": {
                     "type": "string",
                     "description": "Content of the file as markdown. Might be null if the file could not be parsed",
+                    "x-airbyte-semantic-search": SEMANTIC_SEARCH_ANNOTATION,  # type: ignore[dict-item]
                 },
                 "document_key": {
                     "type": "string",

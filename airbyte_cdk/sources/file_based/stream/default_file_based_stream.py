@@ -347,6 +347,8 @@ class DefaultFileBasedStream(AbstractFileBasedStream, IncrementalMixin):
     def _fill_nulls(schema: Mapping[str, Any]) -> Mapping[str, Any]:
         if isinstance(schema, dict):
             for k, v in schema.items():
+                if isinstance(k, str) and k.startswith("x-"):
+                    continue
                 if k == "type":
                     if isinstance(v, list):
                         if "null" not in v:
