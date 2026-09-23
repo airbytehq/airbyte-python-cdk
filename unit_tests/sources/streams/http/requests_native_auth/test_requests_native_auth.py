@@ -1414,3 +1414,58 @@ class TestConcurrentTokenRefresh:
         assert len(results) == 5
         assert all(token == "new_access_token" for token in results)
         assert refresh_call_count == 1, f"Expected 1 refresh call, got {refresh_call_count}"
+
+    def test_refresh_and_set_access_token_skips_refresh_when_another_thread_already_refreshed(
+        self, mocker
+    ):
+        """
+        A forced refresh that was queued behind the class-level lock must not refresh
+        again when the access token changed while it waited: the request is retried
+        with the token the other thread already obtained.
+        """
+        oauth = Oauth2Authenticator(
+            token_refresh_endpoint="https://refresh_endpoint.com",
+            client_id="client_id",
+            client_secret="client_secret",
+            refresh_token="refresh_token",
+            token_expiry_date=ab_datetime_now() + timedelta(hours=1),
+        )
+        oauth.access_token = "old"
+
+        mocked_refresh = mocker.patch.object(oauth, "refresh_access_token")
+
+        with Oauth2Authenticator._token_refresh_lock:
+            thread = threading.Thread(target=oauth.refresh_and_set_access_token)
+            thread.start()
+            # Wait until the worker is blocked on the lock.
+            deadline = time.time() + 5
+            while not thread.is_alive() and time.time() < deadline:
+                time.sleep(0.01)
+            time.sleep(0.1)
+            oauth.access_token = "winner"
+        thread.join(timeout=5)
+
+        assert not thread.is_alive()
+        mocked_refresh.assert_not_called()
+        assert oauth.access_token == "winner"
+
+    def test_refresh_and_set_access_token_refreshes_when_token_unchanged(self, mocker):
+        oauth = Oauth2Authenticator(
+            token_refresh_endpoint="https://refresh_endpoint.com",
+            client_id="client_id",
+            client_secret="client_secret",
+            refresh_token="refresh_token",
+            token_expiry_date=ab_datetime_now() + timedelta(hours=1),
+        )
+        oauth.access_token = "old"
+
+        mocked_refresh = mocker.patch.object(
+            oauth,
+            "refresh_access_token",
+            return_value=("new", ab_datetime_now() + timedelta(hours=1)),
+        )
+
+        oauth.refresh_and_set_access_token()
+
+        mocked_refresh.assert_called_once()
+        assert oauth.access_token == "new"

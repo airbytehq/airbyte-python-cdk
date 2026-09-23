@@ -6,7 +6,7 @@ import logging
 import os
 import urllib
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Mapping, Optional, Set, Tuple, Union
+from typing import Any, Callable, Dict, List, Mapping, Optional, Tuple, Union
 
 import orjson
 import requests
@@ -175,7 +175,7 @@ class HttpClient:
             self._backoff_strategies = [DefaultBackoffStrategy()]
         self._error_message_parser = error_message_parser or JsonErrorMessageParser()
         self._request_attempt_count: Dict[requests.PreparedRequest, int] = {}
-        self._requests_with_refreshed_token: Set[requests.PreparedRequest] = set()
+        self._token_refresh_outcomes: Dict[requests.PreparedRequest, bool] = {}
         self._disable_retries = disable_retries
         self._message_repository = message_repository
         self._authenticator_update_failed = False
@@ -538,7 +538,7 @@ class HttpClient:
         """
         if prepared_request in self._request_attempt_count:
             del self._request_attempt_count[prepared_request]
-        self._requests_with_refreshed_token.discard(prepared_request)
+        self._token_refresh_outcomes.pop(prepared_request, None)
 
     def _handle_error_resolution(
         self,
@@ -578,33 +578,40 @@ class HttpClient:
             print(f"{message}\n", end="", flush=True)
 
         # Handle REFRESH_TOKEN_THEN_RETRY: force refresh the OAuth token before retrying,
-        # at most once per request. If the OAuth provider rejects the refresh with a
-        # config error (e.g. bad credentials) or the request is rejected again after a
-        # refresh, the request fails fast with a config error instead of retrying forever.
+        # at most once per request. A config error from the refresh (e.g. bad credentials)
+        # or a request rejected again after a refresh attempt fails fast instead of
+        # refreshing in a loop; the failure type reflects whether the refresh succeeded.
         # Non-OAuth auth types (e.g., BearerAuthenticator) fall through to normal retry.
         if error_resolution.response_action == ResponseAction.REFRESH_TOKEN_THEN_RETRY:
-            if request in self._requests_with_refreshed_token:
+            if request in self._token_refresh_outcomes:
+                refreshed = self._token_refresh_outcomes[request]
                 self._evict_key(request)
                 status = (
                     f"status code '{response.status_code}'"
                     if response is not None
                     else f"exception '{exc}'"
                 )
-                internal_message = f"'{request.method}' request to '{request.url}' was rejected with {status} again after the OAuth token was refreshed; not refreshing again."
+                if refreshed:
+                    internal_message = f"'{request.method}' request to '{request.url}' was rejected with {status} again after the OAuth token was refreshed; not refreshing again."
+                    failure_type = FailureType.config_error
+                else:
+                    internal_message = f"'{request.method}' request to '{request.url}' was rejected with {status} and the OAuth token could not be refreshed; not refreshing again."
+                    failure_type = FailureType.transient_error
                 self._logger.error(internal_message)
                 raise AirbyteTracedException(
                     internal_message=internal_message,
                     message=error_resolution.error_message or internal_message,
-                    failure_type=FailureType.config_error,
+                    failure_type=failure_type,
                 )
             if (
                 hasattr(self._session, "auth")
                 and self._session.auth is not None
                 and hasattr(self._session.auth, "refresh_and_set_access_token")
             ):
-                self._requests_with_refreshed_token.add(request)
+                self._token_refresh_outcomes[request] = False
                 try:
                     self._session.auth.refresh_and_set_access_token()  # type: ignore[union-attr]
+                    self._token_refresh_outcomes[request] = True
                     self._logger.info(
                         "Refreshed OAuth token due to REFRESH_TOKEN_THEN_RETRY response action"
                     )

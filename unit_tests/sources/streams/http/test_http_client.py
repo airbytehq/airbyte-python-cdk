@@ -1132,7 +1132,6 @@ def test_refresh_token_then_retry_refreshes_once_and_succeeds(requests_mock):
     assert second_request.headers["Authorization"] == "Bearer new"
 
 
-@pytest.mark.usefixtures("mock_sleep")
 def test_refresh_token_then_retry_fails_fast_when_refresh_is_rejected(requests_mock):
     requests_mock.get("https://example.com/data", status_code=401)
     requests_mock.post(
@@ -1171,6 +1170,27 @@ def test_refresh_token_then_retry_does_not_refresh_twice_for_the_same_request(re
 
 
 @pytest.mark.usefixtures("mock_sleep")
+def test_refresh_token_then_retry_reports_transient_error_when_refresh_fails_transiently(
+    requests_mock,
+):
+    requests_mock.get("https://example.com/data", status_code=401)
+    http_client = _build_refresh_token_then_retry_http_client()
+    authenticator = http_client._session.auth
+
+    with patch.object(
+        Oauth2Authenticator,
+        "_make_handled_request",
+        side_effect=requests.exceptions.ConnectionError("token endpoint unreachable"),
+    ) as mocked_handled_request:
+        with pytest.raises(AirbyteTracedException) as exc_info:
+            http_client.send_request("GET", "https://example.com/data", request_kwargs={})
+
+    assert exc_info.value.failure_type == FailureType.transient_error
+    assert mocked_handled_request.call_count == 1
+    assert _request_count(requests_mock, "https://example.com/data") == 2
+
+
+@pytest.mark.usefixtures("mock_sleep")
 def test_refresh_token_then_retry_state_is_evicted_after_success(requests_mock):
     requests_mock.get(
         "https://example.com/data",
@@ -1188,6 +1208,7 @@ def test_refresh_token_then_retry_state_is_evicted_after_success(requests_mock):
 
     _, response = http_client.send_request("GET", "https://example.com/data", request_kwargs={})
     assert response.status_code == 200
+    assert http_client._token_refresh_outcomes == {}
     # A different URL for the second request: PreparedRequest instances are keyed by
     # identity, but a distinct URL also keeps the two request histories easy to count.
     _, second_response = http_client.send_request(
