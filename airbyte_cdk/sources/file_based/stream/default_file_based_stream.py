@@ -341,15 +341,19 @@ class DefaultFileBasedStream(AbstractFileBasedStream, IncrementalMixin):
         loop = asyncio.get_event_loop()
         schema = loop.run_until_complete(self._infer_schema(files))
         # as infer schema returns a Mapping that is assumed to be immutable, we need to create a deepcopy to avoid modifying the reference
-        return self._fill_nulls(deepcopy(schema))
+        return self._fill_nulls(deepcopy(schema), is_properties_map=True)
 
     @staticmethod
-    def _fill_nulls(schema: Mapping[str, Any]) -> Mapping[str, Any]:
+    def _fill_nulls(
+        schema: Mapping[str, Any], is_properties_map: bool = False
+    ) -> Mapping[str, Any]:
         if isinstance(schema, dict):
             for k, v in schema.items():
-                if isinstance(k, str) and k.startswith("x-"):
+                if is_properties_map:
+                    DefaultFileBasedStream._fill_nulls(v)
+                elif isinstance(k, str) and k.startswith("x-"):
                     continue
-                if k == "type":
+                elif k == "type":
                     if isinstance(v, list):
                         if "null" not in v:
                             schema[k] = ["null"] + v
@@ -358,6 +362,8 @@ class DefaultFileBasedStream(AbstractFileBasedStream, IncrementalMixin):
                             schema[k] = ["null", v]
                         else:
                             DefaultFileBasedStream._fill_nulls(v)
+                elif k == "properties":
+                    DefaultFileBasedStream._fill_nulls(v, is_properties_map=True)
                 else:
                     DefaultFileBasedStream._fill_nulls(v)
         elif isinstance(schema, list):
