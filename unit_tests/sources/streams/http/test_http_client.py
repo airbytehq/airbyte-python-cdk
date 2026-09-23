@@ -1175,7 +1175,6 @@ def test_refresh_token_then_retry_reports_transient_error_when_refresh_fails_tra
 ):
     requests_mock.get("https://example.com/data", status_code=401)
     http_client = _build_refresh_token_then_retry_http_client()
-    authenticator = http_client._session.auth
 
     with patch.object(
         Oauth2Authenticator,
