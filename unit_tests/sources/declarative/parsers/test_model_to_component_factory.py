@@ -79,6 +79,7 @@ from airbyte_cdk.sources.declarative.models import DatetimeBasedCursor as Dateti
 from airbyte_cdk.sources.declarative.models import DeclarativeStream as DeclarativeStreamModel
 from airbyte_cdk.sources.declarative.models import DefaultPaginator as DefaultPaginatorModel
 from airbyte_cdk.sources.declarative.models import DpathExtractor as DpathExtractorModel
+from airbyte_cdk.sources.declarative.models import FileUploader as FileUploaderModel
 from airbyte_cdk.sources.declarative.models import (
     GroupingPartitionRouter as GroupingPartitionRouterModel,
 )
@@ -88,6 +89,9 @@ from airbyte_cdk.sources.declarative.models import ListPartitionRouter as ListPa
 from airbyte_cdk.sources.declarative.models import OAuthAuthenticator as OAuthAuthenticatorModel
 from airbyte_cdk.sources.declarative.models import PropertyChunking as PropertyChunkingModel
 from airbyte_cdk.sources.declarative.models import RecordSelector as RecordSelectorModel
+from airbyte_cdk.sources.declarative.models import (
+    SessionTokenAuthenticator as SessionTokenAuthenticatorModel,
+)
 from airbyte_cdk.sources.declarative.models import SimpleRetriever as SimpleRetrieverModel
 from airbyte_cdk.sources.declarative.models import Spec as SpecModel
 from airbyte_cdk.sources.declarative.models import (
@@ -166,6 +170,9 @@ from airbyte_cdk.sources.declarative.requesters.paginators.strategies import (
     PageIncrement,
     StopConditionPaginationStrategyDecorator,
 )
+from airbyte_cdk.sources.declarative.requesters.paginators.strategies.pagination_strategy import (
+    PaginationStrategy,
+)
 from airbyte_cdk.sources.declarative.requesters.query_properties import (
     PropertiesFromEndpoint,
     PropertyChunking,
@@ -193,6 +200,10 @@ from airbyte_cdk.sources.declarative.retrievers import (
     AsyncRetriever,
     LazySimpleRetriever,
     SimpleRetriever,
+)
+from airbyte_cdk.sources.declarative.retrievers.page_size_reducer import (
+    PageSizeReduction,
+    PageSizeResetPolicy,
 )
 from airbyte_cdk.sources.declarative.schema import InlineSchemaLoader, JsonFileSchemaLoader
 from airbyte_cdk.sources.declarative.schema.caching_schema_loader_decorator import (
@@ -6674,6 +6685,1004 @@ def get_schema_loader(stream: DefaultStream):
         CachingSchemaLoaderDecorator,
     )
     return stream._stream_partition_generator._partition_factory._schema_loader._decorated
+
+
+_PAGE_SIZE_REDUCTION_STREAM = """
+type: DeclarativeStream
+name: Test
+primary_key: id
+schema_loader:
+  type: InlineSchemaLoader
+  schema:
+    type: object
+retriever:
+  type: SimpleRetriever
+  {page_size_reduction}
+  requester:
+    type: HttpRequester
+    url_base: "https://airbyte.io"
+    path: "/graphql"
+    http_method: POST
+    error_handler:
+      type: DefaultErrorHandler
+      response_filters:
+        - type: HttpResponseFilter
+          http_codes: [502, 504]
+          action: {action}
+  paginator:
+    type: DefaultPaginator
+    pagination_strategy:
+      {pagination_strategy}
+    {page_size_option}
+    {page_token_option}
+  record_selector:
+    type: RecordSelector
+    extractor:
+      type: DpathExtractor
+      field_path: ["items"]
+"""
+
+_CURSOR_PAGINATION_STRATEGY = (
+    'type: CursorPagination\n      page_size: 100\n      cursor_value: "{{ response.next }}"'
+)
+_PAGE_SIZE_OPTION = """page_size_option:
+      type: RequestOption
+      inject_into: request_parameter
+      field_name: first"""
+
+
+def _page_size_reduction_stream(
+    page_size_reduction="page_size_reduction:\n    type: PageSizeReduction",
+    action="REDUCE_PAGE_SIZE",
+    pagination_strategy=_CURSOR_PAGINATION_STRATEGY,
+    page_size_option=_PAGE_SIZE_OPTION,
+    page_token_option="",
+):
+    content = _PAGE_SIZE_REDUCTION_STREAM.format(
+        page_size_reduction=page_size_reduction,
+        action=action,
+        pagination_strategy=pagination_strategy,
+        page_size_option=page_size_option,
+        page_token_option=page_token_option,
+    )
+    stream_manifest = transformer.propagate_types_and_parameters(
+        "", resolver.preprocess_manifest(YamlDeclarativeSource._parse(content)), {}
+    )
+    return factory.create_component(
+        model_type=DeclarativeStreamModel, component_definition=stream_manifest, config={}
+    )
+
+
+def test_given_page_size_reduction_then_create_retriever_with_defaults():
+    retriever = get_retriever(_page_size_reduction_stream())
+
+    assert retriever.page_size_reduction == PageSizeReduction(
+        reduction_factor=2,
+        minimum_page_size=1,
+        max_attempts=5,
+        reset_policy=PageSizeResetPolicy.NEVER,
+    )
+
+
+def test_given_page_size_reduction_values_then_create_retriever_with_those_values():
+    retriever = get_retriever(
+        _page_size_reduction_stream(
+            page_size_reduction=(
+                "page_size_reduction:\n"
+                "    type: PageSizeReduction\n"
+                "    reduction_factor: 4\n"
+                "    minimum_page_size: 10\n"
+                "    max_attempts: 2\n"
+                "    reset_policy: AFTER_SUCCESSFUL_PAGE"
+            )
+        )
+    )
+
+    assert retriever.page_size_reduction == PageSizeReduction(
+        reduction_factor=4,
+        minimum_page_size=10,
+        max_attempts=2,
+        reset_policy=PageSizeResetPolicy.AFTER_SUCCESSFUL_PAGE,
+    )
+
+
+def test_given_no_page_size_reduction_then_retriever_has_none():
+    retriever = get_retriever(_page_size_reduction_stream(page_size_reduction="", action="RETRY"))
+
+    assert retriever.page_size_reduction is None
+
+
+def test_given_reduce_page_size_action_without_page_size_reduction_then_raise():
+    with pytest.raises(ValueError) as exception:
+        _page_size_reduction_stream(page_size_reduction="")
+
+    assert "REDUCE_PAGE_SIZE" in str(exception.value)
+
+
+def test_given_page_increment_and_page_size_reduction_then_raise():
+    with pytest.raises(ValueError) as exception:
+        _page_size_reduction_stream(pagination_strategy="type: PageIncrement\n      page_size: 100")
+
+    assert "PageIncrement" in str(exception.value)
+
+
+def test_given_no_page_size_option_and_page_size_reduction_then_raise():
+    with pytest.raises(ValueError) as exception:
+        _page_size_reduction_stream(page_size_option="")
+
+    assert "page_size_option" in str(exception.value)
+
+
+def test_given_request_path_page_token_option_and_page_size_reduction_then_raise():
+    # The next page is then a URL built by the API which already carries the page size it echoed back, so the
+    # reduced page size would be sent next to the original one and the API picks which one it honors.
+    with pytest.raises(ValueError) as exception:
+        _page_size_reduction_stream(page_token_option="page_token_option:\n      type: RequestPath")
+
+    assert "RequestPath" in str(exception.value)
+
+
+def test_given_request_option_page_token_option_and_page_size_reduction_then_create_retriever():
+    retriever = get_retriever(
+        _page_size_reduction_stream(
+            page_token_option=(
+                "page_token_option:\n"
+                "      type: RequestOption\n"
+                "      inject_into: request_parameter\n"
+                "      field_name: after"
+            )
+        )
+    )
+
+    assert retriever.page_size_reduction is not None
+
+
+def test_given_failure_message_then_create_retriever_with_that_message():
+    retriever = get_retriever(
+        _page_size_reduction_stream(
+            page_size_reduction=(
+                "page_size_reduction:\n"
+                "    type: PageSizeReduction\n"
+                "    failure_message: Select fewer fields on this stream."
+            )
+        )
+    )
+
+    assert retriever.page_size_reduction.failure_message == "Select fewer fields on this stream."
+
+
+class _StrategyHonoringOverride(PaginationStrategy):
+    """A custom strategy that can be told the reduced page size."""
+
+    @property
+    def initial_token(self):
+        return None
+
+    def next_page_token(
+        self,
+        response,
+        last_page_size,
+        last_record,
+        last_page_token_value=None,
+        page_size_override=None,
+    ):
+        return None
+
+    def get_page_size(self):
+        return 100
+
+
+class _StrategyIgnoringOverride(PaginationStrategy):
+    """A custom strategy predating the feature: it would raise TypeError on the first reduction."""
+
+    @property
+    def initial_token(self):
+        return None
+
+    def next_page_token(self, response, last_page_size, last_record, last_page_token_value=None):
+        return None
+
+    def get_page_size(self):
+        return 100
+
+
+def test_given_custom_pagination_strategy_accepting_the_override_and_page_size_reduction_then_create_retriever():
+    """A custom strategy is written by whoever enables the reduction, so it is allowed as long
+    as it can receive the reduced page size. Rejecting every custom strategy would exclude the
+    GraphQL streams this feature exists for."""
+    retriever = get_retriever(
+        _page_size_reduction_stream(
+            pagination_strategy=(
+                "type: CustomPaginationStrategy\n"
+                "      class_name: unit_tests.sources.declarative.parsers.test_model_to_component_factory._StrategyHonoringOverride"
+            )
+        )
+    )
+
+    assert retriever.page_size_reduction is not None
+
+
+def test_given_custom_pagination_strategy_ignoring_the_override_and_page_size_reduction_then_raise():
+    with pytest.raises(ValueError, match="page_size_override"):
+        _page_size_reduction_stream(
+            pagination_strategy=(
+                "type: CustomPaginationStrategy\n"
+                "      class_name: unit_tests.sources.declarative.parsers.test_model_to_component_factory._StrategyIgnoringOverride"
+            )
+        )
+
+
+class _StrategyAcceptingKwargs(PaginationStrategy):
+    """A custom strategy that swallows the override through `**kwargs` rather than naming it."""
+
+    @property
+    def initial_token(self):
+        return None
+
+    def next_page_token(
+        self, response, last_page_size, last_record, last_page_token_value=None, **kwargs
+    ):
+        return None
+
+    def get_page_size(self):
+        return 100
+
+
+class _StrategySubclassingPageIncrement(PageIncrement):
+    """A custom strategy that inherits `next_page_token` - and therefore its rejection - from PageIncrement."""
+
+
+class _NotAPaginationStrategy:
+    """A class_name that builds but is not a pagination strategy: it defines no `next_page_token`."""
+
+    def __init__(self, **kwargs):
+        pass
+
+    @property
+    def initial_token(self):
+        return None
+
+    def get_page_size(self):
+        return 100
+
+
+def test_given_custom_pagination_strategy_accepting_kwargs_and_page_size_reduction_then_create_retriever():
+    retriever = get_retriever(
+        _page_size_reduction_stream(
+            pagination_strategy=(
+                "type: CustomPaginationStrategy\n"
+                "      class_name: unit_tests.sources.declarative.parsers.test_model_to_component_factory._StrategyAcceptingKwargs"
+            )
+        )
+    )
+
+    assert retriever.page_size_reduction is not None
+
+
+def test_given_custom_pagination_strategy_subclassing_page_increment_then_raise():
+    """
+    `PageIncrement.next_page_token` declares `page_size_override` only to reject it, so a subclass that does
+    not override the method satisfies the signature check while being unable to honor a reduction.
+    """
+    with pytest.raises(ValueError, match="PageIncrement"):
+        _page_size_reduction_stream(
+            pagination_strategy=(
+                "type: CustomPaginationStrategy\n"
+                "      page_size: 100\n"
+                "      class_name: unit_tests.sources.declarative.parsers.test_model_to_component_factory._StrategySubclassingPageIncrement"
+            )
+        )
+
+
+def test_given_custom_pagination_strategy_without_next_page_token_then_raise_value_error():
+    """Every other config-time failure in the factory is a ValueError; this one used to escape as a bare
+    AttributeError, which is reported as a system error rather than a manifest problem."""
+    with pytest.raises(ValueError, match="next_page_token"):
+        _page_size_reduction_stream(
+            pagination_strategy=(
+                "type: CustomPaginationStrategy\n"
+                "      class_name: unit_tests.sources.declarative.parsers.test_model_to_component_factory._NotAPaginationStrategy"
+            )
+        )
+
+
+_CURSOR_PAGINATION_WITH_STOP_CONDITION = (
+    'type: CursorPagination\n      page_size: 100\n      cursor_value: "{{{{ response.next }}}}"\n'
+    '      stop_condition: "{condition}"'
+)
+
+
+def test_given_stop_condition_compares_last_page_size_to_a_constant_then_raise():
+    """
+    A full page at the reduced size satisfies `last_page_size < 100`, so the pagination would end early and
+    silently drop the rest of the partition.
+    """
+    with pytest.raises(ValueError, match="last_page_size"):
+        _page_size_reduction_stream(
+            pagination_strategy=_CURSOR_PAGINATION_WITH_STOP_CONDITION.format(
+                condition="{{ last_page_size < 100 }}"
+            )
+        )
+
+
+def test_given_stop_condition_compares_last_page_size_to_the_requested_page_size_then_create_retriever():
+    retriever = get_retriever(
+        _page_size_reduction_stream(
+            pagination_strategy=_CURSOR_PAGINATION_WITH_STOP_CONDITION.format(
+                condition="{{ last_page_size < page_size }}"
+            )
+        )
+    )
+
+    assert retriever.page_size_reduction is not None
+
+
+def test_given_stop_condition_does_not_mention_last_page_size_then_create_retriever():
+    retriever = get_retriever(
+        _page_size_reduction_stream(
+            pagination_strategy=_CURSOR_PAGINATION_WITH_STOP_CONDITION.format(
+                condition="{{ not response.next }}"
+            )
+        )
+    )
+
+    assert retriever.page_size_reduction is not None
+
+
+@pytest.mark.parametrize(
+    "condition",
+    [
+        # the three literal forms in the monorepo today: source-discord x3
+        pytest.param("{{ last_page_size < 100 }}", id="literal_100"),
+        pytest.param("{{ last_page_size < 200 }}", id="literal_200"),
+        pytest.param("{{ last_page_size < 1000 }}", id="literal_1000"),
+        # the form the string-matching gate let through: `\bpage_size\b` matches inside `config['page_size']`
+        pytest.param("{{ last_page_size < config['page_size'] }}", id="config_reference"),
+        pytest.param("{{ last_page_size < config.page_size }}", id="config_attribute_reference"),
+        pytest.param("{{ last_page_size < parameters['page_size'] }}", id="parameters_reference"),
+        pytest.param("{{ last_page_size <= 99 }}", id="less_than_or_equal_to_a_literal"),
+        pytest.param("{{ 100 > last_page_size }}", id="reversed_operands"),
+        pytest.param(
+            "{{ last_page_size < 100 or not response.next }}", id="inside_a_larger_expression"
+        ),
+        pytest.param("{{ last_page_size | int < 100 }}", id="through_a_filter"),
+    ],
+)
+def test_given_stop_condition_compares_last_page_size_to_a_value_that_does_not_follow_the_reduction_then_raise(
+    condition,
+):
+    """
+    A full page at the reduced size satisfies each of these, so the pagination would end early and silently
+    drop the rest of the partition. `config['page_size']` is the one the previous string-matching gate
+    accepted: it contains the substring `page_size` but holds the configured size, not the requested one.
+    """
+    with pytest.raises(ValueError, match="last_page_size"):
+        _page_size_reduction_stream(
+            pagination_strategy=_CURSOR_PAGINATION_WITH_STOP_CONDITION.format(condition=condition)
+        )
+
+
+@pytest.mark.parametrize(
+    "condition",
+    [
+        # 11 of the 14 `last_page_size` stop conditions in the monorepo, including all 6 in
+        # source-zendesk-support and all 5 in source-trello. A reduction cannot make an empty page non-empty.
+        pytest.param("{{ last_page_size == 0 }}", id="emptiness_test"),
+        pytest.param("{{ 0 == last_page_size }}", id="emptiness_test_reversed"),
+        pytest.param(
+            "{{ last_page_size == 0 or not response.next }}", id="emptiness_test_or_no_cursor"
+        ),
+        # equivalent to emptiness, because `minimum_page_size` defaults to 1
+        pytest.param("{{ last_page_size < 1 }}", id="less_than_the_minimum_page_size"),
+        pytest.param("{{ last_page_size <= 0 }}", id="at_most_zero"),
+        # the sanctioned form, and variations on it that still follow the reduction
+        pytest.param("{{ last_page_size < page_size }}", id="requested_page_size"),
+        pytest.param(
+            "{{ last_page_size < page_size | int }}", id="requested_page_size_through_a_filter"
+        ),
+        pytest.param("{{ page_size > last_page_size }}", id="requested_page_size_reversed"),
+        # a reduction only makes a page smaller, so a lower bound can only stop being satisfied
+        pytest.param("{{ last_page_size > 1000 }}", id="lower_bound"),
+    ],
+)
+def test_given_reduction_safe_stop_condition_then_create_retriever(condition):
+    retriever = get_retriever(
+        _page_size_reduction_stream(
+            pagination_strategy=_CURSOR_PAGINATION_WITH_STOP_CONDITION.format(condition=condition)
+        )
+    )
+
+    assert retriever.page_size_reduction is not None
+
+
+@pytest.mark.parametrize(
+    "condition",
+    [
+        pytest.param(
+            "{{ last_page_size == config['page_size'] }}", id="equality_against_a_config_value"
+        ),
+        pytest.param("{{ last_page_size is lt(100) }}", id="jinja_test_rather_than_a_comparison"),
+        pytest.param("{{ last_page_size < }}", id="not_a_valid_jinja_expression"),
+    ],
+)
+def test_given_stop_condition_shape_cannot_be_classified_then_warn_and_create_retriever(
+    caplog, condition
+):
+    """
+    The gate runs at stream construction, so rejecting a manifest it merely does not understand would take
+    `check` and `discover` down with `read`. A shape outside the analysis warns instead.
+    """
+    with caplog.at_level(logging.WARNING):
+        retriever = get_retriever(
+            _page_size_reduction_stream(
+                pagination_strategy=_CURSOR_PAGINATION_WITH_STOP_CONDITION.format(
+                    condition=condition
+                )
+            )
+        )
+
+    assert retriever.page_size_reduction is not None
+    assert "could not be checked against the reduction" in caplog.text
+
+
+def test_given_no_paginator_and_page_size_reduction_then_raise():
+    content = """
+type: DeclarativeStream
+name: Test
+primary_key: id
+schema_loader:
+  type: InlineSchemaLoader
+  schema:
+    type: object
+retriever:
+  type: SimpleRetriever
+  page_size_reduction:
+    type: PageSizeReduction
+  requester:
+    type: HttpRequester
+    url_base: "https://airbyte.io"
+    path: "/items"
+  record_selector:
+    type: RecordSelector
+    extractor:
+      type: DpathExtractor
+      field_path: ["items"]
+"""
+    stream_manifest = transformer.propagate_types_and_parameters(
+        "", resolver.preprocess_manifest(YamlDeclarativeSource._parse(content)), {}
+    )
+
+    with pytest.raises(ValueError) as exception:
+        factory.create_component(
+            model_type=DeclarativeStreamModel, component_definition=stream_manifest, config={}
+        )
+
+    assert "DefaultPaginator" in str(exception.value)
+
+
+_OFFSET_INCREMENT_STRATEGY = "type: OffsetIncrement\n      page_size: 100"
+
+
+def test_given_offset_increment_and_page_size_reduction_then_create_retriever():
+    """
+    `OffsetIncrement` is the only strategy whose stop condition depends on the page size, so a typo in the
+    validator's isinstance tuple would reject every manifest this feature is meant to support.
+    """
+    retriever = get_retriever(
+        _page_size_reduction_stream(pagination_strategy=_OFFSET_INCREMENT_STRATEGY)
+    )
+
+    assert retriever.page_size_reduction == PageSizeReduction()
+
+
+def test_given_no_page_size_on_the_strategy_and_page_size_reduction_then_raise():
+    """
+    Without a `page_size` the paginator injects nothing, so the reduction is a dead end that would only
+    surface on the first failing response, after records have been emitted.
+    """
+    with pytest.raises(ValueError) as exception:
+        _page_size_reduction_stream(pagination_strategy="type: OffsetIncrement")
+
+    assert "page_size" in str(exception.value)
+
+
+def test_given_minimum_page_size_not_below_the_page_size_then_raise():
+    with pytest.raises(ValueError) as exception:
+        _page_size_reduction_stream(
+            page_size_reduction=(
+                "page_size_reduction:\n    type: PageSizeReduction\n    minimum_page_size: 100"
+            )
+        )
+
+    assert "minimum_page_size" in str(exception.value)
+
+
+def test_given_composite_error_handler_with_reduce_page_size_action_then_require_page_size_reduction():
+    """The action can be nested in a CompositeErrorHandler, which the guard has to recurse into."""
+    stream_definition = {
+        "type": "DeclarativeStream",
+        "name": "Test",
+        "primary_key": "id",
+        "schema_loader": {"type": "InlineSchemaLoader", "schema": {"type": "object"}},
+        "retriever": {
+            "type": "SimpleRetriever",
+            "requester": {
+                "type": "HttpRequester",
+                "url_base": "https://airbyte.io",
+                "path": "/graphql",
+                "http_method": "POST",
+                "error_handler": {
+                    "type": "CompositeErrorHandler",
+                    "error_handlers": [
+                        {
+                            "type": "DefaultErrorHandler",
+                            "response_filters": [
+                                {
+                                    "type": "HttpResponseFilter",
+                                    "http_codes": [429],
+                                    "action": "RATE_LIMITED",
+                                }
+                            ],
+                        },
+                        {
+                            "type": "DefaultErrorHandler",
+                            "response_filters": [
+                                {
+                                    "type": "HttpResponseFilter",
+                                    "http_codes": [502],
+                                    "action": "REDUCE_PAGE_SIZE",
+                                }
+                            ],
+                        },
+                    ],
+                },
+            },
+            "paginator": {
+                "type": "DefaultPaginator",
+                "page_size_option": {
+                    "type": "RequestOption",
+                    "inject_into": "request_parameter",
+                    "field_name": "first",
+                },
+                "pagination_strategy": {
+                    "type": "CursorPagination",
+                    "page_size": 100,
+                    "cursor_value": "{{ response.next }}",
+                },
+            },
+            "record_selector": {
+                "type": "RecordSelector",
+                "extractor": {"type": "DpathExtractor", "field_path": ["items"]},
+            },
+        },
+    }
+
+    with pytest.raises(ValueError) as exception:
+        factory.create_component(
+            model_type=DeclarativeStreamModel,
+            component_definition=stream_definition,
+            config={},
+        )
+
+    assert "REDUCE_PAGE_SIZE" in str(exception.value)
+
+    # and the same manifest with the block present builds
+    stream_definition["retriever"]["page_size_reduction"] = {"type": "PageSizeReduction"}
+    retriever = get_retriever(
+        factory.create_component(
+            model_type=DeclarativeStreamModel,
+            component_definition=stream_definition,
+            config={},
+        )
+    )
+    assert retriever.page_size_reduction == PageSizeReduction()
+
+
+def test_given_page_size_reduction_without_reduce_page_size_action_then_warn(caplog):
+    """
+    A `CustomErrorHandler` can resolve to the action without being inspectable, so this cannot raise. It must
+    not stay silent either: the feature would be dead on a stream that only exists because it would fail.
+    """
+    with caplog.at_level(logging.WARNING, logger="airbyte.model_to_component_factory"):
+        retriever = get_retriever(_page_size_reduction_stream(action="RETRY"))
+
+    assert retriever.page_size_reduction == PageSizeReduction()
+    assert "REDUCE_PAGE_SIZE" in caplog.text
+
+
+def test_given_minimum_page_size_out_of_reach_of_max_attempts_then_warn(caplog):
+    """
+    Each reduction divides the page size by `reduction_factor` and spends one attempt, so the two settings are
+    two bounds and the tighter one wins. A floor the budget cannot reach in one run of failing pages is inert
+    there, and the error branch written for hitting it never fires on that run.
+    """
+    with caplog.at_level(logging.WARNING, logger="airbyte.model_to_component_factory"):
+        retriever = get_retriever(
+            _page_size_reduction_stream(
+                page_size_reduction=(
+                    "page_size_reduction:\n"
+                    "    type: PageSizeReduction\n"
+                    "    minimum_page_size: 10\n"
+                    "    max_attempts: 2"
+                )
+            )
+        )
+
+    assert retriever.page_size_reduction.minimum_page_size == 10
+    assert "minimum_page_size" in caplog.text
+    assert "25 records per page" in caplog.text
+    assert "`max_attempts` of at least 4" in caplog.text
+
+
+def test_given_minimum_page_size_within_reach_of_max_attempts_then_do_not_warn(caplog):
+    with caplog.at_level(logging.WARNING, logger="airbyte.model_to_component_factory"):
+        get_retriever(
+            _page_size_reduction_stream(
+                page_size_reduction=(
+                    "page_size_reduction:\n"
+                    "    type: PageSizeReduction\n"
+                    "    minimum_page_size: 10\n"
+                    "    max_attempts: 5"
+                )
+            )
+        )
+
+    assert "minimum_page_size" not in caplog.text
+
+
+@pytest.mark.parametrize(
+    "page_size_reduction",
+    [
+        pytest.param("page_size_reduction:\n    type: PageSizeReduction", id="floor_left_default"),
+        pytest.param(
+            "page_size_reduction:\n    type: PageSizeReduction\n    minimum_page_size: 1",
+            id="floor_set_to_the_default_value",
+        ),
+    ],
+)
+def test_given_no_floor_worth_reaching_then_do_not_warn_about_its_reachability(
+    page_size_reduction, caplog
+):
+    # A floor of 1 is out of reach of the default budget on any page size above 32, so warning about it would
+    # fire on nearly every stream that opts in - including one that only spells the default out longhand.
+    with caplog.at_level(logging.WARNING, logger="airbyte.model_to_component_factory"):
+        get_retriever(_page_size_reduction_stream(page_size_reduction=page_size_reduction))
+
+    assert "minimum_page_size" not in caplog.text
+
+
+def test_given_query_properties_and_page_size_reduction_then_raise():
+    """
+    Records of the earlier property chunks were already emitted when a later chunk asks for a smaller page, so
+    re-issuing the page would emit them twice.
+    """
+    content = _PAGE_SIZE_REDUCTION_STREAM.format(
+        page_size_reduction="page_size_reduction:\n    type: PageSizeReduction",
+        action="REDUCE_PAGE_SIZE",
+        pagination_strategy=_CURSOR_PAGINATION_STRATEGY,
+        page_size_option=_PAGE_SIZE_OPTION,
+        page_token_option="",
+    ).replace(
+        "    http_method: POST\n",
+        "    http_method: POST\n"
+        "    query_properties:\n"
+        "      type: QueryProperties\n"
+        '      property_list: ["a", "b"]\n',
+    )
+    stream_manifest = transformer.propagate_types_and_parameters(
+        "", resolver.preprocess_manifest(YamlDeclarativeSource._parse(content)), {}
+    )
+
+    with pytest.raises(ValueError) as exception:
+        factory.create_component(
+            model_type=DeclarativeStreamModel, component_definition=stream_manifest, config={}
+        )
+
+    assert "query properties" in str(exception.value)
+
+
+def _lazy_read_stream_definition(page_size_reduction, action):
+    return {
+        "type": "DeclarativeStream",
+        "name": "items",
+        "primary_key": [],
+        "schema_loader": {
+            "type": "InlineSchemaLoader",
+            "schema": {"type": "object", "properties": {}},
+        },
+        "retriever": {
+            "type": "SimpleRetriever",
+            **page_size_reduction,
+            "requester": {
+                "type": "HttpRequester",
+                "url_base": "https://api.test.com",
+                "path": "parent/{{ stream_partition.parent_id }}/items",
+                "http_method": "GET",
+                "error_handler": {
+                    "type": "DefaultErrorHandler",
+                    "response_filters": [
+                        {"type": "HttpResponseFilter", "http_codes": [502], "action": action}
+                    ],
+                },
+            },
+            "record_selector": {
+                "type": "RecordSelector",
+                "extractor": {"type": "DpathExtractor", "field_path": ["data"]},
+            },
+            "paginator": {
+                "type": "DefaultPaginator",
+                "page_size_option": {
+                    "type": "RequestOption",
+                    "inject_into": "request_parameter",
+                    "field_name": "first",
+                },
+                "pagination_strategy": {
+                    "type": "CursorPagination",
+                    "page_size": 100,
+                    "cursor_value": '{{ response["data"][-1]["id"] }}',
+                },
+            },
+            "partition_router": {
+                "type": "SubstreamPartitionRouter",
+                "parent_stream_configs": [
+                    {
+                        "type": "ParentStreamConfig",
+                        "parent_key": "id",
+                        "partition_field": "parent_id",
+                        "lazy_read_pointer": ["items"],
+                        "stream": {
+                            "type": "DeclarativeStream",
+                            "name": "parent",
+                            "schema_loader": {
+                                "type": "InlineSchemaLoader",
+                                "schema": {"type": "object", "properties": {}},
+                            },
+                            "retriever": {
+                                "type": "SimpleRetriever",
+                                "requester": {
+                                    "type": "HttpRequester",
+                                    "url_base": "https://api.test.com",
+                                    "path": "/parents",
+                                    "http_method": "GET",
+                                },
+                                "record_selector": {
+                                    "type": "RecordSelector",
+                                    "extractor": {
+                                        "type": "DpathExtractor",
+                                        "field_path": ["data"],
+                                    },
+                                },
+                            },
+                        },
+                    }
+                ],
+            },
+        },
+    }
+
+
+@pytest.mark.parametrize(
+    "page_size_reduction, action",
+    [
+        pytest.param(
+            {"page_size_reduction": {"type": "PageSizeReduction"}},
+            "RETRY",
+            id="page_size_reduction_without_the_action",
+        ),
+        pytest.param({}, "REDUCE_PAGE_SIZE", id="action_without_page_size_reduction"),
+        pytest.param(
+            {"page_size_reduction": {"type": "PageSizeReduction"}},
+            "REDUCE_PAGE_SIZE",
+            id="both",
+        ),
+    ],
+)
+@pytest.mark.parametrize(
+    "has_state",
+    [pytest.param(False, id="first_sync"), pytest.param(True, id="resumed_sync")],
+)
+def test_given_lazy_read_pointer_and_page_size_reduction_then_raise(
+    page_size_reduction, action, has_state
+):
+    """
+    `LazySimpleRetriever` paginates the parent's embedded pages, so there is no page of its own to re-issue.
+    The rejection must not depend on the presence of state: gating it on the lazy branch, which only applies
+    while a stream has no state, would accept the same manifest from the second sync onwards.
+    """
+    connector_state_manager = ConnectorStateManager(
+        state=[
+            AirbyteStateMessage(
+                type=AirbyteStateType.STREAM,
+                stream=AirbyteStreamState(
+                    stream_descriptor=StreamDescriptor(name="items"),
+                    stream_state=AirbyteStateBlob({"created": "2025-01-01T00:00:00+0000"}),
+                ),
+            )
+        ]
+        if has_state
+        else []
+    )
+
+    with pytest.raises(ValueError) as exception:
+        ModelToComponentFactory(connector_state_manager=connector_state_manager).create_component(
+            model_type=DeclarativeStreamModel,
+            component_definition=_lazy_read_stream_definition(page_size_reduction, action),
+            config=input_config,
+        )
+
+    assert "lazy_read_pointer" in str(exception.value)
+
+
+def test_given_file_uploader_and_page_size_reduction_then_raise():
+    """
+    The file uploader sends one request per record from inside the page's record generator, so a reduction
+    asked for halfway through a page would re-emit the records the generator already yielded.
+    """
+    content = (
+        _PAGE_SIZE_REDUCTION_STREAM.format(
+            page_size_reduction="page_size_reduction:\n    type: PageSizeReduction",
+            action="REDUCE_PAGE_SIZE",
+            pagination_strategy=_CURSOR_PAGINATION_STRATEGY,
+            page_size_option=_PAGE_SIZE_OPTION,
+            page_token_option="",
+        )
+        + """file_uploader:
+  type: FileUploader
+  requester:
+    type: HttpRequester
+    url_base: "https://airbyte.io"
+    path: "/download"
+  download_target_extractor:
+    type: DpathExtractor
+    field_path: ["url"]
+"""
+    )
+    stream_manifest = transformer.propagate_types_and_parameters(
+        "", resolver.preprocess_manifest(YamlDeclarativeSource._parse(content)), {}
+    )
+
+    with pytest.raises(ValueError) as exception:
+        factory.create_component(
+            model_type=DeclarativeStreamModel, component_definition=stream_manifest, config={}
+        )
+
+    assert "file_uploader" in str(exception.value)
+
+
+_REDUCE_PAGE_SIZE_ERROR_HANDLER = {
+    "type": "DefaultErrorHandler",
+    "response_filters": [
+        {"type": "HttpResponseFilter", "http_codes": [502], "action": "REDUCE_PAGE_SIZE"}
+    ],
+}
+
+
+def test_given_reduce_page_size_action_on_the_file_uploader_requester_then_raise():
+    """
+    `error_handler` is defined on `HttpRequester`, so the action is manifest-legal on requesters that have no
+    page of their own. Nothing there can honor it, so it is rejected rather than raised mid-sync.
+    """
+    with pytest.raises(ValueError) as exception:
+        factory.create_component(
+            model_type=FileUploaderModel,
+            component_definition={
+                "type": "FileUploader",
+                "requester": {
+                    "type": "HttpRequester",
+                    "url_base": "https://airbyte.io",
+                    "path": "/download",
+                    "error_handler": _REDUCE_PAGE_SIZE_ERROR_HANDLER,
+                },
+                "download_target_extractor": {
+                    "type": "DpathExtractor",
+                    "field_path": ["url"],
+                },
+            },
+            config={},
+        )
+
+    assert "REDUCE_PAGE_SIZE" in str(exception.value)
+
+
+def test_given_reduce_page_size_action_on_the_login_requester_then_raise():
+    with pytest.raises(ValueError) as exception:
+        factory.create_component(
+            model_type=SessionTokenAuthenticatorModel,
+            component_definition={
+                "type": "SessionTokenAuthenticator",
+                "login_requester": {
+                    "type": "HttpRequester",
+                    "url_base": "https://airbyte.io",
+                    "path": "/login",
+                    "http_method": "POST",
+                    "error_handler": _REDUCE_PAGE_SIZE_ERROR_HANDLER,
+                },
+                "session_token_path": ["token"],
+                "request_authentication": {
+                    "type": "ApiKey",
+                    "inject_into": {
+                        "type": "RequestOption",
+                        "inject_into": "header",
+                        "field_name": "Authorization",
+                    },
+                },
+            },
+            config={},
+            name="a_stream",
+        )
+
+    assert "REDUCE_PAGE_SIZE" in str(exception.value)
+
+
+@pytest.mark.parametrize(
+    "requester_field",
+    [
+        "creation_requester",
+        "polling_requester",
+        "download_requester",
+        "download_target_requester",
+        "abort_requester",
+        "delete_requester",
+    ],
+)
+def test_given_reduce_page_size_action_on_an_async_retriever_requester_then_raise(requester_field):
+    definition = {
+        "type": "AsyncRetriever",
+        "status_mapping": {
+            "type": "AsyncJobStatusMap",
+            "running": ["running"],
+            "completed": ["ready"],
+            "failed": ["failed"],
+            "timeout": ["timeout"],
+        },
+        "status_extractor": {"type": "DpathExtractor", "field_path": ["status"]},
+        "record_selector": {
+            "type": "RecordSelector",
+            "extractor": {"type": "DpathExtractor", "field_path": ["items"]},
+        },
+        "creation_requester": {
+            "type": "HttpRequester",
+            "url_base": "https://airbyte.io",
+            "path": "/jobs",
+            "http_method": "POST",
+        },
+        "polling_requester": {
+            "type": "HttpRequester",
+            "url_base": "https://airbyte.io",
+            "path": "/jobs/{{ creation_response.id }}",
+        },
+        "download_requester": {
+            "type": "HttpRequester",
+            "url_base": "https://airbyte.io",
+            "path": "/jobs/{{ creation_response.id }}/download",
+        },
+    }
+    definition[requester_field] = {
+        "type": "HttpRequester",
+        "url_base": "https://airbyte.io",
+        "path": "/jobs",
+        "error_handler": _REDUCE_PAGE_SIZE_ERROR_HANDLER,
+    }
+    if requester_field == "download_target_requester":
+        # Without it the `download_target_extractor` guard fires first and the assertion below would pass for
+        # the wrong reason.
+        definition["download_target_extractor"] = {
+            "type": "DpathExtractor",
+            "field_path": ["url"],
+        }
+
+    with pytest.raises(ValueError) as exception:
+        factory.create_component(
+            model_type=AsyncRetrieverModel,
+            component_definition=definition,
+            config={},
+            name="a_stream",
+            primary_key=None,
+            stream_slicer=None,
+            transformations=[],
+        )
+
+    assert "REDUCE_PAGE_SIZE" in str(exception.value)
 
 
 def get_retriever(stream: Union[DeclarativeStream, DefaultStream]):
