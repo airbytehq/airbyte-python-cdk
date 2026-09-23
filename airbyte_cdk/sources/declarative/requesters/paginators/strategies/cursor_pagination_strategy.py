@@ -21,7 +21,7 @@ from airbyte_cdk.sources.declarative.parsers.stop_condition_safety import (
 from airbyte_cdk.sources.declarative.requesters.paginators.strategies.pagination_strategy import (
     PaginationStrategy,
 )
-from airbyte_cdk.sources.types import Config, Record
+from airbyte_cdk.sources.types import Config, Record, StreamSlice
 
 
 @dataclass
@@ -115,6 +115,7 @@ class CursorPaginationStrategy(PaginationStrategy):
         last_record: Optional[Record],
         last_page_token_value: Optional[Any] = None,
         page_size_override: Optional[int] = None,
+        stream_slice: Optional[StreamSlice] = None,
     ) -> Optional[Any]:
         # The next page is a cursor read from the response, so `page_size_override` does not change how the token
         # is computed. It is still exposed to the interpolation context as `page_size` because a `stop_condition`
@@ -137,6 +138,7 @@ class CursorPaginationStrategy(PaginationStrategy):
                 last_record=last_record,
                 last_page_size=last_page_size,
                 page_size=requested_page_size,
+                stream_slice=stream_slice,
             )
             if should_stop:
                 return None
@@ -147,6 +149,7 @@ class CursorPaginationStrategy(PaginationStrategy):
             last_record=last_record,
             last_page_size=last_page_size,
             page_size=requested_page_size,
+            stream_slice=stream_slice,
         )
         return token if token else None
 

@@ -754,6 +754,9 @@ definitions:
           - last_record
           - page_size
           - response
+          - stream_interval
+          - stream_partition
+          - stream_slice
         examples:
           - "{{ headers.link.next.cursor }}"
           - "{{ last_record['key'] }}"
@@ -789,6 +792,9 @@ definitions:
           - last_record
           - page_size
           - response
+          - stream_interval
+          - stream_partition
+          - stream_slice
         examples:
           - "{{ response.data.has_more is false }}"
           - "{{ 'next' not in headers['link'] }}"
