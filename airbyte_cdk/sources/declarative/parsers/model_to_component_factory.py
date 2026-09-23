@@ -110,9 +110,12 @@ from airbyte_cdk.sources.declarative.decoders.composite_raw_decoder import (
 )
 from airbyte_cdk.sources.declarative.expanders.record_expander import (
     OnNoRecords,
+    ParentFieldPath,
     RecordExpander,
 )
 from airbyte_cdk.sources.declarative.extractors import (
+    CombinedExtractor,
+    CombineMode,
     DpathExtractor,
     RecordFilter,
     RecordSelector,
@@ -171,6 +174,9 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     CheckStream as CheckStreamModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    CombinedExtractor as CombinedExtractorModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     ComplexFieldType as ComplexFieldTypeModel,
@@ -396,6 +402,9 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     ParametrizedComponentsResolver as ParametrizedComponentsResolverModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    ParentFieldPath as ParentFieldPathModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     ParentStreamConfig as ParentStreamConfigModel,
@@ -702,6 +711,7 @@ from airbyte_cdk.sources.streams.concurrent.state_converters.incrementing_count_
 from airbyte_cdk.sources.streams.http.error_handlers.response_models import ResponseAction
 from airbyte_cdk.sources.types import Config
 from airbyte_cdk.sources.utils.transform import TransformConfig, TypeTransformer
+from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 
 ComponentDefinition = Mapping[str, Any]
 
@@ -799,6 +809,7 @@ class ModelToComponentFactory:
             DeclarativeStreamModel: self.create_default_stream,
             DefaultErrorHandlerModel: self.create_default_error_handler,
             DefaultPaginatorModel: self.create_default_paginator,
+            CombinedExtractorModel: self.create_combined_extractor,
             DpathExtractorModel: self.create_dpath_extractor,
             DpathValidatorModel: self.create_dpath_validator,
             ResponseToFileExtractorModel: self.create_response_to_file_extractor,
@@ -839,6 +850,7 @@ class ModelToComponentFactory:
             PropertiesFromEndpointModel: self.create_properties_from_endpoint,
             PropertyChunkingModel: self.create_property_chunking,
             QueryPropertiesModel: self.create_query_properties,
+            ParentFieldPathModel: self.create_parent_field_path,
             RecordExpanderModel: self.create_record_expander,
             RecordFilterModel: self.create_record_filter,
             RecordSelectorModel: self.create_record_selector,
@@ -2446,7 +2458,9 @@ class ModelToComponentFactory:
         config: Config,
         *,
         url_base: str,
-        extractor_model: Optional[Union[CustomRecordExtractorModel, DpathExtractorModel]] = None,
+        extractor_model: Optional[
+            Union[CustomRecordExtractorModel, DpathExtractorModel, CombinedExtractorModel]
+        ] = None,
         decoder: Optional[Decoder] = None,
         cursor_used_for_stop_condition: Optional[Cursor] = None,
     ) -> Union[DefaultPaginator, PaginatorTestReadDecorator]:
@@ -2489,6 +2503,81 @@ class ModelToComponentFactory:
         if self._limit_pages_fetched_per_slice:
             return PaginatorTestReadDecorator(paginator, self._limit_pages_fetched_per_slice)
         return paginator
+
+    @staticmethod
+    def _is_decoder_downgraded_by_connector_builder(decoder: Decoder) -> bool:
+        """Is this the buffered stand-in the Connector Builder builds for a streaming decoder?
+
+        `create_csv_decoder`, `create_jsonl_decoder`, `create_json_items_decoder` and
+        `create_gzip_decoder` build a `CompositeRawDecoder` with `stream_response=False` when
+        `_emit_connector_builder_messages` is set, so a Builder test read can be replayed. Those
+        four instances are the only ones that stream in production while reporting
+        `is_stream_response() == False` in the Builder.
+
+        The match is on the exact class and on the parser, not on `isinstance`: a `CustomDecoder`
+        subclassing `CompositeRawDecoder` with `stream_response=False`, or a buffered
+        `CompositeRawDecoder` built around a `JsonParser`, reads the body from `response.content`
+        in production too and must not be rejected.
+        """
+        return type(decoder) is CompositeRawDecoder and isinstance(
+            decoder.parser, (CsvParser, JsonLineParser, JsonItemsParser, GzipParser)
+        )
+
+    def _reject_combined_extractor_over_streaming_decoder(self, decoder: Optional[Decoder]) -> None:
+        """Refuse to build a `CombinedExtractor` whose response body can only be read once.
+
+        Every sub-extractor is handed the same `requests.Response`. A streaming decoder consumes
+        and closes `response.raw`, so every sub-extractor after the first reads a closed
+        `urllib3.HTTPResponse`, which returns an empty body instead of raising: `union` emits only
+        the first sub-extractor's records and `first_match` emits nothing when the first path
+        misses. Rejecting the manifest is the only way to make that loud.
+
+        The Connector Builder downgrades those same decoders to `stream_response=False` so a test
+        read can be replayed, which would let a manifest look correct in the Builder and lose
+        records once published. The downgraded decoders are therefore rejected in the Builder too.
+        """
+        if decoder is None:
+            return
+        inner_decoder = (
+            decoder.decoder if isinstance(decoder, PaginationDecoderDecorator) else decoder
+        )
+        streams_in_production = inner_decoder.is_stream_response() or (
+            self._emit_connector_builder_messages
+            and self._is_decoder_downgraded_by_connector_builder(inner_decoder)
+        )
+        if not streams_in_production:
+            return
+        raise AirbyteTracedException(
+            message="CombinedExtractor is not supported with a streaming decoder.",
+            internal_message=(
+                f"CombinedExtractor was configured with {type(inner_decoder).__name__}, which "
+                f"streams the response and can only be read once. Sub-extractors after the first "
+                f"would read a closed response and silently return no records. The streaming "
+                f"decoders are CsvDecoder, JsonlDecoder, JsonItemsDecoder, GzipDecoder and "
+                f"IterableDecoder; use JsonDecoder, XmlDecoder or ZipfileDecoder, or declare a "
+                f"single extractor."
+            ),
+            failure_type=FailureType.config_error,
+        )
+
+    def create_combined_extractor(
+        self,
+        model: CombinedExtractorModel,
+        config: Config,
+        decoder: Optional[Decoder] = None,
+        **kwargs: Any,
+    ) -> CombinedExtractor:
+        self._reject_combined_extractor_over_streaming_decoder(decoder)
+        extractors = [
+            self._create_component_from_model(model=sub_extractor, config=config, decoder=decoder)
+            for sub_extractor in model.extractors
+        ]
+        return CombinedExtractor(
+            extractors=extractors,
+            mode=CombineMode(model.mode.value) if model.mode else CombineMode.union,
+            skip_empty_records=bool(model.skip_empty_records),
+            parameters=model.parameters or {},
+        )
 
     def create_dpath_extractor(
         self,
@@ -2563,6 +2652,13 @@ class ModelToComponentFactory:
             config=config,
             parameters=model.parameters or {},
             remain_original_record=model.remain_original_record or False,
+            parent_fields=[
+                self._create_component_from_model(model=parent_field, config=config)
+                for parent_field in model.parent_fields
+            ]
+            if model.parent_fields
+            else None,
+            merge_parent=model.merge_parent or False,
             on_no_records=OnNoRecords(model.on_no_records.value)
             if model.on_no_records
             else OnNoRecords.skip,
@@ -2570,6 +2666,19 @@ class ModelToComponentFactory:
             truncated_list_retriever=truncated_list_retriever,
             message_repository=self._message_repository,
             suppress_incomplete_fetch_warning=suppress_incomplete_fetch_warning,
+        )
+
+    @staticmethod
+    def create_parent_field_path(
+        model: ParentFieldPathModel,
+        config: Config,
+        **kwargs: Any,
+    ) -> ParentFieldPath:
+        return ParentFieldPath(
+            parent_path=model.parent_path,
+            record_path=model.record_path,
+            config=config,
+            parameters=model.parameters or {},
         )
 
     @staticmethod
@@ -3123,12 +3232,60 @@ class ModelToComponentFactory:
         # returning default values we think cover most cases
         return (400,), "error", ("invalid_grant", "invalid_permissions")
 
+    @staticmethod
+    def _reject_union_combined_extractor_for_offset_increment(
+        extractor_model: Optional[BaseModel],
+    ) -> None:
+        """Refuse an `OffsetIncrement` paginator driven by a `union` `CombinedExtractor`.
+
+        `OffsetIncrement.next_page_token` advances the offset by the number of records its
+        extractor returns for the page. Under `union` that number is the sum over all
+        sub-extractors, so the offset overshoots the API page size and every page after the first
+        starts past the records that were never read: with two sub-extractors returning two records
+        each and `page_size: 2`, the requested offsets are 0, 4, 8 instead of 0, 2, 4 and two
+        thirds of the records are silently dropped.
+
+        `first_match` returns the winning sub-extractor's count, which does not inflate the count,
+        and is left alone. A `union` nested anywhere in the tree inflates the count of the node
+        above it, so the whole tree is walked.
+        """
+        if not isinstance(extractor_model, CombinedExtractorModel):
+            return
+        if not ModelToComponentFactory._combined_extractor_tree_contains_union(extractor_model):
+            return
+        raise AirbyteTracedException(
+            message=(
+                'CombinedExtractor mode "union" is not supported with an OffsetIncrement paginator.'
+            ),
+            internal_message=(
+                "OffsetIncrement counts the records of its extractor to advance the offset. A "
+                "`union` CombinedExtractor returns the sum of its sub-extractors' records, which "
+                "overshoots the page the API returned, so records would be skipped. Use the "
+                "`first_match` mode, a CursorPagination or PageIncrement paginator, or a single "
+                "extractor."
+            ),
+            failure_type=FailureType.config_error,
+        )
+
+    @staticmethod
+    def _combined_extractor_tree_contains_union(model: CombinedExtractorModel) -> bool:
+        mode = CombineMode(model.mode.value) if model.mode else CombineMode.union
+        if mode == CombineMode.union:
+            return True
+        return any(
+            isinstance(sub_extractor, CombinedExtractorModel)
+            and ModelToComponentFactory._combined_extractor_tree_contains_union(sub_extractor)
+            for sub_extractor in model.extractors
+        )
+
     def create_offset_increment(
         self,
         model: OffsetIncrementModel,
         config: Config,
         decoder: Decoder,
-        extractor_model: Optional[Union[CustomRecordExtractorModel, DpathExtractorModel]] = None,
+        extractor_model: Optional[
+            Union[CustomRecordExtractorModel, DpathExtractorModel, CombinedExtractorModel]
+        ] = None,
         **kwargs: Any,
     ) -> OffsetIncrement:
         if isinstance(decoder, PaginationDecoderDecorator):
@@ -3143,6 +3300,8 @@ class ModelToComponentFactory:
             raise ValueError(
                 self._UNSUPPORTED_DECODER_ERROR.format(decoder_type=type(inner_decoder))
             )
+
+        self._reject_union_combined_extractor_for_offset_increment(extractor_model)
 
         # Ideally we would instantiate the runtime extractor from highest most level (in this case the SimpleRetriever)
         # so that it can be shared by OffSetIncrement and RecordSelector. However, due to how we instantiate the
@@ -3177,7 +3336,9 @@ class ModelToComponentFactory:
         model: PageIncrementModel,
         config: Config,
         decoder: Optional[Decoder] = None,
-        extractor_model: Optional[Union[CustomRecordExtractorModel, DpathExtractorModel]] = None,
+        extractor_model: Optional[
+            Union[CustomRecordExtractorModel, DpathExtractorModel, CombinedExtractorModel]
+        ] = None,
         **kwargs: Any,
     ) -> PageIncrement:
         # Like OffsetIncrement, we instantiate a separate extractor with identical behavior to the

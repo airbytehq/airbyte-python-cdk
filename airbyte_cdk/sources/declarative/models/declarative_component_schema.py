@@ -508,6 +508,11 @@ class HttpRequestRegexMatcher(BaseModel):
     )
 
 
+class CombineMode(Enum):
+    union = "union"
+    first_match = "first_match"
+
+
 class ResponseToFileExtractor(BaseModel):
     type: Literal["ResponseToFileExtractor"]
     preserve_na_values: Optional[bool] = Field(
@@ -521,6 +526,23 @@ class ResponseToFileExtractor(BaseModel):
 class OnNoRecords(Enum):
     skip = "skip"
     emit_parent = "emit_parent"
+
+
+class ParentFieldPath(BaseModel):
+    type: Literal["ParentFieldPath"]
+    parent_path: List[str] = Field(
+        ...,
+        description="Path to the value on the record being expanded.",
+        examples=[["url"], ["id"], ["repository", "name"]],
+        title="Parent Path",
+    )
+    record_path: List[str] = Field(
+        ...,
+        description="Path on the expanded item to write the value to. An existing value is overwritten. Intermediate objects are created as needed, so a path may not pass through a value the item already holds as a scalar, and a numeric path segment creates an array rather than an object - the same behavior as `AddFields`.",
+        examples=[["pull_request_url"], ["comment_id"], ["parent", "id"]],
+        title="Record Path",
+    )
+    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
 
 class ExponentialBackoffStrategy(BaseModel):
@@ -2361,6 +2383,16 @@ class RecordExpander(BaseModel):
         description='If true, each expanded record will include the original parent record in an "original_record" field. Defaults to false.',
         title="Remain Original Record",
     )
+    parent_fields: Optional[List[ParentFieldPath]] = Field(
+        None,
+        description="Named values to copy from the record being expanded onto each expanded item. Use this instead of `remain_original_record` when only a few parent fields are needed: it copies the named values rather than deep-copying the whole parent once per item, which matters when the parent record is large and the nested list is long. An existing value at `record_path` is overwritten, and a `parent_path` the parent does not have copies null. A copied object or array is deep-copied, so a transformation that writes inside it affects only that item. Independent of `remain_original_record`; both may be set. Applies to items fetched through `truncated_list_retriever` as well as to embedded ones. This field is ignored by CDK versions that predate it, so pin the connector to a CDK version that supports it.",
+        title="Parent Fields",
+    )
+    merge_parent: Optional[bool] = Field(
+        False,
+        description="If true, each expanded item is the parent record shallow-merged with the item, the item's own keys winning on collision, and the expanded list removed from the parent's copy. Only the value at `expand_records_from_field` is removed, so for a multi-segment path the top-level key stays with its other fields. Each item receives its own deep copy of the merged parent fields, so a transformation that writes into a nested value affects only that item. The merge happens first, then `parent_fields` are copied, then `original_record` is embedded when `remain_original_record` is set; all three may be combined. Applies to items fetched through `truncated_list_retriever` as well as to embedded ones. This field is ignored by CDK versions that predate it, so pin the connector to a CDK version that supports it.",
+        title="Merge Parent",
+    )
     on_no_records: Optional[OnNoRecords] = Field(
         OnNoRecords.skip,
         description='Behavior when the expansion path is missing, not a list, or an empty list. "skip" (default) emits nothing. "emit_parent" emits the original parent record unchanged.',
@@ -2589,6 +2621,26 @@ class DpathExtractor(BaseModel):
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
 
+class CombinedExtractor(BaseModel):
+    type: Literal["CombinedExtractor"]
+    extractors: List[Union[DpathExtractor, CustomRecordExtractor, CombinedExtractor]] = Field(
+        ...,
+        description="The record extractors to combine. At least one is required. Each sub-extractor is given the same HTTP response and decodes it independently, so the response is parsed once per sub-extractor. Streaming decoders (CsvDecoder, JsonlDecoder, JsonItemsDecoder, GzipDecoder, IterableDecoder) can only read the response body once and are rejected.",
+        title="Extractors",
+    )
+    mode: Optional[CombineMode] = Field(
+        CombineMode.union,
+        description='How the records of the sub-extractors are combined. "union" (default) yields every record of every sub-extractor, in the order the extractors are declared. "first_match" yields the records of the first sub-extractor that produces at least one record and skips the remaining ones; nothing is yielded if none of them produces a record. Note that a paginator which counts the records of a page counts the combined records: under "union" that is the sum over all sub-extractors, which overshoots the API page size, so "union" is rejected with an OffsetIncrement paginator because the offset would skip records. Under "first_match" the count is the count of the winning sub-extractor, which is usually the number of records the API returned for the page.',
+        title="Combine Mode",
+    )
+    skip_empty_records: Optional[bool] = Field(
+        False,
+        description='Whether to drop empty records - null, {}, [], "" - yielded by a sub-extractor before the records are combined. Off by default, so the output of a sub-extractor is passed through as it is. Turn it on when the API can return nulls in the middle of a record list, which a GraphQL API does when it answers a partial response and reports the failure in a sibling error field. Under "first_match" this also changes which sub-extractor wins: a sub-extractor whose records are all empty no longer counts as a match, so the next one is tried, and the record count a paginator obtains is the count after the empty records were dropped.',
+        title="Skip Empty Records",
+    )
+    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
+
+
 class ZipfileDecoder(BaseModel):
     class Config:
         extra = Extra.allow
@@ -2603,7 +2655,7 @@ class ZipfileDecoder(BaseModel):
 
 class RecordSelector(BaseModel):
     type: Literal["RecordSelector"]
-    extractor: Union[DpathExtractor, CustomRecordExtractor]
+    extractor: Union[DpathExtractor, CustomRecordExtractor, CombinedExtractor]
     record_filter: Optional[Union[RecordFilter, CustomRecordFilter]] = Field(
         None,
         description="Responsible for filtering records to be emitted by the Source.",
@@ -2848,9 +2900,11 @@ class FileUploader(BaseModel):
         ...,
         description="Requester component that describes how to prepare HTTP requests to send to the source API.",
     )
-    download_target_extractor: Union[DpathExtractor, CustomRecordExtractor] = Field(
-        ...,
-        description="Responsible for fetching the url where the file is located. This is applied on each records and not on the HTTP response",
+    download_target_extractor: Union[DpathExtractor, CustomRecordExtractor, CombinedExtractor] = (
+        Field(
+            ...,
+            description="Responsible for fetching the url where the file is located. This is applied on each records and not on the HTTP response",
+        )
     )
     file_extractor: Optional[Union[DpathExtractor, CustomRecordExtractor]] = Field(
         None,
@@ -3336,15 +3390,17 @@ class AsyncRetriever(BaseModel):
     status_mapping: AsyncJobStatusMap = Field(
         ..., description="Async Job Status to Airbyte CDK Async Job Status mapping."
     )
-    status_extractor: Union[DpathExtractor, CustomRecordExtractor] = Field(
+    status_extractor: Union[DpathExtractor, CustomRecordExtractor, CombinedExtractor] = Field(
         ..., description="Responsible for fetching the actual status of the async job."
     )
-    download_target_extractor: Optional[Union[DpathExtractor, CustomRecordExtractor]] = Field(
+    download_target_extractor: Optional[
+        Union[DpathExtractor, CustomRecordExtractor, CombinedExtractor]
+    ] = Field(
         None,
         description="Responsible for fetching the final result `urls` provided by the completed / finished / ready async job.",
     )
     download_extractor: Optional[
-        Union[DpathExtractor, CustomRecordExtractor, ResponseToFileExtractor]
+        Union[DpathExtractor, CustomRecordExtractor, ResponseToFileExtractor, CombinedExtractor]
     ] = Field(None, description="Responsible for fetching the records from provided urls.")
     creation_requester: Union[HttpRequester, CustomRequester] = Field(
         ...,
@@ -3554,6 +3610,7 @@ class DynamicDeclarativeStream(BaseModel):
 ComplexFieldType.update_forward_refs()
 GzipDecoder.update_forward_refs()
 CompositeErrorHandler.update_forward_refs()
+CombinedExtractor.update_forward_refs()
 DeclarativeSource1.update_forward_refs()
 DeclarativeSource2.update_forward_refs()
 SelectiveAuthenticator.update_forward_refs()

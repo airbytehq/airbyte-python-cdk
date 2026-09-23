@@ -1,0 +1,206 @@
+#
+# Copyright (c) 2025 Airbyte, Inc., all rights reserved.
+#
+
+import logging
+from dataclasses import InitVar, dataclass
+from enum import Enum
+from itertools import chain
+from typing import Any, Iterable, Iterator, List, Mapping, Union
+
+import requests
+
+from airbyte_cdk.sources.declarative.extractors.record_extractor import RecordExtractor
+
+logger = logging.getLogger("airbyte")
+
+
+class CombineMode(Enum):
+    """
+    How a `CombinedExtractor` combines the output of its sub-extractors.
+    """
+
+    union = "union"
+    first_match = "first_match"
+
+
+class _NoRecord:
+    """Sentinel telling "this extractor yielded nothing" apart from a falsy or `None` record."""
+
+
+_NO_RECORD = _NoRecord()
+
+
+@dataclass
+class CombinedExtractor(RecordExtractor):
+    """Combines the output of several record extractors into a single stream of records.
+
+    A single `DpathExtractor` can only describe one path into the response. Several connectors need
+    more than that and reach for a custom `components.py` today, which keeps them out of the
+    Connector Builder. This component covers the two shapes those connectors implement:
+
+    - `union` (default) — yield every record of every sub-extractor, in sub-extractor order. Use it
+      when one response carries records under several paths, for example a GraphQL document that
+      returns `issues.nodes` and `pullRequests.nodes` side by side.
+    - `first_match` — yield the records of the first sub-extractor that produces at least one
+      record, and skip the remaining sub-extractors. If no sub-extractor produces a record, nothing
+      is yielded. Use it when an API answers with one of several alternative shapes. The winning
+      sub-extractor is only peeked at, never restarted: the peeked record is chained back in front
+      of the remaining ones, so large responses are still streamed lazily and no sub-extractor is
+      ever materialized into a list.
+
+    Examples of instantiating this component:
+    ```
+      extractor:
+        type: CombinedExtractor
+        mode: union
+        extractors:
+          - type: DpathExtractor
+            field_path: ["data", "repository", "issues", "nodes"]
+          - type: DpathExtractor
+            field_path: ["data", "repository", "pullRequests", "nodes"]
+    ```
+
+    ```
+      extractor:
+        type: CombinedExtractor
+        mode: first_match
+        extractors:
+          - type: DpathExtractor
+            field_path: ["data", "boards", "*", "items_page", "items"]
+          - type: DpathExtractor
+            field_path: ["data", "next_items_page", "items"]
+    ```
+
+    ## Streaming decoders are rejected
+
+    Every sub-extractor is handed the same `requests.Response`, so the response body must be
+    readable more than once. That holds for the decoders that buffer the whole body, which is the
+    common case: `JsonDecoder` and any `CompositeRawDecoder` built with `stream_response=False`
+    read `response.content`, `XmlDecoder` reads `response.text` and `ZipfileDecoder` reads
+    `response.content` — `requests` caches all of those, so every sub-extractor sees the full body.
+
+    It does NOT hold for streaming decoders, i.e. a `CompositeRawDecoder` with
+    `stream_response=True`, which is what `CsvDecoder`, `JsonlDecoder`, `JsonItemsDecoder` and
+    `GzipDecoder` resolve to outside the Connector Builder, nor for `IterableDecoder`. Those read
+    `response.raw` and close it afterwards, so the first sub-extractor drains the stream and the
+    later ones read a dead body. That loss is SILENT rather than loud: `requests` puts a
+    `urllib3.HTTPResponse` in `response.raw`, and reading a closed `urllib3.HTTPResponse` returns
+    an empty body instead of raising, so `union` emits only the first sub-extractor's records and
+    `first_match` emits nothing at all when the first path misses.
+
+    Because of that, `ModelToComponentFactory.create_combined_extractor` refuses to build this
+    component over a streaming decoder and raises a configuration error, naming the decoder in the
+    internal message. The Connector Builder forces those same decoders to `stream_response=False`,
+    so the rejection is applied there too rather than letting a manifest test-read correctly and
+    lose records once published.
+
+    ## Empty records
+
+    `skip_empty_records` drops falsy records — `None`, `{}`, `[]`, `""` — before any of the modes
+    sees them. It is off by default, so a sub-extractor's output is passed through verbatim.
+
+    Turn it on when an API can answer with nulls in the middle of a record list. A GraphQL API
+    that returns a partial response puts `null` in the `data` array for the fields it failed to
+    resolve and describes the failure in a sibling `errors` field; without this flag those nulls
+    reach the record stream and fail schema validation downstream.
+
+    Under `first_match` the flag also changes which sub-extractor wins: a sub-extractor whose
+    records are all empty no longer counts as a match, so the next sub-extractor is tried. That is
+    the behaviour of `source-monday`'s `MondayIncrementalItemsExtractor`, where a page of nulls
+    must fall through to the pagination path rather than lock in the primary path.
+
+    ## Cost
+
+    Each sub-extractor decodes the response independently — `CompositeRawDecoder` re-parses the
+    cached body on every `decode()` call — so a response is parsed once per sub-extractor.
+    Combining three extractors over a large response costs roughly three times the decode time of
+    a single one.
+
+    Note that an `OffsetIncrement` or `PageIncrement` paginator builds its own copy of the
+    extractor to count the records of a page, which doubles that cost.
+
+    ## Record-counting paginators
+
+    The count those paginators obtain is the combined count, not the API's page size:
+
+    - `union` returns the SUM over all sub-extractors. An `OffsetIncrement` advances the offset by
+      that sum, so the next page starts past the records that were never read — two sub-extractors
+      returning two records each with `page_size: 2` request offsets 0, 4, 8 instead of 0, 2, 4 and
+      silently drop two thirds of the records. `ModelToComponentFactory.create_offset_increment`
+      therefore rejects a `union` `CombinedExtractor` (nested ones included) with a configuration
+      error. A `PageIncrement` only compares the count against `page_size` to decide whether to
+      stop, so it loses nothing, but it issues one extra request whenever the summed count of the
+      last page happens to equal `page_size`.
+    - `first_match` returns the count of the winning sub-extractor, which does not inflate the
+      count, so it works with either paginator as long as the path the count comes from is the one
+      the API paginates over.
+
+    Attributes:
+        extractors (List[RecordExtractor]): The sub-extractors to combine. At least one is required.
+        mode (CombineMode): How the sub-extractor outputs are combined. Defaults to `union`.
+        skip_empty_records (bool): Whether falsy records are dropped before they are combined.
+            Defaults to `False`.
+    """
+
+    extractors: List[RecordExtractor]
+    parameters: InitVar[Mapping[str, Any]]
+    mode: CombineMode = CombineMode.union
+    skip_empty_records: bool = False
+
+    def __post_init__(self, parameters: Mapping[str, Any]) -> None:
+        if not self.extractors:
+            raise ValueError(
+                "CombinedExtractor requires at least one extractor in its `extractors` field."
+            )
+        if not isinstance(self.mode, CombineMode):
+            self.mode = CombineMode(self.mode)
+
+    def extract_records(self, response: requests.Response) -> Iterable[Mapping[str, Any]]:
+        if self.mode == CombineMode.first_match:
+            yield from self._extract_first_match(response)
+        else:
+            yield from self._extract_union(response)
+
+    def _extract_union(self, response: requests.Response) -> Iterable[Mapping[str, Any]]:
+        for index in range(len(self.extractors)):
+            yield from self._records_of(index, response)
+
+    def _extract_first_match(self, response: requests.Response) -> Iterable[Mapping[str, Any]]:
+        for index in range(len(self.extractors)):
+            records: Iterator[Mapping[str, Any]] = iter(self._records_of(index, response))
+            first_record: Union[Mapping[str, Any], _NoRecord] = next(records, _NO_RECORD)
+            if isinstance(first_record, _NoRecord):
+                continue
+            # Chain the peeked record back instead of restarting the extractor: the rest of the
+            # records stay lazy and the response is never read twice.
+            yield from chain([first_record], records)
+            return
+
+    def _records_of(
+        self, extractor_index: int, response: requests.Response
+    ) -> Iterable[Mapping[str, Any]]:
+        records = self.extractors[extractor_index].extract_records(response)
+        if not self.skip_empty_records:
+            return records
+        return self._without_empty_records(records, extractor_index)
+
+    def _without_empty_records(
+        self, records: Iterable[Mapping[str, Any]], extractor_index: int
+    ) -> Iterator[Mapping[str, Any]]:
+        dropped = 0
+        for record in records:
+            if not record:
+                dropped += 1
+                continue
+            yield record
+        if dropped:
+            logger.warning(
+                "CombinedExtractor dropped %s empty record(s) yielded by sub-extractor %s (%s) "
+                "because `skip_empty_records` is enabled. An API that returns empty records "
+                "alongside real ones usually reports the reason in an error field of the "
+                "response body.",
+                dropped,
+                extractor_index,
+                type(self.extractors[extractor_index]).__name__,
+            )
