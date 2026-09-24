@@ -549,6 +549,16 @@ class HttpClient:
         current = self._session.auth.get_auth_header().get("Authorization")  # type: ignore[union-attr]
         return current is not None and current != sent
 
+    @staticmethod
+    def _is_token_endpoint_rejection(error: requests.exceptions.RequestException) -> bool:
+        """Whether the token endpoint answered with a 4xx other than 429, i.e. it rejected the credentials rather than failing transiently."""
+        response = error.response
+        return (
+            response is not None
+            and 400 <= response.status_code < 500
+            and response.status_code != 429
+        )
+
     def _handle_error_resolution(
         self,
         response: Optional[requests.Response],
@@ -587,29 +597,39 @@ class HttpClient:
             print(f"{message}\n", end="", flush=True)
 
         # Handle REFRESH_TOKEN_THEN_RETRY: force refresh the OAuth token before retrying,
-        # at most once per request. A config error from the refresh (e.g. bad credentials)
-        # or a request rejected again after a refresh attempt fails fast instead of
-        # refreshing in a loop; the failure type reflects whether the refresh succeeded.
-        # Non-OAuth auth types (e.g., BearerAuthenticator) fall through to normal retry.
+        # at most once per request. A config error from the refresh (e.g. bad credentials,
+        # including a 4xx rejection from the token endpoint) or a request rejected again
+        # after a refresh attempt fails fast instead of refreshing in a loop; the failure
+        # type reflects whether the refresh succeeded. Transient refresh failures (network
+        # errors, 5xx, 429) keep the retry transient. Non-OAuth auth types (e.g.,
+        # BearerAuthenticator) fall through to normal retry.
         if error_resolution.response_action == ResponseAction.REFRESH_TOKEN_THEN_RETRY:
+            status = (
+                f"status code '{response.status_code}'"
+                if response is not None
+                else f"exception '{exc}'"
+            )
             if request in self._token_refresh_outcomes:
                 refreshed = self._token_refresh_outcomes[request]
                 self._evict_key(request)
-                status = (
-                    f"status code '{response.status_code}'"
-                    if response is not None
-                    else f"exception '{exc}'"
-                )
                 if refreshed:
                     internal_message = f"'{request.method}' request to '{request.url}' was rejected with {status} again after the OAuth token was refreshed; not refreshing again."
                     failure_type = FailureType.config_error
+                    message = "Refreshed OAuth access token is rejected by the API."
                 else:
                     internal_message = f"'{request.method}' request to '{request.url}' was rejected with {status} and the OAuth token could not be refreshed; not refreshing again."
                     failure_type = FailureType.transient_error
+                    message = (
+                        "API rejects the current OAuth access token and the token refresh failed."
+                    )
+                if error_resolution.error_message:
+                    internal_message += (
+                        f" Error handler message: '{error_resolution.error_message}'"
+                    )
                 self._logger.error(internal_message)
                 raise AirbyteTracedException(
                     internal_message=internal_message,
-                    message=error_resolution.error_message or internal_message,
+                    message=message,
                     failure_type=failure_type,
                 )
             if (
@@ -633,6 +653,22 @@ class HttpClient:
                     if refresh_error.failure_type == FailureType.config_error:
                         self._evict_key(request)
                         raise
+                    self._logger.warning(
+                        f"Failed to refresh OAuth token: {refresh_error}. Proceeding with retry using existing token."
+                    )
+                except requests.exceptions.RequestException as refresh_error:
+                    if self._is_token_endpoint_rejection(refresh_error):
+                        self._evict_key(request)
+                        internal_message = (
+                            f"'{request.method}' request to '{request.url}' was rejected with {status} and the OAuth token endpoint "
+                            f"rejected the refresh request: {refresh_error}"
+                        )
+                        self._logger.error(internal_message)
+                        raise AirbyteTracedException(
+                            internal_message=internal_message,
+                            message="OAuth token refresh request is rejected by the token endpoint.",
+                            failure_type=FailureType.config_error,
+                        ) from refresh_error
                     self._logger.warning(
                         f"Failed to refresh OAuth token: {refresh_error}. Proceeding with retry using existing token."
                     )

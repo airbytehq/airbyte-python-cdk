@@ -1167,7 +1167,8 @@ def test_refresh_token_then_retry_does_not_refresh_twice_for_the_same_request(re
         http_client.send_request("GET", "https://example.com/data", request_kwargs={})
 
     assert exc_info.value.failure_type == FailureType.config_error
-    assert exc_info.value.message == "Token rejected; refresh and retry"
+    assert exc_info.value.message == "Refreshed OAuth access token is rejected by the API."
+    assert "Token rejected; refresh and retry" in exc_info.value.internal_message
     assert _request_count(requests_mock, "https://example.com/oauth/token", "POST") == 1
     assert _request_count(requests_mock, "https://example.com/data") == 2
     assert http_client._token_refresh_outcomes == {}
@@ -1188,6 +1189,10 @@ def test_refresh_token_then_retry_reports_transient_error_when_refresh_fails_tra
         http_client.send_request("GET", "https://example.com/data", request_kwargs={})
 
     assert exc_info.value.failure_type == FailureType.transient_error
+    assert (
+        exc_info.value.message
+        == "API rejects the current OAuth access token and the token refresh failed."
+    )
     # The token endpoint itself is retried by the backoff decorator on _make_handled_request.
     assert _request_count(requests_mock, "https://example.com/oauth/token", "POST") > 1
     assert _request_count(requests_mock, "https://example.com/data") == 2
@@ -1206,8 +1211,42 @@ def test_refresh_token_then_retry_refresh_rejected_outside_configured_errors(req
     with pytest.raises(AirbyteTracedException) as exc_info:
         http_client.send_request("GET", "https://example.com/data", request_kwargs={})
 
-    assert exc_info.value.failure_type == FailureType.transient_error
+    assert exc_info.value.failure_type == FailureType.config_error
+    assert (
+        exc_info.value.message == "OAuth token refresh request is rejected by the token endpoint."
+    )
+    assert "401" in exc_info.value.internal_message
     assert _request_count(requests_mock, "https://example.com/oauth/token", "POST") == 1
+    assert _request_count(requests_mock, "https://example.com/data") == 1
+    assert http_client._token_refresh_outcomes == {}
+
+
+def test_refresh_token_then_retry_token_endpoint_5xx_stays_transient(requests_mock, mocker):
+    """A 5xx from the token endpoint is a transient refresh failure, not a credential
+    rejection: the refresh is not retried here (the endpoint's own backoff decorator
+    handles that) and the request stays on the warn-and-retry path."""
+    requests_mock.get("https://example.com/data", status_code=401)
+    http_client = _build_refresh_token_then_retry_http_client()
+
+    token_response = requests.Response()
+    token_response.status_code = 503
+    token_response.url = "https://example.com/oauth/token"
+    refresh_error = DefaultBackoffException(
+        request=requests.Request(method="POST", url="https://example.com/oauth/token").prepare(),
+        response=token_response,
+        failure_type=FailureType.transient_error,
+    )
+    mocker.patch.object(Oauth2Authenticator, "_make_handled_request", side_effect=refresh_error)
+    mocker.patch("time.sleep")
+
+    with pytest.raises(AirbyteTracedException) as exc_info:
+        http_client.send_request("GET", "https://example.com/data", request_kwargs={})
+
+    assert exc_info.value.failure_type == FailureType.transient_error
+    assert (
+        exc_info.value.message
+        == "API rejects the current OAuth access token and the token refresh failed."
+    )
     assert _request_count(requests_mock, "https://example.com/data") == 2
 
 
