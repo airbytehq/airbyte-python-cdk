@@ -1415,8 +1415,9 @@ def test_final_state_cursor_get_cursor_datetime_from_state_returns_now_for_no_cu
 
 class ConcurrentCursorReduceWindowTest(TestCase):
     """
-    Covers ConcurrentCursor.split_request_window(), the WindowReducible implementation backing declarative
-    `request_window_splitting`. See airbyte_cdk.sources.declarative.retrievers.window_reducible.
+    Covers ConcurrentCursor.split_request_window(), the implementation `SimpleRetriever.request_window_splitter`
+    binds to for declarative `request_window_splitting`. See
+    airbyte_cdk.sources.declarative.retrievers.simple_retriever.
     """
 
     def setUp(self) -> None:

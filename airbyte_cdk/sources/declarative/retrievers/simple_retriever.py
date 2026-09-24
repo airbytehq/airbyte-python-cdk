@@ -2,6 +2,7 @@
 # Copyright (c) 2025 Airbyte, Inc., all rights reserved.
 #
 
+import datetime
 import json
 import logging
 from collections import defaultdict
@@ -52,7 +53,6 @@ from airbyte_cdk.sources.declarative.retrievers.retriever import Retriever
 from airbyte_cdk.sources.declarative.retrievers.window_reducible import (
     OnPartialResponse,
     RequestWindowSplitting,
-    WindowReducible,
 )
 from airbyte_cdk.sources.declarative.stream_slicers.stream_slicer import StreamSlicer
 from airbyte_cdk.sources.source import ExperimentalClassWarning
@@ -75,16 +75,16 @@ from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 FULL_REFRESH_SYNC_COMPLETE_KEY = "__ab_full_refresh_sync_complete"
 LOGGER = logging.getLogger("airbyte")
 
-# A defense-in-depth bound independent of any specific WindowReducible's own no-progress guard (cursor_granularity
-# or min_split_window): the retriever enforces this itself so a misbehaving custom cursor (returning children
-# that do not actually shrink) fails deterministically rather than recursing indefinitely. Each split bisects a
-# single already-generated slice - bounded by the cursor's own `step`, not the whole sync range - and real-world
-# APIs that reject oversized windows are typically satisfied well before reaching sub-day granularity: a
-# one-year step bisected down to a 12-hour floor needs ~10 halvings (log2(hours in a year / 12) ~= 9.5), which
-# already covers a wider window than the request-window failures this feature targets in practice tend to
-# involve (on the order of days to a few months). Not user-configurable: a connector whose cursor genuinely
-# needs finer-than-half-day granularity, or windows spanning multiple years, should express that through
-# `min_split_window` instead of raising this safety net.
+# A defense-in-depth bound independent of any specific `request_window_splitter`'s own no-progress guard
+# (cursor_granularity or min_split_window): the retriever enforces this itself so a misbehaving custom cursor
+# (returning children that do not actually shrink) fails deterministically rather than recursing indefinitely.
+# Each split bisects a single already-generated slice - bounded by the cursor's own `step`, not the whole sync
+# range - and real-world APIs that reject oversized windows are typically satisfied well before reaching
+# sub-day granularity: a one-year step bisected down to a 12-hour floor needs ~10 halvings
+# (log2(hours in a year / 12) ~= 9.5), which already covers a wider window than the request-window failures
+# this feature targets in practice tend to involve (on the order of days to a few months). Not
+# user-configurable: a connector whose cursor genuinely needs finer-than-half-day granularity, or windows
+# spanning multiple years, should express that through `min_split_window` instead of raising this safety net.
 _MAX_REQUEST_WINDOW_SPLIT_DEPTH = 10
 
 
@@ -122,10 +122,12 @@ class SimpleRetriever(Retriever):
             is raised directly by custom code. `None` disables request-window splitting entirely: `read_records`
             converts the exception into `RequestWindowSplitNotSupportedException` instead of attempting a
             split it cannot perform.
-        request_window_splitter (Optional[WindowReducible]): The component - normally the stream's own cursor - asked to
-            replace a failing `StreamSlice` with smaller children. `None` has the same effect as
-            `request_window_splitting` being `None`: splitting is not attempted, and a
-            `RequestWindowSplitRequiredException` is re-raised as `RequestWindowSplitNotSupportedException`.
+        request_window_splitter (Optional[Callable[[StreamSlice, Optional[datetime.timedelta]], Optional[List[StreamSlice]]]]):
+            Bound method - normally the stream's own cursor's `split_request_window` - asked to replace a
+            failing `StreamSlice` with smaller children, given the slice and `request_window_splitting`'s
+            `min_split_window`. `None` has the same effect as `request_window_splitting` being `None`:
+            splitting is not attempted, and a `RequestWindowSplitRequiredException` is re-raised as
+            `RequestWindowSplitNotSupportedException`.
     """
 
     requester: Requester
@@ -152,7 +154,9 @@ class SimpleRetriever(Retriever):
     post_pagination_filter: Optional[ClientSideIncrementalRecordFilterDecorator] = None
     page_size_reduction: Optional[PageSizeReduction] = None
     request_window_splitting: Optional[RequestWindowSplitting] = None
-    request_window_splitter: Optional[WindowReducible] = None
+    request_window_splitter: Optional[
+        Callable[[StreamSlice, Optional[datetime.timedelta]], Optional[List[StreamSlice]]]
+    ] = None
 
     def __post_init__(self, parameters: Mapping[str, Any]) -> None:
         self._paginator = self.paginator or NoPagination(parameters=parameters)
@@ -601,7 +605,7 @@ class SimpleRetriever(Retriever):
         `original_slice` is threaded through the recursion unchanged so every record yielded, however deep the
         recursion went to produce it, is re-stamped with the partition's own slice rather than the child slice it
         was actually read against - see `_reassociate_with_original_slice`. `depth` bounds the recursion
-        independently of `WindowReducible.split_request_window`'s own no-progress guard: it is enforced here so a
+        independently of `request_window_splitter`'s own no-progress guard: it is enforced here so a
         misbehaving custom cursor cannot recurse indefinitely regardless of what that guard does or does not
         catch.
         """
@@ -674,7 +678,7 @@ class SimpleRetriever(Retriever):
                     failure_type=FailureType.transient_error,
                 ) from exception
 
-            children = self.request_window_splitter.split_request_window(
+            children = self.request_window_splitter(
                 stream_slice, self.request_window_splitting.min_split_window
             )
             if children is None:

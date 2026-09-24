@@ -208,7 +208,6 @@ from airbyte_cdk.sources.declarative.retrievers.page_size_reducer import (
 from airbyte_cdk.sources.declarative.retrievers.window_reducible import (
     OnPartialResponse,
     RequestWindowSplitting,
-    WindowReducible,
 )
 from airbyte_cdk.sources.declarative.schema import InlineSchemaLoader, JsonFileSchemaLoader
 from airbyte_cdk.sources.declarative.schema.caching_schema_loader_decorator import (
@@ -7619,7 +7618,8 @@ def test_given_request_window_splitting_then_create_retriever_with_defaults():
         on_partial_response=OnPartialResponse.FAIL,
         failure_message=None,
     )
-    assert isinstance(retriever.request_window_splitter, WindowReducible)
+    assert callable(retriever.request_window_splitter)
+    assert retriever.request_window_splitter.__name__ == "split_request_window"
 
 
 def test_given_request_window_splitting_values_then_create_retriever_with_those_values():
@@ -7753,7 +7753,7 @@ def test_given_no_incremental_sync_and_request_window_splitting_then_raise():
     with pytest.raises(ValueError) as exception:
         _request_window_splitting_stream(incremental_sync="")
 
-    assert "cursor_granularity" in str(exception.value) or "WindowReducible" in str(exception.value)
+    assert "cursor_granularity" in str(exception.value)
 
 
 def test_given_datetime_based_cursor_without_cursor_granularity_then_raise():
@@ -7805,8 +7805,8 @@ def test_given_datetime_format_coarser_than_cursor_granularity_and_request_windo
 def test_given_incrementing_count_cursor_and_request_window_splitting_then_raise():
     """
     `IncrementingCountCursor` builds a `ConcurrentCursor` too, but not one carrying the datetime boundary
-    fields, granularity, or formatting `WindowReducible.split_request_window` needs, so it must be rejected the same
-    way a stream with no incremental_sync at all is.
+    fields, granularity, or formatting `split_request_window` needs, so it must be rejected the same way a
+    stream with no incremental_sync at all is.
     """
     with pytest.raises(ValueError) as exception:
         _request_window_splitting_stream(

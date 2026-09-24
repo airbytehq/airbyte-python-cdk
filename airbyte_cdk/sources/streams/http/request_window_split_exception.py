@@ -49,14 +49,14 @@ class RequestWindowSplitNotSupportedException(AirbyteTracedException):
 
     The factory rejects this at config time wherever it can see the error handler, so reaching this means the
     signal came from somewhere it cannot inspect - a custom error handler, a custom requester/retriever raising
-    `RequestWindowSplitRequiredException` directly, or a stream whose cursor does not implement
-    `WindowReducible` (for example, a non-datetime or non-incremental slicer).
+    `RequestWindowSplitRequiredException` directly, or a stream whose cursor has no `split_request_window`
+    method (for example, a non-datetime or non-incremental slicer).
     """
 
     def __init__(self, stream_name: Optional[str] = None) -> None:
         stream = f"Stream {stream_name}" if stream_name else "The stream"
         super().__init__(
-            internal_message=f"A request window split was requested for stream {stream_name} but its retriever defines no `request_window_splitting`, or its cursor does not support window splitting. The action is only supported on a SimpleRetriever whose cursor implements WindowReducible and that defines `request_window_splitting`.",
+            internal_message=f"A request window split was requested for stream {stream_name} but its retriever defines no `request_window_splitting`, or its cursor does not support window splitting. The action is only supported on a SimpleRetriever whose cursor has a `split_request_window` method and that defines `request_window_splitting`.",
             message=f"{stream} resolves to a request window split but is not set up to split its window. Add `request_window_splitting` to the stream's retriever (this requires a datetime-based incremental cursor with `cursor_granularity` set), or remove the `SPLIT_REQUEST_WINDOW` action from its error handler.",
             failure_type=FailureType.config_error,
         )

@@ -598,7 +598,6 @@ from airbyte_cdk.sources.declarative.retrievers.pagination_tracker import Pagina
 from airbyte_cdk.sources.declarative.retrievers.window_reducible import (
     OnPartialResponse,
     RequestWindowSplitting,
-    WindowReducible,
 )
 from airbyte_cdk.sources.declarative.schema import (
     ComplexFieldType,
@@ -3796,7 +3795,9 @@ class ModelToComponentFactory:
             ),
             request_window_splitting=request_window_splitting,
             request_window_splitter=(
-                cursor if request_window_splitting and isinstance(cursor, WindowReducible) else None
+                cursor.split_request_window
+                if request_window_splitting and hasattr(cursor, "split_request_window")
+                else None
             ),
             post_pagination_filter=post_pagination_filter,
             parameters=model.parameters or {},
@@ -4166,13 +4167,13 @@ class ModelToComponentFactory:
     ) -> None:
         """
         Request window splitting replaces a failing slice with smaller children derived from the stream's own
-        cursor, so it only makes sense on a stream whose cursor can do that (see `WindowReducible`) and it is
-        rejected for the same structural reasons `page_size_reduction` is: `additional_query_properties` and a
-        `file_uploader` both mean records of the failing window may already have been emitted by the time the
+        cursor, so it only makes sense on a stream whose cursor exposes a `split_request_window` method and it
+        is rejected for the same structural reasons `page_size_reduction` is: `additional_query_properties` and
+        a `file_uploader` both mean records of the failing window may already have been emitted by the time the
         split is requested, from inside the record generator rather than from a page boundary this retriever
         controls.
         """
-        if not isinstance(cursor, WindowReducible):
+        if not hasattr(cursor, "split_request_window"):
             raise ValueError(
                 f"`request_window_splitting` requires an incremental cursor that supports window splitting on "
                 f"stream {name}. Found {type(cursor).__name__ if cursor is not None else 'no cursor'}: this is "
@@ -4185,9 +4186,9 @@ class ModelToComponentFactory:
             and incremental_sync.cursor_granularity
         ):
             # `cursor_granularity` is both the smallest window the connector will ever request and what keeps
-            # two child windows from overlapping at their shared edge, so `WindowReducible.split_request_window`
-            # cannot split at all without it - checked here, on the manifest model, rather than by reaching
-            # into the cursor's private state from outside the class it belongs to.
+            # two child windows from overlapping at their shared edge, so `split_request_window` cannot split
+            # at all without it - checked here, on the manifest model, rather than by reaching into the
+            # cursor's private state from outside the class it belongs to.
             raise ValueError(
                 f"`request_window_splitting` requires `cursor_granularity` on the `DatetimeBasedCursor` of "
                 f"stream {name}: without it there is no smallest window to stop splitting at, and no way to "

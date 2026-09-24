@@ -618,8 +618,8 @@ class ConcurrentCursor(Cursor):
         connector-configured floor independent of and typically looser than `cursor_granularity`), the
         boundaries are missing/malformed/reversed, or no `cursor_granularity` was configured at all (there is
         then no way to know the smallest addressable unit, or how to keep two children from overlapping at
-        their shared edge). This is a generic implementation of `WindowReducible` (see
-        `airbyte_cdk.sources.declarative.retrievers.window_reducible`) that reuses the same
+        their shared edge). This is the implementation `SimpleRetriever.request_window_splitter` binds to (see
+        `airbyte_cdk.sources.declarative.retrievers.simple_retriever`) that reuses the same
         parsing/formatting/comparison operations `_split_per_slice_range` already relies on, so it works for
         any `CursorValueType`/`GapType` pair this cursor was built with (datetime/timedelta, or int/int),
         without a second, duplicate implementation of that logic living outside the cursor.

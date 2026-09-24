@@ -8,7 +8,7 @@ from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
 from datetime import timedelta
 from functools import partial
-from typing import Any, Iterable, Mapping, Optional
+from typing import Any, Callable, Iterable, List, Mapping, Optional
 from unittest.mock import MagicMock, Mock, patch
 
 import pytest
@@ -60,7 +60,6 @@ from airbyte_cdk.sources.declarative.retrievers.simple_retriever import (
 from airbyte_cdk.sources.declarative.retrievers.window_reducible import (
     OnPartialResponse,
     RequestWindowSplitting,
-    WindowReducible,
 )
 from airbyte_cdk.sources.streams.http.page_size_reduction_exception import (
     PageSizeReductionRequiredException,
@@ -2037,7 +2036,9 @@ def _request_window_splitting_retriever(
     requester: Requester,
     paginator: Paginator,
     record_selector: HttpSelector,
-    request_window_splitter: WindowReducible,
+    request_window_splitter: Callable[
+        [StreamSlice, Optional[timedelta]], Optional[List[StreamSlice]]
+    ],
     request_window_splitting: Optional[RequestWindowSplitting] = None,
 ) -> SimpleRetriever:
     return SimpleRetriever(
@@ -2066,8 +2067,8 @@ def test_given_request_window_splitting_when_read_records_then_split_and_read_bo
     paginator.get_initial_token.return_value = None
     paginator.next_page_token.return_value = None
 
-    request_window_splitter = Mock(spec=WindowReducible)
-    request_window_splitter.split_request_window.return_value = [
+    request_window_splitter = Mock()
+    request_window_splitter.return_value = [
         A_FIRST_HALF_SLICE,
         A_SECOND_HALF_SLICE,
     ]
@@ -2079,7 +2080,7 @@ def test_given_request_window_splitting_when_read_records_then_split_and_read_bo
     records = list(retriever.read_records(A_RECORD_SCHEMA, A_WINDOW_SLICE))
 
     assert records == [{"id": 1}, {"id": 2}]
-    request_window_splitter.split_request_window.assert_called_once_with(A_WINDOW_SLICE, None)
+    request_window_splitter.assert_called_once_with(A_WINDOW_SLICE, None)
     assert requester.send_request.call_count == 3
     assert [call.kwargs["stream_slice"] for call in requester.send_request.call_args_list] == [
         A_WINDOW_SLICE,
@@ -2099,8 +2100,8 @@ def test_given_min_split_window_configured_when_read_records_then_pass_it_to_the
     paginator = _mock_paginator()
     paginator.get_initial_token.return_value = None
 
-    request_window_splitter = Mock(spec=WindowReducible)
-    request_window_splitter.split_request_window.return_value = None
+    request_window_splitter = Mock()
+    request_window_splitter.return_value = None
 
     retriever = _request_window_splitting_retriever(
         requester,
@@ -2113,9 +2114,7 @@ def test_given_min_split_window_configured_when_read_records_then_pass_it_to_the
     with pytest.raises(AirbyteTracedException):
         list(retriever.read_records(A_RECORD_SCHEMA, A_WINDOW_SLICE))
 
-    request_window_splitter.split_request_window.assert_called_once_with(
-        A_WINDOW_SLICE, timedelta(days=1)
-    )
+    request_window_splitter.assert_called_once_with(A_WINDOW_SLICE, timedelta(days=1))
 
 
 def test_given_only_one_child_needs_further_reduction_when_read_records_then_recurse_asymmetrically():
@@ -2145,8 +2144,8 @@ def test_given_only_one_child_needs_further_reduction_when_read_records_then_rec
         cursor_slice={"start_time": "2024-01-01T06:00:00Z", "end_time": "2024-01-01T11:59:59Z"},
         partition={},
     )
-    request_window_splitter = Mock(spec=WindowReducible)
-    request_window_splitter.split_request_window.side_effect = [
+    request_window_splitter = Mock()
+    request_window_splitter.side_effect = [
         [A_FIRST_HALF_SLICE, A_SECOND_HALF_SLICE],
         [a_quarter_slice, another_quarter_slice],
     ]
@@ -2158,7 +2157,7 @@ def test_given_only_one_child_needs_further_reduction_when_read_records_then_rec
     records = list(retriever.read_records(A_RECORD_SCHEMA, A_WINDOW_SLICE))
 
     assert records == [{"id": 1}, {"id": 2}, {"id": 3}]
-    assert request_window_splitter.split_request_window.call_args_list == [
+    assert request_window_splitter.call_args_list == [
         ((A_WINDOW_SLICE, None),),
         ((A_FIRST_HALF_SLICE, None),),
     ]
@@ -2229,7 +2228,7 @@ def test_given_records_already_emitted_and_fail_policy_when_reduction_requested_
     paginator.get_initial_token.return_value = None
     paginator.next_page_token.return_value = {"next_page_token": "page2"}
 
-    request_window_splitter = Mock(spec=WindowReducible)
+    request_window_splitter = Mock()
 
     retriever = _request_window_splitting_retriever(
         requester,
@@ -2243,7 +2242,7 @@ def test_given_records_already_emitted_and_fail_policy_when_reduction_requested_
         list(retriever.read_records(A_RECORD_SCHEMA, A_WINDOW_SLICE))
 
     assert exception.value.failure_type == FailureType.config_error
-    request_window_splitter.split_request_window.assert_not_called()
+    request_window_splitter.assert_not_called()
 
 
 def test_given_records_already_emitted_and_allow_replay_policy_when_reduction_requested_then_reduce_anyway():
@@ -2264,8 +2263,8 @@ def test_given_records_already_emitted_and_allow_replay_policy_when_reduction_re
     paginator.get_initial_token.return_value = None
     paginator.next_page_token.side_effect = [{"next_page_token": "page2"}, None, None]
 
-    request_window_splitter = Mock(spec=WindowReducible)
-    request_window_splitter.split_request_window.return_value = [
+    request_window_splitter = Mock()
+    request_window_splitter.return_value = [
         A_FIRST_HALF_SLICE,
         A_SECOND_HALF_SLICE,
     ]
@@ -2285,12 +2284,12 @@ def test_given_records_already_emitted_and_allow_replay_policy_when_reduction_re
     # the record from the page emitted before the reduction signal is included once more: ALLOW_REPLAY
     # accepts this at-least-once duplication rather than silently dropping it or failing the sync.
     assert records == [{"id": 1}, {"id": 2}, {"id": 3}]
-    request_window_splitter.split_request_window.assert_called_once_with(A_WINDOW_SLICE, None)
+    request_window_splitter.assert_called_once_with(A_WINDOW_SLICE, None)
 
 
 def test_given_request_window_splitter_returns_none_when_reduction_requested_then_raise_terminal_error():
     """
-    `WindowReducible.split_request_window` returning `None` means the window cannot be split any further - either
+    `request_window_splitter` returning `None` means the window cannot be split any further - either
     the granularity floor was reached or reducing would not make progress. Either way this must terminate
     the sync deterministically rather than loop or silently drop the window.
     """
@@ -2302,8 +2301,8 @@ def test_given_request_window_splitter_returns_none_when_reduction_requested_the
     paginator = _mock_paginator()
     paginator.get_initial_token.return_value = None
 
-    request_window_splitter = Mock(spec=WindowReducible)
-    request_window_splitter.split_request_window.return_value = None
+    request_window_splitter = Mock()
+    request_window_splitter.return_value = None
 
     retriever = _request_window_splitting_retriever(
         requester,
@@ -2321,7 +2320,7 @@ def test_given_request_window_splitter_returns_none_when_reduction_requested_the
     # the classifying error's own failure_type is preserved rather than falling back to this branch's default
     assert exception.value.failure_type == FailureType.transient_error
     assert "Lower time_window so that each request covers less data." in exception.value.message
-    request_window_splitter.split_request_window.assert_called_once_with(A_WINDOW_SLICE, None)
+    request_window_splitter.assert_called_once_with(A_WINDOW_SLICE, None)
 
 
 def test_given_request_window_splitter_returns_none_and_no_classified_failure_type_when_reduction_requested_then_raise_transient_error():
@@ -2337,8 +2336,8 @@ def test_given_request_window_splitter_returns_none_and_no_classified_failure_ty
     paginator = _mock_paginator()
     paginator.get_initial_token.return_value = None
 
-    request_window_splitter = Mock(spec=WindowReducible)
-    request_window_splitter.split_request_window.return_value = None
+    request_window_splitter = Mock()
+    request_window_splitter.return_value = None
 
     retriever = _request_window_splitting_retriever(
         requester,
@@ -2360,8 +2359,8 @@ def test_given_empty_children_list_when_reduction_requested_then_emit_no_records
     paginator = _mock_paginator()
     paginator.get_initial_token.return_value = None
 
-    request_window_splitter = Mock(spec=WindowReducible)
-    request_window_splitter.split_request_window.return_value = []
+    request_window_splitter = Mock()
+    request_window_splitter.return_value = []
 
     retriever = _request_window_splitting_retriever(
         requester, paginator, record_selector, request_window_splitter
@@ -2370,7 +2369,7 @@ def test_given_empty_children_list_when_reduction_requested_then_emit_no_records
     records = list(retriever.read_records(A_RECORD_SCHEMA, A_WINDOW_SLICE))
 
     assert records == []
-    request_window_splitter.split_request_window.assert_called_once_with(A_WINDOW_SLICE, None)
+    request_window_splitter.assert_called_once_with(A_WINDOW_SLICE, None)
 
 
 def test_given_a_later_child_fails_when_read_records_then_the_failure_propagates():
@@ -2390,8 +2389,8 @@ def test_given_a_later_child_fails_when_read_records_then_the_failure_propagates
     paginator.get_initial_token.return_value = None
     paginator.next_page_token.return_value = None
 
-    request_window_splitter = Mock(spec=WindowReducible)
-    request_window_splitter.split_request_window.side_effect = [
+    request_window_splitter = Mock()
+    request_window_splitter.side_effect = [
         [A_FIRST_HALF_SLICE, A_SECOND_HALF_SLICE],
         None,
     ]
@@ -2407,7 +2406,7 @@ def test_given_a_later_child_fails_when_read_records_then_the_failure_propagates
 
     # the first child's records were already emitted to the caller before the second child failed
     assert emitted == [{"id": 1}]
-    assert request_window_splitter.split_request_window.call_args_list == [
+    assert request_window_splitter.call_args_list == [
         ((A_WINDOW_SLICE, None),),
         ((A_SECOND_HALF_SLICE, None),),
     ]
@@ -2431,8 +2430,8 @@ def test_given_request_window_splitting_when_read_records_then_each_child_gets_f
     paginator.get_initial_token.return_value = "initial token"
     paginator.next_page_token.return_value = None
 
-    request_window_splitter = Mock(spec=WindowReducible)
-    request_window_splitter.split_request_window.return_value = [
+    request_window_splitter = Mock()
+    request_window_splitter.return_value = [
         A_FIRST_HALF_SLICE,
         A_SECOND_HALF_SLICE,
     ]
@@ -2516,8 +2515,8 @@ def test_given_request_window_splitting_when_split_then_records_are_associated_w
     paginator.get_initial_token.return_value = None
     paginator.next_page_token.return_value = None
 
-    request_window_splitter = Mock(spec=WindowReducible)
-    request_window_splitter.split_request_window.return_value = [
+    request_window_splitter = Mock()
+    request_window_splitter.return_value = [
         A_FIRST_HALF_SLICE,
         A_SECOND_HALF_SLICE,
     ]
@@ -2556,8 +2555,8 @@ def test_given_exception_raised_during_record_extraction_when_read_then_still_sp
     paginator.get_initial_token.return_value = None
     paginator.next_page_token.return_value = None
 
-    request_window_splitter = Mock(spec=WindowReducible)
-    request_window_splitter.split_request_window.return_value = [
+    request_window_splitter = Mock()
+    request_window_splitter.return_value = [
         A_FIRST_HALF_SLICE,
         A_SECOND_HALF_SLICE,
     ]
@@ -2573,7 +2572,7 @@ def test_given_exception_raised_during_record_extraction_when_read_then_still_sp
 
 def test_given_max_split_depth_exceeded_when_read_records_then_raise_terminal_error():
     """
-    Defense-in-depth: even if a (misbehaving, e.g. custom) `WindowReducible` never itself signals "cannot split
+    Defense-in-depth: even if a (misbehaving, e.g. custom) `request_window_splitter` never itself signals "cannot split
     any further", the retriever's own depth counter must still terminate the read deterministically rather than
     recursing without bound.
     """
@@ -2583,11 +2582,12 @@ def test_given_max_split_depth_exceeded_when_read_records_then_raise_terminal_er
     paginator = _mock_paginator()
     paginator.get_initial_token.return_value = None
 
-    request_window_splitter = Mock(spec=WindowReducible)
+    request_window_splitter = Mock()
     # never signals "no further progress possible" - always splits into two children identical to the parent
-    request_window_splitter.split_request_window.side_effect = (
-        lambda stream_slice, min_split_window=None: [stream_slice, stream_slice]
-    )
+    request_window_splitter.side_effect = lambda stream_slice, min_split_window=None: [
+        stream_slice,
+        stream_slice,
+    ]
 
     retriever = _request_window_splitting_retriever(
         requester,
@@ -2611,9 +2611,7 @@ def test_given_max_split_depth_exceeded_when_read_records_then_raise_terminal_er
     # the single leftmost recursion path is explored to the full depth (one split_request_window call per
     # depth, from 0 up to the cap) before the cap stops the next call - the exception then propagates
     # immediately, so sibling branches at shallower depths are never explored
-    assert (
-        request_window_splitter.split_request_window.call_count == _MAX_REQUEST_WINDOW_SPLIT_DEPTH
-    )
+    assert request_window_splitter.call_count == _MAX_REQUEST_WINDOW_SPLIT_DEPTH
 
 
 def test_given_partitions_read_concurrently_then_window_reduction_isolates_between_partitions():
@@ -2663,7 +2661,7 @@ def test_given_partitions_read_concurrently_then_window_reduction_isolates_betwe
     paginator.next_page_token.return_value = None
 
     def split_request_window(stream_slice, min_split_window=None):
-        # preserve the parent's own partition, matching what a real WindowReducible would do
+        # preserve the parent's own partition, matching what a real request_window_splitter would do
         return [
             StreamSlice(
                 cursor_slice={
@@ -2681,8 +2679,8 @@ def test_given_partitions_read_concurrently_then_window_reduction_isolates_betwe
             ),
         ]
 
-    request_window_splitter = Mock(spec=WindowReducible)
-    request_window_splitter.split_request_window.side_effect = split_request_window
+    request_window_splitter = Mock()
+    request_window_splitter.side_effect = split_request_window
 
     retriever = _request_window_splitting_retriever(
         requester, paginator, record_selector, request_window_splitter
@@ -2696,4 +2694,4 @@ def test_given_partitions_read_concurrently_then_window_reduction_isolates_betwe
 
     assert records_b == [{"partition": "b", "start": "2024-02-01T00:00:00Z"}]
     assert len(records_a) == 2
-    request_window_splitter.split_request_window.assert_called_once_with(slice_a, None)
+    request_window_splitter.assert_called_once_with(slice_a, None)
