@@ -540,6 +540,15 @@ class HttpClient:
             del self._request_attempt_count[prepared_request]
         self._token_refresh_outcomes.pop(prepared_request, None)
 
+    def _auth_header_changed_since(self, request: requests.PreparedRequest) -> bool:
+        """Whether the authenticator's current Authorization header differs from the one the request was sent with."""
+        # request.headers is None on an unprepared request
+        sent = request.headers.get("Authorization") if request.headers else None
+        if not sent or not hasattr(self._session.auth, "get_auth_header"):
+            return False
+        current = self._session.auth.get_auth_header().get("Authorization")  # type: ignore[union-attr]
+        return current is not None and current != sent
+
     def _handle_error_resolution(
         self,
         response: Optional[requests.Response],
@@ -610,11 +619,16 @@ class HttpClient:
             ):
                 self._token_refresh_outcomes[request] = False
                 try:
-                    self._session.auth.refresh_and_set_access_token()  # type: ignore[union-attr]
+                    if self._auth_header_changed_since(request):
+                        self._logger.info(
+                            "OAuth token was already replaced since this request was sent; retrying with the current token without refreshing again."
+                        )
+                    else:
+                        self._session.auth.refresh_and_set_access_token()  # type: ignore[union-attr]
+                        self._logger.info(
+                            "Refreshed OAuth token due to REFRESH_TOKEN_THEN_RETRY response action"
+                        )
                     self._token_refresh_outcomes[request] = True
-                    self._logger.info(
-                        "Refreshed OAuth token due to REFRESH_TOKEN_THEN_RETRY response action"
-                    )
                 except AirbyteTracedException as refresh_error:
                     if refresh_error.failure_type == FailureType.config_error:
                         self._evict_key(request)

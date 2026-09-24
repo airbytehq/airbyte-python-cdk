@@ -138,9 +138,12 @@ class AbstractOauth2Authenticator(AuthBase):
         Refreshes regardless of expiry, serialized on the class-level refresh lock. If another
         thread using this same authenticator instance replaced the access token while this one
         waited for the lock, the refresh is skipped and the request is retried with that token.
-        Across separate instances (e.g. one authenticator per declarative stream) the guard does
-        not apply; there, serialization plus config-backed refresh-token rotation
-        (`SingleUseRefreshTokenOauth2Authenticator`) is what keeps concurrent refreshes safe.
+        `SingleUseRefreshTokenOauth2Authenticator` reads `access_token` from the connector config
+        shared by all stream instances, so the early return also covers separate instances there.
+        Only per-instance token authenticators (base and declarative) are limited to same-instance
+        detection; the Authorization-header check in `HttpClient._handle_error_resolution` covers
+        the rest by skipping the forced refresh when the rejected request's token was already
+        replaced.
         Subclasses may override this to handle additional state updates (e.g., persisting new
         refresh tokens).
         """

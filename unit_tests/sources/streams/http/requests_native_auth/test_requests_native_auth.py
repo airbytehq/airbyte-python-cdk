@@ -1476,3 +1476,135 @@ class TestConcurrentTokenRefresh:
 
         mocked_refresh.assert_called_once()
         assert oauth.access_token == "new"
+
+    def test_get_access_token_refresh_lock_is_reentrant(self, requests_mock):
+        """
+        get_access_token() holds the class-level refresh lock while calling
+        refresh_and_set_access_token, which re-acquires it; a non-reentrant lock
+        would deadlock. The worker thread must finish and report the new token.
+        """
+        requests_mock.post(
+            "https://refresh_endpoint.com",
+            json={"access_token": "new_access_token", "expires_in": 3600},
+        )
+        oauth = Oauth2Authenticator(
+            token_refresh_endpoint="https://refresh_endpoint.com",
+            client_id="client_id",
+            client_secret="client_secret",
+            refresh_token="refresh_token",
+            token_expiry_date=ab_datetime_now() - timedelta(hours=1),
+        )
+
+        results, errors = [], []
+
+        def get_token():
+            try:
+                results.append(oauth.get_access_token())
+            except Exception as e:
+                errors.append(e)
+
+        thread = threading.Thread(target=get_token)
+        thread.start()
+        thread.join(timeout=5)
+
+        assert not thread.is_alive(), "get_access_token deadlocked on a non-reentrant lock"
+        assert errors == []
+        assert results == ["new_access_token"]
+
+    def test_refresh_and_set_access_token_holds_lock_during_refresh(self, mocker):
+        """
+        The class-level lock must be held for the whole refresh: a probe from another
+        thread cannot acquire it while refresh_access_token is in flight.
+        """
+        oauth = Oauth2Authenticator(
+            token_refresh_endpoint="https://refresh_endpoint.com",
+            client_id="client_id",
+            client_secret="client_secret",
+            refresh_token="refresh_token",
+            token_expiry_date=ab_datetime_now() + timedelta(hours=1),
+        )
+        oauth.access_token = "old"
+
+        probe_results = []
+
+        def spy_refresh_access_token(self):
+            def probe():
+                acquired = Oauth2Authenticator._token_refresh_lock.acquire(blocking=False)
+                if acquired:
+                    Oauth2Authenticator._token_refresh_lock.release()
+                probe_results.append(acquired)
+
+            probe_thread = threading.Thread(target=probe)
+            probe_thread.start()
+            probe_thread.join()
+            return ("new", ab_datetime_now() + timedelta(hours=1))
+
+        mocker.patch.object(Oauth2Authenticator, "refresh_access_token", spy_refresh_access_token)
+
+        oauth.refresh_and_set_access_token()
+
+        assert probe_results == [False]
+        assert oauth.access_token == "new"
+
+
+class TestSingleUseRefreshTokenInstanceSkip:
+    """
+    Two SingleUseRefreshTokenOauth2Authenticator instances over one shared connector
+    config: a forced refresh queued behind the lock sees the token the first instance
+    already wrote back into the shared config and skips its own refresh.
+    """
+
+    def test_second_instance_skips_refresh_after_first_refreshes(self, requests_mock, mocker):
+        requests_mock.post(
+            "https://refresh_endpoint.com",
+            json={
+                "access_token": "new_access_token",
+                "refresh_token": "new_refresh_token",
+                "expires_in": 3600,
+            },
+        )
+        connector_config = {
+            "credentials": {
+                "client_id": "client_id",
+                "client_secret": "client_secret",
+                "refresh_token": "refresh_token",
+                "access_token": "old_access_token",
+                "token_expiry_date": str(ab_datetime_now() + timedelta(hours=1)),
+            }
+        }
+        auth1 = SingleUseRefreshTokenOauth2Authenticator(
+            connector_config=connector_config,
+            token_refresh_endpoint="https://refresh_endpoint.com",
+        )
+        auth2 = SingleUseRefreshTokenOauth2Authenticator(
+            connector_config=connector_config,
+            token_refresh_endpoint="https://refresh_endpoint.com",
+        )
+
+        mocked_emit = mocker.patch.object(
+            SingleUseRefreshTokenOauth2Authenticator, "_emit_control_message"
+        )
+
+        snapshot_taken = threading.Event()
+        real_snapshot = auth2._current_access_token_or_none
+
+        def record_snapshot():
+            value = real_snapshot()
+            snapshot_taken.set()
+            return value
+
+        mocker.patch.object(auth2, "_current_access_token_or_none", side_effect=record_snapshot)
+
+        with SingleUseRefreshTokenOauth2Authenticator._token_refresh_lock:
+            thread = threading.Thread(target=auth2.refresh_and_set_access_token)
+            thread.start()
+            # auth2 took its pre-lock snapshot ("old_access_token") and now waits on the lock.
+            assert snapshot_taken.wait(5)
+            auth1.refresh_and_set_access_token()
+        thread.join(timeout=5)
+
+        assert not thread.is_alive()
+        assert len(requests_mock.request_history) == 1
+        assert mocked_emit.call_count == 1
+        assert auth2.access_token == "new_access_token"
+        assert connector_config["credentials"]["refresh_token"] == "new_refresh_token"

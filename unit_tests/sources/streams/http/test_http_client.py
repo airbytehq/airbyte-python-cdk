@@ -13,6 +13,7 @@ from pympler import asizeof
 from requests_cache import CachedRequest
 
 from airbyte_cdk.models import FailureType, Level
+from airbyte_cdk.sources.declarative.auth.oauth import DeclarativeOauth2Authenticator
 from airbyte_cdk.sources.http_logger import format_http_message
 from airbyte_cdk.sources.message import InMemoryMessageRepository
 from airbyte_cdk.sources.streams.call_rate import CachedLimiterSession, LimiterSession
@@ -1073,19 +1074,20 @@ def test_refresh_token_then_retry_action_retries_and_succeeds_after_token_refres
     assert call_count == 2
 
 
-def _build_refresh_token_then_retry_http_client():
+def _build_refresh_token_then_retry_http_client(authenticator=None):
     """An HttpClient backed by a real Oauth2Authenticator with a non-expired token, so the
     first request does not itself trigger a refresh and only REFRESH_TOKEN_THEN_RETRY does."""
-    authenticator = Oauth2Authenticator(
-        token_refresh_endpoint="https://example.com/oauth/token",
-        client_id="client_id",
-        client_secret="client_secret",
-        refresh_token="refresh_token",
-        token_expiry_date=ab_datetime_now() + timedelta(days=1),
-        refresh_token_error_status_codes=(400,),
-        refresh_token_error_key="error",
-        refresh_token_error_values=("invalid_grant",),
-    )
+    if authenticator is None:
+        authenticator = Oauth2Authenticator(
+            token_refresh_endpoint="https://example.com/oauth/token",
+            client_id="client_id",
+            client_secret="client_secret",
+            refresh_token="refresh_token",
+            token_expiry_date=ab_datetime_now() + timedelta(days=1),
+            refresh_token_error_status_codes=(400,),
+            refresh_token_error_key="error",
+            refresh_token_error_values=("invalid_grant",),
+        )
     http_client = HttpClient(
         name="test",
         logger=logging.getLogger("test"),
@@ -1148,6 +1150,7 @@ def test_refresh_token_then_retry_fails_fast_when_refresh_is_rejected(requests_m
     assert exc_info.value.failure_type == FailureType.config_error
     assert _request_count(requests_mock, "https://example.com/oauth/token", "POST") == 1
     assert _request_count(requests_mock, "https://example.com/data") == 1
+    assert http_client._token_refresh_outcomes == {}
     mocked_sleep.assert_not_called()
 
 
@@ -1167,25 +1170,107 @@ def test_refresh_token_then_retry_does_not_refresh_twice_for_the_same_request(re
     assert exc_info.value.message == "Token rejected; refresh and retry"
     assert _request_count(requests_mock, "https://example.com/oauth/token", "POST") == 1
     assert _request_count(requests_mock, "https://example.com/data") == 2
+    assert http_client._token_refresh_outcomes == {}
+
+
+def test_refresh_token_then_retry_reports_transient_error_when_refresh_fails_transiently(
+    requests_mock, mocker
+):
+    requests_mock.get("https://example.com/data", status_code=401)
+    requests_mock.post(
+        "https://example.com/oauth/token",
+        exc=requests.exceptions.ConnectionError("token endpoint unreachable"),
+    )
+    http_client = _build_refresh_token_then_retry_http_client()
+
+    mocker.patch("time.sleep")
+    with pytest.raises(AirbyteTracedException) as exc_info:
+        http_client.send_request("GET", "https://example.com/data", request_kwargs={})
+
+    assert exc_info.value.failure_type == FailureType.transient_error
+    # The token endpoint itself is retried by the backoff decorator on _make_handled_request.
+    assert _request_count(requests_mock, "https://example.com/oauth/token", "POST") > 1
+    assert _request_count(requests_mock, "https://example.com/data") == 2
 
 
 @pytest.mark.usefixtures("mock_sleep")
-def test_refresh_token_then_retry_reports_transient_error_when_refresh_fails_transiently(
-    requests_mock,
-):
+def test_refresh_token_then_retry_refresh_rejected_outside_configured_errors(requests_mock):
     requests_mock.get("https://example.com/data", status_code=401)
+    requests_mock.post(
+        "https://example.com/oauth/token",
+        status_code=401,
+        json={"error": "invalid_client"},
+    )
     http_client = _build_refresh_token_then_retry_http_client()
 
-    with patch.object(
-        Oauth2Authenticator,
-        "_make_handled_request",
-        side_effect=requests.exceptions.ConnectionError("token endpoint unreachable"),
-    ) as mocked_handled_request:
-        with pytest.raises(AirbyteTracedException) as exc_info:
-            http_client.send_request("GET", "https://example.com/data", request_kwargs={})
+    with pytest.raises(AirbyteTracedException) as exc_info:
+        http_client.send_request("GET", "https://example.com/data", request_kwargs={})
 
     assert exc_info.value.failure_type == FailureType.transient_error
-    assert mocked_handled_request.call_count == 1
+    assert _request_count(requests_mock, "https://example.com/oauth/token", "POST") == 1
+    assert _request_count(requests_mock, "https://example.com/data") == 2
+
+
+@pytest.mark.usefixtures("mock_sleep")
+def test_refresh_token_then_retry_skips_refresh_when_token_already_replaced(requests_mock):
+    http_client = _build_refresh_token_then_retry_http_client()
+    authenticator = http_client._session.auth
+
+    def expire_token(request, context):
+        authenticator.access_token = "new"
+        context.status_code = 401
+        return json.dumps({})
+
+    requests_mock.get(
+        "https://example.com/data",
+        [{"text": expire_token}, {"status_code": 200, "json": {"data": "ok"}}],
+    )
+
+    with patch.object(authenticator, "refresh_and_set_access_token") as refresh_spy:
+        _, response = http_client.send_request("GET", "https://example.com/data", request_kwargs={})
+
+    assert response.status_code == 200
+    refresh_spy.assert_not_called()
+    assert _request_count(requests_mock, "https://example.com/oauth/token", "POST") == 0
+    assert _request_count(requests_mock, "https://example.com/data") == 2
+    second_request = [
+        r for r in requests_mock.request_history if r.url == "https://example.com/data"
+    ][1]
+    assert second_request.headers["Authorization"] == "Bearer new"
+    assert http_client._token_refresh_outcomes == {}
+
+
+@pytest.mark.usefixtures("mock_sleep")
+def test_refresh_token_then_retry_with_declarative_oauth_authenticator(requests_mock):
+    authenticator = DeclarativeOauth2Authenticator(
+        token_refresh_endpoint="https://example.com/oauth/token",
+        client_id="client_id",
+        client_secret="client_secret",
+        refresh_token="refresh_token",
+        config={},
+        parameters={},
+        access_token_value="old",
+        token_expiry_date=(ab_datetime_now() + timedelta(days=1)).isoformat(),
+        refresh_token_error_status_codes=(400,),
+        refresh_token_error_key="error",
+        refresh_token_error_values=("invalid_grant",),
+    )
+    http_client = _build_refresh_token_then_retry_http_client(authenticator=authenticator)
+
+    requests_mock.get(
+        "https://example.com/data",
+        [{"status_code": 401}, {"status_code": 200, "json": {"data": "ok"}}],
+    )
+    requests_mock.post(
+        "https://example.com/oauth/token",
+        json={"access_token": "new", "expires_in": 3600},
+    )
+
+    _, response = http_client.send_request("GET", "https://example.com/data", request_kwargs={})
+
+    assert response.status_code == 200
+    assert response.json() == {"data": "ok"}
+    assert _request_count(requests_mock, "https://example.com/oauth/token", "POST") == 1
     assert _request_count(requests_mock, "https://example.com/data") == 2
 
 
