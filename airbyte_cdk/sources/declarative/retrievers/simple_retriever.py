@@ -688,6 +688,10 @@ class SimpleRetriever(Retriever):
                     failure_type=exception.classified_failure_type or FailureType.transient_error,
                 ) from exception
 
+            LOGGER.info(
+                f"Stream {self.name}: the API rejected request window {stream_slice} (split depth {depth}); "
+                f"reducing it to {children} and reading each in turn."
+            )
             for child in children:
                 yield from self._read_records_or_split_request_window(
                     records_schema, child, original_slice, depth + 1
