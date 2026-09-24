@@ -279,11 +279,13 @@ class TemporaryExcelFilesStreamReader(InMemoryFilesStreamReader):
 
     def _make_file_contents(self, file_name: str) -> bytes:
         contents = self.files[file_name]["contents"]
-        df = pd.DataFrame(contents)
+        # A mapping declares one worksheet per key; a bare list is a single "Sheet1".
+        sheets = contents if isinstance(contents, Mapping) else {"Sheet1": contents}
 
         with io.BytesIO() as fp:
             writer = pd.ExcelWriter(fp, engine="xlsxwriter")
-            df.to_excel(writer, index=False, sheet_name="Sheet1")
+            for sheet_name, rows in sheets.items():
+                pd.DataFrame(rows).to_excel(writer, index=False, sheet_name=sheet_name)
             writer._save()
             fp.seek(0)
             return fp.read()
