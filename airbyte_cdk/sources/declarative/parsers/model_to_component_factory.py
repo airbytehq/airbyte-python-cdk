@@ -597,7 +597,7 @@ from airbyte_cdk.sources.declarative.retrievers.page_size_reducer import (
 from airbyte_cdk.sources.declarative.retrievers.pagination_tracker import PaginationTracker
 from airbyte_cdk.sources.declarative.retrievers.window_reducible import (
     OnPartialResponse,
-    RequestWindowReduction,
+    RequestWindowSplitting,
     WindowReducible,
 )
 from airbyte_cdk.sources.declarative.schema import (
@@ -1220,7 +1220,7 @@ class ModelToComponentFactory:
         self._reject_reduce_page_size_action(
             model.login_requester, f"`login_requester` of the SessionTokenAuthenticator of {name}"
         )
-        self._reject_reduce_request_window_action(
+        self._reject_split_request_window_action(
             model.login_requester, f"`login_requester` of the SessionTokenAuthenticator of {name}"
         )
         decoder = (
@@ -3701,18 +3701,18 @@ class ModelToComponentFactory:
             )
 
         if reads_parent_stream_lazily and (
-            model.request_window_reduction
-            or self._uses_reduce_request_window_action(
+            model.request_window_splitting
+            or self._uses_split_request_window_action(
                 getattr(model.requester, "error_handler", None)
             )
         ):
             # Same reasoning as the page_size_reduction check above: LazySimpleRetriever reads records
             # embedded in the parent's own pages rather than requesting a window of its own, so there is
-            # nothing here for a reduced child window to be read from.
+            # nothing here for a split child window to be read from.
             raise ValueError(
-                f"`request_window_reduction` and the REDUCE_REQUEST_WINDOW response action are not "
+                f"`request_window_splitting` and the SPLIT_REQUEST_WINDOW response action are not "
                 f"supported when reading a parent stream lazily. Remove either the request window "
-                f"reduction or the parent stream's `lazy_read_pointer` for stream {name}."
+                f"splitting or the parent stream's `lazy_read_pointer` for stream {name}."
             )
 
         if reads_parent_stream_lazily and not bool(
@@ -3755,7 +3755,7 @@ class ModelToComponentFactory:
         ):
             raise ValueError("PaginationResetLimits are not supported while having record filter.")
 
-        request_window_reduction = self._create_request_window_reduction(
+        request_window_splitting = self._create_request_window_splitting(
             model, name, cursor, incremental_sync, query_properties, file_uploader
         )
         return SimpleRetriever(
@@ -3776,9 +3776,9 @@ class ModelToComponentFactory:
             page_size_reduction=self._create_page_size_reduction(
                 model, name, query_properties, file_uploader
             ),
-            request_window_reduction=request_window_reduction,
-            window_reducer=(
-                cursor if request_window_reduction and isinstance(cursor, WindowReducible) else None
+            request_window_splitting=request_window_splitting,
+            request_window_splitter=(
+                cursor if request_window_splitting and isinstance(cursor, WindowReducible) else None
             ),
             post_pagination_filter=post_pagination_filter,
             parameters=model.parameters or {},
@@ -4085,7 +4085,7 @@ class ModelToComponentFactory:
         # A CustomErrorHandler can return any action and we cannot inspect it, so we do not validate it.
         return False
 
-    def _create_request_window_reduction(
+    def _create_request_window_splitting(
         self,
         model: SimpleRetrieverModel,
         name: str,
@@ -4095,50 +4095,49 @@ class ModelToComponentFactory:
         ] = None,
         query_properties: Optional[QueryProperties] = None,
         file_uploader: Optional[DefaultFileUploader] = None,
-    ) -> Optional[RequestWindowReduction]:
+    ) -> Optional[RequestWindowSplitting]:
         # A CustomRequester does not necessarily define an error handler. A CustomRequester that does define
         # one keeps it as a raw dict rather than a typed model, so this returns False for it as well.
         error_handler = getattr(model.requester, "error_handler", None)
-        uses_action = self._uses_reduce_request_window_action(error_handler)
-        if uses_action and not model.request_window_reduction:
+        uses_action = self._uses_split_request_window_action(error_handler)
+        if uses_action and not model.request_window_splitting:
             raise ValueError(
-                f"Stream {name} has a response filter with the REDUCE_REQUEST_WINDOW action but the "
-                f"retriever does not define `request_window_reduction`. Add a `request_window_reduction` "
+                f"Stream {name} has a response filter with the SPLIT_REQUEST_WINDOW action but the "
+                f"retriever does not define `request_window_splitting`. Add a `request_window_splitting` "
                 f"block to the retriever."
             )
 
-        if not model.request_window_reduction:
+        if not model.request_window_splitting:
             return None
 
         if not uses_action:
-            # Not raised: a CustomErrorHandler can resolve to REDUCE_REQUEST_WINDOW without us being able to
-            # see it, and custom code can raise RequestWindowReductionRequiredException directly without
+            # Not raised: a CustomErrorHandler can resolve to SPLIT_REQUEST_WINDOW without us being able to
+            # see it, and custom code can raise RequestWindowSplitRequiredException directly without
             # going through any error handler at all - so the only safe reaction to a block we cannot tie to
             # a known trigger is a warning.
             LOGGER.warning(
-                f"Stream {name} defines `request_window_reduction` but no response filter with the "
-                f"REDUCE_REQUEST_WINDOW action was found on its requester. The request window will never "
-                f"be reduced unless a custom error handler or custom code resolves to that action."
+                f"Stream {name} defines `request_window_splitting` but no response filter with the "
+                f"SPLIT_REQUEST_WINDOW action was found on its requester. The request window will never "
+                f"be split unless a custom error handler or custom code resolves to that action."
             )
 
-        self._validate_request_window_reduction_is_supported(
-            model, name, cursor, incremental_sync, query_properties, file_uploader
+        self._validate_request_window_splitting_is_supported(
+            name, cursor, incremental_sync, query_properties, file_uploader
         )
 
-        on_partial_response = model.request_window_reduction.on_partial_response
-        return RequestWindowReduction(
+        on_partial_response = model.request_window_splitting.on_partial_response
+        return RequestWindowSplitting(
             on_partial_response=OnPartialResponse(on_partial_response.value)
             if on_partial_response is not None
             else OnPartialResponse.FAIL,
-            failure_message=model.request_window_reduction.failure_message,
-            max_split_depth=model.request_window_reduction.max_split_depth  # type: ignore[arg-type]  # the schema defines a default
-            if model.request_window_reduction.max_split_depth is not None
+            failure_message=model.request_window_splitting.failure_message,
+            max_split_depth=model.request_window_splitting.max_split_depth  # type: ignore[arg-type]  # the schema defines a default
+            if model.request_window_splitting.max_split_depth is not None
             else 10,
         )
 
-    def _validate_request_window_reduction_is_supported(
+    def _validate_request_window_splitting_is_supported(
         self,
-        model: SimpleRetrieverModel,
         name: str,
         cursor: Optional[Cursor],
         incremental_sync: Optional[
@@ -4148,16 +4147,16 @@ class ModelToComponentFactory:
         file_uploader: Optional[DefaultFileUploader] = None,
     ) -> None:
         """
-        Request window reduction replaces a failing slice with smaller children derived from the stream's own
+        Request window splitting replaces a failing slice with smaller children derived from the stream's own
         cursor, so it only makes sense on a stream whose cursor can do that (see `WindowReducible`) and it is
         rejected for the same structural reasons `page_size_reduction` is: `additional_query_properties` and a
         `file_uploader` both mean records of the failing window may already have been emitted by the time the
-        reduction is requested, from inside the record generator rather than from a page boundary this retriever
+        split is requested, from inside the record generator rather than from a page boundary this retriever
         controls.
         """
         if not isinstance(cursor, WindowReducible):
             raise ValueError(
-                f"`request_window_reduction` requires an incremental cursor that supports window reduction on "
+                f"`request_window_splitting` requires an incremental cursor that supports window splitting on "
                 f"stream {name}. Found {type(cursor).__name__ if cursor is not None else 'no cursor'}: this is "
                 f"only supported today for a `DatetimeBasedCursor` with `cursor_granularity` set and no "
                 f"partition router combining multiple cursors."
@@ -4168,54 +4167,54 @@ class ModelToComponentFactory:
             and incremental_sync.cursor_granularity
         ):
             # `cursor_granularity` is both the smallest window the connector will ever request and what keeps
-            # two child windows from overlapping at their shared edge, so `WindowReducible.reduce_window`
+            # two child windows from overlapping at their shared edge, so `WindowReducible.split_request_window`
             # cannot split at all without it - checked here, on the manifest model, rather than by reaching
             # into the cursor's private state from outside the class it belongs to.
             raise ValueError(
-                f"`request_window_reduction` requires `cursor_granularity` on the `DatetimeBasedCursor` of "
+                f"`request_window_splitting` requires `cursor_granularity` on the `DatetimeBasedCursor` of "
                 f"stream {name}: without it there is no smallest window to stop splitting at, and no way to "
                 f"keep two child windows from overlapping at their shared edge."
             )
 
         if query_properties:
             raise ValueError(
-                f"`request_window_reduction` cannot be used together with query properties on stream {name}. "
+                f"`request_window_splitting` cannot be used together with query properties on stream {name}. "
                 f"Records from the earlier property chunks may have already been emitted when a chunk asks to "
-                f"reduce the window, so reducing and re-reading it could duplicate them."
+                f"split the window, so splitting and re-reading it could duplicate them."
             )
 
         if file_uploader:
             raise ValueError(
-                f"`request_window_reduction` cannot be used together with a `file_uploader` on stream {name}. "
+                f"`request_window_splitting` cannot be used together with a `file_uploader` on stream {name}. "
                 f"The file uploader sends one request per record from inside the window's record generator, so "
-                f"a reduction requested partway through could re-emit records already yielded by it."
+                f"a split requested partway through could re-emit records already yielded by it."
             )
 
-    def _reject_reduce_request_window_action(self, requester: Any, description: str) -> None:
+    def _reject_split_request_window_action(self, requester: Any, description: str) -> None:
         """
         `error_handler` is defined on `HttpRequester`, which is referenced by requesters that have no window of
-        their own to reduce, so REDUCE_REQUEST_WINDOW is schema-legal in places where nothing can honor it. Only
+        their own to split, so SPLIT_REQUEST_WINDOW is schema-legal in places where nothing can honor it. Only
         the main requester of a `SimpleRetriever` reads a cursor-sliced window, so every other requester is
         rejected here rather than surfacing the exception mid-sync as a generic failure.
         """
         if requester is None:
             return
-        if self._uses_reduce_request_window_action(getattr(requester, "error_handler", None)):
+        if self._uses_split_request_window_action(getattr(requester, "error_handler", None)):
             raise ValueError(
-                f"The REDUCE_REQUEST_WINDOW response action is not supported on the {description}: only the "
-                f"main requester of a SimpleRetriever reads a window that can be reduced. Use a different "
+                f"The SPLIT_REQUEST_WINDOW response action is not supported on the {description}: only the "
+                f"main requester of a SimpleRetriever reads a window that can be split. Use a different "
                 f"action on that error handler."
             )
 
-    def _uses_reduce_request_window_action(self, error_handler: Any) -> bool:
+    def _uses_split_request_window_action(self, error_handler: Any) -> bool:
         if isinstance(error_handler, CompositeErrorHandlerModel):
             return any(
-                self._uses_reduce_request_window_action(nested)
+                self._uses_split_request_window_action(nested)
                 for nested in error_handler.error_handlers
             )
         if isinstance(error_handler, DefaultErrorHandlerModel):
             return any(
-                response_filter.action == HttpResponseFilterActionModel.REDUCE_REQUEST_WINDOW
+                response_filter.action == HttpResponseFilterActionModel.SPLIT_REQUEST_WINDOW
                 for response_filter in error_handler.response_filters or []
             )
         # A CustomErrorHandler can return any action and we cannot inspect it, so we do not validate it.
@@ -4500,7 +4499,7 @@ class ModelToComponentFactory:
                 getattr(model, requester_field, None),
                 f"`{requester_field}` of the AsyncRetriever of stream {name}",
             )
-            self._reject_reduce_request_window_action(
+            self._reject_split_request_window_action(
                 getattr(model, requester_field, None),
                 f"`{requester_field}` of the AsyncRetriever of stream {name}",
             )
@@ -5119,7 +5118,7 @@ class ModelToComponentFactory:
         self, model: FileUploaderModel, config: Config, **kwargs: Any
     ) -> FileUploader:
         self._reject_reduce_page_size_action(model.requester, "requester of a `file_uploader`")
-        self._reject_reduce_request_window_action(model.requester, "requester of a `file_uploader`")
+        self._reject_split_request_window_action(model.requester, "requester of a `file_uploader`")
         name = "File Uploader"
         requester = self._create_component_from_model(
             model=model.requester,

@@ -51,7 +51,7 @@ from airbyte_cdk.sources.declarative.retrievers.pagination_tracker import Pagina
 from airbyte_cdk.sources.declarative.retrievers.retriever import Retriever
 from airbyte_cdk.sources.declarative.retrievers.window_reducible import (
     OnPartialResponse,
-    RequestWindowReduction,
+    RequestWindowSplitting,
     WindowReducible,
 )
 from airbyte_cdk.sources.declarative.stream_slicers.stream_slicer import StreamSlicer
@@ -64,9 +64,9 @@ from airbyte_cdk.sources.streams.http.page_size_reduction_exception import (
 from airbyte_cdk.sources.streams.http.pagination_reset_exception import (
     PaginationResetRequiredException,
 )
-from airbyte_cdk.sources.streams.http.request_window_reduction_exception import (
-    RequestWindowReductionNotSupportedException,
-    RequestWindowReductionRequiredException,
+from airbyte_cdk.sources.streams.http.request_window_split_exception import (
+    RequestWindowSplitNotSupportedException,
+    RequestWindowSplitRequiredException,
 )
 from airbyte_cdk.sources.types import Config, Record, StreamSlice
 from airbyte_cdk.utils.mapping_helpers import combine_mappings
@@ -105,15 +105,15 @@ class SimpleRetriever(Retriever):
             `_read_pages` creates per call, so the retriever and its paginator - both shared by every
             partition of the stream, read concurrently - stay stateless. When `page_size_reduction` is
             `None` no reducer is created and `_read_pages` keeps its previous behaviour
-        request_window_reduction (Optional[RequestWindowReduction]): Policy applied when an error handler
-            resolves to `ResponseAction.REDUCE_REQUEST_WINDOW`, or when `RequestWindowReductionRequiredException`
-            is raised directly by custom code. `None` disables request-window reduction entirely: `read_records`
-            converts the exception into `RequestWindowReductionNotSupportedException` instead of attempting a
-            reduction it cannot perform.
-        window_reducer (Optional[WindowReducible]): The component - normally the stream's own cursor - asked to
+        request_window_splitting (Optional[RequestWindowSplitting]): Policy applied when an error handler
+            resolves to `ResponseAction.SPLIT_REQUEST_WINDOW`, or when `RequestWindowSplitRequiredException`
+            is raised directly by custom code. `None` disables request-window splitting entirely: `read_records`
+            converts the exception into `RequestWindowSplitNotSupportedException` instead of attempting a
+            split it cannot perform.
+        request_window_splitter (Optional[WindowReducible]): The component - normally the stream's own cursor - asked to
             replace a failing `StreamSlice` with smaller children. `None` has the same effect as
-            `request_window_reduction` being `None`: reduction is not attempted, and a
-            `RequestWindowReductionRequiredException` is re-raised as `RequestWindowReductionNotSupportedException`.
+            `request_window_splitting` being `None`: splitting is not attempted, and a
+            `RequestWindowSplitRequiredException` is re-raised as `RequestWindowSplitNotSupportedException`.
     """
 
     requester: Requester
@@ -139,8 +139,8 @@ class SimpleRetriever(Retriever):
     )
     post_pagination_filter: Optional[ClientSideIncrementalRecordFilterDecorator] = None
     page_size_reduction: Optional[PageSizeReduction] = None
-    request_window_reduction: Optional[RequestWindowReduction] = None
-    window_reducer: Optional[WindowReducible] = None
+    request_window_splitting: Optional[RequestWindowSplitting] = None
+    request_window_splitter: Optional[WindowReducible] = None
 
     def __post_init__(self, parameters: Mapping[str, Any]) -> None:
         self._paginator = self.paginator or NoPagination(parameters=parameters)
@@ -563,9 +563,9 @@ class SimpleRetriever(Retriever):
         :return: The records read from the API source
         """
         _slice = stream_slice or StreamSlice(partition={}, cursor_slice={})  # None-check
-        yield from self._read_records_or_reduce_window(records_schema, _slice, _slice, depth=0)
+        yield from self._read_records_or_split_request_window(records_schema, _slice, _slice, depth=0)
 
-    def _read_records_or_reduce_window(
+    def _read_records_or_split_request_window(
         self,
         records_schema: Mapping[str, Any],
         stream_slice: StreamSlice,
@@ -574,7 +574,7 @@ class SimpleRetriever(Retriever):
     ) -> Iterable[StreamData]:
         """
         Read `stream_slice` to completion, replacing it with smaller children and recursing into each of them in
-        turn when a `RequestWindowReductionRequiredException` is raised while reading it.
+        turn when a `RequestWindowSplitRequiredException` is raised while reading it.
 
         Each recursive call re-enters this method - and, through it, `_read_pages` - from scratch for the child
         slice it is given, so every child gets its own paginator token, `PaginationTracker`, and
@@ -582,12 +582,12 @@ class SimpleRetriever(Retriever):
         recursion lives inside the single generator `DeclarativePartition.read()` consumes,
         `PartitionReader.process_partition()` only calls `cursor.close_partition()` once, after this generator is
         fully exhausted - so a failure anywhere in the recursion (a child that cannot be read, or a window that
-        cannot be reduced any further) propagates out without ever checkpointing the original partition.
+        cannot be split any further) propagates out without ever checkpointing the original partition.
 
         `original_slice` is threaded through the recursion unchanged so every record yielded, however deep the
         recursion went to produce it, is re-stamped with the partition's own slice rather than the child slice it
         was actually read against - see `_reassociate_with_original_slice`. `depth` bounds the recursion
-        independently of `WindowReducible.reduce_window`'s own no-progress guard: it is enforced here so a
+        independently of `WindowReducible.split_request_window`'s own no-progress guard: it is enforced here so a
         misbehaving custom cursor cannot recurse indefinitely regardless of what that guard does or does not
         catch.
         """
@@ -616,62 +616,62 @@ class SimpleRetriever(Retriever):
             for record in records:
                 emitted_any = True
                 yield self._reassociate_with_original_slice(record, original_slice)
-        except RequestWindowReductionRequiredException as exception:
-            if self.request_window_reduction is None or self.window_reducer is None:
-                raise RequestWindowReductionNotSupportedException(
+        except RequestWindowSplitRequiredException as exception:
+            if self.request_window_splitting is None or self.request_window_splitter is None:
+                raise RequestWindowSplitNotSupportedException(
                     stream_name=self.name
                 ) from exception
 
             if (
                 emitted_any
-                and self.request_window_reduction.on_partial_response == OnPartialResponse.FAIL
+                and self.request_window_splitting.on_partial_response == OnPartialResponse.FAIL
             ):
-                # The reduction is safe only because it re-reads a window whose records were not emitted yet.
+                # The split is safe only because it re-reads a window whose records were not emitted yet.
                 # Re-reading it as smaller children here would duplicate the records already yielded above.
                 raise AirbyteTracedException(
-                    internal_message=f"Stream {self.name} requested a request window reduction after records of the current window had already been emitted",
+                    internal_message=f"Stream {self.name} requested a request window split after records of the current window had already been emitted",
                     message=(
-                        f"Stream {self.name} asked to reduce its request window after some records of it were "
-                        f"already read. Reducing and re-reading the window would duplicate those records. Set "
-                        f"`on_partial_response: ALLOW_REPLAY` on `request_window_reduction` if duplicate records "
-                        f"are acceptable for this stream, or move the REDUCE_REQUEST_WINDOW action so it only "
+                        f"Stream {self.name} asked to split its request window after some records of it were "
+                        f"already read. Splitting and re-reading the window would duplicate those records. Set "
+                        f"`on_partial_response: ALLOW_REPLAY` on `request_window_splitting` if duplicate records "
+                        f"are acceptable for this stream, or move the SPLIT_REQUEST_WINDOW action so it only "
                         f"triggers before any record of the window has been read."
                     ),
                     failure_type=FailureType.config_error,
                 ) from exception
 
-            if depth >= self.request_window_reduction.max_split_depth:
+            if depth >= self.request_window_splitting.max_split_depth:
                 raise AirbyteTracedException(
-                    internal_message=f"Stream {self.name} exceeded the maximum request window split depth of {self.request_window_reduction.max_split_depth} while reducing {original_slice}",
+                    internal_message=f"Stream {self.name} exceeded the maximum request window split depth of {self.request_window_splitting.max_split_depth} while splitting {original_slice}",
                     message=(
-                        f"Stream {self.name} could not reduce its request window to a size the API accepts "
-                        f"within {self.request_window_reduction.max_split_depth} splits. This usually means the "
+                        f"Stream {self.name} could not split its request window to a size the API accepts "
+                        f"within {self.request_window_splitting.max_split_depth} splits. This usually means the "
                         f"stream's cursor is not actually shrinking the window on each split; if it uses a "
-                        f"custom cursor, check its `reduce_window` implementation. Raise "
-                        f"`request_window_reduction.max_split_depth` only if this stream's cursor granularity "
+                        f"custom cursor, check its `split_request_window` implementation. Raise "
+                        f"`request_window_splitting.max_split_depth` only if this stream's cursor granularity "
                         f"genuinely requires more splits than that."
                     ),
                     failure_type=FailureType.config_error,
                 ) from exception
 
-            children = self.window_reducer.reduce_window(stream_slice)
+            children = self.request_window_splitter.split_request_window(stream_slice)
             if children is None:
                 failure_message = (
                     f"The API kept rejecting stream {self.name}'s request window even at the smallest window "
-                    f"its cursor allows, or reducing the window further would not make progress."
+                    f"its cursor allows, or splitting the window further would not make progress."
                 )
-                if self.request_window_reduction.failure_message:
+                if self.request_window_splitting.failure_message:
                     failure_message = (
-                        f"{failure_message} {self.request_window_reduction.failure_message}"
+                        f"{failure_message} {self.request_window_splitting.failure_message}"
                     )
                 raise AirbyteTracedException(
-                    internal_message=f"Stream {self.name} could not reduce its request window {stream_slice} any further",
+                    internal_message=f"Stream {self.name} could not split its request window {stream_slice} any further",
                     message=failure_message,
                     failure_type=exception.failure_type or FailureType.config_error,
                 ) from exception
 
             for child in children:
-                yield from self._read_records_or_reduce_window(
+                yield from self._read_records_or_split_request_window(
                     records_schema, child, original_slice, depth + 1
                 )
 
@@ -680,7 +680,7 @@ class SimpleRetriever(Retriever):
         record: StreamData, original_slice: StreamSlice
     ) -> StreamData:
         """
-        Records read while recursing into a reduced child window are parsed against that child's `StreamSlice`,
+        Records read while recursing into a split child window are parsed against that child's `StreamSlice`,
         so `RecordSelector` stamps them with the child as `associated_slice`. `DeclarativePartition.read()`
         passes an already-built `Record` through unchanged rather than re-wrapping it, so left uncorrected the
         child slice - not the partition's own slice - is what `ConcurrentCursor.observe()` would key its

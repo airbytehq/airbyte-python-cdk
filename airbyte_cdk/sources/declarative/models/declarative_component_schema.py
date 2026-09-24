@@ -716,7 +716,7 @@ class Action(Enum):
     RATE_LIMITED = "RATE_LIMITED"
     REFRESH_TOKEN_THEN_RETRY = "REFRESH_TOKEN_THEN_RETRY"
     REDUCE_PAGE_SIZE = "REDUCE_PAGE_SIZE"
-    REDUCE_REQUEST_WINDOW = "REDUCE_REQUEST_WINDOW"
+    SPLIT_REQUEST_WINDOW = "SPLIT_REQUEST_WINDOW"
 
 
 class FailureType(Enum):
@@ -739,7 +739,7 @@ class HttpResponseFilter(BaseModel):
             "RATE_LIMITED",
             "REFRESH_TOKEN_THEN_RETRY",
             "REDUCE_PAGE_SIZE",
-            "REDUCE_REQUEST_WINDOW",
+            "SPLIT_REQUEST_WINDOW",
         ],
         title="Action",
     )
@@ -1478,11 +1478,11 @@ class OnPartialResponse(Enum):
     ALLOW_REPLAY = "ALLOW_REPLAY"
 
 
-class RequestWindowReduction(BaseModel):
-    type: Literal["RequestWindowReduction"]
+class RequestWindowSplitting(BaseModel):
+    type: Literal["RequestWindowSplitting"]
     on_partial_response: Optional[OnPartialResponse] = Field(
         OnPartialResponse.FAIL,
-        description="What to do when a REDUCE_REQUEST_WINDOW response arrives after the current window has already emitted a page or a record. FAIL stops the sync with a configuration error, since reducing and re-reading the window from scratch would emit those records a second time - this is correct for an API, such as PayPal's, that always rejects a window before returning its first page. ALLOW_REPLAY reduces and re-reads the window anyway, accepting at-least-once delivery of the records already emitted; use it only when the destination or a downstream deduplication step can tolerate duplicate records, for instance when adopting this action for a transport or streamed-decoding failure that can occur after some records of the window were already read.",
+        description="What to do when a SPLIT_REQUEST_WINDOW response arrives after the current window has already emitted a page or a record. FAIL stops the sync with a configuration error, since splitting and re-reading the window from scratch would emit those records a second time - this is correct for an API, such as PayPal's, that always rejects a window before returning its first page. ALLOW_REPLAY splits and re-reads the window anyway, accepting at-least-once delivery of the records already emitted; use it only when the destination or a downstream deduplication step can tolerate duplicate records, for instance when adopting this action for a transport or streamed-decoding failure that can occur after some records of the window were already read.",
         title="On Partial Response",
     )
     failure_message: Optional[str] = Field(
@@ -1496,7 +1496,7 @@ class RequestWindowReduction(BaseModel):
     )
     max_split_depth: Optional[int] = Field(
         10,
-        description="Maximum number of times in a row a single request window may be split before the sync fails with a configuration error. This is a safety bound independent of the cursor's own granularity floor: it protects against a custom cursor whose reduce_window implementation returns children that do not actually shrink the window, which would otherwise recurse indefinitely. Each reduction bisects a single already-generated slice - bounded by the cursor's own step, not the whole sync range - and real-world APIs that reject oversized windows are typically satisfied well before reaching sub-day granularity: a one-year step bisected down to a twelve-hour floor needs about 10 halvings, which already covers a wider window than the request-window failures this feature targets in practice tend to involve (days to a few months). The default of 10 is a safety net, not a limit legitimate reductions are expected to approach. A stream whose cursor genuinely needs finer-than-half-day granularity, or windows spanning multiple years, should raise this explicitly.",
+        description="Maximum number of times in a row a single request window may be split before the sync fails with a configuration error. This is a safety bound independent of the cursor's own granularity floor: it protects against a custom cursor whose split_request_window implementation returns children that do not actually shrink the window, which would otherwise recurse indefinitely. Each reduction bisects a single already-generated slice - bounded by the cursor's own step, not the whole sync range - and real-world APIs that reject oversized windows are typically satisfied well before reaching sub-day granularity: a one-year step bisected down to a twelve-hour floor needs about 10 halvings, which already covers a wider window than the request-window failures this feature targets in practice tend to involve (days to a few months). The default of 10 is a safety net, not a limit legitimate reductions are expected to approach. A stream whose cursor genuinely needs finer-than-half-day granularity, or windows spanning multiple years, should raise this explicitly.",
         examples=[10, 5],
         ge=1,
         title="Maximum Split Depth",
@@ -3330,9 +3330,9 @@ class SimpleRetriever(BaseModel):
         None,
         description="Describes how the page size is reduced when an error handler resolves to the REDUCE_PAGE_SIZE action. Requires a DefaultPaginator that defines both page_size_option and a pagination strategy with a page_size. Cannot be combined with query properties, a file uploader, or a parent stream read lazily through lazy_read_pointer, because in those cases records of the failing page have already been emitted and re-issuing the page would emit them twice. A page_token_option of type RequestPath is rejected as well, because the next page is then a URL built by the API which already carries the page size.",
     )
-    request_window_reduction: Optional[RequestWindowReduction] = Field(
+    request_window_splitting: Optional[RequestWindowSplitting] = Field(
         None,
-        description="Describes how the request window is reduced when an error handler resolves to the REDUCE_REQUEST_WINDOW action. Requires an incremental_sync cursor that defines cursor_granularity, since that is both the smallest window the connector will request and what keeps two child windows from overlapping at their shared edge. Distinct from page_size_reduction: an API can reject an entire date/time range as too large even though every individual page of it would be within the API's page size limit, and no page can be returned to page through in the first place. On such a response the connector replaces the failing window with two smaller, ordered windows covering the same range and reads each one fully, with its own pagination state, before checkpointing the original partition.",
+        description="Describes how the request window is split when an error handler resolves to the SPLIT_REQUEST_WINDOW action. Requires an incremental_sync cursor that defines cursor_granularity, since that is both the smallest window the connector will request and what keeps two child windows from overlapping at their shared edge. Distinct from page_size_reduction: an API can reject an entire date/time range as too large even though every individual page of it would be within the API's page size limit, and no page can be returned to page through in the first place. On such a response the connector replaces the failing window with two smaller, ordered windows covering the same range and reads each one fully, with its own pagination state, before checkpointing the original partition.",
     )
     ignore_stream_slicer_parameters_on_paginated_requests: Optional[bool] = Field(
         False,

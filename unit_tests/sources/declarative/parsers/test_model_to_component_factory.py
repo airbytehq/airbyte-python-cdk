@@ -207,7 +207,7 @@ from airbyte_cdk.sources.declarative.retrievers.page_size_reducer import (
 )
 from airbyte_cdk.sources.declarative.retrievers.window_reducible import (
     OnPartialResponse,
-    RequestWindowReduction,
+    RequestWindowSplitting,
     WindowReducible,
 )
 from airbyte_cdk.sources.declarative.schema import InlineSchemaLoader, JsonFileSchemaLoader
@@ -7565,7 +7565,7 @@ schema_loader:
 {incremental_sync}
 retriever:
   type: SimpleRetriever
-  {request_window_reduction}
+  {request_window_splitting}
   requester:
     type: HttpRequester
     url_base: "https://airbyte.io"
@@ -7594,14 +7594,14 @@ _DATETIME_BASED_CURSOR_WITH_GRANULARITY = """incremental_sync:
   datetime_format: "%Y-%m-%dT%H:%M:%SZ\""""
 
 
-def _request_window_reduction_stream(
-    request_window_reduction="request_window_reduction:\n    type: RequestWindowReduction",
-    action="REDUCE_REQUEST_WINDOW",
+def _request_window_splitting_stream(
+    request_window_splitting="request_window_splitting:\n    type: RequestWindowSplitting",
+    action="SPLIT_REQUEST_WINDOW",
     incremental_sync=_DATETIME_BASED_CURSOR_WITH_GRANULARITY,
 ):
     content = _REQUEST_WINDOW_REDUCTION_STREAM.format(
         incremental_sync=incremental_sync,
-        request_window_reduction=request_window_reduction,
+        request_window_splitting=request_window_splitting,
         action=action,
     )
     stream_manifest = transformer.propagate_types_and_parameters(
@@ -7612,22 +7612,22 @@ def _request_window_reduction_stream(
     )
 
 
-def test_given_request_window_reduction_then_create_retriever_with_defaults():
-    retriever = get_retriever(_request_window_reduction_stream())
+def test_given_request_window_splitting_then_create_retriever_with_defaults():
+    retriever = get_retriever(_request_window_splitting_stream())
 
-    assert retriever.request_window_reduction == RequestWindowReduction(
+    assert retriever.request_window_splitting == RequestWindowSplitting(
         on_partial_response=OnPartialResponse.FAIL,
         failure_message=None,
     )
-    assert isinstance(retriever.window_reducer, WindowReducible)
+    assert isinstance(retriever.request_window_splitter, WindowReducible)
 
 
-def test_given_request_window_reduction_values_then_create_retriever_with_those_values():
+def test_given_request_window_splitting_values_then_create_retriever_with_those_values():
     retriever = get_retriever(
-        _request_window_reduction_stream(
-            request_window_reduction=(
-                "request_window_reduction:\n"
-                "    type: RequestWindowReduction\n"
+        _request_window_splitting_stream(
+            request_window_splitting=(
+                "request_window_splitting:\n"
+                "    type: RequestWindowSplitting\n"
                 "    on_partial_response: ALLOW_REPLAY\n"
                 "    failure_message: Lower time_window so that each request covers less data.\n"
                 "    max_split_depth: 20"
@@ -7635,44 +7635,44 @@ def test_given_request_window_reduction_values_then_create_retriever_with_those_
         )
     )
 
-    assert retriever.request_window_reduction == RequestWindowReduction(
+    assert retriever.request_window_splitting == RequestWindowSplitting(
         on_partial_response=OnPartialResponse.ALLOW_REPLAY,
         failure_message="Lower time_window so that each request covers less data.",
         max_split_depth=20,
     )
 
 
-def test_given_no_request_window_reduction_then_retriever_has_none():
+def test_given_no_request_window_splitting_then_retriever_has_none():
     retriever = get_retriever(
-        _request_window_reduction_stream(request_window_reduction="", action="RETRY")
+        _request_window_splitting_stream(request_window_splitting="", action="RETRY")
     )
 
-    assert retriever.request_window_reduction is None
-    assert retriever.window_reducer is None
+    assert retriever.request_window_splitting is None
+    assert retriever.request_window_splitter is None
 
 
-def test_given_reduce_request_window_action_without_request_window_reduction_then_raise():
+def test_given_split_request_window_action_without_request_window_splitting_then_raise():
     with pytest.raises(ValueError) as exception:
-        _request_window_reduction_stream(request_window_reduction="")
+        _request_window_splitting_stream(request_window_splitting="")
 
-    assert "REDUCE_REQUEST_WINDOW" in str(exception.value)
+    assert "SPLIT_REQUEST_WINDOW" in str(exception.value)
 
 
-def test_given_request_window_reduction_without_reduce_request_window_action_then_warn(caplog):
+def test_given_request_window_splitting_without_split_request_window_action_then_warn(caplog):
     """
     A `CustomErrorHandler` can resolve to the action without being inspectable, and custom code can raise
-    `RequestWindowReductionRequiredException` directly without going through any error handler at all - so this
+    `RequestWindowSplitRequiredException` directly without going through any error handler at all - so this
     cannot raise. It must not stay silent either: the feature would be dead on a stream that only defines the
     block because it expects to need it.
     """
     with caplog.at_level(logging.WARNING, logger="airbyte.model_to_component_factory"):
-        retriever = get_retriever(_request_window_reduction_stream(action="RETRY"))
+        retriever = get_retriever(_request_window_splitting_stream(action="RETRY"))
 
-    assert retriever.request_window_reduction == RequestWindowReduction()
-    assert "REDUCE_REQUEST_WINDOW" in caplog.text
+    assert retriever.request_window_splitting == RequestWindowSplitting()
+    assert "SPLIT_REQUEST_WINDOW" in caplog.text
 
 
-def test_given_composite_error_handler_with_reduce_request_window_action_then_require_request_window_reduction():
+def test_given_composite_error_handler_with_split_request_window_action_then_require_request_window_splitting():
     """The action can be nested in a CompositeErrorHandler, which the guard has to recurse into."""
     stream_definition = {
         "type": "DeclarativeStream",
@@ -7714,7 +7714,7 @@ def test_given_composite_error_handler_with_reduce_request_window_action_then_re
                                 {
                                     "type": "HttpResponseFilter",
                                     "http_codes": [400],
-                                    "action": "REDUCE_REQUEST_WINDOW",
+                                    "action": "SPLIT_REQUEST_WINDOW",
                                 }
                             ],
                         },
@@ -7735,10 +7735,10 @@ def test_given_composite_error_handler_with_reduce_request_window_action_then_re
             config={},
         )
 
-    assert "REDUCE_REQUEST_WINDOW" in str(exception.value)
+    assert "SPLIT_REQUEST_WINDOW" in str(exception.value)
 
     # and the same manifest with the block present builds
-    stream_definition["retriever"]["request_window_reduction"] = {"type": "RequestWindowReduction"}
+    stream_definition["retriever"]["request_window_splitting"] = {"type": "RequestWindowSplitting"}
     retriever = get_retriever(
         factory.create_component(
             model_type=DeclarativeStreamModel,
@@ -7746,19 +7746,19 @@ def test_given_composite_error_handler_with_reduce_request_window_action_then_re
             config={},
         )
     )
-    assert retriever.request_window_reduction == RequestWindowReduction()
+    assert retriever.request_window_splitting == RequestWindowSplitting()
 
 
-def test_given_no_incremental_sync_and_request_window_reduction_then_raise():
+def test_given_no_incremental_sync_and_request_window_splitting_then_raise():
     with pytest.raises(ValueError) as exception:
-        _request_window_reduction_stream(incremental_sync="")
+        _request_window_splitting_stream(incremental_sync="")
 
     assert "cursor_granularity" in str(exception.value) or "WindowReducible" in str(exception.value)
 
 
 def test_given_datetime_based_cursor_without_cursor_granularity_then_raise():
     with pytest.raises(ValueError) as exception:
-        _request_window_reduction_stream(
+        _request_window_splitting_stream(
             incremental_sync=(
                 'incremental_sync:\n  type: DatetimeBasedCursor\n  start_datetime: "2024-01-01T00:00:00Z"\n'
                 '  end_datetime: "2024-01-31T00:00:00Z"\n  step: "P7D"\n  cursor_field: "updated_at"\n'
@@ -7769,14 +7769,14 @@ def test_given_datetime_based_cursor_without_cursor_granularity_then_raise():
     assert "cursor_granularity" in str(exception.value)
 
 
-def test_given_incrementing_count_cursor_and_request_window_reduction_then_raise():
+def test_given_incrementing_count_cursor_and_request_window_splitting_then_raise():
     """
     `IncrementingCountCursor` builds a `ConcurrentCursor` too, but not one carrying the datetime boundary
-    fields, granularity, or formatting `WindowReducible.reduce_window` needs, so it must be rejected the same
+    fields, granularity, or formatting `WindowReducible.split_request_window` needs, so it must be rejected the same
     way a stream with no incremental_sync at all is.
     """
     with pytest.raises(ValueError) as exception:
-        _request_window_reduction_stream(
+        _request_window_splitting_stream(
             incremental_sync=(
                 "incremental_sync:\n  type: IncrementingCountCursor\n  cursor_field: id"
             )
@@ -7785,11 +7785,11 @@ def test_given_incrementing_count_cursor_and_request_window_reduction_then_raise
     assert "cursor_granularity" in str(exception.value)
 
 
-def test_given_query_properties_and_request_window_reduction_then_raise():
+def test_given_query_properties_and_request_window_splitting_then_raise():
     content = _REQUEST_WINDOW_REDUCTION_STREAM.format(
         incremental_sync=_DATETIME_BASED_CURSOR_WITH_GRANULARITY,
-        request_window_reduction="request_window_reduction:\n    type: RequestWindowReduction",
-        action="REDUCE_REQUEST_WINDOW",
+        request_window_splitting="request_window_splitting:\n    type: RequestWindowSplitting",
+        action="SPLIT_REQUEST_WINDOW",
     ).replace(
         "    http_method: GET\n",
         "    http_method: GET\n"
@@ -7809,12 +7809,12 @@ def test_given_query_properties_and_request_window_reduction_then_raise():
     assert "query properties" in str(exception.value)
 
 
-def test_given_file_uploader_and_request_window_reduction_then_raise():
+def test_given_file_uploader_and_request_window_splitting_then_raise():
     content = (
         _REQUEST_WINDOW_REDUCTION_STREAM.format(
             incremental_sync=_DATETIME_BASED_CURSOR_WITH_GRANULARITY,
-            request_window_reduction="request_window_reduction:\n    type: RequestWindowReduction",
-            action="REDUCE_REQUEST_WINDOW",
+            request_window_splitting="request_window_splitting:\n    type: RequestWindowSplitting",
+            action="SPLIT_REQUEST_WINDOW",
         )
         + """file_uploader:
   type: FileUploader
@@ -7839,7 +7839,7 @@ def test_given_file_uploader_and_request_window_reduction_then_raise():
     assert "file_uploader" in str(exception.value)
 
 
-def test_given_lazy_read_pointer_and_request_window_reduction_then_raise():
+def test_given_lazy_read_pointer_and_request_window_splitting_then_raise():
     """
     A LazySimpleRetriever reads records embedded in the parent's own pages rather than requesting a window of
     its own, so there is nothing for a reduced child window to be read from.
@@ -7854,7 +7854,7 @@ def test_given_lazy_read_pointer_and_request_window_reduction_then_raise():
         },
         "retriever": {
             "type": "SimpleRetriever",
-            "request_window_reduction": {"type": "RequestWindowReduction"},
+            "request_window_splitting": {"type": "RequestWindowSplitting"},
             "requester": {
                 "type": "HttpRequester",
                 "url_base": "https://api.test.com",
@@ -7866,7 +7866,7 @@ def test_given_lazy_read_pointer_and_request_window_reduction_then_raise():
                         {
                             "type": "HttpResponseFilter",
                             "http_codes": [400],
-                            "action": "REDUCE_REQUEST_WINDOW",
+                            "action": "SPLIT_REQUEST_WINDOW",
                         }
                     ],
                 },
@@ -7920,11 +7920,11 @@ def test_given_lazy_read_pointer_and_request_window_reduction_then_raise():
             config={},
         )
 
-    assert "request_window_reduction" in str(exception.value)
+    assert "request_window_splitting" in str(exception.value)
     assert "lazily" in str(exception.value)
 
 
-def test_given_login_requester_with_reduce_request_window_action_then_raise():
+def test_given_login_requester_with_split_request_window_action_then_raise():
     """
     Only the main requester of a SimpleRetriever reads a cursor-sliced window, so the action is rejected on a
     SessionTokenAuthenticator's login_requester even though it is schema-legal there.
@@ -7954,7 +7954,7 @@ def test_given_login_requester_with_reduce_request_window_action_then_raise():
                                 {
                                     "type": "HttpResponseFilter",
                                     "http_codes": [400],
-                                    "action": "REDUCE_REQUEST_WINDOW",
+                                    "action": "SPLIT_REQUEST_WINDOW",
                                 }
                             ],
                         },
@@ -7985,7 +7985,7 @@ def test_given_login_requester_with_reduce_request_window_action_then_raise():
             config={},
         )
 
-    assert "REDUCE_REQUEST_WINDOW" in str(exception.value)
+    assert "SPLIT_REQUEST_WINDOW" in str(exception.value)
     assert "login_requester" in str(exception.value)
 
 

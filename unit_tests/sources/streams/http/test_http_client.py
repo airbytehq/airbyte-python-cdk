@@ -33,8 +33,8 @@ from airbyte_cdk.sources.streams.http.http_client import MessageRepresentationAi
 from airbyte_cdk.sources.streams.http.page_size_reduction_exception import (
     PageSizeReductionRequiredException,
 )
-from airbyte_cdk.sources.streams.http.request_window_reduction_exception import (
-    RequestWindowReductionRequiredException,
+from airbyte_cdk.sources.streams.http.request_window_split_exception import (
+    RequestWindowSplitRequiredException,
 )
 from airbyte_cdk.sources.streams.http.requests_native_auth import TokenAuthenticator
 from airbyte_cdk.utils.traced_exception import AirbyteTracedException
@@ -1570,7 +1570,7 @@ def test_given_no_reduce_page_size_action_then_log_the_response_as_a_page():
     assert [entry["http"].get("is_auxiliary") for entry in logged] == [None]
 
 
-def test_send_raises_request_window_reduction_required_exception_with_reduce_request_window_response_action():
+def test_send_raises_request_window_splitting_required_exception_with_split_request_window_response_action():
     mocked_session = MagicMock(spec=requests.Session)
     http_client = HttpClient(
         name="test",
@@ -1579,7 +1579,7 @@ def test_send_raises_request_window_reduction_required_exception_with_reduce_req
             logger=MagicMock(),
             error_mapping={
                 400: ErrorResolution(
-                    ResponseAction.REDUCE_REQUEST_WINDOW,
+                    ResponseAction.SPLIT_REQUEST_WINDOW,
                     FailureType.config_error,
                     "test reduce request window message",
                 )
@@ -1592,28 +1592,28 @@ def test_send_raises_request_window_reduction_required_exception_with_reduce_req
     mocked_session.send.return_value = mocked_response
 
     # the retriever is responsible for reducing and re-reading the window, so the backoff handlers must not retry
-    with pytest.raises(RequestWindowReductionRequiredException) as exception:
+    with pytest.raises(RequestWindowSplitRequiredException) as exception:
         http_client.send_request(http_method="get", url="https://airbyte.io", request_kwargs={})
 
     assert http_client._session.send.call_count == 1
     assert "test reduce request window message" in exception.value.internal_message
     assert exception.value.message == (
         "The API rejected the current request window of stream test and requires a smaller one. If this "
-        "message ends a sync, the stream is not set up to reduce its window: add `request_window_reduction` "
-        "to its retriever, or remove the `REDUCE_REQUEST_WINDOW` action from its error handler."
+        "message ends a sync, the stream is not set up to split its window: add `request_window_splitting` "
+        "to its retriever, or remove the `SPLIT_REQUEST_WINDOW` action from its error handler."
     )
     # the classifying error's own failure_type is preserved rather than defaulting to config_error
     assert exception.value.failure_type == FailureType.config_error
 
 
-def test_given_no_classified_failure_type_when_reduce_request_window_then_default_to_config_error():
+def test_given_no_classified_failure_type_when_split_request_window_then_default_to_config_error():
     mocked_session = MagicMock(spec=requests.Session)
     http_client = HttpClient(
         name="test",
         logger=MagicMock(),
         error_handler=HttpStatusErrorHandler(
             logger=MagicMock(),
-            error_mapping={400: ErrorResolution(ResponseAction.REDUCE_REQUEST_WINDOW, None, None)},
+            error_mapping={400: ErrorResolution(ResponseAction.SPLIT_REQUEST_WINDOW, None, None)},
         ),
         session=mocked_session,
     )
@@ -1621,16 +1621,16 @@ def test_given_no_classified_failure_type_when_reduce_request_window_then_defaul
     mocked_response.status_code = 400
     mocked_session.send.return_value = mocked_response
 
-    with pytest.raises(RequestWindowReductionRequiredException) as exception:
+    with pytest.raises(RequestWindowSplitRequiredException) as exception:
         http_client.send_request(http_method="get", url="https://airbyte.io", request_kwargs={})
 
     assert exception.value.failure_type == FailureType.config_error
 
 
-def test_given_reduce_request_window_action_then_log_the_response_as_an_auxiliary_request():
+def test_given_split_request_window_action_then_log_the_response_as_an_auxiliary_request():
     """
     Mirrors test_given_reduce_page_size_action_then_log_the_response_as_an_auxiliary_request: a response
-    resolving to REDUCE_REQUEST_WINDOW never becomes a page either - the retriever splits the window and
+    resolving to SPLIT_REQUEST_WINDOW never becomes a page either - the retriever splits the window and
     re-reads it - so it must not count against the Connector Builder's per-slice page limit.
     """
     message_repository = InMemoryMessageRepository(Level.DEBUG)
@@ -1642,7 +1642,7 @@ def test_given_reduce_request_window_action_then_log_the_response_as_an_auxiliar
             logger=MagicMock(),
             error_mapping={
                 400: ErrorResolution(
-                    ResponseAction.REDUCE_REQUEST_WINDOW,
+                    ResponseAction.SPLIT_REQUEST_WINDOW,
                     FailureType.config_error,
                     "test reduce request window message",
                 )
@@ -1656,7 +1656,7 @@ def test_given_reduce_request_window_action_then_log_the_response_as_an_auxiliar
     mocked_response.request = requests.Request(method="GET", url="https://airbyte.io").prepare()
     mocked_session.send.return_value = mocked_response
 
-    with pytest.raises(RequestWindowReductionRequiredException):
+    with pytest.raises(RequestWindowSplitRequiredException):
         http_client.send_request(
             http_method="get",
             url="https://airbyte.io",

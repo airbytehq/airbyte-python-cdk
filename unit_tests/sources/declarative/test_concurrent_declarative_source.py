@@ -5167,7 +5167,7 @@ def test_given_reductions_exhausted_when_read_then_emit_a_transient_error():
     )
 
 
-def _request_window_reduction_manifest():
+def _request_window_splitting_manifest():
     return {
         "version": "0.34.2",
         "type": "DeclarativeSource",
@@ -5201,7 +5201,7 @@ def _request_window_reduction_manifest():
                 },
                 "retriever": {
                     "type": "SimpleRetriever",
-                    "request_window_reduction": {"type": "RequestWindowReduction"},
+                    "request_window_splitting": {"type": "RequestWindowSplitting"},
                     "requester": {
                         "type": "HttpRequester",
                         "url_base": "https://example.org",
@@ -5213,7 +5213,7 @@ def _request_window_reduction_manifest():
                                 {
                                     "type": "HttpResponseFilter",
                                     "http_codes": [400],
-                                    "action": "REDUCE_REQUEST_WINDOW",
+                                    "action": "SPLIT_REQUEST_WINDOW",
                                 },
                             ],
                         },
@@ -5233,7 +5233,7 @@ def _request_window_reduction_manifest():
     }
 
 
-def _read_request_window_reduction_source(manifest):
+def _read_request_window_splitting_source(manifest):
     catalog = create_catalog("Test")
     source = ConcurrentDeclarativeSource(
         source_config=manifest,
@@ -5244,7 +5244,7 @@ def _read_request_window_reduction_source(manifest):
     yield from source.read(logger=source.logger, config={}, catalog=catalog, state=[])
 
 
-def test_given_reduce_request_window_action_when_read_then_split_and_read_both_halves():
+def test_given_split_request_window_action_when_read_then_split_and_read_both_halves():
     """
     Mirrors the real PayPal `RESULTSET_TOO_LARGE` incident this feature exists to generalize: a request for
     the full day is rejected outright, and the connector reads it back as two half-day requests instead, with
@@ -5268,7 +5268,7 @@ def test_given_reduce_request_window_action_when_read_then_split_and_read_both_h
         http_mocker.get(first_half_request, HttpResponse(json.dumps({"items": [{"id": 1}]}), 200))
         http_mocker.get(second_half_request, HttpResponse(json.dumps({"items": [{"id": 2}]}), 200))
 
-        messages = list(_read_request_window_reduction_source(_request_window_reduction_manifest()))
+        messages = list(_read_request_window_splitting_source(_request_window_splitting_manifest()))
 
         http_mocker.assert_number_of_calls(full_window_request, 1)
         http_mocker.assert_number_of_calls(first_half_request, 1)
@@ -5279,7 +5279,7 @@ def test_given_reduce_request_window_action_when_read_then_split_and_read_both_h
     ) == [1, 2]
 
 
-def test_given_reduce_request_window_action_when_read_then_final_state_reflects_full_original_window():
+def test_given_split_request_window_action_when_read_then_final_state_reflects_full_original_window():
     """
     Regression coverage for a bug where records read from a split child window carried the child's own slice
     as `Record.associated_slice`, which `ConcurrentCursor.observe()` keys its bookkeeping by - a key
@@ -5320,7 +5320,7 @@ def test_given_reduce_request_window_action_when_read_then_final_state_reflects_
             ),
         )
 
-        messages = list(_read_request_window_reduction_source(_request_window_reduction_manifest()))
+        messages = list(_read_request_window_splitting_source(_request_window_splitting_manifest()))
 
     states = get_states_for_stream(stream_name="Test", messages=messages)
     assert states

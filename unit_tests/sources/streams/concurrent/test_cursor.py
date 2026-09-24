@@ -1415,8 +1415,8 @@ def test_final_state_cursor_get_cursor_datetime_from_state_returns_now_for_no_cu
 
 class ConcurrentCursorReduceWindowTest(TestCase):
     """
-    Covers ConcurrentCursor.reduce_window(), the WindowReducible implementation backing declarative
-    `request_window_reduction`. See airbyte_cdk.sources.declarative.retrievers.window_reducible.
+    Covers ConcurrentCursor.split_request_window(), the WindowReducible implementation backing declarative
+    `request_window_splitting`. See airbyte_cdk.sources.declarative.retrievers.window_reducible.
     """
 
     def setUp(self) -> None:
@@ -1456,7 +1456,7 @@ class ConcurrentCursorReduceWindowTest(TestCase):
     ) -> None:
         cursor = self._cursor()
 
-        children = cursor.reduce_window(self._slice("2024-01-01T00:00:00Z", "2024-01-01T23:59:59Z"))
+        children = cursor.split_request_window(self._slice("2024-01-01T00:00:00Z", "2024-01-01T23:59:59Z"))
 
         assert children == [
             self._slice("2024-01-01T00:00:00Z", "2024-01-01T11:59:59Z"),
@@ -1469,7 +1469,7 @@ class ConcurrentCursorReduceWindowTest(TestCase):
         cursor = self._cursor()
 
         # 3 whole seconds: [00:00:00, 00:00:02]
-        children = cursor.reduce_window(self._slice("2024-01-01T00:00:00Z", "2024-01-01T00:00:02Z"))
+        children = cursor.split_request_window(self._slice("2024-01-01T00:00:00Z", "2024-01-01T00:00:02Z"))
 
         assert children == [
             self._slice("2024-01-01T00:00:00Z", "2024-01-01T00:00:00Z"),
@@ -1480,7 +1480,7 @@ class ConcurrentCursorReduceWindowTest(TestCase):
         cursor = self._cursor()
 
         assert (
-            cursor.reduce_window(self._slice("2024-01-01T00:00:00Z", "2024-01-01T00:00:00Z"))
+            cursor.split_request_window(self._slice("2024-01-01T00:00:00Z", "2024-01-01T00:00:00Z"))
             is None
         )
 
@@ -1492,7 +1492,7 @@ class ConcurrentCursorReduceWindowTest(TestCase):
 
         depth = 0
         while True:
-            children = cursor.reduce_window(current)
+            children = cursor.split_request_window(current)
             if children is None:
                 break
             # exactly at the boundary
@@ -1502,7 +1502,7 @@ class ConcurrentCursorReduceWindowTest(TestCase):
             )
             current = children[0]
             depth += 1
-            assert depth < 30, "reduce_window did not converge to the granularity floor"
+            assert depth < 30, "split_request_window did not converge to the granularity floor"
 
         assert (
             current.cursor_slice[_LOWER_SLICE_BOUNDARY_FIELD]
@@ -1514,7 +1514,7 @@ class ConcurrentCursorReduceWindowTest(TestCase):
         cursor = self._cursor()
 
         assert (
-            cursor.reduce_window(self._slice("2024-01-01T00:00:05Z", "2024-01-01T00:00:00Z"))
+            cursor.split_request_window(self._slice("2024-01-01T00:00:05Z", "2024-01-01T00:00:00Z"))
             is None
         )
 
@@ -1522,7 +1522,7 @@ class ConcurrentCursorReduceWindowTest(TestCase):
         cursor = self._cursor(granularity=None)
 
         assert (
-            cursor.reduce_window(self._slice("2024-01-01T00:00:00Z", "2024-01-01T23:59:59Z"))
+            cursor.split_request_window(self._slice("2024-01-01T00:00:00Z", "2024-01-01T23:59:59Z"))
             is None
         )
 
@@ -1530,7 +1530,7 @@ class ConcurrentCursorReduceWindowTest(TestCase):
         cursor = self._cursor()
 
         assert (
-            cursor.reduce_window(
+            cursor.split_request_window(
                 StreamSlice(
                     partition={},
                     cursor_slice={
@@ -1546,11 +1546,11 @@ class ConcurrentCursorReduceWindowTest(TestCase):
         cursor = self._cursor()
 
         assert (
-            cursor.reduce_window(StreamSlice(partition={}, cursor_slice={"only_one_field": "x"}))
+            cursor.split_request_window(StreamSlice(partition={}, cursor_slice={"only_one_field": "x"}))
             is None
         )
 
-    def test_reduce_window_preserves_partition_and_extra_fields(self) -> None:
+    def test_split_request_window_preserves_partition_and_extra_fields(self) -> None:
         cursor = self._cursor()
         original = StreamSlice(
             partition={"parent_id": "123"},
@@ -1561,7 +1561,7 @@ class ConcurrentCursorReduceWindowTest(TestCase):
             extra_fields={"some_extra": "value"},
         )
 
-        children = cursor.reduce_window(original)
+        children = cursor.split_request_window(original)
 
         for child in children:
             assert child.partition == {"parent_id": "123"}
@@ -1582,7 +1582,7 @@ class ConcurrentCursorReduceWindowTest(TestCase):
             cursor_granularity=timedelta(seconds=1),
         )
 
-        children = cursor.reduce_window(
+        children = cursor.split_request_window(
             StreamSlice(
                 partition={},
                 cursor_slice={
@@ -1608,7 +1608,7 @@ class ConcurrentCursorReduceWindowTest(TestCase):
     ) -> None:
         cursor = self._cursor(datetime_format="%Y-%m-%d %H:%M:%S")
 
-        children = cursor.reduce_window(self._slice("2024-01-01 00:00:00", "2024-01-01 23:59:59"))
+        children = cursor.split_request_window(self._slice("2024-01-01 00:00:00", "2024-01-01 23:59:59"))
 
         assert children == [
             self._slice("2024-01-01 00:00:00", "2024-01-01 11:59:59"),
@@ -1620,7 +1620,7 @@ class ConcurrentCursorReduceWindowTest(TestCase):
     ) -> None:
         cursor = self._cursor(datetime_format="%Y-%m-%dT%H:%M:%S%z")
 
-        children = cursor.reduce_window(
+        children = cursor.split_request_window(
             self._slice("2024-01-01T00:00:00+0530", "2024-01-01T23:59:59+0530")
         )
 

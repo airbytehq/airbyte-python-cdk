@@ -607,7 +607,7 @@ class ConcurrentCursor(Cursor):
         else:
             return stream_slice
 
-    def reduce_window(self, stream_slice: StreamSlice) -> Optional[List[StreamSlice]]:
+    def split_request_window(self, stream_slice: StreamSlice) -> Optional[List[StreamSlice]]:
         """
         Split `stream_slice` in half along this cursor's own boundary fields, granularity, and output format.
 

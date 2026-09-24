@@ -21,12 +21,12 @@ class WindowReducible(Protocol):
     covering the same range.
 
     The component responsible for slicing owns the boundary field names, parsing, output formatting, and
-    interval semantics (granularity, clamping, comparison), so `reduce_window` lives on that component - not on
+    interval semantics (granularity, clamping, comparison), so `split_request_window` lives on that component - not on
     a standalone retriever-side parser - and is checked with `isinstance(slicer, WindowReducible)` wherever a
-    retriever needs to know whether the stream it is reading supports request-window reduction at all.
+    retriever needs to know whether the stream it is reading supports request-window splitting at all.
     """
 
-    def reduce_window(self, stream_slice: StreamSlice) -> Optional[List[StreamSlice]]:
+    def split_request_window(self, stream_slice: StreamSlice) -> Optional[List[StreamSlice]]:
         """
         Split `stream_slice` into two or more smaller, non-overlapping child slices that together cover exactly
         the same range, preserving `partition` and `extra_fields` unchanged.
@@ -37,26 +37,26 @@ class WindowReducible(Protocol):
         `None` as a terminal condition, not retry with the same slice.
         """
         raise NotImplementedError(
-            "WindowReducible.reduce_window must be implemented by protocol implementers"
+            "WindowReducible.split_request_window must be implemented by protocol implementers"
         )
 
 
 @dataclass(frozen=True)
-class RequestWindowReduction:
+class RequestWindowSplitting:
     """
-    Configuration for the `request_window_reduction` retriever field - created once per stream and shared,
+    Configuration for the `request_window_splitting` retriever field - created once per stream and shared,
     mirroring `PageSizeReduction`. There is no per-partition mutable counterpart to instantiate the way
-    `PageSizeReducer` is: reducing a window does not accumulate attempts across sibling requests the way
-    reducing a page size does, since a reduced window is never retried at the same size twice - it is either
+    `PageSizeReducer` is: splitting a window does not accumulate attempts across sibling requests the way
+    reducing a page size does, since a split window is never retried at the same size twice - it is either
     split again (recursion) or the sync fails. All state needed to decide that lives in the `StreamSlice` being
-    read and the `WindowReducible.reduce_window` result for it, so a plain config object is enough.
+    read and the `WindowReducible.split_request_window` result for it, so a plain config object is enough.
     """
 
     on_partial_response: OnPartialResponse = OnPartialResponse.FAIL
     failure_message: Optional[str] = None
     # A defense-in-depth bound independent of any specific WindowReducible's own no-progress guard: the retriever
     # enforces this itself so a misbehaving custom cursor (returning children that do not actually shrink) fails
-    # deterministically rather than recursing indefinitely. Each reduction bisects a single already-generated
+    # deterministically rather than recursing indefinitely. Each split bisects a single already-generated
     # slice - bounded by the cursor's own `step`, not the whole sync range - and real-world APIs that reject
     # oversized windows are typically satisfied well before reaching sub-day granularity: a one-year step
     # bisected down to a 12-hour floor needs ~10 halvings (log2(hours in a year / 12) ~= 9.5), which already
