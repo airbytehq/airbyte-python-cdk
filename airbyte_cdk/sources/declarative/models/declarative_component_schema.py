@@ -1482,12 +1482,12 @@ class RequestWindowSplitting(BaseModel):
     type: Literal["RequestWindowSplitting"]
     on_partial_response: Optional[OnPartialResponse] = Field(
         OnPartialResponse.FAIL,
-        description="What to do when a SPLIT_REQUEST_WINDOW response arrives after the current window has already emitted a page or a record. FAIL stops the sync with a configuration error, since splitting and re-reading the window from scratch would emit those records a second time - this is correct for an API, such as PayPal's, that always rejects a window before returning its first page. ALLOW_REPLAY splits and re-reads the window anyway, accepting at-least-once delivery of the records already emitted; use it only when the destination or a downstream deduplication step can tolerate duplicate records, for instance when adopting this action for a transport or streamed-decoding failure that can occur after some records of the window were already read.",
+        description="What to do when SPLIT_REQUEST_WINDOW arrives after the current window already emitted a record. FAIL stops the sync with a configuration error, since re-reading the window would duplicate those records. ALLOW_REPLAY splits and re-reads anyway, accepting duplicate records; use it only when duplicates are tolerated downstream.",
         title="On Partial Response",
     )
     failure_message: Optional[str] = Field(
         None,
-        description="Sentence appended to the error message shown to the user when the connector runs out of reductions, either because the window is already at the cursor's minimum granularity or because reducing it would not make progress. Use it to tell the user what they can do about it in terms of this specific API, for instance which filter narrows the query down. Without it the message only states that the API kept rejecting every window size the connector asked for.",
+        description="Sentence appended to the error message when the connector can no longer split the window further. Use it to tell the user what to do for this API, for instance which filter narrows the query down.",
         examples=[
             "Narrow the sync down by selecting fewer fields on this stream.",
             "Lower time_window so that each request covers less data.",
@@ -1496,7 +1496,7 @@ class RequestWindowSplitting(BaseModel):
     )
     min_split_window: Optional[str] = Field(
         None,
-        description="Smallest window (ISO 8601 duration) the connector will ever request, expressed in the same domain terms as `cursor_granularity` rather than a raw split count. Independent of - and typically looser than - the cursor's own `cursor_granularity` floor: a connector whose cursor could technically split down to the second may still want to stop earlier, for instance because the API's rate limit makes many small requests worse than a few large ones. A window already at or below this size is not split any further, the same way one at the `cursor_granularity` floor is not. Splitting is also bounded by an internal safety net independent of this field, which protects against a custom cursor whose `split_request_window` implementation returns children that do not actually shrink the window.",
+        description="Smallest window (ISO 8601 duration) the connector will request. Independent of, and usually looser than, cursor_granularity - useful when a cursor could split further but many small requests are worse for this API than a few large ones.",
         examples=["P1D", "PT1H"],
         title="Minimum Split Window",
     )
@@ -3331,7 +3331,7 @@ class SimpleRetriever(BaseModel):
     )
     request_window_splitting: Optional[RequestWindowSplitting] = Field(
         None,
-        description="Describes how the request window is split when an error handler resolves to the SPLIT_REQUEST_WINDOW action. Requires an incremental_sync cursor that defines cursor_granularity, since that is both the smallest window the connector will request and what keeps two child windows from overlapping at their shared edge. Distinct from page_size_reduction: an API can reject an entire date/time range as too large even though every individual page of it would be within the API's page size limit, and no page can be returned to page through in the first place. On such a response the connector replaces the failing window with two smaller, ordered windows covering the same range and reads each one fully, with its own pagination state, before checkpointing the original partition.",
+        description="Describes how the request window is split when an error handler resolves to the SPLIT_REQUEST_WINDOW action. Requires an incremental_sync cursor that defines cursor_granularity. Distinct from page_size_reduction: this splits the cursor's window rather than a paginator's page size, and applies even when the API rejects the request before returning a single page.",
     )
     ignore_stream_slicer_parameters_on_paginated_requests: Optional[bool] = Field(
         False,

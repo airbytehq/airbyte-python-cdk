@@ -719,10 +719,9 @@ _NO_STREAM_SLICING = SinglePartitionRouter(parameters={})
 # this would be a circular import
 MAX_SLICES = 5
 
-# The smallest duration each `DatetimeParser`/`strftime` directive can distinguish between two values, finest
-# first so ties are irrelevant - used by `_smallest_datetime_format_unit` to check that `datetime_format` can
-# actually represent whatever `cursor_granularity` claims. Directives this table has no entry for (a bare
-# `%Y`/`%m`, or any other formatting scheme) are treated as "cannot determine" rather than rejected.
+# Smallest duration each `DatetimeParser`/`strftime` directive can distinguish, used by
+# `_smallest_datetime_format_unit` to check `datetime_format` can represent `cursor_granularity`. A format with
+# no entry here (e.g. a bare `%Y`/`%m`) is treated as "cannot determine" rather than rejected.
 _DATETIME_FORMAT_DIRECTIVE_GRANULARITY: List[Tuple[str, datetime.timedelta]] = [
     ("%epoch_microseconds", datetime.timedelta(microseconds=1)),
     ("%s_as_float", datetime.timedelta(microseconds=1)),
@@ -4199,9 +4198,8 @@ class ModelToComponentFactory:
         if isinstance(
             parsed_cursor_granularity, datetime.timedelta
         ) and parsed_cursor_granularity <= datetime.timedelta(0):
-            # A zero-length (or, via a leading `-`, negative) granularity passes the truthy check above - the
-            # string is non-empty - but `ConcurrentCursor.split_request_window` divides the window's span by it
-            # to find the split point, so it can never produce a child strictly smaller than the parent.
+            # Passes the truthy check above (the string is non-empty), but a zero-or-negative granularity can
+            # never produce a child strictly smaller than the parent.
             raise ValueError(
                 f"`request_window_splitting` requires a `cursor_granularity` greater than zero on stream "
                 f"{name}: `{incremental_sync.cursor_granularity}` parses to a zero-length duration, which can "
@@ -4214,9 +4212,8 @@ class ModelToComponentFactory:
             and isinstance(parsed_cursor_granularity, datetime.timedelta)
             and parsed_cursor_granularity < smallest_format_unit
         ):
-            # `cursor_granularity` claims a finer boundary than `datetime_format` can render: two children
-            # split that close together would format to the same boundary value, so the retriever would ask
-            # for the same window twice - or, once formatted, request a reversed one - instead of splitting.
+            # Two children split closer together than `datetime_format` can render would format to the same
+            # boundary value instead of splitting.
             raise ValueError(
                 f"`request_window_splitting` requires `cursor_granularity` to be no finer than what "
                 f"`datetime_format` can represent on stream {name}: `datetime_format` "
@@ -4243,9 +4240,8 @@ class ModelToComponentFactory:
     @staticmethod
     def _smallest_datetime_format_unit(datetime_format: str) -> Optional[datetime.timedelta]:
         """
-        :return: the smallest duration `datetime_format` can distinguish between two values - the finest
-            directive it contains, per `_DATETIME_FORMAT_DIRECTIVE_GRANULARITY` - or `None` if it contains none
-            of the directives that table recognizes, in which case the caller cannot validate against it.
+        :return: the finest duration `datetime_format` can distinguish, per
+            `_DATETIME_FORMAT_DIRECTIVE_GRANULARITY`, or `None` if it contains none of those directives.
         """
         matches = [
             granularity

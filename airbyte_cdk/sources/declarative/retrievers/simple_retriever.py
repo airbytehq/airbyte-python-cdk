@@ -75,16 +75,9 @@ from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 FULL_REFRESH_SYNC_COMPLETE_KEY = "__ab_full_refresh_sync_complete"
 LOGGER = logging.getLogger("airbyte")
 
-# A defense-in-depth bound independent of any specific `request_window_splitter`'s own no-progress guard
-# (cursor_granularity or min_split_window): the retriever enforces this itself so a misbehaving custom cursor
-# (returning children that do not actually shrink) fails deterministically rather than recursing indefinitely.
-# Each split bisects a single already-generated slice - bounded by the cursor's own `step`, not the whole sync
-# range - and real-world APIs that reject oversized windows are typically satisfied well before reaching
-# sub-day granularity: a one-year step bisected down to a 12-hour floor needs ~10 halvings
-# (log2(hours in a year / 12) ~= 9.5), which already covers a wider window than the request-window failures
-# this feature targets in practice tend to involve (on the order of days to a few months). Not
-# user-configurable: a connector whose cursor genuinely needs finer-than-half-day granularity, or windows
-# spanning multiple years, should express that through `min_split_window` instead of raising this safety net.
+# A defense-in-depth bound independent of any `request_window_splitter`'s own no-progress guard: protects
+# against a misbehaving custom cursor whose children don't actually shrink the window. Not user-configurable;
+# use `min_split_window` for a legitimate need to split more than this.
 _MAX_REQUEST_WINDOW_SPLIT_DEPTH = 10
 
 
@@ -122,12 +115,9 @@ class SimpleRetriever(Retriever):
             is raised directly by custom code. `None` disables request-window splitting entirely: `read_records`
             converts the exception into `RequestWindowSplitNotSupportedException` instead of attempting a
             split it cannot perform.
-        request_window_splitter (Optional[Callable[[StreamSlice, Optional[datetime.timedelta]], Optional[List[StreamSlice]]]]):
-            Bound method - normally the stream's own cursor's `split_request_window` - asked to replace a
-            failing `StreamSlice` with smaller children, given the slice and `request_window_splitting`'s
-            `min_split_window`. `None` has the same effect as `request_window_splitting` being `None`:
-            splitting is not attempted, and a `RequestWindowSplitRequiredException` is re-raised as
-            `RequestWindowSplitNotSupportedException`.
+        request_window_splitter: Bound method - normally the stream's own cursor's `split_request_window` -
+            asked to replace a failing `StreamSlice` with smaller children. `None` has the same effect as
+            `request_window_splitting` being `None`.
     """
 
     requester: Requester
@@ -657,14 +647,11 @@ class SimpleRetriever(Retriever):
                 ) from exception
 
             if depth >= _MAX_REQUEST_WINDOW_SPLIT_DEPTH:
-                # A safety net, expected to be rare: logged separately from the exception below so it is
-                # visible even if whatever catches the trace message does not surface its internal_message.
+                # Logged separately from the exception below so it stays visible even if the trace message's
+                # internal_message isn't surfaced by whatever catches it.
                 LOGGER.warning(
                     f"Stream {self.name} hit the maximum request window split depth "
-                    f"({_MAX_REQUEST_WINDOW_SPLIT_DEPTH}) while splitting {original_slice}. This is a safety "
-                    f"net against a cursor whose `split_request_window` returns children that do not actually "
-                    f"shrink the window; a stream needing more splits than that for a legitimate reason should "
-                    f"raise `min_split_window` instead of relying on more splits."
+                    f"({_MAX_REQUEST_WINDOW_SPLIT_DEPTH}) while splitting {original_slice}."
                 )
                 raise AirbyteTracedException(
                     internal_message=f"Stream {self.name} exceeded the maximum request window split depth of {_MAX_REQUEST_WINDOW_SPLIT_DEPTH} while splitting {original_slice}",
