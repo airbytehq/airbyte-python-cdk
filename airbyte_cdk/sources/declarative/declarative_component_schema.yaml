@@ -4504,7 +4504,7 @@ definitions:
         title: Maximum Split Depth
         description: >-
           Maximum number of times in a row a single request window may be split before the sync fails with a
-          configuration error. This is a safety bound independent of the cursor's own granularity floor: it
+          transient error. This is a safety bound independent of the cursor's own granularity floor: it
           protects against a custom cursor whose split_request_window implementation returns children that do not
           actually shrink the window, which would otherwise recurse indefinitely. Each reduction bisects a single
           already-generated slice - bounded by the cursor's own step, not the whole sync range - and real-world

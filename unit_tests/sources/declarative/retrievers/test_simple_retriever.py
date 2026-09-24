@@ -2278,10 +2278,39 @@ def test_given_request_window_splitter_returns_none_when_reduction_requested_the
     with pytest.raises(AirbyteTracedException) as exception:
         list(retriever.read_records(A_RECORD_SCHEMA, A_WINDOW_SLICE))
 
-    # the classifying error's own failure_type is preserved rather than defaulting to config_error
+    # the classifying error's own failure_type is preserved rather than falling back to this branch's default
     assert exception.value.failure_type == FailureType.transient_error
     assert "Lower time_window so that each request covers less data." in exception.value.message
     request_window_splitter.split_request_window.assert_called_once_with(A_WINDOW_SLICE)
+
+
+def test_given_request_window_splitter_returns_none_and_no_classified_failure_type_when_reduction_requested_then_raise_transient_error():
+    """
+    When whatever raised `RequestWindowSplitRequiredException` didn't classify a `failure_type` (the common
+    case: a manifest response filter with no explicit `failure_type`, or custom code that omits it), exhausting
+    the split floor must default to `transient_error` - the API kept rejecting every window size tried, which is
+    not the user's fault - matching `PageSizeReducer`'s equivalent exhaustion branch, not `config_error`.
+    """
+    requester = Mock(spec=Requester)
+    requester.send_request.side_effect = RequestWindowSplitRequiredException()
+    record_selector = Mock(spec=HttpSelector)
+    paginator = _mock_paginator()
+    paginator.get_initial_token.return_value = None
+
+    request_window_splitter = Mock(spec=WindowReducible)
+    request_window_splitter.split_request_window.return_value = None
+
+    retriever = _request_window_splitting_retriever(
+        requester,
+        paginator,
+        record_selector,
+        request_window_splitter,
+    )
+
+    with pytest.raises(AirbyteTracedException) as exception:
+        list(retriever.read_records(A_RECORD_SCHEMA, A_WINDOW_SLICE))
+
+    assert exception.value.failure_type == FailureType.transient_error
 
 
 def test_given_empty_children_list_when_reduction_requested_then_emit_no_records_and_do_not_loop():
@@ -2514,15 +2543,21 @@ def test_given_max_split_depth_exceeded_when_read_records_then_raise_terminal_er
         paginator,
         record_selector,
         request_window_splitter,
-        request_window_splitting=RequestWindowSplitting(max_split_depth=3),
+        request_window_splitting=RequestWindowSplitting(
+            max_split_depth=3,
+            failure_message="Lower time_window so that each request covers less data.",
+        ),
     )
 
     with pytest.raises(AirbyteTracedException) as exception:
         list(retriever.read_records(A_RECORD_SCHEMA, A_WINDOW_SLICE))
 
-    assert exception.value.failure_type == FailureType.config_error
+    # exhausting the split depth is not the user's fault - the API kept rejecting every window size tried -
+    # so it is transient_error, matching PageSizeReducer's equivalent exhaustion branch, not config_error
+    assert exception.value.failure_type == FailureType.transient_error
     assert "maximum request window split depth" in exception.value.internal_message
     assert "within 3 splits" in exception.value.message
+    assert "Lower time_window so that each request covers less data." in exception.value.message
     # the single leftmost recursion path is explored to depth 3 (three split_request_window calls, at depth 0, 1, and
     # 2) before the cap stops a fourth call at depth 3 - the exception then propagates immediately, so sibling
     # branches at shallower depths are never explored

@@ -35,6 +35,7 @@ class RequestWindowSplitRequiredException(AirbyteTracedException):
     ) -> None:
         stream = f" of stream {stream_name}" if stream_name else ""
         detail = f": {error_message}" if error_message else ""
+        self.classified_failure_type = failure_type
         super().__init__(
             internal_message=f"A request window split was requested{stream}{detail}",
             message=f"The API rejected the current request window{stream} and requires a smaller one. If this message ends a sync, the stream is not set up to split its window: add `request_window_splitting` to its retriever, or remove the `SPLIT_REQUEST_WINDOW` action from its error handler.",

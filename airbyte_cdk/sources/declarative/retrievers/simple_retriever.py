@@ -643,7 +643,8 @@ class SimpleRetriever(Retriever):
             if depth >= self.request_window_splitting.max_split_depth:
                 raise AirbyteTracedException(
                     internal_message=f"Stream {self.name} exceeded the maximum request window split depth of {self.request_window_splitting.max_split_depth} while splitting {original_slice}",
-                    message=(
+                    # `transient_error`, so the only remediation is the connector's own, if it defined one.
+                    message=self._with_request_window_failure_message(
                         f"Stream {self.name} could not split its request window to a size the API accepts "
                         f"within {self.request_window_splitting.max_split_depth} splits. This usually means the "
                         f"stream's cursor is not actually shrinking the window on each split; if it uses a "
@@ -651,29 +652,36 @@ class SimpleRetriever(Retriever):
                         f"`request_window_splitting.max_split_depth` only if this stream's cursor granularity "
                         f"genuinely requires more splits than that."
                     ),
-                    failure_type=FailureType.config_error,
+                    failure_type=FailureType.transient_error,
                 ) from exception
 
             children = self.request_window_splitter.split_request_window(stream_slice)
             if children is None:
-                failure_message = (
-                    f"The API kept rejecting stream {self.name}'s request window even at the smallest window "
-                    f"its cursor allows, or splitting the window further would not make progress."
-                )
-                if self.request_window_splitting.failure_message:
-                    failure_message = (
-                        f"{failure_message} {self.request_window_splitting.failure_message}"
-                    )
                 raise AirbyteTracedException(
                     internal_message=f"Stream {self.name} could not split its request window {stream_slice} any further",
-                    message=failure_message,
-                    failure_type=exception.failure_type or FailureType.config_error,
+                    # `transient_error`, so the only remediation is the connector's own, if it defined one.
+                    message=self._with_request_window_failure_message(
+                        f"The API kept rejecting stream {self.name}'s request window even at the smallest window "
+                        f"its cursor allows, or splitting the window further would not make progress."
+                    ),
+                    failure_type=exception.classified_failure_type or FailureType.transient_error,
                 ) from exception
 
             for child in children:
                 yield from self._read_records_or_split_request_window(
                     records_schema, child, original_slice, depth + 1
                 )
+
+    def _with_request_window_failure_message(self, message: str) -> str:
+        """
+        :return: the message followed by `request_window_splitting`'s configured `failure_message`, when it
+            defined one - mirroring `PageSizeReducer._with_failure_message`
+        """
+        assert self.request_window_splitting is not None
+        failure_message = (self.request_window_splitting.failure_message or "").strip()
+        if not failure_message:
+            return message
+        return f"{message} {failure_message}"
 
     @staticmethod
     def _reassociate_with_original_slice(
