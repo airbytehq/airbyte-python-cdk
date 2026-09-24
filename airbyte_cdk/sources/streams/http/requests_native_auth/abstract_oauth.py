@@ -61,7 +61,7 @@ class AbstractOauth2Authenticator(AuthBase):
     # through the connector config. Without this lock, concurrent refresh attempts can cause race
     # conditions where one stream successfully refreshes the token while others fail because the
     # refresh token has been invalidated (especially for single-use refresh tokens).
-    _token_refresh_lock: threading.Lock = threading.Lock()
+    _token_refresh_lock = threading.RLock()
 
     def __init__(
         self,
@@ -124,16 +124,36 @@ class AbstractOauth2Authenticator(AuthBase):
 
         return self.access_token
 
+    def _current_access_token_or_none(self) -> Optional[str]:
+        """The current access token, or None when the implementation has none to report
+        (e.g., a declarative authenticator whose token has not been initialized yet)."""
+        try:
+            return self.access_token
+        except Exception:
+            return None
+
     def refresh_and_set_access_token(self) -> None:
         """Force refresh the access token and update internal state.
 
-        This method refreshes the access token regardless of whether it has expired,
-        and updates the internal token and expiry date. Subclasses may override this
-        to handle additional state updates (e.g., persisting new refresh tokens).
+        Refreshes regardless of expiry, serialized on the class-level refresh lock. If another
+        thread using this same authenticator instance replaced the access token while this one
+        waited for the lock, the refresh is skipped and the request is retried with that token.
+        `SingleUseRefreshTokenOauth2Authenticator` reads `access_token` from the connector config
+        shared by all stream instances, so the early return also covers separate instances there.
+        Only per-instance token authenticators (base and declarative) are limited to same-instance
+        detection; the Authorization-header check in `HttpClient._handle_error_resolution` covers
+        the rest by skipping the forced refresh when the rejected request's token was already
+        replaced.
+        Subclasses may override this to handle additional state updates (e.g., persisting new
+        refresh tokens).
         """
-        token, expires_in = self.refresh_access_token()
-        self.access_token = token
-        self.set_token_expiry_date(expires_in)
+        token_before_waiting = self._current_access_token_or_none()
+        with self._token_refresh_lock:
+            if self._current_access_token_or_none() != token_before_waiting:
+                return
+            token, expires_in = self.refresh_access_token()
+            self.access_token = token
+            self.set_token_expiry_date(expires_in)
 
     def token_has_expired(self) -> bool:
         """Returns True if the token is expired"""
