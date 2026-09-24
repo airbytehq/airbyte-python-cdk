@@ -2,6 +2,7 @@
 # Copyright (c) 2026 Airbyte, Inc., all rights reserved.
 #
 
+import datetime
 from dataclasses import dataclass
 from enum import Enum
 from typing import List, Optional, Protocol, runtime_checkable
@@ -26,15 +27,18 @@ class WindowReducible(Protocol):
     retriever needs to know whether the stream it is reading supports request-window splitting at all.
     """
 
-    def split_request_window(self, stream_slice: StreamSlice) -> Optional[List[StreamSlice]]:
+    def split_request_window(
+        self, stream_slice: StreamSlice, min_split_window: Optional[datetime.timedelta] = None
+    ) -> Optional[List[StreamSlice]]:
         """
         Split `stream_slice` into two or more smaller, non-overlapping child slices that together cover exactly
         the same range, preserving `partition` and `extra_fields` unchanged.
 
         Returns `None` when the slice cannot be split any further - either because it is already at (or below)
-        the minimum granularity the cursor supports, or because splitting it would not produce children strictly
-        smaller than the parent (a no-progress guard independent of the granularity check). Callers should treat
-        `None` as a terminal condition, not retry with the same slice.
+        the minimum granularity the cursor supports, because it is already at or below `min_split_window` (a
+        connector-configured floor expressed in domain terms rather than raw split count), or because splitting
+        it would not produce children strictly smaller than the parent (a no-progress guard independent of
+        either floor). Callers should treat `None` as a terminal condition, not retry with the same slice.
         """
         raise NotImplementedError(
             "WindowReducible.split_request_window must be implemented by protocol implementers"
@@ -54,13 +58,9 @@ class RequestWindowSplitting:
 
     on_partial_response: OnPartialResponse = OnPartialResponse.FAIL
     failure_message: Optional[str] = None
-    # A defense-in-depth bound independent of any specific WindowReducible's own no-progress guard: the retriever
-    # enforces this itself so a misbehaving custom cursor (returning children that do not actually shrink) fails
-    # deterministically rather than recursing indefinitely. Each split bisects a single already-generated
-    # slice - bounded by the cursor's own `step`, not the whole sync range - and real-world APIs that reject
-    # oversized windows are typically satisfied well before reaching sub-day granularity: a one-year step
-    # bisected down to a 12-hour floor needs ~10 halvings (log2(hours in a year / 12) ~= 9.5), which already
-    # covers a wider window than the request-window failures this feature targets in practice tend to involve
-    # (on the order of days to a few months). A connector whose cursor genuinely needs finer-than-half-day
-    # granularity, or windows spanning multiple years, should raise this explicitly.
-    max_split_depth: int = 10
+    # An upper bound on how small a window `split_request_window` is asked to produce, expressed in the same
+    # domain terms as `cursor_granularity` (a duration) rather than a raw split count. Independent of - and
+    # typically looser than - the cursor's own granularity floor: a connector whose cursor could technically
+    # split down to the second may still want to stop earlier, e.g. because the API's rate limit makes many
+    # small requests worse than a few large ones.
+    min_split_window: Optional[datetime.timedelta] = None

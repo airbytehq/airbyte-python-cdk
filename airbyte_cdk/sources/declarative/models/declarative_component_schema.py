@@ -1494,12 +1494,11 @@ class RequestWindowSplitting(BaseModel):
         ],
         title="Failure Message",
     )
-    max_split_depth: Optional[int] = Field(
-        10,
-        description="Maximum number of times in a row a single request window may be split before the sync fails with a transient error. This is a safety bound independent of the cursor's own granularity floor: it protects against a custom cursor whose split_request_window implementation returns children that do not actually shrink the window, which would otherwise recurse indefinitely. Each reduction bisects a single already-generated slice - bounded by the cursor's own step, not the whole sync range - and real-world APIs that reject oversized windows are typically satisfied well before reaching sub-day granularity: a one-year step bisected down to a twelve-hour floor needs about 10 halvings, which already covers a wider window than the request-window failures this feature targets in practice tend to involve (days to a few months). The default of 10 is a safety net, not a limit legitimate reductions are expected to approach. A stream whose cursor genuinely needs finer-than-half-day granularity, or windows spanning multiple years, should raise this explicitly.",
-        examples=[10, 5],
-        ge=1,
-        title="Maximum Split Depth",
+    min_split_window: Optional[str] = Field(
+        None,
+        description="Smallest window (ISO 8601 duration) the connector will ever request, expressed in the same domain terms as `cursor_granularity` rather than a raw split count. Independent of - and typically looser than - the cursor's own `cursor_granularity` floor: a connector whose cursor could technically split down to the second may still want to stop earlier, for instance because the API's rate limit makes many small requests worse than a few large ones. A window already at or below this size is not split any further, the same way one at the `cursor_granularity` floor is not. Splitting is also bounded by an internal safety net independent of this field, which protects against a custom cursor whose `split_request_window` implementation returns children that do not actually shrink the window.",
+        examples=["P1D", "PT1H"],
+        title="Minimum Split Window",
     )
 
 

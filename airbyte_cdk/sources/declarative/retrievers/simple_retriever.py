@@ -75,6 +75,18 @@ from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 FULL_REFRESH_SYNC_COMPLETE_KEY = "__ab_full_refresh_sync_complete"
 LOGGER = logging.getLogger("airbyte")
 
+# A defense-in-depth bound independent of any specific WindowReducible's own no-progress guard (cursor_granularity
+# or min_split_window): the retriever enforces this itself so a misbehaving custom cursor (returning children
+# that do not actually shrink) fails deterministically rather than recursing indefinitely. Each split bisects a
+# single already-generated slice - bounded by the cursor's own `step`, not the whole sync range - and real-world
+# APIs that reject oversized windows are typically satisfied well before reaching sub-day granularity: a
+# one-year step bisected down to a 12-hour floor needs ~10 halvings (log2(hours in a year / 12) ~= 9.5), which
+# already covers a wider window than the request-window failures this feature targets in practice tend to
+# involve (on the order of days to a few months). Not user-configurable: a connector whose cursor genuinely
+# needs finer-than-half-day granularity, or windows spanning multiple years, should express that through
+# `min_split_window` instead of raising this safety net.
+_MAX_REQUEST_WINDOW_SPLIT_DEPTH = 10
+
 
 @dataclass
 class SimpleRetriever(Retriever):
@@ -563,7 +575,9 @@ class SimpleRetriever(Retriever):
         :return: The records read from the API source
         """
         _slice = stream_slice or StreamSlice(partition={}, cursor_slice={})  # None-check
-        yield from self._read_records_or_split_request_window(records_schema, _slice, _slice, depth=0)
+        yield from self._read_records_or_split_request_window(
+            records_schema, _slice, _slice, depth=0
+        )
 
     def _read_records_or_split_request_window(
         self,
@@ -618,9 +632,7 @@ class SimpleRetriever(Retriever):
                 yield self._reassociate_with_original_slice(record, original_slice)
         except RequestWindowSplitRequiredException as exception:
             if self.request_window_splitting is None or self.request_window_splitter is None:
-                raise RequestWindowSplitNotSupportedException(
-                    stream_name=self.name
-                ) from exception
+                raise RequestWindowSplitNotSupportedException(stream_name=self.name) from exception
 
             if (
                 emitted_any
@@ -640,22 +652,31 @@ class SimpleRetriever(Retriever):
                     failure_type=FailureType.config_error,
                 ) from exception
 
-            if depth >= self.request_window_splitting.max_split_depth:
+            if depth >= _MAX_REQUEST_WINDOW_SPLIT_DEPTH:
+                # A safety net, expected to be rare: logged separately from the exception below so it is
+                # visible even if whatever catches the trace message does not surface its internal_message.
+                LOGGER.warning(
+                    f"Stream {self.name} hit the maximum request window split depth "
+                    f"({_MAX_REQUEST_WINDOW_SPLIT_DEPTH}) while splitting {original_slice}. This is a safety "
+                    f"net against a cursor whose `split_request_window` returns children that do not actually "
+                    f"shrink the window; a stream needing more splits than that for a legitimate reason should "
+                    f"raise `min_split_window` instead of relying on more splits."
+                )
                 raise AirbyteTracedException(
-                    internal_message=f"Stream {self.name} exceeded the maximum request window split depth of {self.request_window_splitting.max_split_depth} while splitting {original_slice}",
+                    internal_message=f"Stream {self.name} exceeded the maximum request window split depth of {_MAX_REQUEST_WINDOW_SPLIT_DEPTH} while splitting {original_slice}",
                     # `transient_error`, so the only remediation is the connector's own, if it defined one.
                     message=self._with_request_window_failure_message(
                         f"Stream {self.name} could not split its request window to a size the API accepts "
-                        f"within {self.request_window_splitting.max_split_depth} splits. This usually means the "
-                        f"stream's cursor is not actually shrinking the window on each split; if it uses a "
-                        f"custom cursor, check its `split_request_window` implementation. Raise "
-                        f"`request_window_splitting.max_split_depth` only if this stream's cursor granularity "
-                        f"genuinely requires more splits than that."
+                        f"within {_MAX_REQUEST_WINDOW_SPLIT_DEPTH} splits. This usually means the stream's "
+                        f"cursor is not actually shrinking the window on each split; if it uses a custom "
+                        f"cursor, check its `split_request_window` implementation."
                     ),
                     failure_type=FailureType.transient_error,
                 ) from exception
 
-            children = self.request_window_splitter.split_request_window(stream_slice)
+            children = self.request_window_splitter.split_request_window(
+                stream_slice, self.request_window_splitting.min_split_window
+            )
             if children is None:
                 raise AirbyteTracedException(
                     internal_message=f"Stream {self.name} could not split its request window {stream_slice} any further",

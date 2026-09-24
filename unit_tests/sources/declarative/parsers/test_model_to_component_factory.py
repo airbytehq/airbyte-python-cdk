@@ -7630,7 +7630,7 @@ def test_given_request_window_splitting_values_then_create_retriever_with_those_
                 "    type: RequestWindowSplitting\n"
                 "    on_partial_response: ALLOW_REPLAY\n"
                 "    failure_message: Lower time_window so that each request covers less data.\n"
-                "    max_split_depth: 20"
+                "    min_split_window: P1D"
             )
         )
     )
@@ -7638,7 +7638,7 @@ def test_given_request_window_splitting_values_then_create_retriever_with_those_
     assert retriever.request_window_splitting == RequestWindowSplitting(
         on_partial_response=OnPartialResponse.ALLOW_REPLAY,
         failure_message="Lower time_window so that each request covers less data.",
-        max_split_depth=20,
+        min_split_window=timedelta(days=1),
     )
 
 
@@ -7767,6 +7767,39 @@ def test_given_datetime_based_cursor_without_cursor_granularity_then_raise():
         )
 
     assert "cursor_granularity" in str(exception.value)
+
+
+def test_given_zero_length_cursor_granularity_and_request_window_splitting_then_raise():
+    with pytest.raises(ValueError) as exception:
+        _request_window_splitting_stream(
+            incremental_sync=(
+                'incremental_sync:\n  type: DatetimeBasedCursor\n  start_datetime: "2024-01-01T00:00:00Z"\n'
+                '  end_datetime: "2024-01-31T00:00:00Z"\n  step: "P7D"\n  cursor_field: "updated_at"\n'
+                '  cursor_granularity: "PT0S"\n  datetime_format: "%Y-%m-%dT%H:%M:%SZ"'
+            )
+        )
+
+    assert "cursor_granularity" in str(exception.value)
+    assert "zero-length" in str(exception.value)
+
+
+def test_given_datetime_format_coarser_than_cursor_granularity_and_request_window_splitting_then_raise():
+    """
+    `cursor_granularity: PT1S` claims second-level precision, but `%Y-%m-%d` can only render day boundaries: two
+    children split less than a day apart would format to the same date and the retriever would re-request the
+    same (or a reversed) window instead of a smaller one.
+    """
+    with pytest.raises(ValueError) as exception:
+        _request_window_splitting_stream(
+            incremental_sync=(
+                'incremental_sync:\n  type: DatetimeBasedCursor\n  start_datetime: "2024-01-01"\n'
+                '  end_datetime: "2024-01-31"\n  step: "P7D"\n  cursor_field: "updated_at"\n'
+                '  cursor_granularity: "PT1S"\n  datetime_format: "%Y-%m-%d"'
+            )
+        )
+
+    assert "cursor_granularity" in str(exception.value)
+    assert "datetime_format" in str(exception.value)
 
 
 def test_given_incrementing_count_cursor_and_request_window_splitting_then_raise():

@@ -1456,7 +1456,9 @@ class ConcurrentCursorReduceWindowTest(TestCase):
     ) -> None:
         cursor = self._cursor()
 
-        children = cursor.split_request_window(self._slice("2024-01-01T00:00:00Z", "2024-01-01T23:59:59Z"))
+        children = cursor.split_request_window(
+            self._slice("2024-01-01T00:00:00Z", "2024-01-01T23:59:59Z")
+        )
 
         assert children == [
             self._slice("2024-01-01T00:00:00Z", "2024-01-01T11:59:59Z"),
@@ -1469,7 +1471,9 @@ class ConcurrentCursorReduceWindowTest(TestCase):
         cursor = self._cursor()
 
         # 3 whole seconds: [00:00:00, 00:00:02]
-        children = cursor.split_request_window(self._slice("2024-01-01T00:00:00Z", "2024-01-01T00:00:02Z"))
+        children = cursor.split_request_window(
+            self._slice("2024-01-01T00:00:00Z", "2024-01-01T00:00:02Z")
+        )
 
         assert children == [
             self._slice("2024-01-01T00:00:00Z", "2024-01-01T00:00:00Z"),
@@ -1483,6 +1487,37 @@ class ConcurrentCursorReduceWindowTest(TestCase):
             cursor.split_request_window(self._slice("2024-01-01T00:00:00Z", "2024-01-01T00:00:00Z"))
             is None
         )
+
+    def test_given_window_at_or_below_min_split_window_when_reduce_then_return_none(self) -> None:
+        """
+        `min_split_window` is a connector-configured floor independent of, and typically looser than,
+        `cursor_granularity`: a window already at or below it must not be split further even though
+        `cursor_granularity` alone would still allow it.
+        """
+        cursor = self._cursor()
+
+        # spans exactly 1 day - at the floor when min_split_window is 1 day, even though cursor_granularity
+        # (1 second) would otherwise allow splitting this down much further
+        assert (
+            cursor.split_request_window(
+                self._slice("2024-01-01T00:00:00Z", "2024-01-01T23:59:59Z"),
+                min_split_window=timedelta(days=1),
+            )
+            is None
+        )
+
+    def test_given_window_above_min_split_window_when_reduce_then_split_normally(self) -> None:
+        cursor = self._cursor()
+
+        children = cursor.split_request_window(
+            self._slice("2024-01-01T00:00:00Z", "2024-01-02T23:59:59Z"),
+            min_split_window=timedelta(days=1),
+        )
+
+        assert children == [
+            self._slice("2024-01-01T00:00:00Z", "2024-01-01T23:59:59Z"),
+            self._slice("2024-01-02T00:00:00Z", "2024-01-02T23:59:59Z"),
+        ]
 
     def test_given_repeated_reduction_when_reduce_then_eventually_reaches_granularity_floor(
         self,
@@ -1546,7 +1581,9 @@ class ConcurrentCursorReduceWindowTest(TestCase):
         cursor = self._cursor()
 
         assert (
-            cursor.split_request_window(StreamSlice(partition={}, cursor_slice={"only_one_field": "x"}))
+            cursor.split_request_window(
+                StreamSlice(partition={}, cursor_slice={"only_one_field": "x"})
+            )
             is None
         )
 
@@ -1608,7 +1645,9 @@ class ConcurrentCursorReduceWindowTest(TestCase):
     ) -> None:
         cursor = self._cursor(datetime_format="%Y-%m-%d %H:%M:%S")
 
-        children = cursor.split_request_window(self._slice("2024-01-01 00:00:00", "2024-01-01 23:59:59"))
+        children = cursor.split_request_window(
+            self._slice("2024-01-01 00:00:00", "2024-01-01 23:59:59")
+        )
 
         assert children == [
             self._slice("2024-01-01 00:00:00", "2024-01-01 11:59:59"),

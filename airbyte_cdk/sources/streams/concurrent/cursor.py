@@ -607,16 +607,20 @@ class ConcurrentCursor(Cursor):
         else:
             return stream_slice
 
-    def split_request_window(self, stream_slice: StreamSlice) -> Optional[List[StreamSlice]]:
+    def split_request_window(
+        self, stream_slice: StreamSlice, min_split_window: Optional[datetime.timedelta] = None
+    ) -> Optional[List[StreamSlice]]:
         """
         Split `stream_slice` in half along this cursor's own boundary fields, granularity, and output format.
 
         Returns `None` when the slice cannot be split any further: either it spans at most one
-        `cursor_granularity` unit already (the floor), the boundaries are missing/malformed/reversed, or no
-        `cursor_granularity` was configured at all (there is then no way to know the smallest addressable unit,
-        or how to keep two children from overlapping at their shared edge). This is a generic implementation of
-        `WindowReducible` (see `airbyte_cdk.sources.declarative.retrievers.window_reducible`) that reuses the
-        same parsing/formatting/comparison operations `_split_per_slice_range` already relies on, so it works for
+        `cursor_granularity` unit already (the floor), it is already at or below `min_split_window` (a
+        connector-configured floor independent of and typically looser than `cursor_granularity`), the
+        boundaries are missing/malformed/reversed, or no `cursor_granularity` was configured at all (there is
+        then no way to know the smallest addressable unit, or how to keep two children from overlapping at
+        their shared edge). This is a generic implementation of `WindowReducible` (see
+        `airbyte_cdk.sources.declarative.retrievers.window_reducible`) that reuses the same
+        parsing/formatting/comparison operations `_split_per_slice_range` already relies on, so it works for
         any `CursorValueType`/`GapType` pair this cursor was built with (datetime/timedelta, or int/int),
         without a second, duplicate implementation of that logic living outside the cursor.
         """
@@ -639,6 +643,9 @@ class ConcurrentCursor(Cursor):
             return None
 
         span = end_value - start_value  # type: ignore[operator]  # concretely a GapType (timedelta/int) at runtime
+        if min_split_window is not None and span <= min_split_window:  # type: ignore[operator]
+            return None
+
         total_units = span // self._cursor_granularity + 1  # type: ignore[operator]  # inclusive count of granularity units
         if total_units <= 1:
             # Already at the minimum granularity and still rejected; nothing left to split.
