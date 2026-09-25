@@ -9,6 +9,7 @@ import requests
 
 _BODY_STREAMED_ATTR = "_airbyte_body_streamed"
 _DOCUMENT_REMAINDER_ATTR = "_airbyte_document_remainder"
+_SPOOLED_BODY_SIZE_ATTR = "_airbyte_spooled_body_size"
 
 
 def mark_body_streamed(response: requests.Response) -> None:
@@ -25,6 +26,14 @@ def set_document_remainder(response: requests.Response, remainder: Any) -> None:
 
 def get_document_remainder(response: requests.Response) -> Optional[Any]:
     return response.__dict__.get(_DOCUMENT_REMAINDER_ATTR)
+
+
+def set_spooled_body_size(response: requests.Response, size: int) -> None:
+    response.__dict__[_SPOOLED_BODY_SIZE_ATTR] = size
+
+
+def get_spooled_body_size(response: requests.Response) -> Optional[int]:
+    return response.__dict__.get(_SPOOLED_BODY_SIZE_ATTR)
 
 
 class SpooledResponseBody(io.BufferedReader):

@@ -65,6 +65,7 @@ from airbyte_cdk.sources.streams.http.requests_native_auth.protocols import (
 from airbyte_cdk.sources.streams.http.streamed_response import (
     SpooledResponseBody,
     mark_body_streamed,
+    set_spooled_body_size,
 )
 from airbyte_cdk.sources.utils.types import JsonType
 from airbyte_cdk.utils.airbyte_secrets_utils import filter_secrets
@@ -426,15 +427,18 @@ class HttpClient:
 
     def _spool_response_body(self, response: requests.Response) -> None:
         spool = tempfile.TemporaryFile(prefix="airbyte-http-body-")
+        size = 0
         try:
             for chunk in response.iter_content(chunk_size=_SPOOL_CHUNK_SIZE):
                 spool.write(chunk)
+                size += len(chunk)
         except BaseException:
             spool.close()
             response.close()  # release the (broken) connection
             raise
         response.close()  # body fully read: release the connection to the pool now
         spool.seek(0)
+        set_spooled_body_size(response, size)
         response.raw = SpooledResponseBody(spool)
         response._content_consumed = False  # type: ignore[attr-defined] # iter_content set it True; the body is readable again from disk
 
@@ -477,6 +481,9 @@ class HttpClient:
         error_resolution: ErrorResolution = self._error_handler.interpret_response(
             response if response is not None else exc
         )
+        if response is not None and isinstance(getattr(response, "raw", None), SpooledResponseBody):
+            # body filters may have consumed the spooled body; rewind it for the decoder
+            response.raw.seek(0)
 
         # Evaluation of response.text can be heavy, for example, if streaming a large response
         # Do it only in debug mode
