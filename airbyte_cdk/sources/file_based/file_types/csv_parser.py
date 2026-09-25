@@ -22,11 +22,7 @@ from airbyte_cdk.sources.file_based.config.csv_format import (
     InferenceType,
 )
 from airbyte_cdk.sources.file_based.config.file_based_stream_config import FileBasedStreamConfig
-from airbyte_cdk.sources.file_based.exceptions import (
-    EmptyFileSchemaInferenceError,
-    FileBasedSourceError,
-    RecordParseError,
-)
+from airbyte_cdk.sources.file_based.exceptions import FileBasedSourceError, RecordParseError
 from airbyte_cdk.sources.file_based.file_based_stream_reader import (
     AbstractFileBasedStreamReader,
     FileReadMode,
@@ -158,7 +154,11 @@ class _CsvReader:
 
         self._skip_rows(fp, config_format.skip_rows_before_header)
         reader = csv.reader(fp, dialect=dialect_name)  # type: ignore
-        raw_headers = list(next(reader))
+        try:
+            raw_headers = list(next(reader))
+        except StopIteration:
+            # Empty file (no bytes at all): no header row to parse
+            return [], []
 
         headers = self._validate_trailing_headers(raw_headers)
 
@@ -246,7 +246,11 @@ class _CsvReader:
         See https://arrow.apache.org/docs/python/generated/pyarrow.csv.ReadOptions.html
         """
         reader = csv.reader(fp, dialect=dialect_name)  # type: ignore
-        number_of_columns = len(next(reader))  # type: ignore
+        try:
+            number_of_columns = len(next(reader))  # type: ignore
+        except StopIteration:
+            # Empty file (no bytes at all): no row to autogenerate headers from
+            return []
         return [f"f{i}" for i in range(number_of_columns)]
 
     @staticmethod
@@ -310,11 +314,11 @@ class CsvParser(FileTypeParser):
                 break
 
         if not type_inferrer_by_field:
-            raise EmptyFileSchemaInferenceError(
-                message=f"Could not infer schema as there are no rows in {file.uri}. If having an empty CSV file is expected, ignore this. "
-                f"Else, please contact Airbyte.",
-                failure_type=FailureType.config_error,
+            logger.warning(
+                f"Could not infer schema from {file.uri} as it has no rows; skipping it for schema inference."
             )
+            data_generator.close()
+            return {}
         schema = {
             header.strip(): {"type": type_inferred.infer()}
             for header, type_inferred in type_inferrer_by_field.items()

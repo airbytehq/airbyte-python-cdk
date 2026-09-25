@@ -30,7 +30,7 @@ class FileBasedStreamConfig(BaseModel):
     globs: Optional[List[str]] = Field(
         default=["**"],
         title="Globs",
-        description='The pattern used to specify which files should be selected from the file system. For more information on glob pattern matching look <a href="https://en.wikipedia.org/wiki/Glob_(programming)">here</a>.',
+        description='The pattern used to specify which files should be selected from the file system. Patterns prefixed with `!` exclude matching files. For more information on glob pattern matching look <a href="https://en.wikipedia.org/wiki/Glob_(programming)">here</a>.',
         order=1,
     )
     legacy_prefix: Optional[str] = Field(

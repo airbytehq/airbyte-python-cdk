@@ -89,7 +89,7 @@ single_csv_scenario: TestScenario[InMemoryFilesSource] = (
                                 },
                                 "globs": {
                                     "title": "Globs",
-                                    "description": 'The pattern used to specify which files should be selected from the file system. For more information on glob pattern matching look <a href="https://en.wikipedia.org/wiki/Glob_(programming)">here</a>.',
+                                    "description": 'The pattern used to specify which files should be selected from the file system. Patterns prefixed with `!` exclude matching files. For more information on glob pattern matching look <a href="https://en.wikipedia.org/wiki/Glob_(programming)">here</a>.',
                                     "type": "array",
                                     "items": {"type": "string"},
                                     "order": 1,

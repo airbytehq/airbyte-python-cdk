@@ -13,7 +13,7 @@ from os import makedirs, path
 from typing import Any, Iterable, List, MutableMapping, Optional, Set, Tuple
 
 from airbyte_protocol_dataclasses.models import FailureType
-from wcmatch.glob import GLOBSTAR, globmatch
+from wcmatch.glob import GLOBSTAR, NEGATE, globmatch
 
 from airbyte_cdk.models import AirbyteRecordMessageFileReference
 from airbyte_cdk.sources.file_based.config.abstract_file_based_spec import AbstractFileBasedSpec
@@ -150,14 +150,15 @@ class AbstractFileBasedStreamReader(ABC):
     def file_matches_globs(file: RemoteFile, globs: List[str]) -> bool:
         # Use the GLOBSTAR flag to enable recursive ** matching
         # (https://facelessuser.github.io/wcmatch/wcmatch/#globstar)
-        return any(globmatch(file.uri, g, flags=GLOBSTAR) for g in globs)
+        # and the NEGATE flag so that patterns starting with `!` exclude matching files
+        return globmatch(file.uri, globs, flags=GLOBSTAR | NEGATE)
 
     @staticmethod
     def get_prefixes_from_globs(globs: List[str]) -> Set[str]:
         """
         Utility method for extracting prefixes from the globs.
         """
-        prefixes = {glob.split("*")[0] for glob in globs}
+        prefixes = {glob.split("*")[0] for glob in globs if not glob.startswith("!")}
         return set(filter(lambda x: bool(x), prefixes))
 
     def use_file_transfer(self) -> bool:

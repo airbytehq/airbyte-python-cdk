@@ -409,6 +409,27 @@ class TestSpec(AbstractFileBasedSpec):
             id="all_csvs_start_date_without_microseconds",
         ),
         pytest.param(
+            ["**/*.csv", "!a/b.csv"],
+            DEFAULT_CONFIG,
+            {"a.csv", "a/c.csv", "a/b/c.csv", "a/c/c.csv", "a/b/c/d.csv"},
+            set(),
+            id="negation_excludes_matching_file",
+        ),
+        pytest.param(
+            ["a/*.csv", "a/*/*.csv", "!a/b/*.csv"],
+            DEFAULT_CONFIG,
+            {"a/b.csv", "a/c.csv", "a/c/c.csv"},
+            {"a/"},
+            id="negation_excluded_from_prefixes",
+        ),
+        pytest.param(
+            ["!a/*.csv"],
+            DEFAULT_CONFIG,
+            set(),
+            set(),
+            id="only_negation_matches_nothing",
+        ),
+        pytest.param(
             ["**/*.csv"],
             {"start_date": "2023-06-05T03:54:07.000Z", "streams": []},
             {"a.csv", "a/b.csv", "a/c.csv", "a/b/c.csv", "a/c/c.csv", "a/b/c/d.csv"},

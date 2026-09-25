@@ -316,11 +316,32 @@ class SchemaInferenceTestCase(TestCase):
         # since the type is number, we know the string at the end was not considered
         assert inferred_schema == {self._HEADER_NAME: {"type": "number"}}
 
-    def test_given_empty_csv_file_when_infer_schema_then_raise_config_error(self) -> None:
-        self._csv_reader.read_data.return_value = []
-        with pytest.raises(AirbyteTracedException) as exception:
-            self._infer_schema()
-        assert exception.value.failure_type == FailureType.config_error
+    def test_given_empty_csv_file_when_infer_schema_then_return_empty_schema(self) -> None:
+        self._csv_reader.read_data.return_value = (row for row in [])
+        inferred_schema = self._infer_schema()
+        assert inferred_schema == {}
+
+    def test_given_header_only_csv_file_when_infer_schema_then_return_empty_schema(self) -> None:
+        self._stream_reader.open_file.return_value = (
+            CsvFileBuilder().with_data(["col1,col2,col3"]).build()
+        )
+        parser = CsvParser()
+        loop = asyncio.new_event_loop()
+        task = loop.create_task(
+            parser.infer_schema(self._config, self._file, self._stream_reader, self._logger)
+        )
+        loop.run_until_complete(task)
+        assert task.result() == {}
+
+    def test_given_zero_byte_csv_file_when_infer_schema_then_return_empty_schema(self) -> None:
+        self._stream_reader.open_file.return_value = io.StringIO("")
+        parser = CsvParser()
+        loop = asyncio.new_event_loop()
+        task = loop.create_task(
+            parser.infer_schema(self._config, self._file, self._stream_reader, self._logger)
+        )
+        loop.run_until_complete(task)
+        assert task.result() == {}
 
     def _test_infer_schema(self, rows: List[str], expected_type: str) -> None:
         self._csv_reader.read_data.return_value = ({self._HEADER_NAME: row} for row in rows)

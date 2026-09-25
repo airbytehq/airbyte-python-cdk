@@ -316,7 +316,8 @@ class DefaultFileBasedStream(AbstractFileBasedStream, IncrementalMixin):
         if not inferred_schema:
             raise InvalidSchemaError(
                 FileBasedSourceError.INVALID_SCHEMA_ERROR,
-                details=f"Empty schema. Please check that the files are valid for format {self.config.format}",
+                details=f"Empty schema. Please check that the files are valid for format {self.config.format}."
+                f" This can happen when all files sampled for schema inference are empty.",
                 stream=self.name,
             )
 

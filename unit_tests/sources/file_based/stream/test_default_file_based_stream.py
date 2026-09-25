@@ -227,6 +227,34 @@ class DefaultFileBasedStreamTest(unittest.TestCase):
         }
         assert self._parser.infer_schema.call_count == 3
 
+    def test_given_one_empty_and_one_non_empty_file_when_infer_schema_then_schema_from_non_empty_file(
+        self,
+    ) -> None:
+        self._discovery_policy.n_concurrent_requests = 1
+        self._discovery_policy.get_max_n_files_for_schema_inference.return_value = 3
+        self._stream.config.input_schema = None
+        self._stream.config.schemaless = None
+        self._stream.config.use_first_found_file_for_schema_discovery = False
+        self._stream.config.recent_n_files_to_read_for_schema_discovery = None
+        # Empty CSV files return an empty schema that must not prevent merging the schema of other files
+        self._parser.infer_schema.side_effect = [{}, {"data": {"type": "string"}}]
+        files = [
+            RemoteFile(uri="empty.csv", last_modified=self._NOW),
+            RemoteFile(uri="non_empty.csv", last_modified=self._NOW),
+        ]
+        self._stream_reader.get_matching_files.return_value = files
+
+        schema = self._stream.get_json_schema()
+
+        assert schema == {
+            "type": "object",
+            "properties": {
+                "_ab_source_file_last_modified": {"type": "string"},
+                "_ab_source_file_url": {"type": "string"},
+                "data": {"type": ["null", "string"]},
+            },
+        }
+
     def test_use_first_found_file_for_schema_discovery(self) -> None:
         self._stream.config.use_first_found_file_for_schema_discovery = True
 
