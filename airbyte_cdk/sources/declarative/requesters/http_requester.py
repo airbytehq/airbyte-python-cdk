@@ -68,8 +68,8 @@ class HttpRequester(Requester):
     use_cache: bool = False
     _exit_on_rate_limit: bool = False
     stream_response: bool = False
-    spool_response: bool = False
     decoder: Decoder = field(default_factory=lambda: JsonDecoder(parameters={}))
+    spool_response: bool = False
 
     def __post_init__(self, parameters: Mapping[str, Any]) -> None:
         self._url = InterpolatedString.create(
