@@ -4,6 +4,7 @@
 
 import logging
 import os
+import tempfile
 import urllib
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Mapping, Optional, Tuple, Union
@@ -61,6 +62,10 @@ from airbyte_cdk.sources.streams.http.requests_native_auth.protocols import (
     ResponseAwareAuthenticator,
     TokenRotatingAuthenticator,
 )
+from airbyte_cdk.sources.streams.http.streamed_response import (
+    SpooledResponseBody,
+    mark_body_streamed,
+)
 from airbyte_cdk.sources.utils.types import JsonType
 from airbyte_cdk.utils.airbyte_secrets_utils import filter_secrets
 from airbyte_cdk.utils.constants import ENV_REQUEST_CACHE_PATH
@@ -75,6 +80,8 @@ from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 MessageRepresentationAirbyteTracedErrors = AirbyteTracedException
 
 BODY_REQUEST_METHODS = ("GET", "POST", "PUT", "PATCH")
+
+_SPOOL_CHUNK_SIZE = 1 << 20
 
 
 def monkey_patched_get_item(self, key):  # type: ignore # this interface is a copy/paste from the requests_cache lib
@@ -304,6 +311,7 @@ class HttpClient:
         request_kwargs: Mapping[str, Any],
         log_formatter: Optional[Callable[[requests.Response], Any]] = None,
         exit_on_rate_limit: Optional[bool] = False,
+        spool_response: bool = False,
     ) -> requests.Response:
         """
         Sends a request with retry logic.
@@ -334,6 +342,7 @@ class HttpClient:
                 request_kwargs,
                 log_formatter=log_formatter,
                 exit_on_rate_limit=exit_on_rate_limit,
+                spool_response=spool_response,
             )  # type: ignore # mypy can't infer that backoff_handler wraps _send
 
             return response
@@ -415,12 +424,27 @@ class HttpClient:
                     "Authenticator failed to update quota state from response", exc_info=True
                 )
 
+    def _spool_response_body(self, response: requests.Response) -> None:
+        spool = tempfile.TemporaryFile(prefix="airbyte-http-body-")
+        try:
+            for chunk in response.iter_content(chunk_size=_SPOOL_CHUNK_SIZE):
+                spool.write(chunk)
+        except BaseException:
+            spool.close()
+            response.close()  # release the (broken) connection
+            raise
+        response.close()  # body fully read: release the connection to the pool now
+        spool.seek(0)
+        response.raw = SpooledResponseBody(spool)
+        response._content_consumed = False  # type: ignore[attr-defined] # iter_content set it True; the body is readable again from disk
+
     def _send(
         self,
         request: requests.PreparedRequest,
         request_kwargs: Mapping[str, Any],
         log_formatter: Optional[Callable[[requests.Response], Any]] = None,
         exit_on_rate_limit: Optional[bool] = False,
+        spool_response: bool = False,
     ) -> requests.Response:
         if request not in self._request_attempt_count:
             self._request_attempt_count[request] = 1
@@ -439,7 +463,12 @@ class HttpClient:
 
         try:
             response = self._session.send(request, **request_kwargs)
+            if request_kwargs.get("stream"):
+                mark_body_streamed(response)
+                if spool_response:
+                    self._spool_response_body(response)
         except requests.RequestException as e:
+            response = None
             exc = e
 
         if response is not None:
@@ -735,6 +764,7 @@ class HttpClient:
         dedupe_query_params: bool = False,
         log_formatter: Optional[Callable[[requests.Response], Any]] = None,
         exit_on_rate_limit: Optional[bool] = False,
+        spool_response: bool = False,
     ) -> Tuple[requests.PreparedRequest, requests.Response]:
         """
         Prepares and sends request and return request and response objects.
@@ -764,6 +794,7 @@ class HttpClient:
             request_kwargs=request_kwargs,
             log_formatter=log_formatter,
             exit_on_rate_limit=exit_on_rate_limit,
+            spool_response=spool_response,
         )
 
         return request, response

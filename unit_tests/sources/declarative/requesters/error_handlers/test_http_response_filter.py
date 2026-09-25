@@ -13,6 +13,7 @@ from airbyte_cdk.sources.streams.http.error_handlers.response_models import (
     ErrorResolution,
     ResponseAction,
 )
+from airbyte_cdk.sources.streams.http.streamed_response import mark_body_streamed
 
 
 @pytest.mark.parametrize(
@@ -237,3 +238,102 @@ def test_matches(
         assert actual_response_status.error_message == expected_error_resolution.error_message
     else:
         assert actual_response_status is None
+
+
+def _access_denied_filter(**kwargs) -> HttpResponseFilter:
+    return HttpResponseFilter(
+        action=ResponseAction.IGNORE,
+        failure_type=None,
+        config={},
+        parameters={},
+        http_codes=set(),
+        predicate="",
+        error_message_contains="You do not have access",
+        error_message="",
+        **kwargs,
+    )
+
+
+def _streamed_2xx_with_access_denied_body(requests_mock):
+    requests_mock.register_uri(
+        "GET",
+        "https://airbyte.io/",
+        text=json.dumps({"error": "You do not have access"}),
+        status_code=200,
+    )
+    return requests.get("https://airbyte.io/", stream=True)
+
+
+def test_error_message_contains_matches_403_despite_streamed_marker(requests_mock):
+    requests_mock.register_uri(
+        "GET",
+        "https://airbyte.io/",
+        text=json.dumps({"error": "You do not have access"}),
+        status_code=403,
+    )
+    response = requests.get("https://airbyte.io/", stream=True)
+    mark_body_streamed(response)
+    resolution = _access_denied_filter().matches(response)
+    assert resolution.response_action == ResponseAction.IGNORE
+
+
+def test_streamed_2xx_skips_body_filters_and_keeps_body_unread(requests_mock):
+    response = _streamed_2xx_with_access_denied_body(requests_mock)
+    mark_body_streamed(response)
+    assert _access_denied_filter().matches(response) is None
+    assert response._content_consumed is False
+
+
+def test_unmarked_2xx_still_matches_error_message_contains(requests_mock):
+    response = _streamed_2xx_with_access_denied_body(requests_mock)
+    resolution = _access_denied_filter().matches(response)
+    assert resolution.response_action == ResponseAction.IGNORE
+
+
+def test_streamed_2xx_skips_predicate_filter(requests_mock):
+    requests_mock.register_uri(
+        "GET",
+        "https://airbyte.io/",
+        text=json.dumps({"flag": "match me"}),
+        status_code=200,
+    )
+    response = requests.get("https://airbyte.io/", stream=True)
+    mark_body_streamed(response)
+    response_filter = HttpResponseFilter(
+        action=ResponseAction.IGNORE,
+        failure_type=None,
+        config={},
+        parameters={},
+        http_codes=set(),
+        predicate='{{ response.flag == "match me" }}',
+        error_message_contains="",
+        error_message="",
+    )
+    assert response_filter.matches(response) is None
+    assert response._content_consumed is False
+
+
+def test_http_codes_filter_matches_marked_2xx_without_consuming_body(requests_mock):
+    requests_mock.register_uri(
+        "GET",
+        "https://airbyte.io/",
+        text=json.dumps({"error": "whatever"}),
+        status_code=200,
+    )
+    response = requests.get("https://airbyte.io/", stream=True)
+    mark_body_streamed(response)
+    response_filter = HttpResponseFilter(
+        action=ResponseAction.IGNORE,
+        failure_type=None,
+        config={},
+        parameters={},
+        http_codes={200},
+        predicate="",
+        error_message_contains="",
+        error_message="matched: {{ response.get('error') }}",
+    )
+    resolution = response_filter.matches(response)
+    assert resolution.response_action == ResponseAction.IGNORE
+    # the error_message template interpolates `response` as {} for streamed 2xx bodies
+    assert resolution.error_message == "matched: None"
+    assert response._content_consumed is False

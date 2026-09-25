@@ -9,6 +9,7 @@ from typing import Any, Generator, MutableMapping
 import requests
 
 from airbyte_cdk.sources.declarative.decoders import Decoder
+from airbyte_cdk.sources.streams.http.streamed_response import get_document_remainder
 
 logger = logging.getLogger("airbyte")
 
@@ -33,7 +34,13 @@ class PaginationDecoderDecorator(Decoder):
         self, response: requests.Response
     ) -> Generator[MutableMapping[str, Any], None, None]:
         if self._decoder.is_stream_response():
-            logger.warning("Response is streamed and therefore will not be decoded for pagination.")
-            yield {}
+            remainder = get_document_remainder(response)
+            if remainder is not None:
+                yield remainder
+            else:
+                logger.warning(
+                    "Response is streamed and therefore will not be decoded for pagination."
+                )
+                yield {}
         else:
             yield from self._decoder.decode(response)

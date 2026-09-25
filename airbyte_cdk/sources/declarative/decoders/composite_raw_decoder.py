@@ -10,7 +10,7 @@ import json
 import logging
 from dataclasses import dataclass
 from io import BufferedIOBase, TextIOWrapper
-from typing import Any, List, Optional
+from typing import Any, Callable, Generator, List, Optional, Tuple
 
 import ijson
 import orjson
@@ -25,6 +25,7 @@ from airbyte_cdk.sources.declarative.decoders.decoder_parser import (
     PARSERS_TYPE,
     Parser,
 )
+from airbyte_cdk.sources.streams.http.streamed_response import set_document_remainder
 from airbyte_cdk.utils import AirbyteTracedException
 
 logger = logging.getLogger("airbyte")
@@ -63,7 +64,7 @@ class _PrefixedStream(io.RawIOBase):
 class GzipParser(Parser):
     inner_parser: Parser
 
-    def parse(self, data: BufferedIOBase) -> PARSER_OUTPUT_TYPE:
+    def parse(self, data: BufferedIOBase, **kwargs: Any) -> PARSER_OUTPUT_TYPE:
         """Decompress gzipped data or pass uncompressed data through unchanged.
 
         Args:
@@ -82,9 +83,9 @@ class GzipParser(Parser):
 
         if prefix == b"\x1f\x8b":
             with gzip.GzipFile(fileobj=prefixed_data, mode="rb") as gzipobj:
-                yield from self.inner_parser.parse(gzipobj)
+                yield from self.inner_parser.parse(gzipobj, **kwargs)
         else:
-            yield from self.inner_parser.parse(prefixed_data)
+            yield from self.inner_parser.parse(prefixed_data, **kwargs)
 
 
 @dataclass
@@ -176,7 +177,12 @@ class JsonItemsParser(Parser):
     items_path: str = ""
     encoding: Optional[str] = "utf-8"
 
-    def parse(self, data: BufferedIOBase) -> PARSER_OUTPUT_TYPE:
+    def parse(
+        self,
+        data: BufferedIOBase,
+        *,
+        on_document_remainder: Optional[Callable[[Any], None]] = None,
+    ) -> PARSER_OUTPUT_TYPE:
         if not self.items_path:
             raise ValueError("JsonItemsParser requires a non-empty items_path.")
         if self.encoding and codecs.lookup(self.encoding).name != "utf-8":
@@ -190,7 +196,20 @@ class JsonItemsParser(Parser):
         # whole stream up front.
         # use_float=True yields floats for non-integer numbers instead of Decimal, matching
         # json.loads/orjson behavior so downstream JSON serialization doesn't choke on Decimal.
-        yield from ijson.items(data, f"{self.items_path}.item", use_float=True)
+        if on_document_remainder is None:
+            yield from ijson.items(data, f"{self.items_path}.item", use_float=True)
+            return
+        items_prefix = f"{self.items_path}.item"
+        builder = ijson.common.ObjectBuilder()
+
+        def events() -> Generator[Tuple[str, str, Any], None, None]:
+            for prefix, event, value in ijson.parse(data, use_float=True):
+                if not (prefix == items_prefix or prefix.startswith(items_prefix + ".")):
+                    builder.event(event, value)
+                yield prefix, event, value
+
+        yield from ijson.items(events(), items_prefix)
+        on_document_remainder(builder.value)
 
 
 @dataclass
@@ -222,6 +241,14 @@ class CsvParser(Parser):
             yield row
 
 
+def _parser_supports_document_remainder(parser: Parser) -> bool:
+    if isinstance(parser, JsonItemsParser):
+        return True
+    if isinstance(parser, GzipParser):
+        return _parser_supports_document_remainder(parser.inner_parser)
+    return False
+
+
 class CompositeRawDecoder(Decoder):
     """
     Decoder strategy to transform a requests.Response into a PARSER_OUTPUT_TYPE
@@ -242,6 +269,7 @@ class CompositeRawDecoder(Decoder):
         parser: Parser,
         stream_response: bool = True,
         parsers_by_header: PARSERS_BY_HEADER_TYPE = None,
+        spool_response: bool = False,
     ) -> None:
         # since we moved from using `dataclass` to `__init__` method,
         # we need to keep using the `parser` to be able to resolve the depenencies
@@ -250,6 +278,7 @@ class CompositeRawDecoder(Decoder):
 
         self._parsers_by_header = parsers_by_header if parsers_by_header else {}
         self._stream_response = stream_response
+        self._spool_response = spool_response
 
     @classmethod
     def by_headers(
@@ -278,8 +307,16 @@ class CompositeRawDecoder(Decoder):
     def is_stream_response(self) -> bool:
         return self._stream_response
 
+    def spools_response(self) -> bool:
+        return self._spool_response
+
     def decode(self, response: requests.Response) -> DECODER_OUTPUT_TYPE:
         parser = self._select_parser(response)
+        parse_kwargs = (
+            {"on_document_remainder": lambda doc: set_document_remainder(response, doc)}
+            if _parser_supports_document_remainder(parser)
+            else {}
+        )
         if self.is_stream_response():
             # urllib mentions that some interfaces don't play nice with auto_close
             # More info here: https://urllib3.readthedocs.io/en/stable/user-guide.html#using-io-wrappers-with-response-content
@@ -288,10 +325,11 @@ class CompositeRawDecoder(Decoder):
             response.raw.auto_close = False
             yield from parser.parse(
                 data=response.raw,  # type: ignore[arg-type]
+                **parse_kwargs,
             )
             response.raw.close()
         else:
-            yield from parser.parse(data=io.BytesIO(response.content))
+            yield from parser.parse(data=io.BytesIO(response.content), **parse_kwargs)
 
     def _select_parser(self, response: requests.Response) -> Parser:
         """
