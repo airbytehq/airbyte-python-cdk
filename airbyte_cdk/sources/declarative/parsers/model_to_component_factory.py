@@ -2660,8 +2660,10 @@ class ModelToComponentFactory:
                 "Set `use_cache: false` on the requester (including on parent streams, whose cache is enabled automatically)."
             )
 
-        if decoder is not None and decoder.spools_response() and isinstance(
-            model.error_handler, DefaultErrorHandlerModel
+        if (
+            decoder is not None
+            and decoder.spools_response()
+            and isinstance(model.error_handler, DefaultErrorHandlerModel)
         ):
             if any(
                 f.predicate or f.error_message_contains

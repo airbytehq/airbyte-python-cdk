@@ -331,8 +331,7 @@ class CompositeRawDecoder(Decoder):
 
         parse_kwargs = (
             {"on_document_remainder": on_document_remainder}
-            if self._capture_document_remainder
-            and _parser_supports_document_remainder(parser)
+            if self._capture_document_remainder and _parser_supports_document_remainder(parser)
             else {}
         )
         if self.is_stream_response():

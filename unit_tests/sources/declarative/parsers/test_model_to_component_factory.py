@@ -8033,9 +8033,7 @@ def _json_items_spooling_decoder():
     )
 
     return factory.create_json_items_decoder(
-        JsonItemsDecoderModel(
-            type="JsonItemsDecoder", items_path="tickets", spool_to_disk=True
-        ),
+        JsonItemsDecoderModel(type="JsonItemsDecoder", items_path="tickets", spool_to_disk=True),
         input_config,
     )
 
@@ -8044,12 +8042,9 @@ def test_spool_to_disk_with_body_filters_logs_warning(caplog):
     import logging
 
     with caplog.at_level(logging.WARNING):
-        _build_requester_from_manifest(
-            _SPOOL_BODY_FILTER_MANIFEST, _json_items_spooling_decoder()
-        )
+        _build_requester_from_manifest(_SPOOL_BODY_FILTER_MANIFEST, _json_items_spooling_decoder())
     assert any(
-        "spool_to_disk" in r.message and "response filters" in r.message
-        for r in caplog.records
+        "spool_to_disk" in r.message and "response filters" in r.message for r in caplog.records
     )
 
 
@@ -8057,7 +8052,5 @@ def test_no_spool_to_disk_no_body_filter_warning(caplog):
     import logging
 
     with caplog.at_level(logging.WARNING):
-        _build_requester_from_manifest(
-            _SPOOL_BODY_FILTER_MANIFEST, _json_items_decoder_component()
-        )
+        _build_requester_from_manifest(_SPOOL_BODY_FILTER_MANIFEST, _json_items_decoder_component())
     assert not any("spool_to_disk" in r.message for r in caplog.records)
