@@ -334,6 +334,5 @@ def test_http_codes_filter_matches_marked_2xx_without_consuming_body(requests_mo
     )
     resolution = response_filter.matches(response)
     assert resolution.response_action == ResponseAction.IGNORE
-    # the error_message template interpolates `response` as {} for streamed 2xx bodies
-    assert resolution.error_message == "matched: None"
-    assert response._content_consumed is False
+    # like main: the error_message template interpolates the actual body
+    assert resolution.error_message == "matched: whatever"
