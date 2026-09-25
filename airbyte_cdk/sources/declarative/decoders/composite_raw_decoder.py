@@ -323,6 +323,8 @@ class CompositeRawDecoder(Decoder):
             # We have indeed observed some issues with CSV parsing.
             # Hence, we will manage the closing of the file ourselves until we find a better solution.
             response.raw.auto_close = False
+            if hasattr(response.raw, "decode_content"):
+                response.raw.decode_content = True
             yield from parser.parse(
                 data=response.raw,  # type: ignore[arg-type]
                 **parse_kwargs,

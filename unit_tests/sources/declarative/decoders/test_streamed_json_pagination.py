@@ -180,3 +180,28 @@ def test_spooled_response_body_small_body_stays_in_memory():
     raw = SpooledResponseBody(spool)
     assert raw.read() == b"hello"
     assert spool._rolled is False
+
+
+def test_streamed_decode_applies_decode_content_for_transport_gzip():
+    body = gzip.compress(_JSON_BODY)
+    response = _streamed_response(body, headers={"Content-Encoding": "gzip"})
+    decoder = CompositeRawDecoder(parser=JsonItemsParser(items_path="items"))
+    assert list(decoder.decode(response)) == [{"id": 1}, {"id": 2}]
+
+
+def test_streamed_gzip_decoder_over_double_compressed_body():
+    body = gzip.compress(gzip.compress(_JSON_BODY))
+    response = _streamed_response(body, headers={"Content-Encoding": "gzip"})
+    decoder = CompositeRawDecoder(
+        parser=GzipParser(inner_parser=JsonItemsParser(items_path="items"))
+    )
+    assert list(decoder.decode(response)) == [{"id": 1}, {"id": 2}]
+
+
+def test_streamed_gzip_decoder_over_plain_gzip_payload_unchanged():
+    body = gzip.compress(_JSON_BODY)
+    response = _streamed_response(body)
+    decoder = CompositeRawDecoder(
+        parser=GzipParser(inner_parser=JsonItemsParser(items_path="items"))
+    )
+    assert list(decoder.decode(response)) == [{"id": 1}, {"id": 2}]
