@@ -90,6 +90,7 @@ class DynamicStreamCheckConfig(BaseModel):
     stream_count: Optional[int] = Field(
         None,
         description="The number of streams to attempt reading from during a check operation. If unset, all generated streams are checked. Must be a positive integer; if it exceeds the total number of available streams, all streams are checked.",
+        ge=1,
         title="Stream Count",
     )
 
@@ -143,6 +144,7 @@ class ConstantBackoffStrategy(BaseModel):
         None,
         description="Optional additive jitter range in seconds. When set, the backoff time is uniformly distributed between backoff_time_in_seconds and backoff_time_in_seconds + (jitter_range_in_seconds * 2), so jitter only increases the base backoff.",
         examples=[15],
+        ge=0,
         title="Jitter Range",
     )
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
@@ -563,6 +565,7 @@ class ExponentialBackoffStrategy(BaseModel):
         None,
         description="Optional additive jitter range in seconds. When set, the backoff time is uniformly distributed between computed_backoff and computed_backoff + (jitter_range_in_seconds * 2), so jitter only increases the computed backoff.",
         examples=[2],
+        ge=0,
         title="Jitter Range",
     )
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
@@ -1309,30 +1312,35 @@ class PageSizeReduction(BaseModel):
         2,
         description="Divisor applied to the page size on each reduction. The new page size is floor(current page size / reduction factor).",
         examples=[2, 4],
+        gt=1,
         title="Reduction Factor",
     )
     minimum_page_size: Optional[int] = Field(
         1,
         description="Page size below which the connector stops reducing and fails the sync. It must be smaller than the page size configured on the pagination strategy, otherwise no reduction could ever be applied. It is one of two bounds on the reduction and whichever is tighter wins: an unbroken run of failing pages divides the page size by reduction_factor at most max_attempts times, so reaching this floor in a single run needs max_attempts of at least log(page_size / minimum_page_size) / log(reduction_factor) - with the defaults, a page size of 1000 bottoms out at 31 records per page and a floor of 10 is never reached. Pages that succeed in between restart the max_attempts budget, so the floor is still reachable over a partition.",
         examples=[1, 10],
+        ge=1,
         title="Minimum Page Size",
     )
     max_attempts: Optional[int] = Field(
         5,
         description="Maximum number of page size reductions made in a row without a single page succeeding, before the sync fails with a transient error. Every reduction follows a request that failed, so at most max_attempts + 1 failing requests are issued before giving up. The budget restarts after every page that succeeds, under either reset_policy, so it bounds the reductions needed to get a single page through and not the number of pages a partition may have: a stream that needs a reduction every now and then reads to the end however long it is. Under NEVER the page size also strictly decreases, so minimum_page_size bounds the reductions of the whole partition on its own. The wait between reduction attempts is the CDK's own - it grows with each attempt - and does not consult the error handler's backoff_strategies or a Retry-After header.",
         examples=[5, 10],
+        ge=1,
         title="Maximum Reduction Attempts",
     )
     backoff_seconds: Optional[float] = Field(
         0.5,
         description='Base number of seconds to wait before the page is re-issued, multiplied by the number of attempts made in a row, so the second attempt waits twice as long as the first. A REDUCE_PAGE_SIZE response never reaches the error handler\'s retry budget, backoff_strategies or a Retry-After header, so this is the only thing spacing those requests out. Raise it on an API whose error also means "we are briefly unwell" rather than only "your page is too big", since the default spaces the whole run of attempts over a few seconds.',
         examples=[0.5, 5],
+        ge=0,
         title="Backoff Seconds",
     )
     retries_at_minimum_page_size: Optional[int] = Field(
         0,
         description="Number of times the same page is re-issued unchanged, each after the backoff wait, once the page size cannot be shrunk any further, before the sync fails with a transient error. The default of 0 fails on the first response received at minimum_page_size. Raise it when the API returns the same error for a page that is too big and for a server-side hiccup: at the floor, reducing is no longer an option but waiting still is, and without this budget those responses end the stream on the first one. This budget is separate from max_attempts, which only counts reductions, and it restarts on every page that succeeds. It applies however the page size arrived at the floor, whether by reduction or because page_size was already there; a page size that minimum_page_size blocks from ever being reduced is still reported as a configuration error, but only once this budget is spent.",
         examples=[0, 3],
+        ge=0,
         title="Retries At Minimum Page Size",
     )
     failure_message: Optional[str] = Field(
@@ -3386,6 +3394,7 @@ class AsyncRetriever(BaseModel):
     failed_retry_wait_time_in_seconds: Optional[Union[int, str]] = Field(
         None,
         description="Time in seconds to wait before retrying a failed async job. Only applies to jobs that ran on the API side and reported a FAILED status (e.g. report generation failed due to a cooldown). Creation failures (HTTP errors when starting a job, such as 429s) and TIMED_OUT jobs are retried immediately and are not affected by this setting. When set, the orchestrator defers retry of real failed jobs until the wait time has elapsed, without blocking other jobs.",
+        ge=1,
     )
     download_target_requester: Optional[Union[HttpRequester, CustomRequester]] = Field(
         None,
