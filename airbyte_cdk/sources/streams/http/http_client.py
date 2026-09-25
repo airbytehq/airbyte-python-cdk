@@ -85,6 +85,9 @@ BODY_REQUEST_METHODS = ("GET", "POST", "PUT", "PATCH")
 
 _SPOOL_CHUNK_SIZE = 1 << 20
 _SPOOL_IN_MEMORY_LIMIT = 8 << 20
+# Out-of-band request flag: subclasses may override _send/_send_with_retry with the
+# baseline signatures, so the spool option travels inside request_kwargs instead.
+_SPOOL_RESPONSE_KWARG = "_airbyte_spool_response"
 
 
 def monkey_patched_get_item(self, key):  # type: ignore # this interface is a copy/paste from the requests_cache lib
@@ -314,7 +317,6 @@ class HttpClient:
         request_kwargs: Mapping[str, Any],
         log_formatter: Optional[Callable[[requests.Response], Any]] = None,
         exit_on_rate_limit: Optional[bool] = False,
-        spool_response: bool = False,
     ) -> requests.Response:
         """
         Sends a request with retry logic.
@@ -345,7 +347,6 @@ class HttpClient:
                 request_kwargs,
                 log_formatter=log_formatter,
                 exit_on_rate_limit=exit_on_rate_limit,
-                spool_response=spool_response,
             )  # type: ignore # mypy can't infer that backoff_handler wraps _send
 
             return response
@@ -464,8 +465,9 @@ class HttpClient:
         request_kwargs: Mapping[str, Any],
         log_formatter: Optional[Callable[[requests.Response], Any]] = None,
         exit_on_rate_limit: Optional[bool] = False,
-        spool_response: bool = False,
     ) -> requests.Response:
+        request_kwargs = dict(request_kwargs)
+        spool_response = bool(request_kwargs.pop(_SPOOL_RESPONSE_KWARG, False))
         if request not in self._request_attempt_count:
             self._request_attempt_count[request] = 1
         else:
@@ -811,13 +813,14 @@ class HttpClient:
             cert=request_kwargs.get("cert"),
         )
         request_kwargs = {**request_kwargs, **env_settings}
+        if spool_response:
+            request_kwargs[_SPOOL_RESPONSE_KWARG] = True
 
         response: requests.Response = self._send_with_retry(
             request=request,
             request_kwargs=request_kwargs,
             log_formatter=log_formatter,
             exit_on_rate_limit=exit_on_rate_limit,
-            spool_response=spool_response,
         )
 
         return request, response

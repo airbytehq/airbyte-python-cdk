@@ -1,6 +1,7 @@
 # Copyright (c) 2024 Airbyte, Inc., all rights reserved.
 
 import gzip
+import inspect
 import io
 import json
 import logging
@@ -8,6 +9,7 @@ import os
 import tempfile
 import time
 from datetime import timedelta
+from typing import Any, Callable, Mapping, Optional
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -1874,3 +1876,52 @@ def test_send_request_large_spooled_body_skips_filter_and_is_rewound():
     assert returned_response._content_consumed is False
     assert returned_response.raw.tell() == 0
     assert returned_response.raw.read() == payload
+
+
+class LegacyOverrideHttpClient(HttpClient):
+    def _send_with_retry(
+        self,
+        request: requests.PreparedRequest,
+        request_kwargs: Mapping[str, Any],
+        log_formatter: Optional[Callable[[requests.Response], Any]] = None,
+        exit_on_rate_limit: Optional[bool] = False,
+    ) -> requests.Response:
+        return super()._send_with_retry(request, request_kwargs, log_formatter, exit_on_rate_limit)
+
+
+def test_legacy_send_with_retry_override_without_spool_param_still_works():
+    assert "spool_response" not in inspect.signature(HttpClient._send_with_retry).parameters
+    assert "spool_response" not in inspect.signature(HttpClient._send).parameters
+
+    mocked_session = MagicMock(spec=requests.Session)
+    mocked_session.merge_environment_settings.return_value = {}
+    payload = gzip.compress(json.dumps({"tickets": [{"id": 1}]}).encode())
+    response, _ = _raw_streaming_response(payload, headers={"Content-Encoding": "gzip"})
+    mocked_session.send.return_value = response
+    http_client = LegacyOverrideHttpClient(
+        name="test",
+        logger=MagicMock(),
+        session=mocked_session,
+    )
+
+    _, resp = http_client.send_request(
+        http_method="get",
+        url="https://test_base_url.com/v1/endpoint",
+        request_kwargs={"stream": True},
+        spool_response=False,
+    )
+    assert resp.status_code == 200
+    assert not isinstance(resp.raw, SpooledResponseBody)
+
+    response2, _ = _raw_streaming_response(payload, headers={"Content-Encoding": "gzip"})
+    mocked_session.send.return_value = response2
+    _, resp2 = http_client.send_request(
+        http_method="get",
+        url="https://test_base_url.com/v1/endpoint",
+        request_kwargs={"stream": True},
+        spool_response=True,
+    )
+    assert resp2.status_code == 200
+    assert isinstance(resp2.raw, SpooledResponseBody)
+    sent_kwargs = mocked_session.send.call_args.kwargs
+    assert "_airbyte_spool_response" not in sent_kwargs
