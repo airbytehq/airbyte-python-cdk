@@ -49,7 +49,11 @@ class _FileLikeRaw(io.RawIOBase):
         return True
 
     def readinto(self, b: Any) -> int:
-        return self._fileobj.readinto(b)  # type: ignore[attr-defined,no-any-return]
+        # SpooledTemporaryFile has no readinto on python 3.10
+        data = self._fileobj.read(len(b))
+        n = len(data)
+        b[:n] = data
+        return n
 
     def seek(self, offset: int, whence: int = io.SEEK_SET) -> int:
         return self._fileobj.seek(offset, whence)
