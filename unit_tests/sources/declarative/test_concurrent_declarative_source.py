@@ -5167,6 +5167,171 @@ def test_given_reductions_exhausted_when_read_then_emit_a_transient_error():
     )
 
 
+def _request_window_splitting_manifest():
+    return {
+        "version": "0.34.2",
+        "type": "DeclarativeSource",
+        "check": {"type": "CheckStream", "stream_names": ["Test"]},
+        "streams": [
+            {
+                "type": "DeclarativeStream",
+                "name": "Test",
+                "schema_loader": {
+                    "type": "InlineSchemaLoader",
+                    "schema": {"type": "object"},
+                },
+                "incremental_sync": {
+                    "type": "DatetimeBasedCursor",
+                    "start_datetime": "2024-01-01T00:00:00Z",
+                    "end_datetime": "2024-01-01T23:59:59Z",
+                    "step": "P1D",
+                    "cursor_field": "updated_at",
+                    "cursor_granularity": "PT1S",
+                    "datetime_format": "%Y-%m-%dT%H:%M:%SZ",
+                    "start_time_option": {
+                        "type": "RequestOption",
+                        "inject_into": "request_parameter",
+                        "field_name": "start",
+                    },
+                    "end_time_option": {
+                        "type": "RequestOption",
+                        "inject_into": "request_parameter",
+                        "field_name": "end",
+                    },
+                },
+                "retriever": {
+                    "type": "SimpleRetriever",
+                    "request_window_splitting": {"type": "RequestWindowSplitting"},
+                    "requester": {
+                        "type": "HttpRequester",
+                        "url_base": "https://example.org",
+                        "path": "/test",
+                        "authenticator": {"type": "NoAuth"},
+                        "error_handler": {
+                            "type": "DefaultErrorHandler",
+                            "response_filters": [
+                                {
+                                    "type": "HttpResponseFilter",
+                                    "http_codes": [400],
+                                    "action": "SPLIT_REQUEST_WINDOW",
+                                },
+                            ],
+                        },
+                    },
+                    "record_selector": {
+                        "type": "RecordSelector",
+                        "extractor": {"type": "DpathExtractor", "field_path": ["items"]},
+                    },
+                },
+            }
+        ],
+        "spec": {
+            "type": "Spec",
+            "documentation_url": "https://example.org",
+            "connection_specification": {},
+        },
+    }
+
+
+def _read_request_window_splitting_source(manifest):
+    catalog = create_catalog("Test")
+    source = ConcurrentDeclarativeSource(
+        source_config=manifest,
+        config={},
+        catalog=catalog,
+        state=None,
+    )
+    yield from source.read(logger=source.logger, config={}, catalog=catalog, state=[])
+
+
+def test_given_split_request_window_action_when_read_then_split_and_read_both_halves():
+    """
+    Mirrors the real PayPal `RESULTSET_TOO_LARGE` incident this feature exists to generalize: a request for
+    the full day is rejected outright, and the connector reads it back as two half-day requests instead, with
+    a complete, gap-free, non-duplicated record set.
+    """
+    full_window_request = HttpRequest(
+        "https://example.org/test",
+        query_params={"start": "2024-01-01T00:00:00Z", "end": "2024-01-01T23:59:59Z"},
+    )
+    first_half_request = HttpRequest(
+        "https://example.org/test",
+        query_params={"start": "2024-01-01T00:00:00Z", "end": "2024-01-01T11:59:59Z"},
+    )
+    second_half_request = HttpRequest(
+        "https://example.org/test",
+        query_params={"start": "2024-01-01T12:00:00Z", "end": "2024-01-01T23:59:59Z"},
+    )
+
+    with HttpMocker() as http_mocker:
+        http_mocker.get(full_window_request, HttpResponse("", 400))
+        http_mocker.get(first_half_request, HttpResponse(json.dumps({"items": [{"id": 1}]}), 200))
+        http_mocker.get(second_half_request, HttpResponse(json.dumps({"items": [{"id": 2}]}), 200))
+
+        messages = list(_read_request_window_splitting_source(_request_window_splitting_manifest()))
+
+        http_mocker.assert_number_of_calls(full_window_request, 1)
+        http_mocker.assert_number_of_calls(first_half_request, 1)
+        http_mocker.assert_number_of_calls(second_half_request, 1)
+
+    assert sorted(
+        message.record.data["id"] for message in messages if message.type == Type.RECORD
+    ) == [1, 2]
+
+
+def test_given_split_request_window_action_when_read_then_final_state_reflects_full_original_window():
+    """
+    Regression coverage for a bug where records read from a split child window carried the child's own slice
+    as `Record.associated_slice`, which `ConcurrentCursor.observe()` keys its bookkeeping by - a key
+    `close_partition()` (which always looks up by the *original* partition's slice) could never find. Left
+    unfixed, `_get_latest_complete_time`'s `first_interval.get("most_recent_cursor_value") or
+    first_interval[START_KEY]` fallback would silently commit the window's *start* boundary as the emitted
+    state instead of the actual highest cursor value observed across the two split children - reverting the
+    cursor all the way back to the beginning of the (already fully synced) day on the very next sync, rather
+    than a merely imprecise-but-safe value.
+    """
+    full_window_request = HttpRequest(
+        "https://example.org/test",
+        query_params={"start": "2024-01-01T00:00:00Z", "end": "2024-01-01T23:59:59Z"},
+    )
+    first_half_request = HttpRequest(
+        "https://example.org/test",
+        query_params={"start": "2024-01-01T00:00:00Z", "end": "2024-01-01T11:59:59Z"},
+    )
+    second_half_request = HttpRequest(
+        "https://example.org/test",
+        query_params={"start": "2024-01-01T12:00:00Z", "end": "2024-01-01T23:59:59Z"},
+    )
+
+    with HttpMocker() as http_mocker:
+        http_mocker.get(full_window_request, HttpResponse("", 400))
+        http_mocker.get(
+            first_half_request,
+            HttpResponse(
+                json.dumps({"items": [{"id": 1, "updated_at": "2024-01-01T05:00:00Z"}]}), 200
+            ),
+        )
+        http_mocker.get(
+            second_half_request,
+            # the higher cursor value lives in the *second* half, so a fallback to the slice's end boundary
+            # instead of the true observed maximum would be easy to miss if it happened to match by accident
+            HttpResponse(
+                json.dumps({"items": [{"id": 2, "updated_at": "2024-01-01T20:00:00Z"}]}), 200
+            ),
+        )
+
+        messages = list(_read_request_window_splitting_source(_request_window_splitting_manifest()))
+
+    states = get_states_for_stream(stream_name="Test", messages=messages)
+    assert states
+    # the declarative DatetimeBasedCursor emits sequential-format state (a flat {cursor_field: value} dict) by
+    # default; every emitted state must show the true observed maximum, never the window's start boundary
+    assert all(
+        state.stream.stream_state.__dict__ == {"updated_at": "2024-01-01T20:00:00Z"}
+        for state in states
+    )
+
+
 def test_given_pagination_limit_reached_when_read_then_reset_pagination():
     input_config = {}
     manifest = {

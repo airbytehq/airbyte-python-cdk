@@ -19,6 +19,7 @@ from typing import (
     Union,
 )
 
+from airbyte_cdk.models import FailureType
 from airbyte_cdk.sources.connector_state_manager import ConnectorStateManager
 from airbyte_cdk.sources.message import MessageRepository, NoopMessageRepository
 from airbyte_cdk.sources.streams import NO_CURSOR_STATE_KEY
@@ -30,6 +31,7 @@ from airbyte_cdk.sources.streams.concurrent.state_converters.abstract_stream_sta
     AbstractStreamStateConverter,
 )
 from airbyte_cdk.sources.types import Record, StreamSlice
+from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 
 LOGGER = logging.getLogger("airbyte")
 
@@ -606,6 +608,96 @@ class ConcurrentCursor(Cursor):
             )
         else:
             return stream_slice
+
+    def split_request_window(
+        self, stream_slice: StreamSlice, min_split_window: Optional[datetime.timedelta] = None
+    ) -> Optional[List[StreamSlice]]:
+        """
+        Split `stream_slice` in half along this cursor's own boundary fields, granularity, and output format.
+
+        Returns `None` when the slice cannot be split any further: either it spans at most one
+        `cursor_granularity` unit already (the floor), it is already at or below `min_split_window` (a
+        connector-configured floor independent of and typically looser than `cursor_granularity`), the
+        boundaries are reversed, or no `cursor_granularity` was configured at all (there is then no way to know
+        the smallest addressable unit, or how to keep two children from overlapping at their shared edge).
+        Raises `AirbyteTracedException` instead if a boundary is missing or unparseable: that is a bug in how
+        the slice was produced, not the API rejecting a window, so it must not be reported as one. This is the
+        implementation `SimpleRetriever.request_window_splitter` binds to (see
+        `airbyte_cdk.sources.declarative.retrievers.simple_retriever`) that reuses the same
+        parsing/formatting/comparison operations `_split_per_slice_range` already relies on, so it works for
+        any `CursorValueType`/`GapType` pair this cursor was built with (datetime/timedelta, or int/int),
+        without a second, duplicate implementation of that logic living outside the cursor.
+        """
+        if not self._cursor_granularity:
+            return None
+
+        start_field, end_field = self._slice_boundary_fields_wrapper
+        try:
+            start_value = self._connector_state_converter.parse_value(
+                stream_slice.cursor_slice[start_field]
+            )
+            end_value = self._connector_state_converter.parse_value(
+                stream_slice.cursor_slice[end_field]
+            )
+        except (KeyError, ValueError, TypeError) as exception:
+            # A missing or unparseable boundary means this slice was produced (or passed in) wrong - a bug in
+            # slice generation, not something the API did. Raising here, rather than returning `None` (which
+            # `SimpleRetriever` reports as "the API kept rejecting..."), keeps that distinction visible instead
+            # of blaming the API for our own state.
+            raise AirbyteTracedException(
+                internal_message=(
+                    f"Cannot split {stream_slice}: boundary field {start_field!r} or {end_field!r} is missing "
+                    f"or not parseable: {exception}"
+                ),
+                message=(
+                    f"Stream {self._stream_name} produced a request window with a missing or invalid "
+                    f"{start_field!r}/{end_field!r} boundary and could not split it further."
+                ),
+                failure_type=FailureType.system_error,
+            ) from exception
+
+        if start_value >= end_value:
+            # Reversed or degenerate boundaries: nothing safe to split.
+            return None
+
+        span = end_value - start_value  # type: ignore[operator]  # concretely a GapType (timedelta/int) at runtime
+        if min_split_window is not None and span <= min_split_window:  # type: ignore[operator]
+            return None
+
+        total_units = span // self._cursor_granularity + 1  # type: ignore[operator]  # inclusive count of granularity units
+        if total_units <= 1:
+            # Already at the minimum granularity and still rejected; nothing left to split.
+            return None
+
+        half_units = total_units // 2
+        first_end = (
+            start_value + (half_units * self._cursor_granularity) - self._cursor_granularity  # type: ignore[operator]
+        )
+        second_start = first_end + self._cursor_granularity
+
+        if not (start_value <= first_end < second_start <= end_value):
+            # No-progress guard, independent of the granularity check above: refuse to return children that
+            # are not strictly ordered and non-degenerate, rather than risk an identical or overlapping split.
+            return None
+
+        return [
+            StreamSlice(
+                partition=stream_slice.partition,
+                cursor_slice={
+                    start_field: self._connector_state_converter.output_format(start_value),
+                    end_field: self._connector_state_converter.output_format(first_end),
+                },
+                extra_fields=stream_slice.extra_fields,
+            ),
+            StreamSlice(
+                partition=stream_slice.partition,
+                cursor_slice={
+                    start_field: self._connector_state_converter.output_format(second_start),
+                    end_field: self._connector_state_converter.output_format(end_value),
+                },
+                extra_fields=stream_slice.extra_fields,
+            ),
+        ]
 
     def get_cursor_datetime_from_state(
         self, stream_state: Mapping[str, Any]

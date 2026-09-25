@@ -205,6 +205,9 @@ from airbyte_cdk.sources.declarative.retrievers.page_size_reducer import (
     PageSizeReduction,
     PageSizeResetPolicy,
 )
+from airbyte_cdk.sources.declarative.retrievers.request_window_splitting import (
+    RequestWindowSplitting,
+)
 from airbyte_cdk.sources.declarative.schema import InlineSchemaLoader, JsonFileSchemaLoader
 from airbyte_cdk.sources.declarative.schema.caching_schema_loader_decorator import (
     CachingSchemaLoaderDecorator,
@@ -7549,6 +7552,550 @@ def test_given_file_uploader_and_page_size_reduction_then_raise():
     assert "file_uploader" in str(exception.value)
 
 
+_REQUEST_WINDOW_REDUCTION_STREAM = """
+type: DeclarativeStream
+name: Test
+primary_key: id
+schema_loader:
+  type: InlineSchemaLoader
+  schema:
+    type: object
+{incremental_sync}
+retriever:
+  type: SimpleRetriever
+  {request_window_splitting}
+  requester:
+    type: HttpRequester
+    url_base: "https://airbyte.io"
+    path: "/items"
+    http_method: GET
+    error_handler:
+      type: DefaultErrorHandler
+      response_filters:
+        - type: HttpResponseFilter
+          http_codes: [400]
+          action: {action}
+  record_selector:
+    type: RecordSelector
+    extractor:
+      type: DpathExtractor
+      field_path: ["items"]
+"""
+
+_DATETIME_BASED_CURSOR_WITH_GRANULARITY = """incremental_sync:
+  type: DatetimeBasedCursor
+  start_datetime: "2024-01-01T00:00:00Z"
+  end_datetime: "2024-01-31T00:00:00Z"
+  step: "P7D"
+  cursor_field: "updated_at"
+  cursor_granularity: "PT1S"
+  datetime_format: "%Y-%m-%dT%H:%M:%SZ\""""
+
+
+def _request_window_splitting_stream(
+    request_window_splitting="request_window_splitting:\n    type: RequestWindowSplitting",
+    action="SPLIT_REQUEST_WINDOW",
+    incremental_sync=_DATETIME_BASED_CURSOR_WITH_GRANULARITY,
+):
+    content = _REQUEST_WINDOW_REDUCTION_STREAM.format(
+        incremental_sync=incremental_sync,
+        request_window_splitting=request_window_splitting,
+        action=action,
+    )
+    stream_manifest = transformer.propagate_types_and_parameters(
+        "", resolver.preprocess_manifest(YamlDeclarativeSource._parse(content)), {}
+    )
+    return factory.create_component(
+        model_type=DeclarativeStreamModel, component_definition=stream_manifest, config={}
+    )
+
+
+def test_given_request_window_splitting_then_create_retriever_with_defaults():
+    retriever = get_retriever(_request_window_splitting_stream())
+
+    assert retriever.request_window_splitting == RequestWindowSplitting(
+        failure_message=None,
+    )
+    assert callable(retriever.request_window_splitter)
+    assert retriever.request_window_splitter.__name__ == "split_request_window"
+
+
+def test_given_request_window_splitting_values_then_create_retriever_with_those_values():
+    retriever = get_retriever(
+        _request_window_splitting_stream(
+            request_window_splitting=(
+                "request_window_splitting:\n"
+                "    type: RequestWindowSplitting\n"
+                "    failure_message: Lower time_window so that each request covers less data.\n"
+                "    min_split_window: P1D"
+            )
+        )
+    )
+
+    assert retriever.request_window_splitting == RequestWindowSplitting(
+        failure_message="Lower time_window so that each request covers less data.",
+        min_split_window=timedelta(days=1),
+    )
+
+
+def test_given_no_request_window_splitting_then_retriever_has_none():
+    retriever = get_retriever(
+        _request_window_splitting_stream(request_window_splitting="", action="RETRY")
+    )
+
+    assert retriever.request_window_splitting is None
+    assert retriever.request_window_splitter is None
+
+
+def test_given_split_request_window_action_without_request_window_splitting_then_raise():
+    with pytest.raises(ValueError) as exception:
+        _request_window_splitting_stream(request_window_splitting="")
+
+    assert "SPLIT_REQUEST_WINDOW" in str(exception.value)
+
+
+def test_given_request_window_splitting_without_split_request_window_action_then_warn(caplog):
+    """
+    A `CustomErrorHandler` can resolve to the action without being inspectable, and custom code can raise
+    `RequestWindowSplitRequiredException` directly without going through any error handler at all - so this
+    cannot raise. It must not stay silent either: the feature would be dead on a stream that only defines the
+    block because it expects to need it.
+    """
+    with caplog.at_level(logging.WARNING, logger="airbyte.model_to_component_factory"):
+        retriever = get_retriever(_request_window_splitting_stream(action="RETRY"))
+
+    assert retriever.request_window_splitting == RequestWindowSplitting()
+    assert "SPLIT_REQUEST_WINDOW" in caplog.text
+
+
+def test_given_composite_error_handler_with_split_request_window_action_then_require_request_window_splitting():
+    """The action can be nested in a CompositeErrorHandler, which the guard has to recurse into."""
+    stream_definition = {
+        "type": "DeclarativeStream",
+        "name": "Test",
+        "primary_key": "id",
+        "schema_loader": {"type": "InlineSchemaLoader", "schema": {"type": "object"}},
+        "incremental_sync": {
+            "type": "DatetimeBasedCursor",
+            "start_datetime": "2024-01-01T00:00:00Z",
+            "end_datetime": "2024-01-31T00:00:00Z",
+            "step": "P7D",
+            "cursor_field": "updated_at",
+            "cursor_granularity": "PT1S",
+            "datetime_format": "%Y-%m-%dT%H:%M:%SZ",
+        },
+        "retriever": {
+            "type": "SimpleRetriever",
+            "requester": {
+                "type": "HttpRequester",
+                "url_base": "https://airbyte.io",
+                "path": "/items",
+                "http_method": "GET",
+                "error_handler": {
+                    "type": "CompositeErrorHandler",
+                    "error_handlers": [
+                        {
+                            "type": "DefaultErrorHandler",
+                            "response_filters": [
+                                {
+                                    "type": "HttpResponseFilter",
+                                    "http_codes": [429],
+                                    "action": "RATE_LIMITED",
+                                }
+                            ],
+                        },
+                        {
+                            "type": "DefaultErrorHandler",
+                            "response_filters": [
+                                {
+                                    "type": "HttpResponseFilter",
+                                    "http_codes": [400],
+                                    "action": "SPLIT_REQUEST_WINDOW",
+                                }
+                            ],
+                        },
+                    ],
+                },
+            },
+            "record_selector": {
+                "type": "RecordSelector",
+                "extractor": {"type": "DpathExtractor", "field_path": ["items"]},
+            },
+        },
+    }
+
+    with pytest.raises(ValueError) as exception:
+        factory.create_component(
+            model_type=DeclarativeStreamModel,
+            component_definition=stream_definition,
+            config={},
+        )
+
+    assert "SPLIT_REQUEST_WINDOW" in str(exception.value)
+
+    # and the same manifest with the block present builds
+    stream_definition["retriever"]["request_window_splitting"] = {"type": "RequestWindowSplitting"}
+    retriever = get_retriever(
+        factory.create_component(
+            model_type=DeclarativeStreamModel,
+            component_definition=stream_definition,
+            config={},
+        )
+    )
+    assert retriever.request_window_splitting == RequestWindowSplitting()
+
+
+def test_given_no_incremental_sync_and_request_window_splitting_then_raise():
+    with pytest.raises(ValueError) as exception:
+        _request_window_splitting_stream(incremental_sync="")
+
+    assert "cursor_granularity" in str(exception.value)
+
+
+def test_given_datetime_based_cursor_without_cursor_granularity_then_raise():
+    with pytest.raises(ValueError) as exception:
+        _request_window_splitting_stream(
+            incremental_sync=(
+                'incremental_sync:\n  type: DatetimeBasedCursor\n  start_datetime: "2024-01-01T00:00:00Z"\n'
+                '  end_datetime: "2024-01-31T00:00:00Z"\n  step: "P7D"\n  cursor_field: "updated_at"\n'
+                '  datetime_format: "%Y-%m-%dT%H:%M:%SZ"'
+            )
+        )
+
+    assert "cursor_granularity" in str(exception.value)
+
+
+def test_given_zero_length_cursor_granularity_and_request_window_splitting_then_raise():
+    with pytest.raises(ValueError) as exception:
+        _request_window_splitting_stream(
+            incremental_sync=(
+                'incremental_sync:\n  type: DatetimeBasedCursor\n  start_datetime: "2024-01-01T00:00:00Z"\n'
+                '  end_datetime: "2024-01-31T00:00:00Z"\n  step: "P7D"\n  cursor_field: "updated_at"\n'
+                '  cursor_granularity: "PT0S"\n  datetime_format: "%Y-%m-%dT%H:%M:%SZ"'
+            )
+        )
+
+    assert "cursor_granularity" in str(exception.value)
+    assert "zero-length" in str(exception.value)
+
+
+def test_given_datetime_format_coarser_than_cursor_granularity_and_request_window_splitting_then_raise():
+    """
+    `cursor_granularity: PT1S` claims second-level precision, but `%Y-%m-%d` can only render day boundaries: two
+    children split less than a day apart would format to the same date and the retriever would re-request the
+    same (or a reversed) window instead of a smaller one.
+    """
+    with pytest.raises(ValueError) as exception:
+        _request_window_splitting_stream(
+            incremental_sync=(
+                'incremental_sync:\n  type: DatetimeBasedCursor\n  start_datetime: "2024-01-01"\n'
+                '  end_datetime: "2024-01-31"\n  step: "P7D"\n  cursor_field: "updated_at"\n'
+                '  cursor_granularity: "PT1S"\n  datetime_format: "%Y-%m-%d"'
+            )
+        )
+
+    assert "cursor_granularity" in str(exception.value)
+    assert "datetime_format" in str(exception.value)
+
+
+def test_given_client_side_incremental_and_request_window_splitting_then_raise():
+    """
+    A client-side-incremental cursor filters records after they're read instead of sending the window as
+    request parameters, so every split child would send the exact same request as its parent - splitting would
+    never resolve a SPLIT_REQUEST_WINDOW response.
+    """
+    with pytest.raises(ValueError) as exception:
+        _request_window_splitting_stream(
+            incremental_sync=(
+                'incremental_sync:\n  type: DatetimeBasedCursor\n  start_datetime: "2024-01-01T00:00:00Z"\n'
+                '  end_datetime: "2024-01-31T00:00:00Z"\n  step: "P7D"\n  cursor_field: "updated_at"\n'
+                '  cursor_granularity: "PT1S"\n  datetime_format: "%Y-%m-%dT%H:%M:%SZ"\n'
+                "  is_client_side_incremental: true"
+            )
+        )
+
+    assert "is_client_side_incremental" in str(exception.value)
+
+
+def test_given_month_or_year_min_split_window_and_request_window_splitting_then_raise():
+    """
+    `P1M` parses to an `isodate.Duration`, which has no fixed length to compare a window's span against -
+    `ConcurrentCursor.split_request_window` would raise a `TypeError` mid-sync trying to. This must be rejected
+    at config time instead.
+    """
+    with pytest.raises(ValueError) as exception:
+        _request_window_splitting_stream(
+            request_window_splitting=(
+                "request_window_splitting:\n    type: RequestWindowSplitting\n    min_split_window: P1M"
+            )
+        )
+
+    assert "min_split_window" in str(exception.value)
+
+
+def test_given_negative_min_split_window_and_request_window_splitting_then_raise():
+    with pytest.raises(ValueError) as exception:
+        _request_window_splitting_stream(
+            request_window_splitting=(
+                "request_window_splitting:\n    type: RequestWindowSplitting\n    min_split_window: -PT1H"
+            )
+        )
+
+    assert "min_split_window" in str(exception.value)
+
+
+def test_given_incrementing_count_cursor_and_request_window_splitting_then_raise():
+    """
+    `IncrementingCountCursor` builds a `ConcurrentCursor` too, but not one carrying the datetime boundary
+    fields, granularity, or formatting `split_request_window` needs, so it must be rejected the same way a
+    stream with no incremental_sync at all is.
+    """
+    with pytest.raises(ValueError) as exception:
+        _request_window_splitting_stream(
+            incremental_sync=(
+                "incremental_sync:\n  type: IncrementingCountCursor\n  cursor_field: id"
+            )
+        )
+
+    assert "cursor_granularity" in str(exception.value)
+
+
+def test_given_partition_router_and_request_window_splitting_then_raise():
+    """
+    A partition router combines multiple cursors (one per partition) behind a `ConcurrentPerPartitionCursor`,
+    which does not implement `split_request_window` itself - there is no longer one cursor whose own
+    granularity/boundary fields splitting could rely on. Rejected the same way a stream with no incremental
+    cursor at all is.
+    """
+    content = _REQUEST_WINDOW_REDUCTION_STREAM.format(
+        incremental_sync=_DATETIME_BASED_CURSOR_WITH_GRANULARITY,
+        request_window_splitting="request_window_splitting:\n    type: RequestWindowSplitting",
+        action="SPLIT_REQUEST_WINDOW",
+    ).replace(
+        "  requester:\n",
+        "  partition_router:\n"
+        "    type: ListPartitionRouter\n"
+        '    values: ["a", "b"]\n'
+        "    cursor_field: partition_field\n"
+        "  requester:\n",
+    )
+    stream_manifest = transformer.propagate_types_and_parameters(
+        "", resolver.preprocess_manifest(YamlDeclarativeSource._parse(content)), {}
+    )
+
+    with pytest.raises(ValueError) as exception:
+        factory.create_component(
+            model_type=DeclarativeStreamModel, component_definition=stream_manifest, config={}
+        )
+
+    assert "request_window_splitting" in str(exception.value)
+    assert "partition router" in str(exception.value)
+
+
+def test_given_query_properties_and_request_window_splitting_then_raise():
+    content = _REQUEST_WINDOW_REDUCTION_STREAM.format(
+        incremental_sync=_DATETIME_BASED_CURSOR_WITH_GRANULARITY,
+        request_window_splitting="request_window_splitting:\n    type: RequestWindowSplitting",
+        action="SPLIT_REQUEST_WINDOW",
+    ).replace(
+        "    http_method: GET\n",
+        "    http_method: GET\n"
+        "    query_properties:\n"
+        "      type: QueryProperties\n"
+        '      property_list: ["a", "b"]\n',
+    )
+    stream_manifest = transformer.propagate_types_and_parameters(
+        "", resolver.preprocess_manifest(YamlDeclarativeSource._parse(content)), {}
+    )
+
+    with pytest.raises(ValueError) as exception:
+        factory.create_component(
+            model_type=DeclarativeStreamModel, component_definition=stream_manifest, config={}
+        )
+
+    assert "query properties" in str(exception.value)
+
+
+def test_given_file_uploader_and_request_window_splitting_then_raise():
+    content = (
+        _REQUEST_WINDOW_REDUCTION_STREAM.format(
+            incremental_sync=_DATETIME_BASED_CURSOR_WITH_GRANULARITY,
+            request_window_splitting="request_window_splitting:\n    type: RequestWindowSplitting",
+            action="SPLIT_REQUEST_WINDOW",
+        )
+        + """file_uploader:
+  type: FileUploader
+  requester:
+    type: HttpRequester
+    url_base: "https://airbyte.io"
+    path: "/download"
+  download_target_extractor:
+    type: DpathExtractor
+    field_path: ["url"]
+"""
+    )
+    stream_manifest = transformer.propagate_types_and_parameters(
+        "", resolver.preprocess_manifest(YamlDeclarativeSource._parse(content)), {}
+    )
+
+    with pytest.raises(ValueError) as exception:
+        factory.create_component(
+            model_type=DeclarativeStreamModel, component_definition=stream_manifest, config={}
+        )
+
+    assert "file_uploader" in str(exception.value)
+
+
+def test_given_lazy_read_pointer_and_request_window_splitting_then_raise():
+    """
+    A LazySimpleRetriever reads records embedded in the parent's own pages rather than requesting a window of
+    its own, so there is nothing for a reduced child window to be read from.
+    """
+    stream_definition = {
+        "type": "DeclarativeStream",
+        "name": "items",
+        "primary_key": [],
+        "schema_loader": {
+            "type": "InlineSchemaLoader",
+            "schema": {"type": "object", "properties": {}},
+        },
+        "retriever": {
+            "type": "SimpleRetriever",
+            "request_window_splitting": {"type": "RequestWindowSplitting"},
+            "requester": {
+                "type": "HttpRequester",
+                "url_base": "https://api.test.com",
+                "path": "parent/{{ stream_partition.parent_id }}/items",
+                "http_method": "GET",
+                "error_handler": {
+                    "type": "DefaultErrorHandler",
+                    "response_filters": [
+                        {
+                            "type": "HttpResponseFilter",
+                            "http_codes": [400],
+                            "action": "SPLIT_REQUEST_WINDOW",
+                        }
+                    ],
+                },
+            },
+            "record_selector": {
+                "type": "RecordSelector",
+                "extractor": {"type": "DpathExtractor", "field_path": ["data"]},
+            },
+            "partition_router": {
+                "type": "SubstreamPartitionRouter",
+                "parent_stream_configs": [
+                    {
+                        "type": "ParentStreamConfig",
+                        "parent_key": "id",
+                        "partition_field": "parent_id",
+                        "lazy_read_pointer": ["items"],
+                        "stream": {
+                            "type": "DeclarativeStream",
+                            "name": "parent",
+                            "schema_loader": {
+                                "type": "InlineSchemaLoader",
+                                "schema": {"type": "object", "properties": {}},
+                            },
+                            "retriever": {
+                                "type": "SimpleRetriever",
+                                "requester": {
+                                    "type": "HttpRequester",
+                                    "url_base": "https://api.test.com",
+                                    "path": "/parents",
+                                    "http_method": "GET",
+                                },
+                                "record_selector": {
+                                    "type": "RecordSelector",
+                                    "extractor": {
+                                        "type": "DpathExtractor",
+                                        "field_path": ["data"],
+                                    },
+                                },
+                            },
+                        },
+                    }
+                ],
+            },
+        },
+    }
+
+    with pytest.raises(ValueError) as exception:
+        factory.create_component(
+            model_type=DeclarativeStreamModel,
+            component_definition=stream_definition,
+            config={},
+        )
+
+    assert "request_window_splitting" in str(exception.value)
+    assert "lazily" in str(exception.value)
+
+
+def test_given_login_requester_with_split_request_window_action_then_raise():
+    """
+    Only the main requester of a SimpleRetriever reads a cursor-sliced window, so the action is rejected on a
+    SessionTokenAuthenticator's login_requester even though it is schema-legal there.
+    """
+    stream_definition = {
+        "type": "DeclarativeStream",
+        "name": "Test",
+        "primary_key": "id",
+        "schema_loader": {"type": "InlineSchemaLoader", "schema": {"type": "object"}},
+        "retriever": {
+            "type": "SimpleRetriever",
+            "requester": {
+                "type": "HttpRequester",
+                "url_base": "https://airbyte.io",
+                "path": "/items",
+                "http_method": "GET",
+                "authenticator": {
+                    "type": "SessionTokenAuthenticator",
+                    "login_requester": {
+                        "type": "HttpRequester",
+                        "url_base": "https://airbyte.io",
+                        "path": "/session",
+                        "http_method": "POST",
+                        "error_handler": {
+                            "type": "DefaultErrorHandler",
+                            "response_filters": [
+                                {
+                                    "type": "HttpResponseFilter",
+                                    "http_codes": [400],
+                                    "action": "SPLIT_REQUEST_WINDOW",
+                                }
+                            ],
+                        },
+                    },
+                    "session_token_path": ["session_token"],
+                    "expiration_duration": "PT1H",
+                    "request_authentication": {
+                        "type": "ApiKey",
+                        "inject_into": {
+                            "type": "RequestOption",
+                            "inject_into": "header",
+                            "field_name": "X-Session-Token",
+                        },
+                    },
+                },
+            },
+            "record_selector": {
+                "type": "RecordSelector",
+                "extractor": {"type": "DpathExtractor", "field_path": ["items"]},
+            },
+        },
+    }
+
+    with pytest.raises(ValueError) as exception:
+        factory.create_component(
+            model_type=DeclarativeStreamModel,
+            component_definition=stream_definition,
+            config={},
+        )
+
+    assert "SPLIT_REQUEST_WINDOW" in str(exception.value)
+    assert "login_requester" in str(exception.value)
+
+
 _REDUCE_PAGE_SIZE_ERROR_HANDLER = {
     "type": "DefaultErrorHandler",
     "response_filters": [
@@ -7683,6 +8230,114 @@ def test_given_reduce_page_size_action_on_an_async_retriever_requester_then_rais
         )
 
     assert "REDUCE_PAGE_SIZE" in str(exception.value)
+
+
+_SPLIT_REQUEST_WINDOW_ERROR_HANDLER = {
+    "type": "DefaultErrorHandler",
+    "response_filters": [
+        {"type": "HttpResponseFilter", "http_codes": [400], "action": "SPLIT_REQUEST_WINDOW"}
+    ],
+}
+
+
+def test_given_split_request_window_action_on_the_file_uploader_requester_then_raise():
+    """
+    `error_handler` is defined on `HttpRequester`, so the action is manifest-legal on requesters that have no
+    window of their own. Nothing there can honor it, so it is rejected rather than raised mid-sync.
+    """
+    with pytest.raises(ValueError) as exception:
+        factory.create_component(
+            model_type=FileUploaderModel,
+            component_definition={
+                "type": "FileUploader",
+                "requester": {
+                    "type": "HttpRequester",
+                    "url_base": "https://airbyte.io",
+                    "path": "/download",
+                    "error_handler": _SPLIT_REQUEST_WINDOW_ERROR_HANDLER,
+                },
+                "download_target_extractor": {
+                    "type": "DpathExtractor",
+                    "field_path": ["url"],
+                },
+            },
+            config={},
+        )
+
+    assert "SPLIT_REQUEST_WINDOW" in str(exception.value)
+
+
+@pytest.mark.parametrize(
+    "requester_field",
+    [
+        "creation_requester",
+        "polling_requester",
+        "download_requester",
+        "download_target_requester",
+        "abort_requester",
+        "delete_requester",
+    ],
+)
+def test_given_split_request_window_action_on_an_async_retriever_requester_then_raise(
+    requester_field,
+):
+    definition = {
+        "type": "AsyncRetriever",
+        "status_mapping": {
+            "type": "AsyncJobStatusMap",
+            "running": ["running"],
+            "completed": ["ready"],
+            "failed": ["failed"],
+            "timeout": ["timeout"],
+        },
+        "status_extractor": {"type": "DpathExtractor", "field_path": ["status"]},
+        "record_selector": {
+            "type": "RecordSelector",
+            "extractor": {"type": "DpathExtractor", "field_path": ["items"]},
+        },
+        "creation_requester": {
+            "type": "HttpRequester",
+            "url_base": "https://airbyte.io",
+            "path": "/jobs",
+            "http_method": "POST",
+        },
+        "polling_requester": {
+            "type": "HttpRequester",
+            "url_base": "https://airbyte.io",
+            "path": "/jobs/{{ creation_response.id }}",
+        },
+        "download_requester": {
+            "type": "HttpRequester",
+            "url_base": "https://airbyte.io",
+            "path": "/jobs/{{ creation_response.id }}/download",
+        },
+    }
+    definition[requester_field] = {
+        "type": "HttpRequester",
+        "url_base": "https://airbyte.io",
+        "path": "/jobs",
+        "error_handler": _SPLIT_REQUEST_WINDOW_ERROR_HANDLER,
+    }
+    if requester_field == "download_target_requester":
+        # Without it the `download_target_extractor` guard fires first and the assertion below would pass for
+        # the wrong reason.
+        definition["download_target_extractor"] = {
+            "type": "DpathExtractor",
+            "field_path": ["url"],
+        }
+
+    with pytest.raises(ValueError) as exception:
+        factory.create_component(
+            model_type=AsyncRetrieverModel,
+            component_definition=definition,
+            config={},
+            name="a_stream",
+            primary_key=None,
+            stream_slicer=None,
+            transformations=[],
+        )
+
+    assert "SPLIT_REQUEST_WINDOW" in str(exception.value)
 
 
 def get_retriever(stream: Union[DeclarativeStream, DefaultStream]):

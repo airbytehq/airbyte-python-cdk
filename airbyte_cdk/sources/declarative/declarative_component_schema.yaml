@@ -2686,6 +2686,7 @@ definitions:
           - RATE_LIMITED
           - REFRESH_TOKEN_THEN_RETRY
           - REDUCE_PAGE_SIZE
+          - SPLIT_REQUEST_WINDOW
         examples:
           - SUCCESS
           - FAIL
@@ -2695,6 +2696,7 @@ definitions:
           - RATE_LIMITED
           - REFRESH_TOKEN_THEN_RETRY
           - REDUCE_PAGE_SIZE
+          - SPLIT_REQUEST_WINDOW
       failure_type:
         title: Failure Type
         description: Failure type of traced exception if a response matches the filter.
@@ -4261,6 +4263,13 @@ definitions:
           re-issuing the page would emit them twice. A page_token_option of type RequestPath is rejected as
           well, because the next page is then a URL built by the API which already carries the page size.
         "$ref": "#/definitions/PageSizeReduction"
+      request_window_splitting:
+        description: >-
+          Describes how the request window is split when an error handler resolves to the
+          SPLIT_REQUEST_WINDOW action. Requires an incremental_sync cursor that defines cursor_granularity.
+          Distinct from page_size_reduction: this splits the cursor's window rather than a paginator's page
+          size, and applies even when the API rejects the request before returning a single page.
+        "$ref": "#/definitions/RequestWindowSplitting"
       ignore_stream_slicer_parameters_on_paginated_requests:
         description: If true, the partition router and incremental request options will be ignored when paginating requests. Request options set directly on the requester will not be ignored.
         type: boolean
@@ -4441,6 +4450,42 @@ definitions:
           - NEVER
           - AFTER_SUCCESSFUL_PAGE
         default: NEVER
+  RequestWindowSplitting:
+    title: Request Window Splitting
+    description: >-
+      Describes how the request window is split when an error handler resolves to the SPLIT_REQUEST_WINDOW
+      action. The connector replaces the failing window with two smaller, ordered windows covering the same
+      range and reads each one fully before checkpointing. If the failing window had already emitted records,
+      those may be re-emitted; downstream primary-key deduplication is expected to handle that. Only supported
+      on a stream whose incremental_sync cursor defines cursor_granularity. Distinct from page_size_reduction,
+      which shrinks a paginator's page size rather than the cursor's window.
+    type: object
+    required:
+      - type
+    properties:
+      type:
+        type: string
+        enum: [RequestWindowSplitting]
+      failure_message:
+        title: Failure Message
+        description: >-
+          Sentence appended to the error message when the connector can no longer split the window further.
+          Use it to tell the user what to do for this API, for instance which filter narrows the query down.
+        type: string
+        examples:
+          - Narrow the sync down by selecting fewer fields on this stream.
+          - Lower time_window so that each request covers less data.
+      min_split_window:
+        title: Minimum Split Window
+        description: >-
+          Approximate smallest window (ISO 8601 duration) the connector will split down to - a window at or
+          below this size is not split further, though the result can end up a bit smaller than this, not
+          larger. Independent of, and usually looser than, cursor_granularity - useful when a cursor could
+          split further but many small requests are worse for this API than a few large ones.
+        type: string
+        examples:
+          - "P1D"
+          - "PT1H"
   GzipDecoder:
     title: gzip
     description: Select 'gzip' for response data that is compressed with gzip. Requires specifying an inner data type/decoder to parse the decompressed data.

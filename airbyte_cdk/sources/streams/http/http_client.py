@@ -53,6 +53,9 @@ from airbyte_cdk.sources.streams.http.rate_limiting import (
     rate_limit_default_backoff_handler,
     user_defined_backoff_handler,
 )
+from airbyte_cdk.sources.streams.http.request_window_split_exception import (
+    RequestWindowSplitRequiredException,
+)
 
 # Imported from the leaf module rather than the package: `protocols` pulls in nothing from the
 # CDK, so this import cannot cycle no matter what else lands in `requests_native_auth` -- an
@@ -474,20 +477,36 @@ class HttpClient:
             and self._message_repository is not None
         ):
             formatter = log_formatter
-            # A response resolving to REDUCE_PAGE_SIZE is not a page of the stream: the retriever discards it
-            # and re-issues the same page with a smaller page size. Logging it as an auxiliary request keeps it
-            # visible in the Connector Builder while keeping it out of the per-slice page count, which would
-            # otherwise report "limit reached" on a read that only retried.
-            log_as_auxiliary = error_resolution.response_action == ResponseAction.REDUCE_PAGE_SIZE
+            # A response resolving to REDUCE_PAGE_SIZE or SPLIT_REQUEST_WINDOW is not a page of the stream:
+            # the retriever discards it and re-issues the request with a smaller page size or a narrower
+            # window. Logging it as an auxiliary request keeps it visible in the Connector Builder while
+            # keeping it out of the per-slice page count, which would otherwise report "limit reached" on a
+            # read that only retried.
+            log_as_auxiliary = error_resolution.response_action in (
+                ResponseAction.REDUCE_PAGE_SIZE,
+                ResponseAction.SPLIT_REQUEST_WINDOW,
+            )
             self._message_repository.log_message(
                 Level.DEBUG,
                 lambda: _as_auxiliary_request_log(
                     formatter(response),
-                    title=f"Stream '{self._name}' page rejected, retrying with a smaller page size",
+                    title=(
+                        f"Stream '{self._name}' page rejected, retrying with a smaller page size"
+                        if error_resolution.response_action == ResponseAction.REDUCE_PAGE_SIZE
+                        else f"Stream '{self._name}' request window rejected, retrying with a smaller window"
+                    ),
                     description=(
-                        f"Request for stream '{self._name}' whose response asked for a smaller page. The "
-                        f"same page is requested again with a reduced page size, so this request produced "
-                        f"no records."
+                        (
+                            f"Request for stream '{self._name}' whose response asked for a smaller page. The "
+                            f"same page is requested again with a reduced page size, so this request produced "
+                            f"no records."
+                        )
+                        if error_resolution.response_action == ResponseAction.REDUCE_PAGE_SIZE
+                        else (
+                            f"Request for stream '{self._name}' whose response asked for a smaller request "
+                            f"window. The window is split and re-read as smaller children, so this request "
+                            f"produced no records."
+                        )
                     ),
                 )
                 if log_as_auxiliary
@@ -555,6 +574,13 @@ class HttpClient:
         if error_resolution.response_action == ResponseAction.REDUCE_PAGE_SIZE:
             raise PageSizeReductionRequiredException(
                 stream_name=self._name, error_message=error_resolution.error_message
+            )
+
+        if error_resolution.response_action == ResponseAction.SPLIT_REQUEST_WINDOW:
+            raise RequestWindowSplitRequiredException(
+                stream_name=self._name,
+                error_message=error_resolution.error_message,
+                failure_type=error_resolution.failure_type,
             )
 
         # Emit stream status RUNNING with the reason RATE_LIMITED to log that the rate limit has been reached
