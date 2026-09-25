@@ -23,6 +23,12 @@ class Decoder:
         Set to True if you'd like to use stream=True option in http requester
         """
 
+    def spools_response(self) -> bool:
+        """
+        Set to True if the full response body should be copied to disk before decoding.
+        """
+        return False
+
     @abstractmethod
     def decode(self, response: requests.Response) -> DECODER_OUTPUT_TYPE:
         """

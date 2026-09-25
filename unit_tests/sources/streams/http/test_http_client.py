@@ -1,18 +1,31 @@
 # Copyright (c) 2024 Airbyte, Inc., all rights reserved.
 
+import gzip
+import inspect
+import io
 import json
 import logging
 import os
+import tempfile
 import time
 from datetime import timedelta
+from typing import Any, Callable, Mapping, Optional
 from unittest.mock import MagicMock, patch
 
 import pytest
 import requests
+import urllib3
 from pympler import asizeof
 from requests_cache import CachedRequest
 
 from airbyte_cdk.models import FailureType, Level
+from airbyte_cdk.sources.declarative.requesters.error_handlers import (
+    DefaultErrorHandler,
+    HttpResponseFilter,
+)
+from airbyte_cdk.sources.declarative.requesters.error_handlers.backoff_strategies import (
+    WaitTimeFromHeaderBackoffStrategy,
+)
 from airbyte_cdk.sources.http_logger import format_http_message
 from airbyte_cdk.sources.message import InMemoryMessageRepository
 from airbyte_cdk.sources.streams.call_rate import CachedLimiterSession, LimiterSession
@@ -34,6 +47,12 @@ from airbyte_cdk.sources.streams.http.page_size_reduction_exception import (
     PageSizeReductionRequiredException,
 )
 from airbyte_cdk.sources.streams.http.requests_native_auth import TokenAuthenticator
+from airbyte_cdk.sources.streams.http.streamed_response import (
+    SpooledResponseBody,
+    is_body_streamed,
+    mark_body_streamed,
+    set_spooled_body_size,
+)
 from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 
 
@@ -1565,3 +1584,346 @@ def test_given_no_reduce_page_size_action_then_log_the_response_as_a_page():
 
     logged = [json.loads(message.log.message) for message in message_repository.consume_queue()]
     assert [entry["http"].get("is_auxiliary") for entry in logged] == [None]
+
+
+class _BreakingBody(io.RawIOBase):
+    """File-like body that raises a urllib3 error after `limit` bytes."""
+
+    def __init__(self, payload: bytes, limit: int, error: Exception):
+        self._fh = io.BytesIO(payload)
+        self._limit = limit
+        self._error = error
+        self._served = 0
+
+    def readinto(self, b) -> int:
+        if self._served >= self._limit:
+            raise self._error
+        n = self._fh.readinto(memoryview(b)[: self._limit - self._served])
+        self._served += n
+        return n
+
+    def readable(self):
+        return True
+
+
+def _raw_streaming_response(payload: bytes, headers=None, breaking=None):
+    raw = urllib3.HTTPResponse(
+        body=breaking if breaking is not None else io.BytesIO(payload),
+        headers=headers or {},
+        status=200,
+        preload_content=False,
+        decode_content=False,
+    )
+    response = requests.Response()
+    response.status_code = 200
+    response.raw = raw
+    response.url = "https://test_base_url.com/v1/endpoint"
+    for k, v in (headers or {}).items():
+        response.headers[k] = v
+    return response, raw
+
+
+def _http_client_with_session(session, error_handler=None):
+    return HttpClient(
+        name="test",
+        logger=MagicMock(),
+        error_handler=error_handler,
+        session=session,
+    )
+
+
+_GZIP_PAYLOAD = gzip.compress(json.dumps({"tickets": [{"id": 1}], "after_url": "x"}).encode())
+
+
+def test_send_request_with_spool_replaces_raw_with_spooled_body():
+    mocked_session = MagicMock(spec=requests.Session)
+    mocked_session.merge_environment_settings.return_value = {}
+    response, original_raw = _raw_streaming_response(
+        _GZIP_PAYLOAD, headers={"Content-Encoding": "gzip"}
+    )
+    mocked_session.send.return_value = response
+    http_client = _http_client_with_session(mocked_session)
+
+    before = set(os.listdir(tempfile.gettempdir()))
+    request, returned_response = http_client.send_request(
+        http_method="get",
+        url="https://test_base_url.com/v1/endpoint",
+        request_kwargs={"stream": True},
+        spool_response=True,
+    )
+
+    assert isinstance(returned_response.raw, SpooledResponseBody)
+    assert returned_response.raw.read() == gzip.decompress(_GZIP_PAYLOAD)
+    returned_response.raw.seek(0)
+    assert returned_response.json() == {"tickets": [{"id": 1}], "after_url": "x"}
+    assert is_body_streamed(returned_response) is True
+    assert original_raw.closed
+    returned_response.raw.close()
+    assert set(os.listdir(tempfile.gettempdir())) == before
+
+
+def _zendesk_like_error_handler():
+    return DefaultErrorHandler(
+        backoff_strategies=[
+            WaitTimeFromHeaderBackoffStrategy(header="Retry-After", config={}, parameters={})
+        ],
+        response_filters=[
+            HttpResponseFilter(
+                action=ResponseAction.IGNORE,
+                error_message_contains="You do not have access",
+                config={},
+                parameters={},
+            ),
+            HttpResponseFilter(
+                action=ResponseAction.FAIL,
+                failure_type=FailureType.config_error,
+                http_codes={403, 404},
+                config={},
+                parameters={},
+            ),
+        ],
+        config={},
+        parameters={},
+    )
+
+
+@pytest.mark.parametrize(
+    "injected_error, expected_requests_error",
+    [
+        (
+            urllib3.exceptions.IncompleteRead(10, 10),
+            requests.exceptions.ChunkedEncodingError,
+        ),
+        (
+            urllib3.exceptions.DecodeError("/x", Exception("corrupt")),
+            requests.exceptions.ContentDecodingError,
+        ),
+        (
+            urllib3.exceptions.ReadTimeoutError(None, "/", "timed out"),
+            requests.exceptions.ConnectionError,
+        ),
+    ],
+    ids=["incomplete_read", "content_decoding", "read_timeout"],
+)
+def test_spool_mid_body_failure_retries_like_a_failed_request(
+    mocker, injected_error, expected_requests_error
+):
+    payload = json.dumps({"tickets": [{"id": 1}]}).encode()
+    breaking = _BreakingBody(payload, len(payload) // 2, injected_error)
+    broken_response, _ = _raw_streaming_response(payload, breaking=breaking)
+    good_response, _ = _raw_streaming_response(payload)
+
+    mocked_session = MagicMock(spec=requests.Session)
+    mocked_session.merge_environment_settings.return_value = {}
+    mocked_session.send.side_effect = [broken_response, good_response]
+    mocker.patch("time.sleep")
+
+    http_client = _http_client_with_session(
+        mocked_session, error_handler=_zendesk_like_error_handler()
+    )
+
+    _, returned_response = http_client.send_request(
+        http_method="get",
+        url="https://test_base_url.com/v1/endpoint",
+        request_kwargs={"stream": True},
+        spool_response=True,
+    )
+
+    assert returned_response is good_response
+    assert mocked_session.send.call_count == 2
+    assert isinstance(returned_response.raw, SpooledResponseBody)
+
+
+def test_without_stream_no_marker_and_spool_is_ignored():
+    mocked_session = MagicMock(spec=requests.Session)
+    mocked_session.merge_environment_settings.return_value = {}
+    payload = b'{"ok": true}'
+    response, _ = _raw_streaming_response(payload)
+    mocked_session.send.return_value = response
+    http_client = _http_client_with_session(mocked_session)
+
+    _, returned_response = http_client.send_request(
+        http_method="get",
+        url="https://test_base_url.com/v1/endpoint",
+        request_kwargs={},
+        spool_response=True,
+    )
+
+    assert not isinstance(returned_response.raw, SpooledResponseBody)
+    assert is_body_streamed(returned_response) is False
+
+
+def test_stream_without_spool_marks_body_streamed():
+    mocked_session = MagicMock(spec=requests.Session)
+    mocked_session.merge_environment_settings.return_value = {}
+    response, _ = _raw_streaming_response(b"{}")
+    mocked_session.send.return_value = response
+    http_client = _http_client_with_session(mocked_session)
+
+    _, returned_response = http_client.send_request(
+        http_method="get",
+        url="https://test_base_url.com/v1/endpoint",
+        request_kwargs={"stream": True},
+    )
+
+    assert is_body_streamed(returned_response) is True
+
+
+def _spooled_response(payload: bytes):
+    spool = tempfile.TemporaryFile()
+    spool.write(payload)
+    spool.seek(0)
+    response, _ = _raw_streaming_response(payload)
+    response.raw = SpooledResponseBody(spool)
+    mark_body_streamed(response)
+    set_spooled_body_size(response, len(payload))
+    return response
+
+
+def test_small_spooled_body_is_evaluated_by_error_message_contains():
+    payload = json.dumps({"error": "You do not have access"}).encode()
+    response = _spooled_response(payload)
+    filter_ = HttpResponseFilter(
+        action=ResponseAction.IGNORE,
+        error_message_contains="You do not have access",
+        config={},
+        parameters={},
+    )
+    resolution = filter_.matches(response)
+    assert resolution is not None
+    assert resolution.response_action == ResponseAction.IGNORE
+
+
+def test_small_spooled_body_is_evaluated_by_predicate():
+    payload = json.dumps({"error": "You do not have access"}).encode()
+    response = _spooled_response(payload)
+    filter_ = HttpResponseFilter(
+        action=ResponseAction.IGNORE,
+        predicate="{{ response.get('error') }}",
+        config={},
+        parameters={},
+    )
+    resolution = filter_.matches(response)
+    assert resolution is not None
+    assert resolution.response_action == ResponseAction.IGNORE
+
+
+def test_large_spooled_body_skips_body_filters():
+    payload = json.dumps({"error": "You do not have access", "pad": "x" * (2 << 20)}).encode()
+    response = _spooled_response(payload)
+    filter_ = HttpResponseFilter(
+        action=ResponseAction.IGNORE,
+        error_message_contains="You do not have access",
+        config={},
+        parameters={},
+    )
+    assert filter_.matches(response) is None
+
+
+def test_unspooled_streamed_body_is_evaluated_by_body_filters():
+    payload = json.dumps({"error": "You do not have access"}).encode()
+    response, _ = _raw_streaming_response(payload)
+    mark_body_streamed(response)
+    filter_ = HttpResponseFilter(
+        action=ResponseAction.IGNORE,
+        error_message_contains="You do not have access",
+        config={},
+        parameters={},
+    )
+    resolution = filter_.matches(response)
+    assert resolution is not None
+    assert resolution.response_action == ResponseAction.IGNORE
+
+
+def test_send_request_rewinds_small_spooled_body_after_ignore():
+    payload = json.dumps({"error": "You do not have access"}).encode()
+    assert len(payload) < 1 << 20
+    response, _ = _raw_streaming_response(payload)
+    mocked_session = MagicMock(spec=requests.Session)
+    mocked_session.merge_environment_settings.return_value = {}
+    mocked_session.send.return_value = response
+    http_client = _http_client_with_session(
+        mocked_session, error_handler=_zendesk_like_error_handler()
+    )
+
+    _, returned_response = http_client.send_request(
+        http_method="get",
+        url="https://test_base_url.com/v1/endpoint",
+        request_kwargs={"stream": True},
+        spool_response=True,
+    )
+
+    assert isinstance(returned_response.raw, SpooledResponseBody)
+    assert returned_response.raw.read() == payload
+
+
+def test_send_request_large_spooled_body_skips_filter_and_is_rewound():
+    payload = json.dumps({"error": "You do not have access", "pad": "x" * (2 << 20)}).encode()
+    response, _ = _raw_streaming_response(payload)
+    mocked_session = MagicMock(spec=requests.Session)
+    mocked_session.merge_environment_settings.return_value = {}
+    mocked_session.send.return_value = response
+    http_client = _http_client_with_session(
+        mocked_session, error_handler=_zendesk_like_error_handler()
+    )
+
+    _, returned_response = http_client.send_request(
+        http_method="get",
+        url="https://test_base_url.com/v1/endpoint",
+        request_kwargs={"stream": True},
+        spool_response=True,
+    )
+
+    assert isinstance(returned_response.raw, SpooledResponseBody)
+    assert returned_response._content_consumed is False
+    assert returned_response.raw.tell() == 0
+    assert returned_response.raw.read() == payload
+
+
+class LegacyOverrideHttpClient(HttpClient):
+    def _send_with_retry(
+        self,
+        request: requests.PreparedRequest,
+        request_kwargs: Mapping[str, Any],
+        log_formatter: Optional[Callable[[requests.Response], Any]] = None,
+        exit_on_rate_limit: Optional[bool] = False,
+    ) -> requests.Response:
+        return super()._send_with_retry(request, request_kwargs, log_formatter, exit_on_rate_limit)
+
+
+def test_legacy_send_with_retry_override_without_spool_param_still_works():
+    assert "spool_response" not in inspect.signature(HttpClient._send_with_retry).parameters
+    assert "spool_response" not in inspect.signature(HttpClient._send).parameters
+
+    mocked_session = MagicMock(spec=requests.Session)
+    mocked_session.merge_environment_settings.return_value = {}
+    payload = gzip.compress(json.dumps({"tickets": [{"id": 1}]}).encode())
+    response, _ = _raw_streaming_response(payload, headers={"Content-Encoding": "gzip"})
+    mocked_session.send.return_value = response
+    http_client = LegacyOverrideHttpClient(
+        name="test",
+        logger=MagicMock(),
+        session=mocked_session,
+    )
+
+    _, resp = http_client.send_request(
+        http_method="get",
+        url="https://test_base_url.com/v1/endpoint",
+        request_kwargs={"stream": True},
+        spool_response=False,
+    )
+    assert resp.status_code == 200
+    assert not isinstance(resp.raw, SpooledResponseBody)
+
+    response2, _ = _raw_streaming_response(payload, headers={"Content-Encoding": "gzip"})
+    mocked_session.send.return_value = response2
+    _, resp2 = http_client.send_request(
+        http_method="get",
+        url="https://test_base_url.com/v1/endpoint",
+        request_kwargs={"stream": True},
+        spool_response=True,
+    )
+    assert resp2.status_code == 200
+    assert isinstance(resp2.raw, SpooledResponseBody)
+    sent_kwargs = mocked_session.send.call_args.kwargs
+    assert "_airbyte_spool_response" not in sent_kwargs

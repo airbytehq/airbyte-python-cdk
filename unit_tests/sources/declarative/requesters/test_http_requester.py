@@ -960,3 +960,38 @@ def test_http_requester_with_mock_api_budget(http_requester_factory, monkeypatch
     assert response.status_code == 200
 
     assert mock_budget.acquire_call.call_count == 1
+
+
+def test_spool_response_is_keyword_only_in_practice():
+    from airbyte_cdk.sources.declarative.decoders.composite_raw_decoder import (
+        CompositeRawDecoder,
+        JsonItemsParser,
+    )
+    from airbyte_cdk.sources.message import NoopMessageRepository
+
+    decoder = CompositeRawDecoder(parser=JsonItemsParser(items_path="tickets"))
+    # Positional order matching the fields before spool_response, as on main:
+    # name, config, parameters, url, url_base, path, authenticator, http_method,
+    # request_options_provider, error_handler, api_budget, disable_retries,
+    # message_repository, use_cache, _exit_on_rate_limit, stream_response, decoder
+    requester = HttpRequester(
+        "tickets",  # name
+        {},  # config
+        {},  # parameters
+        None,  # url
+        "https://api.example.com/",  # url_base
+        "tickets.json",  # path
+        None,  # authenticator
+        HttpMethod.GET,
+        None,  # request_options_provider
+        None,  # error_handler
+        None,  # api_budget
+        False,  # disable_retries
+        NoopMessageRepository(),
+        False,  # use_cache
+        False,  # _exit_on_rate_limit
+        False,  # stream_response
+        decoder,
+    )
+    assert requester.decoder is decoder
+    assert requester.spool_response is False

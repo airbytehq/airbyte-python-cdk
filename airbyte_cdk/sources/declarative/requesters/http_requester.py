@@ -69,6 +69,7 @@ class HttpRequester(Requester):
     _exit_on_rate_limit: bool = False
     stream_response: bool = False
     decoder: Decoder = field(default_factory=lambda: JsonDecoder(parameters={}))
+    spool_response: bool = False
 
     def __post_init__(self, parameters: Mapping[str, Any]) -> None:
         self._url = InterpolatedString.create(
@@ -464,6 +465,7 @@ class HttpRequester(Requester):
                 next_page_token=next_page_token,
             ),
             request_kwargs={"stream": self.stream_response},
+            spool_response=self.spool_response,
             headers=self._request_headers(
                 stream_state, stream_slice, next_page_token, request_headers
             ),

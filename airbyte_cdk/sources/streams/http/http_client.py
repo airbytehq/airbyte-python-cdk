@@ -4,6 +4,8 @@
 
 import logging
 import os
+import tempfile
+import time
 import urllib
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Mapping, Optional, Tuple, Union
@@ -61,6 +63,11 @@ from airbyte_cdk.sources.streams.http.requests_native_auth.protocols import (
     ResponseAwareAuthenticator,
     TokenRotatingAuthenticator,
 )
+from airbyte_cdk.sources.streams.http.streamed_response import (
+    SpooledResponseBody,
+    mark_body_streamed,
+    set_spooled_body_size,
+)
 from airbyte_cdk.sources.utils.types import JsonType
 from airbyte_cdk.utils.airbyte_secrets_utils import filter_secrets
 from airbyte_cdk.utils.constants import ENV_REQUEST_CACHE_PATH
@@ -75,6 +82,12 @@ from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 MessageRepresentationAirbyteTracedErrors = AirbyteTracedException
 
 BODY_REQUEST_METHODS = ("GET", "POST", "PUT", "PATCH")
+
+_SPOOL_CHUNK_SIZE = 1 << 20
+_SPOOL_IN_MEMORY_LIMIT = 8 << 20
+# Out-of-band request flag: subclasses may override _send/_send_with_retry with the
+# baseline signatures, so the spool option travels inside request_kwargs instead.
+_SPOOL_RESPONSE_KWARG = "_airbyte_spool_response"
 
 
 def monkey_patched_get_item(self, key):  # type: ignore # this interface is a copy/paste from the requests_cache lib
@@ -415,6 +428,37 @@ class HttpClient:
                     "Authenticator failed to update quota state from response", exc_info=True
                 )
 
+    def _spool_response_body(
+        self, response: requests.Response, request: requests.PreparedRequest
+    ) -> None:
+        start = time.monotonic()
+        spool = tempfile.SpooledTemporaryFile(
+            max_size=_SPOOL_IN_MEMORY_LIMIT, prefix="airbyte-http-body-"
+        )
+        size = 0
+        try:
+            for chunk in response.iter_content(chunk_size=_SPOOL_CHUNK_SIZE):
+                spool.write(chunk)
+                size += len(chunk)
+        except BaseException:
+            spool.close()
+            response.close()  # release the (broken) connection
+            raise
+        response.close()  # body fully read: release the connection to the pool now
+        spool.seek(0)
+        set_spooled_body_size(response, size)
+        response.raw = SpooledResponseBody(spool)
+        self._logger.debug(
+            "Spooled response body to disk",
+            extra={
+                "url": request.url,
+                "status": response.status_code,
+                "bytes": size,
+                "seconds": round(time.monotonic() - start, 3),
+            },
+        )
+        response._content_consumed = False  # type: ignore[attr-defined] # iter_content set it True; the body is readable again from disk
+
     def _send(
         self,
         request: requests.PreparedRequest,
@@ -422,6 +466,8 @@ class HttpClient:
         log_formatter: Optional[Callable[[requests.Response], Any]] = None,
         exit_on_rate_limit: Optional[bool] = False,
     ) -> requests.Response:
+        request_kwargs = dict(request_kwargs)
+        spool_response = bool(request_kwargs.pop(_SPOOL_RESPONSE_KWARG, False))
         if request not in self._request_attempt_count:
             self._request_attempt_count[request] = 1
         else:
@@ -439,7 +485,12 @@ class HttpClient:
 
         try:
             response = self._session.send(request, **request_kwargs)
+            if request_kwargs.get("stream"):
+                mark_body_streamed(response)
+                if spool_response:
+                    self._spool_response_body(response, request)
         except requests.RequestException as e:
+            response = None
             exc = e
 
         if response is not None:
@@ -448,6 +499,9 @@ class HttpClient:
         error_resolution: ErrorResolution = self._error_handler.interpret_response(
             response if response is not None else exc
         )
+        if response is not None and isinstance(getattr(response, "raw", None), SpooledResponseBody):
+            # body filters may have consumed the spooled body; rewind it for the decoder
+            response.raw.seek(0)
 
         # Evaluation of response.text can be heavy, for example, if streaming a large response
         # Do it only in debug mode
@@ -735,6 +789,7 @@ class HttpClient:
         dedupe_query_params: bool = False,
         log_formatter: Optional[Callable[[requests.Response], Any]] = None,
         exit_on_rate_limit: Optional[bool] = False,
+        spool_response: bool = False,
     ) -> Tuple[requests.PreparedRequest, requests.Response]:
         """
         Prepares and sends request and return request and response objects.
@@ -758,6 +813,8 @@ class HttpClient:
             cert=request_kwargs.get("cert"),
         )
         request_kwargs = {**request_kwargs, **env_settings}
+        if spool_response:
+            request_kwargs[_SPOOL_RESPONSE_KWARG] = True
 
         response: requests.Response = self._send_with_retry(
             request=request,

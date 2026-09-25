@@ -18,7 +18,20 @@ from airbyte_cdk.sources.streams.http.error_handlers.response_models import (
     ErrorResolution,
     ResponseAction,
 )
+from airbyte_cdk.sources.streams.http.streamed_response import (
+    get_spooled_body_size,
+    is_body_streamed,
+)
 from airbyte_cdk.sources.types import Config
+
+_MAX_BODY_FILTER_SIZE = 1 << 20
+
+
+def _skips_body_filters(response: requests.Response) -> bool:
+    if not (response.ok and is_body_streamed(response)):
+        return False
+    size = get_spooled_body_size(response)
+    return size is not None and size > _MAX_BODY_FILTER_SIZE
 
 
 @dataclass
@@ -130,10 +143,17 @@ class HttpResponseFilter:
         :param response: The HTTP response to evaluate
         :return: The action to execute. None if the response does not match the filter
         """
-        if isinstance(response_or_exception, requests.Response) and (
-            response_or_exception.status_code in self.http_codes  # type: ignore # http_codes set is always initialized to a value in __post_init__
-            or self._response_matches_predicate(response_or_exception)
-            or self._response_contains_error_message(response_or_exception)
+        if not isinstance(response_or_exception, requests.Response):
+            return None
+        response = response_or_exception
+        if response.status_code in self.http_codes:  # type: ignore # http_codes set is always initialized to a value in __post_init__
+            return self.action  # type: ignore # action is always cast to a ResponseAction not a str
+        if _skips_body_filters(response):
+            # body-based matching would consume the stream the decoder has not read yet;
+            # small spooled bodies are cheap to read and get rewound afterwards
+            return None
+        if self._response_matches_predicate(response) or self._response_contains_error_message(
+            response
         ):
             return self.action  # type: ignore # action is always cast to a ResponseAction not a str
         return None
@@ -151,8 +171,9 @@ class HttpResponseFilter:
         :param response: The HTTP response which can be used during interpolation
         :return: The evaluated error message string to be emitted
         """
+        response_json = {} if _skips_body_filters(response) else self._safe_response_json(response)
         return self.error_message.eval(  # type: ignore[no-any-return, union-attr]
-            self.config, response=self._safe_response_json(response), headers=response.headers
+            self.config, response=response_json, headers=response.headers
         )
 
     def _response_matches_predicate(self, response: requests.Response) -> bool:

@@ -2452,6 +2452,10 @@ class ModelToComponentFactory:
     ) -> Union[DefaultPaginator, PaginatorTestReadDecorator]:
         if decoder:
             if self._is_supported_decoder_for_pagination(decoder):
+                if isinstance(decoder, CompositeRawDecoder):
+                    # the retriever shares this decoder instance with the record selector,
+                    # so opting in here makes decode() also capture the remainder
+                    decoder.enable_document_remainder_capture()
                 decoder_to_use = PaginationDecoderDecorator(decoder=decoder)
             else:
                 raise ValueError(self._UNSUPPORTED_DECODER_ERROR.format(decoder_type=type(decoder)))
@@ -2648,6 +2652,29 @@ class ModelToComponentFactory:
 
         should_use_cache = (model.use_cache or bool(use_cache)) and not self._disable_cache
 
+        if should_use_cache and decoder is not None and decoder.spools_response():
+            raise ValueError(
+                f"Stream {name}: `use_cache` cannot be combined with a decoder configured with `spool_to_disk` "
+                f"({type(decoder).__name__}); requests_cache reads the whole body when storing a response, which "
+                "leaves nothing for the decoder to spool. "
+                "Set `use_cache: false` on the requester (including on parent streams, whose cache is enabled automatically)."
+            )
+
+        if (
+            decoder is not None
+            and decoder.spools_response()
+            and isinstance(model.error_handler, DefaultErrorHandlerModel)
+        ):
+            if any(
+                f.predicate or f.error_message_contains
+                for f in model.error_handler.response_filters or []
+            ):
+                LOGGER.warning(
+                    f"Stream {name}: `spool_to_disk` response bodies larger than 1 MiB are not "
+                    "evaluated by body-based response filters (`predicate`, `error_message_contains`); "
+                    "only `http_codes` apply to them."
+                )
+
         return HttpRequester(
             name=name,
             url=model.url,
@@ -2665,6 +2692,7 @@ class ModelToComponentFactory:
             use_cache=should_use_cache,
             decoder=decoder,
             stream_response=decoder.is_stream_response() if decoder else False,
+            spool_response=decoder.spools_response() if decoder else False,
         )
 
     @staticmethod
@@ -2824,6 +2852,7 @@ class ModelToComponentFactory:
         return CompositeRawDecoder(
             parser=ModelToComponentFactory._get_parser(model, config),
             stream_response=False if self._emit_connector_builder_messages else True,
+            spool_response=bool(model.spool_to_disk) and not self._emit_connector_builder_messages,
         )
 
     def create_gzip_decoder(
@@ -4893,8 +4922,8 @@ class ModelToComponentFactory:
 
     _UNSUPPORTED_DECODER_ERROR = (
         "Specified decoder of {decoder_type} is not supported for pagination."
-        "Please set as `JsonDecoder`, `XmlDecoder`, or a `CompositeRawDecoder` with an inner_parser of `JsonParser` or `GzipParser` instead."
-        "If using `GzipParser`, please ensure that the lowest level inner_parser is a `JsonParser`."
+        "Please set as `JsonDecoder`, `XmlDecoder`, or a `CompositeRawDecoder` with an inner_parser of `JsonParser`, `JsonItemsParser`, or `GzipParser` instead."
+        "If using `GzipParser`, please ensure that the lowest level inner_parser is a `JsonParser` or `JsonItemsParser`."
     )
 
     def _is_supported_decoder_for_pagination(self, decoder: Decoder) -> bool:
@@ -4906,12 +4935,11 @@ class ModelToComponentFactory:
             return False
 
     def _is_supported_parser_for_pagination(self, parser: Parser) -> bool:
-        if isinstance(parser, JsonParser):
+        if isinstance(parser, (JsonParser, JsonItemsParser)):
             return True
         elif isinstance(parser, GzipParser):
-            return isinstance(parser.inner_parser, JsonParser)
-        else:
-            return False
+            return isinstance(parser.inner_parser, (JsonParser, JsonItemsParser))
+        return False
 
     def create_http_api_budget(
         self, model: HTTPAPIBudgetModel, config: Config, **kwargs: Any
