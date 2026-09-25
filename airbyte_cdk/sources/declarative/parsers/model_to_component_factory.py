@@ -2648,10 +2648,11 @@ class ModelToComponentFactory:
 
         should_use_cache = (model.use_cache or bool(use_cache)) and not self._disable_cache
 
-        if should_use_cache and decoder is not None and decoder.is_stream_response():
+        if should_use_cache and decoder is not None and decoder.spools_response():
             raise ValueError(
-                f"Stream {name}: `use_cache` cannot be combined with the streaming decoder {type(decoder).__name__}; "
-                "requests_cache reads the whole body when storing a response, which leaves nothing for the decoder to stream. "
+                f"Stream {name}: `use_cache` cannot be combined with a decoder configured with `spool_to_disk` "
+                f"({type(decoder).__name__}); requests_cache reads the whole body when storing a response, which "
+                "leaves nothing for the decoder to spool. "
                 "Set `use_cache: false` on the requester (including on parent streams, whose cache is enabled automatically)."
             )
 

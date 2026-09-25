@@ -7928,9 +7928,33 @@ def _build_requester(use_cache: bool, decoder, factory_=None):
     )
 
 
-def test_use_cache_with_streaming_decoder_raises():
-    with pytest.raises(ValueError, match="use_cache"):
-        _build_requester(True, _json_items_decoder_component())
+def test_use_cache_with_streaming_decoder_builds_fine():
+    from airbyte_cdk.sources.declarative.models import (
+        JsonlDecoder as JsonlDecoderModel,
+    )
+
+    requester = _build_requester(
+        True,
+        factory.create_jsonl_decoder(JsonlDecoderModel(type="JsonlDecoder"), input_config),
+    )
+    assert requester.use_cache is True
+
+
+def test_use_cache_with_spool_to_disk_decoder_raises():
+    from airbyte_cdk.sources.declarative.models import (
+        JsonItemsDecoder as JsonItemsDecoderModel,
+    )
+
+    with pytest.raises(ValueError, match="use_cache.*spool_to_disk"):
+        _build_requester(
+            True,
+            factory.create_json_items_decoder(
+                JsonItemsDecoderModel(
+                    type="JsonItemsDecoder", items_path="tickets", spool_to_disk=True
+                ),
+                input_config,
+            ),
+        )
 
 
 def test_spool_to_disk_propagates_to_requester():
