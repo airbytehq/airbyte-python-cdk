@@ -54,11 +54,13 @@ from airbyte_cdk.sources.declarative.retrievers.page_size_reducer import (
     PageSizeResetPolicy,
 )
 from airbyte_cdk.sources.declarative.retrievers.pagination_tracker import PaginationTracker
+from airbyte_cdk.sources.declarative.retrievers.request_window_splitting import (
+    RequestWindowSplitting,
+)
 from airbyte_cdk.sources.declarative.retrievers.simple_retriever import (
     _MAX_REQUEST_WINDOW_SPLIT_DEPTH,
     SimpleRetriever,
 )
-from airbyte_cdk.sources.declarative.retrievers.window_reducible import RequestWindowSplitting
 from airbyte_cdk.sources.streams.http.page_size_reduction_exception import (
     PageSizeReductionRequiredException,
 )
@@ -2254,15 +2256,17 @@ def test_given_records_already_emitted_when_reduction_requested_then_split_and_r
     request_window_splitter.assert_called_once_with(A_WINDOW_SLICE, None)
 
 
-def test_given_request_window_splitter_returns_none_when_reduction_requested_then_raise_terminal_error():
+def test_given_request_window_splitter_returns_none_when_reduction_requested_then_raise_transient_error():
     """
-    `request_window_splitter` returning `None` means the window cannot be split any further - either
-    the granularity floor was reached or reducing would not make progress. Either way this must terminate
-    the sync deterministically rather than loop or silently drop the window.
+    `request_window_splitter` returning `None` means the window cannot be split any further - either the
+    granularity floor or `min_split_window` was reached, or splitting would not make progress. This is never
+    the user's fault - the API kept rejecting every window size tried - so it is always `transient_error`,
+    matching `PageSizeReducer`'s equivalent exhaustion branch, regardless of how the triggering response was
+    classified (here, deliberately the opposite - `config_error` - to prove it is overridden).
     """
     requester = Mock(spec=Requester)
     requester.send_request.side_effect = RequestWindowSplitRequiredException(
-        failure_type=FailureType.transient_error
+        failure_type=FailureType.config_error
     )
     record_selector = Mock(spec=HttpSelector)
     paginator = _mock_paginator()
@@ -2284,18 +2288,15 @@ def test_given_request_window_splitter_returns_none_when_reduction_requested_the
     with pytest.raises(AirbyteTracedException) as exception:
         list(retriever.read_records(A_RECORD_SCHEMA, A_WINDOW_SLICE))
 
-    # the classifying error's own failure_type is preserved rather than falling back to this branch's default
     assert exception.value.failure_type == FailureType.transient_error
     assert "Lower time_window so that each request covers less data." in exception.value.message
     request_window_splitter.assert_called_once_with(A_WINDOW_SLICE, None)
 
 
-def test_given_request_window_splitter_returns_none_and_no_classified_failure_type_when_reduction_requested_then_raise_transient_error():
+def test_given_request_window_splitter_returns_none_and_min_split_window_configured_then_name_it_in_the_message():
     """
-    When whatever raised `RequestWindowSplitRequiredException` didn't classify a `failure_type` (the common
-    case: a manifest response filter with no explicit `failure_type`, or custom code that omits it), exhausting
-    the split floor must default to `transient_error` - the API kept rejecting every window size tried, which is
-    not the user's fault - matching `PageSizeReducer`'s equivalent exhaustion branch, not `config_error`.
+    When `min_split_window` is configured, it may be the actual reason splitting stopped rather than the
+    cursor's own granularity floor - the terminal message should name it so the user knows which knob to check.
     """
     requester = Mock(spec=Requester)
     requester.send_request.side_effect = RequestWindowSplitRequiredException()
@@ -2311,12 +2312,14 @@ def test_given_request_window_splitter_returns_none_and_no_classified_failure_ty
         paginator,
         record_selector,
         request_window_splitter,
+        request_window_splitting=RequestWindowSplitting(min_split_window=timedelta(days=1)),
     )
 
     with pytest.raises(AirbyteTracedException) as exception:
         list(retriever.read_records(A_RECORD_SCHEMA, A_WINDOW_SLICE))
 
-    assert exception.value.failure_type == FailureType.transient_error
+    assert "min_split_window" in exception.value.message
+    assert str(timedelta(days=1)) in exception.value.message
 
 
 def test_given_empty_children_list_when_reduction_requested_then_emit_no_records_and_do_not_loop():

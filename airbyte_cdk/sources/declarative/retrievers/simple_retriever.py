@@ -49,8 +49,10 @@ from airbyte_cdk.sources.declarative.retrievers.page_size_reducer import (
     PageSizeReduction,
 )
 from airbyte_cdk.sources.declarative.retrievers.pagination_tracker import PaginationTracker
+from airbyte_cdk.sources.declarative.retrievers.request_window_splitting import (
+    RequestWindowSplitting,
+)
 from airbyte_cdk.sources.declarative.retrievers.retriever import Retriever
-from airbyte_cdk.sources.declarative.retrievers.window_reducible import RequestWindowSplitting
 from airbyte_cdk.sources.declarative.stream_slicers.stream_slicer import StreamSlicer
 from airbyte_cdk.sources.source import ExperimentalClassWarning
 from airbyte_cdk.sources.streams.core import StreamData
@@ -73,8 +75,7 @@ FULL_REFRESH_SYNC_COMPLETE_KEY = "__ab_full_refresh_sync_complete"
 LOGGER = logging.getLogger("airbyte")
 
 # A defense-in-depth bound independent of any `request_window_splitter`'s own no-progress guard: protects
-# against a misbehaving custom cursor whose children don't actually shrink the window. Not user-configurable;
-# use `min_split_window` for a legitimate need to split more than this.
+# against a misbehaving custom cursor whose children don't actually shrink the window. Not user-configurable.
 _MAX_REQUEST_WINDOW_SPLIT_DEPTH = 10
 
 
@@ -658,14 +659,21 @@ class SimpleRetriever(Retriever):
                 stream_slice, self.request_window_splitting.min_split_window
             )
             if children is None:
+                min_split_window_note = (
+                    f", its configured `min_split_window` ({self.request_window_splitting.min_split_window})"
+                    if self.request_window_splitting.min_split_window
+                    else ""
+                )
                 raise AirbyteTracedException(
                     internal_message=f"Stream {self.name} could not split its request window {stream_slice} any further",
-                    # `transient_error`, so the only remediation is the connector's own, if it defined one.
+                    # `transient_error` regardless of how the triggering response was classified: exhaustion is
+                    # never the user's fault, matching `PageSizeReducer`'s equivalent exhaustion branch.
                     message=self._with_request_window_failure_message(
                         f"The API kept rejecting stream {self.name}'s request window even at the smallest window "
-                        f"its cursor allows, or splitting the window further would not make progress."
+                        f"its cursor allows{min_split_window_note}, or splitting the window further would not "
+                        f"make progress."
                     ),
-                    failure_type=exception.classified_failure_type or FailureType.transient_error,
+                    failure_type=FailureType.transient_error,
                 ) from exception
 
             LOGGER.info(

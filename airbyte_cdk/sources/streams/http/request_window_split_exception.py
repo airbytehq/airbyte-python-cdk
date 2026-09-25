@@ -20,10 +20,11 @@ class RequestWindowSplitRequiredException(AirbyteTracedException):
     failure the built-in `HttpResponseFilter`/`ResponseAction.SPLIT_REQUEST_WINDOW` path cannot see, without
     the CDK needing to know about that connector's specific exception types.
 
-    The classifying error's `failure_type` and `error_message` are preserved on this exception so the eventual
-    terminal failure - if the window cannot be split any further - reports the original cause rather than a
-    generic "please split" message. Callers with an underlying exception should chain it the normal Python way,
-    `raise RequestWindowSplitRequiredException(...) from original_exception`, so the original traceback is
+    The classifying error's `error_message` is preserved on this exception so it can be surfaced if the window
+    is never split any further. `failure_type` is not: exhausting every window size the API will accept is
+    never the user's fault, so `SimpleRetriever` always reports that as `transient_error` regardless of how the
+    triggering response was classified. Callers with an underlying exception should chain it the normal Python
+    way, `raise RequestWindowSplitRequiredException(...) from original_exception`, so the original traceback is
     not lost.
     """
 
@@ -35,7 +36,6 @@ class RequestWindowSplitRequiredException(AirbyteTracedException):
     ) -> None:
         stream = f" of stream {stream_name}" if stream_name else ""
         detail = f": {error_message}" if error_message else ""
-        self.classified_failure_type = failure_type
         super().__init__(
             internal_message=f"A request window split was requested{stream}{detail}",
             message=f"The API rejected the current request window{stream} and requires a smaller one. If this message ends a sync, the stream is not set up to split its window: add `request_window_splitting` to its retriever, or remove the `SPLIT_REQUEST_WINDOW` action from its error handler.",

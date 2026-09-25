@@ -595,7 +595,9 @@ from airbyte_cdk.sources.declarative.retrievers.page_size_reducer import (
     PageSizeResetPolicy,
 )
 from airbyte_cdk.sources.declarative.retrievers.pagination_tracker import PaginationTracker
-from airbyte_cdk.sources.declarative.retrievers.window_reducible import RequestWindowSplitting
+from airbyte_cdk.sources.declarative.retrievers.request_window_splitting import (
+    RequestWindowSplitting,
+)
 from airbyte_cdk.sources.declarative.schema import (
     ComplexFieldType,
     DefaultSchemaLoader,
@@ -4137,7 +4139,12 @@ class ModelToComponentFactory:
             )
 
         self._validate_request_window_splitting_is_supported(
-            name, cursor, incremental_sync, query_properties, file_uploader
+            name,
+            cursor,
+            incremental_sync,
+            model.request_window_splitting.min_split_window,
+            query_properties,
+            file_uploader,
         )
 
         return RequestWindowSplitting(
@@ -4154,6 +4161,7 @@ class ModelToComponentFactory:
         incremental_sync: Optional[
             Union[IncrementingCountCursorModel, DatetimeBasedCursorModel]
         ] = None,
+        min_split_window: Optional[str] = None,
         query_properties: Optional[QueryProperties] = None,
         file_uploader: Optional[DefaultFileUploader] = None,
     ) -> None:
@@ -4187,6 +4195,17 @@ class ModelToComponentFactory:
                 f"keep two child windows from overlapping at their shared edge."
             )
 
+        if incremental_sync.is_client_side_incremental:
+            # A client-side-incremental cursor filters records after they are read rather than sending the
+            # window as request parameters, so every child window sends the exact same request as its parent:
+            # splitting changes nothing, and the sync would keep splitting all the way to `min_split_window`
+            # or the safety-net depth before failing.
+            raise ValueError(
+                f"`request_window_splitting` cannot be used together with `is_client_side_incremental` on "
+                f"stream {name}: the window is filtered client-side rather than sent to the API, so splitting "
+                f"it would not change the request and could not resolve a SPLIT_REQUEST_WINDOW response."
+            )
+
         parsed_cursor_granularity = parse_duration(incremental_sync.cursor_granularity)
         if isinstance(
             parsed_cursor_granularity, datetime.timedelta
@@ -4215,6 +4234,19 @@ class ModelToComponentFactory:
                 f"finer than that. Use a `datetime_format` precise enough to represent `cursor_granularity`, "
                 f"or a coarser `cursor_granularity`."
             )
+
+        if min_split_window:
+            parsed_min_split_window = parse_duration(min_split_window)
+            if not isinstance(
+                parsed_min_split_window, datetime.timedelta
+            ) or parsed_min_split_window <= datetime.timedelta(0):
+                # A duration with years or months (e.g. `P1M`) parses to an `isodate.Duration`, which has no
+                # fixed length to compare a window's span against - `split_request_window` would raise
+                # mid-sync trying to. A zero-or-negative duration would never stop splitting.
+                raise ValueError(
+                    f"`min_split_window` must be a positive duration expressible as a fixed number of "
+                    f"days/hours/minutes/seconds on stream {name}: `{min_split_window}` is not."
+                )
 
         if query_properties:
             raise ValueError(

@@ -19,6 +19,7 @@ from typing import (
     Union,
 )
 
+from airbyte_cdk.models import FailureType
 from airbyte_cdk.sources.connector_state_manager import ConnectorStateManager
 from airbyte_cdk.sources.message import MessageRepository, NoopMessageRepository
 from airbyte_cdk.sources.streams import NO_CURSOR_STATE_KEY
@@ -30,6 +31,7 @@ from airbyte_cdk.sources.streams.concurrent.state_converters.abstract_stream_sta
     AbstractStreamStateConverter,
 )
 from airbyte_cdk.sources.types import Record, StreamSlice
+from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 
 LOGGER = logging.getLogger("airbyte")
 
@@ -616,9 +618,11 @@ class ConcurrentCursor(Cursor):
         Returns `None` when the slice cannot be split any further: either it spans at most one
         `cursor_granularity` unit already (the floor), it is already at or below `min_split_window` (a
         connector-configured floor independent of and typically looser than `cursor_granularity`), the
-        boundaries are missing/malformed/reversed, or no `cursor_granularity` was configured at all (there is
-        then no way to know the smallest addressable unit, or how to keep two children from overlapping at
-        their shared edge). This is the implementation `SimpleRetriever.request_window_splitter` binds to (see
+        boundaries are reversed, or no `cursor_granularity` was configured at all (there is then no way to know
+        the smallest addressable unit, or how to keep two children from overlapping at their shared edge).
+        Raises `AirbyteTracedException` instead if a boundary is missing or unparseable: that is a bug in how
+        the slice was produced, not the API rejecting a window, so it must not be reported as one. This is the
+        implementation `SimpleRetriever.request_window_splitter` binds to (see
         `airbyte_cdk.sources.declarative.retrievers.simple_retriever`) that reuses the same
         parsing/formatting/comparison operations `_split_per_slice_range` already relies on, so it works for
         any `CursorValueType`/`GapType` pair this cursor was built with (datetime/timedelta, or int/int),
@@ -635,8 +639,22 @@ class ConcurrentCursor(Cursor):
             end_value = self._connector_state_converter.parse_value(
                 stream_slice.cursor_slice[end_field]
             )
-        except (KeyError, ValueError, TypeError):
-            return None
+        except (KeyError, ValueError, TypeError) as exception:
+            # A missing or unparseable boundary means this slice was produced (or passed in) wrong - a bug in
+            # slice generation, not something the API did. Raising here, rather than returning `None` (which
+            # `SimpleRetriever` reports as "the API kept rejecting..."), keeps that distinction visible instead
+            # of blaming the API for our own state.
+            raise AirbyteTracedException(
+                internal_message=(
+                    f"Cannot split {stream_slice}: boundary field {start_field!r} or {end_field!r} is missing "
+                    f"or not parseable: {exception}"
+                ),
+                message=(
+                    f"Stream {self._stream_name} produced a request window with a missing or invalid "
+                    f"{start_field!r}/{end_field!r} boundary and could not split it further."
+                ),
+                failure_type=FailureType.system_error,
+            ) from exception
 
         if start_value >= end_value:
             # Reversed or degenerate boundaries: nothing safe to split.

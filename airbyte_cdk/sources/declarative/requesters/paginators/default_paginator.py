@@ -265,6 +265,10 @@ class PaginatorTestReadDecorator(Paginator):
     class (`connector_builder/test_reader/reader.py::_has_reached_limit`). The two counts agree because
     `HttpClient` logs a response resolving to `REDUCE_PAGE_SIZE` as an auxiliary request, which the Builder
     does not turn into a page.
+
+    `get_initial_token()` also resets this count, and `SimpleRetriever._read_pages` calls it again from scratch
+    for every child window a `SPLIT_REQUEST_WINDOW` response produces. A split slice can therefore fetch up to
+    `maximum_number_of_pages` per child rather than sharing one budget across the whole original partition.
     """
 
     _PAGE_COUNT_BEFORE_FIRST_NEXT_CALL = 1

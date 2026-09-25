@@ -4478,9 +4478,10 @@ definitions:
       min_split_window:
         title: Minimum Split Window
         description: >-
-          Smallest window (ISO 8601 duration) the connector will request. Independent of, and usually looser
-          than, cursor_granularity - useful when a cursor could split further but many small requests are
-          worse for this API than a few large ones.
+          Approximate smallest window (ISO 8601 duration) the connector will split down to - a window at or
+          below this size is not split further, though the result can end up a bit smaller than this, not
+          larger. Independent of, and usually looser than, cursor_granularity - useful when a cursor could
+          split further but many small requests are worse for this API than a few large ones.
         type: string
         examples:
           - "P1D"

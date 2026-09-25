@@ -11,6 +11,7 @@ from unittest.mock import Mock
 import freezegun
 import pytest
 
+from airbyte_cdk.models import FailureType
 from airbyte_cdk.sources.connector_state_manager import ConnectorStateManager
 from airbyte_cdk.sources.message import MessageRepository
 from airbyte_cdk.sources.streams import NO_CURSOR_STATE_KEY
@@ -36,6 +37,7 @@ from airbyte_cdk.sources.streams.concurrent.state_converters.datetime_stream_sta
     EpochValueConcurrentStreamStateConverter,
 )
 from airbyte_cdk.sources.types import Record, StreamSlice
+from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 
 _A_STREAM_NAME = "a stream name"
 _A_STREAM_NAMESPACE = "a stream namespace"
@@ -1562,10 +1564,15 @@ class ConcurrentCursorReduceWindowTest(TestCase):
             is None
         )
 
-    def test_given_malformed_boundary_when_reduce_then_return_none(self) -> None:
+    def test_given_malformed_boundary_when_reduce_then_raise(self) -> None:
+        """
+        A malformed boundary means the slice was produced wrong - a bug, not the API rejecting a window - so
+        this must not be silently swallowed as `None` (which `SimpleRetriever` reports as "the API kept
+        rejecting...", misattributing the cause).
+        """
         cursor = self._cursor()
 
-        assert (
+        with pytest.raises(AirbyteTracedException) as exception:
             cursor.split_request_window(
                 StreamSlice(
                     partition={},
@@ -1575,18 +1582,17 @@ class ConcurrentCursorReduceWindowTest(TestCase):
                     },
                 )
             )
-            is None
-        )
+        assert exception.value.failure_type == FailureType.system_error
+        assert _LOWER_SLICE_BOUNDARY_FIELD in exception.value.internal_message
 
-    def test_given_missing_boundary_field_when_reduce_then_return_none(self) -> None:
+    def test_given_missing_boundary_field_when_reduce_then_raise(self) -> None:
         cursor = self._cursor()
 
-        assert (
+        with pytest.raises(AirbyteTracedException) as exception:
             cursor.split_request_window(
                 StreamSlice(partition={}, cursor_slice={"only_one_field": "x"})
             )
-            is None
-        )
+        assert exception.value.failure_type == FailureType.system_error
 
     def test_split_request_window_preserves_partition_and_extra_fields(self) -> None:
         cursor = self._cursor()

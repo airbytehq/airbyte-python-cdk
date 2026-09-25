@@ -1372,7 +1372,7 @@ class RequestWindowSplitting(BaseModel):
     )
     min_split_window: Optional[str] = Field(
         None,
-        description="Smallest window (ISO 8601 duration) the connector will request. Independent of, and usually looser than, cursor_granularity - useful when a cursor could split further but many small requests are worse for this API than a few large ones.",
+        description="Approximate smallest window (ISO 8601 duration) the connector will split down to - a window at or below this size is not split further, though the result can end up a bit smaller than this, not larger. Independent of, and usually looser than, cursor_granularity - useful when a cursor could split further but many small requests are worse for this API than a few large ones.",
         examples=["P1D", "PT1H"],
         title="Minimum Split Window",
     )
