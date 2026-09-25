@@ -106,6 +106,13 @@ from airbyte_cdk.utils.airbyte_secrets_utils import add_to_secrets, get_secrets
 from airbyte_cdk.utils.stream_status_utils import as_airbyte_message
 from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 
+# Decoder types whose factory-built component streams the response body; the verified set is
+# the create_* methods in model_to_component_factory that pass stream_response=True outside of
+# connector-builder mode (CsvDecoder, JsonlDecoder, JsonItemsDecoder, GzipDecoder).
+_STREAMING_DECODER_TYPES = frozenset(
+    {"CsvDecoder", "JsonlDecoder", "JsonItemsDecoder", "GzipDecoder"}
+)
+
 
 @dataclass
 class TestLimits:
@@ -530,8 +537,13 @@ class ConcurrentDeclarativeSource(Source):
         """
         parent_streams = set()
 
-        def _set_cache_if_not_disabled(requester: Dict[str, Any]) -> None:
+        def _set_cache_if_not_disabled(retriever: Dict[str, Any]) -> None:
             """Set use_cache to True only if not explicitly disabled."""
+            decoder_type = (retriever.get("decoder") or {}).get("type")
+            if decoder_type in _STREAMING_DECODER_TYPES:
+                # requests_cache consumes the whole body, leaving nothing to stream
+                return
+            requester = retriever["requester"]
             if requester.get("use_cache") is not False:
                 requester["use_cache"] = True
 
@@ -542,19 +554,19 @@ class ConcurrentDeclarativeSource(Source):
                 parent_streams.add(parent_config["stream"]["name"])
                 if parent_config["stream"]["type"] == "StateDelegatingStream":
                     _set_cache_if_not_disabled(
-                        parent_config["stream"]["full_refresh_stream"]["retriever"]["requester"]
+                        parent_config["stream"]["full_refresh_stream"]["retriever"]
                     )
                     _set_cache_if_not_disabled(
-                        parent_config["stream"]["incremental_stream"]["retriever"]["requester"]
+                        parent_config["stream"]["incremental_stream"]["retriever"]
                     )
                 else:
-                    _set_cache_if_not_disabled(parent_config["stream"]["retriever"]["requester"])
+                    _set_cache_if_not_disabled(parent_config["stream"]["retriever"])
 
         for stream_config in stream_configs:
             if stream_config.get("incremental_sync", {}).get("parent_stream"):
                 parent_streams.add(stream_config["incremental_sync"]["parent_stream"]["name"])
                 _set_cache_if_not_disabled(
-                    stream_config["incremental_sync"]["parent_stream"]["retriever"]["requester"]
+                    stream_config["incremental_sync"]["parent_stream"]["retriever"]
                 )
 
             elif stream_config.get("retriever", {}).get("partition_router", {}):
@@ -581,14 +593,10 @@ class ConcurrentDeclarativeSource(Source):
         for stream_config in stream_configs:
             if stream_config["name"] in parent_streams:
                 if stream_config["type"] == "StateDelegatingStream":
-                    _set_cache_if_not_disabled(
-                        stream_config["full_refresh_stream"]["retriever"]["requester"]
-                    )
-                    _set_cache_if_not_disabled(
-                        stream_config["incremental_stream"]["retriever"]["requester"]
-                    )
+                    _set_cache_if_not_disabled(stream_config["full_refresh_stream"]["retriever"])
+                    _set_cache_if_not_disabled(stream_config["incremental_stream"]["retriever"])
                 else:
-                    _set_cache_if_not_disabled(stream_config["retriever"]["requester"])
+                    _set_cache_if_not_disabled(stream_config["retriever"])
         return stream_configs
 
     def spec(self, logger: logging.Logger) -> ConnectorSpecification:
