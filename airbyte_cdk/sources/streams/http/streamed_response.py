@@ -3,7 +3,7 @@
 #
 
 import io
-from typing import Any, BinaryIO, Optional
+from typing import IO, Any, Optional
 
 import requests
 
@@ -36,13 +36,41 @@ def get_spooled_body_size(response: requests.Response) -> Optional[int]:
     return response.__dict__.get(_SPOOLED_BODY_SIZE_ATTR)
 
 
+class _FileLikeRaw(io.RawIOBase):
+    """Raw adapter over a SpooledTemporaryFile so BufferedReader can wrap it without fileno()."""
+
+    def __init__(self, fileobj: IO[bytes]) -> None:
+        self._fileobj = fileobj
+
+    def readable(self) -> bool:
+        return True
+
+    def seekable(self) -> bool:
+        return True
+
+    def readinto(self, b: Any) -> int:
+        return self._fileobj.readinto(b)  # type: ignore[attr-defined,no-any-return]
+
+    def seek(self, offset: int, whence: int = io.SEEK_SET) -> int:
+        return self._fileobj.seek(offset, whence)
+
+    def tell(self) -> int:
+        return self._fileobj.tell()
+
+    def close(self) -> None:
+        try:
+            super().close()
+        finally:
+            self._fileobj.close()
+
+
 class SpooledResponseBody(io.BufferedReader):
     """File-backed replacement for `requests.Response.raw` once the body has been copied to disk."""
 
-    def __init__(self, spool: BinaryIO) -> None:
-        # spool is a tempfile.TemporaryFile() (already unlinked, anonymous)
+    def __init__(self, spool: IO[bytes]) -> None:
+        # spool is a tempfile.SpooledTemporaryFile(); BytesIO below max_size, unlinked file above
         self._spool = spool
-        super().__init__(io.FileIO(spool.fileno(), mode="rb", closefd=False))
+        super().__init__(_FileLikeRaw(spool))
         self.auto_close = False  # CompositeRawDecoder sets this attribute; keep it settable
 
     def close(self) -> None:

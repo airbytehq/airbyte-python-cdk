@@ -125,3 +125,58 @@ def test_pagination_decoder_decorator_delegates_when_not_streamed():
     response._content = body
     decorator = PaginationDecoderDecorator(decoder=JsonDecoder(parameters={}))
     assert next(decorator.decode(response)) == {"data": [{"id": 1}]}
+
+
+import gzip
+import tempfile
+
+from airbyte_cdk.sources.declarative.decoders.composite_raw_decoder import (
+    CsvParser,
+    JsonLineParser,
+    JsonParser,
+)
+from airbyte_cdk.sources.streams.http.streamed_response import SpooledResponseBody
+
+
+def _spooled_body(body: bytes, max_size: int) -> SpooledResponseBody:
+    spool = tempfile.SpooledTemporaryFile(max_size=max_size)
+    spool.write(body)
+    spool.seek(0)
+    return SpooledResponseBody(spool)
+
+
+_JSON_BODY = json.dumps({"items": [{"id": 1}, {"id": 2}], "after_url": "x"}).encode()
+
+
+@pytest.mark.parametrize(
+    "parser, body, expected",
+    [
+        (JsonParser(), _JSON_BODY, [_JSON_BODY]),
+        (JsonItemsParser(items_path="items"), _JSON_BODY, [{"id": 1}, {"id": 2}]),
+        (JsonLineParser(), b'{"id":1}\n{"id":2}\n', [{"id": 1}, {"id": 2}]),
+        (CsvParser(), b"a,b\n1,2\n", [{"a": "1", "b": "2"}]),
+        (
+            GzipParser(inner_parser=JsonItemsParser(items_path="items")),
+            gzip.compress(_JSON_BODY),
+            [{"id": 1}, {"id": 2}],
+        ),
+    ],
+    ids=["json", "json_items", "json_lines", "csv", "gzip_json_items"],
+)
+@pytest.mark.parametrize("max_size", [64 << 10, 1], ids=["in_memory", "rolled_to_disk"])
+def test_parsers_read_from_spooled_response_body(parser, body, expected, max_size):
+    raw = _spooled_body(body, max_size=max_size)
+    if parser.__class__ is JsonParser:
+        assert list(parser.parse(raw)) == [json.loads(body)]
+    else:
+        assert list(parser.parse(raw)) == expected
+    raw.close()
+
+
+def test_spooled_response_body_small_body_stays_in_memory():
+    spool = tempfile.SpooledTemporaryFile(max_size=8 << 20)
+    spool.write(b"hello")
+    spool.seek(0)
+    raw = SpooledResponseBody(spool)
+    assert raw.read() == b"hello"
+    assert spool._rolled is False

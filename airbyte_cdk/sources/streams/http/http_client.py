@@ -83,6 +83,7 @@ MessageRepresentationAirbyteTracedErrors = AirbyteTracedException
 BODY_REQUEST_METHODS = ("GET", "POST", "PUT", "PATCH")
 
 _SPOOL_CHUNK_SIZE = 1 << 20
+_SPOOL_IN_MEMORY_LIMIT = 8 << 20
 
 
 def monkey_patched_get_item(self, key):  # type: ignore # this interface is a copy/paste from the requests_cache lib
@@ -426,7 +427,9 @@ class HttpClient:
                 )
 
     def _spool_response_body(self, response: requests.Response) -> None:
-        spool = tempfile.TemporaryFile(prefix="airbyte-http-body-")
+        spool = tempfile.SpooledTemporaryFile(
+            max_size=_SPOOL_IN_MEMORY_LIMIT, prefix="airbyte-http-body-"
+        )
         size = 0
         try:
             for chunk in response.iter_content(chunk_size=_SPOOL_CHUNK_SIZE):
