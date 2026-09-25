@@ -277,11 +277,11 @@ def test_error_message_contains_matches_403_despite_streamed_marker(requests_moc
     assert resolution.response_action == ResponseAction.IGNORE
 
 
-def test_streamed_2xx_skips_body_filters_and_keeps_body_unread(requests_mock):
+def test_unspooled_streamed_2xx_evaluates_body_filters(requests_mock):
     response = _streamed_2xx_with_access_denied_body(requests_mock)
     mark_body_streamed(response)
-    assert _access_denied_filter().matches(response) is None
-    assert response._content_consumed is False
+    resolution = _access_denied_filter().matches(response)
+    assert resolution.response_action == ResponseAction.IGNORE
 
 
 def test_unmarked_2xx_still_matches_error_message_contains(requests_mock):
@@ -290,7 +290,7 @@ def test_unmarked_2xx_still_matches_error_message_contains(requests_mock):
     assert resolution.response_action == ResponseAction.IGNORE
 
 
-def test_streamed_2xx_skips_predicate_filter(requests_mock):
+def test_unspooled_streamed_2xx_evaluates_predicate_filter(requests_mock):
     requests_mock.register_uri(
         "GET",
         "https://airbyte.io/",
@@ -309,8 +309,8 @@ def test_streamed_2xx_skips_predicate_filter(requests_mock):
         error_message_contains="",
         error_message="",
     )
-    assert response_filter.matches(response) is None
-    assert response._content_consumed is False
+    resolution = response_filter.matches(response)
+    assert resolution.response_action == ResponseAction.IGNORE
 
 
 def test_http_codes_filter_matches_marked_2xx_without_consuming_body(requests_mock):

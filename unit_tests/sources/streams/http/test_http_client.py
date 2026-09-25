@@ -1820,7 +1820,7 @@ def test_large_spooled_body_skips_body_filters():
     assert filter_.matches(response) is None
 
 
-def test_unspooled_streamed_body_skips_body_filters():
+def test_unspooled_streamed_body_is_evaluated_by_body_filters():
     payload = json.dumps({"error": "You do not have access"}).encode()
     response, _ = _raw_streaming_response(payload)
     mark_body_streamed(response)
@@ -1830,7 +1830,9 @@ def test_unspooled_streamed_body_skips_body_filters():
         config={},
         parameters={},
     )
-    assert filter_.matches(response) is None
+    resolution = filter_.matches(response)
+    assert resolution is not None
+    assert resolution.response_action == ResponseAction.IGNORE
 
 
 def test_send_request_rewinds_small_spooled_body_after_ignore():

@@ -24,14 +24,14 @@ from airbyte_cdk.sources.streams.http.streamed_response import (
 )
 from airbyte_cdk.sources.types import Config
 
-_MAX_SPOOLED_BODY_BYTES_FOR_BODY_FILTERS = 1 << 20
+_MAX_BODY_FILTER_SIZE = 1 << 20
 
 
 def _skips_body_filters(response: requests.Response) -> bool:
     if not (response.ok and is_body_streamed(response)):
         return False
     size = get_spooled_body_size(response)
-    return size is None or size > _MAX_SPOOLED_BODY_BYTES_FOR_BODY_FILTERS
+    return size is not None and size > _MAX_BODY_FILTER_SIZE
 
 
 @dataclass

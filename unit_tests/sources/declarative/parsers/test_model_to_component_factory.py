@@ -7996,3 +7996,68 @@ def test_default_paginator_enables_remainder_capture_on_shared_decoder():
 
     decoder_without_paginator = _json_items_decoder_component()
     assert decoder_without_paginator._capture_document_remainder is False
+
+
+_SPOOL_BODY_FILTER_MANIFEST = """
+requester:
+  type: HttpRequester
+  url_base: "https://airbyte.io"
+  path: "/v1/items"
+  http_method: "GET"
+  error_handler:
+    type: DefaultErrorHandler
+    response_filters:
+      - action: IGNORE
+        error_message_contains: "You do not have access"
+"""
+
+
+def _build_requester_from_manifest(content: str, decoder):
+    parsed_manifest = YamlDeclarativeSource._parse(content)
+    resolved_manifest = resolver.preprocess_manifest(parsed_manifest)
+    requester_manifest = transformer.propagate_types_and_parameters(
+        "", resolved_manifest["requester"], {}
+    )
+    return factory.create_component(
+        model_type=HttpRequesterModel,
+        component_definition=requester_manifest,
+        config=input_config,
+        name="name",
+        decoder=decoder,
+    )
+
+
+def _json_items_spooling_decoder():
+    from airbyte_cdk.sources.declarative.models import (
+        JsonItemsDecoder as JsonItemsDecoderModel,
+    )
+
+    return factory.create_json_items_decoder(
+        JsonItemsDecoderModel(
+            type="JsonItemsDecoder", items_path="tickets", spool_to_disk=True
+        ),
+        input_config,
+    )
+
+
+def test_spool_to_disk_with_body_filters_logs_warning(caplog):
+    import logging
+
+    with caplog.at_level(logging.WARNING):
+        _build_requester_from_manifest(
+            _SPOOL_BODY_FILTER_MANIFEST, _json_items_spooling_decoder()
+        )
+    assert any(
+        "spool_to_disk" in r.message and "response filters" in r.message
+        for r in caplog.records
+    )
+
+
+def test_no_spool_to_disk_no_body_filter_warning(caplog):
+    import logging
+
+    with caplog.at_level(logging.WARNING):
+        _build_requester_from_manifest(
+            _SPOOL_BODY_FILTER_MANIFEST, _json_items_decoder_component()
+        )
+    assert not any("spool_to_disk" in r.message for r in caplog.records)
