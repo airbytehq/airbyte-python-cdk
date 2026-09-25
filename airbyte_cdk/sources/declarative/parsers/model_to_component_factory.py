@@ -595,10 +595,7 @@ from airbyte_cdk.sources.declarative.retrievers.page_size_reducer import (
     PageSizeResetPolicy,
 )
 from airbyte_cdk.sources.declarative.retrievers.pagination_tracker import PaginationTracker
-from airbyte_cdk.sources.declarative.retrievers.window_reducible import (
-    OnPartialResponse,
-    RequestWindowSplitting,
-)
+from airbyte_cdk.sources.declarative.retrievers.window_reducible import RequestWindowSplitting
 from airbyte_cdk.sources.declarative.schema import (
     ComplexFieldType,
     DefaultSchemaLoader,
@@ -4143,11 +4140,7 @@ class ModelToComponentFactory:
             name, cursor, incremental_sync, query_properties, file_uploader
         )
 
-        on_partial_response = model.request_window_splitting.on_partial_response
         return RequestWindowSplitting(
-            on_partial_response=OnPartialResponse(on_partial_response.value)
-            if on_partial_response is not None
-            else OnPartialResponse.FAIL,
             failure_message=model.request_window_splitting.failure_message,
             min_split_window=parse_duration(model.request_window_splitting.min_split_window)
             if model.request_window_splitting.min_split_window

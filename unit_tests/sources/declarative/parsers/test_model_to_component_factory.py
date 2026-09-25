@@ -205,10 +205,7 @@ from airbyte_cdk.sources.declarative.retrievers.page_size_reducer import (
     PageSizeReduction,
     PageSizeResetPolicy,
 )
-from airbyte_cdk.sources.declarative.retrievers.window_reducible import (
-    OnPartialResponse,
-    RequestWindowSplitting,
-)
+from airbyte_cdk.sources.declarative.retrievers.window_reducible import RequestWindowSplitting
 from airbyte_cdk.sources.declarative.schema import InlineSchemaLoader, JsonFileSchemaLoader
 from airbyte_cdk.sources.declarative.schema.caching_schema_loader_decorator import (
     CachingSchemaLoaderDecorator,
@@ -7615,7 +7612,6 @@ def test_given_request_window_splitting_then_create_retriever_with_defaults():
     retriever = get_retriever(_request_window_splitting_stream())
 
     assert retriever.request_window_splitting == RequestWindowSplitting(
-        on_partial_response=OnPartialResponse.FAIL,
         failure_message=None,
     )
     assert callable(retriever.request_window_splitter)
@@ -7628,7 +7624,6 @@ def test_given_request_window_splitting_values_then_create_retriever_with_those_
             request_window_splitting=(
                 "request_window_splitting:\n"
                 "    type: RequestWindowSplitting\n"
-                "    on_partial_response: ALLOW_REPLAY\n"
                 "    failure_message: Lower time_window so that each request covers less data.\n"
                 "    min_split_window: P1D"
             )
@@ -7636,7 +7631,6 @@ def test_given_request_window_splitting_values_then_create_retriever_with_those_
     )
 
     assert retriever.request_window_splitting == RequestWindowSplitting(
-        on_partial_response=OnPartialResponse.ALLOW_REPLAY,
         failure_message="Lower time_window so that each request covers less data.",
         min_split_window=timedelta(days=1),
     )

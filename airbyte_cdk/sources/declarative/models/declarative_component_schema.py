@@ -1473,18 +1473,8 @@ class PageSizeReduction(BaseModel):
     )
 
 
-class OnPartialResponse(Enum):
-    FAIL = "FAIL"
-    ALLOW_REPLAY = "ALLOW_REPLAY"
-
-
 class RequestWindowSplitting(BaseModel):
     type: Literal["RequestWindowSplitting"]
-    on_partial_response: Optional[OnPartialResponse] = Field(
-        OnPartialResponse.FAIL,
-        description="What to do when SPLIT_REQUEST_WINDOW arrives after the current window already emitted a record. FAIL stops the sync with a configuration error, since re-reading the window would duplicate those records. ALLOW_REPLAY splits and re-reads anyway, accepting duplicate records; use it only when duplicates are tolerated downstream.",
-        title="On Partial Response",
-    )
     failure_message: Optional[str] = Field(
         None,
         description="Sentence appended to the error message when the connector can no longer split the window further. Use it to tell the user what to do for this API, for instance which filter narrows the query down.",

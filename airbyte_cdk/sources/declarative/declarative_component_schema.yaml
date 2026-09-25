@@ -4455,9 +4455,10 @@ definitions:
     description: >-
       Describes how the request window is split when an error handler resolves to the SPLIT_REQUEST_WINDOW
       action. The connector replaces the failing window with two smaller, ordered windows covering the same
-      range and reads each one fully before checkpointing. Only supported on a stream whose incremental_sync
-      cursor defines cursor_granularity. Distinct from page_size_reduction, which shrinks a paginator's page
-      size rather than the cursor's window.
+      range and reads each one fully before checkpointing. If the failing window had already emitted records,
+      those may be re-emitted; downstream primary-key deduplication is expected to handle that. Only supported
+      on a stream whose incremental_sync cursor defines cursor_granularity. Distinct from page_size_reduction,
+      which shrinks a paginator's page size rather than the cursor's window.
     type: object
     required:
       - type
@@ -4465,18 +4466,6 @@ definitions:
       type:
         type: string
         enum: [RequestWindowSplitting]
-      on_partial_response:
-        title: On Partial Response
-        description: >-
-          What to do when SPLIT_REQUEST_WINDOW arrives after the current window already emitted a record.
-          FAIL stops the sync with a configuration error, since re-reading the window would duplicate those
-          records. ALLOW_REPLAY splits and re-reads anyway, accepting duplicate records; use it only when
-          duplicates are tolerated downstream.
-        type: string
-        enum:
-          - FAIL
-          - ALLOW_REPLAY
-        default: FAIL
       failure_message:
         title: Failure Message
         description: >-

@@ -50,10 +50,7 @@ from airbyte_cdk.sources.declarative.retrievers.page_size_reducer import (
 )
 from airbyte_cdk.sources.declarative.retrievers.pagination_tracker import PaginationTracker
 from airbyte_cdk.sources.declarative.retrievers.retriever import Retriever
-from airbyte_cdk.sources.declarative.retrievers.window_reducible import (
-    OnPartialResponse,
-    RequestWindowSplitting,
-)
+from airbyte_cdk.sources.declarative.retrievers.window_reducible import RequestWindowSplitting
 from airbyte_cdk.sources.declarative.stream_slicers.stream_slicer import StreamSlicer
 from airbyte_cdk.sources.source import ExperimentalClassWarning
 from airbyte_cdk.sources.streams.core import StreamData
@@ -605,7 +602,7 @@ class SimpleRetriever(Retriever):
             records_schema=records_schema,
         )
 
-        emitted_any = False
+        emitted_count = 0
         try:
             records: Iterable[Mapping[str, Any]] = self._read_pages(record_generator, stream_slice)
             if self.post_pagination_filter:
@@ -622,29 +619,21 @@ class SimpleRetriever(Retriever):
                     stream_slice=stream_slice,
                 )
             for record in records:
-                emitted_any = True
+                emitted_count += 1
                 yield self._reassociate_with_original_slice(record, original_slice)
         except RequestWindowSplitRequiredException as exception:
             if self.request_window_splitting is None or self.request_window_splitter is None:
                 raise RequestWindowSplitNotSupportedException(stream_name=self.name) from exception
 
-            if (
-                emitted_any
-                and self.request_window_splitting.on_partial_response == OnPartialResponse.FAIL
-            ):
-                # The split is safe only because it re-reads a window whose records were not emitted yet.
-                # Re-reading it as smaller children here would duplicate the records already yielded above.
-                raise AirbyteTracedException(
-                    internal_message=f"Stream {self.name} requested a request window split after records of the current window had already been emitted",
-                    message=(
-                        f"Stream {self.name} asked to split its request window after some records of it were "
-                        f"already read. Splitting and re-reading the window would duplicate those records. Set "
-                        f"`on_partial_response: ALLOW_REPLAY` on `request_window_splitting` if duplicate records "
-                        f"are acceptable for this stream, or move the SPLIT_REQUEST_WINDOW action so it only "
-                        f"triggers before any record of the window has been read."
-                    ),
-                    failure_type=FailureType.config_error,
-                ) from exception
+            if emitted_count:
+                # Splitting and re-reading the window re-emits these records: a failed partition is never
+                # checkpointed, so the next attempt would re-emit them anyway. Always replaying makes forward
+                # progress instead of retrying the same oversized window forever; primary-key dedup downstream
+                # handles the duplicates either way.
+                LOGGER.warning(
+                    f"Stream {self.name} already emitted {emitted_count} record(s) from {stream_slice} before "
+                    f"it was rejected; splitting and re-reading the window may re-emit them."
+                )
 
             if depth >= _MAX_REQUEST_WINDOW_SPLIT_DEPTH:
                 # Logged separately from the exception below so it stays visible even if the trace message's

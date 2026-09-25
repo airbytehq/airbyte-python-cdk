@@ -3,6 +3,7 @@
 #
 
 import json
+import logging
 import threading
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
@@ -57,10 +58,7 @@ from airbyte_cdk.sources.declarative.retrievers.simple_retriever import (
     _MAX_REQUEST_WINDOW_SPLIT_DEPTH,
     SimpleRetriever,
 )
-from airbyte_cdk.sources.declarative.retrievers.window_reducible import (
-    OnPartialResponse,
-    RequestWindowSplitting,
-)
+from airbyte_cdk.sources.declarative.retrievers.window_reducible import RequestWindowSplitting
 from airbyte_cdk.sources.streams.http.page_size_reduction_exception import (
     PageSizeReductionRequiredException,
 )
@@ -2214,41 +2212,14 @@ def test_given_no_request_window_splitter_when_reduction_required_then_raise_not
         list(retriever.read_records(A_RECORD_SCHEMA, A_WINDOW_SLICE))
 
 
-def test_given_records_already_emitted_and_fail_policy_when_reduction_requested_then_raise_config_error():
+def test_given_records_already_emitted_when_reduction_requested_then_split_and_replay_anyway(
+    caplog,
+):
     """
-    A later page of the same window fails after an earlier page already emitted records: with the default
-    `FAIL` policy, reducing and re-reading the window from scratch would duplicate those records, so this
-    must raise a hard config_error instead of silently reducing.
-    """
-    requester = Mock(spec=Requester)
-    requester.send_request.side_effect = [Mock(), RequestWindowSplitRequiredException()]
-    record_selector = Mock(spec=HttpSelector)
-    record_selector.select_records.return_value = [{"id": 1}]
-    paginator = _mock_paginator()
-    paginator.get_initial_token.return_value = None
-    paginator.next_page_token.return_value = {"next_page_token": "page2"}
-
-    request_window_splitter = Mock()
-
-    retriever = _request_window_splitting_retriever(
-        requester,
-        paginator,
-        record_selector,
-        request_window_splitter,
-        request_window_splitting=RequestWindowSplitting(on_partial_response=OnPartialResponse.FAIL),
-    )
-
-    with pytest.raises(AirbyteTracedException) as exception:
-        list(retriever.read_records(A_RECORD_SCHEMA, A_WINDOW_SLICE))
-
-    assert exception.value.failure_type == FailureType.config_error
-    request_window_splitter.assert_not_called()
-
-
-def test_given_records_already_emitted_and_allow_replay_policy_when_reduction_requested_then_reduce_anyway():
-    """
-    The opt-in `ALLOW_REPLAY` policy accepts at-least-once delivery: unlike the FAIL case above, this must
-    proceed to split and re-read the window even though the first page already emitted a record.
+    A later page of the same window fails after an earlier page already emitted a record: since a failed
+    partition is never checkpointed, refusing to split here wouldn't avoid the duplicate anyway - the next
+    attempt would just re-read the same window and re-emit it. So this always splits and re-reads, logging a
+    warning with how many records were already emitted.
     """
     requester = Mock(spec=Requester)
     requester.send_request.side_effect = [
@@ -2270,20 +2241,16 @@ def test_given_records_already_emitted_and_allow_replay_policy_when_reduction_re
     ]
 
     retriever = _request_window_splitting_retriever(
-        requester,
-        paginator,
-        record_selector,
-        request_window_splitter,
-        request_window_splitting=RequestWindowSplitting(
-            on_partial_response=OnPartialResponse.ALLOW_REPLAY
-        ),
+        requester, paginator, record_selector, request_window_splitter
     )
 
-    records = list(retriever.read_records(A_RECORD_SCHEMA, A_WINDOW_SLICE))
+    with caplog.at_level(logging.WARNING, logger="airbyte"):
+        records = list(retriever.read_records(A_RECORD_SCHEMA, A_WINDOW_SLICE))
 
-    # the record from the page emitted before the reduction signal is included once more: ALLOW_REPLAY
-    # accepts this at-least-once duplication rather than silently dropping it or failing the sync.
+    # the record from the page emitted before the split signal is included once more: splitting and
+    # re-reading accepts this at-least-once duplication rather than silently dropping it or failing the sync.
     assert records == [{"id": 1}, {"id": 2}, {"id": 3}]
+    assert "already emitted 1 record" in caplog.text
     request_window_splitter.assert_called_once_with(A_WINDOW_SLICE, None)
 
 
@@ -2570,7 +2537,7 @@ def test_given_exception_raised_during_record_extraction_when_read_then_still_sp
     assert records == [{"id": 1}, {"id": 2}]
 
 
-def test_given_max_split_depth_exceeded_when_read_records_then_raise_terminal_error():
+def test_given_max_split_depth_exceeded_when_read_records_then_raise_terminal_error(caplog):
     """
     Defense-in-depth: even if a (misbehaving, e.g. custom) `request_window_splitter` never itself signals "cannot split
     any further", the retriever's own depth counter must still terminate the read deterministically rather than
@@ -2599,8 +2566,9 @@ def test_given_max_split_depth_exceeded_when_read_records_then_raise_terminal_er
         ),
     )
 
-    with pytest.raises(AirbyteTracedException) as exception:
-        list(retriever.read_records(A_RECORD_SCHEMA, A_WINDOW_SLICE))
+    with caplog.at_level(logging.WARNING, logger="airbyte"):
+        with pytest.raises(AirbyteTracedException) as exception:
+            list(retriever.read_records(A_RECORD_SCHEMA, A_WINDOW_SLICE))
 
     # exhausting the split depth is not the user's fault - the API kept rejecting every window size tried -
     # so it is transient_error, matching PageSizeReducer's equivalent exhaustion branch, not config_error
@@ -2608,6 +2576,9 @@ def test_given_max_split_depth_exceeded_when_read_records_then_raise_terminal_er
     assert "maximum request window split depth" in exception.value.internal_message
     assert f"within {_MAX_REQUEST_WINDOW_SPLIT_DEPTH} splits" in exception.value.message
     assert "Lower time_window so that each request covers less data." in exception.value.message
+    # the safety net is expected to be rare, so it's logged separately from the exception (per review feedback
+    # to make it visible for later review even if the trace message's internal_message isn't surfaced)
+    assert f"hit the maximum request window split depth ({_MAX_REQUEST_WINDOW_SPLIT_DEPTH})" in caplog.text
     # the single leftmost recursion path is explored to the full depth (one split_request_window call per
     # depth, from 0 up to the cap) before the cap stops the next call - the exception then propagates
     # immediately, so sibling branches at shallower depths are never explored
