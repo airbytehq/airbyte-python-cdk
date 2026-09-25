@@ -8,6 +8,7 @@ import gzip
 import io
 import json
 import logging
+from collections.abc import Mapping
 from dataclasses import dataclass
 from io import BufferedIOBase, TextIOWrapper
 from typing import Any, Callable, Generator, List, Optional, Tuple
@@ -312,8 +313,18 @@ class CompositeRawDecoder(Decoder):
 
     def decode(self, response: requests.Response) -> DECODER_OUTPUT_TYPE:
         parser = self._select_parser(response)
+
+        def on_document_remainder(doc: Any) -> None:
+            set_document_remainder(response, doc)
+            logger.debug(
+                "Captured pagination document remainder",
+                extra={
+                    "keys": list(doc.keys()) if isinstance(doc, Mapping) else type(doc).__name__
+                },
+            )
+
         parse_kwargs = (
-            {"on_document_remainder": lambda doc: set_document_remainder(response, doc)}
+            {"on_document_remainder": on_document_remainder}
             if _parser_supports_document_remainder(parser)
             else {}
         )

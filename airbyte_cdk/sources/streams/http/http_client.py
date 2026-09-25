@@ -5,6 +5,7 @@
 import logging
 import os
 import tempfile
+import time
 import urllib
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Mapping, Optional, Tuple, Union
@@ -426,7 +427,10 @@ class HttpClient:
                     "Authenticator failed to update quota state from response", exc_info=True
                 )
 
-    def _spool_response_body(self, response: requests.Response) -> None:
+    def _spool_response_body(
+        self, response: requests.Response, request: requests.PreparedRequest
+    ) -> None:
+        start = time.monotonic()
         spool = tempfile.SpooledTemporaryFile(
             max_size=_SPOOL_IN_MEMORY_LIMIT, prefix="airbyte-http-body-"
         )
@@ -443,6 +447,15 @@ class HttpClient:
         spool.seek(0)
         set_spooled_body_size(response, size)
         response.raw = SpooledResponseBody(spool)
+        self._logger.debug(
+            "Spooled response body to disk",
+            extra={
+                "url": request.url,
+                "status": response.status_code,
+                "bytes": size,
+                "seconds": round(time.monotonic() - start, 3),
+            },
+        )
         response._content_consumed = False  # type: ignore[attr-defined] # iter_content set it True; the body is readable again from disk
 
     def _send(
@@ -473,7 +486,7 @@ class HttpClient:
             if request_kwargs.get("stream"):
                 mark_body_streamed(response)
                 if spool_response:
-                    self._spool_response_body(response)
+                    self._spool_response_body(response, request)
         except requests.RequestException as e:
             response = None
             exc = e
