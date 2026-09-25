@@ -2452,6 +2452,10 @@ class ModelToComponentFactory:
     ) -> Union[DefaultPaginator, PaginatorTestReadDecorator]:
         if decoder:
             if self._is_supported_decoder_for_pagination(decoder):
+                if isinstance(decoder, CompositeRawDecoder):
+                    # the retriever shares this decoder instance with the record selector,
+                    # so opting in here makes decode() also capture the remainder
+                    decoder.enable_document_remainder_capture()
                 decoder_to_use = PaginationDecoderDecorator(decoder=decoder)
             else:
                 raise ValueError(self._UNSUPPORTED_DECODER_ERROR.format(decoder_type=type(decoder)))

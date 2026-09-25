@@ -90,6 +90,7 @@ def test_composite_raw_decoder_sets_remainder_on_streamed_response():
     ).encode()
     response = _streamed_response(body)
     decoder = CompositeRawDecoder(parser=JsonItemsParser(items_path="tickets"))
+    decoder.enable_document_remainder_capture()
     assert list(decoder.decode(response)) == [{"id": 1}, {"id": 2}]
     assert get_document_remainder(response) == {
         "tickets": [],
@@ -205,3 +206,17 @@ def test_streamed_gzip_decoder_over_plain_gzip_payload_unchanged():
         parser=GzipParser(inner_parser=JsonItemsParser(items_path="items"))
     )
     assert list(decoder.decode(response)) == [{"id": 1}, {"id": 2}]
+
+
+def test_composite_raw_decoder_does_not_capture_remainder_without_opt_in(mocker):
+    body = json.dumps(
+        {"tickets": [{"id": 1}, {"id": 2}], "after_url": "x", "end_of_stream": False}
+    ).encode()
+    response = _streamed_response(body)
+    spy = mocker.patch(
+        "airbyte_cdk.sources.declarative.decoders.composite_raw_decoder.set_document_remainder"
+    )
+    decoder = CompositeRawDecoder(parser=JsonItemsParser(items_path="tickets"))
+    assert list(decoder.decode(response)) == [{"id": 1}, {"id": 2}]
+    spy.assert_not_called()
+    assert get_document_remainder(response) is None

@@ -7987,3 +7987,12 @@ def test_builder_mode_json_items_decoder_is_not_streamed_or_spooled():
     )
     assert decoder.is_stream_response() is False
     assert decoder.spools_response() is False
+
+
+def test_default_paginator_enables_remainder_capture_on_shared_decoder():
+    decoder = _json_items_decoder_component()
+    _build_paginator(decoder)
+    assert decoder._capture_document_remainder is True
+
+    decoder_without_paginator = _json_items_decoder_component()
+    assert decoder_without_paginator._capture_document_remainder is False

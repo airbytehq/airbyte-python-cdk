@@ -271,6 +271,7 @@ class CompositeRawDecoder(Decoder):
         stream_response: bool = True,
         parsers_by_header: PARSERS_BY_HEADER_TYPE = None,
         spool_response: bool = False,
+        capture_document_remainder: bool = False,
     ) -> None:
         # since we moved from using `dataclass` to `__init__` method,
         # we need to keep using the `parser` to be able to resolve the depenencies
@@ -280,6 +281,7 @@ class CompositeRawDecoder(Decoder):
         self._parsers_by_header = parsers_by_header if parsers_by_header else {}
         self._stream_response = stream_response
         self._spool_response = spool_response
+        self._capture_document_remainder = capture_document_remainder
 
     @classmethod
     def by_headers(
@@ -305,6 +307,10 @@ class CompositeRawDecoder(Decoder):
                 parsers_by_header[header] = {header_value: parser for header_value in header_values}
         return cls(fallback_parser, stream_response, parsers_by_header)
 
+    def enable_document_remainder_capture(self) -> None:
+        """Opt in to capturing the non-items document fields for pagination."""
+        self._capture_document_remainder = True
+
     def is_stream_response(self) -> bool:
         return self._stream_response
 
@@ -325,7 +331,8 @@ class CompositeRawDecoder(Decoder):
 
         parse_kwargs = (
             {"on_document_remainder": on_document_remainder}
-            if _parser_supports_document_remainder(parser)
+            if self._capture_document_remainder
+            and _parser_supports_document_remainder(parser)
             else {}
         )
         if self.is_stream_response():
