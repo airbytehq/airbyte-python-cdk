@@ -195,3 +195,42 @@ def test_get_new_session_token(requests_mock):
         config["session_token_response_key"],
     )
     assert session_token == "some session id"
+
+
+def test_get_new_session_token_applies_default_timeout(mocker):
+    response = mocker.Mock(ok=True)
+    response.json.return_value = {"id": "some session id"}
+    mocked_post = mocker.patch(
+        "airbyte_cdk.sources.declarative.auth.token.requests.post", return_value=response
+    )
+
+    get_new_session_token(
+        "https://airbyte.example/session-timeout-test",
+        username,
+        password,
+        session_token_response_key,
+    )
+
+    assert mocked_post.call_args.kwargs["timeout"] == (30.0, 300.0)
+
+
+def test_is_valid_session_token_applies_default_timeout(mocker):
+    response = mocker.Mock()
+    mocked_get = mocker.patch(
+        "airbyte_cdk.sources.declarative.auth.token.requests.get", return_value=response
+    )
+    authenticator = LegacySessionTokenAuthenticator(
+        config=config,
+        parameters=parameters,
+        api_url=input_instance_api_url,
+        username=input_username,
+        password=input_password,
+        session_token=input_session_token,
+        header=header,
+        session_token_response_key=session_token_response_key,
+        login_url=login_url,
+        validate_session_url=validate_session_url,
+    )
+
+    assert authenticator.is_valid_session_token()
+    assert mocked_get.call_args.kwargs["timeout"] == (30.0, 300.0)

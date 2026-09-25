@@ -3,7 +3,9 @@
 #
 
 import asyncio
+import time
 from datetime import datetime
+from io import BytesIO
 from unittest import mock
 from unittest.mock import MagicMock, call, mock_open, patch
 
@@ -22,6 +24,7 @@ from airbyte_cdk.sources.file_based.config.unstructured_format import (
 from airbyte_cdk.sources.file_based.exceptions import RecordParseError
 from airbyte_cdk.sources.file_based.file_types import UnstructuredParser
 from airbyte_cdk.sources.file_based.remote_file import RemoteFile
+from airbyte_cdk.sources.streams.http.request_timeout import ENV_HTTP_CONNECT_TIMEOUT_SECONDS
 from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 
 FILE_URI = "path/to/file.xyz"
@@ -671,6 +674,70 @@ def test_parse_records_remotely(
         )
 
     if expected_requests:
-        requests_mock.post.assert_has_calls(expected_requests)
+        requests_mock.post.assert_has_calls(
+            [
+                call(
+                    *expected_call.args,
+                    **{**expected_call.kwargs, "timeout": (30.0, None)},
+                )
+                if expected_call.args
+                else expected_call
+                for expected_call in expected_requests
+            ]
+        )
     else:
         requests_mock.post.assert_not_called()
+
+
+def test_read_file_remotely_applies_connect_only_timeout(mocker):
+    response = mocker.Mock(status_code=200)
+    response.json.return_value = []
+    mocked_post = mocker.patch(
+        "airbyte_cdk.sources.file_based.file_types.unstructured_parser.requests.post",
+        return_value=response,
+    )
+    format_config = APIProcessingConfigModel(mode="api", api_key="test")
+
+    UnstructuredParser()._read_file_remotely(
+        MagicMock(), format_config, FileType.PDF, "auto", MagicMock()
+    )
+
+    assert mocked_post.call_args.kwargs["timeout"] == (30.0, None)
+
+
+def test_read_file_remotely_connect_timeout_honours_env_var(mocker, monkeypatch):
+    response = mocker.Mock(status_code=200)
+    response.json.return_value = []
+    mocked_post = mocker.patch(
+        "airbyte_cdk.sources.file_based.file_types.unstructured_parser.requests.post",
+        return_value=response,
+    )
+    monkeypatch.setenv(ENV_HTTP_CONNECT_TIMEOUT_SECONDS, "5")
+    format_config = APIProcessingConfigModel(mode="api", api_key="test")
+
+    UnstructuredParser()._read_file_remotely(
+        MagicMock(), format_config, FileType.PDF, "auto", MagicMock()
+    )
+
+    assert mocked_post.call_args.kwargs["timeout"] == (5.0, None)
+
+
+def test_read_file_remotely_hanging_connect_fails_fast(monkeypatch):
+    monkeypatch.setenv(ENV_HTTP_CONNECT_TIMEOUT_SECONDS, "0.5")
+    format_config = APIProcessingConfigModel(
+        mode="api",
+        api_key="test",
+        api_url="http://10.255.255.1:9",
+    )
+
+    started_at = time.monotonic()
+    try:
+        UnstructuredParser()._read_file_remotely(
+            BytesIO(b"document"), format_config, FileType.PDF, "auto", MagicMock()
+        )
+    except requests.exceptions.ConnectTimeout:
+        assert time.monotonic() - started_at < 5
+    except requests.exceptions.ConnectionError as exc:
+        pytest.skip(f"Sandbox refused the connection before timeout: {exc}")
+    else:
+        pytest.fail("Expected the non-routable connection to fail")

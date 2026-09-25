@@ -36,6 +36,7 @@ from airbyte_cdk.sources.file_based.file_based_stream_reader import (
 from airbyte_cdk.sources.file_based.file_types.file_type_parser import FileTypeParser
 from airbyte_cdk.sources.file_based.remote_file import RemoteFile
 from airbyte_cdk.sources.file_based.schema_helpers import SchemaType
+from airbyte_cdk.sources.streams.http.request_timeout import connect_only_request_timeout
 from airbyte_cdk.utils import is_cloud_environment
 from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 
@@ -337,8 +338,17 @@ class UnstructuredParser(FileTypeParser):
 
         file_data = {"files": ("filename", file_handle, FILETYPE_TO_MIMETYPE[filetype])}
 
+        # The hosted partition endpoint is synchronous: the response arrives only once the whole
+        # document has been processed, so a read timeout would be a limit on document processing
+        # time (hi_res runs at roughly seconds per page). Only the connect phase is bounded.
+        # A ReadTimeout is also a RequestException, which the max_tries=5 backoff wrapper around
+        # this call would retry by re-uploading the whole document up to five times.
         response = requests.post(
-            f"{format.api_url}/general/v0/general", headers=headers, data=data, files=file_data
+            f"{format.api_url}/general/v0/general",
+            headers=headers,
+            data=data,
+            files=file_data,
+            timeout=connect_only_request_timeout(),
         )
 
         if response.status_code == 422:
