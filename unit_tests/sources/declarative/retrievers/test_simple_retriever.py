@@ -2578,7 +2578,10 @@ def test_given_max_split_depth_exceeded_when_read_records_then_raise_terminal_er
     assert "Lower time_window so that each request covers less data." in exception.value.message
     # the safety net is expected to be rare, so it's logged separately from the exception (per review feedback
     # to make it visible for later review even if the trace message's internal_message isn't surfaced)
-    assert f"hit the maximum request window split depth ({_MAX_REQUEST_WINDOW_SPLIT_DEPTH})" in caplog.text
+    assert (
+        f"hit the maximum request window split depth ({_MAX_REQUEST_WINDOW_SPLIT_DEPTH})"
+        in caplog.text
+    )
     # the single leftmost recursion path is explored to the full depth (one split_request_window call per
     # depth, from 0 up to the cap) before the cap stops the next call - the exception then propagates
     # immediately, so sibling branches at shallower depths are never explored
