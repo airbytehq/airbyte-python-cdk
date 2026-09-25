@@ -106,12 +106,16 @@ from airbyte_cdk.utils.airbyte_secrets_utils import add_to_secrets, get_secrets
 from airbyte_cdk.utils.stream_status_utils import as_airbyte_message
 from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 
-# Decoder types whose factory-built component streams the response body; the verified set is
-# the create_* methods in model_to_component_factory that pass stream_response=True outside of
-# connector-builder mode (CsvDecoder, JsonlDecoder, JsonItemsDecoder, GzipDecoder).
-_STREAMING_DECODER_TYPES = frozenset(
-    {"CsvDecoder", "JsonlDecoder", "JsonItemsDecoder", "GzipDecoder"}
-)
+
+def _decoder_spools_to_disk(decoder_definition: Optional[Dict[str, Any]]) -> bool:
+    """Whether a resolved decoder manifest dict enables spool_to_disk (GzipDecoder recurses)."""
+    if not isinstance(decoder_definition, dict):
+        return False
+    if decoder_definition.get("type") == "JsonItemsDecoder":
+        return bool(decoder_definition.get("spool_to_disk"))
+    if decoder_definition.get("type") == "GzipDecoder":
+        return _decoder_spools_to_disk(decoder_definition.get("decoder"))
+    return False
 
 
 @dataclass
@@ -539,9 +543,8 @@ class ConcurrentDeclarativeSource(Source):
 
         def _set_cache_if_not_disabled(retriever: Dict[str, Any]) -> None:
             """Set use_cache to True only if not explicitly disabled."""
-            decoder_type = (retriever.get("decoder") or {}).get("type")
-            if decoder_type in _STREAMING_DECODER_TYPES:
-                # requests_cache consumes the whole body, leaving nothing to stream
+            if _decoder_spools_to_disk(retriever.get("decoder")):
+                # requests_cache consumes the whole body, leaving nothing to spool
                 return
             requester = retriever["requester"]
             if requester.get("use_cache") is not False:

@@ -6367,8 +6367,44 @@ def _stream_uses_cache(stream) -> bool:
     return stream._stream_partition_generator._partition_factory._retriever.requester.use_cache
 
 
-def test_parent_stream_with_streaming_decoder_does_not_get_cache():
-    manifest = _parent_substream_manifest({"type": "JsonItemsDecoder", "items_path": "parents"})
+@pytest.mark.parametrize(
+    "decoder_definition",
+    [
+        {"type": "JsonItemsDecoder", "items_path": "parents"},
+        {"type": "JsonlDecoder"},
+        {"type": "CsvDecoder"},
+        {"type": "GzipDecoder", "decoder": {"type": "JsonlDecoder"}},
+    ],
+    ids=["json_items", "jsonl", "csv", "gzip_jsonl"],
+)
+def test_parent_stream_with_streaming_decoder_still_gets_cache(decoder_definition):
+    manifest = _parent_substream_manifest(decoder_definition)
+    source = ConcurrentDeclarativeSource(
+        source_config=manifest, config={}, catalog=create_catalog("parents"), state=None
+    )
+    streams = source.streams({})
+    assert _stream_uses_cache(streams[0])
+    parent = streams[1]._stream_partition_generator._stream_slicer.parent_stream_configs[0].stream
+    assert _stream_uses_cache(parent)
+
+
+@pytest.mark.parametrize(
+    "decoder_definition",
+    [
+        {"type": "JsonItemsDecoder", "items_path": "parents", "spool_to_disk": True},
+        {
+            "type": "GzipDecoder",
+            "decoder": {
+                "type": "JsonItemsDecoder",
+                "items_path": "parents",
+                "spool_to_disk": True,
+            },
+        },
+    ],
+    ids=["json_items_spool", "gzip_json_items_spool"],
+)
+def test_parent_stream_with_spool_to_disk_decoder_does_not_get_cache(decoder_definition):
+    manifest = _parent_substream_manifest(decoder_definition)
     source = ConcurrentDeclarativeSource(
         source_config=manifest, config={}, catalog=create_catalog("parents"), state=None
     )
@@ -6389,9 +6425,9 @@ def test_parent_stream_with_json_decoder_still_gets_cache():
     assert _stream_uses_cache(parent)
 
 
-def test_parent_stream_with_explicit_use_cache_and_streaming_decoder_raises():
+def test_parent_stream_with_explicit_use_cache_and_spooling_decoder_raises():
     manifest = _parent_substream_manifest(
-        {"type": "JsonItemsDecoder", "items_path": "parents"},
+        {"type": "JsonItemsDecoder", "items_path": "parents", "spool_to_disk": True},
         parent_requester_extra={"use_cache": True},
     )
     source = ConcurrentDeclarativeSource(
@@ -6442,7 +6478,11 @@ def test_state_delegating_parent_cache_only_applies_to_non_streaming_branch():
                     },
                 },
                 "record_selector": {"extractor": {"type": "DpathExtractor", "field_path": []}},
-                "decoder": {"type": "JsonItemsDecoder", "items_path": "parents"},
+                "decoder": {
+                    "type": "JsonItemsDecoder",
+                    "items_path": "parents",
+                    "spool_to_disk": True,
+                },
             },
             "incremental_sync": {
                 "type": "DatetimeBasedCursor",
