@@ -20,3 +20,14 @@ def default_request_timeout() -> Tuple[float, float]:
     connect = float(os.getenv(ENV_HTTP_CONNECT_TIMEOUT_SECONDS, DEFAULT_CONNECT_TIMEOUT_SECONDS))
     read = float(os.getenv(ENV_HTTP_READ_TIMEOUT_SECONDS, DEFAULT_READ_TIMEOUT_SECONDS))
     return (connect, read)
+
+
+def connect_only_request_timeout() -> Tuple[float, None]:
+    """Returns a `(connect, None)` timeout: the connection attempt is bounded, the read is not.
+
+    For endpoints whose response time is the server-side processing time of the request
+    (e.g. synchronous document partitioning), a read timeout would be a processing-time
+    limit rather than a liveness check.
+    """
+    connect, _ = default_request_timeout()
+    return (connect, None)
