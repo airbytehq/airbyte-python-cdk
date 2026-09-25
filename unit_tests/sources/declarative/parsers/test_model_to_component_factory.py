@@ -8039,8 +8039,6 @@ def _json_items_spooling_decoder():
 
 
 def test_spool_to_disk_with_body_filters_logs_warning(caplog):
-    import logging
-
     with caplog.at_level(logging.WARNING):
         _build_requester_from_manifest(_SPOOL_BODY_FILTER_MANIFEST, _json_items_spooling_decoder())
     assert any(
@@ -8049,8 +8047,6 @@ def test_spool_to_disk_with_body_filters_logs_warning(caplog):
 
 
 def test_no_spool_to_disk_no_body_filter_warning(caplog):
-    import logging
-
     with caplog.at_level(logging.WARNING):
         _build_requester_from_manifest(_SPOOL_BODY_FILTER_MANIFEST, _json_items_decoder_component())
     assert not any("spool_to_disk" in r.message for r in caplog.records)
