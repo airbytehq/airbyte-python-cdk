@@ -89,6 +89,7 @@ class SchemaTypeIdentifier:
     type_pointer: Optional[List[Union[InterpolatedString, str]]] = None
     types_mapping: Optional[List[TypesMap]] = None
     schema_pointer: Optional[List[Union[InterpolatedString, str]]] = None
+    default_type: Optional[str] = None
 
     def __post_init__(self, parameters: Mapping[str, Any]) -> None:
         self.schema_pointer = (
@@ -215,6 +216,7 @@ class DynamicSchemaLoader(SchemaLoader):
             else "string"
         )
         mapped_field_type = self._replace_type_if_not_valid(raw_field_type, raw_schema)
+        type_was_mapped = mapped_field_type is not raw_field_type
         if (
             isinstance(mapped_field_type, list)
             and len(mapped_field_type) == 2
@@ -225,7 +227,9 @@ class DynamicSchemaLoader(SchemaLoader):
             return {"oneOf": [first_type, second_type]}
 
         elif isinstance(mapped_field_type, str):
-            return self._get_airbyte_type(mapped_field_type)
+            return self._get_airbyte_type(
+                mapped_field_type, allow_default_fallback=not type_was_mapped
+            )
 
         elif isinstance(mapped_field_type, ComplexFieldType):
             return self._resolve_complex_type(mapped_field_type)
@@ -269,12 +273,19 @@ class DynamicSchemaLoader(SchemaLoader):
                     return types_map.target_type
         return field_type
 
-    @staticmethod
-    def _get_airbyte_type(field_type: str) -> MutableMapping[str, Any]:
+    def _get_airbyte_type(
+        self, field_type: str, *, allow_default_fallback: bool = False
+    ) -> MutableMapping[str, Any]:
         """
         Maps a field type to its corresponding Airbyte type definition.
+        Falls back to `default_type` when `allow_default_fallback` is True and `field_type` is not recognized.
         """
         if field_type not in AIRBYTE_DATA_TYPES:
+            default_type = self.schema_type_identifier.default_type
+            if allow_default_fallback and default_type is not None:
+                if default_type not in AIRBYTE_DATA_TYPES:
+                    raise ValueError(f"Invalid default Airbyte data type: {default_type}")
+                return deepcopy(AIRBYTE_DATA_TYPES[default_type])
             raise ValueError(f"Invalid Airbyte data type: {field_type}")
 
         return deepcopy(AIRBYTE_DATA_TYPES[field_type])
