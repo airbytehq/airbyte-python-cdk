@@ -71,6 +71,24 @@ def timestamp(dt: Union[float, str]) -> Union[int, float]:
         return str_to_datetime(dt).astimezone(pytz.utc).timestamp()
 
 
+def timestamp_to_datetime(ts: Union[int, float, str]) -> datetime.datetime:
+    """
+    Converts a Unix timestamp to a datetime object with UTC timezone.
+
+    Usage:
+    "{{ timestamp_to_datetime(1658505815) }}"
+
+    :param ts: Unix timestamp (in seconds) to convert to datetime
+    :return: datetime object in UTC timezone
+    """
+    try:
+        ts_value = float(ts)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"Invalid timestamp value: {ts}") from exc
+
+    return datetime.datetime.fromtimestamp(ts_value, tz=datetime.timezone.utc)
+
+
 def str_to_datetime(s: str) -> datetime.datetime:
     """
     Converts a string to a datetime object with UTC timezone
@@ -222,6 +240,7 @@ _macros_list = [
     now_utc,
     today_utc,
     timestamp,
+    timestamp_to_datetime,
     max,
     min,
     day_delta,
