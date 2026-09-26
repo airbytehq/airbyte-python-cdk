@@ -1,6 +1,7 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
+import logging
 import time
 from queue import Queue
 
@@ -11,6 +12,8 @@ from airbyte_cdk.sources.concurrent_source.stream_thread_exception import Stream
 from airbyte_cdk.sources.concurrent_source.thread_pool_manager import ThreadPoolManager
 from airbyte_cdk.sources.streams.concurrent.abstract_stream import AbstractStream
 from airbyte_cdk.sources.streams.concurrent.partitions.types import QueueItem
+
+LOGGER = logging.getLogger(f"airbyte.PartitionEnqueuer")
 
 
 class PartitionEnqueuer:
@@ -42,7 +45,9 @@ class PartitionEnqueuer:
 
         This method is meant to be called in a separate thread.
         """
+
         try:
+            LOGGER.info(f"Starting partition generation for stream {stream.name}")
             for partition in stream.generate_partitions():
                 # Adding partitions to the queue generates futures. To avoid having too many futures, we throttle here. We understand that
                 # we might add more futures than the limit by throttling in the threads while it is the main thread that actual adds the
@@ -58,7 +63,10 @@ class PartitionEnqueuer:
                 while self._thread_pool_manager.prune_to_validate_has_reached_futures_limit():
                     time.sleep(self._sleep_time_in_seconds)
                 self._queue.put(partition)
+
+            LOGGER.info(f"Partition generation complete for stream {stream.name}")
             self._queue.put(PartitionGenerationCompletedSentinel(stream))
         except Exception as e:
+            LOGGER.info(f"Error during partition generation for stream {stream.name}")
             self._queue.put(StreamThreadException(e, stream.name))
             self._queue.put(PartitionGenerationCompletedSentinel(stream))
