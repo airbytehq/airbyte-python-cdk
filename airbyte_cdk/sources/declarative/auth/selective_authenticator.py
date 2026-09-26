@@ -7,7 +7,9 @@ from typing import Any, List, Mapping
 
 import dpath
 
+from airbyte_cdk.models import FailureType
 from airbyte_cdk.sources.declarative.auth.declarative_authenticator import DeclarativeAuthenticator
+from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 
 
 @dataclass
@@ -27,6 +29,7 @@ class SelectiveAuthenticator(DeclarativeAuthenticator):
         *arg: Any,
         **kwargs: Any,
     ) -> DeclarativeAuthenticator:
+        dotted_path = ".".join(authenticator_selection_path)
         try:
             selected_key = str(
                 dpath.get(
@@ -35,11 +38,16 @@ class SelectiveAuthenticator(DeclarativeAuthenticator):
                 )
             )
         except KeyError as err:
-            raise ValueError(
-                "The path from `authenticator_selection_path` is not found in the config."
+            raise AirbyteTracedException(
+                message=f'Required field "{dotted_path}" is missing from connector configuration.',
+                internal_message=f"SelectiveAuthenticator could not find the path {authenticator_selection_path} in the config. Available top-level config keys: {list(config.keys())}",
+                failure_type=FailureType.config_error,
             ) from err
 
-        try:
-            return authenticators[selected_key]
-        except KeyError as err:
-            raise ValueError(f"The authenticator `{selected_key}` is not found.") from err
+        if selected_key not in authenticators:
+            raise AirbyteTracedException(
+                message=f'Configuration field "{dotted_path}" contains unrecognized value "{selected_key}".',
+                internal_message=f'SelectiveAuthenticator received key "{selected_key}" but available authenticators are: {list(authenticators.keys())}',
+                failure_type=FailureType.config_error,
+            )
+        return authenticators[selected_key]
