@@ -1210,7 +1210,7 @@ class ModelToComponentFactory:
         )
 
     def create_session_token_authenticator(
-        self, model: SessionTokenAuthenticatorModel, config: Config, name: str, **kwargs: Any
+        self, model: SessionTokenAuthenticatorModel, config: Config, *, name: str, **kwargs: Any
     ) -> Union[ApiKeyAuthenticator, BearerAuthenticator]:
         self._reject_reduce_page_size_action(
             model.login_requester, f"`login_requester` of the SessionTokenAuthenticator of {name}"
