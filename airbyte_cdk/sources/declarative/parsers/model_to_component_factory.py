@@ -2452,6 +2452,10 @@ class ModelToComponentFactory:
     ) -> Union[DefaultPaginator, PaginatorTestReadDecorator]:
         if decoder:
             if self._is_supported_decoder_for_pagination(decoder):
+                if isinstance(decoder, CompositeRawDecoder):
+                    # the retriever shares this decoder instance with the record selector,
+                    # so opting in here makes decode() also capture the remainder
+                    decoder.enable_document_remainder_capture()
                 decoder_to_use = PaginationDecoderDecorator(decoder=decoder)
             else:
                 raise ValueError(self._UNSUPPORTED_DECODER_ERROR.format(decoder_type=type(decoder)))
@@ -2833,7 +2837,6 @@ class ModelToComponentFactory:
         return CompositeRawDecoder(
             parser=ModelToComponentFactory._get_parser(model, config),
             stream_response=False if self._emit_connector_builder_messages else True,
-            spool_response=bool(model.spool_to_disk) and not self._emit_connector_builder_messages,
         )
 
     def create_jsonl_decoder(
@@ -2842,7 +2845,6 @@ class ModelToComponentFactory:
         return CompositeRawDecoder(
             parser=ModelToComponentFactory._get_parser(model, config),
             stream_response=False if self._emit_connector_builder_messages else True,
-            spool_response=bool(model.spool_to_disk) and not self._emit_connector_builder_messages,
         )
 
     def create_json_items_decoder(
@@ -4921,8 +4923,8 @@ class ModelToComponentFactory:
 
     _UNSUPPORTED_DECODER_ERROR = (
         "Specified decoder of {decoder_type} is not supported for pagination."
-        "Please set as `JsonDecoder`, `XmlDecoder`, or a `CompositeRawDecoder` with an inner_parser of `JsonParser` or `GzipParser` instead."
-        "If using `GzipParser`, please ensure that the lowest level inner_parser is a `JsonParser`."
+        "Please set as `JsonDecoder`, `XmlDecoder`, or a `CompositeRawDecoder` with an inner_parser of `JsonParser`, `JsonItemsParser`, or `GzipParser` instead."
+        "If using `GzipParser`, please ensure that the lowest level inner_parser is a `JsonParser` or `JsonItemsParser`."
     )
 
     def _is_supported_decoder_for_pagination(self, decoder: Decoder) -> bool:
@@ -4934,12 +4936,11 @@ class ModelToComponentFactory:
             return False
 
     def _is_supported_parser_for_pagination(self, parser: Parser) -> bool:
-        if isinstance(parser, JsonParser):
+        if isinstance(parser, (JsonParser, JsonItemsParser)):
             return True
         elif isinstance(parser, GzipParser):
-            return isinstance(parser.inner_parser, JsonParser)
-        else:
-            return False
+            return isinstance(parser.inner_parser, (JsonParser, JsonItemsParser))
+        return False
 
     def create_http_api_budget(
         self, model: HTTPAPIBudgetModel, config: Config, **kwargs: Any
