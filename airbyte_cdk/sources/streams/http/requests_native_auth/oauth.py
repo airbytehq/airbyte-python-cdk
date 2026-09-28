@@ -2,7 +2,8 @@
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
 
-from datetime import timedelta
+from contextlib import suppress
+from datetime import datetime, timedelta
 from typing import Any, List, Mapping, Optional, Sequence, Tuple, Union
 
 import dpath
@@ -126,6 +127,10 @@ class Oauth2Authenticator(AbstractOauth2Authenticator):
         return self._token_expiry_date
 
     def set_token_expiry_date(self, value: AirbyteDateTime) -> None:
+        # Overrides of `refresh_access_token` written before 6.45.5 return the raw `expires_in`.
+        if not isinstance(value, datetime):
+            with suppress(ValueError, OverflowError):
+                value = self._parse_token_expiration_date(value)
         self._token_expiry_date = value
 
     @property
@@ -316,6 +321,15 @@ class SingleUseRefreshTokenOauth2Authenticator(Oauth2Authenticator):
         Args:
             new_token_expiry_date (AirbyteDateTime): The new expiry date for the token.
         """
+        if not (
+            isinstance(new_token_expiry_date, datetime)
+            or self.token_expiry_is_time_of_expiration
+            or self.token_expiry_date_format
+        ):
+            # Overrides of `refresh_access_token` written before 6.45.5 return the raw `expires_in`
+            # in seconds. Other values are stored as-is and parsed on read.
+            with suppress(ValueError, OverflowError):
+                new_token_expiry_date = self._parse_token_expiration_date(new_token_expiry_date)
         self._set_config_value_by_path(
             self._token_expiry_date_config_path, str(new_token_expiry_date)
         )
