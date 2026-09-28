@@ -487,8 +487,16 @@ def _async_schema_loader_manifest(download_decoder, schema_type_identifier, part
             },
             id="csv_download_header_as_schema",
         ),
+        pytest.param(
+            None,
+            {"schema_pointer": ["fields"], "key_pointer": ["name"], "type_pointer": ["type"]},
+            "",
+            {},
+            id="empty_download",
+        ),
     ],
 )
+@patch.object(AsyncJobOrchestrator, "_WAIT_TIME_BETWEEN_STATUS_UPDATE_IN_SECONDS", 0)
 def test_dynamic_schema_loader_with_async_retriever(
     download_decoder, schema_type_identifier, download_body, expected_properties
 ):
