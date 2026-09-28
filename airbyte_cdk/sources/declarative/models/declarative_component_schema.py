@@ -846,6 +846,11 @@ class JsonItemsDecoder(BaseModel):
         description="The character encoding of the JSON data. Defaults to UTF-8.",
         title="Encoding",
     )
+    spool_to_disk: Optional[bool] = Field(
+        False,
+        description="Download the whole response body to an anonymous temporary file before parsing it, instead of parsing straight from the network socket. The download happens inside the request retry logic, so a connection that breaks mid-body is retried exactly like a failed request and no record of the page is emitted before the full page is on disk. Costs the decoded size of one page in temporary disk per in-flight request; memory stays bounded. Recommended for very large pages consumed slowly.",
+        title="Spool Response To Disk",
+    )
 
 
 class JsonlDecoder(BaseModel):

@@ -6299,3 +6299,249 @@ def test_dynamic_stream_discovery_http_requests_use_api_budget():
         "HttpComponentsResolver's requester should have api_budget set during dynamic stream "
         "discovery, but it was None. This means discovery HTTP requests are not rate-limited."
     )
+
+
+def _parent_substream_manifest(decoder_definition, parent_requester_extra=None):
+    parent_retriever = {
+        "requester": {
+            "path": "parents",
+            "authenticator": {
+                "type": "BasicHttpAuthenticator",
+                "username": "{{ config['api_key'] }}",
+            },
+            **(parent_requester_extra or {}),
+        },
+        "record_selector": {"extractor": {"type": "DpathExtractor", "field_path": []}},
+    }
+    if decoder_definition is not None:
+        parent_retriever["decoder"] = decoder_definition
+    parent_stream = {
+        "type": "DeclarativeStream",
+        "$parameters": {
+            "name": "parents",
+            "primary_key": "id",
+            "url_base": "https://example.com/v1/",
+        },
+        "schema_loader": {"type": "InlineSchemaLoader", "schema": {}},
+        "retriever": parent_retriever,
+    }
+    child_stream = {
+        "type": "DeclarativeStream",
+        "name": "children",
+        "$parameters": {
+            "name": "children",
+            "primary_key": "id",
+            "url_base": "https://example.com/v1/",
+        },
+        "schema_loader": {"type": "InlineSchemaLoader", "schema": {}},
+        "retriever": {
+            "requester": {
+                "path": "children",
+                "authenticator": {
+                    "type": "BasicHttpAuthenticator",
+                    "username": "{{ config['api_key'] }}",
+                },
+            },
+            "record_selector": {"extractor": {"type": "DpathExtractor", "field_path": []}},
+            "partition_router": {
+                "type": "SubstreamPartitionRouter",
+                "parent_stream_configs": [
+                    {
+                        "parent_key": "id",
+                        "partition_field": "parent_id",
+                        "stream": deepcopy(parent_stream),
+                    }
+                ],
+            },
+        },
+    }
+    return {
+        "version": "0.29.3",
+        "definitions": {},
+        "streams": [deepcopy(parent_stream), child_stream],
+        "check": {"type": "CheckStream", "stream_names": ["parents"]},
+    }
+
+
+def _stream_uses_cache(stream) -> bool:
+    return stream._stream_partition_generator._partition_factory._retriever.requester.use_cache
+
+
+@pytest.mark.parametrize(
+    "decoder_definition",
+    [
+        {"type": "JsonItemsDecoder", "items_path": "parents"},
+        {"type": "JsonlDecoder"},
+        {"type": "CsvDecoder"},
+        {"type": "GzipDecoder", "decoder": {"type": "JsonlDecoder"}},
+    ],
+    ids=["json_items", "jsonl", "csv", "gzip_jsonl"],
+)
+def test_parent_stream_with_streaming_decoder_still_gets_cache(decoder_definition):
+    manifest = _parent_substream_manifest(decoder_definition)
+    source = ConcurrentDeclarativeSource(
+        source_config=manifest, config={}, catalog=create_catalog("parents"), state=None
+    )
+    streams = source.streams({})
+    assert _stream_uses_cache(streams[0])
+    parent = streams[1]._stream_partition_generator._stream_slicer.parent_stream_configs[0].stream
+    assert _stream_uses_cache(parent)
+
+
+@pytest.mark.parametrize(
+    "decoder_definition",
+    [
+        {"type": "JsonItemsDecoder", "items_path": "parents", "spool_to_disk": True},
+        {
+            "type": "GzipDecoder",
+            "decoder": {
+                "type": "JsonItemsDecoder",
+                "items_path": "parents",
+                "spool_to_disk": True,
+            },
+        },
+    ],
+    ids=["json_items_spool", "gzip_json_items_spool"],
+)
+def test_parent_stream_with_spool_to_disk_decoder_does_not_get_cache(decoder_definition):
+    manifest = _parent_substream_manifest(decoder_definition)
+    source = ConcurrentDeclarativeSource(
+        source_config=manifest, config={}, catalog=create_catalog("parents"), state=None
+    )
+    streams = source.streams({})
+    assert not _stream_uses_cache(streams[0])
+    parent = streams[1]._stream_partition_generator._stream_slicer.parent_stream_configs[0].stream
+    assert not _stream_uses_cache(parent)
+
+
+def test_parent_stream_with_json_decoder_still_gets_cache():
+    manifest = _parent_substream_manifest({"type": "JsonDecoder"})
+    source = ConcurrentDeclarativeSource(
+        source_config=manifest, config={}, catalog=create_catalog("parents"), state=None
+    )
+    streams = source.streams({})
+    assert _stream_uses_cache(streams[0])
+    parent = streams[1]._stream_partition_generator._stream_slicer.parent_stream_configs[0].stream
+    assert _stream_uses_cache(parent)
+
+
+def test_parent_stream_with_explicit_use_cache_and_spooling_decoder_raises():
+    manifest = _parent_substream_manifest(
+        {"type": "JsonItemsDecoder", "items_path": "parents", "spool_to_disk": True},
+        parent_requester_extra={"use_cache": True},
+    )
+    source = ConcurrentDeclarativeSource(
+        source_config=manifest, config={}, catalog=create_catalog("parents"), state=None
+    )
+    with pytest.raises(ValueError, match="use_cache.*cannot be combined"):
+        source.streams({})
+
+
+def test_state_delegating_parent_cache_only_applies_to_non_streaming_branch():
+    parent_stream = {
+        "type": "StateDelegatingStream",
+        "name": "delegating_parent",
+        "full_refresh_stream": {
+            "type": "DeclarativeStream",
+            "$parameters": {
+                "name": "delegating_parent",
+                "primary_key": "id",
+                "url_base": "https://example.com/v1/",
+            },
+            "schema_loader": {"type": "InlineSchemaLoader", "schema": {}},
+            "retriever": {
+                "requester": {
+                    "path": "parents",
+                    "authenticator": {
+                        "type": "BasicHttpAuthenticator",
+                        "username": "{{ config['api_key'] }}",
+                    },
+                },
+                "record_selector": {"extractor": {"type": "DpathExtractor", "field_path": []}},
+                "decoder": {"type": "JsonDecoder"},
+            },
+        },
+        "incremental_stream": {
+            "type": "DeclarativeStream",
+            "$parameters": {
+                "name": "delegating_parent",
+                "primary_key": "id",
+                "url_base": "https://example.com/v1/",
+            },
+            "schema_loader": {"type": "InlineSchemaLoader", "schema": {}},
+            "retriever": {
+                "requester": {
+                    "path": "parents/incremental",
+                    "authenticator": {
+                        "type": "BasicHttpAuthenticator",
+                        "username": "{{ config['api_key'] }}",
+                    },
+                },
+                "record_selector": {"extractor": {"type": "DpathExtractor", "field_path": []}},
+                "decoder": {
+                    "type": "JsonItemsDecoder",
+                    "items_path": "parents",
+                    "spool_to_disk": True,
+                },
+            },
+            "incremental_sync": {
+                "type": "DatetimeBasedCursor",
+                "cursor_field": "updated_at",
+                "cursor_datetime_formats": ["%s"],
+                "datetime_format": "%s",
+                "start_datetime": {"datetime": "{{ config.get('start_date', '1970-01-01') }}"},
+            },
+        },
+    }
+    child_stream = {
+        "type": "DeclarativeStream",
+        "name": "children",
+        "$parameters": {
+            "name": "children",
+            "primary_key": "id",
+            "url_base": "https://example.com/v1/",
+        },
+        "schema_loader": {"type": "InlineSchemaLoader", "schema": {}},
+        "retriever": {
+            "requester": {
+                "path": "children",
+                "authenticator": {
+                    "type": "BasicHttpAuthenticator",
+                    "username": "{{ config['api_key'] }}",
+                },
+            },
+            "record_selector": {"extractor": {"type": "DpathExtractor", "field_path": []}},
+            "partition_router": {
+                "type": "SubstreamPartitionRouter",
+                "parent_stream_configs": [
+                    {
+                        "parent_key": "id",
+                        "partition_field": "parent_id",
+                        "stream": deepcopy(parent_stream),
+                    }
+                ],
+            },
+        },
+    }
+    manifest = {
+        "version": "0.29.3",
+        "definitions": {},
+        "streams": [deepcopy(parent_stream), child_stream],
+        "check": {"type": "CheckStream", "stream_names": ["delegating_parent"]},
+    }
+    configs = ConcurrentDeclarativeSource._initialize_cache_for_parent_streams(
+        deepcopy(manifest["streams"])
+    )
+    delegating = [c for c in configs if c.get("type") == "StateDelegatingStream"]
+    delegating += [
+        cfg["stream"]
+        for c in configs
+        for r in [c.get("retriever", {}).get("partition_router") or []]
+        for r in (r if isinstance(r, list) else [r])
+        for cfg in r.get("parent_stream_configs", [])
+        if cfg["stream"].get("type") == "StateDelegatingStream"
+    ]
+    assert delegating
+    for cfg in delegating:
+        assert cfg["full_refresh_stream"]["retriever"]["requester"].get("use_cache") is True
+        assert cfg["incremental_stream"]["retriever"]["requester"].get("use_cache") is not True
