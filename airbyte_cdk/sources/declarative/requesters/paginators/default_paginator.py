@@ -16,6 +16,7 @@ from airbyte_cdk.sources.declarative.interpolation.interpolated_string import In
 from airbyte_cdk.sources.declarative.requesters.paginators.paginator import (
     Paginator,
     page_size_override_kwargs,
+    stream_slice_kwargs,
 )
 from airbyte_cdk.sources.declarative.requesters.paginators.strategies.pagination_strategy import (
     PaginationStrategy,
@@ -146,6 +147,7 @@ class DefaultPaginator(Paginator):
         last_record: Optional[Record],
         last_page_token_value: Optional[Any] = None,
         page_size_override: Optional[int] = None,
+        stream_slice: Optional[StreamSlice] = None,
     ) -> Optional[Mapping[str, Any]]:
         next_page_token = self.pagination_strategy.next_page_token(
             response=response,
@@ -153,6 +155,7 @@ class DefaultPaginator(Paginator):
             last_record=last_record,
             last_page_token_value=last_page_token_value,
             **page_size_override_kwargs(page_size_override),
+            **stream_slice_kwargs(self.pagination_strategy.next_page_token, stream_slice),
         )
         if next_page_token:
             return {"next_page_token": next_page_token}
@@ -292,6 +295,7 @@ class PaginatorTestReadDecorator(Paginator):
         last_record: Optional[Record],
         last_page_token_value: Optional[Any] = None,
         page_size_override: Optional[int] = None,
+        stream_slice: Optional[StreamSlice] = None,
     ) -> Optional[Mapping[str, Any]]:
         if self._page_count >= self._maximum_number_of_pages:
             return None
@@ -303,6 +307,7 @@ class PaginatorTestReadDecorator(Paginator):
             last_record,
             last_page_token_value,
             **page_size_override_kwargs(page_size_override),
+            **stream_slice_kwargs(self._decorated.next_page_token, stream_slice),
         )
 
     def path(

@@ -13,7 +13,7 @@ from airbyte_cdk.sources.declarative.interpolation import InterpolatedString
 from airbyte_cdk.sources.declarative.requesters.paginators.strategies.pagination_strategy import (
     PaginationStrategy,
 )
-from airbyte_cdk.sources.types import Config, Record
+from airbyte_cdk.sources.types import Config, Record, StreamSlice
 from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 
 
@@ -56,6 +56,7 @@ class PageIncrement(PaginationStrategy):
         last_record: Optional[Record],
         last_page_token_value: Optional[Any],
         page_size_override: Optional[int] = None,
+        stream_slice: Optional[StreamSlice] = None,
     ) -> Optional[Any]:
         if page_size_override is not None:
             # Reachable only when the factory is bypassed: a manifest naming PageIncrement, and a

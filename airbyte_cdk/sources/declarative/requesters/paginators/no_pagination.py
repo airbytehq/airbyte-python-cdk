@@ -73,5 +73,6 @@ class NoPagination(Paginator):
         last_record: Optional[Record],
         last_page_token_value: Optional[Any],
         page_size_override: Optional[int] = None,
+        stream_slice: Optional[StreamSlice] = None,
     ) -> Optional[Mapping[str, Any]]:
         return {}

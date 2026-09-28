@@ -36,6 +36,7 @@ from airbyte_cdk.sources.declarative.requesters.paginators.no_pagination import 
 from airbyte_cdk.sources.declarative.requesters.paginators.paginator import (
     Paginator,
     page_size_override_kwargs,
+    stream_slice_kwargs,
 )
 from airbyte_cdk.sources.declarative.requesters.query_properties import QueryProperties
 from airbyte_cdk.sources.declarative.requesters.request_options import (
@@ -329,6 +330,7 @@ class SimpleRetriever(Retriever):
         last_record: Optional[Record],
         last_page_token_value: Optional[Any],
         page_size_override: Optional[int] = None,
+        stream_slice: Optional[StreamSlice] = None,
     ) -> Optional[Mapping[str, Any]]:
         """
         Specifies a pagination strategy.
@@ -343,6 +345,7 @@ class SimpleRetriever(Retriever):
             last_record=last_record,
             last_page_token_value=last_page_token_value,
             **page_size_override_kwargs(page_size_override),
+            **stream_slice_kwargs(self._paginator.next_page_token, stream_slice),
         )
 
     def _fetch_next_page(
@@ -518,6 +521,7 @@ class SimpleRetriever(Retriever):
                     last_record=last_record,
                     last_page_token_value=last_page_token_value,
                     **page_size_override_kwargs(page_size_override),
+                    **stream_slice_kwargs(self._next_page_token, stream_slice),
                 )
                 if not next_page_token:
                     break
@@ -629,7 +633,13 @@ class LazySimpleRetriever(SimpleRetriever):
                 last_record = record
                 yield record
 
-            next_page_token = self._next_page_token(response, last_page_size, last_record, None)
+            next_page_token = self._next_page_token(
+                response,
+                last_page_size,
+                last_record,
+                None,
+                **stream_slice_kwargs(self._next_page_token, stream_slice),
+            )
             if next_page_token:
                 yield from self._paginate(
                     next_page_token,
@@ -669,7 +679,11 @@ class LazySimpleRetriever(SimpleRetriever):
                     next_page_token.get("next_page_token") if next_page_token else None
                 )
                 next_page_token = self._next_page_token(
-                    response, last_page_size, last_record, last_page_token_value
+                    response,
+                    last_page_size,
+                    last_record,
+                    last_page_token_value,
+                    **stream_slice_kwargs(self._next_page_token, stream_slice),
                 )
 
                 if not next_page_token:

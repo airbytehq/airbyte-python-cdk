@@ -1442,6 +1442,62 @@ def test_given_reach_pagination_limit_after_two_pages_when_read_records_than_red
     }
 
 
+def test_given_pagination_reset_when_read_records_then_paginator_sees_the_slice_each_page_was_read_for():
+    requester = Mock(spec=Requester)
+    requester.send_request.side_effect = [[{"id": 1}], [{"id": 2}], [{"id": 3}]]
+    record_selector = Mock(spec=HttpSelector)
+    record_selector.select_records.side_effect = [[{"id": 1}], [{"id": 2}], [{"id": 3}]]
+    pagination_tracker = Mock(spec=PaginationTracker)
+    pagination_tracker.has_reached_limit.side_effect = [False, True, False]
+    paginator = _mock_paginator()
+    paginator.get_initial_token.return_value = 1
+    paginator.next_page_token.side_effect = [{"next_page_token": 2}, None]
+    retriever = SimpleRetriever(
+        name=A_STREAM_NAME,
+        primary_key=primary_key,
+        requester=requester,
+        record_selector=record_selector,
+        paginator=paginator,
+        pagination_tracker_factory=lambda: pagination_tracker,
+        parameters={},
+        config={},
+    )
+
+    list(retriever.read_records(A_RECORD_SCHEMA, A_STREAM_SLICE))
+
+    assert [call.kwargs["stream_slice"] for call in paginator.next_page_token.call_args_list] == [
+        A_STREAM_SLICE,
+        pagination_tracker.reduce_slice_range_if_possible.return_value,
+    ]
+
+
+class _PaginatorWithoutStreamSlice(DefaultPaginator):
+    """A paginator whose `next_page_token` predates the `stream_slice` argument."""
+
+    def next_page_token(self, response, last_page_size, last_record, last_page_token_value=None):
+        return None
+
+
+def test_given_a_paginator_without_stream_slice_when_read_records_then_do_not_pass_it():
+    requester = Mock(spec=Requester)
+    requester.send_request.return_value = [{"id": 1}]
+    record_selector = Mock(spec=HttpSelector)
+    record_selector.select_records.return_value = [{"id": 1}]
+    retriever = SimpleRetriever(
+        name=A_STREAM_NAME,
+        primary_key=primary_key,
+        requester=requester,
+        record_selector=record_selector,
+        paginator=_PaginatorWithoutStreamSlice(
+            pagination_strategy=Mock(), config={}, url_base="https://airbyte.io", parameters={}
+        ),
+        parameters={},
+        config={},
+    )
+
+    assert len(list(retriever.read_records(A_RECORD_SCHEMA, A_STREAM_SLICE))) == 1
+
+
 @pytest.fixture(autouse=True)
 def _no_page_size_reduction_backoff(monkeypatch):
     """The reducer waits between reduction retries; taking those waits for real adds seconds to every CI run."""
