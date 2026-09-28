@@ -17,6 +17,7 @@ from airbyte_cdk.models import (
     Type,
 )
 from airbyte_cdk.sources.declarative.expanders.record_expander import (
+    OnNoRecords,
     ParentFieldPath,
     RecordExpander,
 )
@@ -883,6 +884,15 @@ def test_record_path_through_a_non_object_value_raises_a_config_error(blocking_v
 
     assert error.value.failure_type == FailureType.config_error
     assert "['q', 'x']" in error.value.message
+
+
+def test_new_fields_do_not_shift_positional_arguments():
+    """`parent_fields` and `merge_parent` come after the fields that predate them."""
+    expander = RecordExpander(["items"], config, parameters, False, OnNoRecords.emit_parent)
+
+    assert expander.on_no_records == OnNoRecords.emit_parent
+    assert expander.parent_fields is None
+    assert expander.merge_parent is False
 
 
 def _mailchimp_parent():

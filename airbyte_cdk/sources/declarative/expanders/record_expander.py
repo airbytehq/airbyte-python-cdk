@@ -280,13 +280,14 @@ class RecordExpander:
     config: Config
     parameters: InitVar[Mapping[str, Any]]
     remain_original_record: bool = False
-    parent_fields: Optional[Sequence[ParentFieldPath]] = None
-    merge_parent: bool = False
     on_no_records: OnNoRecords = OnNoRecords.skip
     truncation_indicator_path: Optional[Sequence[str]] = None
     truncated_list_retriever: Optional["Retriever"] = None
     message_repository: Optional[MessageRepository] = None
     suppress_incomplete_fetch_warning: bool = False
+    # Appended after the pre-existing fields so positional construction keeps its meaning.
+    parent_fields: Optional[Sequence[ParentFieldPath]] = None
+    merge_parent: bool = False
 
     def __post_init__(self, parameters: Mapping[str, Any]) -> None:
         self._expand_path: list[InterpolatedString] = [
