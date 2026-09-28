@@ -5,15 +5,24 @@
 import threading
 from unittest.mock import MagicMock
 
+import dpath
 import pytest
 
-from airbyte_cdk.models import AirbyteLogMessage, AirbyteMessage, AirbyteRecordMessage, Level, Type
+from airbyte_cdk.models import (
+    AirbyteLogMessage,
+    AirbyteMessage,
+    AirbyteRecordMessage,
+    FailureType,
+    Level,
+    Type,
+)
 from airbyte_cdk.sources.declarative.expanders.record_expander import (
     ParentFieldPath,
     RecordExpander,
 )
 from airbyte_cdk.sources.message import InMemoryMessageRepository
 from airbyte_cdk.sources.types import Record, StreamSlice
+from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 
 config = {}
 parameters = {}
@@ -800,6 +809,82 @@ def test_parent_field_paths_interpolate_config():
     assert child == {"pull_request_url": "https://example.com/7"}
 
 
+@pytest.mark.parametrize(
+    "parent,parent_path",
+    [
+        ({"a": {"b": 1}}, ["a", "b"]),
+        ({"a": {"b": None}}, ["a", "b"]),
+        ({"a": {"b": {"c": [1, 2]}}}, ["a", "b"]),
+        ({"a": [{"b": 1}, {"b": 2}]}, ["a", "1", "b"]),
+        ({"a": [{"b": 1}, {"b": 2}]}, ["a", "01", "b"]),
+        ({"a": [{"b": 1}]}, ["a", "1", "b"]),
+        ({"a": [{"b": 1}, {"b": 2}]}, ["a", "-1", "b"]),
+        ({"a": [{"b": 1}]}, ["a", "-2", "b"]),
+        ({"a": [{"b": 1}]}, ["a", "x"]),
+        ({"a": {"0": "zero"}}, ["a", "0"]),
+        ({"a": "text"}, ["a", "0"]),
+        ({"a": 1}, ["a", "b"]),
+        ({}, ["a"]),
+    ],
+)
+def test_parent_field_lookup_matches_dpath_get(parent, parent_path):
+    """The direct lookup replacing `dpath.get` resolves every path the way `dpath.get` did."""
+    try:
+        expected = dpath.get(parent, parent_path)
+    except (KeyError, ValueError):
+        expected = None
+    child = {}
+
+    _parent_field(parent_path, ["copied"]).copy_onto(parent, child)
+
+    assert child == {"copied": expected}
+
+
+def test_parent_field_lookup_does_not_walk_the_parent(monkeypatch):
+    """Walking the whole parent per item made `parent_fields` quadratic in the list length."""
+
+    def fail(*args, **kwargs):
+        raise AssertionError("the parent was walked")
+
+    monkeypatch.setattr(dpath, "get", fail)
+    expander = RecordExpander(
+        expand_records_from_field=["items"],
+        parent_fields=[_parent_field(["meta", "url"], ["url"])],
+        config=config,
+        parameters=parameters,
+    )
+    parent = {"meta": {"url": "u"}, "items": [{"n": n} for n in range(3)]}
+
+    assert list(expander.expand_record(parent)) == [
+        {"n": 0, "url": "u"},
+        {"n": 1, "url": "u"},
+        {"n": 2, "url": "u"},
+    ]
+
+
+def test_parent_field_paths_interpolate_parameters():
+    parent_field = ParentFieldPath(
+        parent_path=["{{ parameters['from'] }}"],
+        record_path=["{{ parameters['to'] }}"],
+        config=config,
+        parameters={"from": "url", "to": "pull_request_url"},
+    )
+    child = {}
+
+    parent_field.copy_onto({"url": "https://example.com/7"}, child)
+
+    assert child == {"pull_request_url": "https://example.com/7"}
+
+
+@pytest.mark.parametrize("blocking_value", [1, [1]], ids=["scalar", "list"])
+def test_record_path_through_a_non_object_value_raises_a_config_error(blocking_value):
+    with pytest.raises(AirbyteTracedException) as error:
+        _parent_field(["id"], ["q", "x"]).copy_onto({"id": 1}, {"q": blocking_value})
+
+    assert error.value.failure_type == FailureType.config_error
+    assert "['q', 'x']" in error.value.message
+
+
 def _mailchimp_parent():
     return {
         "email_id": "e1",
@@ -877,6 +962,51 @@ def test_merge_parent_removes_lists_nested_in_a_list_of_sections():
     assert list(expander.expand_record(parent)) == [
         {"sections": [{"k": "s0"}, {"k": "s1"}], "n": 1},
         {"sections": [{"k": "s0"}, {"k": "s1"}], "n": 2},
+    ]
+
+
+def test_merge_parent_removes_several_lists_from_the_same_list():
+    """Removal runs right-most first; left to right, the second index would have shifted."""
+    expander = _merge_expander(["sec", "*"])
+    parent = {"id": 1, "sec": [[{"n": 1}], [{"n": 2}], [{"n": 3}]]}
+
+    assert list(expander.expand_record(parent)) == [
+        {"id": 1, "sec": [], "n": 1},
+        {"id": 1, "sec": [], "n": 2},
+        {"id": 1, "sec": [], "n": 3},
+    ]
+
+
+def test_merge_parent_removes_a_list_matched_inside_another_matched_list():
+    """Removal runs deepest first, so the outer list is still there when the inner one goes."""
+    expander = _merge_expander(["**"])
+    parent = {"outer": [{"n": 1}, [{"n": 2}]]}
+    merge_base = expander._without_expanded_list(parent, ["**"])
+
+    assert merge_base == {}
+    assert parent == {"outer": [{"n": 1}, [{"n": 2}]]}
+
+
+def test_merge_parent_keeps_glob_matches_that_are_not_lists():
+    expander = _merge_expander(["sec", "*"])
+    parent = {"sec": [[{"n": 1}], "s", [{"n": 2}]]}
+
+    assert list(expander.expand_record(parent)) == [
+        {"sec": ["s"], "n": 1},
+        {"sec": ["s"], "n": 2},
+    ]
+
+
+def test_parent_fields_write_into_a_merged_nested_value():
+    """Merge first, then the named copy: the copy lands inside the merged object, not over it."""
+    expander = _merge_expander(
+        ["items"],
+        parent_fields=[_parent_field(["id"], ["meta", "parent_id"])],
+    )
+    parent = {"id": 7, "meta": {"a": 1}, "items": [{"n": 1}]}
+
+    assert list(expander.expand_record(parent)) == [
+        {"id": 7, "meta": {"a": 1, "parent_id": 7}, "n": 1},
     ]
 
 
