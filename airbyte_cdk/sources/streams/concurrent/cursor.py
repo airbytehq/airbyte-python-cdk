@@ -570,7 +570,19 @@ class ConcurrentCursor(Cursor):
         except ValueError:
             self._log_for_record_without_cursor_value()
             return True
-        return self.start <= record_cursor_value <= self._end_provider()
+        return self._lowest_cursor_value_to_sync() <= record_cursor_value <= self._end_provider()
+
+    def _lowest_cursor_value_to_sync(self) -> CursorValueType:
+        # `stream_slices` requests records from `start` minus the lookback window (clamped to the configured start), so
+        # the filter must keep them. `min(self.start, self._start)` keeps the filter never narrower than before when
+        # the state is below the configured start.
+        if not self._lookback_window:
+            return self.start
+        try:
+            lower = self.start - self._lookback_window
+        except OverflowError:
+            return self.start
+        return max(lower, min(self.start, self._start)) if self._start else lower
 
     def _log_for_record_without_cursor_value(self) -> None:
         if not self._should_be_synced_logger_triggered:
