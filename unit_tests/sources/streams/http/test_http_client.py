@@ -34,6 +34,9 @@ from airbyte_cdk.sources.streams.http.http_client import MessageRepresentationAi
 from airbyte_cdk.sources.streams.http.page_size_reduction_exception import (
     PageSizeReductionRequiredException,
 )
+from airbyte_cdk.sources.streams.http.request_window_split_exception import (
+    RequestWindowSplitRequiredException,
+)
 from airbyte_cdk.sources.streams.http.requests_native_auth import (
     Oauth2Authenticator,
     TokenAuthenticator,
