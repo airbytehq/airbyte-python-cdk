@@ -4,17 +4,20 @@
 
 import json
 from copy import deepcopy
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
-from airbyte_cdk.models import AirbyteLogMessage, AirbyteMessage, Level, Type
+from airbyte_cdk.models import AirbyteLogMessage, AirbyteMessage, Level, SyncMode, Type
+from airbyte_cdk.sources.declarative.async_job.job_orchestrator import AsyncJobOrchestrator
 from airbyte_cdk.sources.declarative.concurrent_declarative_source import (
     ConcurrentDeclarativeSource,
     TestLimits,
 )
 from airbyte_cdk.sources.declarative.schema import DynamicSchemaLoader, SchemaTypeIdentifier
+from airbyte_cdk.test.catalog_builder import CatalogBuilder
 from airbyte_cdk.test.mock_http import HttpMocker, HttpRequest, HttpResponse
+from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 
 _CONFIG = {
     "start_date": "2024-07-01T00:00:00.000Z",
@@ -514,6 +517,87 @@ def test_dynamic_schema_loader_with_async_retriever(
         http_mocker.assert_number_of_calls(download, 1)
 
     assert actual_catalog.streams[0].json_schema["properties"] == expected_properties
+
+
+@patch.object(AsyncJobOrchestrator, "_WAIT_TIME_BETWEEN_STATUS_UPDATE_IN_SECONDS", 0)
+def test_read_with_async_retriever_and_async_dynamic_schema_loader():
+    manifest = _async_schema_loader_manifest(
+        None, {"schema_pointer": ["fields"], "key_pointer": ["name"], "type_pointer": ["type"]}
+    )
+    stream = manifest["definitions"]["party_members_stream"]
+    data_retriever = deepcopy(stream["schema_loader"]["retriever"])
+    data_retriever["creation_requester"]["url"] = "https://api.test.com/data_job"
+    data_retriever["polling_requester"]["url"] = (
+        "https://api.test.com/data_job/{{ creation_response['id'] }}"
+    )
+    # casts records to the loaded schema, so the output proves which schema the read used
+    data_retriever["record_selector"]["schema_normalization"] = "Default"
+    stream["retriever"] = data_retriever
+    catalog = CatalogBuilder().with_stream("party_members", SyncMode.full_refresh).build()
+    source = ConcurrentDeclarativeSource(
+        source_config=manifest, config=_CONFIG, catalog=catalog, state=None
+    )
+    schema_creation = HttpRequest(url="https://api.test.com/schema_job")
+
+    with HttpMocker() as http_mocker:
+        http_mocker.post(schema_creation, HttpResponse(body=json.dumps({"id": "s1"})))
+        http_mocker.get(
+            HttpRequest(url="https://api.test.com/schema_job/s1"),
+            HttpResponse(
+                body=json.dumps(
+                    {"status": "ready", "urls": ["https://api.test.com/download/schema"]}
+                )
+            ),
+        )
+        http_mocker.get(
+            HttpRequest(url="https://api.test.com/download/schema"),
+            HttpResponse(body=json.dumps({"fields": [{"name": "id", "type": "integer"}]})),
+        )
+        http_mocker.post(
+            HttpRequest(url="https://api.test.com/data_job"),
+            HttpResponse(body=json.dumps({"id": "d1"})),
+        )
+        http_mocker.get(
+            HttpRequest(url="https://api.test.com/data_job/d1"),
+            HttpResponse(
+                body=json.dumps({"status": "ready", "urls": ["https://api.test.com/download/data"]})
+            ),
+        )
+        http_mocker.get(
+            HttpRequest(url="https://api.test.com/download/data"),
+            HttpResponse(body=json.dumps({"id": "1"})),
+        )
+
+        messages = list(source.read(source.logger, _CONFIG, catalog, None))
+
+        http_mocker.assert_number_of_calls(schema_creation, 1)
+
+    assert [message.record.data for message in messages if message.type == Type.RECORD] == [
+        {"id": 1}
+    ]
+
+
+@patch.object(AsyncJobOrchestrator, "_WAIT_TIME_BETWEEN_STATUS_UPDATE_IN_SECONDS", 0)
+def test_discover_with_failed_async_schema_job_raises():
+    manifest = _async_schema_loader_manifest(
+        None, {"schema_pointer": ["fields"], "key_pointer": ["name"]}
+    )
+    source = ConcurrentDeclarativeSource(
+        source_config=manifest, config=_CONFIG, catalog=None, state=None
+    )
+
+    with HttpMocker() as http_mocker:
+        http_mocker.post(
+            HttpRequest(url="https://api.test.com/schema_job"),
+            HttpResponse(body=json.dumps({"id": "job_1"})),
+        )
+        http_mocker.get(
+            HttpRequest(url="https://api.test.com/schema_job/job_1"),
+            HttpResponse(body=json.dumps({"status": "failed"})),
+        )
+
+        with pytest.raises(AirbyteTracedException, match="async jobs failed"):
+            source.discover(logger=source.logger, config=_CONFIG)
 
 
 def test_dynamic_schema_loader_with_async_retriever_and_partition_router_raises():

@@ -79,6 +79,9 @@ from airbyte_cdk.sources.declarative.models import DatetimeBasedCursor as Dateti
 from airbyte_cdk.sources.declarative.models import DeclarativeStream as DeclarativeStreamModel
 from airbyte_cdk.sources.declarative.models import DefaultPaginator as DefaultPaginatorModel
 from airbyte_cdk.sources.declarative.models import DpathExtractor as DpathExtractorModel
+from airbyte_cdk.sources.declarative.models import (
+    DynamicSchemaLoader as DynamicSchemaLoaderModel,
+)
 from airbyte_cdk.sources.declarative.models import FileUploader as FileUploaderModel
 from airbyte_cdk.sources.declarative.models import (
     GroupingPartitionRouter as GroupingPartitionRouterModel,
@@ -5217,6 +5220,46 @@ stream_with_dynamic_schema:
     schema_loader = get_schema_loader(stream)
     assert isinstance(schema_loader, DynamicSchemaLoader)
     assert isinstance(schema_loader.retriever, AsyncRetriever)
+
+
+def test_dynamic_schema_loader_keeps_custom_retriever_stream_slicer():
+    content = """
+schema_loader:
+  type: DynamicSchemaLoader
+  retriever:
+    type: CustomRetriever
+    class_name: unit_tests.sources.declarative.parsers.testing_components.TestingCustomRetriever
+    stream_slicer:
+      type: ListPartitionRouter
+      cursor_field: p
+      values: ["a"]
+    requester:
+      type: HttpRequester
+      url: https://api.test.com/schema
+    record_selector:
+      type: RecordSelector
+      extractor:
+        type: DpathExtractor
+        field_path: []
+  schema_type_identifier:
+    type: SchemaTypeIdentifier
+    key_pointer:
+      - name
+"""
+    parsed_manifest = YamlDeclarativeSource._parse(content)
+    resolved_manifest = resolver.preprocess_manifest(parsed_manifest)
+    schema_loader_manifest = transformer.propagate_types_and_parameters(
+        "", resolved_manifest["schema_loader"], {}
+    )
+
+    schema_loader = factory.create_component(
+        model_type=DynamicSchemaLoaderModel,
+        component_definition=schema_loader_manifest,
+        config=input_config,
+    )
+
+    assert isinstance(schema_loader.retriever, TestingCustomRetriever)
+    assert isinstance(schema_loader.retriever.stream_slicer, ListPartitionRouter)
 
 
 def test_api_budget():

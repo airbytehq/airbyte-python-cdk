@@ -122,7 +122,8 @@ class DynamicSchemaLoader(SchemaLoader):
     Dynamically loads a JSON Schema by extracting data from retrieved records.
 
     With an AsyncRetriever, each schema load creates one async job, reads only the first record,
-    and does not call the job's delete endpoint.
+    and does not call the job's delete endpoint. During a read the schema job runs before the
+    stream's records are read and shares max_concurrent_async_job_count with the stream's jobs.
     """
 
     retriever: Retriever
