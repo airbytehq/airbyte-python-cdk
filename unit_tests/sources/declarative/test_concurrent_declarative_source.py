@@ -6395,3 +6395,75 @@ def test_combined_extractor_with_an_empty_extractors_list_fails_schema_validatio
         "should be non-empty" in message
         for message in _validation_messages(exc_info.value.__cause__)
     )
+
+
+@pytest.mark.parametrize(
+    "pagination_strategy, page_token_field, page_tokens",
+    [
+        pytest.param(
+            {"type": "OffsetIncrement", "page_size": 3}, "offset", ["3", "6"], id="offset_increment"
+        ),
+        pytest.param(
+            {"type": "PageIncrement", "page_size": 3, "start_from_page": 0},
+            "page",
+            ["1", "2"],
+            id="page_increment",
+        ),
+    ],
+)
+def test_combined_extractor_skipping_empty_records_reads_every_page(
+    pagination_strategy, page_token_field, page_tokens
+):
+    """A null on a full page used to make the page look short, so the later pages were never read."""
+    manifest = _combined_extractor_manifest(
+        {
+            "type": "CombinedExtractor",
+            "mode": "first_match",
+            "skip_empty_records": True,
+            "extractors": [
+                {"type": "DpathExtractor", "field_path": ["data", "items"]},
+                {"type": "DpathExtractor", "field_path": ["data", "fallback"]},
+            ],
+        }
+    )
+    manifest["streams"][0]["retriever"]["paginator"] = {
+        "type": "DefaultPaginator",
+        "pagination_strategy": pagination_strategy,
+        "page_token_option": {
+            "type": "RequestOption",
+            "inject_into": "request_parameter",
+            "field_name": page_token_field,
+        },
+    }
+    catalog = create_catalog("lists")
+    source = ConcurrentDeclarativeSource(
+        source_config=manifest, config={}, catalog=catalog, state=None
+    )
+
+    with HttpMocker() as http_mocker:
+        http_mocker.get(
+            HttpRequest("https://api.test.com/lists"),
+            HttpResponse(json.dumps({"data": {"items": [{"id": 1}, None, {"id": 3}]}})),
+        )
+        http_mocker.get(
+            HttpRequest(
+                "https://api.test.com/lists", query_params={page_token_field: page_tokens[0]}
+            ),
+            HttpResponse(json.dumps({"data": {"items": [{"id": 4}, {"id": 5}, {"id": 6}]}})),
+        )
+        http_mocker.get(
+            HttpRequest(
+                "https://api.test.com/lists", query_params={page_token_field: page_tokens[1]}
+            ),
+            HttpResponse(json.dumps({"data": {"items": [{"id": 7}]}})),
+        )
+        messages = list(source.read(logger=source.logger, config={}, catalog=catalog, state=[]))
+
+    assert [record.data["id"] for record in get_records_for_stream("lists", messages)] == [
+        1,
+        3,
+        4,
+        5,
+        6,
+        7,
+    ]

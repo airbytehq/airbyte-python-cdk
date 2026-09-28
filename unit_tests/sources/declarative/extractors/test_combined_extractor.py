@@ -442,3 +442,137 @@ def test_skip_empty_records_does_not_warn_when_nothing_is_dropped(caplog):
         ]
 
     assert [record.message for record in caplog.records if record.levelno == logging.WARNING] == []
+
+
+def _counting_copy(extractor: CombinedExtractor) -> CombinedExtractor:
+    """What the factory hands a record-counting paginator: the same tree, told to count its drops."""
+    extractor.count_dropped_empty_records = True
+    for sub_extractor in extractor.extractors:
+        if isinstance(sub_extractor, CombinedExtractor):
+            _counting_copy(sub_extractor)
+    return extractor
+
+
+def test_the_counting_copy_counts_dropped_empty_records_under_union():
+    extractor = _counting_copy(
+        CombinedExtractor(
+            extractors=[
+                _CountingExtractor(records=[{"id": 1}, None, {}]),
+                _CountingExtractor(records=[{"id": 2}]),
+            ],
+            mode=CombineMode.union,
+            skip_empty_records=True,
+            parameters=parameters,
+        )
+    )
+
+    assert len(list(extractor.extract_records(create_response(GRAPHQL_BODY)))) == 4
+
+
+def test_the_counting_copy_counts_the_same_winner_the_record_stream_reads():
+    """A page of nulls must not win the count while the record stream falls through past it.
+
+    The winner is chosen by the surviving records, so the count is the fallback path's, dropped
+    records included, and not the two nulls of the primary path.
+    """
+    body = {
+        "data": {
+            "boards": [{"items_page": {"items": [None, None]}}],
+            "next_items_page": {"items": [None, {"id": "item_1"}, {"id": "item_2"}]},
+        }
+    }
+
+    assert list(
+        _monday_extractor(skip_empty_records=True).extract_records(create_response(body))
+    ) == [{"id": "item_1"}, {"id": "item_2"}]
+    assert (
+        len(
+            list(
+                _counting_copy(_monday_extractor(skip_empty_records=True)).extract_records(
+                    create_response(body)
+                )
+            )
+        )
+        == 3
+    )
+
+
+def test_the_counting_copy_counts_nothing_when_every_record_is_empty():
+    extractor = _counting_copy(
+        CombinedExtractor(
+            extractors=[_CountingExtractor(records=[None]), _CountingExtractor(records=[{}])],
+            mode=CombineMode.first_match,
+            skip_empty_records=True,
+            parameters=parameters,
+        )
+    )
+
+    assert list(extractor.extract_records(create_response(GRAPHQL_BODY))) == []
+
+
+def test_the_counting_copy_counts_the_drops_of_a_nested_combined_extractor():
+    extractor = _counting_copy(
+        CombinedExtractor(
+            extractors=[
+                CombinedExtractor(
+                    extractors=[_CountingExtractor(records=[None, None])],
+                    skip_empty_records=True,
+                    parameters=parameters,
+                ),
+                CombinedExtractor(
+                    extractors=[_CountingExtractor(records=[{"id": 1}, None])],
+                    skip_empty_records=True,
+                    parameters=parameters,
+                ),
+            ],
+            mode=CombineMode.first_match,
+            parameters=parameters,
+        )
+    )
+
+    # The first nested extractor yields no surviving record, so it does not win even though the
+    # outer extractor does not skip empty records itself.
+    assert len(list(extractor.extract_records(create_response(GRAPHQL_BODY)))) == 2
+
+
+def test_the_counting_copy_does_not_warn(caplog):
+    """The record stream already warned about the page the paginator re-reads."""
+    extractor = _counting_copy(
+        CombinedExtractor(
+            extractors=[_CountingExtractor(records=[{"id": 1}, None])],
+            skip_empty_records=True,
+            parameters=parameters,
+        )
+    )
+
+    with caplog.at_level(logging.WARNING, logger="airbyte"):
+        list(extractor.extract_records(create_response(GRAPHQL_BODY)))
+
+    assert not [record for record in caplog.records if record.levelno == logging.WARNING]
+
+
+def test_the_documented_first_match_example_yields_one_record_per_item():
+    """The schema and docstring example; without the trailing `*` each board's list was one record."""
+    extractor = CombinedExtractor(
+        extractors=[
+            dpath("data", "boards", "*", "items_page", "items", "*"),
+            dpath("data", "next_items_page", "items"),
+        ],
+        mode=CombineMode.first_match,
+        skip_empty_records=True,
+        parameters=parameters,
+    )
+    body = {
+        "data": {
+            "boards": [
+                {"items_page": {"items": [{"id": 1}, {"id": 2}]}},
+                {"items_page": {"items": [{"id": 3}]}},
+            ],
+        }
+    }
+
+    assert list(extractor.extract_records(create_response(body))) == [
+        {"id": 1},
+        {"id": 2},
+        {"id": 3},
+    ]

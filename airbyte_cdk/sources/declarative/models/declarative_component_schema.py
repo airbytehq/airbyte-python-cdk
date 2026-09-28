@@ -2635,7 +2635,7 @@ class CombinedExtractor(BaseModel):
     )
     skip_empty_records: Optional[bool] = Field(
         False,
-        description='Whether to drop empty records - null, {}, [], "" - yielded by a sub-extractor before the records are combined. Off by default, so the output of a sub-extractor is passed through as it is. Turn it on when the API can return nulls in the middle of a record list, which a GraphQL API does when it answers a partial response and reports the failure in a sibling error field. Under "first_match" this also changes which sub-extractor wins: a sub-extractor whose records are all empty no longer counts as a match, so the next one is tried, and the record count a paginator obtains is the count after the empty records were dropped.',
+        description='Whether to drop empty records - null, {}, [], "" - yielded by a sub-extractor before the records are combined. Off by default, so the output of a sub-extractor is passed through as it is. Turn it on when the API can return nulls in the middle of a record list, which a GraphQL API does when it answers a partial response and reports the failure in a sibling error field. Under "first_match" this also changes which sub-extractor wins: a sub-extractor whose records are all empty no longer counts as a match, so the next one is tried. The dropped records still count toward the page size of an OffsetIncrement or PageIncrement paginator, so a full page holding a null does not end pagination early.',
         title="Skip Empty Records",
     )
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
