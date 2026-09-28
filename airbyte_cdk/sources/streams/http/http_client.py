@@ -42,6 +42,9 @@ from airbyte_cdk.sources.streams.http.exceptions import (
     RequestBodyException,
     UserDefinedBackoffException,
 )
+from airbyte_cdk.sources.streams.http.page_size_reduction_exception import (
+    PageSizeReductionRequiredException,
+)
 from airbyte_cdk.sources.streams.http.pagination_reset_exception import (
     PaginationResetRequiredException,
 )
@@ -50,6 +53,14 @@ from airbyte_cdk.sources.streams.http.rate_limiting import (
     rate_limit_default_backoff_handler,
     user_defined_backoff_handler,
 )
+
+# Imported from the leaf module rather than the package: `protocols` pulls in nothing from the
+# CDK, so this import cannot cycle no matter what else lands in `requests_native_auth` -- an
+# authenticator there needing `HttpClient` (as the declarative one does) stays safe.
+from airbyte_cdk.sources.streams.http.requests_native_auth.protocols import (
+    ResponseAwareAuthenticator,
+    TokenRotatingAuthenticator,
+)
 from airbyte_cdk.sources.utils.types import JsonType
 from airbyte_cdk.utils.airbyte_secrets_utils import filter_secrets
 from airbyte_cdk.utils.constants import ENV_REQUEST_CACHE_PATH
@@ -57,6 +68,11 @@ from airbyte_cdk.utils.stream_status_utils import (
     as_airbyte_message as stream_status_as_airbyte_message,
 )
 from airbyte_cdk.utils.traced_exception import AirbyteTracedException
+
+# Backward-compatible deprecated alias. This class was removed in PR #927 but is still
+# imported by connectors in the airbyte monorepo. Keep as a simple alias to
+# AirbyteTracedException until all downstream usages have been migrated.
+MessageRepresentationAirbyteTracedErrors = AirbyteTracedException
 
 BODY_REQUEST_METHODS = ("GET", "POST", "PUT", "PATCH")
 
@@ -82,9 +98,37 @@ def monkey_patched_get_item(self, key):  # type: ignore # this interface is a co
 requests_cache.SQLiteDict.__getitem__ = monkey_patched_get_item  # type: ignore # see the method doc for more information
 
 
+def _as_auxiliary_request_log(
+    log_message: Any, title: Optional[str] = None, description: Optional[str] = None
+) -> Any:
+    """
+    Flag an already-formatted request/response log as an auxiliary request.
+
+    The Connector Builder builds one page per non-auxiliary HTTP log and bounds a slice by the number of those
+    pages, so a request that will not produce a page has to be marked here or it inflates that count. The
+    Builder also labels its side panel from the log's `title` and `description`, which the formatter filled
+    with the wording of an ordinary page, so a caller that knows why the request is auxiliary passes its own
+    and the panel does not read as a successful page fetch. The log formatter is connector-supplied and only
+    the CDK's own one is guaranteed to have an `http` object, hence the defensive check.
+    """
+    if isinstance(log_message, dict):
+        http = log_message.get("http")
+        if isinstance(http, dict):
+            http["is_auxiliary"] = True
+            if title is not None:
+                http["title"] = title
+            if description is not None:
+                http["description"] = description
+    return log_message
+
+
 class HttpClient:
     _DEFAULT_MAX_RETRY: int = 5
     _DEFAULT_MAX_TIME: int = 60 * 10
+    # Backoff used in place of a rate-limit wait when another credential can serve the retry.
+    # Kept non-zero so a misreporting authenticator degrades to a slow retry, not a hot loop
+    # (the retry handler adds a second on top of whatever is returned).
+    TOKEN_ROTATION_BACKOFF: float = 0.1
     _ACTIONS_TO_RETRY_ON = {
         ResponseAction.RETRY,
         ResponseAction.RATE_LIMITED,
@@ -133,6 +177,7 @@ class HttpClient:
         self._request_attempt_count: Dict[requests.PreparedRequest, int] = {}
         self._disable_retries = disable_retries
         self._message_repository = message_repository
+        self._authenticator_update_failed = False
 
     @property
     def cache_filename(self) -> str:
@@ -293,7 +338,22 @@ class HttpClient:
 
             return response
         except BaseBackoffException as e:
-            self._logger.error(f"Retries exhausted with backoff exception.", exc_info=True)
+            self._logger.error("Retries exhausted with backoff exception.", exc_info=True)
+
+            is_rate_limited = (
+                isinstance(e.response, requests.Response)
+                and e.response.status_code == requests.codes.too_many_requests
+            )
+
+            if is_rate_limited:
+                raise AirbyteTracedException(
+                    internal_message=f"Rate limit retry budget exhausted. Last exception: {e}",
+                    message="API rate limit exceeded.",
+                    failure_type=FailureType.transient_error,
+                    exception=e,
+                    stream_descriptor=StreamDescriptor(name=self._name),
+                )
+
             raise AirbyteTracedException(
                 internal_message=f"Exhausted available request attempts. Exception: {e}",
                 message=f"Exhausted available request attempts. Please see logs for more details. Exception: {e}",
@@ -301,6 +361,59 @@ class HttpClient:
                 exception=e,
                 stream_descriptor=StreamDescriptor(name=self._name),
             )
+
+    def _can_retry_on_another_token(self, request: requests.PreparedRequest) -> bool:
+        """Whether the authenticator can serve this request from a different credential now.
+
+        Opted into by implementing `TokenRotatingAuthenticator`.
+        """
+        authenticator = getattr(self._session, "auth", None)
+        if not isinstance(authenticator, TokenRotatingAuthenticator):
+            return False
+        try:
+            return bool(authenticator.has_alternative_token(request))
+        except Exception:
+            # Falling back to the computed wait is always safe, so never fail a retry over this.
+            self._logger.debug(
+                "Authenticator failed to report credential availability", exc_info=True
+            )
+            return False
+
+    def _update_authenticator_from_response(
+        self, request: requests.PreparedRequest, response: requests.Response
+    ) -> None:
+        """Let a quota-tracking authenticator reconcile its state against the server.
+
+        Authenticators only ever see requests, so an authenticator that tracks per-token quota
+        has no way to learn that the server disagrees with its local bookkeeping. This is the
+        feedback channel, mirroring what `LimiterMixin.send` does for the API budget.
+
+        Opted into by implementing `ResponseAwareAuthenticator`.
+        """
+        authenticator = getattr(self._session, "auth", None)
+        if not isinstance(authenticator, ResponseAwareAuthenticator):
+            return
+        if getattr(response, "from_cache", False):
+            # A replayed cached response carries the rate-limit headers from whenever it was
+            # first fetched and consumed no quota of its own.
+            return
+        try:
+            authenticator.update_from_response(request, response)
+        except Exception:
+            # Quota bookkeeping must never turn an otherwise fine response into a failure. Warn
+            # once so a persistently broken update -- which silently degrades the connector back
+            # to single-token behaviour -- is at least diagnosable from default-level logs.
+            if not self._authenticator_update_failed:
+                self._authenticator_update_failed = True
+                self._logger.warning(
+                    "Authenticator failed to update quota state from a response; token rotation "
+                    "may fall back to local counters only. Further occurrences log at debug.",
+                    exc_info=True,
+                )
+            else:
+                self._logger.debug(
+                    "Authenticator failed to update quota state from response", exc_info=True
+                )
 
     def _send(
         self,
@@ -328,6 +441,9 @@ class HttpClient:
             response = self._session.send(request, **request_kwargs)
         except requests.RequestException as e:
             exc = e
+
+        if response is not None:
+            self._update_authenticator_from_response(request, response)
 
         error_resolution: ErrorResolution = self._error_handler.interpret_response(
             response if response is not None else exc
@@ -358,9 +474,24 @@ class HttpClient:
             and self._message_repository is not None
         ):
             formatter = log_formatter
+            # A response resolving to REDUCE_PAGE_SIZE is not a page of the stream: the retriever discards it
+            # and re-issues the same page with a smaller page size. Logging it as an auxiliary request keeps it
+            # visible in the Connector Builder while keeping it out of the per-slice page count, which would
+            # otherwise report "limit reached" on a read that only retried.
+            log_as_auxiliary = error_resolution.response_action == ResponseAction.REDUCE_PAGE_SIZE
             self._message_repository.log_message(
                 Level.DEBUG,
-                lambda: formatter(response),
+                lambda: _as_auxiliary_request_log(
+                    formatter(response),
+                    title=f"Stream '{self._name}' page rejected, retrying with a smaller page size",
+                    description=(
+                        f"Request for stream '{self._name}' whose response asked for a smaller page. The "
+                        f"same page is requested again with a reduced page size, so this request produced "
+                        f"no records."
+                    ),
+                )
+                if log_as_auxiliary
+                else formatter(response),
             )
 
         self._handle_error_resolution(
@@ -420,6 +551,11 @@ class HttpClient:
 
         if error_resolution.response_action == ResponseAction.RESET_PAGINATION:
             raise PaginationResetRequiredException()
+
+        if error_resolution.response_action == ResponseAction.REDUCE_PAGE_SIZE:
+            raise PageSizeReductionRequiredException(
+                stream_name=self._name, error_message=error_resolution.error_message
+            )
 
         # Emit stream status RUNNING with the reason RATE_LIMITED to log that the rate limit has been reached
         if error_resolution.response_action == ResponseAction.RATE_LIMITED:
@@ -499,14 +635,49 @@ class HttpClient:
             ResponseAction.REFRESH_TOKEN_THEN_RETRY,
         ):
             user_defined_backoff_time = None
-            for backoff_strategy in self._backoff_strategies:
-                backoff_time = backoff_strategy.backoff_time(
-                    response_or_exception=response if response is not None else exc,
-                    attempt_count=self._request_attempt_count[request],
+            # Asked before the strategies, not after. The backoff they compute describes the
+            # credential the server just rejected, so when another credential can serve the
+            # retry that wait is irrelevant -- and a strategy is allowed to refuse a wait by
+            # raising (`max_waiting_time_in_seconds`), which would otherwise end the stream
+            # before rotation was ever considered. Rotating is strictly the better outcome
+            # there: it is the same retry, seconds from now, on a credential with quota.
+            #
+            # Two consequences of not calling the strategies, both deliberate. A rate limit
+            # that yields no backoff at all now rotates too, rather than falling through to
+            # the default exponential retry -- on a rotating credential that is the better
+            # behaviour, and `has_alternative_token` only answers True when the retry will
+            # rotate -- the CDK's own authenticator narrows that further, to a sending credential
+            # that is tracked and spent. And a `max_waiting_time_in_seconds` the manifest got
+            # wrong -- one that cannot be evaluated -- is not reported from here, since that
+            # error is raised from inside the strategy. Both capped strategies therefore resolve
+            # the field once in `__post_init__` too, so a manifest mistake fails at startup
+            # rather than waiting for a rate limit that finds no spare credential.
+            rotate_instead_of_waiting = (
+                error_resolution.response_action == ResponseAction.RATE_LIMITED
+                and self._can_retry_on_another_token(request)
+            )
+
+            if rotate_instead_of_waiting:
+                # Says that a wait was skipped without the number, which is no longer computed,
+                # and names the cap explicitly: a connector that configured one gets no other
+                # signal that the retry went ahead without consulting it.
+                self._logger.info(
+                    "Rate limited on the current credential; retrying in "
+                    f"{self.TOKEN_ROTATION_BACKOFF}s with another one instead of waiting for the "
+                    "rate limit to reset. Any configured backoff, including a wait cap, is not "
+                    "evaluated for this retry."
                 )
-                if backoff_time:
-                    user_defined_backoff_time = backoff_time
-                    break
+                user_defined_backoff_time = self.TOKEN_ROTATION_BACKOFF
+            else:
+                for backoff_strategy in self._backoff_strategies:
+                    backoff_time = backoff_strategy.backoff_time(
+                        response_or_exception=response if response is not None else exc,
+                        attempt_count=self._request_attempt_count[request],
+                    )
+                    if backoff_time:
+                        user_defined_backoff_time = backoff_time
+                        break
+
             error_message = (
                 error_resolution.error_message
                 or f"Request to {request.url} failed with failure type {error_resolution.failure_type}, response action {error_resolution.response_action}."

@@ -4,6 +4,7 @@
 
 import json
 import logging
+import re
 import threading
 import time
 from datetime import timedelta
@@ -25,9 +26,11 @@ from airbyte_cdk.sources.streams.http.requests_native_auth import (
     TokenAuthenticator,
 )
 from airbyte_cdk.sources.streams.http.requests_native_auth.abstract_oauth import (
+    _PROVIDER_ERROR_DETAIL_MAX_LENGTH,
     ResponseKeysMaxRecurtionReached,
 )
 from airbyte_cdk.utils import AirbyteTracedException
+from airbyte_cdk.utils.airbyte_secrets_utils import update_secrets
 from airbyte_cdk.utils.datetime_helpers import AirbyteDateTime, ab_datetime_now, ab_datetime_parse
 
 LOGGER = logging.getLogger(__name__)
@@ -204,6 +207,73 @@ class TestOauth2Authenticator:
         )
         headers = oauth.build_refresh_request_headers()
         assert headers is None
+
+    def test_send_refresh_request_as_query_params(self):
+        """When `send_refresh_request_as_query_params=True`, the standard
+        refresh args are returned by `build_refresh_request_query_params()`
+        and `build_refresh_request_body()` returns an empty body.
+        """
+        oauth = Oauth2Authenticator(
+            token_refresh_endpoint="refresh_end",
+            client_id="some_client_id",
+            client_secret="some_client_secret",
+            refresh_token="some_refresh_token",
+            send_refresh_request_as_query_params=True,
+            refresh_request_headers={"Authorization": "Basic dGVzdA=="},
+        )
+        params = oauth.build_refresh_request_query_params()
+        assert params == {
+            "grant_type": "refresh_token",
+            "refresh_token": "some_refresh_token",
+        }
+
+        body = oauth.build_refresh_request_body()
+        assert body == {}
+
+    def test_send_refresh_request_as_query_params_default_false(self):
+        """When `send_refresh_request_as_query_params` is not set (default `False`),
+        no query params are sent on the refresh URL and the standard refresh
+        args remain in the body.
+        """
+        oauth = Oauth2Authenticator(
+            token_refresh_endpoint="refresh_end",
+            client_id="some_client_id",
+            client_secret="some_client_secret",
+            refresh_token="some_refresh_token",
+        )
+        assert oauth.build_refresh_request_query_params() is None
+        body = oauth.build_refresh_request_body()
+        assert body["grant_type"] == "refresh_token"
+        assert body["refresh_token"] == "some_refresh_token"
+
+    def test_send_refresh_request_as_query_params_sent_on_request(self, mocker):
+        """Verify that URL query params are sent via `params=` kwarg on the
+        HTTP request when `send_refresh_request_as_query_params=True`, and the
+        body is emitted empty.
+        """
+        oauth = Oauth2Authenticator(
+            token_refresh_endpoint="https://refresh_endpoint.com",
+            client_id="some_client_id",
+            client_secret="some_client_secret",
+            refresh_token="some_refresh_token",
+            send_refresh_request_as_query_params=True,
+            refresh_request_headers={"Authorization": "Basic dGVzdA=="},
+        )
+
+        resp.status_code = 200
+        mocker.patch.object(
+            resp, "json", return_value={"access_token": "access_token", "expires_in": 1000}
+        )
+        mocked_request = mocker.patch.object(
+            requests, "request", side_effect=mock_request, autospec=True
+        )
+        token, _ = oauth.refresh_access_token()
+        assert token == "access_token"
+        assert mocked_request.call_args.kwargs["params"] == {
+            "grant_type": "refresh_token",
+            "refresh_token": "some_refresh_token",
+        }
+        assert mocked_request.call_args.kwargs["data"] == {}
 
     def test_refresh_request_body_with_keys_override(self):
         """
@@ -575,10 +645,358 @@ class TestOauth2Authenticator:
             oauth.refresh_access_token()
 
         if wrapped:
-            error_message = "Refresh token is invalid or expired. Please re-authenticate from Sources/<your source>/Settings."
-            assert exc_info.value.internal_message == error_message
-            assert exc_info.value.message == error_message
+            error_message = "Refresh token was rejected by the OAuth provider (invalid, expired, or already used). Re-authenticate this source's credentials in its connection settings."
+            assert exc_info.value.internal_message.startswith(
+                "Refresh token rejected by the OAuth token endpoint."
+            )
+            assert f"HTTP {response_code}" in exc_info.value.internal_message
+            assert response_value in exc_info.value.internal_message
+            assert exc_info.value.message.startswith(error_message)
             assert exc_info.value.failure_type == FailureType.config_error
+
+    def _entra_style_authenticator(self):
+        return Oauth2Authenticator(
+            f"https://{TestOauth2Authenticator.refresh_endpoint}",
+            TestOauth2Authenticator.client_id,
+            TestOauth2Authenticator.client_secret,
+            TestOauth2Authenticator.refresh_token,
+            refresh_token_error_status_codes=(400,),
+            refresh_token_error_key="error",
+            refresh_token_error_values=("invalid_grant", "invalid_client"),
+        )
+
+    # Sits on a later line of each provider payload below, like the trace ids and timestamps
+    # Microsoft Entra appends, so it must reach the internal message and never the user-facing one.
+    trailing_marker = "Correlation ID: 11111111-2222-3333-4444-555555555555"
+
+    @pytest.mark.parametrize(
+        "error, error_description, expected_code",
+        (
+            (
+                # Grant revoked, e.g. the user changed their password: re-authentication is the fix.
+                "invalid_grant",
+                "AADSTS50173: The provided grant has expired due to it being revoked, a fresh auth "
+                "token is needed. The user might have changed or reset their password.\r\n"
+                "Trace ID: 00000000-0000-0000-0000-000000000000\r\n" + trailing_marker,
+                "AADSTS50173",
+            ),
+            (
+                # Client type / credential misconfiguration: re-authentication will not help.
+                "invalid_client",
+                "AADSTS7000218: The request body must contain the following parameter: "
+                "'client_assertion' or 'client_secret'.\r\n" + trailing_marker,
+                "AADSTS7000218",
+            ),
+            (
+                # Conditional Access requires an interactive sign-in.
+                "invalid_grant",
+                "AADSTS50076: Due to a configuration change made by your administrator, or because "
+                "you moved to a new location, you must use multi-factor authentication to access "
+                "the resource.\r\n" + trailing_marker,
+                "AADSTS50076",
+            ),
+        ),
+    )
+    def test_refresh_access_token_surfaces_provider_error_code(
+        self, requests_mock, error, error_description, expected_code
+    ):
+        """The provider's own diagnostic must reach the logs and the user-facing message."""
+        oauth = self._entra_style_authenticator()
+        requests_mock.post(
+            f"https://{TestOauth2Authenticator.refresh_endpoint}",
+            status_code=400,
+            json={"error": error, "error_description": error_description},
+        )
+
+        with pytest.raises(AirbyteTracedException) as exc_info:
+            oauth.refresh_access_token()
+
+        guidance = (
+            "Refresh token was rejected by the OAuth provider (invalid, expired, or already used). "
+            "Re-authenticate this source's credentials in its connection settings."
+        )
+        # The full provider response reaches the internal message, which is logged.
+        assert expected_code in exc_info.value.internal_message
+        assert TestOauth2Authenticator.trailing_marker in exc_info.value.internal_message
+        # The actionable guidance still leads the user-facing message ...
+        assert exc_info.value.message.startswith(guidance)
+        # ... followed by a short, single-line provider detail carrying the error code.
+        assert f"Provider error: {error}: {expected_code}" in exc_info.value.message
+        assert "\n" not in exc_info.value.message and "\r" not in exc_info.value.message
+        # Later lines of the description (trace ids, timestamps) stay out of the user-facing message,
+        # so the same failure produces the same message on every attempt.
+        assert TestOauth2Authenticator.trailing_marker not in exc_info.value.message
+        assert exc_info.value.failure_type == FailureType.config_error
+
+    def test_refresh_access_token_omits_description_prose(self, requests_mock):
+        """Only the provider code is surfaced; the surrounding prose never reaches the user."""
+        oauth = self._entra_style_authenticator()
+        error_description = "AADSTS50173: " + ("x" * 5000)
+        requests_mock.post(
+            f"https://{TestOauth2Authenticator.refresh_endpoint}",
+            status_code=400,
+            json={"error": "invalid_grant", "error_description": error_description},
+        )
+
+        with pytest.raises(AirbyteTracedException) as exc_info:
+            oauth.refresh_access_token()
+
+        assert exc_info.value.message.endswith("Provider error: invalid_grant: AADSTS50173")
+        assert "xxx" not in exc_info.value.message
+        assert len(exc_info.value.internal_message) < 1200
+
+    def test_provider_error_detail_is_capped(self, requests_mock):
+        """The `error` field is not always the gated one, so it stays provider-controlled.
+
+        `_wrap_refresh_token_exception` gates on `refresh_token_error_key`, but the user-facing
+        detail always reads the RFC 6749 `error` field. A connector configured against a different
+        key (Okta's `errorCode`, here) therefore admits an arbitrary `error` value, which is what
+        the cap bounds.
+
+        The expected length is written as a literal rather than derived from the imported
+        constant, so raising the cap fails this test instead of silently redefining it.
+        """
+        oauth = Oauth2Authenticator(
+            f"https://{TestOauth2Authenticator.refresh_endpoint}",
+            TestOauth2Authenticator.client_id,
+            TestOauth2Authenticator.client_secret,
+            TestOauth2Authenticator.refresh_token,
+            refresh_token_error_status_codes=(400,),
+            refresh_token_error_key="errorCode",
+            refresh_token_error_values=("invalid_grant",),
+        )
+        requests_mock.post(
+            f"https://{TestOauth2Authenticator.refresh_endpoint}",
+            status_code=400,
+            json={
+                "errorCode": "invalid_grant",
+                "error": "e" * 500,
+                "error_description": "AADSTS50173: y",
+            },
+        )
+
+        with pytest.raises(AirbyteTracedException) as exc_info:
+            oauth.refresh_access_token()
+
+        provider_detail = exc_info.value.message.split("Provider error: ", 1)[1]
+        assert provider_detail.endswith("...")
+        assert len(provider_detail) == 67  # 64-char cap + the "..." marker
+        assert len(provider_detail) == _PROVIDER_ERROR_DETAIL_MAX_LENGTH + len("...")
+
+    def test_refresh_access_token_redacts_credentials_from_provider_error(self, requests_mock):
+        """A provider that echoes the submitted credentials must not leak them into the error."""
+        # Start from no config-level secrets: earlier tests register values such as "token" through
+        # add_to_secrets, which would otherwise mask the credentials on their own.
+        update_secrets([])
+        refresh_token = "0.AXoA-rt-9f3ZqW7kP2"
+        client_secret = "s3cr3t~Xyz-1Qp"
+        oauth = Oauth2Authenticator(
+            f"https://{TestOauth2Authenticator.refresh_endpoint}",
+            TestOauth2Authenticator.client_id,
+            client_secret,
+            refresh_token,
+            refresh_token_error_status_codes=(400,),
+            refresh_token_error_key="error",
+            refresh_token_error_values=("invalid_grant",),
+        )
+        requests_mock.post(
+            f"https://{TestOauth2Authenticator.refresh_endpoint}",
+            status_code=400,
+            json={
+                "error": "invalid_grant",
+                "error_description": f"AADSTS50173: rejected rt={refresh_token} cs={client_secret}",
+            },
+        )
+
+        with pytest.raises(AirbyteTracedException) as exc_info:
+            oauth.refresh_access_token()
+
+        for message in (exc_info.value.message, exc_info.value.internal_message):
+            assert refresh_token not in message
+            assert client_secret not in message
+        # The internal message keeps the echoed body, with both credentials redacted.
+        assert exc_info.value.internal_message.count("****") == 2
+        # The user-facing message never carries description prose, so there is nothing to redact:
+        # credential echo-back is structurally impossible there, not merely masked.
+        assert "****" not in exc_info.value.message
+        assert exc_info.value.message.endswith("Provider error: invalid_grant: AADSTS50173")
+
+    @pytest.mark.parametrize(
+        "response_kwargs",
+        (
+            {"text": ""},
+            {"text": "<html><body>Bad Request</body></html>"},
+            {"json": ["invalid_grant"]},
+        ),
+        ids=["empty_body", "html_body", "json_array_body"],
+    )
+    def test_refresh_access_token_non_json_body_does_not_raise_new_exception(
+        self, requests_mock, response_kwargs
+    ):
+        """A body we cannot read as a JSON object falls back to the raw RequestException."""
+        oauth = self._entra_style_authenticator()
+        requests_mock.post(
+            f"https://{TestOauth2Authenticator.refresh_endpoint}",
+            status_code=400,
+            **response_kwargs,
+        )
+
+        with pytest.raises(RequestException):
+            oauth.refresh_access_token()
+
+    def _message_for_description(self, requests_mock, error_description):
+        oauth = self._entra_style_authenticator()
+        requests_mock.post(
+            f"https://{TestOauth2Authenticator.refresh_endpoint}",
+            status_code=400,
+            json={"error": "invalid_grant", "error_description": error_description},
+        )
+        with pytest.raises(AirbyteTracedException) as exc_info:
+            oauth.refresh_access_token()
+        return exc_info.value.message
+
+    # AADSTS700082 embeds the token issue timestamp in the *first sentence* of the description,
+    # so no first-line rule and no character cap can separate it from the stable text.
+    _AADSTS700082 = (
+        "AADSTS700082: The refresh token has expired due to inactivity. The token was issued "
+        "on {issued} and was inactive for 90.00:00:00."
+    )
+
+    def test_same_failure_produces_identical_message_across_attempts(self, requests_mock):
+        """The grouping property: per-request values must not vary the user-facing message."""
+        first = self._message_for_description(
+            requests_mock, self._AADSTS700082.format(issued="2026-06-11T03:14:07.000Z")
+        )
+        second = self._message_for_description(
+            requests_mock, self._AADSTS700082.format(issued="2026-07-29T22:01:52.000Z")
+        )
+        assert first == second
+        assert "AADSTS700082" in first
+
+    def test_timestamp_in_first_sentence_never_reaches_message(self, requests_mock):
+        """A per-request value inside the first sentence, with no later lines to fall back on."""
+        message = self._message_for_description(
+            requests_mock, self._AADSTS700082.format(issued="2026-06-11T03:14:07.000Z")
+        )
+        assert "AADSTS700082" in message
+        assert re.search(r"\d{4}-\d{2}-\d{2}T", message) is None
+
+    def test_trace_id_under_the_cap_never_reaches_message(self, requests_mock):
+        """A short payload whose trace id sits below the cap, so the cap alone cannot remove it."""
+        message = self._message_for_description(
+            requests_mock,
+            "AADSTS50173: grant revoked.\r\nTrace ID: 00000000-0000-0000-0000-000000000000",
+        )
+        assert "AADSTS50173" in message
+        assert "Trace ID" not in message
+
+    def test_provider_code_is_only_read_from_the_start_of_the_description(self, requests_mock):
+        """The code pattern is anchored: a code mentioned mid-prose is not the failure's own code.
+
+        Kills the `match` -> `search` mutant. Matching anywhere would let a code named inside a
+        sentence (a doc reference, a nested provider error) become the grouping key.
+        """
+        message = self._message_for_description(
+            requests_mock, "Something went wrong; see AADSTS50173 in the documentation."
+        )
+        assert message.endswith("Provider error: invalid_grant")
+        assert "AADSTS50173" not in message
+
+    def test_credential_extracted_as_a_provider_code_is_redacted(self, requests_mock):
+        """A code-shaped refresh token leading the description is extracted, so it must be masked."""
+        update_secrets([])
+        refresh_token = "RTOKEN1234567890"
+        oauth = Oauth2Authenticator(
+            f"https://{TestOauth2Authenticator.refresh_endpoint}",
+            TestOauth2Authenticator.client_id,
+            TestOauth2Authenticator.client_secret,
+            refresh_token,
+            refresh_token_error_status_codes=(400,),
+            refresh_token_error_key="error",
+            refresh_token_error_values=("invalid_grant",),
+        )
+        requests_mock.post(
+            f"https://{TestOauth2Authenticator.refresh_endpoint}",
+            status_code=400,
+            json={"error": "invalid_grant", "error_description": f"{refresh_token} was rejected."},
+        )
+
+        with pytest.raises(AirbyteTracedException) as exc_info:
+            oauth.refresh_access_token()
+
+        assert refresh_token not in exc_info.value.message
+        assert exc_info.value.message.endswith("Provider error: invalid_grant: ****")
+
+    def test_provider_code_requires_a_word_boundary(self, requests_mock):
+        """`AADSTS50173abc` is a longer identifier, not the code `AADSTS50173`."""
+        message = self._message_for_description(requests_mock, "AADSTS50173abc: not a code.")
+        assert message.endswith("Provider error: invalid_grant")
+        assert "AADSTS50173" not in message
+
+    def test_credentials_echoed_in_the_error_field_are_redacted(self, requests_mock):
+        """The `error` field is ungated when the connector keys off a different field.
+
+        Kills the mutant that drops `_redact_credentials` from the user-facing detail: the code and
+        the gated error token are safe by construction, but this field is not.
+        """
+        update_secrets([])
+        refresh_token = "0.AXoA-rt-9f3ZqW7kP2"
+        oauth = Oauth2Authenticator(
+            f"https://{TestOauth2Authenticator.refresh_endpoint}",
+            TestOauth2Authenticator.client_id,
+            TestOauth2Authenticator.client_secret,
+            refresh_token,
+            refresh_token_error_status_codes=(400,),
+            refresh_token_error_key="errorCode",
+            refresh_token_error_values=("invalid_grant",),
+        )
+        requests_mock.post(
+            f"https://{TestOauth2Authenticator.refresh_endpoint}",
+            status_code=400,
+            json={
+                "errorCode": "invalid_grant",
+                "error": f"rejected {refresh_token}",
+                "error_description": "AADSTS50173: revoked.",
+            },
+        )
+
+        with pytest.raises(AirbyteTracedException) as exc_info:
+            oauth.refresh_access_token()
+
+        assert refresh_token not in exc_info.value.message
+        assert "****" in exc_info.value.message
+
+    def test_description_without_provider_code_falls_back_to_error_token(self, requests_mock):
+        """Providers that return prose with no code still get the RFC 6749 error token."""
+        message = self._message_for_description(requests_mock, "Token has been expired or revoked.")
+        assert message.endswith("Provider error: invalid_grant")
+        assert "revoked." not in message
+
+    def test_refresh_access_token_without_error_fields_keeps_bare_guidance(self, requests_mock):
+        """No usable provider detail means the user-facing message is left exactly as before."""
+        oauth = Oauth2Authenticator(
+            f"https://{TestOauth2Authenticator.refresh_endpoint}",
+            TestOauth2Authenticator.client_id,
+            TestOauth2Authenticator.client_secret,
+            TestOauth2Authenticator.refresh_token,
+            refresh_token_error_status_codes=(400,),
+            refresh_token_error_key="errorCode",
+            refresh_token_error_values=("invalid_grant",),
+        )
+        requests_mock.post(
+            f"https://{TestOauth2Authenticator.refresh_endpoint}",
+            status_code=400,
+            json={"errorCode": "invalid_grant", "errorSummary": "the grant was revoked"},
+        )
+
+        with pytest.raises(AirbyteTracedException) as exc_info:
+            oauth.refresh_access_token()
+
+        assert exc_info.value.message == (
+            "Refresh token was rejected by the OAuth provider (invalid, expired, or already used). "
+            "Re-authenticate this source's credentials in its connection settings."
+        )
+        assert "the grant was revoked" in exc_info.value.internal_message
 
 
 @freezegun.freeze_time("2022-12-31")
@@ -780,8 +1198,88 @@ class TestSingleUseRefreshTokenOauth2Authenticator:
             "new_refresh_token",
         )
 
+    def test_send_refresh_request_as_query_params_picks_up_rotated_refresh_token(
+        self, mocker, connector_config
+    ):
+        """`SingleUseRefreshTokenOauth2Authenticator` rotates its refresh token
+        on every refresh. When `send_refresh_request_as_query_params=True`, the
+        URL on the second refresh request must carry the **rotated** refresh
+        token (the one returned by the previous refresh), not the original
+        value from the connector config at construction time.
+        """
+        original_refresh_token = connector_config["credentials"]["refresh_token"]
+        rotated_refresh_token = "rotated_refresh_token_value"
 
-def mock_request(method, url, data, headers):
+        authenticator = SingleUseRefreshTokenOauth2Authenticator(
+            connector_config,
+            token_refresh_endpoint="https://refresh_endpoint.com",
+            client_id=connector_config["credentials"]["client_id"],
+            client_secret=connector_config["credentials"]["client_secret"],
+            send_refresh_request_as_query_params=True,
+            refresh_request_headers={"Authorization": "Basic dGVzdA=="},
+        )
+
+        resp.status_code = 200
+        mocker.patch.object(
+            resp,
+            "json",
+            return_value={
+                authenticator.get_access_token_name(): "new_access_token",
+                authenticator.get_expires_in_name(): 3600,
+                authenticator.get_refresh_token_name(): rotated_refresh_token,
+            },
+        )
+        mocked_request = mocker.patch.object(
+            requests, "request", side_effect=mock_request, autospec=True
+        )
+
+        authenticator.refresh_and_set_access_token()
+        first_call_params = mocked_request.call_args.kwargs["params"]
+        assert first_call_params["refresh_token"] == original_refresh_token
+        assert connector_config["credentials"]["refresh_token"] == rotated_refresh_token, (
+            "config should have been mutated to carry the rotated refresh token"
+        )
+
+        authenticator.refresh_and_set_access_token()
+        second_call_params = mocked_request.call_args.kwargs["params"]
+        assert second_call_params["refresh_token"] == rotated_refresh_token, (
+            "second refresh must send the rotated refresh token on the URL, "
+            "not the stale value baked in at construction time"
+        )
+        second_call_body = mocked_request.call_args.kwargs["data"]
+        assert "refresh_token" not in second_call_body
+
+    def test_missing_refresh_token_in_response_preserves_existing_token(
+        self, mocker, connector_config
+    ):
+        """When the OAuth response omits the refresh token, the existing refresh token is preserved."""
+        original_refresh_token = connector_config["credentials"]["refresh_token"]
+        authenticator = SingleUseRefreshTokenOauth2Authenticator(
+            connector_config,
+            token_refresh_endpoint="https://refresh_endpoint.com",
+            client_id=connector_config["credentials"]["client_id"],
+            client_secret=connector_config["credentials"]["client_secret"],
+        )
+
+        resp.status_code = 200
+        mocker.patch.object(
+            resp,
+            "json",
+            return_value={
+                authenticator.get_access_token_name(): "new_access_token",
+                authenticator.get_expires_in_name(): 3600,
+                # no refresh_token in response
+            },
+        )
+        mocker.patch.object(requests, "request", side_effect=mock_request, autospec=True)
+
+        authenticator.refresh_and_set_access_token()
+
+        assert authenticator.access_token == "new_access_token"
+        assert authenticator.get_refresh_token() == original_refresh_token
+
+
+def mock_request(method, url, data, headers, **kwargs):
     if url == "https://refresh_endpoint.com":
         return resp
     raise Exception(

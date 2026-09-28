@@ -3,6 +3,7 @@
 #
 
 import logging
+import re
 import threading
 from abc import abstractmethod
 from datetime import timedelta
@@ -17,13 +18,26 @@ from airbyte_cdk.models import FailureType, Level
 from airbyte_cdk.sources.http_logger import format_http_message
 from airbyte_cdk.sources.message import MessageRepository, NoopMessageRepository
 from airbyte_cdk.utils import AirbyteTracedException
-from airbyte_cdk.utils.airbyte_secrets_utils import add_to_secrets
+from airbyte_cdk.utils.airbyte_secrets_utils import add_to_secrets, filter_secrets
 from airbyte_cdk.utils.datetime_helpers import AirbyteDateTime, ab_datetime_now, ab_datetime_parse
 
 from ..exceptions import DefaultBackoffException
 
 logger = logging.getLogger("airbyte")
 _NOOP_MESSAGE_REPOSITORY = NoopMessageRepository()
+
+# Provider error codes that lead `error_description`, e.g. Microsoft Entra's `AADSTS50173`.
+# Only the code is appended to the user-facing message: it is the entire grouping key, and unlike
+# the surrounding prose it is identical on every attempt at the same failure.
+_PROVIDER_ERROR_CODE_PATTERN = re.compile(r"^[A-Za-z]{3,}\d{4,}\b")
+# Upper bound on the provider-controlled text appended to the user-facing message. Both the
+# RFC 6749 `error` token and the extracted code come from the provider, so both are still capped.
+# The longest standard token (`unsupported_grant_type`, 22) plus a 7-digit Entra code is 37
+# characters, so this leaves roughly 2x headroom while still bounding a misbehaving provider.
+_PROVIDER_ERROR_DETAIL_MAX_LENGTH = 64
+# How much of the raw provider response is kept in the internal message, which is logged and is not
+# shown to the user.
+_PROVIDER_ERROR_RESPONSE_MAX_LENGTH = 1000
 
 
 class ResponseKeysMaxRecurtionReached(AirbyteTracedException):
@@ -125,29 +139,29 @@ class AbstractOauth2Authenticator(AuthBase):
         """Returns True if the token is expired"""
         return ab_datetime_now() > self.get_token_expiry_date()
 
-    def build_refresh_request_body(self) -> Mapping[str, Any]:
-        """
-        Returns the request body to set on the refresh request.
+    def _build_standard_refresh_args(self) -> MutableMapping[str, Any]:
+        """Build the standard OAuth refresh args (grant_type, refresh_token, client
+        credentials, scopes, plus any user-configured `refresh_request_body` extras).
 
-        Override to define additional parameters.
+        Used by both `build_refresh_request_body()` and
+        `build_refresh_request_query_params()` so the same set of args can be emitted
+        in either the body or the URL query string depending on
+        `should_send_refresh_request_as_query_params()`.
 
-        Client credentials (client_id and client_secret) are excluded from the body when
-        refresh_request_headers contains an Authorization header (e.g., Basic auth).
-        This is required by OAuth providers like Gong that expect credentials ONLY in the
-        Authorization header and reject requests that include them in both places.
+        Client credentials (client_id and client_secret) are excluded when
+        `refresh_request_headers` contains an `Authorization` header (e.g. Basic
+        auth). This is required by OAuth providers like Gong that expect credentials
+        ONLY in the Authorization header and reject requests that include them in
+        both places.
         """
-        # Check if credentials are being sent via Authorization header
         headers = self.get_refresh_request_headers()
         credentials_in_header = headers and "Authorization" in headers
-
-        # Only include client credentials in body if not already in header
         include_client_credentials = not credentials_in_header
 
         payload: MutableMapping[str, Any] = {
             self.get_grant_type_name(): self.get_grant_type(),
         }
 
-        # Only include client credentials in body if configured to do so and not in header
         if include_client_credentials:
             payload[self.get_client_id_name()] = self.get_client_id()
             payload[self.get_client_secret_name()] = self.get_client_secret()
@@ -159,11 +173,24 @@ class AbstractOauth2Authenticator(AuthBase):
 
         if self.get_refresh_request_body():
             for key, val in self.get_refresh_request_body().items():
-                # We defer to existing oauth constructs over custom configured fields
+                # Existing oauth args take precedence over custom configured fields.
                 if key not in payload:
                     payload[key] = val
 
         return payload
+
+    def build_refresh_request_body(self) -> Mapping[str, Any]:
+        """Returns the request body to set on the refresh request.
+
+        When `should_send_refresh_request_as_query_params()` is `True`, the standard
+        refresh args are emitted on the URL query string instead and this method
+        returns an empty body. This supports OAuth providers like Gong that document
+        their refresh endpoint as a `POST` with parameters on the URL query string
+        and an empty body.
+        """
+        if self.should_send_refresh_request_as_query_params():
+            return {}
+        return self._build_standard_refresh_args()
 
     def build_refresh_request_headers(self) -> Mapping[str, Any] | None:
         """
@@ -173,13 +200,39 @@ class AbstractOauth2Authenticator(AuthBase):
         headers = self.get_refresh_request_headers()
         return headers if headers else None
 
+    def build_refresh_request_query_params(self) -> Mapping[str, Any] | None:
+        """Returns the URL query string parameters to set on the refresh request.
+
+        When `should_send_refresh_request_as_query_params()` is `True`, the standard
+        refresh args (grant_type, refresh_token, client credentials, scopes, plus
+        any user-configured `refresh_request_body` extras) are returned here and
+        `build_refresh_request_body()` returns an empty body.
+
+        Returns `None` otherwise so existing authenticators retain their previous
+        behavior (no query params on the refresh URL).
+        """
+        if not self.should_send_refresh_request_as_query_params():
+            return None
+        return self._build_standard_refresh_args()
+
     def refresh_access_token(self) -> Tuple[str, AirbyteDateTime]:
         """
         Returns the refresh token and its expiration datetime
 
         :return: a tuple of (access_token, token_lifespan)
         """
-        response_json = self._make_handled_request()
+        try:
+            response_json = self._make_handled_request()
+        except (
+            requests.exceptions.ConnectionError,
+            requests.exceptions.ConnectTimeout,
+            requests.exceptions.ReadTimeout,
+        ) as e:
+            raise AirbyteTracedException(
+                message="OAuth access token refresh request failed due to a network error.",
+                internal_message=f"Network error during OAuth token refresh after retries were exhausted: {e}",
+                failure_type=FailureType.transient_error,
+            ) from e
         self._ensure_access_token_in_response(response_json)
 
         return (
@@ -199,8 +252,100 @@ class AbstractOauth2Authenticator(AuthBase):
         default_token_expiry_duration_hours = 1  # 1 hour
         return ab_datetime_now() + timedelta(hours=default_token_expiry_duration_hours)
 
+    @staticmethod
+    def _parse_error_response_content(
+        response: Optional[requests.Response],
+    ) -> Optional[Mapping[str, Any]]:
+        """
+        Best-effort parse of an error response body as a JSON object.
+
+        Returns `None` when the response is missing, empty, not valid JSON, or not a JSON object,
+        so that callers can degrade gracefully instead of raising a new exception while they are
+        already handling an error.
+        """
+        if response is None:
+            return None
+        try:
+            content = response.json()
+        except (JSONDecodeError, ValueError):
+            return None
+        return content if isinstance(content, Mapping) else None
+
+    def _redact_credentials(self, value: str) -> str:
+        """
+        Redact credential material from a string before it is logged or surfaced to the user.
+
+        Only response bodies are passed here, so request headers (including `Authorization`) are
+        never echoed. On top of the config secrets already tracked by the CDK, the authenticator's
+        own refresh token and client secret are redacted explicitly, in case a provider echoes the
+        submitted credentials back in its error payload.
+        """
+        redacted = filter_secrets(value)
+        for get_credential in (self.get_refresh_token, self.get_client_secret):
+            try:
+                credential = get_credential()
+            except Exception:
+                # Never let redaction itself fail the error path we are already in.
+                continue
+            if credential and isinstance(credential, str):
+                redacted = redacted.replace(credential, "****")
+        return redacted
+
+    @staticmethod
+    def _truncate(value: str, max_length: int) -> str:
+        return value if len(value) <= max_length else value[:max_length] + "..."
+
+    def _build_provider_error_detail(
+        self, response_content: Optional[Mapping[str, Any]]
+    ) -> Optional[str]:
+        """
+        Build a short, deterministic provider error detail for the user-facing message.
+
+        Only the standard OAuth 2.0 `error` field (RFC 6749 section 5.2) and the provider error
+        code leading `error_description` are used. Both are stable for a given failure, so the same
+        failure produces a byte-identical message on every attempt and the platform groups them
+        into a single failure summary. The description prose is deliberately excluded: it is
+        free-form, and providers embed per-request values in it -- Microsoft Entra's
+        `AADSTS700082` carries the token issue timestamp in its first sentence -- which would make
+        the grouping key unbounded. The code alone is what distinguishes a revoked grant
+        (`AADSTS50173`) from a misconfigured client (`AADSTS7000218`) or a Conditional Access
+        requirement (`AADSTS50076`). The full response body is preserved in the internal message,
+        which is logged. Which provider errors reach this path at all is set by the
+        authenticator's `refresh_token_error_*` configuration.
+        """
+        if not response_content:
+            return None
+        parts = []
+        error = response_content.get("error")
+        if isinstance(error, str) and error.strip():
+            parts.append(" ".join(error.split()))
+        description = response_content.get("error_description")
+        if isinstance(description, str):
+            code_match = _PROVIDER_ERROR_CODE_PATTERN.match(description.strip())
+            if code_match:
+                parts.append(code_match.group())
+        if not parts:
+            return None
+        return self._truncate(
+            self._redact_credentials(": ".join(parts)), _PROVIDER_ERROR_DETAIL_MAX_LENGTH
+        )
+
+    def _build_provider_response_info(self, exception: requests.exceptions.RequestException) -> str:
+        """
+        Build the full provider response detail for the internal message, which goes to the logs.
+        """
+        if exception.response is None:
+            return self._redact_credentials(str(exception))
+        body = self._truncate(
+            self._redact_credentials(exception.response.text),
+            _PROVIDER_ERROR_RESPONSE_MAX_LENGTH,
+        )
+        return f"HTTP {exception.response.status_code}: {body}"
+
     def _wrap_refresh_token_exception(
-        self, exception: requests.exceptions.RequestException
+        self,
+        exception: requests.exceptions.RequestException,
+        response_content: Optional[Mapping[str, Any]] = None,
     ) -> bool:
         """
         Wraps and handles exceptions that occur during the refresh token process.
@@ -210,16 +355,20 @@ class AbstractOauth2Authenticator(AuthBase):
 
         Args:
             exception (requests.exceptions.RequestException): The exception raised during the request.
+            response_content (Optional[Mapping[str, Any]]): The already-parsed response body, when
+                the caller has one, so the body is not parsed twice. Parsed on demand otherwise.
 
         Returns:
             bool: True if the exception is related to a refresh token error, False otherwise.
         """
-        try:
-            if exception.response is not None:
-                exception_content = exception.response.json()
-            else:
-                return False
-        except JSONDecodeError:
+        if exception.response is None:
+            return False
+        exception_content = (
+            response_content
+            if response_content is not None
+            else self._parse_error_response_content(exception.response)
+        )
+        if exception_content is None:
             return False
         return (
             exception.response.status_code in self._refresh_token_error_status_codes
@@ -229,7 +378,12 @@ class AbstractOauth2Authenticator(AuthBase):
 
     @backoff.on_exception(
         backoff.expo,
-        DefaultBackoffException,
+        (
+            DefaultBackoffException,
+            requests.exceptions.ConnectionError,
+            requests.exceptions.ConnectTimeout,
+            requests.exceptions.ReadTimeout,
+        ),
         on_backoff=lambda details: logger.info(
             f"Caught retryable error after {details['tries']} tries. Waiting {details['wait']} seconds then retrying..."
         ),
@@ -259,6 +413,7 @@ class AbstractOauth2Authenticator(AuthBase):
                 url=self.get_token_refresh_endpoint(),  # type: ignore # returns None, if not provided, but str | bytes is expected.
                 data=self.build_refresh_request_body(),
                 headers=self.build_refresh_request_headers(),
+                params=self.build_refresh_request_query_params(),
             )
 
             if not response.ok:
@@ -288,14 +443,34 @@ class AbstractOauth2Authenticator(AuthBase):
                         response=e.response,
                         failure_type=FailureType.transient_error,
                     )
-            if self._wrap_refresh_token_exception(e):
-                message = "Refresh token is invalid or expired. Please re-authenticate from Sources/<your source>/Settings."
-                raise AirbyteTracedException(
-                    internal_message=message, message=message, failure_type=FailureType.config_error
+            error_content = self._parse_error_response_content(e.response)
+            if self._wrap_refresh_token_exception(e, response_content=error_content):
+                message = (
+                    "Refresh token was rejected by the OAuth provider (invalid, expired, or "
+                    "already used). Re-authenticate this source's credentials in its connection "
+                    "settings."
                 )
+                provider_error_detail = self._build_provider_error_detail(error_content)
+                if provider_error_detail:
+                    # The provider's own diagnostic is what tells apart otherwise identical-looking
+                    # failures (revoked grant vs. misconfigured client vs. Conditional Access), so
+                    # a short form of it is appended after the actionable guidance.
+                    message = f"{message} Provider error: {provider_error_detail}"
+                raise AirbyteTracedException(
+                    internal_message=(
+                        "Refresh token rejected by the OAuth token endpoint. "
+                        f"{self._build_provider_response_info(e)}"
+                    ),
+                    message=message,
+                    failure_type=FailureType.config_error,
+                ) from e
             raise
         except Exception as e:
-            raise Exception(f"Error while refreshing access token: {e}") from e
+            raise AirbyteTracedException(
+                message="OAuth access token refresh request failed.",
+                internal_message=f"Unexpected error during OAuth token refresh: {e}",
+                failure_type=FailureType.system_error,
+            ) from e
 
     def _ensure_access_token_in_response(self, response_data: Mapping[str, Any]) -> None:
         """
@@ -534,6 +709,17 @@ class AbstractOauth2Authenticator(AuthBase):
     @abstractmethod
     def get_refresh_request_headers(self) -> Mapping[str, Any]:
         """Returns the request headers to set on the refresh request"""
+
+    def should_send_refresh_request_as_query_params(self) -> bool:
+        """Returns `True` if the standard refresh args should be sent on the URL
+        query string instead of in the request body.
+
+        Defaults to `False` so existing authenticators retain their previous
+        behavior (params in body, no query params on the refresh URL). Subclasses
+        can override this to opt into the URL-query-string shape required by OAuth
+        providers like Gong.
+        """
+        return False
 
     @abstractmethod
     def get_grant_type(self) -> str:

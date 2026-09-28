@@ -152,3 +152,156 @@ def test_interpolated_page_size_raises_on_non_integer():
             config={"page_size": "invalid"},
             parameters={},
         )
+
+
+def test_given_page_size_override_then_token_is_unchanged():
+    strategy = CursorPaginationStrategy(
+        page_size=100, cursor_value="{{ response.next }}", config={}, parameters={}
+    )
+    response = requests.Response()
+    response._content = json.dumps({"next": "a token"}).encode("utf-8")
+
+    assert (
+        strategy.next_page_token(response, 50, None, None, page_size_override=50)
+        == strategy.next_page_token(response, 100, None, None)
+        == "a token"
+    )
+
+
+def test_given_stop_condition_uses_page_size_and_page_is_full_at_the_reduced_size_then_keep_paginating():
+    """
+    Regression test for the silent truncation a page size reduction used to cause: a full page at the reduced
+    size satisfies `last_page_size < 100` and would end the pagination, dropping the rest of the partition.
+    `page_size` holds the size that was actually requested, so the same condition keeps paginating.
+    """
+    strategy = CursorPaginationStrategy(
+        page_size=100,
+        cursor_value="{{ response.next }}",
+        stop_condition="{{ last_page_size < page_size }}",
+        config={},
+        parameters={},
+    )
+    response = requests.Response()
+    response._content = json.dumps({"next": "a token"}).encode("utf-8")
+
+    assert strategy.next_page_token(response, 50, None, None, page_size_override=50) == "a token"
+    assert strategy.next_page_token(response, 100, None, None) == "a token"
+
+
+def test_given_stop_condition_uses_page_size_and_page_is_short_then_stop():
+    strategy = CursorPaginationStrategy(
+        page_size=100,
+        cursor_value="{{ response.next }}",
+        stop_condition="{{ last_page_size < page_size }}",
+        config={},
+        parameters={},
+    )
+    response = requests.Response()
+    response._content = json.dumps({"next": "a token"}).encode("utf-8")
+
+    assert strategy.next_page_token(response, 49, None, None, page_size_override=50) is None
+    assert strategy.next_page_token(response, 99, None, None) is None
+
+
+@pytest.mark.parametrize(
+    "page_size,page_size_override,expected_token",
+    [
+        pytest.param(100, None, 100, id="test_configured_page_size_is_bound"),
+        pytest.param(100, 50, 50, id="test_reduced_page_size_is_bound"),
+    ],
+)
+def test_page_size_is_bound_in_the_cursor_value_interpolation_context(
+    page_size, page_size_override, expected_token
+):
+    """
+    `page_size` has to resolve to the size that was actually requested. The None case alone would also pass if
+    the variable were never bound at all, so the two positive cases are what pin it.
+    """
+    strategy = CursorPaginationStrategy(
+        page_size=page_size, cursor_value="{{ page_size }}", config={}, parameters={}
+    )
+    response = requests.Response()
+    response._content = json.dumps({}).encode("utf-8")
+
+    assert (
+        strategy.next_page_token(response, 10, None, None, page_size_override=page_size_override)
+        == expected_token
+    )
+
+
+@pytest.mark.parametrize(
+    "field_name, kwargs",
+    [
+        pytest.param(
+            "stop_condition",
+            {
+                "cursor_value": "{{ response.next }}",
+                "stop_condition": "{{ last_page_size < page_size }}",
+            },
+            id="test_stop_condition_reads_page_size",
+        ),
+        pytest.param(
+            "cursor_value",
+            {"cursor_value": "{{ page_size }}"},
+            id="test_cursor_value_reads_page_size",
+        ),
+        pytest.param(
+            "stop_condition",
+            {
+                "cursor_value": "{{ response.next }}",
+                "stop_condition": InterpolatedBoolean(
+                    condition="{{ last_page_size < page_size }}", parameters={}
+                ),
+            },
+            id="test_stop_condition_given_as_a_component",
+        ),
+    ],
+)
+def test_given_no_page_size_when_an_expression_reads_page_size_then_raise(field_name, kwargs):
+    """
+    `page_size` is unbound without a declared page size, and an unbound comparison does not fail loudly: Jinja
+    raises, the interpolation falls back to the raw template string, and a non-empty string is truthy. A
+    `stop_condition` written that way would stop after the first page, so it has to be rejected here.
+    """
+    with pytest.raises(ValueError) as error:
+        CursorPaginationStrategy(config={}, parameters={}, **kwargs)
+
+    assert f"`{field_name}`" in str(error.value)
+    assert "declares no `page_size`" in str(error.value)
+
+
+def test_given_no_page_size_when_the_expression_reads_config_page_size_then_accept():
+    """`config['page_size']` is a lookup on the config, not the reduction-aware variable, and is always bound."""
+    strategy = CursorPaginationStrategy(
+        cursor_value="{{ response.next }}",
+        stop_condition="{{ last_page_size < config['page_size'] }}",
+        config={"page_size": 100},
+        parameters={},
+    )
+    response = requests.Response()
+    response._content = json.dumps({"next": "a token"}).encode("utf-8")
+
+    assert strategy.next_page_token(response, 100, None, None) == "a token"
+
+
+@pytest.mark.parametrize(
+    "page_size",
+    [
+        pytest.param(100, id="test_literal_page_size"),
+        pytest.param("{{ config['page_size'] }}", id="test_interpolated_page_size"),
+    ],
+)
+def test_given_a_page_size_when_an_expression_reads_page_size_then_accept(page_size):
+    strategy = CursorPaginationStrategy(
+        cursor_value="{{ response.next }}",
+        stop_condition="{{ last_page_size < page_size }}",
+        page_size=page_size,
+        config={"page_size": 100},
+        parameters={},
+    )
+    response = requests.Response()
+    response._content = json.dumps({"next": "a token"}).encode("utf-8")
+
+    assert strategy.next_page_token(response, 100, None, None) == "a token"
+    assert strategy.next_page_token(response, 50, None, None, page_size_override=50) == "a token"
+    assert strategy.next_page_token(response, 49, None, None, page_size_override=50) is None

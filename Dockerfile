@@ -5,7 +5,7 @@
 # A new version of source-declarative-manifest is built for every new Airbyte CDK release, and their versions are kept in sync.
 #
 
-FROM docker.io/airbyte/python-connector-base:4.1.0@sha256:1d1aa21d34e851df4e8a87b391c27724c06e2597608e7161f4d167be853bd7b6
+FROM docker.io/airbyte/python-connector-base:4.1.1@sha256:a268b44c733ae699a60f5fbc06a324945dba98945c6e2ab7f8609f2f895b0d28
 
 WORKDIR /airbyte/integration_code
 

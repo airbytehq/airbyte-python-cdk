@@ -148,7 +148,7 @@ def connector_test(
     click.echo("Connector test command executed.")
     connector_name, connector_directory = resolve_connector_name_and_directory(connector)
 
-    pytest_args = pytest_args or []
+    pytest_args = list(pytest_args or [])
     if collect_only:
         pytest_args.append("--collect-only")
 

@@ -79,6 +79,9 @@ def build_source(
         state=state,
         source_config=definition,
         config=config,
+        # The manifest is supplied by the API caller rather than bundled in a connector image, so
+        # any custom components it references are untrusted code.
+        custom_components_trusted=False,
         normalize_manifest=should_normalize,
         migrate_manifest=should_migrate,
         emit_connector_builder_messages=True,

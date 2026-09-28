@@ -212,14 +212,6 @@ def test_interpolated_request_json(test_name, input_request_json, expected_reque
             {},
         ),
         (
-            "test_string",
-            RequestBodyPlainText(
-                type="RequestBodyPlainText",
-                value="""{"nested": { "key": "{{ config['option'] }}" }}""",
-            ),
-            {"nested": {"key": "OPTION"}},
-        ),
-        (
             "test_nested_objects",
             RequestBodyJsonObject(
                 type="RequestBodyJsonObject", value={"nested": {"key": "{{ config['option'] }}"}}
@@ -344,6 +336,22 @@ def test_interpolated_request_data(test_name, input_request_data, expected_reque
                 },
             ),
             {"2020-01-01 - 12345": "ABC"},
+        ),
+        (
+            "test_plain_text_body",
+            RequestBodyPlainText(
+                type="RequestBodyPlainText",
+                value="plain text body content",
+            ),
+            "plain text body content",
+        ),
+        (
+            "test_plain_text_with_interpolation",
+            RequestBodyPlainText(
+                type="RequestBodyPlainText",
+                value="interpolate_me=5&option={{ config['option'] }}",
+            ),
+            "interpolate_me=5&option=OPTION",
         ),
     ],
 )

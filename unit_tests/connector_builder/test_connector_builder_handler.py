@@ -56,6 +56,10 @@ from airbyte_cdk.sources.declarative.concurrent_declarative_source import (
     ConcurrentDeclarativeSource,
     TestLimits,
 )
+from airbyte_cdk.sources.declarative.parsers.custom_code_compiler import (
+    ENV_VAR_ALLOW_CUSTOM_CODE,
+    AirbyteCustomCodeNotPermittedError,
+)
 from airbyte_cdk.sources.declarative.retrievers.simple_retriever import SimpleRetriever
 from airbyte_cdk.sources.declarative.stream_slicers import StreamSlicerTestReadDecorator
 from airbyte_cdk.sources.streams.concurrent.default_stream import DefaultStream
@@ -1031,6 +1035,117 @@ def test_create_source():
     assert source._constructor._disable_cache
 
 
+def test_create_source_marks_manifest_untrusted():
+    """A Connector Builder manifest is caller-supplied, so its factory must be untrusted.
+
+    This is the invariant that gates custom-component execution independently of the config
+    contents, so it cannot be defeated by a manifest that manipulates its own config.
+    """
+    source = create_source(
+        config={"__injected_declarative_manifest": MANIFEST}, limits=None, catalog=None, state=None
+    )
+
+    assert source._constructor._custom_components_trusted is False
+
+
+_GATE_BYPASS_STREAM = {
+    "type": "DeclarativeStream",
+    "name": "s",
+    "retriever": {
+        "type": "SimpleRetriever",
+        "requester": {
+            "type": "HttpRequester",
+            "url_base": "https://example.com",
+            "path": "/",
+        },
+        "record_selector": {
+            "type": "RecordSelector",
+            "extractor": {
+                "type": "CustomRecordExtractor",
+                "class_name": "not_a_real_module.NotAThing",
+            },
+        },
+    },
+    "schema_loader": {
+        "type": "InlineSchemaLoader",
+        "schema": {"type": "object", "properties": {}},
+    },
+}
+
+
+def test_spec_level_custom_component_is_gated(monkeypatch):
+    """A `Custom*` component in `spec.config_normalization_rules` must honor the gate.
+
+    The spec component is built with an empty config, so the config-key provenance signal is
+    absent there; the untrusted-factory flag is what keeps the gate active. A non-existent
+    `class_name` proves the gate fires *before* the class is resolved (otherwise the failure
+    would be a class-resolution `ValueError`, not `AirbyteCustomCodeNotPermittedError`).
+    """
+    monkeypatch.delenv(ENV_VAR_ALLOW_CUSTOM_CODE, raising=False)
+    manifest = {
+        "type": "DeclarativeSource",
+        "version": "6.0.0",
+        "check": {"type": "CheckStream", "stream_names": ["s"]},
+        "spec": {
+            "type": "Spec",
+            "connection_specification": {"type": "object", "properties": {}},
+            "config_normalization_rules": {
+                "type": "ConfigNormalizationRules",
+                "transformations": [
+                    {
+                        "type": "CustomConfigTransformation",
+                        "class_name": "not_a_real_module.NotAThing",
+                    }
+                ],
+            },
+        },
+        "streams": [_GATE_BYPASS_STREAM],
+    }
+
+    with pytest.raises(AirbyteCustomCodeNotPermittedError):
+        create_source(
+            config={"__injected_declarative_manifest": manifest},
+            limits=None,
+            catalog=None,
+            state=None,
+        )
+
+
+def test_config_strip_does_not_bypass_custom_code_gate(monkeypatch):
+    """A manifest that strips its own provenance key must not escape the gate.
+
+    A plain `ConfigRemoveFields` removing `__injected_declarative_manifest` runs before streams
+    are built, defeating the config-key signal. The untrusted-factory flag does not live in the
+    config, so a stream-level `Custom*` component stays gated.
+    """
+    monkeypatch.delenv(ENV_VAR_ALLOW_CUSTOM_CODE, raising=False)
+    manifest = {
+        "type": "DeclarativeSource",
+        "version": "6.0.0",
+        "check": {"type": "CheckStream", "stream_names": ["s"]},
+        "spec": {
+            "type": "Spec",
+            "connection_specification": {"type": "object", "properties": {}},
+            "config_normalization_rules": {
+                "type": "ConfigNormalizationRules",
+                "transformations": [
+                    {
+                        "type": "ConfigRemoveFields",
+                        "field_pointers": [["__injected_declarative_manifest"]],
+                    }
+                ],
+            },
+        },
+        "streams": [_GATE_BYPASS_STREAM],
+    }
+    config = {"__injected_declarative_manifest": manifest}
+
+    source = create_source(config=config, limits=None, catalog=None, state=None)
+
+    with pytest.raises(AirbyteCustomCodeNotPermittedError):
+        source.streams(config)
+
+
 def request_log_message(request: dict) -> AirbyteMessage:
     return AirbyteMessage(
         type=Type.LOG,
@@ -1288,7 +1403,7 @@ def test_handle_read_external_requests(deployment_mode, url_base, expected_error
         pytest.param(
             "CLOUD",
             "https://10.0.27.27/tokens/bearer",
-            "Error while refreshing access token",
+            "OAuth access token refresh request failed.",
             id="test_cloud_read_with_private_endpoint",
         ),
         pytest.param(
@@ -1804,3 +1919,131 @@ def test_full_resolve_manifest(valid_resolve_manifest_config_file):
     }
     assert resolved_manifest.record.data["manifest"] == expected_resolved_manifest
     assert resolved_manifest.record.stream == "full_resolve_manifest"
+
+
+_PAGE_SIZE_REDUCTION_STREAM_NAME = "reducing_stream"
+_PAGE_SIZE_REDUCTION_MANIFEST = {
+    "version": "0.30.3",
+    "type": "DeclarativeSource",
+    "check": {"type": "CheckStream", "stream_names": [_PAGE_SIZE_REDUCTION_STREAM_NAME]},
+    "streams": [
+        {
+            "type": "DeclarativeStream",
+            "name": _PAGE_SIZE_REDUCTION_STREAM_NAME,
+            "schema_loader": {"type": "InlineSchemaLoader", "schema": {"type": "object"}},
+            "retriever": {
+                "type": "SimpleRetriever",
+                "page_size_reduction": {"type": "PageSizeReduction"},
+                "requester": {
+                    "type": "HttpRequester",
+                    "url_base": "https://demonslayers.com/api/v1/",
+                    "path": "hashiras",
+                    "http_method": "GET",
+                    "error_handler": {
+                        "type": "DefaultErrorHandler",
+                        "response_filters": [
+                            {
+                                "type": "HttpResponseFilter",
+                                "http_codes": [502],
+                                "action": "REDUCE_PAGE_SIZE",
+                            }
+                        ],
+                    },
+                },
+                "record_selector": {
+                    "type": "RecordSelector",
+                    "extractor": {"type": "DpathExtractor", "field_path": ["result"]},
+                },
+                "paginator": {
+                    "type": "DefaultPaginator",
+                    "page_size_option": {
+                        "type": "RequestOption",
+                        "inject_into": "request_parameter",
+                        "field_name": "first",
+                    },
+                    # `page_size_reduction` rejects a RequestPath page token: the next-page URL built by the
+                    # API already carries the page size, so the reduced one would be sent next to it.
+                    "page_token_option": {
+                        "type": "RequestOption",
+                        "inject_into": "request_parameter",
+                        "field_name": "after",
+                    },
+                    "pagination_strategy": {
+                        "type": "CursorPagination",
+                        "page_size": 100,
+                        "cursor_value": "{{ response._metadata.next }}",
+                        "stop_condition": "{{ not response._metadata.next }}",
+                    },
+                },
+            },
+        }
+    ],
+    "spec": {
+        "connection_specification": {
+            "$schema": "http://json-schema.org/draft-07/schema#",
+            "type": "object",
+            "required": [],
+            "properties": {},
+        },
+        "documentation_url": "https://example.org",
+        "type": "Spec",
+    },
+}
+
+
+def _create_502_page_response():
+    response = requests.Response()
+    response.status_code = 502
+    response._content = b"{}"
+    response.headers["Content-Type"] = "application/json"
+    response.request = _create_request()
+    return response
+
+
+@patch("airbyte_cdk.sources.declarative.retrievers.page_size_reducer.time.sleep", lambda _: None)
+@patch.object(
+    requests.Session,
+    "send",
+    side_effect=(
+        _create_502_page_response(),
+        _create_page_response({"result": [{"id": 0}], "_metadata": {"next": "next"}}),
+        _create_page_response({"result": [{"id": 1}], "_metadata": {}}),
+    ),
+)
+def test_given_page_size_reduction_when_test_read_then_the_retry_does_not_count_as_a_page(
+    mock_http_stream,
+):
+    """
+    The Connector Builder bounds a slice by the number of request/response logs it sees, not by the paginator's
+    own counter. A response that only triggers a reduction is never a page of the stream, so counting it would
+    show empty error pages and report "limit reached" on a read that merely retried.
+    """
+    # three responses are served but only two of them are pages, so the limit is not reached
+    limits = TestLimits(max_records=100, max_pages_per_slice=3, max_slices=2)
+    catalog = ConfiguredAirbyteCatalog(
+        streams=[
+            ConfiguredAirbyteStream(
+                stream=AirbyteStream(
+                    name=_PAGE_SIZE_REDUCTION_STREAM_NAME,
+                    json_schema={},
+                    supported_sync_modes=[SyncMode.full_refresh],
+                ),
+                sync_mode=SyncMode.full_refresh,
+                destination_sync_mode=DestinationSyncMode.append,
+            )
+        ]
+    )
+    config = {"__injected_declarative_manifest": _PAGE_SIZE_REDUCTION_MANIFEST}
+    source = create_source(config=config, limits=limits, catalog=catalog, state=None)
+
+    output_data = read_stream(source, config, catalog, None, limits).record.data
+
+    pages = output_data["slices"][0]["pages"]
+    assert [page["response"]["status"] for page in pages] == [200, 200]
+    assert [record["id"] for page in pages for record in page["records"]] == [0, 1]
+    assert output_data["test_read_limit_reached"] is False
+    # the failed attempt stays visible, just not as a page
+    assert [
+        auxiliary_request["response"]["status"]
+        for auxiliary_request in output_data["auxiliary_requests"]
+    ] == [502]

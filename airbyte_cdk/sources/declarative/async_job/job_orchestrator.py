@@ -5,7 +5,7 @@ import threading
 import time
 import traceback
 import uuid
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 from typing import (
     Any,
     Generator,
@@ -91,10 +91,16 @@ class AsyncPartition:
     @property
     def status(self) -> AsyncJobStatus:
         """
-        Given different job statuses, the priority is: FAILED, TIMED_OUT, RUNNING. Else, it means everything is completed.
+        Given different job statuses, the priority is: FAILED, TIMED_OUT, RUNNING. Else, it means everything is completed
+        or skipped. A partition is SKIPPED only when all jobs are SKIPPED (or a mix of COMPLETED and SKIPPED).
         """
         statuses = set(map(lambda job: job.status(), self.jobs))
         if statuses == {AsyncJobStatus.COMPLETED}:
+            return AsyncJobStatus.COMPLETED
+        elif statuses == {AsyncJobStatus.SKIPPED}:
+            return AsyncJobStatus.SKIPPED
+        elif statuses <= {AsyncJobStatus.COMPLETED, AsyncJobStatus.SKIPPED}:
+            # Mix of completed and skipped — treat as completed so records are fetched for the completed jobs
             return AsyncJobStatus.COMPLETED
         elif AsyncJobStatus.FAILED in statuses:
             return AsyncJobStatus.FAILED
@@ -149,6 +155,7 @@ class AsyncJobOrchestrator:
         AsyncJobStatus.FAILED,
         AsyncJobStatus.RUNNING,
         AsyncJobStatus.TIMED_OUT,
+        AsyncJobStatus.SKIPPED,
     }
     _RUNNING_ON_API_SIDE_STATUS = {AsyncJobStatus.RUNNING, AsyncJobStatus.TIMED_OUT}
 
@@ -161,6 +168,7 @@ class AsyncJobOrchestrator:
         exceptions_to_break_on: Iterable[Type[Exception]] = tuple(),
         has_bulk_parent: bool = False,
         job_max_retry: Optional[int] = None,
+        failed_retry_wait_time_in_seconds: Optional[int] = None,
     ) -> None:
         """
         If the stream slices provided as a parameters relies on a async job streams that relies on the same JobTracker, `has_bulk_parent`
@@ -174,6 +182,9 @@ class AsyncJobOrchestrator:
                 "An AsyncJobStatus has been either removed or added which means the logic of this class needs to be reviewed. Once the logic has been updated, please update _KNOWN_JOB_STATUSES"
             )
 
+        if failed_retry_wait_time_in_seconds is not None and failed_retry_wait_time_in_seconds <= 0:
+            raise ValueError("failed_retry_wait_time_in_seconds must be >= 1")
+
         self._job_repository: AsyncJobRepository = job_repository
         self._slice_iterator = LookaheadIterator(slices)
         self._running_partitions: List[AsyncPartition] = []
@@ -182,6 +193,7 @@ class AsyncJobOrchestrator:
         self._exceptions_to_break_on: Tuple[Type[Exception], ...] = tuple(exceptions_to_break_on)
         self._has_bulk_parent = has_bulk_parent
         self._job_max_retry = job_max_retry
+        self._failed_retry_wait_time_in_seconds = failed_retry_wait_time_in_seconds
 
         self._non_breaking_exceptions: List[Exception] = []
 
@@ -189,6 +201,29 @@ class AsyncJobOrchestrator:
         failed_status_jobs = (AsyncJobStatus.FAILED, AsyncJobStatus.TIMED_OUT)
         jobs_to_replace = [job for job in partition.jobs if job.status() in failed_status_jobs]
         for job in jobs_to_replace:
+            if (
+                self._failed_retry_wait_time_in_seconds is not None
+                and job.status() == AsyncJobStatus.FAILED
+                and not job.is_creation_failure()
+            ):
+                if not job.ready_to_retry():
+                    lazy_log(
+                        LOGGER,
+                        logging.DEBUG,
+                        lambda: f"Job {job.api_job_id()} is not ready to retry yet (deferred). Skipping.",
+                    )
+                    continue
+                if not job.retry_deferred():
+                    job.set_retry_after(
+                        datetime.now(tz=timezone.utc)
+                        + timedelta(seconds=self._failed_retry_wait_time_in_seconds)
+                    )
+                    lazy_log(
+                        LOGGER,
+                        logging.INFO,
+                        lambda: f"Job {job.api_job_id()} failed. Deferring retry for {self._failed_retry_wait_time_in_seconds} seconds.",
+                    )
+                    continue
             new_job = self._start_job(job.job_parameters(), job.api_job_id())
             partition.replace_job(job, [new_job])
 
@@ -274,7 +309,12 @@ class AsyncJobOrchestrator:
         return job
 
     def _create_failed_job(self, stream_slice: StreamSlice) -> AsyncJob:
-        job = AsyncJob(f"{uuid.uuid4()} - Job that could not start", stream_slice, _NO_TIMEOUT)
+        job = AsyncJob(
+            f"{uuid.uuid4()} - Job that could not start",
+            stream_slice,
+            _NO_TIMEOUT,
+            is_creation_failure=True,
+        )
         job.update_status(AsyncJobStatus.FAILED)
         return job
 
@@ -341,6 +381,19 @@ class AsyncJobOrchestrator:
         for job in partition.jobs:
             self._job_tracker.remove_job(job.api_job_id())
 
+    def _process_skipped_partition(self, partition: AsyncPartition) -> None:
+        """
+        Process a skipped partition. The API indicated there is no data to return for this job
+        (e.g. Amazon SP-API CANCELLED status means no data to report). We clean up the job
+        allocation without fetching any records or raising errors.
+        """
+        job_ids = list(map(lambda job: job.api_job_id(), {job for job in partition.jobs}))
+        LOGGER.info(
+            f"The following jobs for stream slice {partition.stream_slice} have been skipped (no data to return): {job_ids}."
+        )
+        for job in partition.jobs:
+            self._job_tracker.remove_job(job.api_job_id())
+
     def _process_running_partitions_and_yield_completed_ones(
         self,
     ) -> Generator[AsyncPartition, Any, None]:
@@ -359,6 +412,8 @@ class AsyncJobOrchestrator:
                 case AsyncJobStatus.COMPLETED:
                     self._process_completed_partition(partition)
                     yield partition
+                case AsyncJobStatus.SKIPPED:
+                    self._process_skipped_partition(partition)
                 case AsyncJobStatus.RUNNING:
                     current_running_partitions.append(partition)
                 case _ if partition.has_reached_max_attempt():

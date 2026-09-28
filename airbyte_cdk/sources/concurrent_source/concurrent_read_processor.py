@@ -13,11 +13,17 @@ from airbyte_cdk.sources.concurrent_source.partition_generation_completed_sentin
 )
 from airbyte_cdk.sources.concurrent_source.stream_thread_exception import StreamThreadException
 from airbyte_cdk.sources.concurrent_source.thread_pool_manager import ThreadPoolManager
+from airbyte_cdk.sources.declarative.partition_routers.cartesian_product_stream_slicer import (
+    CartesianProductStreamSlicer,
+)
 from airbyte_cdk.sources.declarative.partition_routers.grouping_partition_router import (
     GroupingPartitionRouter,
 )
 from airbyte_cdk.sources.declarative.partition_routers.substream_partition_router import (
     SubstreamPartitionRouter,
+)
+from airbyte_cdk.sources.declarative.partition_routers.union_partition_router import (
+    UnionPartitionRouter,
 )
 from airbyte_cdk.sources.message import MessageRepository
 from airbyte_cdk.sources.streams.concurrent.abstract_stream import AbstractStream
@@ -45,6 +51,7 @@ class ConcurrentReadProcessor:
         slice_logger: SliceLogger,
         message_repository: MessageRepository,
         partition_reader: PartitionReader,
+        max_concurrent_partition_generators: Optional[int] = None,
     ):
         """
         This class is responsible for handling items from a concurrent stream read process.
@@ -55,6 +62,12 @@ class ConcurrentReadProcessor:
         :param slice_logger: SliceLogger instance
         :param message_repository: MessageRepository instance
         :param partition_reader: PartitionReader instance
+        :param max_concurrent_partition_generators: Maximum number of partition generators allowed
+            to run concurrently. None means no limit. When set, should be less than the number of
+            workers in multi-worker mode so at least one worker slot is always available for
+            partition reading, preventing thread pool starvation. In single-threaded mode
+            (num_workers=1) the value may equal num_workers; ConcurrentSource.create() handles
+            this distinction. ConcurrentSource.read() passes this value explicitly.
         """
         self._stream_name_to_instance = {s.name: s for s in stream_instances_to_read_from}
         self._record_counter = {}
@@ -62,8 +75,16 @@ class ConcurrentReadProcessor:
         for stream in stream_instances_to_read_from:
             self._streams_to_running_partitions[stream.name] = set()
             self._record_counter[stream.name] = 0
+        if (
+            max_concurrent_partition_generators is not None
+            and max_concurrent_partition_generators < 1
+        ):
+            raise ValueError(
+                f"max_concurrent_partition_generators must be >= 1 or None, got {max_concurrent_partition_generators}"
+            )
         self._thread_pool_manager = thread_pool_manager
         self._partition_enqueuer = partition_enqueuer
+        self._max_concurrent_partition_generators = max_concurrent_partition_generators
         self._stream_instances_to_start_partition_generation = stream_instances_to_read_from
         self._streams_currently_generating_partitions: List[str] = []
         self._logger = logger
@@ -255,6 +276,20 @@ class ConcurrentReadProcessor:
         if not self._stream_instances_to_start_partition_generation:
             return None
 
+        # Enforce the concurrent generator cap so at least one worker slot is always available
+        # for partition reading. Recovery is guaranteed: on_partition_generation_completed
+        # decrements the count before calling here, so the guard always passes there.
+        if (
+            self._max_concurrent_partition_generators is not None
+            and len(self._streams_currently_generating_partitions)
+            >= self._max_concurrent_partition_generators
+        ):
+            self._logger.debug(
+                f"Concurrent partition generator cap ({self._max_concurrent_partition_generators}) reached "
+                f"({len(self._streams_currently_generating_partitions)} active). Deferring next generator start."
+            )
+            return None
+
         # Remember initial queue size to avoid infinite loops if all streams are blocked
         max_attempts = len(self._stream_instances_to_start_partition_generation)
         attempts = 0
@@ -409,14 +444,20 @@ class ConcurrentReadProcessor:
         partition_router = (
             stream.get_partition_router() if isinstance(stream, DefaultStream) else None
         )
-        if isinstance(partition_router, GroupingPartitionRouter):
-            partition_router = partition_router.underlying_partition_router
-
-        if isinstance(partition_router, SubstreamPartitionRouter):
-            for parent_config in partition_router.parent_stream_configs:
-                parent_name = parent_config.stream.name
-                parent_names.add(parent_name)
-                parent_names.update(self._collect_all_parent_stream_names(parent_name))
+        routers = [partition_router] if partition_router is not None else []
+        while routers:
+            router = routers.pop()
+            if isinstance(router, GroupingPartitionRouter):
+                routers.append(router.underlying_partition_router)
+            elif isinstance(router, UnionPartitionRouter):
+                routers.extend(router.partition_routers)
+            elif isinstance(router, CartesianProductStreamSlicer):
+                routers.extend(router.stream_slicers)
+            elif isinstance(router, SubstreamPartitionRouter):
+                for parent_config in router.parent_stream_configs:
+                    parent_name = parent_config.stream.name
+                    parent_names.add(parent_name)
+                    parent_names.update(self._collect_all_parent_stream_names(parent_name))
 
         return parent_names
 
