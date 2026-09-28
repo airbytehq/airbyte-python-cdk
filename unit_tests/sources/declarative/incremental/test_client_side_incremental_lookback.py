@@ -201,6 +201,8 @@ def test_given_state_and_lookback_window_when_read_then_emit_records_within_look
     final_state = _final_state(output)
     cursor_state = final_state if kind == "plain" else final_state["state"]
     assert int(cursor_state["updated_at"]) == expected_state_value
+    if kind == "per_partition":
+        assert int(final_state["states"][0]["cursor"]["updated_at"]) == expected_state_value
 
 
 @pytest.mark.parametrize("kind", ["plain", "per_partition", "global"])
@@ -242,3 +244,10 @@ def test_given_incremental_parent_with_lookback_when_read_then_parent_record_wit
     final_state = _final_state(output)
     assert int(final_state["state"]["updated_at"]) >= _STATE_VALUE
     assert int(final_state["parent_state"]["conversations"]["updated_at"]) >= _STATE_VALUE
+    if kind == "per_partition":
+        partition_cursor = next(
+            partition_state["cursor"]
+            for partition_state in final_state["states"]
+            if partition_state["partition"]["id"] == 1
+        )
+        assert int(partition_cursor["updated_at"]) >= _STATE_VALUE
