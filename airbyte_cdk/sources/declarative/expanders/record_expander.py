@@ -17,12 +17,14 @@ from airbyte_cdk.models import (
     AirbyteMessage,
     AirbyteStateMessage,
     AirbyteTraceMessage,
+    FailureType,
     Level,
 )
 from airbyte_cdk.models import Type as MessageType
 from airbyte_cdk.sources.declarative.interpolation.interpolated_string import InterpolatedString
 from airbyte_cdk.sources.message import MessageRepository
 from airbyte_cdk.sources.types import Config, Record, StreamSlice
+from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 
 if TYPE_CHECKING:
     from airbyte_cdk.sources.declarative.retrievers import Retriever
@@ -32,6 +34,9 @@ logger = logging.getLogger("airbyte")
 # dpath treats these characters as glob metacharacters (fnmatch semantics) inside a path segment.
 _GLOB_METACHARACTERS = ("*", "?", "[")
 
+# Returned by `_lookup` for a path the record does not have, since `None` is a valid value.
+_MISSING = object()
+
 # Protocol payloads a retriever may yield unwrapped (i.e. not inside an `AirbyteMessage` envelope).
 _BARE_PROTOCOL_MESSAGES = (
     AirbyteControlMessage,
@@ -39,6 +44,41 @@ _BARE_PROTOCOL_MESSAGES = (
     AirbyteStateMessage,
     AirbyteTraceMessage,
 )
+
+
+def _lookup(record: Any, path: Sequence[Any]) -> Any:
+    """Value at a glob-free `path`, or `_MISSING`, reading only the containers on the path.
+
+    Matches the way `dpath.get` resolves such a path: a mapping key is compared as a string, and
+    a segment reaching a list is taken as an index, negative ones counting from the end.
+    `dpath.get` itself walks the whole record, so on a parent holding a long list each lookup
+    costs as much as that list.
+    """
+    value = record
+    for segment in path:
+        if isinstance(value, Mapping):
+            key = str(segment)
+            if key not in value:
+                return _MISSING
+            value = value[key]
+        elif isinstance(value, list):
+            try:
+                index = int(segment)
+            except (TypeError, ValueError):
+                return _MISSING
+            if not -len(value) <= index < len(value):
+                return _MISSING
+            value = value[index]
+        else:
+            return _MISSING
+    return value
+
+
+def _detached(value: Any) -> Any:
+    """Copy of `value` sharing nothing with the record it came from; scalars are returned as-is."""
+    if isinstance(value, (Mapping, list, set, tuple)):
+        return copy.deepcopy(value)
+    return value
 
 
 class OnNoRecords(Enum):
@@ -51,6 +91,76 @@ class OnNoRecords(Enum):
 
 
 @dataclass
+class ParentFieldPath:
+    """One field to copy from the record being expanded onto each expanded item.
+
+    `parent_path` locates the value on the parent, `record_path` says where to put it on the
+    child. Both are lists, so a value nested inside the parent can be copied into a nested
+    position on the child. Glob metacharacters are rejected: each path must identify a single
+    field.
+    """
+
+    parent_path: Sequence[str]
+    record_path: Sequence[str]
+    config: Config
+    parameters: InitVar[Mapping[str, Any]]
+
+    def __post_init__(self, parameters: Mapping[str, Any]) -> None:
+        if not self.parent_path:
+            raise ValueError("`parent_path` cannot be empty.")
+        if not self.record_path:
+            raise ValueError("`record_path` cannot be empty.")
+        self._parent_path: list[InterpolatedString] = [
+            InterpolatedString.create(path, parameters=parameters) for path in self.parent_path
+        ]
+        self._record_path: list[InterpolatedString] = [
+            InterpolatedString.create(path, parameters=parameters) for path in self.record_path
+        ]
+        # The paths only interpolate `config`, so they are evaluated once instead of per item.
+        self._evaluated_parent_path = self.evaluated_parent_path()
+        self._evaluated_record_path = self.evaluated_record_path()
+        RecordExpander._reject_globs(self._evaluated_parent_path, "parent_path")
+        RecordExpander._reject_globs(self._evaluated_record_path, "record_path")
+
+    def evaluated_parent_path(self) -> list[Any]:
+        return [segment.eval(self.config) for segment in self._parent_path]
+
+    def evaluated_record_path(self) -> list[Any]:
+        return [segment.eval(self.config) for segment in self._record_path]
+
+    def copy_onto(
+        self, parent_record: Mapping[str, Any], child_record: MutableMapping[str, Any]
+    ) -> None:
+        """Copy the parent value onto the child, overwriting whatever was there.
+
+        A `parent_path` that the parent does not have copies `None`, which is what the custom
+        connector classes this replaces do (`parent.get(field)`). Distinguishing "absent" from
+        "present and null" would need a third option and no connector needs one.
+
+        A container value is deep-copied, so that a downstream transformation writing inside it
+        cannot reach the parent record or the items expanded from it alongside this one. Both the
+        lookup and the copy cost proportionally to the named value, not to the whole parent.
+
+        A `record_path` running through a value the item holds as a scalar or a list cannot be
+        written and fails the sync as a config error naming the path.
+        """
+        value = _lookup(parent_record, self._evaluated_parent_path)
+        copied = None if value is _MISSING else _detached(value)
+        try:
+            dpath.new(child_record, self._evaluated_record_path, copied)
+        except (dpath.exceptions.PathNotFound, TypeError) as error:
+            message = (
+                f"Cannot write parent field to `record_path` {self._evaluated_record_path}: "
+                "the expanded item already holds a non-object value on that path."
+            )
+            raise AirbyteTracedException(
+                message=message,
+                internal_message=f"{message} {error!r}",
+                failure_type=FailureType.config_error,
+            ) from error
+
+
+@dataclass
 class RecordExpander:
     """Expands records by extracting items from a nested array field.
 
@@ -58,6 +168,15 @@ class RecordExpander:
     within each record and emits each item as a separate record. Set `remain_original_record: true`
     to embed the full parent record under `original_record` in each expanded item when you need
     downstream transformations to access parent context.
+
+    When only a few parent fields are needed, prefer `parent_fields` over
+    `remain_original_record`: it copies the named values onto each expanded item instead of
+    deep-copying the whole parent once per item, which matters when the parent is large and the
+    nested list is long.
+
+    Set `merge_parent: true` to flatten the parent into each item instead: the parent's fields,
+    minus the expanded list, are shallow-merged underneath the item's own fields, so the item wins
+    on any key both have.
 
     The expand_records_from_field path supports wildcards (*) for matching multiple arrays.
     When wildcards are used, items from all matched arrays are extracted and emitted.
@@ -76,6 +195,25 @@ class RecordExpander:
       record_expander:
         type: RecordExpander
         expand_records_from_field:
+          - "reviews"
+          - "nodes"
+        parent_fields:
+          - parent_path: ["url"]
+            record_path: ["pull_request_url"]
+    ```
+
+    ```
+      record_expander:
+        type: RecordExpander
+        expand_records_from_field:
+          - "activity"
+        merge_parent: true
+    ```
+
+    ```
+      record_expander:
+        type: RecordExpander
+        expand_records_from_field:
           - "sections"
           - "*"
           - "items"
@@ -88,6 +226,23 @@ class RecordExpander:
             Supports wildcards (*).
         remain_original_record: If True, each expanded record will include the original
             parent record in an "original_record" field. Defaults to False.
+        parent_fields: Named values to copy from the record being expanded onto each expanded
+            item. Each entry has a `parent_path` and a `record_path`; an existing value at
+            `record_path` is overwritten, and a `parent_path` the parent does not have copies
+            `None`. A copied container is deep-copied, so writing into it downstream does not
+            reach the parent or the sibling items. Independent of `remain_original_record` -
+            both may be set, though copying named fields is the cheaper way to carry parent
+            context. Applies to items fetched through `truncated_list_retriever` as well as to
+            embedded ones. Glob metacharacters are rejected in both paths.
+        merge_parent: If True, each expanded item is the parent record shallow-merged with the
+            item, the item's own keys winning on collision, and the expanded list removed from
+            the parent's copy. Only the value at `expand_records_from_field` is removed: for a
+            multi-segment path the top-level key stays with its other fields. Each item gets its
+            own deep copy of the merged parent, so a downstream transformation writing into a
+            nested value affects only that item. The merge happens before `parent_fields` are
+            copied and before `original_record` is embedded, so both can overwrite merged
+            values. Applies to items fetched through `truncated_list_retriever` as well as to
+            embedded ones. Defaults to False.
         on_no_records: Behavior when expansion produces no records. "skip" (default)
             emits nothing. "emit_parent" emits the original parent record unchanged.
         truncation_indicator_path: Path within each record to a field indicating that the
@@ -130,6 +285,9 @@ class RecordExpander:
     truncated_list_retriever: Optional["Retriever"] = None
     message_repository: Optional[MessageRepository] = None
     suppress_incomplete_fetch_warning: bool = False
+    # Appended after the pre-existing fields so positional construction keeps its meaning.
+    parent_fields: Optional[Sequence[ParentFieldPath]] = None
+    merge_parent: bool = False
 
     def __post_init__(self, parameters: Mapping[str, Any]) -> None:
         self._expand_path: list[InterpolatedString] = [
@@ -159,8 +317,8 @@ class RecordExpander:
             for segment in path
         ):
             raise ValueError(
-                f"Glob characters {_GLOB_METACHARACTERS} are not supported in `{field_name}` when "
-                "truncation handling is configured: the path must identify a single field."
+                f"Glob characters {_GLOB_METACHARACTERS} are not supported in `{field_name}`: "
+                "the path must identify a single field."
             )
 
     def _evaluated_indicator_path(self) -> list[Any]:
@@ -184,13 +342,18 @@ class RecordExpander:
 
         expand_path = self._evaluated_expand_path()
         truncated = bool(self._truncation_indicator_path) and self._is_truncated(parent_record)
+        # Built once per parent, not once per item: the walk that finds the expanded list costs
+        # as much as extracting it does.
+        merge_base = (
+            self._without_expanded_list(parent_record, expand_path) if self.merge_parent else None
+        )
 
         if truncated and self.truncated_list_retriever:
             # Streamed, so the shortfall is only known once the retriever is exhausted. If the
             # consumer stops early the fetch was cut short by it, not by the API, and no warning
             # would be accurate anyway.
             fetched_count = 0
-            for fetched in self._fetch_complete_list(parent_record):
+            for fetched in self._fetch_complete_list(parent_record, merge_base):
                 fetched_count += 1
                 yield fetched
             self._warn_if_fetch_incomplete(parent_record, expand_path, fetched_count)
@@ -213,14 +376,9 @@ class RecordExpander:
         for items in embedded_lists:
             for item in items:
                 if isinstance(item, dict):
-                    expanded_record = dict(item)
-                    self._apply_parent_context(parent_record, expanded_record)
-                    yield expanded_record
-                elif self.remain_original_record:
-                    yield {
-                        "value": item,
-                        "original_record": copy.deepcopy(parent_record),
-                    }
+                    yield self._apply_parent_context(parent_record, dict(item), merge_base)
+                elif self._carries_parent_context():
+                    yield self._apply_parent_context(parent_record, {"value": item}, merge_base)
                 else:
                     yield item
 
@@ -302,7 +460,9 @@ class RecordExpander:
         except (KeyError, ValueError):
             return False
 
-    def _fetch_complete_list(self, parent_record: Mapping[str, Any]) -> Iterable[Any]:
+    def _fetch_complete_list(
+        self, parent_record: Mapping[str, Any], merge_base: Optional[Mapping[str, Any]]
+    ) -> Iterable[Any]:
         if not self.truncated_list_retriever:
             return
         stream_slice = StreamSlice(partition={"parent_record": parent_record}, cursor_slice={})
@@ -320,17 +480,81 @@ class RecordExpander:
             else:
                 data = item
             if isinstance(data, Mapping):
-                expanded_record = dict(data)
-                self._apply_parent_context(parent_record, expanded_record)
-                yield expanded_record
-            elif self.remain_original_record:
-                yield {"value": data, "original_record": copy.deepcopy(parent_record)}
+                yield self._apply_parent_context(parent_record, dict(data), merge_base)
+            elif self._carries_parent_context():
+                yield self._apply_parent_context(parent_record, {"value": data}, merge_base)
             else:
                 yield data
 
     def _apply_parent_context(
-        self, parent_record: Mapping[str, Any], child_record: MutableMapping[str, Any]
-    ) -> None:
-        """Apply parent context to a child record."""
+        self,
+        parent_record: Mapping[str, Any],
+        child_record: MutableMapping[str, Any],
+        merge_base: Optional[Mapping[str, Any]],
+    ) -> MutableMapping[str, Any]:
+        """Return the child record carrying the configured parent context.
+
+        The order is fixed: the parent is merged underneath the child first, then `parent_fields`
+        are copied on top, then `original_record` is embedded. A named copy can therefore
+        overwrite a merged value.
+        """
+        if merge_base is not None:
+            # Deep-copied per item: a shallow merge would alias every nested container of the
+            # parent into every item, so a downstream transformation writing into one of them
+            # would reach the parent record and the items already yielded. The expanded list is
+            # already stripped from `merge_base`, so the copy costs less than
+            # `remain_original_record` does.
+            child_record = {**copy.deepcopy(merge_base), **child_record}
+        for parent_field in self.parent_fields or []:
+            parent_field.copy_onto(parent_record, child_record)
         if self.remain_original_record:
             child_record["original_record"] = copy.deepcopy(parent_record)
+        return child_record
+
+    def _carries_parent_context(self) -> bool:
+        return bool(self.remain_original_record or self.parent_fields or self.merge_parent)
+
+    @classmethod
+    def _without_expanded_list(
+        cls, parent_record: Mapping[str, Any], expand_path: list[Any]
+    ) -> Mapping[str, Any]:
+        """Copy of the parent with only the value at `expand_path` removed.
+
+        The containers on the way to the list are copied and the rest of the parent is shared,
+        so siblings of the list are kept and the parent itself is not mutated here. This base is
+        built once per parent record and then deep-copied per item in `_apply_parent_context`,
+        which is what keeps the parent and the sibling items isolated from one another. Every
+        list matched by the path is removed, which covers glob paths that select several lists;
+        a match that is not a list is kept, since nothing is expanded from it.
+        """
+        matched_paths = [
+            path
+            for path, value in dpath.segments.walk(parent_record)  # type: ignore[no-untyped-call]
+            if isinstance(value, list) and dpath.segments.match(path, expand_path)
+        ]
+        stripped: Any = parent_record
+        # Deepest and right-most first, so removing a list element never shifts the index of a
+        # match still to be removed, and a match nested inside another match goes first.
+        for path in sorted(matched_paths, key=cls._path_sort_key, reverse=True):
+            stripped = cls._without_path(stripped, path)
+        return dict(stripped)
+
+    @staticmethod
+    def _path_sort_key(path: Sequence[Any]) -> list[tuple[int, Any]]:
+        # Integers and strings are not mutually comparable, so tag each segment by kind.
+        return [(0, segment) if isinstance(segment, int) else (1, str(segment)) for segment in path]
+
+    @classmethod
+    def _without_path(cls, container: Any, path: Sequence[Any]) -> Any:
+        head, rest = path[0], path[1:]
+        if isinstance(container, Mapping):
+            copied: Any = dict(container)
+        elif isinstance(container, list):
+            copied = list(container)
+        else:
+            return container
+        if rest:
+            copied[head] = cls._without_path(copied[head], rest)
+        else:
+            del copied[head]
+        return copied
