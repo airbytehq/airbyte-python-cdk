@@ -11,6 +11,7 @@ from unittest.mock import Mock
 import freezegun
 import pytest
 
+from airbyte_cdk.models import FailureType
 from airbyte_cdk.sources.connector_state_manager import ConnectorStateManager
 from airbyte_cdk.sources.message import MessageRepository
 from airbyte_cdk.sources.streams import NO_CURSOR_STATE_KEY
@@ -36,6 +37,7 @@ from airbyte_cdk.sources.streams.concurrent.state_converters.datetime_stream_sta
     EpochValueConcurrentStreamStateConverter,
 )
 from airbyte_cdk.sources.types import Record, StreamSlice
+from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 
 _A_STREAM_NAME = "a stream name"
 _A_STREAM_NAMESPACE = "a stream namespace"
@@ -1411,3 +1413,264 @@ def test_final_state_cursor_get_cursor_datetime_from_state_returns_now_for_no_cu
 
     result_with_empty_state = cursor.get_cursor_datetime_from_state({})
     assert result_with_empty_state is None
+
+
+class ConcurrentCursorReduceWindowTest(TestCase):
+    """
+    Covers ConcurrentCursor.split_request_window(), the implementation `SimpleRetriever.request_window_splitter`
+    binds to for declarative `request_window_splitting`. See
+    airbyte_cdk.sources.declarative.retrievers.simple_retriever.
+    """
+
+    def setUp(self) -> None:
+        self._message_repository = Mock(spec=MessageRepository)
+        self._state_manager = Mock(spec=ConnectorStateManager)
+
+    def _cursor(
+        self,
+        granularity: Optional[timedelta] = timedelta(seconds=1),
+        datetime_format: str = "%Y-%m-%dT%H:%M:%SZ",
+        slice_boundary_fields: Optional[tuple] = _SLICE_BOUNDARY_FIELDS,
+    ) -> ConcurrentCursor:
+        return ConcurrentCursor(
+            _A_STREAM_NAME,
+            _A_STREAM_NAMESPACE,
+            {},
+            self._message_repository,
+            self._state_manager,
+            CustomFormatConcurrentStreamStateConverter(
+                datetime_format, is_sequential_state=_NOT_SEQUENTIAL
+            ),
+            CursorField(_A_CURSOR_FIELD_KEY),
+            slice_boundary_fields,
+            datetime(2024, 1, 1, tzinfo=timezone.utc),
+            lambda: datetime(2024, 2, 1, tzinfo=timezone.utc),
+            cursor_granularity=granularity,
+        )
+
+    def _slice(self, start: str, end: str) -> StreamSlice:
+        return StreamSlice(
+            partition={},
+            cursor_slice={_LOWER_SLICE_BOUNDARY_FIELD: start, _UPPER_SLICE_BOUNDARY_FIELD: end},
+        )
+
+    def test_given_window_when_reduce_then_split_in_half_at_cursor_granularity_boundary(
+        self,
+    ) -> None:
+        cursor = self._cursor()
+
+        children = cursor.split_request_window(
+            self._slice("2024-01-01T00:00:00Z", "2024-01-01T23:59:59Z")
+        )
+
+        assert children == [
+            self._slice("2024-01-01T00:00:00Z", "2024-01-01T11:59:59Z"),
+            self._slice("2024-01-01T12:00:00Z", "2024-01-01T23:59:59Z"),
+        ]
+
+    def test_given_odd_number_of_granularity_units_when_reduce_then_children_still_cover_parent_exactly(
+        self,
+    ) -> None:
+        cursor = self._cursor()
+
+        # 3 whole seconds: [00:00:00, 00:00:02]
+        children = cursor.split_request_window(
+            self._slice("2024-01-01T00:00:00Z", "2024-01-01T00:00:02Z")
+        )
+
+        assert children == [
+            self._slice("2024-01-01T00:00:00Z", "2024-01-01T00:00:00Z"),
+            self._slice("2024-01-01T00:00:01Z", "2024-01-01T00:00:02Z"),
+        ]
+
+    def test_given_single_granularity_unit_window_when_reduce_then_return_none(self) -> None:
+        cursor = self._cursor()
+
+        assert (
+            cursor.split_request_window(self._slice("2024-01-01T00:00:00Z", "2024-01-01T00:00:00Z"))
+            is None
+        )
+
+    def test_given_window_at_or_below_min_split_window_when_reduce_then_return_none(self) -> None:
+        """
+        `min_split_window` is a connector-configured floor independent of, and typically looser than,
+        `cursor_granularity`: a window already at or below it must not be split further even though
+        `cursor_granularity` alone would still allow it.
+        """
+        cursor = self._cursor()
+
+        # spans exactly 1 day - at the floor when min_split_window is 1 day, even though cursor_granularity
+        # (1 second) would otherwise allow splitting this down much further
+        assert (
+            cursor.split_request_window(
+                self._slice("2024-01-01T00:00:00Z", "2024-01-01T23:59:59Z"),
+                min_split_window=timedelta(days=1),
+            )
+            is None
+        )
+
+    def test_given_window_above_min_split_window_when_reduce_then_split_normally(self) -> None:
+        cursor = self._cursor()
+
+        children = cursor.split_request_window(
+            self._slice("2024-01-01T00:00:00Z", "2024-01-02T23:59:59Z"),
+            min_split_window=timedelta(days=1),
+        )
+
+        assert children == [
+            self._slice("2024-01-01T00:00:00Z", "2024-01-01T23:59:59Z"),
+            self._slice("2024-01-02T00:00:00Z", "2024-01-02T23:59:59Z"),
+        ]
+
+    def test_given_repeated_reduction_when_reduce_then_eventually_reaches_granularity_floor(
+        self,
+    ) -> None:
+        cursor = self._cursor()
+        current = self._slice("2024-01-01T00:00:00Z", "2024-01-01T23:59:59Z")
+
+        depth = 0
+        while True:
+            children = cursor.split_request_window(current)
+            if children is None:
+                break
+            # exactly at the boundary
+            assert (
+                children[0].cursor_slice[_UPPER_SLICE_BOUNDARY_FIELD]
+                < current.cursor_slice[_UPPER_SLICE_BOUNDARY_FIELD]
+            )
+            current = children[0]
+            depth += 1
+            assert depth < 30, "split_request_window did not converge to the granularity floor"
+
+        assert (
+            current.cursor_slice[_LOWER_SLICE_BOUNDARY_FIELD]
+            == current.cursor_slice[_UPPER_SLICE_BOUNDARY_FIELD]
+            == "2024-01-01T00:00:00Z"
+        )
+
+    def test_given_reversed_boundaries_when_reduce_then_return_none(self) -> None:
+        cursor = self._cursor()
+
+        assert (
+            cursor.split_request_window(self._slice("2024-01-01T00:00:05Z", "2024-01-01T00:00:00Z"))
+            is None
+        )
+
+    def test_given_no_cursor_granularity_when_reduce_then_return_none(self) -> None:
+        cursor = self._cursor(granularity=None)
+
+        assert (
+            cursor.split_request_window(self._slice("2024-01-01T00:00:00Z", "2024-01-01T23:59:59Z"))
+            is None
+        )
+
+    def test_given_malformed_boundary_when_reduce_then_raise(self) -> None:
+        """
+        A malformed boundary means the slice was produced wrong - a bug, not the API rejecting a window - so
+        this must not be silently swallowed as `None` (which `SimpleRetriever` reports as "the API kept
+        rejecting...", misattributing the cause).
+        """
+        cursor = self._cursor()
+
+        with pytest.raises(AirbyteTracedException) as exception:
+            cursor.split_request_window(
+                StreamSlice(
+                    partition={},
+                    cursor_slice={
+                        _LOWER_SLICE_BOUNDARY_FIELD: "not-a-date",
+                        _UPPER_SLICE_BOUNDARY_FIELD: "2024-01-01T23:59:59Z",
+                    },
+                )
+            )
+        assert exception.value.failure_type == FailureType.system_error
+        assert _LOWER_SLICE_BOUNDARY_FIELD in exception.value.internal_message
+
+    def test_given_missing_boundary_field_when_reduce_then_raise(self) -> None:
+        cursor = self._cursor()
+
+        with pytest.raises(AirbyteTracedException) as exception:
+            cursor.split_request_window(
+                StreamSlice(partition={}, cursor_slice={"only_one_field": "x"})
+            )
+        assert exception.value.failure_type == FailureType.system_error
+
+    def test_split_request_window_preserves_partition_and_extra_fields(self) -> None:
+        cursor = self._cursor()
+        original = StreamSlice(
+            partition={"parent_id": "123"},
+            cursor_slice={
+                _LOWER_SLICE_BOUNDARY_FIELD: "2024-01-01T00:00:00Z",
+                _UPPER_SLICE_BOUNDARY_FIELD: "2024-01-01T23:59:59Z",
+            },
+            extra_fields={"some_extra": "value"},
+        )
+
+        children = cursor.split_request_window(original)
+
+        for child in children:
+            assert child.partition == {"parent_id": "123"}
+            assert child.extra_fields == {"some_extra": "value"}
+
+    def test_given_epoch_cursor_when_reduce_then_split_using_epoch_output_format(self) -> None:
+        cursor = ConcurrentCursor(
+            _A_STREAM_NAME,
+            _A_STREAM_NAMESPACE,
+            {},
+            self._message_repository,
+            self._state_manager,
+            EpochValueConcurrentStreamStateConverter(is_sequential_state=_NOT_SEQUENTIAL),
+            CursorField(_A_CURSOR_FIELD_KEY),
+            _SLICE_BOUNDARY_FIELDS,
+            0,
+            lambda: 1000,
+            cursor_granularity=timedelta(seconds=1),
+        )
+
+        children = cursor.split_request_window(
+            StreamSlice(
+                partition={},
+                cursor_slice={
+                    _LOWER_SLICE_BOUNDARY_FIELD: 0,
+                    _UPPER_SLICE_BOUNDARY_FIELD: 99,
+                },
+            )
+        )
+
+        assert children == [
+            StreamSlice(
+                partition={},
+                cursor_slice={_LOWER_SLICE_BOUNDARY_FIELD: 0, _UPPER_SLICE_BOUNDARY_FIELD: 49},
+            ),
+            StreamSlice(
+                partition={},
+                cursor_slice={_LOWER_SLICE_BOUNDARY_FIELD: 50, _UPPER_SLICE_BOUNDARY_FIELD: 99},
+            ),
+        ]
+
+    def test_given_multiple_datetime_formats_when_reduce_then_round_trip_format_correctly(
+        self,
+    ) -> None:
+        cursor = self._cursor(datetime_format="%Y-%m-%d %H:%M:%S")
+
+        children = cursor.split_request_window(
+            self._slice("2024-01-01 00:00:00", "2024-01-01 23:59:59")
+        )
+
+        assert children == [
+            self._slice("2024-01-01 00:00:00", "2024-01-01 11:59:59"),
+            self._slice("2024-01-01 12:00:00", "2024-01-01 23:59:59"),
+        ]
+
+    def test_given_non_utc_timezone_offset_when_reduce_then_preserve_offset_in_round_trip(
+        self,
+    ) -> None:
+        cursor = self._cursor(datetime_format="%Y-%m-%dT%H:%M:%S%z")
+
+        children = cursor.split_request_window(
+            self._slice("2024-01-01T00:00:00+0530", "2024-01-01T23:59:59+0530")
+        )
+
+        assert children == [
+            self._slice("2024-01-01T00:00:00+0530", "2024-01-01T11:59:59+0530"),
+            self._slice("2024-01-01T12:00:00+0530", "2024-01-01T23:59:59+0530"),
+        ]
