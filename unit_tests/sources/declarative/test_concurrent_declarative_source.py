@@ -5522,6 +5522,111 @@ def test_given_record_selector_is_filtering_when_read_then_raise_error():
         list(source.read(logger=source.logger, config=input_config, catalog=catalog, state=[]))
 
 
+@pytest.mark.parametrize(
+    "auth_type, expected_headers, expected_login_calls",
+    [
+        pytest.param("session", {"X-Session": "a_session_token"}, 1, id="test_session_selected"),
+        pytest.param("token", {"X-Key": "a_key"}, 0, id="test_token_selected"),
+    ],
+)
+def test_given_selective_authenticator_nesting_session_token_authenticator_when_read_then_authenticate(
+    auth_type, expected_headers, expected_login_calls
+):
+    input_config = {"auth_type": auth_type, "username": "a_user", "api_key": "a_key"}
+    manifest = {
+        "version": "0.34.2",
+        "type": "DeclarativeSource",
+        "check": {"type": "CheckStream", "stream_names": ["Test"]},
+        "streams": [
+            {
+                "type": "DeclarativeStream",
+                "name": "Test",
+                "schema_loader": {
+                    "type": "InlineSchemaLoader",
+                    "schema": {"type": "object"},
+                },
+                "retriever": {
+                    "type": "SimpleRetriever",
+                    "requester": {
+                        "type": "HttpRequester",
+                        "url_base": "https://example.org",
+                        "path": "/test",
+                        "authenticator": {
+                            "type": "SelectiveAuthenticator",
+                            "authenticator_selection_path": ["auth_type"],
+                            "authenticators": {
+                                "session": {
+                                    "type": "SessionTokenAuthenticator",
+                                    "login_requester": {
+                                        "type": "HttpRequester",
+                                        "url_base": "https://example.org",
+                                        "path": "/login",
+                                        "http_method": "POST",
+                                        "request_body_json": {
+                                            "username": "{{ config['username'] }}"
+                                        },
+                                    },
+                                    "session_token_path": ["token"],
+                                    "expiration_duration": "PT1H",
+                                    "request_authentication": {
+                                        "type": "ApiKey",
+                                        "inject_into": {
+                                            "type": "RequestOption",
+                                            "inject_into": "header",
+                                            "field_name": "X-Session",
+                                        },
+                                    },
+                                },
+                                "token": {
+                                    "type": "ApiKeyAuthenticator",
+                                    "header": "X-Key",
+                                    "api_token": "{{ config['api_key'] }}",
+                                },
+                            },
+                        },
+                    },
+                    "record_selector": {
+                        "type": "RecordSelector",
+                        "extractor": {"type": "DpathExtractor", "field_path": []},
+                    },
+                },
+            }
+        ],
+        "spec": {
+            "type": "Spec",
+            "documentation_url": "https://example.org",
+            "connection_specification": {},
+        },
+    }
+
+    catalog = create_catalog("Test")
+    source = ConcurrentDeclarativeSource(
+        source_config=manifest,
+        config=input_config,
+        catalog=catalog,
+        state=None,
+    )
+    login_request = HttpRequest(
+        "https://example.org/login", body=json.dumps({"username": "a_user"})
+    )
+
+    with HttpMocker() as http_mocker:
+        http_mocker.post(login_request, HttpResponse(json.dumps({"token": "a_session_token"})))
+        http_mocker.get(
+            HttpRequest("https://example.org/test", headers=expected_headers),
+            HttpResponse(json.dumps([{"id": 1}])),
+        )
+        messages = list(
+            source.read(logger=source.logger, config=input_config, catalog=catalog, state=[])
+        )
+
+        http_mocker.assert_number_of_calls(login_request, expected_login_calls)
+
+    assert [message.record.data for message in messages if message.type == Type.RECORD] == [
+        {"id": 1}
+    ]
+
+
 def _make_default_stream(name: str) -> DefaultStream:
     """Create a minimal DefaultStream instance for testing."""
     from airbyte_cdk.sources.streams.concurrent.cursor import FinalStateCursor
