@@ -351,12 +351,18 @@ class SingleUseRefreshTokenOauth2Authenticator(Oauth2Authenticator):
         and emits a control message to update the connector config. If the
         response omits a refresh token, the existing one is preserved.
         """
-        new_access_token, access_token_expires_in, new_refresh_token = self.refresh_access_token()
-        self.access_token = new_access_token
-        if new_refresh_token is not None:
-            self.set_refresh_token(new_refresh_token)
-        self.set_token_expiry_date(access_token_expires_in)
-        self._emit_control_message()
+        token_before_waiting = self._current_access_token_or_none()
+        with self._token_refresh_lock:
+            if self._current_access_token_or_none() != token_before_waiting:
+                return
+            new_access_token, access_token_expires_in, new_refresh_token = (
+                self.refresh_access_token()
+            )
+            self.access_token = new_access_token
+            if new_refresh_token is not None:
+                self.set_refresh_token(new_refresh_token)
+            self.set_token_expiry_date(access_token_expires_in)
+            self._emit_control_message()
 
     def refresh_access_token(self) -> Tuple[str, AirbyteDateTime, Optional[str]]:  # type: ignore[override]
         """
