@@ -558,6 +558,23 @@ class OnNoRecords(Enum):
     emit_parent = "emit_parent"
 
 
+class ParentFieldPath(BaseModel):
+    type: Literal["ParentFieldPath"]
+    parent_path: List[str] = Field(
+        ...,
+        description="Path to the value on the record being expanded.",
+        examples=[["url"], ["id"], ["repository", "name"]],
+        title="Parent Path",
+    )
+    record_path: List[str] = Field(
+        ...,
+        description="Path on the expanded item to write the value to. An existing value is overwritten. Intermediate objects are created as needed, so a path may not pass through a value the item already holds as a scalar, and a numeric path segment creates an array rather than an object - the same behavior as `AddFields`.",
+        examples=[["pull_request_url"], ["comment_id"], ["parent", "id"]],
+        title="Record Path",
+    )
+    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
+
+
 class ExponentialBackoffStrategy(BaseModel):
     type: Literal["ExponentialBackoffStrategy"]
     factor: Optional[Union[float, str]] = Field(
@@ -2320,6 +2337,53 @@ class DefaultPaginator(BaseModel):
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
 
+class RecordExpander(BaseModel):
+    type: Literal["RecordExpander"]
+    expand_records_from_field: List[str] = Field(
+        ...,
+        description="Path to a nested array field within each record. Items from this array will be extracted and emitted as separate records. Supports wildcards (*) for matching multiple arrays.",
+        examples=[
+            ["lines", "data"],
+            ["items"],
+            ["nested", "array"],
+            ["sections", "*", "items"],
+        ],
+        title="Expand Records From Field",
+    )
+    remain_original_record: Optional[bool] = Field(
+        False,
+        description='If true, each expanded record will include the original parent record in an "original_record" field. Defaults to false.',
+        title="Remain Original Record",
+    )
+    parent_fields: Optional[List[ParentFieldPath]] = Field(
+        None,
+        description="Named values to copy from the record being expanded onto each expanded item. Use this instead of `remain_original_record` when only a few parent fields are needed: it copies the named values rather than deep-copying the whole parent once per item, which matters when the parent record is large and the nested list is long. An existing value at `record_path` is overwritten, and a `parent_path` the parent does not have copies null. A copied object or array is deep-copied, so a transformation that writes inside it affects only that item. Independent of `remain_original_record`; both may be set. Applies to items fetched through `truncated_list_retriever` as well as to embedded ones. This field is ignored by CDK versions that predate it, so pin the connector to a CDK version that supports it.",
+        title="Parent Fields",
+    )
+    merge_parent: Optional[bool] = Field(
+        False,
+        description="If true, each expanded item is the parent record shallow-merged with the item, the item's own keys winning on collision, and the expanded list removed from the parent's copy. Only the value at `expand_records_from_field` is removed, so for a multi-segment path the top-level key stays with its other fields. Each item receives its own deep copy of the merged parent fields, so a transformation that writes into a nested value affects only that item. The merge happens first, then `parent_fields` are copied, then `original_record` is embedded when `remain_original_record` is set; all three may be combined. Applies to items fetched through `truncated_list_retriever` as well as to embedded ones. This field is ignored by CDK versions that predate it, so pin the connector to a CDK version that supports it.",
+        title="Merge Parent",
+    )
+    on_no_records: Optional[OnNoRecords] = Field(
+        OnNoRecords.skip,
+        description='Behavior when the expansion path is missing, not a list, or an empty list. "skip" (default) emits nothing. "emit_parent" emits the original parent record unchanged.',
+        title="On No Records",
+    )
+    truncation_indicator_path: Optional[List[str]] = Field(
+        None,
+        description="Path within each record to a field indicating that the embedded nested list is truncated (e.g. a `has_more` flag on the list object). When the field evaluates to a truthy value and `truncated_list_retriever` is configured, the retriever is used to fetch the complete list instead of expanding the embedded items. When the field is truthy and no retriever is configured, the embedded items are expanded as normal and a WARNING is logged once per stream so the truncation is visible instead of silent. Glob characters (`*`, `?`, `[`) are not supported in this path, nor in `expand_records_from_field` when a retriever is configured; this is enforced on the interpolated values. This field is ignored by CDK versions that predate it, so pin the connector to a CDK version that supports it.",
+        examples=[["data", "object", "lines", "has_more"]],
+        title="Truncation Indicator Path",
+    )
+    truncated_list_retriever: Optional[Union[SimpleRetriever, CustomRetriever]] = Field(
+        None,
+        description="Retriever used to fetch the complete list of items when the field at `truncation_indicator_path` is truthy on a record. The record being expanded is exposed to the retriever's interpolation context as `stream_slice['parent_record']`. One fetch is issued per truncated record, so enable `use_cache` on the requester when the same list can be fetched repeatedly. Configure a `paginator`, since without one only the first page of the complete list is read. If the retriever returns no records, the embedded items are expanded as a fallback; if it returns fewer records than the `total_count` field next to the indicator, a WARNING is logged once per stream. Request failures surface through the retriever's `error_handler` and fail the stream like any other request. `$parameters` of the enclosing stream propagate into this retriever's components (including `request_parameters` on its requester); move request-shaping parameters to the outer requester's `request_parameters` when adopting this field. `partition_router` and `pagination_reset` are not supported. In Connector Builder test reads, its requests appear as auxiliary requests and the test-read page limit applies to each fetch independently, so the fetched list may be shorter than `total_count`; the incomplete-fetch warning is not emitted in test reads when a `paginator` is configured (without one the retriever is not capped, so the warning still applies). Requires `truncation_indicator_path`. This field is ignored by CDK versions that predate it, so pin the connector to a CDK version that supports it.",
+        title="Truncated List Retriever",
+    )
+    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
+
+
 class SessionTokenRequestApiKeyAuthenticator(BaseModel):
     type: Literal["ApiKey"]
     inject_into: RequestOption = Field(
@@ -2952,43 +3016,6 @@ class DeclarativeStream(BaseModel):
         None,
         description="(experimental) Describes how to fetch a file",
         title="File Uploader",
-    )
-    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
-
-
-class RecordExpander(BaseModel):
-    type: Literal["RecordExpander"]
-    expand_records_from_field: List[str] = Field(
-        ...,
-        description="Path to a nested array field within each record. Items from this array will be extracted and emitted as separate records. Supports wildcards (*) for matching multiple arrays.",
-        examples=[
-            ["lines", "data"],
-            ["items"],
-            ["nested", "array"],
-            ["sections", "*", "items"],
-        ],
-        title="Expand Records From Field",
-    )
-    remain_original_record: Optional[bool] = Field(
-        False,
-        description='If true, each expanded record will include the original parent record in an "original_record" field. Defaults to false.',
-        title="Remain Original Record",
-    )
-    on_no_records: Optional[OnNoRecords] = Field(
-        OnNoRecords.skip,
-        description='Behavior when the expansion path is missing, not a list, or an empty list. "skip" (default) emits nothing. "emit_parent" emits the original parent record unchanged.',
-        title="On No Records",
-    )
-    truncation_indicator_path: Optional[List[str]] = Field(
-        None,
-        description="Path within each record to a field indicating that the embedded nested list is truncated (e.g. a `has_more` flag on the list object). When the field evaluates to a truthy value and `truncated_list_retriever` is configured, the retriever is used to fetch the complete list instead of expanding the embedded items. When the field is truthy and no retriever is configured, the embedded items are expanded as normal and a WARNING is logged once per stream so the truncation is visible instead of silent. Glob characters (`*`, `?`, `[`) are not supported in this path, nor in `expand_records_from_field` when a retriever is configured; this is enforced on the interpolated values. This field is ignored by CDK versions that predate it, so pin the connector to a CDK version that supports it.",
-        examples=[["data", "object", "lines", "has_more"]],
-        title="Truncation Indicator Path",
-    )
-    truncated_list_retriever: Optional[Union[SimpleRetriever, CustomRetriever]] = Field(
-        None,
-        description="Retriever used to fetch the complete list of items when the field at `truncation_indicator_path` is truthy on a record. The record being expanded is exposed to the retriever's interpolation context as `stream_slice['parent_record']`. One fetch is issued per truncated record, so enable `use_cache` on the requester when the same list can be fetched repeatedly. Configure a `paginator`, since without one only the first page of the complete list is read. If the retriever returns no records, the embedded items are expanded as a fallback; if it returns fewer records than the `total_count` field next to the indicator, a WARNING is logged once per stream. Request failures surface through the retriever's `error_handler` and fail the stream like any other request. `$parameters` of the enclosing stream propagate into this retriever's components (including `request_parameters` on its requester); move request-shaping parameters to the outer requester's `request_parameters` when adopting this field. `partition_router` and `pagination_reset` are not supported. In Connector Builder test reads, its requests appear as auxiliary requests and the test-read page limit applies to each fetch independently, so the fetched list may be shorter than `total_count`; the incomplete-fetch warning is not emitted in test reads when a `paginator` is configured (without one the retriever is not capped, so the warning still applies). Requires `truncation_indicator_path`. This field is ignored by CDK versions that predate it, so pin the connector to a CDK version that supports it.",
-        title="Truncated List Retriever",
     )
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
