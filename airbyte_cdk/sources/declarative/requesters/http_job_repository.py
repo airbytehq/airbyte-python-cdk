@@ -14,10 +14,7 @@ from airbyte_cdk.models import AirbyteMessage, FailureType, Type
 from airbyte_cdk.sources.declarative.async_job.job import AsyncJob
 from airbyte_cdk.sources.declarative.async_job.repository import AsyncJobRepository
 from airbyte_cdk.sources.declarative.async_job.status import AsyncJobStatus
-from airbyte_cdk.sources.declarative.extractors.dpath_extractor import (
-    DpathExtractor,
-    RecordExtractor,
-)
+from airbyte_cdk.sources.declarative.extractors.record_extractor import RecordExtractor
 from airbyte_cdk.sources.declarative.extractors.response_to_file_extractor import (
     ResponseToFileExtractor,
 )
@@ -41,9 +38,9 @@ class AsyncHttpJobRepository(AsyncJobRepository):
     download_retriever: SimpleRetriever
     abort_requester: Optional[Requester]
     delete_requester: Optional[Requester]
-    status_extractor: DpathExtractor
+    status_extractor: RecordExtractor
     status_mapping: Mapping[str, AsyncJobStatus]
-    download_target_extractor: Optional[DpathExtractor]
+    download_target_extractor: Optional[RecordExtractor]
 
     # timeout for the job to be completed, passed from `polling_job_timeout`
     job_timeout: Optional[timedelta] = None
