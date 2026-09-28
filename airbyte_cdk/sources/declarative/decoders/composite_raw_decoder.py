@@ -242,6 +242,7 @@ class CompositeRawDecoder(Decoder):
         parser: Parser,
         stream_response: bool = True,
         parsers_by_header: PARSERS_BY_HEADER_TYPE = None,
+        spool_response: bool = False,
     ) -> None:
         # since we moved from using `dataclass` to `__init__` method,
         # we need to keep using the `parser` to be able to resolve the depenencies
@@ -250,6 +251,7 @@ class CompositeRawDecoder(Decoder):
 
         self._parsers_by_header = parsers_by_header if parsers_by_header else {}
         self._stream_response = stream_response
+        self._spool_response = spool_response
 
     @classmethod
     def by_headers(
@@ -277,6 +279,9 @@ class CompositeRawDecoder(Decoder):
 
     def is_stream_response(self) -> bool:
         return self._stream_response
+
+    def spools_response(self) -> bool:
+        return self._spool_response
 
     def decode(self, response: requests.Response) -> DECODER_OUTPUT_TYPE:
         parser = self._select_parser(response)

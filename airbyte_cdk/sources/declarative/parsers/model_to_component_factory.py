@@ -2648,6 +2648,30 @@ class ModelToComponentFactory:
 
         should_use_cache = (model.use_cache or bool(use_cache)) and not self._disable_cache
 
+        spools_response = decoder is not None and decoder.spools_response()
+
+        if should_use_cache and spools_response:
+            raise ValueError(
+                f"Stream {name}: `use_cache` cannot be combined with a decoder configured with `spool_to_disk` "
+                f"({type(decoder).__name__}); requests_cache reads the whole body when storing a response, which "
+                "leaves nothing for the decoder to spool. "
+                "Set `use_cache: false` on the requester (including on parent streams, whose cache is enabled automatically)."
+            )
+
+        if (
+            spools_response
+            and isinstance(model.error_handler, DefaultErrorHandlerModel)
+            and any(
+                f.predicate or f.error_message_contains
+                for f in model.error_handler.response_filters or []
+            )
+        ):
+            LOGGER.warning(
+                f"Stream {name}: `spool_to_disk` response bodies larger than 1 MiB are not "
+                "evaluated by body-based response filters (`predicate`, `error_message_contains`); "
+                "only `http_codes` apply to them."
+            )
+
         return HttpRequester(
             name=name,
             url=model.url,
@@ -2665,6 +2689,7 @@ class ModelToComponentFactory:
             use_cache=should_use_cache,
             decoder=decoder,
             stream_response=decoder.is_stream_response() if decoder else False,
+            spool_response=spools_response,
         )
 
     @staticmethod
@@ -2808,6 +2833,7 @@ class ModelToComponentFactory:
         return CompositeRawDecoder(
             parser=ModelToComponentFactory._get_parser(model, config),
             stream_response=False if self._emit_connector_builder_messages else True,
+            spool_response=bool(model.spool_to_disk) and not self._emit_connector_builder_messages,
         )
 
     def create_jsonl_decoder(
@@ -2816,6 +2842,7 @@ class ModelToComponentFactory:
         return CompositeRawDecoder(
             parser=ModelToComponentFactory._get_parser(model, config),
             stream_response=False if self._emit_connector_builder_messages else True,
+            spool_response=bool(model.spool_to_disk) and not self._emit_connector_builder_messages,
         )
 
     def create_json_items_decoder(
@@ -2824,6 +2851,7 @@ class ModelToComponentFactory:
         return CompositeRawDecoder(
             parser=ModelToComponentFactory._get_parser(model, config),
             stream_response=False if self._emit_connector_builder_messages else True,
+            spool_response=bool(model.spool_to_disk) and not self._emit_connector_builder_messages,
         )
 
     def create_gzip_decoder(
