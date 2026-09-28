@@ -8,6 +8,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from airbyte_cdk.models import AirbyteLogMessage, AirbyteMessage, Level, Type
 from airbyte_cdk.sources.declarative.concurrent_declarative_source import (
     ConcurrentDeclarativeSource,
     TestLimits,
@@ -414,3 +415,129 @@ def test_dynamic_schema_loader_with_type_conditions():
 
     assert len(actual_catalog.streams) == 1
     assert actual_catalog.streams[0].json_schema == expected_schema
+
+
+def _async_schema_loader_manifest(download_decoder, schema_type_identifier, partition_router=None):
+    retriever = {
+        "type": "AsyncRetriever",
+        "status_mapping": {
+            "failed": ["failed"],
+            "running": ["pending"],
+            "timeout": ["timeout"],
+            "completed": ["ready"],
+        },
+        "status_extractor": {"type": "DpathExtractor", "field_path": ["status"]},
+        "download_target_extractor": {"type": "DpathExtractor", "field_path": ["urls"]},
+        "record_selector": {
+            "type": "RecordSelector",
+            "extractor": {"type": "DpathExtractor", "field_path": []},
+        },
+        "creation_requester": {
+            "type": "HttpRequester",
+            "url": "https://api.test.com/schema_job",
+            "http_method": "POST",
+        },
+        "polling_requester": {
+            "type": "HttpRequester",
+            "url": "https://api.test.com/schema_job/{{ creation_response['id'] }}",
+            "http_method": "GET",
+        },
+        "download_requester": {
+            "type": "HttpRequester",
+            "url": "{{ download_target }}",
+            "http_method": "GET",
+        },
+    }
+    if download_decoder:
+        retriever["download_decoder"] = download_decoder
+    if partition_router:
+        retriever["partition_router"] = partition_router
+    manifest = deepcopy(_MANIFEST)
+    manifest["definitions"]["party_members_stream"]["schema_loader"] = {
+        "type": "DynamicSchemaLoader",
+        "retriever": retriever,
+        "schema_type_identifier": schema_type_identifier,
+    }
+    return manifest
+
+
+@pytest.mark.parametrize(
+    "download_decoder, schema_type_identifier, download_body, expected_properties",
+    [
+        pytest.param(
+            None,
+            {"schema_pointer": ["fields"], "key_pointer": ["name"], "type_pointer": ["type"]},
+            json.dumps(
+                {"fields": [{"name": "id", "type": "integer"}, {"name": "name", "type": "string"}]}
+            ),
+            {"id": {"type": ["null", "integer"]}, "name": {"type": ["null", "string"]}},
+            id="json_download",
+        ),
+        pytest.param(
+            {"type": "CsvDecoder", "encoding": "utf-8", "delimiter": ","},
+            {"schema_pointer": [], "key_pointer": []},
+            "id,name,amount\n1,foo,3\n2,bar,4\n",
+            {
+                "id": {"type": ["null", "string"]},
+                "name": {"type": ["null", "string"]},
+                "amount": {"type": ["null", "string"]},
+            },
+            id="csv_download_header_as_schema",
+        ),
+    ],
+)
+def test_dynamic_schema_loader_with_async_retriever(
+    download_decoder, schema_type_identifier, download_body, expected_properties
+):
+    manifest = _async_schema_loader_manifest(download_decoder, schema_type_identifier)
+    source = ConcurrentDeclarativeSource(
+        source_config=manifest, config=_CONFIG, catalog=None, state=None
+    )
+    creation = HttpRequest(url="https://api.test.com/schema_job")
+    polling = HttpRequest(url="https://api.test.com/schema_job/job_1")
+    download = HttpRequest(url="https://api.test.com/download/1")
+
+    with HttpMocker() as http_mocker:
+        http_mocker.post(creation, HttpResponse(body=json.dumps({"id": "job_1"})))
+        http_mocker.get(
+            polling,
+            HttpResponse(
+                body=json.dumps({"status": "ready", "urls": ["https://api.test.com/download/1"]})
+            ),
+        )
+        http_mocker.get(download, HttpResponse(body=download_body))
+
+        actual_catalog = source.discover(logger=source.logger, config=_CONFIG)
+
+        http_mocker.assert_number_of_calls(creation, 1)
+        http_mocker.assert_number_of_calls(polling, 1)
+        http_mocker.assert_number_of_calls(download, 1)
+
+    assert actual_catalog.streams[0].json_schema["properties"] == expected_properties
+
+
+def test_dynamic_schema_loader_with_async_retriever_and_partition_router_raises():
+    manifest = _async_schema_loader_manifest(
+        None,
+        {"schema_pointer": ["fields"], "key_pointer": ["name"]},
+        partition_router={"type": "ListPartitionRouter", "cursor_field": "p", "values": ["a", "b"]},
+    )
+    source = ConcurrentDeclarativeSource(
+        source_config=manifest, config=_CONFIG, catalog=None, state=None
+    )
+
+    with pytest.raises(ValueError, match="DynamicSchemaLoader does not support an AsyncRetriever"):
+        source.streams(config=_CONFIG)
+
+
+def test_dynamic_schema_loader_skips_non_record_items(dynamic_schema_loader):
+    log_message = AirbyteMessage(
+        type=Type.LOG, log=AirbyteLogMessage(level=Level.INFO, message="slice")
+    )
+    dynamic_schema_loader.retriever.read_records.return_value = iter(
+        [log_message, {"schema": [{"key": "name", "type": "string"}]}]
+    )
+
+    schema = dynamic_schema_loader.get_json_schema()
+
+    assert schema["properties"] == {"name": {"type": ["null", "string"]}}

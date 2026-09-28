@@ -120,6 +120,9 @@ class SchemaTypeIdentifier:
 class DynamicSchemaLoader(SchemaLoader):
     """
     Dynamically loads a JSON Schema by extracting data from retrieved records.
+
+    With an AsyncRetriever, each schema load creates one async job, reads only the first record,
+    and does not call the job's delete endpoint.
     """
 
     retriever: Retriever
@@ -134,7 +137,10 @@ class DynamicSchemaLoader(SchemaLoader):
         Constructs a JSON Schema based on retrieved data.
         """
         properties = {}
-        retrieved_record = next(self.retriever.read_records({}), None)  # type: ignore[call-overload] # read_records return Iterable data type
+        retrieved_record = next(
+            (record for record in self.retriever.read_records({}) if isinstance(record, Mapping)),
+            None,
+        )
 
         raw_schema = (
             self._extract_data(

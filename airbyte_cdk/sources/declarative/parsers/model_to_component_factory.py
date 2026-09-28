@@ -2759,6 +2759,10 @@ class ModelToComponentFactory:
                 schema_transformations.append(
                     self._create_component_from_model(model=transformation_model, config=config)
                 )
+        if isinstance(model.retriever, AsyncRetrieverModel) and model.retriever.partition_router:
+            raise ValueError(
+                "DynamicSchemaLoader does not support an AsyncRetriever with a partition_router: only the first record is read, so jobs for other partitions would be orphaned. Remove the partition_router from the schema loader's AsyncRetriever."
+            )
         name = "dynamic_properties"
         partition_router = self._build_stream_slicer_from_partition_router(model.retriever, config)
         retriever = self._create_component_from_model(
