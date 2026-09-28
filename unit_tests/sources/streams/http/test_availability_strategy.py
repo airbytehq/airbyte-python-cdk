@@ -107,7 +107,7 @@ def test_http_availability_raises_unhandled_error(mocker):
 
     assert (
         False,
-        "Not found. The requested resource was not found on the server.",
+        "HTTP Status Code: 404. Error: Not found. The requested resource was not found on the server.",
     ) == HttpAvailabilityStrategy().check_availability(http_stream, logger)
 
 

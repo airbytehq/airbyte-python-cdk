@@ -7,7 +7,7 @@ from typing import Iterable, Tuple
 from airbyte_cdk.models import AirbyteRecordMessageFileReference
 from airbyte_cdk.sources.file_based.file_based_stream_reader import AbstractFileBasedStreamReader
 from airbyte_cdk.sources.file_based.file_record_data import FileRecordData
-from airbyte_cdk.sources.file_based.remote_file import RemoteFile
+from airbyte_cdk.sources.file_based.remote_file import UploadableRemoteFile
 from airbyte_cdk.sources.utils.files_directory import get_files_directory
 
 
@@ -17,7 +17,7 @@ class FileTransfer:
 
     def upload(
         self,
-        file: RemoteFile,
+        file: UploadableRemoteFile,
         stream_reader: AbstractFileBasedStreamReader,
         logger: logging.Logger,
     ) -> Iterable[Tuple[FileRecordData, AirbyteRecordMessageFileReference]]:

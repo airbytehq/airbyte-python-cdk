@@ -17,10 +17,6 @@ import requests
 
 from airbyte_cdk import connector_builder
 from airbyte_cdk.connector_builder.connector_builder_handler import (
-    DEFAULT_MAXIMUM_NUMBER_OF_PAGES_PER_SLICE,
-    DEFAULT_MAXIMUM_NUMBER_OF_SLICES,
-    DEFAULT_MAXIMUM_RECORDS,
-    TestLimits,
     create_source,
     get_limits,
     resolve_manifest,
@@ -56,10 +52,17 @@ from airbyte_cdk.models import (
     Type,
 )
 from airbyte_cdk.models import Type as MessageType
-from airbyte_cdk.sources.declarative.declarative_stream import DeclarativeStream
-from airbyte_cdk.sources.declarative.manifest_declarative_source import ManifestDeclarativeSource
+from airbyte_cdk.sources.declarative.concurrent_declarative_source import (
+    ConcurrentDeclarativeSource,
+    TestLimits,
+)
+from airbyte_cdk.sources.declarative.parsers.custom_code_compiler import (
+    ENV_VAR_ALLOW_CUSTOM_CODE,
+    AirbyteCustomCodeNotPermittedError,
+)
 from airbyte_cdk.sources.declarative.retrievers.simple_retriever import SimpleRetriever
 from airbyte_cdk.sources.declarative.stream_slicers import StreamSlicerTestReadDecorator
+from airbyte_cdk.sources.streams.concurrent.default_stream import DefaultStream
 from airbyte_cdk.test.mock_http import HttpMocker, HttpRequest, HttpResponse
 from airbyte_cdk.utils.airbyte_secrets_utils import filter_secrets, update_secrets
 from unit_tests.connector_builder.utils import create_configured_catalog
@@ -440,6 +443,10 @@ MOCK_RESPONSE = {
 }
 
 
+def get_retriever(stream: DefaultStream):
+    return stream._stream_partition_generator._partition_factory._retriever
+
+
 @pytest.fixture
 def valid_resolve_manifest_config_file(tmp_path):
     config_file = tmp_path / "config.json"
@@ -530,7 +537,9 @@ def test_resolve_manifest(valid_resolve_manifest_config_file):
     config = copy.deepcopy(RESOLVE_MANIFEST_CONFIG)
     command = "resolve_manifest"
     config["__command"] = command
-    source = ManifestDeclarativeSource(source_config=MANIFEST)
+    source = ConcurrentDeclarativeSource(
+        catalog=None, config=config, state=None, source_config=MANIFEST
+    )
     limits = TestLimits()
     resolved_manifest = handle_connector_builder_request(
         source, command, config, create_configured_catalog("dummy_stream"), _A_STATE, limits
@@ -679,19 +688,21 @@ def test_resolve_manifest(valid_resolve_manifest_config_file):
 
 
 def test_resolve_manifest_error_returns_error_response():
-    class MockManifestDeclarativeSource:
+    class MockConcurrentDeclarativeSource:
         @property
         def resolved_manifest(self):
             raise ValueError
 
-    source = MockManifestDeclarativeSource()
+    source = MockConcurrentDeclarativeSource()
     response = resolve_manifest(source)
     assert "Error resolving manifest" in response.trace.error.message
 
 
 def test_read():
     config = TEST_READ_CONFIG
-    source = ManifestDeclarativeSource(source_config=MANIFEST)
+    source = ConcurrentDeclarativeSource(
+        catalog=None, config=config, state=None, source_config=MANIFEST
+    )
 
     real_record = AirbyteRecordMessage(
         data={"id": "1234", "key": "value"}, emitted_at=1, stream=_stream_name
@@ -780,7 +791,13 @@ def test_config_update() -> None:
         "client_secret": "a client secret",
         "refresh_token": "a refresh token",
     }
-    source = ManifestDeclarativeSource(source_config=manifest)
+    source = ConcurrentDeclarativeSource(
+        catalog=None,
+        config=config,
+        state=None,
+        source_config=manifest,
+        emit_connector_builder_messages=True,
+    )
 
     refresh_request_response = {
         "access_token": "an updated access token",
@@ -817,7 +834,7 @@ def test_read_returns_error_response(mock_from_exception):
         def name(self):
             return _stream_name
 
-    class MockManifestDeclarativeSource:
+    class MockConcurrentDeclarativeSource:
         def streams(self, config):
             return [MockDeclarativeStream()]
 
@@ -839,7 +856,7 @@ def test_read_returns_error_response(mock_from_exception):
     stack_trace = "a stack trace"
     mock_from_exception.return_value = stack_trace
 
-    source = MockManifestDeclarativeSource()
+    source = MockConcurrentDeclarativeSource()
     limits = TestLimits()
     response = read_stream(
         source,
@@ -874,26 +891,35 @@ def test_handle_429_response():
         {"result": [{"error": "too many requests"}], "_metadata": {"next": "next"}}
     )
 
+    config = copy.deepcopy(TEST_READ_CONFIG)
+
     # Add backoff strategy to avoid default endless backoff loop
-    TEST_READ_CONFIG["__injected_declarative_manifest"]["definitions"]["retriever"]["requester"][
+    config["__injected_declarative_manifest"]["definitions"]["retriever"]["requester"][
         "error_handler"
     ] = {"backoff_strategies": [{"type": "ConstantBackoffStrategy", "backoff_time_in_seconds": 5}]}
 
-    config = TEST_READ_CONFIG
     limits = TestLimits()
-    source = create_source(config, limits)
+    catalog = ConfiguredAirbyteCatalogSerializer.load(CONFIGURED_CATALOG)
+    source = create_source(
+        config=config,
+        limits=limits,
+        catalog=catalog,
+        state=None,
+    )
 
     with patch("requests.Session.send", return_value=response) as mock_send:
         response = handle_connector_builder_request(
             source,
             "test_read",
             config,
-            ConfiguredAirbyteCatalogSerializer.load(CONFIGURED_CATALOG),
+            catalog,
             _A_PER_PARTITION_STATE,
             limits,
         )
 
-        mock_send.assert_called_once()
+        # The test read will attempt a read for 5 partitions, and attempt 1 request
+        # each time that will not be retried
+        assert mock_send.call_count == 5
 
 
 @pytest.mark.parametrize(
@@ -945,7 +971,7 @@ def test_invalid_config_command(invalid_config_file, dummy_catalog):
 
 @pytest.fixture
 def manifest_declarative_source():
-    return mock.Mock(spec=ManifestDeclarativeSource, autospec=True)
+    return mock.Mock(spec=ConcurrentDeclarativeSource, autospec=True)
 
 
 def create_mock_retriever(name, url_base, path):
@@ -958,28 +984,22 @@ def create_mock_retriever(name, url_base, path):
     return http_stream
 
 
-def create_mock_declarative_stream(http_stream):
-    declarative_stream = mock.Mock(spec=DeclarativeStream, autospec=True)
-    declarative_stream.retriever = http_stream
-    return declarative_stream
-
-
 @pytest.mark.parametrize(
     "test_name, config, expected_max_records, expected_max_slices, expected_max_pages_per_slice",
     [
         (
             "test_no_test_read_config",
             {},
-            DEFAULT_MAXIMUM_RECORDS,
-            DEFAULT_MAXIMUM_NUMBER_OF_SLICES,
-            DEFAULT_MAXIMUM_NUMBER_OF_PAGES_PER_SLICE,
+            TestLimits.DEFAULT_MAX_RECORDS,
+            TestLimits.DEFAULT_MAX_SLICES,
+            TestLimits.DEFAULT_MAX_PAGES_PER_SLICE,
         ),
         (
             "test_no_values_set",
             {"__test_read_config": {}},
-            DEFAULT_MAXIMUM_RECORDS,
-            DEFAULT_MAXIMUM_NUMBER_OF_SLICES,
-            DEFAULT_MAXIMUM_NUMBER_OF_PAGES_PER_SLICE,
+            TestLimits.DEFAULT_MAX_RECORDS,
+            TestLimits.DEFAULT_MAX_SLICES,
+            TestLimits.DEFAULT_MAX_PAGES_PER_SLICE,
         ),
         (
             "test_values_are_set",
@@ -1007,12 +1027,123 @@ def test_create_source():
 
     config = {"__injected_declarative_manifest": MANIFEST}
 
-    source = create_source(config, limits)
+    source = create_source(config=config, limits=limits, catalog=None, state=None)
 
-    assert isinstance(source, ManifestDeclarativeSource)
+    assert isinstance(source, ConcurrentDeclarativeSource)
     assert source._constructor._limit_pages_fetched_per_slice == limits.max_pages_per_slice
     assert source._constructor._limit_slices_fetched == limits.max_slices
     assert source._constructor._disable_cache
+
+
+def test_create_source_marks_manifest_untrusted():
+    """A Connector Builder manifest is caller-supplied, so its factory must be untrusted.
+
+    This is the invariant that gates custom-component execution independently of the config
+    contents, so it cannot be defeated by a manifest that manipulates its own config.
+    """
+    source = create_source(
+        config={"__injected_declarative_manifest": MANIFEST}, limits=None, catalog=None, state=None
+    )
+
+    assert source._constructor._custom_components_trusted is False
+
+
+_GATE_BYPASS_STREAM = {
+    "type": "DeclarativeStream",
+    "name": "s",
+    "retriever": {
+        "type": "SimpleRetriever",
+        "requester": {
+            "type": "HttpRequester",
+            "url_base": "https://example.com",
+            "path": "/",
+        },
+        "record_selector": {
+            "type": "RecordSelector",
+            "extractor": {
+                "type": "CustomRecordExtractor",
+                "class_name": "not_a_real_module.NotAThing",
+            },
+        },
+    },
+    "schema_loader": {
+        "type": "InlineSchemaLoader",
+        "schema": {"type": "object", "properties": {}},
+    },
+}
+
+
+def test_spec_level_custom_component_is_gated(monkeypatch):
+    """A `Custom*` component in `spec.config_normalization_rules` must honor the gate.
+
+    The spec component is built with an empty config, so the config-key provenance signal is
+    absent there; the untrusted-factory flag is what keeps the gate active. A non-existent
+    `class_name` proves the gate fires *before* the class is resolved (otherwise the failure
+    would be a class-resolution `ValueError`, not `AirbyteCustomCodeNotPermittedError`).
+    """
+    monkeypatch.delenv(ENV_VAR_ALLOW_CUSTOM_CODE, raising=False)
+    manifest = {
+        "type": "DeclarativeSource",
+        "version": "6.0.0",
+        "check": {"type": "CheckStream", "stream_names": ["s"]},
+        "spec": {
+            "type": "Spec",
+            "connection_specification": {"type": "object", "properties": {}},
+            "config_normalization_rules": {
+                "type": "ConfigNormalizationRules",
+                "transformations": [
+                    {
+                        "type": "CustomConfigTransformation",
+                        "class_name": "not_a_real_module.NotAThing",
+                    }
+                ],
+            },
+        },
+        "streams": [_GATE_BYPASS_STREAM],
+    }
+
+    with pytest.raises(AirbyteCustomCodeNotPermittedError):
+        create_source(
+            config={"__injected_declarative_manifest": manifest},
+            limits=None,
+            catalog=None,
+            state=None,
+        )
+
+
+def test_config_strip_does_not_bypass_custom_code_gate(monkeypatch):
+    """A manifest that strips its own provenance key must not escape the gate.
+
+    A plain `ConfigRemoveFields` removing `__injected_declarative_manifest` runs before streams
+    are built, defeating the config-key signal. The untrusted-factory flag does not live in the
+    config, so a stream-level `Custom*` component stays gated.
+    """
+    monkeypatch.delenv(ENV_VAR_ALLOW_CUSTOM_CODE, raising=False)
+    manifest = {
+        "type": "DeclarativeSource",
+        "version": "6.0.0",
+        "check": {"type": "CheckStream", "stream_names": ["s"]},
+        "spec": {
+            "type": "Spec",
+            "connection_specification": {"type": "object", "properties": {}},
+            "config_normalization_rules": {
+                "type": "ConfigNormalizationRules",
+                "transformations": [
+                    {
+                        "type": "ConfigRemoveFields",
+                        "field_pointers": [["__injected_declarative_manifest"]],
+                    }
+                ],
+            },
+        },
+        "streams": [_GATE_BYPASS_STREAM],
+    }
+    config = {"__injected_declarative_manifest": manifest}
+
+    source = create_source(config=config, limits=None, catalog=None, state=None)
+
+    with pytest.raises(AirbyteCustomCodeNotPermittedError):
+        source.streams(config)
 
 
 def request_log_message(request: dict) -> AirbyteMessage:
@@ -1101,7 +1232,7 @@ def test_read_source(mock_http_stream):
 
     config = {"__injected_declarative_manifest": MANIFEST}
 
-    source = create_source(config, limits)
+    source = create_source(config=config, limits=limits, catalog=catalog, state=None)
 
     output_data = read_stream(source, config, catalog, _A_PER_PARTITION_STATE, limits).record.data
     slices = output_data["slices"]
@@ -1117,8 +1248,11 @@ def test_read_source(mock_http_stream):
 
     streams = source.streams(config)
     for s in streams:
-        assert isinstance(s.retriever, SimpleRetriever)
-        assert isinstance(s.retriever.stream_slicer, StreamSlicerTestReadDecorator)
+        retriever = get_retriever(s)
+        assert isinstance(retriever, SimpleRetriever)
+        assert isinstance(
+            s._stream_partition_generator._stream_slicer, StreamSlicerTestReadDecorator
+        )
 
 
 @patch.object(
@@ -1149,7 +1283,7 @@ def test_read_source_single_page_single_slice(mock_http_stream):
 
     config = {"__injected_declarative_manifest": MANIFEST}
 
-    source = create_source(config, limits)
+    source = create_source(config=config, limits=limits, catalog=catalog, state=None)
 
     output_data = read_stream(source, config, catalog, _A_PER_PARTITION_STATE, limits).record.data
     slices = output_data["slices"]
@@ -1164,8 +1298,11 @@ def test_read_source_single_page_single_slice(mock_http_stream):
 
     streams = source.streams(config)
     for s in streams:
-        assert isinstance(s.retriever, SimpleRetriever)
-        assert isinstance(s.retriever.stream_slicer, StreamSlicerTestReadDecorator)
+        retriever = get_retriever(s)
+        assert isinstance(retriever, SimpleRetriever)
+        assert isinstance(
+            s._stream_partition_generator._stream_slicer, StreamSlicerTestReadDecorator
+        )
 
 
 @pytest.mark.parametrize(
@@ -1232,11 +1369,11 @@ def test_handle_read_external_requests(deployment_mode, url_base, expected_error
         ]
     )
 
-    test_manifest = MANIFEST
+    test_manifest = copy.deepcopy(MANIFEST)
     test_manifest["streams"][0]["$parameters"]["url_base"] = url_base
     config = {"__injected_declarative_manifest": test_manifest}
 
-    source = create_source(config, limits)
+    source = create_source(config=config, limits=limits, catalog=catalog, state=None)
 
     with mock.patch.dict(os.environ, {"DEPLOYMENT_MODE": deployment_mode}, clear=False):
         output_data = read_stream(
@@ -1266,13 +1403,13 @@ def test_handle_read_external_requests(deployment_mode, url_base, expected_error
         pytest.param(
             "CLOUD",
             "https://10.0.27.27/tokens/bearer",
-            "AirbyteTracedException",
+            "OAuth access token refresh request failed.",
             id="test_cloud_read_with_private_endpoint",
         ),
         pytest.param(
             "CLOUD",
             "http://unsecured.protocol/tokens/bearer",
-            "InvalidSchema",
+            "Invalid Protocol Scheme",
             id="test_cloud_read_with_unsecured_endpoint",
         ),
         pytest.param(
@@ -1326,13 +1463,13 @@ def test_handle_read_external_oauth_request(deployment_mode, token_url, expected
         "refresh_token": "john",
     }
 
-    test_manifest = MANIFEST
+    test_manifest = copy.deepcopy(MANIFEST)
     test_manifest["definitions"]["retriever"]["requester"]["authenticator"] = (
         oauth_authenticator_config
     )
     config = {"__injected_declarative_manifest": test_manifest}
 
-    source = create_source(config, limits)
+    source = create_source(config=config, limits=limits, catalog=catalog, state=None)
 
     with mock.patch.dict(os.environ, {"DEPLOYMENT_MODE": deployment_mode}, clear=False):
         output_data = read_stream(
@@ -1389,7 +1526,9 @@ def test_read_stream_exception_with_secrets():
 def test_full_resolve_manifest(valid_resolve_manifest_config_file):
     config = copy.deepcopy(RESOLVE_DYNAMIC_STREAM_MANIFEST_CONFIG)
     command = config["__command"]
-    source = ManifestDeclarativeSource(source_config=DYNAMIC_STREAM_MANIFEST)
+    source = ConcurrentDeclarativeSource(
+        catalog=None, config=config, state=None, source_config=DYNAMIC_STREAM_MANIFEST
+    )
     limits = TestLimits(max_streams=2)
     with HttpMocker() as http_mocker:
         http_mocker.get(
@@ -1460,11 +1599,11 @@ def test_full_resolve_manifest(valid_resolve_manifest_config_file):
                             "type": "RequestOption",
                             "name": "stream_with_custom_requester",
                             "primary_key": "id",
-                            "url_base": "https://10.0.27.27/api/v1/",
+                            "url_base": "https://api.sendgrid.com",
                             "$parameters": {
                                 "name": "stream_with_custom_requester",
                                 "primary_key": "id",
-                                "url_base": "https://10.0.27.27/api/v1/",
+                                "url_base": "https://api.sendgrid.com",
                             },
                         },
                         "page_token_option": {
@@ -1472,11 +1611,11 @@ def test_full_resolve_manifest(valid_resolve_manifest_config_file):
                             "type": "RequestPath",
                             "name": "stream_with_custom_requester",
                             "primary_key": "id",
-                            "url_base": "https://10.0.27.27/api/v1/",
+                            "url_base": "https://api.sendgrid.com",
                             "$parameters": {
                                 "name": "stream_with_custom_requester",
                                 "primary_key": "id",
-                                "url_base": "https://10.0.27.27/api/v1/",
+                                "url_base": "https://api.sendgrid.com",
                             },
                         },
                         "pagination_strategy": {
@@ -1485,20 +1624,20 @@ def test_full_resolve_manifest(valid_resolve_manifest_config_file):
                             "page_size": 2,
                             "name": "stream_with_custom_requester",
                             "primary_key": "id",
-                            "url_base": "https://10.0.27.27/api/v1/",
+                            "url_base": "https://api.sendgrid.com",
                             "$parameters": {
                                 "name": "stream_with_custom_requester",
                                 "primary_key": "id",
-                                "url_base": "https://10.0.27.27/api/v1/",
+                                "url_base": "https://api.sendgrid.com",
                             },
                         },
                         "name": "stream_with_custom_requester",
                         "primary_key": "id",
-                        "url_base": "https://10.0.27.27/api/v1/",
+                        "url_base": "https://api.sendgrid.com",
                         "$parameters": {
                             "name": "stream_with_custom_requester",
                             "primary_key": "id",
-                            "url_base": "https://10.0.27.27/api/v1/",
+                            "url_base": "https://api.sendgrid.com",
                         },
                     },
                     "partition_router": {
@@ -1507,11 +1646,11 @@ def test_full_resolve_manifest(valid_resolve_manifest_config_file):
                         "cursor_field": "item_id",
                         "name": "stream_with_custom_requester",
                         "primary_key": "id",
-                        "url_base": "https://10.0.27.27/api/v1/",
+                        "url_base": "https://api.sendgrid.com",
                         "$parameters": {
                             "name": "stream_with_custom_requester",
                             "primary_key": "id",
-                            "url_base": "https://10.0.27.27/api/v1/",
+                            "url_base": "https://api.sendgrid.com",
                         },
                     },
                     "requester": {
@@ -1521,22 +1660,22 @@ def test_full_resolve_manifest(valid_resolve_manifest_config_file):
                             "api_token": "{{ config.apikey }}",
                             "name": "stream_with_custom_requester",
                             "primary_key": "id",
-                            "url_base": "https://10.0.27.27/api/v1/",
+                            "url_base": "https://api.sendgrid.com",
                             "$parameters": {
                                 "name": "stream_with_custom_requester",
                                 "primary_key": "id",
-                                "url_base": "https://10.0.27.27/api/v1/",
+                                "url_base": "https://api.sendgrid.com",
                             },
                         },
                         "request_parameters": {"a_param": "10"},
                         "type": "HttpRequester",
                         "name": "stream_with_custom_requester",
                         "primary_key": "id",
-                        "url_base": "https://10.0.27.27/api/v1/",
+                        "url_base": "https://api.sendgrid.com",
                         "$parameters": {
                             "name": "stream_with_custom_requester",
                             "primary_key": "id",
-                            "url_base": "https://10.0.27.27/api/v1/",
+                            "url_base": "https://api.sendgrid.com",
                         },
                     },
                     "record_selector": {
@@ -1545,40 +1684,40 @@ def test_full_resolve_manifest(valid_resolve_manifest_config_file):
                             "type": "DpathExtractor",
                             "name": "stream_with_custom_requester",
                             "primary_key": "id",
-                            "url_base": "https://10.0.27.27/api/v1/",
+                            "url_base": "https://api.sendgrid.com",
                             "$parameters": {
                                 "name": "stream_with_custom_requester",
                                 "primary_key": "id",
-                                "url_base": "https://10.0.27.27/api/v1/",
+                                "url_base": "https://api.sendgrid.com",
                             },
                         },
                         "type": "RecordSelector",
                         "name": "stream_with_custom_requester",
                         "primary_key": "id",
-                        "url_base": "https://10.0.27.27/api/v1/",
+                        "url_base": "https://api.sendgrid.com",
                         "$parameters": {
                             "name": "stream_with_custom_requester",
                             "primary_key": "id",
-                            "url_base": "https://10.0.27.27/api/v1/",
+                            "url_base": "https://api.sendgrid.com",
                         },
                     },
                     "type": "SimpleRetriever",
                     "name": "stream_with_custom_requester",
                     "primary_key": "id",
-                    "url_base": "https://10.0.27.27/api/v1/",
+                    "url_base": "https://api.sendgrid.com",
                     "$parameters": {
                         "name": "stream_with_custom_requester",
                         "primary_key": "id",
-                        "url_base": "https://10.0.27.27/api/v1/",
+                        "url_base": "https://api.sendgrid.com",
                     },
                 },
                 "name": "stream_with_custom_requester",
                 "primary_key": "id",
-                "url_base": "https://10.0.27.27/api/v1/",
+                "url_base": "https://api.sendgrid.com",
                 "$parameters": {
                     "name": "stream_with_custom_requester",
                     "primary_key": "id",
-                    "url_base": "https://10.0.27.27/api/v1/",
+                    "url_base": "https://api.sendgrid.com",
                 },
                 "dynamic_stream_name": None,
             },
@@ -1780,3 +1919,131 @@ def test_full_resolve_manifest(valid_resolve_manifest_config_file):
     }
     assert resolved_manifest.record.data["manifest"] == expected_resolved_manifest
     assert resolved_manifest.record.stream == "full_resolve_manifest"
+
+
+_PAGE_SIZE_REDUCTION_STREAM_NAME = "reducing_stream"
+_PAGE_SIZE_REDUCTION_MANIFEST = {
+    "version": "0.30.3",
+    "type": "DeclarativeSource",
+    "check": {"type": "CheckStream", "stream_names": [_PAGE_SIZE_REDUCTION_STREAM_NAME]},
+    "streams": [
+        {
+            "type": "DeclarativeStream",
+            "name": _PAGE_SIZE_REDUCTION_STREAM_NAME,
+            "schema_loader": {"type": "InlineSchemaLoader", "schema": {"type": "object"}},
+            "retriever": {
+                "type": "SimpleRetriever",
+                "page_size_reduction": {"type": "PageSizeReduction"},
+                "requester": {
+                    "type": "HttpRequester",
+                    "url_base": "https://demonslayers.com/api/v1/",
+                    "path": "hashiras",
+                    "http_method": "GET",
+                    "error_handler": {
+                        "type": "DefaultErrorHandler",
+                        "response_filters": [
+                            {
+                                "type": "HttpResponseFilter",
+                                "http_codes": [502],
+                                "action": "REDUCE_PAGE_SIZE",
+                            }
+                        ],
+                    },
+                },
+                "record_selector": {
+                    "type": "RecordSelector",
+                    "extractor": {"type": "DpathExtractor", "field_path": ["result"]},
+                },
+                "paginator": {
+                    "type": "DefaultPaginator",
+                    "page_size_option": {
+                        "type": "RequestOption",
+                        "inject_into": "request_parameter",
+                        "field_name": "first",
+                    },
+                    # `page_size_reduction` rejects a RequestPath page token: the next-page URL built by the
+                    # API already carries the page size, so the reduced one would be sent next to it.
+                    "page_token_option": {
+                        "type": "RequestOption",
+                        "inject_into": "request_parameter",
+                        "field_name": "after",
+                    },
+                    "pagination_strategy": {
+                        "type": "CursorPagination",
+                        "page_size": 100,
+                        "cursor_value": "{{ response._metadata.next }}",
+                        "stop_condition": "{{ not response._metadata.next }}",
+                    },
+                },
+            },
+        }
+    ],
+    "spec": {
+        "connection_specification": {
+            "$schema": "http://json-schema.org/draft-07/schema#",
+            "type": "object",
+            "required": [],
+            "properties": {},
+        },
+        "documentation_url": "https://example.org",
+        "type": "Spec",
+    },
+}
+
+
+def _create_502_page_response():
+    response = requests.Response()
+    response.status_code = 502
+    response._content = b"{}"
+    response.headers["Content-Type"] = "application/json"
+    response.request = _create_request()
+    return response
+
+
+@patch("airbyte_cdk.sources.declarative.retrievers.page_size_reducer.time.sleep", lambda _: None)
+@patch.object(
+    requests.Session,
+    "send",
+    side_effect=(
+        _create_502_page_response(),
+        _create_page_response({"result": [{"id": 0}], "_metadata": {"next": "next"}}),
+        _create_page_response({"result": [{"id": 1}], "_metadata": {}}),
+    ),
+)
+def test_given_page_size_reduction_when_test_read_then_the_retry_does_not_count_as_a_page(
+    mock_http_stream,
+):
+    """
+    The Connector Builder bounds a slice by the number of request/response logs it sees, not by the paginator's
+    own counter. A response that only triggers a reduction is never a page of the stream, so counting it would
+    show empty error pages and report "limit reached" on a read that merely retried.
+    """
+    # three responses are served but only two of them are pages, so the limit is not reached
+    limits = TestLimits(max_records=100, max_pages_per_slice=3, max_slices=2)
+    catalog = ConfiguredAirbyteCatalog(
+        streams=[
+            ConfiguredAirbyteStream(
+                stream=AirbyteStream(
+                    name=_PAGE_SIZE_REDUCTION_STREAM_NAME,
+                    json_schema={},
+                    supported_sync_modes=[SyncMode.full_refresh],
+                ),
+                sync_mode=SyncMode.full_refresh,
+                destination_sync_mode=DestinationSyncMode.append,
+            )
+        ]
+    )
+    config = {"__injected_declarative_manifest": _PAGE_SIZE_REDUCTION_MANIFEST}
+    source = create_source(config=config, limits=limits, catalog=catalog, state=None)
+
+    output_data = read_stream(source, config, catalog, None, limits).record.data
+
+    pages = output_data["slices"][0]["pages"]
+    assert [page["response"]["status"] for page in pages] == [200, 200]
+    assert [record["id"] for page in pages for record in page["records"]] == [0, 1]
+    assert output_data["test_read_limit_reached"] is False
+    # the failed attempt stays visible, just not as a page
+    assert [
+        auxiliary_request["response"]["status"]
+        for auxiliary_request in output_data["auxiliary_requests"]
+    ] == [502]

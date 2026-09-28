@@ -9,6 +9,7 @@ import pytest
 from isodate import parse_duration
 
 from airbyte_cdk.sources.declarative.auth.token_provider import (
+    InterpolatedSessionTokenProvider,
     InterpolatedStringTokenProvider,
     SessionTokenProvider,
 )
@@ -79,3 +80,29 @@ def test_session_token_provider_ignored_response():
     provider.login_requester.send_request.return_value = None
     with pytest.raises(ReadException):
         provider.get_token()
+
+
+@pytest.mark.parametrize(
+    "api_token_template,expected_token",
+    [
+        pytest.param("Token {{ session_token }}", "Token my_token", id="token_prefix"),
+        pytest.param("Bearer {{ session_token }}", "Bearer my_token", id="bearer_prefix"),
+        pytest.param("{{ session_token }}", "my_token", id="just_session_token"),
+        pytest.param("Custom-{{ session_token }}", "Custom-my_token", id="custom_prefix"),
+        pytest.param(
+            "realm=xyz, token={{ session_token }}",
+            "realm=xyz, token=my_token",
+            id="complex_format",
+        ),
+    ],
+)
+def test_interpolated_session_token_provider(api_token_template, expected_token):
+    """Test that InterpolatedSessionTokenProvider correctly interpolates session token."""
+    underlying_provider = create_session_token_provider()
+    interpolated_provider = InterpolatedSessionTokenProvider(
+        config={"some_config": "value"},
+        api_token=api_token_template,
+        session_token_provider=underlying_provider,
+        parameters={},
+    )
+    assert interpolated_provider.get_token() == expected_token

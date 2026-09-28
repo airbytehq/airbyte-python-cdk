@@ -166,3 +166,173 @@ def test_given_both_from_exception_and_as_sanitized_airbyte_message_with_stream_
     )
     message = traced_exc.as_sanitized_airbyte_message(stream_descriptor=_ANOTHER_STREAM_DESCRIPTOR)
     assert message.trace.error.stream_descriptor == _A_STREAM_DESCRIPTOR
+
+
+class TestAirbyteTracedExceptionStr:
+    """Tests proving that __str__ returns user-facing message instead of internal_message."""
+
+    def test_str_returns_user_facing_message_when_both_set(self) -> None:
+        exc = AirbyteTracedException(
+            internal_message="raw API error: 401 Unauthorized",
+            message="Authentication credentials are invalid.",
+        )
+        assert str(exc) == "Authentication credentials are invalid."
+
+    def test_str_falls_back_to_internal_message_when_message_is_none(self) -> None:
+        exc = AirbyteTracedException(internal_message="an internal error")
+        assert str(exc) == "an internal error"
+
+    def test_str_returns_empty_string_when_both_none(self) -> None:
+        exc = AirbyteTracedException()
+        assert str(exc) == ""
+
+    def test_str_returns_message_when_internal_message_is_none(self) -> None:
+        exc = AirbyteTracedException(message="A user-friendly error occurred.")
+        assert str(exc) == "A user-friendly error occurred."
+
+    def test_str_used_in_fstring_returns_user_facing_message(self) -> None:
+        exc = AirbyteTracedException(
+            internal_message="internal detail",
+            message="Connection timed out.",
+        )
+        assert f"Error: {exc}" == "Error: Connection timed out."
+
+    def test_str_used_in_logging_format_returns_user_facing_message(self) -> None:
+        exc = AirbyteTracedException(
+            internal_message="socket.timeout: read timed out",
+            message="Request timed out.",
+        )
+        assert "Error: %s" % exc == "Error: Request timed out."
+
+    def test_args_still_contains_internal_message(self) -> None:
+        """Verify args[0] is still internal_message for traceback formatting."""
+        exc = AirbyteTracedException(
+            internal_message="internal detail",
+            message="user-facing message",
+        )
+        assert exc.args[0] == "internal detail"
+
+    def test_str_on_subclass_inherits_behavior(self) -> None:
+        """Verify subclasses inherit the __str__ override without needing their own."""
+
+        class CustomTracedException(AirbyteTracedException):
+            pass
+
+        exc = CustomTracedException(
+            internal_message="raw error",
+            message="User-friendly error.",
+        )
+        assert str(exc) == "User-friendly error."
+
+    def test_str_with_from_exception_factory(self) -> None:
+        original = ValueError("original error")
+        exc = AirbyteTracedException.from_exception(
+            original, message="A validation error occurred."
+        )
+        assert str(exc) == "A validation error occurred."
+        assert exc.internal_message == "original error"
+
+    def test_str_with_from_exception_without_message(self) -> None:
+        original = RuntimeError("runtime failure")
+        exc = AirbyteTracedException.from_exception(original)
+        assert str(exc) == "runtime failure"
+
+    def test_stack_trace_uses_str_representation(self) -> None:
+        """Verify traceback one-liner uses __str__ (user-facing message)."""
+        exc = AirbyteTracedException(
+            internal_message="internal detail for traceback",
+            message="User sees this.",
+        )
+        airbyte_message = exc.as_airbyte_message()
+        assert "User sees this." in airbyte_message.trace.error.stack_trace
+
+    def test_str_with_empty_message_does_not_fall_back_to_internal_message(self) -> None:
+        """Explicit empty message should be respected and not replaced by internal_message."""
+        exc = AirbyteTracedException(
+            internal_message="an internal error that should not be shown to the user",
+            message="",
+        )
+        assert str(exc) == ""
+
+    def test_internal_message_preserved_in_trace_error(self) -> None:
+        """Verify internal_message is still available in the trace error for debugging."""
+        exc = AirbyteTracedException(
+            internal_message="raw API error: 401",
+            message="Authentication failed.",
+        )
+        airbyte_message = exc.as_airbyte_message()
+        assert airbyte_message.trace.error.internal_message == "raw API error: 401"
+        assert airbyte_message.trace.error.message == "Authentication failed."
+
+
+class TestFromExceptionPreservesFields:
+    """Tests proving that from_exception preserves both fields when wrapping an AirbyteTracedException."""
+
+    def test_from_exception_wrapping_traced_preserves_internal_message(self) -> None:
+        """When wrapping an AirbyteTracedException, internal_message should be taken directly, not via str()."""
+        original = AirbyteTracedException(
+            internal_message="raw API error: 401 Unauthorized",
+            message="Authentication failed.",
+        )
+        wrapped = AirbyteTracedException.from_exception(original)
+        assert wrapped.internal_message == "raw API error: 401 Unauthorized"
+
+    def test_from_exception_wrapping_traced_preserves_message(self) -> None:
+        """When wrapping an AirbyteTracedException without explicit message, the original's message is preserved."""
+        original = AirbyteTracedException(
+            internal_message="raw API error",
+            message="User-friendly error.",
+        )
+        wrapped = AirbyteTracedException.from_exception(original)
+        assert wrapped.message == "User-friendly error."
+
+    def test_from_exception_wrapping_traced_caller_message_overrides(self) -> None:
+        """When the caller provides an explicit message, it should override the original's message."""
+        original = AirbyteTracedException(
+            internal_message="raw API error",
+            message="Original user message.",
+        )
+        wrapped = AirbyteTracedException.from_exception(original, message="Custom wrapper message.")
+        assert wrapped.message == "Custom wrapper message."
+        assert wrapped.internal_message == "raw API error"
+
+    def test_from_exception_wrapping_traced_with_only_message(self) -> None:
+        """When wrapping a traced exception that has message but no internal_message, both fields are preserved."""
+        original = AirbyteTracedException(
+            message="User error only.",
+        )
+        wrapped = AirbyteTracedException.from_exception(original)
+        assert wrapped.internal_message is None
+        assert wrapped.message == "User error only."
+
+    def test_from_exception_wrapping_traced_with_only_internal_message(self) -> None:
+        """When wrapping a traced exception that has only internal_message, it is preserved correctly."""
+        original = AirbyteTracedException(
+            internal_message="internal detail only",
+        )
+        wrapped = AirbyteTracedException.from_exception(original)
+        assert wrapped.internal_message == "internal detail only"
+        assert wrapped.message is None
+
+    def test_from_exception_wrapping_traced_with_neither_field(self) -> None:
+        """When wrapping a traced exception with no messages, both remain None."""
+        original = AirbyteTracedException()
+        wrapped = AirbyteTracedException.from_exception(original)
+        assert wrapped.internal_message is None
+        assert wrapped.message is None
+
+    def test_from_exception_wrapping_regular_exception_unchanged(self) -> None:
+        """Wrapping a regular exception should still use str(exc) for internal_message."""
+        original = ValueError("some value error")
+        wrapped = AirbyteTracedException.from_exception(original)
+        assert wrapped.internal_message == "some value error"
+        assert wrapped.message is None
+
+    def test_from_exception_wrapping_regular_exception_with_message(self) -> None:
+        """Wrapping a regular exception with explicit message kwarg still works."""
+        original = RuntimeError("runtime failure")
+        wrapped = AirbyteTracedException.from_exception(
+            original, message="A runtime error occurred."
+        )
+        assert wrapped.internal_message == "runtime failure"
+        assert wrapped.message == "A runtime error occurred."

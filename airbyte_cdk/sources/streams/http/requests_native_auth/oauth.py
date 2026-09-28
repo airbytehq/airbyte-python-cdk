@@ -45,6 +45,7 @@ class Oauth2Authenticator(AbstractOauth2Authenticator):
         expires_in_name: str = "expires_in",
         refresh_request_body: Mapping[str, Any] | None = None,
         refresh_request_headers: Mapping[str, Any] | None = None,
+        send_refresh_request_as_query_params: bool = False,
         grant_type_name: str = "grant_type",
         grant_type: str = "refresh_token",
         token_expiry_is_time_of_expiration: bool = False,
@@ -64,6 +65,7 @@ class Oauth2Authenticator(AbstractOauth2Authenticator):
         self._expires_in_name = expires_in_name
         self._refresh_request_body = refresh_request_body
         self._refresh_request_headers = refresh_request_headers
+        self._send_refresh_request_as_query_params = send_refresh_request_as_query_params
         self._grant_type_name = grant_type_name
         self._grant_type = grant_type
 
@@ -110,6 +112,9 @@ class Oauth2Authenticator(AbstractOauth2Authenticator):
 
     def get_refresh_request_headers(self) -> Mapping[str, Any]:
         return self._refresh_request_headers  # type: ignore[return-value]
+
+    def should_send_refresh_request_as_query_params(self) -> bool:
+        return self._send_refresh_request_as_query_params
 
     def get_grant_type_name(self) -> str:
         return self._grant_type_name
@@ -160,6 +165,7 @@ class SingleUseRefreshTokenOauth2Authenticator(Oauth2Authenticator):
         refresh_token_name: str = "refresh_token",
         refresh_request_body: Mapping[str, Any] | None = None,
         refresh_request_headers: Mapping[str, Any] | None = None,
+        send_refresh_request_as_query_params: bool = False,
         grant_type_name: str = "grant_type",
         grant_type: str = "refresh_token",
         client_id_name: str = "client_id",
@@ -186,6 +192,7 @@ class SingleUseRefreshTokenOauth2Authenticator(Oauth2Authenticator):
             refresh_token_name (str, optional): Name of the name of the refresh token field, used to parse the refresh token response. Defaults to "refresh_token".
             refresh_request_body (Mapping[str, Any], optional): Custom key value pair that will be added to the refresh token request body. Defaults to None.
             refresh_request_headers (Mapping[str, Any], optional): Custom key value pair that will be added to the refresh token request headers. Defaults to None.
+            send_refresh_request_as_query_params (bool, optional): When True, the standard refresh args (`grant_type`, `refresh_token`, client credentials when not in an `Authorization` header, scopes, plus any `refresh_request_body` extras) are sent on the URL query string and the request body is emitted empty. Use this for OAuth providers like Gong that document their refresh endpoint with refresh args on the URL query string. Defaults to False.
             grant_type (str, optional): OAuth grant type. Defaults to "refresh_token".
             client_id (Optional[str]): The client id to authenticate. If not specified, defaults to credentials.client_id in the config object.
             client_secret (Optional[str]): The client secret to authenticate. If not specified, defaults to credentials.client_secret in the config object.
@@ -227,6 +234,7 @@ class SingleUseRefreshTokenOauth2Authenticator(Oauth2Authenticator):
             expires_in_name=expires_in_name,
             refresh_request_body=refresh_request_body,
             refresh_request_headers=refresh_request_headers,
+            send_refresh_request_as_query_params=send_refresh_request_as_query_params,
             grant_type_name=self._grant_type_name,
             grant_type=grant_type,
             token_expiry_date_format=token_expiry_date_format,
@@ -318,26 +326,51 @@ class SingleUseRefreshTokenOauth2Authenticator(Oauth2Authenticator):
 
     def get_access_token(self) -> str:
         """Retrieve new access and refresh token if the access token has expired.
-        The new refresh token is persisted with the set_refresh_token function
+
+        This method uses double-checked locking to ensure thread-safe token refresh.
+        This is especially critical for single-use refresh tokens where concurrent
+        refresh attempts would cause failures as the refresh token is invalidated
+        after first use.
+
+        The new refresh token is persisted with the set_refresh_token function.
+
         Returns:
             str: The current access_token, updated if it was previously expired.
         """
         if self.token_has_expired():
+            with self._token_refresh_lock:
+                # Double-check after acquiring lock - another thread may have already refreshed
+                if self.token_has_expired():
+                    self.refresh_and_set_access_token()
+        return self.access_token
+
+    def refresh_and_set_access_token(self) -> None:
+        """Force refresh the access token and update internal state.
+
+        For single-use refresh tokens, this also persists the new refresh token
+        and emits a control message to update the connector config. If the
+        response omits a refresh token, the existing one is preserved.
+        """
+        token_before_waiting = self._current_access_token_or_none()
+        with self._token_refresh_lock:
+            if self._current_access_token_or_none() != token_before_waiting:
+                return
             new_access_token, access_token_expires_in, new_refresh_token = (
                 self.refresh_access_token()
             )
             self.access_token = new_access_token
-            self.set_refresh_token(new_refresh_token)
+            if new_refresh_token is not None:
+                self.set_refresh_token(new_refresh_token)
             self.set_token_expiry_date(access_token_expires_in)
             self._emit_control_message()
-        return self.access_token
 
-    def refresh_access_token(self) -> Tuple[str, AirbyteDateTime, str]:  # type: ignore[override]
+    def refresh_access_token(self) -> Tuple[str, AirbyteDateTime, Optional[str]]:  # type: ignore[override]
         """
         Refreshes the access token by making a handled request and extracting the necessary token information.
 
         Returns:
-            Tuple[str, str, str]: A tuple containing the new access token, token expiry date, and refresh token.
+            A tuple of (access_token, token_expiry_date, refresh_token). The refresh token
+            is `None` when the OAuth provider omits it from the response.
         """
         response_json = self._make_handled_request()
         return (
@@ -383,27 +416,24 @@ class SingleUseRefreshTokenOauth2Authenticator(Oauth2Authenticator):
         """
         Emits a control message based on the connector configuration.
 
-        This method checks if the message repository is not a NoopMessageRepository.
-        If it is not, it emits a message using the message repository. Otherwise,
-        it falls back to emitting the configuration as an Airbyte control message
-        directly to the console for backward compatibility.
+        Control messages for config updates (like refreshed tokens) must be printed directly
+        to stdout so the platform can process them immediately. The message repository is
+        also used to queue the message for any additional processing.
 
         Note:
-            The function `emit_configuration_as_airbyte_control_message` has been deprecated
-            in favor of the package `airbyte_cdk.sources.message`.
-
-        Raises:
-            TypeError: If the argument types are incorrect.
+            The function `emit_configuration_as_airbyte_control_message` prints directly to
+            stdout, which is required for the platform to detect and persist config changes.
         """
-        # FIXME emit_configuration_as_airbyte_control_message as been deprecated in favor of package airbyte_cdk.sources.message
-        # Usually, a class shouldn't care about the implementation details but to keep backward compatibility where we print the
-        # message directly in the console, this is needed
+        # Always emit to stdout so the platform can process the config update immediately.
+        # This is critical for single-use refresh tokens where the new token must be persisted
+        # before subsequent operations try to use the old (now invalid) token.
+        emit_configuration_as_airbyte_control_message(self._connector_config)  # type: ignore[arg-type]
+
+        # Also emit to the message repository for any additional processing (e.g., logging)
         if not isinstance(self._message_repository, NoopMessageRepository):
             self._message_repository.emit_message(
                 create_connector_config_control_message(self._connector_config)  # type: ignore[arg-type]
             )
-        else:
-            emit_configuration_as_airbyte_control_message(self._connector_config)  # type: ignore[arg-type]
 
     @property
     def _message_repository(self) -> MessageRepository:

@@ -124,8 +124,8 @@ class JinjaInterpolation(Interpolation):
 
     def _literal_eval(self, result: Optional[str], valid_types: Optional[Tuple[Type[Any]]]) -> Any:
         try:
-            evaluated = ast.literal_eval(result)  # type: ignore # literal_eval is able to handle None
-        except (ValueError, SyntaxError):
+            evaluated = ast.literal_eval(result)  # type: ignore # result may be None; on error we return it unchanged
+        except (ValueError, SyntaxError, TypeError):
             return result
         if (not valid_types and not isinstance(evaluated, complex)) or (
             valid_types and isinstance(evaluated, valid_types)

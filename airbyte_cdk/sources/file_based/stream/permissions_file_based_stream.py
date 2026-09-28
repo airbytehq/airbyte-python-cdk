@@ -7,6 +7,7 @@ from typing import Any, Dict, Iterable
 
 from airbyte_cdk.models import AirbyteLogMessage, AirbyteMessage, Level
 from airbyte_cdk.models import Type as MessageType
+from airbyte_cdk.sources.file_based.config.file_based_stream_config import PrimaryKeyType
 from airbyte_cdk.sources.file_based.file_based_stream_permissions_reader import (
     AbstractFileBasedStreamPermissionsReader,
 )
@@ -34,6 +35,10 @@ class PermissionsFileBasedStream(DefaultFileBasedStream):
     ):
         super().__init__(**kwargs)
         self.stream_permissions_reader = stream_permissions_reader
+
+    @property
+    def primary_key(self) -> PrimaryKeyType:
+        return self.config.primary_key
 
     def _filter_schema_invalid_properties(
         self, configured_catalog_json_schema: Dict[str, Any]

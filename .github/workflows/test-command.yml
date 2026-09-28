@@ -50,7 +50,12 @@ jobs:
     needs: [start-workflow]
     strategy:
       matrix:
-        python-version: ["3.10", "3.11"]
+        python-version: [
+          "3.10",
+          "3.11",
+          "3.12",
+          "3.13",
+        ]
         os: [
             Ubuntu,
             # Windows,  # For now, we don't include Windows in the test matrix.
@@ -83,9 +88,9 @@ jobs:
       # Same as the `python_pytest.yml` file:
 
       - name: Set up Poetry
-        uses: Gr1N/setup-poetry@v9
+        uses: snok/install-poetry@v1
         with:
-          poetry-version: "2.0.1"
+          version: "2.0.1"
       - name: Set up Python
         uses: actions/setup-python@v5
         with:

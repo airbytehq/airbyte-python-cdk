@@ -143,9 +143,10 @@ class ConnectorTestScenario(BaseModel):
         ) as temp_file:
             temp_file.write(json.dumps(config))
             temp_file.flush()
-            # Allow the file to be read by other processes
+            # Allow the file to be read and written by other processes
+            # Write access is needed for connectors with config migration (e.g., OAuth token refresh)
             temp_path = Path(temp_file.name)
-            temp_path.chmod(temp_path.stat().st_mode | 0o444)
+            temp_path.chmod(temp_path.stat().st_mode | 0o666)
             yield temp_path
 
         # attempt cleanup, ignore errors
@@ -186,3 +187,8 @@ class ConnectorTestScenario(BaseModel):
             **self.model_dump(exclude={"status"}),
             status="succeed",
         )
+
+    @property
+    def requires_creds(self) -> bool:
+        """Return True if the scenario requires credentials to run."""
+        return bool(self.config_path and "secrets" in self.config_path.parts)

@@ -12,7 +12,9 @@ from airbyte_cdk.cli.source_declarative_manifest._run import (
     create_declarative_source,
     handle_command,
 )
-from airbyte_cdk.sources.declarative.manifest_declarative_source import ManifestDeclarativeSource
+from airbyte_cdk.sources.declarative.concurrent_declarative_source import (
+    ConcurrentDeclarativeSource,
+)
 
 REMOTE_MANIFEST_SPEC_SUBSTRING = '"required":["__injected_declarative_manifest"]'
 
@@ -30,7 +32,7 @@ def test_given_no_injected_declarative_manifest_then_raise_value_error(invalid_r
 
 def test_given_injected_declarative_manifest_then_return_declarative_manifest(valid_remote_config):
     source = create_declarative_source(["check", "--config", str(valid_remote_config)])
-    assert isinstance(source, ManifestDeclarativeSource)
+    assert isinstance(source, ConcurrentDeclarativeSource)
 
 
 def test_parse_manifest_from_file(valid_remote_config: Path) -> None:

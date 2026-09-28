@@ -1,5 +1,37 @@
 # CDK Migration Guide
 
+## Upgrading to 7.0.0
+
+[Version 7.0.0](https://github.com/airbytehq/airbyte-python-cdk/releases/tag/v7.0.0) of the CDK migrates the CDK to the Concurrent CDK by removing some of the Declarative CDK concepts that are better expressed in the Concurrent CDK or that are outright incompatible with it. This changes mostly impact the Python implementations although the concept of CustomIncrementalSync has been removed from the declarative language as well.
+
+### CustomIncrementalSync
+
+Migration steps: None available
+
+Rationale: Our current interface for CustomIncrementalSync was assuming that the first slice would be processed before the second which would be processed before the third, etc... In a concurrent world, the multiple units of work can be done in any order. The current implementations of CustomIncrementalSync do not account for that hence are not compatible with the new version of the CDK. Also, we've rarely seen CustomIncrementalSync that were actually needed. On top of that, state management is much more complex in a concurrent world as it requires the developer to track multiple units of work and combining them to provide a simple representation of a state. For all those reason, we have decided not to support CustomIncrementalSync but if needs be, feel free to reach out to our team and we will re-evaluate the need for those.
+
+### CustomRetriever State
+
+Migration steps: Ensures that you don't implement `Retriever.state` or relying on the field `SimpleRetriever.cursor`. For more information, see the point above.
+
+Rationale: As mentioned above, the state has been moved outside the realm of the stream responsibilities. Therefore, it does not make sense for the retriever (which is a stream specific concept) to hold state information. This way, a connector developer wanting to implement a CustomRetriever will not have to bother about state management anymore. 
+
+### Inheriting from Substream Partition Routing
+
+Migration steps: If your custom component relies on SubstreamPartitionRouter.parent_stream_configs[x].stream, make sure you migrate from the `DeclarativeStream` interface to the `AbstractStream` one.
+
+Rationale: `DeclarativeStream` interface is not compatible with the `AbstractStream` from the Concurrent CDK. In order to avoid maintaining two different instantiation flows (one for the SubstreamPartitionRouter and one for the Concurrent CDK), we decided to migrate `SubstreamPartitionRouter` to use `AbstractStream`.
+
+### CustomRetriever.stream_slices
+
+Migration steps: Ensures that you don't implement `Retriever.stream_slices` or relying on the field `SimpleRetriever.stream_slicer`. You can implement your own PartitionRouter to influence how stream slices are generated.
+
+Rationale: Generating units of work has been re-implemented as part of the Concurrent CDK as those units will be parallelized. While doing this change, there were no apparent reasons to go through the retriever in order to get the stream slices. Hence, we are deprecating this method and will remove it.
+
+### Possible Missing Features
+
+We have seen that some custom components were create just for the RequestOptionsProvider interface. There should always be an escape path for that which is the string interpolation. Given this is not enough, feel free to reach out to our team so that we can figure out a solution.
+
 ## Upgrading to 6.34.0
 
 [Version 6.34.0](https://github.com/airbytehq/airbyte-python-cdk/releases/tag/v6.34.0) of the CDK removes support for `stream_state` in the Jinja interpolation context. This change is breaking for any low-code connectors that use `stream_state` in the interpolation context.

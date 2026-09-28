@@ -7,9 +7,13 @@ from __future__ import annotations
 import datetime
 import importlib
 import inspect
+import json
+import logging
+import math
 import re
 from functools import partial
 from typing import (
+    TYPE_CHECKING,
     Any,
     Callable,
     Dict,
@@ -17,6 +21,7 @@ from typing import (
     Mapping,
     MutableMapping,
     Optional,
+    Tuple,
     Type,
     Union,
     cast,
@@ -25,6 +30,12 @@ from typing import (
     get_type_hints,
 )
 
+if TYPE_CHECKING:
+    from airbyte_cdk.legacy.sources.declarative.incremental.datetime_based_cursor import (
+        DatetimeBasedCursor,
+    )
+
+from airbyte_protocol_dataclasses.models import ConfiguredAirbyteStream
 from isodate import parse_duration
 from pydantic.v1 import BaseModel
 from requests import Response
@@ -32,7 +43,16 @@ from requests import Response
 from airbyte_cdk.connector_builder.models import (
     LogMessage as ConnectorBuilderLogMessage,
 )
-from airbyte_cdk.models import FailureType, Level
+from airbyte_cdk.models import (
+    AirbyteStateBlob,
+    AirbyteStateMessage,
+    AirbyteStateType,
+    AirbyteStreamState,
+    ConfiguredAirbyteCatalog,
+    FailureType,
+    Level,
+    StreamDescriptor,
+)
 from airbyte_cdk.sources.connector_state_manager import ConnectorStateManager
 from airbyte_cdk.sources.declarative.async_job.job_orchestrator import AsyncJobOrchestrator
 from airbyte_cdk.sources.declarative.async_job.job_tracker import JobTracker
@@ -47,6 +67,10 @@ from airbyte_cdk.sources.declarative.auth.jwt import JwtAlgorithm
 from airbyte_cdk.sources.declarative.auth.oauth import (
     DeclarativeSingleUseRefreshTokenOauth2Authenticator,
 )
+from airbyte_cdk.sources.declarative.auth.rate_limited_multiple_token import (
+    RateLimitedMultipleTokenAuthenticator,
+    TokenQuota,
+)
 from airbyte_cdk.sources.declarative.auth.selective_authenticator import SelectiveAuthenticator
 from airbyte_cdk.sources.declarative.auth.token import (
     ApiKeyAuthenticator,
@@ -55,6 +79,7 @@ from airbyte_cdk.sources.declarative.auth.token import (
     LegacySessionTokenAuthenticator,
 )
 from airbyte_cdk.sources.declarative.auth.token_provider import (
+    InterpolatedSessionTokenProvider,
     InterpolatedStringTokenProvider,
     SessionTokenProvider,
     TokenProvider,
@@ -66,7 +91,6 @@ from airbyte_cdk.sources.declarative.checks import (
 )
 from airbyte_cdk.sources.declarative.concurrency_level import ConcurrencyLevel
 from airbyte_cdk.sources.declarative.datetime.min_max_datetime import MinMaxDatetime
-from airbyte_cdk.sources.declarative.declarative_stream import DeclarativeStream
 from airbyte_cdk.sources.declarative.decoders import (
     Decoder,
     IterableDecoder,
@@ -79,9 +103,14 @@ from airbyte_cdk.sources.declarative.decoders.composite_raw_decoder import (
     CompositeRawDecoder,
     CsvParser,
     GzipParser,
+    JsonItemsParser,
     JsonLineParser,
     JsonParser,
     Parser,
+)
+from airbyte_cdk.sources.declarative.expanders.record_expander import (
+    OnNoRecords,
+    RecordExpander,
 )
 from airbyte_cdk.sources.declarative.extractors import (
     DpathExtractor,
@@ -89,20 +118,13 @@ from airbyte_cdk.sources.declarative.extractors import (
     RecordSelector,
     ResponseToFileExtractor,
 )
+from airbyte_cdk.sources.declarative.extractors.record_extractor import RecordExtractor
 from airbyte_cdk.sources.declarative.extractors.record_filter import (
     ClientSideIncrementalRecordFilterDecorator,
 )
 from airbyte_cdk.sources.declarative.incremental import (
-    ChildPartitionResumableFullRefreshCursor,
     ConcurrentCursorFactory,
     ConcurrentPerPartitionCursor,
-    CursorFactory,
-    DatetimeBasedCursor,
-    DeclarativeCursor,
-    GlobalSubstreamCursor,
-    PerPartitionCursor,
-    PerPartitionWithGlobalCursor,
-    ResumableFullRefreshCursor,
 )
 from airbyte_cdk.sources.declarative.interpolation import InterpolatedString
 from airbyte_cdk.sources.declarative.interpolation.interpolated_mapping import InterpolatedMapping
@@ -111,10 +133,17 @@ from airbyte_cdk.sources.declarative.migrations.legacy_to_per_partition_state_mi
 )
 from airbyte_cdk.sources.declarative.models import (
     CustomStateMigration,
+    PaginationResetLimits,
 )
 from airbyte_cdk.sources.declarative.models.base_model_with_deprecations import (
     DEPRECATION_LOGS_TAG,
     BaseModelWithDeprecations,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    Action as HttpResponseFilterActionModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    Action1 as PaginationResetActionModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     AddedFieldDefinition as AddedFieldDefinitionModel,
@@ -193,9 +222,6 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     CustomErrorHandler as CustomErrorHandlerModel,
-)
-from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
-    CustomIncrementalSync as CustomIncrementalSyncModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     CustomPaginationStrategy as CustomPaginationStrategyModel,
@@ -306,7 +332,13 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
     JsonFileSchemaLoader as JsonFileSchemaLoaderModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    JsonItemsDecoder as JsonItemsDecoderModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     JsonlDecoder as JsonlDecoderModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    JsonSchemaPropertySelector as JsonSchemaPropertySelectorModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     JwtAuthenticator as JwtAuthenticatorModel,
@@ -357,6 +389,12 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
     PageIncrement as PageIncrementModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    PageSizeReduction as PageSizeReductionModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    PaginationReset as PaginationResetModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     ParametrizedComponentsResolver as ParametrizedComponentsResolverModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
@@ -381,10 +419,19 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
     Rate as RateModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    RateLimitedMultipleTokenAuthenticator as RateLimitedMultipleTokenAuthenticatorModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    RecordExpander as RecordExpanderModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     RecordFilter as RecordFilterModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     RecordSelector as RecordSelectorModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    RefreshTokenUpdater as RefreshTokenUpdaterModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     RemoveFields as RemoveFieldsModel,
@@ -427,6 +474,9 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
     TypesMap as TypesMapModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    UnionPartitionRouter as UnionPartitionRouterModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     UnlimitedCallRatePolicy as UnlimitedCallRatePolicyModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
@@ -446,8 +496,13 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
     ZipfileDecoder as ZipfileDecoderModel,
 )
 from airbyte_cdk.sources.declarative.parsers.custom_code_compiler import (
-    COMPONENTS_MODULE_NAME,
-    SDM_COMPONENTS_MODULE_NAME,
+    INJECTED_MANIFEST,
+    AirbyteCustomCodeNotPermittedError,
+    custom_code_execution_permitted,
+)
+from airbyte_cdk.sources.declarative.parsers.stop_condition_safety import (
+    StopConditionSafety,
+    classify_stop_condition,
 )
 from airbyte_cdk.sources.declarative.partition_routers import (
     CartesianProductStreamSlicer,
@@ -456,6 +511,7 @@ from airbyte_cdk.sources.declarative.partition_routers import (
     PartitionRouter,
     SinglePartitionRouter,
     SubstreamPartitionRouter,
+    UnionPartitionRouter,
 )
 from airbyte_cdk.sources.declarative.partition_routers.async_job_partition_router import (
     AsyncJobPartitionRouter,
@@ -496,6 +552,9 @@ from airbyte_cdk.sources.declarative.requesters.query_properties import (
 from airbyte_cdk.sources.declarative.requesters.query_properties.property_chunking import (
     PropertyLimitType,
 )
+from airbyte_cdk.sources.declarative.requesters.query_properties.property_selector import (
+    JsonSchemaPropertySelector,
+)
 from airbyte_cdk.sources.declarative.requesters.query_properties.strategies import (
     GroupByKey,
 )
@@ -505,6 +564,9 @@ from airbyte_cdk.sources.declarative.requesters.request_options import (
     DefaultRequestOptionsProvider,
     InterpolatedRequestOptionsProvider,
     RequestOptionsProvider,
+)
+from airbyte_cdk.sources.declarative.requesters.request_options.per_partition_request_option_provider import (
+    PerPartitionRequestOptionsProvider,
 )
 from airbyte_cdk.sources.declarative.requesters.request_path import RequestPath
 from airbyte_cdk.sources.declarative.requesters.requester import HttpMethod, Requester
@@ -528,20 +590,33 @@ from airbyte_cdk.sources.declarative.retrievers.file_uploader import (
     LocalFileSystemFileWriter,
     NoopFileWriter,
 )
+from airbyte_cdk.sources.declarative.retrievers.page_size_reducer import (
+    PageSizeReduction,
+    PageSizeResetPolicy,
+)
+from airbyte_cdk.sources.declarative.retrievers.pagination_tracker import PaginationTracker
 from airbyte_cdk.sources.declarative.schema import (
     ComplexFieldType,
     DefaultSchemaLoader,
     DynamicSchemaLoader,
     InlineSchemaLoader,
     JsonFileSchemaLoader,
+    SchemaLoader,
     SchemaTypeIdentifier,
     TypesMap,
+)
+from airbyte_cdk.sources.declarative.schema.caching_schema_loader_decorator import (
+    CachingSchemaLoaderDecorator,
 )
 from airbyte_cdk.sources.declarative.schema.composite_schema_loader import CompositeSchemaLoader
 from airbyte_cdk.sources.declarative.spec import ConfigMigration, Spec
 from airbyte_cdk.sources.declarative.stream_slicers import (
     StreamSlicer,
     StreamSlicerTestReadDecorator,
+)
+from airbyte_cdk.sources.declarative.stream_slicers.declarative_partition_generator import (
+    DeclarativePartitionFactory,
+    StreamSlicerPartitionGenerator,
 )
 from airbyte_cdk.sources.declarative.transformations import (
     AddFields,
@@ -585,6 +660,8 @@ from airbyte_cdk.sources.message import (
     MessageRepository,
     NoopMessageRepository,
 )
+from airbyte_cdk.sources.message.repository import StateFilteringMessageRepository
+from airbyte_cdk.sources.streams import NO_CURSOR_STATE_KEY
 from airbyte_cdk.sources.streams.call_rate import (
     APIBudget,
     FixedWindowCallRatePolicy,
@@ -594,6 +671,7 @@ from airbyte_cdk.sources.streams.call_rate import (
     Rate,
     UnlimitedCallRatePolicy,
 )
+from airbyte_cdk.sources.streams.concurrent.abstract_stream import AbstractStream
 from airbyte_cdk.sources.streams.concurrent.clamping import (
     ClampingEndProvider,
     ClampingStrategy,
@@ -603,7 +681,17 @@ from airbyte_cdk.sources.streams.concurrent.clamping import (
     WeekClampingStrategy,
     Weekday,
 )
-from airbyte_cdk.sources.streams.concurrent.cursor import ConcurrentCursor, Cursor, CursorField
+from airbyte_cdk.sources.streams.concurrent.cursor import (
+    ConcurrentCursor,
+    Cursor,
+    CursorField,
+    FinalStateCursor,
+)
+from airbyte_cdk.sources.streams.concurrent.default_stream import DefaultStream
+from airbyte_cdk.sources.streams.concurrent.helpers import get_primary_key_from_stream
+from airbyte_cdk.sources.streams.concurrent.partitions.stream_slicer import (
+    StreamSlicer as ConcurrentStreamSlicer,
+)
 from airbyte_cdk.sources.streams.concurrent.state_converters.datetime_stream_state_converter import (
     CustomFormatConcurrentStreamStateConverter,
     DateTimeStreamStateConverter,
@@ -621,6 +709,13 @@ SCHEMA_TRANSFORMER_TYPE_MAPPING = {
     SchemaNormalizationModel.None_: TransformConfig.NoTransform,
     SchemaNormalizationModel.Default: TransformConfig.DefaultSchemaNormalization,
 }
+_NO_STREAM_SLICING = SinglePartitionRouter(parameters={})
+
+# Ideally this should use the value defined in ConcurrentDeclarativeSource, but
+# this would be a circular import
+MAX_SLICES = 5
+
+LOGGER = logging.getLogger(f"airbyte.model_to_component_factory")
 
 
 class ModelToComponentFactory:
@@ -633,23 +728,35 @@ class ModelToComponentFactory:
         emit_connector_builder_messages: bool = False,
         disable_retries: bool = False,
         disable_cache: bool = False,
-        disable_resumable_full_refresh: bool = False,
         message_repository: Optional[MessageRepository] = None,
         connector_state_manager: Optional[ConnectorStateManager] = None,
         max_concurrent_async_job_count: Optional[int] = None,
+        configured_catalog: Optional[ConfiguredAirbyteCatalog] = None,
+        api_budget: Optional[APIBudget] = None,
+        rate_limited_authenticators: Optional[
+            Dict[str, RateLimitedMultipleTokenAuthenticator]
+        ] = None,
+        custom_components_trusted: bool = True,
     ):
         self._init_mappings()
+        self._custom_components_trusted = custom_components_trusted
         self._limit_pages_fetched_per_slice = limit_pages_fetched_per_slice
         self._limit_slices_fetched = limit_slices_fetched
         self._emit_connector_builder_messages = emit_connector_builder_messages
         self._disable_retries = disable_retries
         self._disable_cache = disable_cache
-        self._disable_resumable_full_refresh = disable_resumable_full_refresh
         self._message_repository = message_repository or InMemoryMessageRepository(
             self._evaluate_log_level(emit_connector_builder_messages)
         )
+        self._stream_name_to_configured_stream = self._create_stream_name_to_configured_stream(
+            configured_catalog
+        )
         self._connector_state_manager = connector_state_manager or ConnectorStateManager()
-        self._api_budget: Optional[Union[APIBudget, HttpAPIBudget]] = None
+        self._api_budget: Optional[Union[APIBudget]] = api_budget
+        # Shared instances so all streams see the same token quota counters (like api_budget)
+        self._rate_limited_authenticators: Dict[str, RateLimitedMultipleTokenAuthenticator] = (
+            rate_limited_authenticators if rate_limited_authenticators is not None else {}
+        )
         self._job_tracker: JobTracker = JobTracker(max_concurrent_async_job_count or 1)
         # placeholder for deprecation warnings
         self._collected_deprecation_logs: List[ConnectorBuilderLogMessage] = []
@@ -677,7 +784,6 @@ class ModelToComponentFactory:
             CustomBackoffStrategyModel: self.create_custom_component,
             CustomDecoderModel: self.create_custom_component,
             CustomErrorHandlerModel: self.create_custom_component,
-            CustomIncrementalSyncModel: self.create_custom_component,
             CustomRecordExtractorModel: self.create_custom_component,
             CustomRecordFilterModel: self.create_custom_component,
             CustomRequesterModel: self.create_custom_component,
@@ -690,8 +796,7 @@ class ModelToComponentFactory:
             CustomTransformationModel: self.create_custom_component,
             CustomValidationStrategyModel: self.create_custom_component,
             CustomConfigTransformationModel: self.create_custom_component,
-            DatetimeBasedCursorModel: self.create_datetime_based_cursor,
-            DeclarativeStreamModel: self.create_declarative_stream,
+            DeclarativeStreamModel: self.create_default_stream,
             DefaultErrorHandlerModel: self.create_default_error_handler,
             DefaultPaginatorModel: self.create_default_paginator,
             DpathExtractorModel: self.create_dpath_extractor,
@@ -704,7 +809,9 @@ class ModelToComponentFactory:
             HttpResponseFilterModel: self.create_http_response_filter,
             InlineSchemaLoaderModel: self.create_inline_schema_loader,
             JsonDecoderModel: self.create_json_decoder,
+            JsonItemsDecoderModel: self.create_json_items_decoder,
             JsonlDecoderModel: self.create_jsonl_decoder,
+            JsonSchemaPropertySelectorModel: self.create_json_schema_property_selector,
             GzipDecoderModel: self.create_gzip_decoder,
             KeysToLowerModel: self.create_keys_to_lower_transformation,
             KeysToSnakeCaseModel: self.create_keys_to_snake_transformation,
@@ -712,7 +819,6 @@ class ModelToComponentFactory:
             FlattenFieldsModel: self.create_flatten_fields,
             DpathFlattenFieldsModel: self.create_dpath_flatten_fields,
             IterableDecoderModel: self.create_iterable_decoder,
-            IncrementingCountCursorModel: self.create_incrementing_count_cursor,
             XmlDecoderModel: self.create_xml_decoder,
             JsonFileSchemaLoaderModel: self.create_json_file_schema_loader,
             DynamicSchemaLoaderModel: self.create_dynamic_schema_loader,
@@ -728,11 +834,12 @@ class ModelToComponentFactory:
             OAuthAuthenticatorModel: self.create_oauth_authenticator,
             OffsetIncrementModel: self.create_offset_increment,
             PageIncrementModel: self.create_page_increment,
-            ParentStreamConfigModel: self.create_parent_stream_config,
+            ParentStreamConfigModel: self.create_parent_stream_config_with_substream_wrapper,
             PredicateValidatorModel: self.create_predicate_validator,
             PropertiesFromEndpointModel: self.create_properties_from_endpoint,
             PropertyChunkingModel: self.create_property_chunking,
             QueryPropertiesModel: self.create_query_properties,
+            RecordExpanderModel: self.create_record_expander,
             RecordFilterModel: self.create_record_filter,
             RecordSelectorModel: self.create_record_selector,
             RemoveFieldsModel: self.create_remove_fields,
@@ -761,11 +868,23 @@ class ModelToComponentFactory:
             UnlimitedCallRatePolicyModel: self.create_unlimited_call_rate_policy,
             RateModel: self.create_rate,
             HttpRequestRegexMatcherModel: self.create_http_request_matcher,
+            RateLimitedMultipleTokenAuthenticatorModel: self.create_rate_limited_multiple_token_authenticator,
             GroupingPartitionRouterModel: self.create_grouping_partition_router,
+            UnionPartitionRouterModel: self.create_union_partition_router,
         }
 
         # Needed for the case where we need to perform a second parse on the fields of a custom component
         self.TYPE_NAME_TO_MODEL = {cls.__name__: cls for cls in self.PYDANTIC_MODEL_TO_CONSTRUCTOR}
+
+    @staticmethod
+    def _create_stream_name_to_configured_stream(
+        configured_catalog: Optional[ConfiguredAirbyteCatalog],
+    ) -> Mapping[str, ConfiguredAirbyteStream]:
+        return (
+            {stream.stream.name: stream for stream in configured_catalog.streams}
+            if configured_catalog
+            else {}
+        )
 
     def create_component(
         self,
@@ -1061,12 +1180,19 @@ class ModelToComponentFactory:
             )
         partition_router = retriever.partition_router
         if not isinstance(
-            partition_router, (SubstreamPartitionRouterModel, CustomPartitionRouterModel)
+            partition_router,
+            (
+                SubstreamPartitionRouterModel,
+                CustomPartitionRouterModel,
+                UnionPartitionRouterModel,
+            ),
         ):
             raise ValueError(
-                f"LegacyToPerPartitionStateMigrations can only be applied on a SimpleRetriever with a Substream partition router. Got {type(partition_router)}"
+                f"LegacyToPerPartitionStateMigrations can only be applied on a SimpleRetriever with a SubstreamPartitionRouter, UnionPartitionRouter or CustomPartitionRouter. Got {type(partition_router)}"
             )
-        if not hasattr(partition_router, "parent_stream_configs"):
+        if not isinstance(partition_router, UnionPartitionRouterModel) and not hasattr(
+            partition_router, "parent_stream_configs"
+        ):
             raise ValueError(
                 "LegacyToPerPartitionStateMigrations can only be applied with a parent stream configuration."
             )
@@ -1086,6 +1212,9 @@ class ModelToComponentFactory:
     def create_session_token_authenticator(
         self, model: SessionTokenAuthenticatorModel, config: Config, *, name: str, **kwargs: Any
     ) -> Union[ApiKeyAuthenticator, BearerAuthenticator]:
+        self._reject_reduce_page_size_action(
+            model.login_requester, f"`login_requester` of the SessionTokenAuthenticator of {name}"
+        )
         decoder = (
             self._create_component_from_model(model=model.decoder, config=config)
             if model.decoder
@@ -1114,6 +1243,16 @@ class ModelToComponentFactory:
                 token_provider=token_provider,
             )
         else:
+            # Get the api_token template if specified, default to just the session token
+            api_token_template = (
+                getattr(model.request_authentication, "api_token", None) or "{{ session_token }}"
+            )
+            final_token_provider: TokenProvider = InterpolatedSessionTokenProvider(
+                config=config,
+                api_token=api_token_template,
+                session_token_provider=token_provider,
+                parameters=model.parameters or {},
+            )
             return self.create_api_key_authenticator(
                 ApiKeyAuthenticatorModel(
                     type="ApiKeyAuthenticator",
@@ -1121,7 +1260,7 @@ class ModelToComponentFactory:
                     inject_into=model.request_authentication.inject_into,
                 ),  # type: ignore # $parameters and headers default to None
                 config=config,
-                token_provider=token_provider,
+                token_provider=final_token_provider,
             )
 
     @staticmethod
@@ -1166,7 +1305,7 @@ class ModelToComponentFactory:
     ) -> DynamicStreamCheckConfig:
         return DynamicStreamCheckConfig(
             dynamic_stream_name=model.dynamic_stream_name,
-            stream_count=model.stream_count or 0,
+            stream_count=model.stream_count,
         )
 
     def create_check_stream(
@@ -1186,6 +1325,9 @@ class ModelToComponentFactory:
             else []
         )
 
+        # `model.config_overrides` is deliberately not read here. The source applies it around the whole
+        # check operation (`ConcurrentDeclarativeSource._config_overridden_for_check`), which is what makes
+        # it work for every checker type rather than only this one. Do not wire it in a second time.
         return CheckStream(
             stream_names=model.stream_names or [],
             dynamic_streams_check_configs=dynamic_streams_check_configs,
@@ -1200,6 +1342,7 @@ class ModelToComponentFactory:
 
         use_check_availability = model.use_check_availability
 
+        # See `create_check_stream`: `model.config_overrides` is applied by the source, not here.
         return CheckDynamicStream(
             stream_count=model.stream_count,
             use_check_availability=use_check_availability,
@@ -1245,28 +1388,24 @@ class ModelToComponentFactory:
         component_definition: ComponentDefinition,
         stream_name: str,
         stream_namespace: Optional[str],
+        stream_state: MutableMapping[str, Any],
         config: Config,
         message_repository: Optional[MessageRepository] = None,
         runtime_lookback_window: Optional[datetime.timedelta] = None,
-        stream_state_migrations: Optional[List[Any]] = None,
         **kwargs: Any,
     ) -> ConcurrentCursor:
-        # Per-partition incremental streams can dynamically create child cursors which will pass their current
-        # state via the stream_state keyword argument. Incremental syncs without parent streams use the
-        # incoming state and connector_state_manager that is initialized when the component factory is created
-        stream_state = (
-            self._connector_state_manager.get_stream_state(stream_name, stream_namespace)
-            if "stream_state" not in kwargs
-            else kwargs["stream_state"]
-        )
-        stream_state = self.apply_stream_state_migrations(stream_state_migrations, stream_state)
-
         component_type = component_definition.get("type")
         if component_definition.get("type") != model_type.__name__:
             raise ValueError(
                 f"Expected manifest component of type {model_type.__name__}, but received {component_type} instead"
             )
 
+        # FIXME the interfaces of the concurrent cursor are kind of annoying as they take a `ComponentDefinition` instead of the actual model. This was done because the ConcurrentDeclarativeSource didn't have access to the models [here for example](https://github.com/airbytehq/airbyte-python-cdk/blob/f525803b3fec9329e4cc8478996a92bf884bfde9/airbyte_cdk/sources/declarative/concurrent_declarative_source.py#L354C54-L354C91). So now we have two cases:
+        # * The ComponentDefinition comes from model.__dict__ in which case we have `parameters`
+        # * The ComponentDefinition comes from the manifest as a dict in which case we have `$parameters`
+        # We should change those interfaces to use the model once we clean up the code in CDS at which point the parameter propagation should happen as part of the ModelToComponentFactory.
+        if "$parameters" not in component_definition and "parameters" in component_definition:
+            component_definition["$parameters"] = component_definition.get("parameters")  # type: ignore  # This is a dict
         datetime_based_cursor_model = model_type.parse_obj(component_definition)
 
         if not isinstance(datetime_based_cursor_model, DatetimeBasedCursorModel):
@@ -1274,19 +1413,32 @@ class ModelToComponentFactory:
                 f"Expected {model_type.__name__} component, but received {datetime_based_cursor_model.__class__.__name__}"
             )
 
-        interpolated_cursor_field = InterpolatedString.create(
-            datetime_based_cursor_model.cursor_field,
-            parameters=datetime_based_cursor_model.parameters or {},
+        model_parameters = datetime_based_cursor_model.parameters or {}
+
+        cursor_field = self._get_catalog_defined_cursor_field(
+            stream_name=stream_name,
+            allow_catalog_defined_cursor_field=datetime_based_cursor_model.allow_catalog_defined_cursor_field
+            or False,
         )
-        cursor_field = CursorField(interpolated_cursor_field.eval(config=config))
+
+        if not cursor_field:
+            interpolated_cursor_field = InterpolatedString.create(
+                datetime_based_cursor_model.cursor_field,
+                parameters=model_parameters,
+            )
+            cursor_field = CursorField(
+                cursor_field_key=interpolated_cursor_field.eval(config=config),
+                supports_catalog_defined_cursor_field=datetime_based_cursor_model.allow_catalog_defined_cursor_field
+                or False,
+            )
 
         interpolated_partition_field_start = InterpolatedString.create(
             datetime_based_cursor_model.partition_field_start or "start_time",
-            parameters=datetime_based_cursor_model.parameters or {},
+            parameters=model_parameters,
         )
         interpolated_partition_field_end = InterpolatedString.create(
             datetime_based_cursor_model.partition_field_end or "end_time",
-            parameters=datetime_based_cursor_model.parameters or {},
+            parameters=model_parameters,
         )
 
         slice_boundary_fields = (
@@ -1306,7 +1458,7 @@ class ModelToComponentFactory:
         interpolated_lookback_window = (
             InterpolatedString.create(
                 datetime_based_cursor_model.lookback_window,
-                parameters=datetime_based_cursor_model.parameters or {},
+                parameters=model_parameters,
             )
             if datetime_based_cursor_model.lookback_window
             else None
@@ -1392,7 +1544,7 @@ class ModelToComponentFactory:
         interpolated_step = (
             InterpolatedString.create(
                 datetime_based_cursor_model.step,
-                parameters=datetime_based_cursor_model.parameters or {},
+                parameters=model_parameters,
             )
             if datetime_based_cursor_model.step
             else None
@@ -1409,7 +1561,7 @@ class ModelToComponentFactory:
             # object which we want to keep agnostic of being low-code
             target = InterpolatedString(
                 string=datetime_based_cursor_model.clamping.target,
-                parameters=datetime_based_cursor_model.parameters or {},
+                parameters=model_parameters,
             )
             evaluated_target = target.eval(config=config)
             match evaluated_target:
@@ -1472,21 +1624,11 @@ class ModelToComponentFactory:
         component_definition: ComponentDefinition,
         stream_name: str,
         stream_namespace: Optional[str],
+        stream_state: MutableMapping[str, Any],
         config: Config,
         message_repository: Optional[MessageRepository] = None,
-        stream_state_migrations: Optional[List[Any]] = None,
         **kwargs: Any,
     ) -> ConcurrentCursor:
-        # Per-partition incremental streams can dynamically create child cursors which will pass their current
-        # state via the stream_state keyword argument. Incremental syncs without parent streams use the
-        # incoming state and connector_state_manager that is initialized when the component factory is created
-        stream_state = (
-            self._connector_state_manager.get_stream_state(stream_name, stream_namespace)
-            if "stream_state" not in kwargs
-            else kwargs["stream_state"]
-        )
-        stream_state = self.apply_stream_state_migrations(stream_state_migrations, stream_state)
-
         component_type = component_definition.get("type")
         if component_definition.get("type") != model_type.__name__:
             raise ValueError(
@@ -1500,20 +1642,35 @@ class ModelToComponentFactory:
                 f"Expected {model_type.__name__} component, but received {incrementing_count_cursor_model.__class__.__name__}"
             )
 
-        interpolated_start_value = (
-            InterpolatedString.create(
-                incrementing_count_cursor_model.start_value,  # type: ignore
+        start_value: Union[int, str, None] = incrementing_count_cursor_model.start_value
+        # Pydantic Union type coercion can convert int 0 to string '0' depending on Union order.
+        # We need to handle both int and str representations of numeric values.
+        # Evaluate the InterpolatedString and convert to int for the ConcurrentCursor.
+        if start_value is not None:
+            interpolated_start_value = InterpolatedString.create(
+                str(start_value),  # Ensure we pass a string to InterpolatedString.create
                 parameters=incrementing_count_cursor_model.parameters or {},
             )
-            if incrementing_count_cursor_model.start_value
-            else 0
+            evaluated_start_value: int = int(interpolated_start_value.eval(config=config))
+        else:
+            evaluated_start_value = 0
+
+        cursor_field = self._get_catalog_defined_cursor_field(
+            stream_name=stream_name,
+            allow_catalog_defined_cursor_field=incrementing_count_cursor_model.allow_catalog_defined_cursor_field
+            or False,
         )
 
-        interpolated_cursor_field = InterpolatedString.create(
-            incrementing_count_cursor_model.cursor_field,
-            parameters=incrementing_count_cursor_model.parameters or {},
-        )
-        cursor_field = CursorField(interpolated_cursor_field.eval(config=config))
+        if not cursor_field:
+            interpolated_cursor_field = InterpolatedString.create(
+                incrementing_count_cursor_model.cursor_field,
+                parameters=incrementing_count_cursor_model.parameters or {},
+            )
+            cursor_field = CursorField(
+                cursor_field_key=interpolated_cursor_field.eval(config=config),
+                supports_catalog_defined_cursor_field=incrementing_count_cursor_model.allow_catalog_defined_cursor_field
+                or False,
+            )
 
         connector_state_converter = IncrementingCountStreamStateConverter(
             is_sequential_state=True,  # ConcurrentPerPartitionCursor only works with sequential state
@@ -1528,7 +1685,7 @@ class ModelToComponentFactory:
             connector_state_converter=connector_state_converter,
             cursor_field=cursor_field,
             slice_boundary_fields=None,
-            start=interpolated_start_value,  # type: ignore  # Having issues w/ inspection for GapType and CursorValueType as shown in existing tests. Confirmed functionality is working in practice
+            start=evaluated_start_value,  # type: ignore  # Having issues w/ inspection for GapType and CursorValueType as shown in existing tests. Confirmed functionality is working in practice
             end_provider=connector_state_converter.get_end_provider(),  # type: ignore  # Having issues w/ inspection for GapType and CursorValueType as shown in existing tests. Confirmed functionality is working in practice
         )
 
@@ -1561,7 +1718,6 @@ class ModelToComponentFactory:
         config: Config,
         stream_state: MutableMapping[str, Any],
         partition_router: PartitionRouter,
-        stream_state_migrations: Optional[List[Any]] = None,
         attempt_to_create_cursor_if_not_provided: bool = False,
         **kwargs: Any,
     ) -> ConcurrentPerPartitionCursor:
@@ -1571,6 +1727,12 @@ class ModelToComponentFactory:
                 f"Expected manifest component of type {model_type.__name__}, but received {component_type} instead"
             )
 
+        # FIXME the interfaces of the concurrent cursor are kind of annoying as they take a `ComponentDefinition` instead of the actual model. This was done because the ConcurrentDeclarativeSource didn't have access to the models [here for example](https://github.com/airbytehq/airbyte-python-cdk/blob/f525803b3fec9329e4cc8478996a92bf884bfde9/airbyte_cdk/sources/declarative/concurrent_declarative_source.py#L354C54-L354C91). So now we have two cases:
+        # * The ComponentDefinition comes from model.__dict__ in which case we have `parameters`
+        # * The ComponentDefinition comes from the manifest as a dict in which case we have `$parameters`
+        # We should change those interfaces to use the model once we clean up the code in CDS at which point the parameter propagation should happen as part of the ModelToComponentFactory.
+        if "$parameters" not in component_definition and "parameters" in component_definition:
+            component_definition["$parameters"] = component_definition.get("parameters")  # type: ignore  # This is a dict
         datetime_based_cursor_model = model_type.parse_obj(component_definition)
 
         if not isinstance(datetime_based_cursor_model, DatetimeBasedCursorModel):
@@ -1578,11 +1740,26 @@ class ModelToComponentFactory:
                 f"Expected {model_type.__name__} component, but received {datetime_based_cursor_model.__class__.__name__}"
             )
 
-        interpolated_cursor_field = InterpolatedString.create(
-            datetime_based_cursor_model.cursor_field,
-            parameters=datetime_based_cursor_model.parameters or {},
+        cursor_field = self._get_catalog_defined_cursor_field(
+            stream_name=stream_name,
+            allow_catalog_defined_cursor_field=datetime_based_cursor_model.allow_catalog_defined_cursor_field
+            or False,
         )
-        cursor_field = CursorField(interpolated_cursor_field.eval(config=config))
+
+        if not cursor_field:
+            interpolated_cursor_field = InterpolatedString.create(
+                datetime_based_cursor_model.cursor_field,
+                # FIXME the interfaces of the concurrent cursor are kind of annoying as they take a `ComponentDefinition` instead of the actual model. This was done because the ConcurrentDeclarativeSource didn't have access to the models [here for example](https://github.com/airbytehq/airbyte-python-cdk/blob/f525803b3fec9329e4cc8478996a92bf884bfde9/airbyte_cdk/sources/declarative/concurrent_declarative_source.py#L354C54-L354C91). So now we have two cases:
+                # * The ComponentDefinition comes from model.__dict__ in which case we have `parameters`
+                # * The ComponentDefinition comes from the manifest as a dict in which case we have `$parameters`
+                # We should change those interfaces to use the model once we clean up the code in CDS at which point the parameter propagation should happen as part of the ModelToComponentFactory.
+                parameters=datetime_based_cursor_model.parameters or {},
+            )
+            cursor_field = CursorField(
+                cursor_field_key=interpolated_cursor_field.eval(config=config),
+                supports_catalog_defined_cursor_field=datetime_based_cursor_model.allow_catalog_defined_cursor_field
+                or False,
+            )
 
         datetime_format = datetime_based_cursor_model.datetime_format
 
@@ -1611,11 +1788,9 @@ class ModelToComponentFactory:
                 stream_namespace=stream_namespace,
                 config=config,
                 message_repository=NoopMessageRepository(),
-                stream_state_migrations=stream_state_migrations,
             )
         )
 
-        stream_state = self.apply_stream_state_migrations(stream_state_migrations, stream_state)
         # Per-partition state doesn't make sense for GroupingPartitionRouter, so force the global state
         use_global_cursor = isinstance(
             partition_router, GroupingPartitionRouter
@@ -1640,11 +1815,18 @@ class ModelToComponentFactory:
     def create_constant_backoff_strategy(
         model: ConstantBackoffStrategyModel, config: Config, **kwargs: Any
     ) -> ConstantBackoffStrategy:
+        ModelToComponentFactory._validate_jitter_range(model.jitter_range_in_seconds)
         return ConstantBackoffStrategy(
             backoff_time_in_seconds=model.backoff_time_in_seconds,
+            jitter_range_in_seconds=model.jitter_range_in_seconds,
             config=config,
             parameters=model.parameters or {},
         )
+
+    @staticmethod
+    def _validate_jitter_range(jitter_range_in_seconds: Optional[float]) -> None:
+        if jitter_range_in_seconds is not None and jitter_range_in_seconds < 0:
+            raise ValueError("jitter_range_in_seconds must be greater than or equal to 0")
 
     def create_cursor_pagination(
         self, model: CursorPaginationModel, config: Config, decoder: Decoder, **kwargs: Any
@@ -1662,10 +1844,16 @@ class ModelToComponentFactory:
                 self._UNSUPPORTED_DECODER_ERROR.format(decoder_type=type(inner_decoder))
             )
 
+        # Pydantic v1 Union type coercion can convert int to string depending on Union order.
+        # If page_size is a string that represents an integer (not an interpolation), convert it back.
+        page_size = model.page_size
+        if isinstance(page_size, str) and page_size.isdigit():
+            page_size = int(page_size)
+
         return CursorPaginationStrategy(
             cursor_value=model.cursor_value,
             decoder=decoder_to_use,
-            page_size=model.page_size,
+            page_size=page_size,
             stop_condition=model.stop_condition,
             config=config,
             parameters=model.parameters or {},
@@ -1679,6 +1867,18 @@ class ModelToComponentFactory:
         :param config: The custom defined connector config
         :return: The declarative component built from the Pydantic model to be used at runtime
         """
+        # Instantiating a custom component means importing and executing arbitrary code referenced
+        # by `class_name`. Manifests supplied by a caller, whether through the config or directly to
+        # the manifest server, are untrusted input and could point `class_name` at any importable
+        # callable, so they honor the same `AIRBYTE_ENABLE_UNSAFE_CODE` gate as injected
+        # `components.py` code. Manifests bundled in a published connector image are trusted and may
+        # always use their bundled custom components.
+        manifest_is_untrusted = not self._custom_components_trusted or bool(
+            config.get(INJECTED_MANIFEST)
+        )
+        if manifest_is_untrusted and not custom_code_execution_permitted():
+            raise AirbyteCustomCodeNotPermittedError
+
         custom_component_class = self._get_class_from_fully_qualified_class_name(model.class_name)
         component_fields = get_type_hints(custom_component_class)
         model_args = model.dict()
@@ -1707,7 +1907,11 @@ class ModelToComponentFactory:
 
             if self._is_component(model_value):
                 model_args[model_field] = self._create_nested_component(
-                    model, model_field, model_value, config
+                    model,
+                    model_field,
+                    model_value,
+                    config,
+                    **kwargs,
                 )
             elif isinstance(model_value, list):
                 vals = []
@@ -1719,7 +1923,15 @@ class ModelToComponentFactory:
                         if derived_type:
                             v["type"] = derived_type
                     if self._is_component(v):
-                        vals.append(self._create_nested_component(model, model_field, v, config))
+                        vals.append(
+                            self._create_nested_component(
+                                model,
+                                model_field,
+                                v,
+                                config,
+                                **kwargs,
+                            )
+                        )
                     else:
                         vals.append(v)
                 model_args[model_field] = vals
@@ -1729,6 +1941,10 @@ class ModelToComponentFactory:
             for class_field in component_fields.keys()
             if class_field in model_args
         }
+
+        if "api_budget" in component_fields and kwargs.get("api_budget") is None:
+            kwargs["api_budget"] = self._api_budget
+
         return custom_component_class(**kwargs)
 
     @staticmethod
@@ -1809,7 +2025,7 @@ class ModelToComponentFactory:
             return []
 
     def _create_nested_component(
-        self, model: Any, model_field: str, model_value: Any, config: Config
+        self, model: Any, model_field: str, model_value: Any, config: Config, **kwargs: Any
     ) -> Any:
         type_name = model_value.get("type", None)
         if not type_name:
@@ -1834,8 +2050,11 @@ class ModelToComponentFactory:
                     for kwarg in constructor_kwargs
                     if kwarg in model_parameters
                 }
+                matching_kwargs = {
+                    kwarg: kwargs[kwarg] for kwarg in constructor_kwargs if kwarg in kwargs
+                }
                 return self._create_component_from_model(
-                    model=parsed_model, config=config, **matching_parameters
+                    model=parsed_model, config=config, **(matching_parameters | matching_kwargs)
                 )
             except TypeError as error:
                 missing_parameters = self._extract_missing_parameters(error)
@@ -1861,93 +2080,22 @@ class ModelToComponentFactory:
     def _is_component(model_value: Any) -> bool:
         return isinstance(model_value, dict) and model_value.get("type") is not None
 
-    def create_datetime_based_cursor(
-        self, model: DatetimeBasedCursorModel, config: Config, **kwargs: Any
-    ) -> DatetimeBasedCursor:
-        start_datetime: Union[str, MinMaxDatetime] = (
-            model.start_datetime
-            if isinstance(model.start_datetime, str)
-            else self.create_min_max_datetime(model.start_datetime, config)
-        )
-        end_datetime: Union[str, MinMaxDatetime, None] = None
-        if model.is_data_feed and model.end_datetime:
-            raise ValueError("Data feed does not support end_datetime")
-        if model.is_data_feed and model.is_client_side_incremental:
-            raise ValueError(
-                "`Client side incremental` cannot be applied with `data feed`. Choose only 1 from them."
-            )
-        if model.end_datetime:
-            end_datetime = (
-                model.end_datetime
-                if isinstance(model.end_datetime, str)
-                else self.create_min_max_datetime(model.end_datetime, config)
-            )
-
-        end_time_option = (
-            self._create_component_from_model(
-                model.end_time_option, config, parameters=model.parameters or {}
-            )
-            if model.end_time_option
-            else None
-        )
-        start_time_option = (
-            self._create_component_from_model(
-                model.start_time_option, config, parameters=model.parameters or {}
-            )
-            if model.start_time_option
-            else None
-        )
-
-        return DatetimeBasedCursor(
-            cursor_field=model.cursor_field,
-            cursor_datetime_formats=model.cursor_datetime_formats
-            if model.cursor_datetime_formats
-            else [],
-            cursor_granularity=model.cursor_granularity,
-            datetime_format=model.datetime_format,
-            end_datetime=end_datetime,
-            start_datetime=start_datetime,
-            step=model.step,
-            end_time_option=end_time_option,
-            lookback_window=model.lookback_window,
-            start_time_option=start_time_option,
-            partition_field_end=model.partition_field_end,
-            partition_field_start=model.partition_field_start,
-            message_repository=self._message_repository,
-            is_compare_strictly=model.is_compare_strictly,
-            config=config,
-            parameters=model.parameters or {},
-        )
-
-    def create_declarative_stream(
-        self, model: DeclarativeStreamModel, config: Config, **kwargs: Any
-    ) -> DeclarativeStream:
-        # When constructing a declarative stream, we assemble the incremental_sync component and retriever's partition_router field
-        # components if they exist into a single CartesianProductStreamSlicer. This is then passed back as an argument when constructing the
-        # Retriever. This is done in the declarative stream not the retriever to support custom retrievers. The custom create methods in
-        # the factory only support passing arguments to the component constructors, whereas this performs a merge of all slicers into one.
-        combined_slicers = self._merge_stream_slicers(model=model, config=config)
-
+    def create_default_stream(
+        self, model: DeclarativeStreamModel, config: Config, is_parent: bool = False, **kwargs: Any
+    ) -> AbstractStream:
         primary_key = model.primary_key.__root__ if model.primary_key else None
-        stop_condition_on_cursor = (
-            model.incremental_sync
-            and hasattr(model.incremental_sync, "is_data_feed")
-            and model.incremental_sync.is_data_feed
-        )
-        client_side_filtering_enabled = (
-            model.incremental_sync
-            and hasattr(model.incremental_sync, "is_client_side_incremental")
-            and model.incremental_sync.is_client_side_incremental
-        )
-        concurrent_cursor = None
-        if stop_condition_on_cursor or client_side_filtering_enabled:
-            stream_slicer = self._build_stream_slicer_from_partition_router(
-                model.retriever, config, stream_name=model.name
-            )
-            concurrent_cursor = self._build_concurrent_cursor(model, stream_slicer, config)
+        self._migrate_state(model, config)
+        self._warn_on_ineffective_incremental_dependency(model)
 
+        partition_router = self._build_stream_slicer_from_partition_router(
+            model.retriever,
+            config,
+            stream_name=model.name,
+            **kwargs,
+        )
+        concurrent_cursor = self._build_concurrent_cursor(model, partition_router, config)
         if model.incremental_sync and isinstance(model.incremental_sync, DatetimeBasedCursorModel):
-            cursor_model = model.incremental_sync
+            cursor_model: DatetimeBasedCursorModel = model.incremental_sync
 
             end_time_option = (
                 self._create_component_from_model(
@@ -1964,17 +2112,29 @@ class ModelToComponentFactory:
                 else None
             )
 
-            request_options_provider = DatetimeBasedRequestOptionsProvider(
+            datetime_request_options_provider = DatetimeBasedRequestOptionsProvider(
                 start_time_option=start_time_option,
                 end_time_option=end_time_option,
-                partition_field_start=cursor_model.partition_field_end,
+                partition_field_start=cursor_model.partition_field_start,
                 partition_field_end=cursor_model.partition_field_end,
                 config=config,
                 parameters=model.parameters or {},
             )
+            request_options_provider = (
+                datetime_request_options_provider
+                if not isinstance(concurrent_cursor, ConcurrentPerPartitionCursor)
+                else PerPartitionRequestOptionsProvider(
+                    partition_router, datetime_request_options_provider
+                )
+            )
         elif model.incremental_sync and isinstance(
             model.incremental_sync, IncrementingCountCursorModel
         ):
+            if isinstance(concurrent_cursor, ConcurrentPerPartitionCursor):
+                raise ValueError(
+                    "PerPartition does not support per partition states because switching to global state is time based"
+                )
+
             cursor_model: IncrementingCountCursorModel = model.incremental_sync  # type: ignore
 
             start_time_option = (
@@ -2012,38 +2172,31 @@ class ModelToComponentFactory:
                 model=model.file_uploader, config=config
             )
 
+        stream_slicer: ConcurrentStreamSlicer = (
+            partition_router
+            if isinstance(concurrent_cursor, FinalStateCursor)
+            else concurrent_cursor
+        )
+
         retriever = self._create_component_from_model(
             model=model.retriever,
             config=config,
             name=model.name,
             primary_key=primary_key,
-            stream_slicer=combined_slicers,
             request_options_provider=request_options_provider,
-            stop_condition_cursor=concurrent_cursor,
-            client_side_incremental_sync={"cursor": concurrent_cursor}
-            if client_side_filtering_enabled
-            else None,
+            stream_slicer=stream_slicer,
+            partition_router=partition_router,
+            has_stop_condition_cursor=self._is_stop_condition_on_cursor(model),
+            is_client_side_incremental_sync=self._is_client_side_filtering_enabled(model),
+            cursor=concurrent_cursor,
             transformations=transformations,
             file_uploader=file_uploader,
             incremental_sync=model.incremental_sync,
         )
-        cursor_field = model.incremental_sync.cursor_field if model.incremental_sync else None
+        if isinstance(retriever, AsyncRetriever):
+            stream_slicer = retriever.stream_slicer
 
-        if model.state_migrations:
-            state_transformations = [
-                self._create_component_from_model(state_migration, config, declarative_stream=model)
-                for state_migration in model.state_migrations
-            ]
-        else:
-            state_transformations = []
-
-        schema_loader: Union[
-            CompositeSchemaLoader,
-            DefaultSchemaLoader,
-            DynamicSchemaLoader,
-            InlineSchemaLoader,
-            JsonFileSchemaLoader,
-        ]
+        schema_loader: SchemaLoader
         if model.schema_loader and isinstance(model.schema_loader, list):
             nested_schema_loaders = [
                 self._create_component_from_model(model=nested_schema_loader, config=config)
@@ -2062,16 +2215,92 @@ class ModelToComponentFactory:
             if "name" not in options:
                 options["name"] = model.name
             schema_loader = DefaultSchemaLoader(config=config, parameters=options)
+        schema_loader = CachingSchemaLoaderDecorator(schema_loader)
 
-        return DeclarativeStream(
-            name=model.name or "",
-            primary_key=primary_key,
-            retriever=retriever,
-            schema_loader=schema_loader,
-            stream_cursor_field=cursor_field or "",
-            state_migrations=state_transformations,
-            config=config,
-            parameters=model.parameters or {},
+        stream_name = model.name or ""
+        return DefaultStream(
+            partition_generator=StreamSlicerPartitionGenerator(
+                DeclarativePartitionFactory(
+                    stream_name,
+                    schema_loader,
+                    retriever,
+                    self._message_repository,
+                ),
+                stream_slicer,
+                slice_limit=self._limit_slices_fetched,
+            ),
+            name=stream_name,
+            json_schema=schema_loader.get_json_schema,
+            primary_key=get_primary_key_from_stream(primary_key),
+            cursor_field=(
+                concurrent_cursor.cursor_field
+                if hasattr(concurrent_cursor, "cursor_field")
+                else None
+            ),
+            logger=logging.getLogger(f"airbyte.{stream_name}"),
+            cursor=concurrent_cursor,
+            supports_file_transfer=hasattr(model, "file_uploader") and bool(model.file_uploader),
+        )
+
+    def _warn_on_ineffective_incremental_dependency(self, model: DeclarativeStreamModel) -> None:
+        """
+        `incremental_dependency: true` only takes effect when the substream defines its own
+        `incremental_sync`: the parent cursor is persisted under the `parent_state` key of the
+        substream's state, which is only emitted by incremental substreams. On a stream without
+        `incremental_sync`, the setting is silently ignored and all parent records are re-read on
+        every sync, so we warn about the misconfiguration instead.
+        """
+        if model.incremental_sync:
+            return
+
+        partition_router = getattr(model.retriever, "partition_router", None)
+        if not partition_router:
+            return
+
+        routers = partition_router if isinstance(partition_router, list) else [partition_router]
+        for router in routers:
+            if isinstance(router, GroupingPartitionRouterModel):
+                router = router.underlying_partition_router
+            if isinstance(router, SubstreamPartitionRouterModel) and any(
+                parent_stream_config.incremental_dependency
+                for parent_stream_config in router.parent_stream_configs
+            ):
+                LOGGER.warning(
+                    f"Stream `{model.name}` has `incremental_dependency: true` in its parent stream configuration but does not define `incremental_sync`. "
+                    "The parent stream's cursor is only persisted in the state of an incremental substream, so this setting has no effect and all parent records will be re-read on every sync. "
+                    "Define `incremental_sync` on this stream or remove `incremental_dependency`."
+                )
+                return
+
+    def _migrate_state(self, model: DeclarativeStreamModel, config: Config) -> None:
+        stream_name = model.name or ""
+        stream_state = self._connector_state_manager.get_stream_state(
+            stream_name=stream_name, namespace=None
+        )
+        if model.state_migrations:
+            state_transformations = [
+                self._create_component_from_model(state_migration, config, declarative_stream=model)
+                for state_migration in model.state_migrations
+            ]
+        else:
+            state_transformations = []
+        stream_state = self.apply_stream_state_migrations(state_transformations, stream_state)
+        self._connector_state_manager.update_state_for_stream(
+            stream_name=stream_name, namespace=None, value=stream_state
+        )
+
+    def _is_stop_condition_on_cursor(self, model: DeclarativeStreamModel) -> bool:
+        return bool(
+            model.incremental_sync
+            and hasattr(model.incremental_sync, "is_data_feed")
+            and model.incremental_sync.is_data_feed
+        )
+
+    def _is_client_side_filtering_enabled(self, model: DeclarativeStreamModel) -> bool:
+        return bool(
+            model.incremental_sync
+            and hasattr(model.incremental_sync, "is_client_side_incremental")
+            and model.incremental_sync.is_client_side_incremental
         )
 
     def _build_stream_slicer_from_partition_router(
@@ -2083,10 +2312,11 @@ class ModelToComponentFactory:
         ],
         config: Config,
         stream_name: Optional[str] = None,
-    ) -> Optional[PartitionRouter]:
+        **kwargs: Any,
+    ) -> PartitionRouter:
         if (
             hasattr(model, "partition_router")
-            and isinstance(model, SimpleRetrieverModel | AsyncRetrieverModel)
+            and isinstance(model, (SimpleRetrieverModel, AsyncRetrieverModel, CustomRetrieverModel))
             and model.partition_router
         ):
             stream_slicer_model = model.partition_router
@@ -2100,207 +2330,87 @@ class ModelToComponentFactory:
                     ],
                     parameters={},
                 )
+            elif isinstance(stream_slicer_model, dict):
+                # partition router comes from CustomRetrieverModel therefore has not been parsed as a model
+                params = stream_slicer_model.get("$parameters")
+                if not isinstance(params, dict):
+                    params = {}
+                    stream_slicer_model["$parameters"] = params
+
+                if stream_name is not None:
+                    params["stream_name"] = stream_name
+
+                return self._create_nested_component(  # type: ignore[no-any-return] # There is no guarantee that this will return a stream slicer. If not, we expect an AttributeError during the call to `stream_slices`
+                    model,
+                    "partition_router",
+                    stream_slicer_model,
+                    config,
+                    **kwargs,
+                )
             else:
                 return self._create_component_from_model(  # type: ignore[no-any-return] # Will be created PartitionRouter as stream_slicer_model is model.partition_router
                     model=stream_slicer_model, config=config, stream_name=stream_name or ""
                 )
-        return None
-
-    def _build_incremental_cursor(
-        self,
-        model: DeclarativeStreamModel,
-        stream_slicer: Optional[PartitionRouter],
-        config: Config,
-    ) -> Optional[StreamSlicer]:
-        if model.incremental_sync and stream_slicer:
-            if model.retriever.type == "AsyncRetriever":
-                stream_name = model.name or ""
-                stream_namespace = None
-                stream_state = self._connector_state_manager.get_stream_state(
-                    stream_name, stream_namespace
-                )
-                state_transformations = (
-                    [
-                        self._create_component_from_model(
-                            state_migration, config, declarative_stream=model
-                        )
-                        for state_migration in model.state_migrations
-                    ]
-                    if model.state_migrations
-                    else []
-                )
-
-                return self.create_concurrent_cursor_from_perpartition_cursor(  # type: ignore # This is a known issue that we are creating and returning a ConcurrentCursor which does not technically implement the (low-code) StreamSlicer. However, (low-code) StreamSlicer and ConcurrentCursor both implement StreamSlicer.stream_slices() which is the primary method needed for checkpointing
-                    state_manager=self._connector_state_manager,
-                    model_type=DatetimeBasedCursorModel,
-                    component_definition=model.incremental_sync.__dict__,
-                    stream_name=stream_name,
-                    stream_namespace=stream_namespace,
-                    config=config or {},
-                    stream_state=stream_state,
-                    stream_state_migrations=state_transformations,
-                    partition_router=stream_slicer,
-                )
-
-            incremental_sync_model = model.incremental_sync
-            cursor_component = self._create_component_from_model(
-                model=incremental_sync_model, config=config
-            )
-            is_global_cursor = (
-                hasattr(incremental_sync_model, "global_substream_cursor")
-                and incremental_sync_model.global_substream_cursor
-            )
-
-            if is_global_cursor:
-                return GlobalSubstreamCursor(
-                    stream_cursor=cursor_component, partition_router=stream_slicer
-                )
-            return PerPartitionWithGlobalCursor(
-                cursor_factory=CursorFactory(
-                    lambda: self._create_component_from_model(
-                        model=incremental_sync_model, config=config
-                    ),
-                ),
-                partition_router=stream_slicer,
-                stream_cursor=cursor_component,
-            )
-        elif model.incremental_sync:
-            if model.retriever.type == "AsyncRetriever":
-                return self.create_concurrent_cursor_from_datetime_based_cursor(  # type: ignore # This is a known issue that we are creating and returning a ConcurrentCursor which does not technically implement the (low-code) StreamSlicer. However, (low-code) StreamSlicer and ConcurrentCursor both implement StreamSlicer.stream_slices() which is the primary method needed for checkpointing
-                    model_type=DatetimeBasedCursorModel,
-                    component_definition=model.incremental_sync.__dict__,
-                    stream_name=model.name or "",
-                    stream_namespace=None,
-                    config=config or {},
-                    stream_state_migrations=model.state_migrations,
-                )
-            return self._create_component_from_model(model=model.incremental_sync, config=config)  # type: ignore[no-any-return]  # Will be created Cursor as stream_slicer_model is model.incremental_sync
-        return None
+        return SinglePartitionRouter(parameters={})
 
     def _build_concurrent_cursor(
         self,
         model: DeclarativeStreamModel,
         stream_slicer: Optional[PartitionRouter],
         config: Config,
-    ) -> Optional[StreamSlicer]:
-        stream_state = self._connector_state_manager.get_stream_state(
-            stream_name=model.name or "", namespace=None
-        )
+    ) -> Cursor:
+        stream_name = model.name or ""
+        stream_state = self._connector_state_manager.get_stream_state(stream_name, None)
 
-        if model.incremental_sync and stream_slicer:
-            # FIXME there is a discrepancy where this logic is applied on the create_*_cursor methods for
-            #   ConcurrentCursor but it is applied outside of create_concurrent_cursor_from_perpartition_cursor
-            if model.state_migrations:
-                state_transformations = [
-                    self._create_component_from_model(
-                        state_migration, config, declarative_stream=model
-                    )
-                    for state_migration in model.state_migrations
-                ]
-            else:
-                state_transformations = []
-
+        if (
+            model.incremental_sync
+            and stream_slicer
+            and not isinstance(stream_slicer, SinglePartitionRouter)
+        ):
+            if isinstance(model.incremental_sync, IncrementingCountCursorModel):
+                # We don't currently support usage of partition routing and IncrementingCountCursor at the
+                # same time because we didn't solve for design questions like what the lookback window would
+                # be as well as global cursor fall backs. We have not seen customers that have needed both
+                # at the same time yet and are currently punting on this until we need to solve it.
+                raise ValueError(
+                    f"The low-code framework does not currently support usage of a PartitionRouter and an IncrementingCountCursor at the same time. Please specify only one of these options for stream {stream_name}."
+                )
             return self.create_concurrent_cursor_from_perpartition_cursor(  # type: ignore # This is a known issue that we are creating and returning a ConcurrentCursor which does not technically implement the (low-code) StreamSlicer. However, (low-code) StreamSlicer and ConcurrentCursor both implement StreamSlicer.stream_slices() which is the primary method needed for checkpointing
                 state_manager=self._connector_state_manager,
                 model_type=DatetimeBasedCursorModel,
                 component_definition=model.incremental_sync.__dict__,
-                stream_name=model.name or "",
+                stream_name=stream_name,
+                stream_state=stream_state,
                 stream_namespace=None,
                 config=config or {},
-                stream_state=stream_state,
-                stream_state_migrations=state_transformations,
                 partition_router=stream_slicer,
-                attempt_to_create_cursor_if_not_provided=True,
+                attempt_to_create_cursor_if_not_provided=True,  # FIXME can we remove that now?
             )
         elif model.incremental_sync:
             if type(model.incremental_sync) == IncrementingCountCursorModel:
                 return self.create_concurrent_cursor_from_incrementing_count_cursor(  # type: ignore # This is a known issue that we are creating and returning a ConcurrentCursor which does not technically implement the (low-code) StreamSlicer. However, (low-code) StreamSlicer and ConcurrentCursor both implement StreamSlicer.stream_slices() which is the primary method needed for checkpointing
                     model_type=IncrementingCountCursorModel,
                     component_definition=model.incremental_sync.__dict__,
-                    stream_name=model.name or "",
+                    stream_name=stream_name,
                     stream_namespace=None,
+                    stream_state=stream_state,
                     config=config or {},
-                    stream_state_migrations=model.state_migrations,
                 )
             elif type(model.incremental_sync) == DatetimeBasedCursorModel:
                 return self.create_concurrent_cursor_from_datetime_based_cursor(  # type: ignore # This is a known issue that we are creating and returning a ConcurrentCursor which does not technically implement the (low-code) StreamSlicer. However, (low-code) StreamSlicer and ConcurrentCursor both implement StreamSlicer.stream_slices() which is the primary method needed for checkpointing
                     model_type=type(model.incremental_sync),
                     component_definition=model.incremental_sync.__dict__,
-                    stream_name=model.name or "",
+                    stream_name=stream_name,
                     stream_namespace=None,
+                    stream_state=stream_state,
                     config=config or {},
-                    stream_state_migrations=model.state_migrations,
                     attempt_to_create_cursor_if_not_provided=True,
                 )
             else:
                 raise ValueError(
                     f"Incremental sync of type {type(model.incremental_sync)} is not supported"
                 )
-        return None
-
-    def _build_resumable_cursor(
-        self,
-        model: Union[
-            AsyncRetrieverModel,
-            CustomRetrieverModel,
-            SimpleRetrieverModel,
-        ],
-        stream_slicer: Optional[PartitionRouter],
-    ) -> Optional[StreamSlicer]:
-        if hasattr(model, "paginator") and model.paginator and not stream_slicer:
-            # For the regular Full-Refresh streams, we use the high level `ResumableFullRefreshCursor`
-            return ResumableFullRefreshCursor(parameters={})
-        elif stream_slicer:
-            # For the Full-Refresh sub-streams, we use the nested `ChildPartitionResumableFullRefreshCursor`
-            return PerPartitionCursor(
-                cursor_factory=CursorFactory(
-                    create_function=partial(ChildPartitionResumableFullRefreshCursor, {})
-                ),
-                partition_router=stream_slicer,
-            )
-        return None
-
-    def _merge_stream_slicers(
-        self, model: DeclarativeStreamModel, config: Config
-    ) -> Optional[StreamSlicer]:
-        retriever_model = model.retriever
-
-        stream_slicer = self._build_stream_slicer_from_partition_router(
-            retriever_model, config, stream_name=model.name
-        )
-
-        if retriever_model.type == "AsyncRetriever":
-            is_not_datetime_cursor = (
-                model.incremental_sync.type != "DatetimeBasedCursor"
-                if model.incremental_sync
-                else None
-            )
-            is_partition_router = (
-                bool(retriever_model.partition_router) if model.incremental_sync else None
-            )
-
-            if is_not_datetime_cursor:
-                # We are currently in a transition to the Concurrent CDK and AsyncRetriever can only work with the
-                # support or unordered slices (for example, when we trigger reports for January and February, the report
-                # in February can be completed first). Once we have support for custom concurrent cursor or have a new
-                # implementation available in the CDK, we can enable more cursors here.
-                raise ValueError(
-                    "AsyncRetriever with cursor other than DatetimeBasedCursor is not supported yet."
-                )
-
-            if is_partition_router and not stream_slicer:
-                # Note that this development is also done in parallel to the per partition development which once merged
-                # we could support here by calling create_concurrent_cursor_from_perpartition_cursor
-                raise ValueError("Per partition state is not supported yet for AsyncRetriever.")
-
-        if model.incremental_sync:
-            return self._build_incremental_cursor(model, stream_slicer, config)
-
-        return (
-            stream_slicer
-            if self._disable_resumable_full_refresh
-            else self._build_resumable_cursor(retriever_model, stream_slicer)
-        )
+        return FinalStateCursor(stream_name, None, self._message_repository)
 
     def create_default_error_handler(
         self, model: DefaultErrorHandlerModel, config: Config, **kwargs: Any
@@ -2392,11 +2502,74 @@ class ModelToComponentFactory:
         else:
             decoder_to_use = JsonDecoder(parameters={})
         model_field_path: List[Union[InterpolatedString, str]] = [x for x in model.field_path]
+
+        record_expander = None
+        if model.record_expander:
+            record_expander = self._create_component_from_model(
+                model=model.record_expander,
+                config=config,
+            )
+
         return DpathExtractor(
             decoder=decoder_to_use,
             field_path=model_field_path,
             config=config,
             parameters=model.parameters or {},
+            record_expander=record_expander,
+        )
+
+    def create_record_expander(
+        self,
+        model: RecordExpanderModel,
+        config: Config,
+        **kwargs: Any,
+    ) -> RecordExpander:
+        truncated_list_retriever = None
+        suppress_incomplete_fetch_warning = False
+        if model.truncated_list_retriever:
+            retriever_model = model.truncated_list_retriever
+            name = "record_expander_truncated_list"
+            # `CustomRetriever` allows extra fields, so read from the dumped model to cover both types.
+            retriever_fields = retriever_model.dict()
+            for unsupported_option in ("partition_router", "pagination_reset"):
+                if retriever_fields.get(unsupported_option):
+                    raise ValueError(
+                        f"`{unsupported_option}` is not supported on `truncated_list_retriever`."
+                    )
+            log_formatter = lambda response: format_http_message(
+                response,
+                f"Record expander '{name}' request",
+                "Request performed in order to fetch the complete nested list of a truncated record.",
+                name,
+                is_auxiliary=True,
+            )
+            # `name`/`primary_key`/`transformations` are also what a `CustomRetriever` forwards to its
+            # nested `requester`/`record_selector`, so they are passed for both retriever types.
+            truncated_list_retriever = self._create_component_from_model(
+                model=retriever_model,
+                config=config,
+                name=name,
+                primary_key=None,
+                transformations=[],
+                log_formatter=log_formatter,
+            )
+            # Only a capped paginator makes a shortfall expected; `NoPagination` and retrievers
+            # without a paginator are never capped.
+            suppress_incomplete_fetch_warning = isinstance(
+                truncated_list_retriever, SimpleRetriever
+            ) and isinstance(truncated_list_retriever.paginator, PaginatorTestReadDecorator)
+        return RecordExpander(
+            expand_records_from_field=model.expand_records_from_field,
+            config=config,
+            parameters=model.parameters or {},
+            remain_original_record=model.remain_original_record or False,
+            on_no_records=OnNoRecords(model.on_no_records.value)
+            if model.on_no_records
+            else OnNoRecords.skip,
+            truncation_indicator_path=model.truncation_indicator_path,
+            truncated_list_retriever=truncated_list_retriever,
+            message_repository=self._message_repository,
+            suppress_incomplete_fetch_warning=suppress_incomplete_fetch_warning,
         )
 
     @staticmethod
@@ -2404,14 +2577,21 @@ class ModelToComponentFactory:
         model: ResponseToFileExtractorModel,
         **kwargs: Any,
     ) -> ResponseToFileExtractor:
-        return ResponseToFileExtractor(parameters=model.parameters or {})
+        return ResponseToFileExtractor(
+            parameters=model.parameters or {},
+            preserve_na_values=model.preserve_na_values or False,
+        )
 
     @staticmethod
     def create_exponential_backoff_strategy(
         model: ExponentialBackoffStrategyModel, config: Config
     ) -> ExponentialBackoffStrategy:
+        ModelToComponentFactory._validate_jitter_range(model.jitter_range_in_seconds)
         return ExponentialBackoffStrategy(
-            factor=model.factor or 5, parameters=model.parameters or {}, config=config
+            factor=model.factor or 5,
+            jitter_range_in_seconds=model.jitter_range_in_seconds,
+            parameters=model.parameters or {},
+            config=config,
         )
 
     @staticmethod
@@ -2452,21 +2632,12 @@ class ModelToComponentFactory:
 
         api_budget = self._api_budget
 
-        # Removes QueryProperties components from the interpolated mappings because it has been designed
-        # to be used by the SimpleRetriever and will be resolved from the provider from the slice directly
-        # instead of through jinja interpolation
-        request_parameters: Optional[Union[str, Mapping[str, str]]]
-        if isinstance(model.request_parameters, Mapping):
-            request_parameters = self._remove_query_properties(model.request_parameters)
-        else:
-            request_parameters = model.request_parameters
-
         request_options_provider = InterpolatedRequestOptionsProvider(
             request_body=model.request_body,
             request_body_data=model.request_body_data,
             request_body_json=model.request_body_json,
             request_headers=model.request_headers,
-            request_parameters=request_parameters,
+            request_parameters=model.request_parameters,  # type: ignore  # QueryProperties have been removed in `create_simple_retriever`
             query_properties_key=query_properties_key,
             config=config,
             parameters=model.parameters or {},
@@ -2582,9 +2753,6 @@ class ModelToComponentFactory:
     def create_dynamic_schema_loader(
         self, model: DynamicSchemaLoaderModel, config: Config, **kwargs: Any
     ) -> DynamicSchemaLoader:
-        stream_slicer = self._build_stream_slicer_from_partition_router(model.retriever, config)
-        combined_slicers = self._build_resumable_cursor(model.retriever, stream_slicer)
-
         schema_transformations = []
         if model.schema_transformations:
             for transformation_model in model.schema_transformations:
@@ -2597,7 +2765,9 @@ class ModelToComponentFactory:
             config=config,
             name=name,
             primary_key=None,
-            stream_slicer=combined_slicers,
+            partition_router=self._build_stream_slicer_from_partition_router(
+                model.retriever, config
+            ),
             transformations=[],
             use_cache=True,
             log_formatter=(
@@ -2648,6 +2818,14 @@ class ModelToComponentFactory:
             stream_response=False if self._emit_connector_builder_messages else True,
         )
 
+    def create_json_items_decoder(
+        self, model: JsonItemsDecoderModel, config: Config, **kwargs: Any
+    ) -> Decoder:
+        return CompositeRawDecoder(
+            parser=ModelToComponentFactory._get_parser(model, config),
+            stream_response=False if self._emit_connector_builder_messages else True,
+        )
+
     def create_gzip_decoder(
         self, model: GzipDecoderModel, config: Config, **kwargs: Any
     ) -> Decoder:
@@ -2665,31 +2843,16 @@ class ModelToComponentFactory:
         gzip_parser: GzipParser = ModelToComponentFactory._get_parser(model, config)  # type: ignore  # based on the model, we know this will be a GzipParser
 
         if self._emit_connector_builder_messages:
-            # This is very surprising but if the response is not streamed,
-            # CompositeRawDecoder calls response.content and the requests library actually uncompress the data as opposed to response.raw,
-            # which uses urllib3 directly and does not uncompress the data.
-            return CompositeRawDecoder(gzip_parser.inner_parser, False)
+            return CompositeRawDecoder(gzip_parser, False)
 
+        transport_gzip_parser = GzipParser(inner_parser=gzip_parser)
         return CompositeRawDecoder.by_headers(
-            [({"Content-Encoding", "Content-Type"}, _compressed_response_types, gzip_parser)],
+            [
+                ({"Content-Encoding"}, {"gzip"}, transport_gzip_parser),
+                ({"Content-Type"}, _compressed_response_types, gzip_parser),
+            ],
             stream_response=True,
-            fallback_parser=gzip_parser.inner_parser,
-        )
-
-    @staticmethod
-    def create_incrementing_count_cursor(
-        model: IncrementingCountCursorModel, config: Config, **kwargs: Any
-    ) -> DatetimeBasedCursor:
-        # This should not actually get used anywhere at runtime, but needed to add this to pass checks since
-        # we still parse models into components. The issue is that there's no runtime implementation of a
-        # IncrementingCountCursor.
-        # A known and expected issue with this stub is running a check with the declared IncrementingCountCursor because it is run without ConcurrentCursor.
-        return DatetimeBasedCursor(
-            cursor_field=model.cursor_field,
-            datetime_format="%Y-%m-%d",
-            start_datetime="2024-12-12",
-            config=config,
-            parameters={},
+            fallback_parser=gzip_parser,
         )
 
     @staticmethod
@@ -2712,6 +2875,11 @@ class ModelToComponentFactory:
         if isinstance(model, JsonDecoderModel):
             # Note that the logic is a bit different from the JsonDecoder as there is some legacy that is maintained to return {} on error cases
             return JsonParser()
+        elif isinstance(model, JsonItemsDecoderModel):
+            return JsonItemsParser(
+                items_path=model.items_path,
+                encoding=model.encoding,
+            )
         elif isinstance(model, JsonlDecoderModel):
             return JsonLineParser()
         elif isinstance(model, CsvDecoderModel):
@@ -2739,12 +2907,16 @@ class ModelToComponentFactory:
             file_path=model.file_path or "", config=config, parameters=model.parameters or {}
         )
 
-    @staticmethod
     def create_jwt_authenticator(
-        model: JwtAuthenticatorModel, config: Config, **kwargs: Any
+        self, model: JwtAuthenticatorModel, config: Config, **kwargs: Any
     ) -> JwtAuthenticator:
         jwt_headers = model.jwt_headers or JwtHeadersModel(kid=None, typ="JWT", cty=None)
         jwt_payload = model.jwt_payload or JwtPayloadModel(iss=None, sub=None, aud=None)
+        request_option = (
+            self._create_component_from_model(model.request_option, config)
+            if model.request_option
+            else None
+        )
         return JwtAuthenticator(
             config=config,
             parameters=model.parameters or {},
@@ -2761,6 +2933,8 @@ class ModelToComponentFactory:
             aud=jwt_payload.aud,
             additional_jwt_headers=model.additional_jwt_headers,
             additional_jwt_payload=model.additional_jwt_payload,
+            passphrase=model.passphrase,
+            request_option=request_option,
         )
 
     def create_list_partition_router(
@@ -2810,6 +2984,9 @@ class ModelToComponentFactory:
             else None
         )
 
+        refresh_token_error_status_codes, refresh_token_error_key, refresh_token_error_values = (
+            self._get_refresh_token_error_information(model)
+        )
         if model.refresh_token_updater:
             # ignore type error because fixing it would have a lot of dependencies, revisit later
             return DeclarativeSingleUseRefreshTokenOauth2Authenticator(  # type: ignore
@@ -2856,13 +3033,16 @@ class ModelToComponentFactory:
                 refresh_request_headers=InterpolatedMapping(
                     model.refresh_request_headers or {}, parameters=model.parameters or {}
                 ).eval(config),
+                send_refresh_request_as_query_params=bool(
+                    model.send_refresh_request_as_query_params
+                ),
                 scopes=model.scopes,
                 token_expiry_date_format=model.token_expiry_date_format,
                 token_expiry_is_time_of_expiration=bool(model.token_expiry_date_format),
                 message_repository=self._message_repository,
-                refresh_token_error_status_codes=model.refresh_token_updater.refresh_token_error_status_codes,
-                refresh_token_error_key=model.refresh_token_updater.refresh_token_error_key,
-                refresh_token_error_values=model.refresh_token_updater.refresh_token_error_values,
+                refresh_token_error_status_codes=refresh_token_error_status_codes,
+                refresh_token_error_key=refresh_token_error_key,
+                refresh_token_error_values=refresh_token_error_values,
             )
         # ignore type error because fixing it would have a lot of dependencies, revisit later
         return DeclarativeOauth2Authenticator(  # type: ignore
@@ -2877,6 +3057,7 @@ class ModelToComponentFactory:
             grant_type=model.grant_type or "refresh_token",
             refresh_request_body=model.refresh_request_body,
             refresh_request_headers=model.refresh_request_headers,
+            send_refresh_request_as_query_params=bool(model.send_refresh_request_as_query_params),
             refresh_token_name=model.refresh_token_name or "refresh_token",
             refresh_token=model.refresh_token,
             scopes=model.scopes,
@@ -2889,7 +3070,58 @@ class ModelToComponentFactory:
             message_repository=self._message_repository,
             profile_assertion=profile_assertion,
             use_profile_assertion=model.use_profile_assertion,
+            refresh_token_error_status_codes=refresh_token_error_status_codes,
+            refresh_token_error_key=refresh_token_error_key,
+            refresh_token_error_values=refresh_token_error_values,
         )
+
+    @staticmethod
+    def _get_refresh_token_error_information(
+        model: OAuthAuthenticatorModel,
+    ) -> Tuple[Tuple[int, ...], str, Tuple[str, ...]]:
+        """
+        In a previous version of the CDK, the auth error as config_error was only done if a refresh token updater was
+        defined. As a transition, we added those fields on the OAuthAuthenticatorModel. This method ensures that the
+        information is defined only once and return the right fields.
+        """
+        refresh_token_updater = model.refresh_token_updater
+        is_defined_on_refresh_token_updated = refresh_token_updater and (
+            refresh_token_updater.refresh_token_error_status_codes
+            or refresh_token_updater.refresh_token_error_key
+            or refresh_token_updater.refresh_token_error_values
+        )
+        is_defined_on_oauth_authenticator = (
+            model.refresh_token_error_status_codes
+            or model.refresh_token_error_key
+            or model.refresh_token_error_values
+        )
+        if is_defined_on_refresh_token_updated and is_defined_on_oauth_authenticator:
+            raise ValueError(
+                "refresh_token_error should either be defined on the OAuthAuthenticatorModel or the RefreshTokenUpdaterModel, not both"
+            )
+
+        if is_defined_on_refresh_token_updated:
+            not_optional_refresh_token_updater: RefreshTokenUpdaterModel = refresh_token_updater  # type: ignore  # we know from the condition that this is not None
+            return (
+                tuple(not_optional_refresh_token_updater.refresh_token_error_status_codes)
+                if not_optional_refresh_token_updater.refresh_token_error_status_codes
+                else (),
+                not_optional_refresh_token_updater.refresh_token_error_key or "",
+                tuple(not_optional_refresh_token_updater.refresh_token_error_values)
+                if not_optional_refresh_token_updater.refresh_token_error_values
+                else (),
+            )
+        elif is_defined_on_oauth_authenticator:
+            return (
+                tuple(model.refresh_token_error_status_codes)
+                if model.refresh_token_error_status_codes
+                else (),
+                model.refresh_token_error_key or "",
+                tuple(model.refresh_token_error_values) if model.refresh_token_error_values else (),
+            )
+
+        # returning default values we think cover most cases
+        return (400,), "error", ("invalid_grant", "invalid_permissions")
 
     def create_offset_increment(
         self,
@@ -2925,8 +3157,14 @@ class ModelToComponentFactory:
             else None
         )
 
+        # Pydantic v1 Union type coercion can convert int to string depending on Union order.
+        # If page_size is a string that represents an integer (not an interpolation), convert it back.
+        page_size = model.page_size
+        if isinstance(page_size, str) and page_size.isdigit():
+            page_size = int(page_size)
+
         return OffsetIncrement(
-            page_size=model.page_size,
+            page_size=page_size,
             config=config,
             decoder=decoder_to_use,
             extractor=extractor,
@@ -2934,23 +3172,46 @@ class ModelToComponentFactory:
             parameters=model.parameters or {},
         )
 
-    @staticmethod
     def create_page_increment(
-        model: PageIncrementModel, config: Config, **kwargs: Any
+        self,
+        model: PageIncrementModel,
+        config: Config,
+        decoder: Optional[Decoder] = None,
+        extractor_model: Optional[Union[CustomRecordExtractorModel, DpathExtractorModel]] = None,
+        **kwargs: Any,
     ) -> PageIncrement:
+        # Like OffsetIncrement, we instantiate a separate extractor with identical behavior to the
+        # RecordSelector's so the strategy can count the raw records in the response. This ensures
+        # pagination is driven by the API's page size, not the post-filter record count.
+        extractor = (
+            self._create_component_from_model(model=extractor_model, config=config, decoder=decoder)
+            if extractor_model
+            else None
+        )
+
+        # Pydantic v1 Union type coercion can convert int to string depending on Union order.
+        # If page_size is a string that represents an integer (not an interpolation), convert it back.
+        page_size = model.page_size
+        if isinstance(page_size, str) and page_size.isdigit():
+            page_size = int(page_size)
+
         return PageIncrement(
-            page_size=model.page_size,
+            page_size=page_size,
             config=config,
             start_from_page=model.start_from_page or 0,
             inject_on_first_request=model.inject_on_first_request or False,
+            extractor=extractor,
             parameters=model.parameters or {},
         )
 
     def create_parent_stream_config(
-        self, model: ParentStreamConfigModel, config: Config, **kwargs: Any
+        self, model: ParentStreamConfigModel, config: Config, *, stream_name: str, **kwargs: Any
     ) -> ParentStreamConfig:
         declarative_stream = self._create_component_from_model(
-            model.stream, config=config, **kwargs
+            model.stream,
+            config=config,
+            is_parent=True,
+            **kwargs,
         )
         request_option = (
             self._create_component_from_model(model.request_option, config=config)
@@ -3027,7 +3288,7 @@ class ModelToComponentFactory:
         )
 
     def create_query_properties(
-        self, model: QueryPropertiesModel, config: Config, **kwargs: Any
+        self, model: QueryPropertiesModel, config: Config, *, stream_name: str, **kwargs: Any
     ) -> QueryProperties:
         if isinstance(model.property_list, list):
             property_list = model.property_list
@@ -3044,10 +3305,43 @@ class ModelToComponentFactory:
             else None
         )
 
+        property_selector = (
+            self._create_component_from_model(
+                model=model.property_selector, config=config, stream_name=stream_name, **kwargs
+            )
+            if model.property_selector
+            else None
+        )
+
         return QueryProperties(
             property_list=property_list,
             always_include_properties=model.always_include_properties,
             property_chunking=property_chunking,
+            property_selector=property_selector,
+            config=config,
+            parameters=model.parameters or {},
+        )
+
+    def create_json_schema_property_selector(
+        self,
+        model: JsonSchemaPropertySelectorModel,
+        config: Config,
+        *,
+        stream_name: str,
+        **kwargs: Any,
+    ) -> JsonSchemaPropertySelector:
+        configured_stream = self._stream_name_to_configured_stream.get(stream_name)
+
+        transformations = []
+        if model.transformations:
+            for transformation_model in model.transformations:
+                transformations.append(
+                    self._create_component_from_model(model=transformation_model, config=config)
+                )
+
+        return JsonSchemaPropertySelector(
+            configured_stream=configured_stream,
+            properties_transformations=transformations,
             config=config,
             parameters=model.parameters or {},
         )
@@ -3097,7 +3391,8 @@ class ModelToComponentFactory:
         name: str,
         transformations: List[RecordTransformation] | None = None,
         decoder: Decoder | None = None,
-        client_side_incremental_sync: Dict[str, Any] | None = None,
+        client_side_incremental_sync_cursor: Optional[Cursor] = None,
+        is_client_side_incremental_sync: bool = False,
         file_uploader: Optional[DefaultFileUploader] = None,
         **kwargs: Any,
     ) -> RecordSelector:
@@ -3110,22 +3405,25 @@ class ModelToComponentFactory:
             else None
         )
 
-        transform_before_filtering = (
-            False if model.transform_before_filtering is None else model.transform_before_filtering
+        # A client-side incremental stream transforms before filtering by default. That default belongs to the flag,
+        # not to the component that ends up doing the cursor comparison: a data feed does it in the retriever and
+        # receives no cursor here, but its `record_filter` condition must keep running after the transformations.
+        default_transform_before_filtering = bool(
+            client_side_incremental_sync_cursor or is_client_side_incremental_sync
         )
-        if client_side_incremental_sync:
+        transform_before_filtering = (
+            default_transform_before_filtering
+            if model.transform_before_filtering is None
+            else model.transform_before_filtering
+        )
+        if client_side_incremental_sync_cursor:
             record_filter = ClientSideIncrementalRecordFilterDecorator(
                 config=config,
                 parameters=model.parameters,
                 condition=model.record_filter.condition
                 if (model.record_filter and hasattr(model.record_filter, "condition"))
                 else None,
-                **client_side_incremental_sync,
-            )
-            transform_before_filtering = (
-                True
-                if model.transform_before_filtering is None
-                else model.transform_before_filtering
+                cursor=client_side_incremental_sync_cursor,
             )
 
         if model.schema_normalization is None:
@@ -3197,22 +3495,21 @@ class ModelToComponentFactory:
         *,
         name: str,
         primary_key: Optional[Union[str, List[str], List[List[str]]]],
-        stream_slicer: Optional[StreamSlicer],
         request_options_provider: Optional[RequestOptionsProvider] = None,
-        stop_condition_cursor: Optional[Cursor] = None,
-        client_side_incremental_sync: Optional[Dict[str, Any]] = None,
+        cursor: Optional[Cursor] = None,
+        has_stop_condition_cursor: bool = False,
+        is_client_side_incremental_sync: bool = False,
         transformations: List[RecordTransformation],
         file_uploader: Optional[DefaultFileUploader] = None,
         incremental_sync: Optional[
-            Union[
-                IncrementingCountCursorModel, DatetimeBasedCursorModel, CustomIncrementalSyncModel
-            ]
+            Union[IncrementingCountCursorModel, DatetimeBasedCursorModel]
         ] = None,
         use_cache: Optional[bool] = None,
         log_formatter: Optional[Callable[[Response], Any]] = None,
+        partition_router: Optional[PartitionRouter] = None,
         **kwargs: Any,
     ) -> SimpleRetriever:
-        def _get_url() -> str:
+        def _get_url(req: Requester) -> str:
             """
             Closure to get the URL from the requester. This is used to get the URL in the case of a lazy retriever.
             This is needed because the URL is not set until the requester is created.
@@ -3221,15 +3518,45 @@ class ModelToComponentFactory:
             _url: str = (
                 model.requester.url
                 if hasattr(model.requester, "url") and model.requester.url is not None
-                else requester.get_url()
+                else req.get_url(stream_state=None, stream_slice=None, next_page_token=None)
             )
             _url_base: str = (
                 model.requester.url_base
                 if hasattr(model.requester, "url_base") and model.requester.url_base is not None
-                else requester.get_url_base()
+                else req.get_url_base(stream_state=None, stream_slice=None, next_page_token=None)
             )
 
             return _url or _url_base
+
+        if cursor is None:
+            cursor = FinalStateCursor(name, None, self._message_repository)
+
+        # A data feed drops the records the cursor considers already synced in the retriever, which sits downstream of
+        # the paginator. Letting the record selector drop them as well would be redundant and would hide them from the
+        # pagination stop condition, so a data feed never delegates that filtering to the record selector, whether
+        # `is_client_side_incremental` is set or not. The `condition` from `record_filter` is intentionally left out of
+        # the post-pagination filter and stays in the record selector, which preserves the existing behaviour: the
+        # selector runs inside the page loop, so the records the condition rejects never reach the paginator's
+        # accounting. Moving it downstream would start counting them.
+        post_pagination_filter = (
+            ClientSideIncrementalRecordFilterDecorator(
+                config=config,
+                parameters=model.parameters or {},
+                condition=None,
+                cursor=cursor,
+            )
+            if has_stop_condition_cursor
+            else None
+        )
+        client_side_incremental_cursor = (
+            cursor if is_client_side_incremental_sync and not post_pagination_filter else None
+        )
+        if post_pagination_filter and is_client_side_incremental_sync:
+            LOGGER.warning(
+                f"Stream {name}: `is_client_side_incremental` adds no record filtering when `is_data_feed` is set, "
+                "as a data feed already filters on the cursor value. It still makes the record selector apply the "
+                "transformations before the `record_filter` condition."
+            )
 
         decoder = (
             self._create_component_from_model(model=model.decoder, config=config)
@@ -3242,13 +3569,15 @@ class ModelToComponentFactory:
             config=config,
             decoder=decoder,
             transformations=transformations,
-            client_side_incremental_sync=client_side_incremental_sync,
+            client_side_incremental_sync_cursor=client_side_incremental_cursor,
+            is_client_side_incremental_sync=is_client_side_incremental_sync,
             file_uploader=file_uploader,
         )
 
         query_properties: Optional[QueryProperties] = None
         query_properties_key: Optional[str] = None
-        if self._query_properties_in_request_parameters(model.requester):
+        self._ensure_query_properties_to_model(model.requester)
+        if self._has_query_properties_in_request_parameters(model.requester):
             # It is better to be explicit about an error if PropertiesFromEndpoint is defined in multiple
             # places instead of default to request_parameters which isn't clearly documented
             if (
@@ -3260,7 +3589,7 @@ class ModelToComponentFactory:
                 )
 
             query_properties_definitions = []
-            for key, request_parameter in model.requester.request_parameters.items():  # type: ignore # request_parameters is already validated to be a Mapping using _query_properties_in_request_parameters()
+            for key, request_parameter in model.requester.request_parameters.items():  # type: ignore # request_parameters is already validated to be a Mapping using _has_query_properties_in_request_parameters()
                 if isinstance(request_parameter, QueryPropertiesModel):
                     query_properties_key = key
                     query_properties_definitions.append(request_parameter)
@@ -3272,7 +3601,17 @@ class ModelToComponentFactory:
 
             if len(query_properties_definitions) == 1:
                 query_properties = self._create_component_from_model(
-                    model=query_properties_definitions[0], config=config
+                    model=query_properties_definitions[0], stream_name=name, config=config
+                )
+
+            # Removes QueryProperties components from the interpolated mappings because it has been designed
+            # to be used by the SimpleRetriever and will be resolved from the provider from the slice directly
+            # instead of through jinja interpolation
+            if hasattr(model.requester, "request_parameters") and isinstance(
+                model.requester.request_parameters, Mapping
+            ):
+                model.requester.request_parameters = self._remove_query_properties(
+                    model.requester.request_parameters
                 )
         elif (
             hasattr(model.requester, "fetch_properties_from_endpoint")
@@ -3288,11 +3627,13 @@ class ModelToComponentFactory:
 
             query_properties = self.create_query_properties(
                 model=query_properties_definition,
+                stream_name=name,
                 config=config,
             )
         elif hasattr(model.requester, "query_properties") and model.requester.query_properties:
             query_properties = self.create_query_properties(
                 model=model.requester.query_properties,
+                stream_name=name,
                 config=config,
             )
 
@@ -3305,39 +3646,21 @@ class ModelToComponentFactory:
             config=config,
         )
 
-        # Define cursor only if per partition or common incremental support is needed
-        cursor = stream_slicer if isinstance(stream_slicer, DeclarativeCursor) else None
-
-        if (
-            not isinstance(stream_slicer, DatetimeBasedCursor)
-            or type(stream_slicer) is not DatetimeBasedCursor
-        ):
-            # Many of the custom component implementations of DatetimeBasedCursor override get_request_params() (or other methods).
-            # Because we're decoupling RequestOptionsProvider from the Cursor, custom components will eventually need to reimplement
-            # their own RequestOptionsProvider. However, right now the existing StreamSlicer/Cursor still can act as the SimpleRetriever's
-            # request_options_provider
-            request_options_provider = stream_slicer or DefaultRequestOptionsProvider(parameters={})
-        elif not request_options_provider:
+        if not request_options_provider:
             request_options_provider = DefaultRequestOptionsProvider(parameters={})
-
-        stream_slicer = stream_slicer or SinglePartitionRouter(parameters={})
-        if self._should_limit_slices_fetched():
-            stream_slicer = cast(
-                StreamSlicer,
-                StreamSlicerTestReadDecorator(
-                    wrapped_slicer=stream_slicer,
-                    maximum_number_of_slices=self._limit_slices_fetched or 5,
-                ),
-            )
+        if isinstance(request_options_provider, DefaultRequestOptionsProvider) and isinstance(
+            partition_router, PartitionRouter
+        ):
+            request_options_provider = partition_router
 
         paginator = (
             self._create_component_from_model(
                 model=model.paginator,
                 config=config,
-                url_base=_get_url(),
+                url_base=_get_url(requester),
                 extractor_model=model.record_selector.extractor,
                 decoder=decoder,
-                cursor_used_for_stop_condition=stop_condition_cursor or None,
+                cursor_used_for_stop_condition=cursor if has_stop_condition_cursor else None,
             )
             if model.paginator
             else NoPagination(parameters={})
@@ -3347,14 +3670,30 @@ class ModelToComponentFactory:
             model.ignore_stream_slicer_parameters_on_paginated_requests or False
         )
 
-        if (
+        reads_parent_stream_lazily = bool(
             model.partition_router
             and isinstance(model.partition_router, SubstreamPartitionRouterModel)
-            and not bool(self._connector_state_manager.get_stream_state(name, None))
             and any(
                 parent_stream_config.lazy_read_pointer
                 for parent_stream_config in model.partition_router.parent_stream_configs
             )
+        )
+        if reads_parent_stream_lazily and (
+            model.page_size_reduction
+            or self._uses_reduce_page_size_action(getattr(model.requester, "error_handler", None))
+        ):
+            # Checked outside of the LazySimpleRetriever branch below, which only applies on the first
+            # sync of a stream: gating it on the absence of state would accept the same manifest from the
+            # second sync onwards. LazySimpleRetriever paginates the parent's embedded pages, so there is
+            # no page of its own to re-issue with a smaller page size.
+            raise ValueError(
+                f"`page_size_reduction` and the REDUCE_PAGE_SIZE response action are not supported when "
+                f"reading a parent stream lazily. Remove either the page size reduction or the parent "
+                f"stream's `lazy_read_pointer` for stream {name}."
+            )
+
+        if reads_parent_stream_lazily and not bool(
+            self._connector_state_manager.get_stream_state(name, None)
         ):
             if incremental_sync:
                 if incremental_sync.type != "DatetimeBasedCursor":
@@ -3378,13 +3717,20 @@ class ModelToComponentFactory:
                 primary_key=primary_key,
                 requester=requester,
                 record_selector=record_selector,
-                stream_slicer=stream_slicer,
+                stream_slicer=_NO_STREAM_SLICING,
                 request_option_provider=request_options_provider,
-                cursor=cursor,
                 config=config,
                 ignore_stream_slicer_parameters_on_paginated_requests=ignore_stream_slicer_parameters_on_paginated_requests,
+                post_pagination_filter=post_pagination_filter,
                 parameters=model.parameters or {},
             )
+
+        if (
+            model.record_selector.record_filter
+            and model.pagination_reset
+            and model.pagination_reset.limits
+        ):
+            raise ValueError("PaginationResetLimits are not supported while having record filter.")
 
         return SimpleRetriever(
             name=name,
@@ -3392,15 +3738,350 @@ class ModelToComponentFactory:
             primary_key=primary_key,
             requester=requester,
             record_selector=record_selector,
-            stream_slicer=stream_slicer,
+            stream_slicer=_NO_STREAM_SLICING,
             request_option_provider=request_options_provider,
-            cursor=cursor,
             config=config,
             ignore_stream_slicer_parameters_on_paginated_requests=ignore_stream_slicer_parameters_on_paginated_requests,
             additional_query_properties=query_properties,
             log_formatter=self._get_log_formatter(log_formatter, name),
+            pagination_tracker_factory=self._create_pagination_tracker_factory(
+                model.pagination_reset, cursor
+            ),
+            page_size_reduction=self._create_page_size_reduction(
+                model, name, query_properties, file_uploader
+            ),
+            post_pagination_filter=post_pagination_filter,
             parameters=model.parameters or {},
         )
+
+    def _create_page_size_reduction(
+        self,
+        model: SimpleRetrieverModel,
+        name: str,
+        query_properties: Optional[QueryProperties],
+        file_uploader: Optional[DefaultFileUploader] = None,
+    ) -> Optional[PageSizeReduction]:
+        # A CustomRequester does not necessarily define an error handler. A CustomRequester that does define
+        # one keeps it as a raw dict rather than a typed model, so this returns False for it as well.
+        error_handler = getattr(model.requester, "error_handler", None)
+        uses_action = self._uses_reduce_page_size_action(error_handler)
+        if uses_action and not model.page_size_reduction:
+            raise ValueError(
+                f"Stream {name} has a response filter with the REDUCE_PAGE_SIZE action but the retriever does not "
+                f"define `page_size_reduction`. Add a `page_size_reduction` block to the retriever."
+            )
+
+        if not model.page_size_reduction:
+            return None
+
+        if not uses_action:
+            # Not raised: a CustomErrorHandler can resolve to REDUCE_PAGE_SIZE without us being able to see
+            # it, so the only safe reaction to a block we cannot tie to an action is a warning. Without it a
+            # misspelled action leaves the feature silently dead on a stream that only exists because it
+            # would otherwise fail.
+            LOGGER.warning(
+                f"Stream {name} defines `page_size_reduction` but no response filter with the "
+                f"REDUCE_PAGE_SIZE action was found on its requester. The page size will never be reduced "
+                f"unless a custom error handler resolves to that action."
+            )
+
+        self._validate_page_size_reduction_is_supported(
+            model, name, query_properties, file_uploader
+        )
+
+        reset_policy = model.page_size_reduction.reset_policy
+        return PageSizeReduction(
+            reduction_factor=model.page_size_reduction.reduction_factor,  # type: ignore[arg-type]  # the schema defines a default
+            minimum_page_size=model.page_size_reduction.minimum_page_size,  # type: ignore[arg-type]  # the schema defines a default
+            max_attempts=model.page_size_reduction.max_attempts,  # type: ignore[arg-type]  # the schema defines a default
+            backoff_seconds=model.page_size_reduction.backoff_seconds,  # type: ignore[arg-type]  # the schema defines a default
+            retries_at_minimum_page_size=model.page_size_reduction.retries_at_minimum_page_size,  # type: ignore[arg-type]  # the schema defines a default
+            failure_message=model.page_size_reduction.failure_message,
+            reset_policy=PageSizeResetPolicy(reset_policy.value)
+            if reset_policy is not None
+            else PageSizeResetPolicy.NEVER,
+        )
+
+    def _validate_page_size_reduction_is_supported(
+        self,
+        model: SimpleRetrieverModel,
+        name: str,
+        query_properties: Optional[QueryProperties],
+        file_uploader: Optional[DefaultFileUploader] = None,
+    ) -> None:
+        """
+        Page size reduction re-issues the same page with a smaller page size. That is only correct when the next
+        page does not depend on the page size, and it only has an effect when the paginator injects the page size
+        in the request. A custom pagination strategy is accepted when it can receive the reduced page size, which
+        is checked by inspecting its signature rather than by recognizing its type.
+        """
+        if query_properties:
+            raise ValueError(
+                f"`page_size_reduction` cannot be used together with query properties on stream {name}. Records "
+                f"from the earlier property chunks have already been emitted when a chunk asks for a smaller page, "
+                f"so retrying the page would emit them twice."
+            )
+
+        if file_uploader:
+            raise ValueError(
+                f"`page_size_reduction` cannot be used together with a `file_uploader` on stream {name}. The "
+                f"file uploader sends one request per record from inside the page's record generator, so a "
+                f"reduction asked for halfway through a page would re-emit the records already yielded by it."
+            )
+
+        if not isinstance(model.paginator, DefaultPaginatorModel):
+            raise ValueError(
+                f"`page_size_reduction` requires a DefaultPaginator on stream {name} so that the connector can "
+                f"send a smaller page size."
+            )
+
+        if not model.paginator.page_size_option:
+            raise ValueError(
+                f"`page_size_reduction` requires `page_size_option` on the paginator of stream {name}: without it "
+                f"the connector cannot tell the API to send a smaller page."
+            )
+
+        if isinstance(model.paginator.page_token_option, RequestPathModel):
+            # A RequestPath page token is a full URL built by the API, and it already carries the page size the
+            # API echoed back. The reduced page size is injected as a request option on top of that URL, so the
+            # request goes out with the page size twice - the original one from the URL and the reduced one -
+            # and which of the two the API honors is up to the API. Every page after the first would then keep
+            # asking for the page size that just failed.
+            raise ValueError(
+                f"`page_size_reduction` does not support a `page_token_option` of type RequestPath on stream "
+                f"{name}. The next page is then requested through a URL returned by the API, which already "
+                f"carries the page size, so the reduced page size would be sent alongside the original one. Use "
+                f"a CursorPagination strategy with a `page_token_option` of type RequestOption instead."
+            )
+
+        strategy = model.paginator.pagination_strategy
+        if isinstance(strategy, PageIncrementModel):
+            raise ValueError(
+                f"`page_size_reduction` does not support the PageIncrement pagination strategy used by stream "
+                f"{name}. Pages are addressed as page number * page size, so a smaller page size shifts every "
+                f"following page boundary and would skip records. Use OffsetIncrement or CursorPagination."
+            )
+        if isinstance(strategy, CustomPaginationStrategyModel):
+            # A custom strategy is written by the same person enabling the reduction, so the
+            # question is not whether we recognize it but whether it can be told the reduced
+            # page size. Checking the signature keeps a strategy that would raise TypeError
+            # mid-sync from being accepted at config time.
+            custom_class = self._get_class_from_fully_qualified_class_name(strategy.class_name)
+            if isinstance(custom_class, type) and issubclass(custom_class, PageIncrement):
+                # `PageIncrement.next_page_token` declares `page_size_override` only to reject it, so a
+                # subclass that does not override the method would pass the signature check below and only
+                # fail once the first reduction is requested, mid-sync.
+                raise ValueError(
+                    f"`page_size_reduction` does not support the PageIncrement pagination strategy that the "
+                    f"custom pagination strategy {strategy.class_name} used by stream {name} inherits from. "
+                    f"Pages are addressed as page number * page size, so a smaller page size shifts every "
+                    f"following page boundary and would skip records. Use OffsetIncrement or CursorPagination."
+                )
+            try:
+                parameters = inspect.signature(custom_class.next_page_token).parameters
+            except (AttributeError, TypeError, ValueError) as exception:
+                raise ValueError(
+                    f"`page_size_reduction` could not check the signature of `next_page_token` on the custom "
+                    f"pagination strategy {strategy.class_name} used by stream {name}: {exception}. Make sure "
+                    f"`class_name` points at a PaginationStrategy subclass whose `next_page_token` accepts a "
+                    f"`page_size_override` keyword argument."
+                )
+            accepts_override = "page_size_override" in parameters or any(
+                parameter.kind == inspect.Parameter.VAR_KEYWORD for parameter in parameters.values()
+            )
+            if not accepts_override:
+                raise ValueError(
+                    f"`page_size_reduction` requires the custom pagination strategy "
+                    f"{strategy.class_name} used by stream {name} to accept a `page_size_override` keyword "
+                    f"argument in `next_page_token`, so that it can honor the reduced page size. Add "
+                    f"`page_size_override: Optional[int] = None` to its signature; a strategy that does not "
+                    f"use its page size as a stop condition can ignore the value."
+                )
+        elif not isinstance(strategy, (CursorPaginationModel, OffsetIncrementModel)):
+            raise ValueError(
+                f"`page_size_reduction` only supports the CursorPagination, OffsetIncrement and "
+                f"CustomPaginationStrategy pagination strategies. Stream {name} uses "
+                f"{type(strategy).__name__}."
+            )
+        else:
+            # A CustomPaginationStrategy carries its page size in its own code, so this is only checkable
+            # for the strategies the CDK defines. `page_size` is optional on both of them, and without it
+            # `get_page_size` returns None, the paginator injects nothing, and the reduction is a dead end
+            # that only surfaces on the first failing response - after records have been emitted.
+            self._validate_page_size_is_reducible(strategy, model.page_size_reduction, name)
+            if isinstance(strategy, CursorPaginationModel):
+                self._validate_stop_condition_is_reduction_aware(
+                    strategy, model.page_size_reduction, name
+                )
+
+    @staticmethod
+    def _validate_stop_condition_is_reduction_aware(
+        strategy: CursorPaginationModel,
+        page_size_reduction: Optional[PageSizeReductionModel],
+        name: str,
+    ) -> None:
+        """
+        A `stop_condition` comparing `last_page_size` to a hardcoded page size reads a full reduced page as a
+        short page and ends the pagination early, dropping the rest of the partition without failing. The
+        strategy exposes the page size that was actually requested as `page_size`, so the condition can be
+        written correctly - but only if it is, which is what this checks.
+
+        The condition is parsed as a Jinja expression rather than matched as a string: only the AST tells
+        `page_size`, which follows the reduction, apart from `config['page_size']`, which does not, and only the
+        AST tells an inequality, which a reduction can invalidate, apart from `last_page_size == 0`, which it
+        cannot. A condition that never names `last_page_size` is not waved through: a count read from the
+        response body - `{{ response['data'] | length < 100 }}` - truncates in exactly the same way, and which
+        response field counts the records of a page is not knowable here. A shape the analysis does not
+        understand is warned about rather than rejected - this runs at stream construction, so a false
+        rejection takes `check`, `discover` and `read` down with it.
+        """
+        stop_condition = strategy.stop_condition
+        if not stop_condition:
+            return
+
+        minimum_page_size = (
+            page_size_reduction.minimum_page_size if page_size_reduction else None
+        ) or 1
+        verdict, reason = classify_stop_condition(stop_condition, minimum_page_size)
+        if verdict is StopConditionSafety.TRUNCATES:
+            raise ValueError(
+                f"`page_size_reduction` on stream {name} cannot be used with the `stop_condition` "
+                f"{stop_condition!r}: {reason}. The pagination would then end early, silently dropping the "
+                f"rest of the partition. Compare against the `page_size` interpolation variable instead, "
+                f"which holds the page size that was actually requested (for example "
+                f"`{{{{ last_page_size < page_size }}}}`), or test the page for emptiness with "
+                f"`{{{{ last_page_size == 0 }}}}`."
+            )
+        if verdict is StopConditionSafety.UNKNOWN:
+            LOGGER.warning(
+                f"Stream {name} uses `page_size_reduction` with the `stop_condition` {stop_condition!r}, "
+                f"which could not be checked against the reduction because {reason}. Make sure a page that is "
+                f"full at a reduced page size does not satisfy it, otherwise the pagination ends early and the "
+                f"rest of the partition is silently dropped. Comparing against the `page_size` interpolation "
+                f"variable, which holds the page size that was actually requested, is always safe."
+            )
+
+    @staticmethod
+    def _validate_page_size_is_reducible(
+        strategy: Union[CursorPaginationModel, OffsetIncrementModel],
+        page_size_reduction: Optional[PageSizeReductionModel],
+        name: str,
+    ) -> None:
+        page_size = strategy.page_size
+        if page_size is None:
+            raise ValueError(
+                f"`page_size_reduction` requires `page_size` on the pagination strategy of stream {name}: "
+                f"without it the paginator does not send a page size, so there is nothing to reduce."
+            )
+
+        # The schema allows a string so that the page size can be interpolated. `page_size` is
+        # `Optional[Union[int, str]]` and pydantic v1 tries `int` first, so both `100` and `"100"` arrive as
+        # an int and only a genuinely non-numeric template stays a str. Such a template is only known once
+        # the config is available, so it is left to the runtime check in `PageSizeReducer.reduce`.
+        try:
+            configured_page_size: Optional[int] = int(page_size)
+        except ValueError:
+            configured_page_size = None
+
+        minimum_page_size = (
+            page_size_reduction.minimum_page_size if page_size_reduction else None
+        ) or 1
+        if configured_page_size is not None and configured_page_size <= minimum_page_size:
+            raise ValueError(
+                f"`page_size_reduction` on stream {name} can never reduce its page size: the pagination "
+                f"strategy's `page_size` is {configured_page_size} and `minimum_page_size` is "
+                f"{minimum_page_size}. Lower `minimum_page_size` or raise `page_size`."
+            )
+
+        # Each reduction divides the page size by `reduction_factor` and spends one attempt, so an unbroken
+        # run of failures bottoms out at `page_size / reduction_factor ** max_attempts` whatever
+        # `minimum_page_size` says. Only warned about, and not raised: pages that succeed in between restart
+        # the budget while `NEVER` keeps the page size, so the floor is reachable over a partition even when
+        # it is out of reach of a single run - and a manifest that deliberately gives up earlier than its
+        # floor is not wrong, only worth pointing out.
+        reduction_factor = (
+            page_size_reduction.reduction_factor if page_size_reduction else None
+        ) or 2.0
+        max_attempts = (page_size_reduction.max_attempts if page_size_reduction else None) or 5
+        # Only when there is a floor worth reaching. The default of 1 is out of reach of the default budget on
+        # any page size above 32, so this would otherwise fire on nearly every stream that opts in - and
+        # `__fields_set__` would not help, since it records that a value was supplied and not that it differs
+        # from the default, so spelling `minimum_page_size: 1` out longhand would earn the warning.
+        if (
+            configured_page_size is not None
+            and minimum_page_size > 1
+            and reduction_factor**max_attempts < configured_page_size / minimum_page_size
+        ):
+            reachable_page_size = max(
+                minimum_page_size, int(configured_page_size // reduction_factor**max_attempts)
+            )
+            LOGGER.warning(
+                f"Stream {name} sets `minimum_page_size` to {minimum_page_size}, which `page_size_reduction` "
+                f"cannot reach in one run of failing pages: `max_attempts` is {max_attempts} and "
+                f"`reduction_factor` is {reduction_factor}, so {max_attempts} reductions of a page size of "
+                f"{configured_page_size} stop at {reachable_page_size} records per page and the sync then "
+                f"fails with a transient error. Whichever of the two bounds is tighter wins; reaching "
+                f"{minimum_page_size} in one run needs `max_attempts` of at least "
+                f"{math.ceil(math.log(configured_page_size / minimum_page_size, reduction_factor))}."
+            )
+
+    def _reject_reduce_page_size_action(self, requester: Any, description: str) -> None:
+        """
+        `error_handler` is defined on `HttpRequester`, which is referenced by requesters that have no page of
+        their own, so REDUCE_PAGE_SIZE is schema-legal in places where nothing can honor it. Only
+        `SimpleRetriever._read_pages` re-issues a page, so every other requester is rejected here rather than
+        surfacing the exception mid-sync as a generic failure.
+        """
+        if requester is None:
+            return
+        if self._uses_reduce_page_size_action(getattr(requester, "error_handler", None)):
+            raise ValueError(
+                f"The REDUCE_PAGE_SIZE response action is not supported on the {description}: only the main "
+                f"requester of a SimpleRetriever can re-issue its page with a smaller page size. Use a "
+                f"different action on that error handler."
+            )
+
+    def _uses_reduce_page_size_action(self, error_handler: Any) -> bool:
+        if isinstance(error_handler, CompositeErrorHandlerModel):
+            return any(
+                self._uses_reduce_page_size_action(nested)
+                for nested in error_handler.error_handlers
+            )
+        if isinstance(error_handler, DefaultErrorHandlerModel):
+            return any(
+                response_filter.action == HttpResponseFilterActionModel.REDUCE_PAGE_SIZE
+                for response_filter in error_handler.response_filters or []
+            )
+        # A CustomErrorHandler can return any action and we cannot inspect it, so we do not validate it.
+        return False
+
+    def _create_pagination_tracker_factory(
+        self, model: Optional[PaginationResetModel], cursor: Cursor
+    ) -> Callable[[], PaginationTracker]:
+        if model is None:
+            return lambda: PaginationTracker()
+
+        # Until we figure out a way to use any cursor for PaginationTracker, we will have to have this cursor selector logic
+        cursor_factory: Callable[[], Optional[ConcurrentCursor]] = lambda: None
+        if model.action == PaginationResetActionModel.RESET:
+            # in that case, we will let cursor_factory to return None even if the stream has a cursor
+            pass
+        elif model.action == PaginationResetActionModel.SPLIT_USING_CURSOR:
+            if isinstance(cursor, ConcurrentCursor):
+                cursor_factory = lambda: cursor.copy_without_state()  # type: ignore  # the if condition validates that it is a ConcurrentCursor
+            elif isinstance(cursor, ConcurrentPerPartitionCursor):
+                cursor_factory = lambda: cursor._cursor_factory.create(  # type: ignore  # if this becomes a problem, we would need to extract the cursor_factory instantiation logic and make it accessible here
+                    {}, datetime.timedelta(0)
+                )
+            elif not isinstance(cursor, FinalStateCursor):
+                LOGGER.warning(
+                    "Unknown cursor for PaginationTracker. Pagination resets might not work properly"
+                )
+        else:
+            raise ValueError(f"Unknown PaginationReset action: {model.action}")
+
+        limit = model.limits.number_of_records if model and model.limits else None
+        return lambda: PaginationTracker(cursor_factory(), limit)
 
     def _get_log_formatter(
         self, log_formatter: Callable[[Response], Any] | None, name: str
@@ -3428,7 +4109,7 @@ class ModelToComponentFactory:
         return bool(self._limit_slices_fetched or self._emit_connector_builder_messages)
 
     @staticmethod
-    def _query_properties_in_request_parameters(
+    def _has_query_properties_in_request_parameters(
         requester: Union[HttpRequesterModel, CustomRequesterModel],
     ) -> bool:
         if not hasattr(requester, "request_parameters"):
@@ -3454,9 +4135,8 @@ class ModelToComponentFactory:
         self,
         model: StateDelegatingStreamModel,
         config: Config,
-        has_parent_state: Optional[bool] = None,
         **kwargs: Any,
-    ) -> DeclarativeStream:
+    ) -> DefaultStream:
         if (
             model.full_refresh_stream.name != model.name
             or model.name != model.incremental_stream.name
@@ -3465,13 +4145,123 @@ class ModelToComponentFactory:
                 f"state_delegating_stream, full_refresh_stream name and incremental_stream must have equal names. Instead has {model.name}, {model.full_refresh_stream.name} and {model.incremental_stream.name}."
             )
 
-        stream_model = (
+        # Resolve api_retention_period with config context (supports Jinja2 interpolation)
+        resolved_retention_period: Optional[str] = None
+        if model.api_retention_period:
+            interpolated_retention = InterpolatedString.create(
+                model.api_retention_period, parameters=model.parameters or {}
+            )
+            resolved_value = interpolated_retention.eval(config=config)
+            if resolved_value:
+                resolved_retention_period = str(resolved_value)
+
+        if resolved_retention_period:
+            for stream_model in (model.full_refresh_stream, model.incremental_stream):
+                if isinstance(stream_model.incremental_sync, IncrementingCountCursorModel):
+                    raise ValueError(
+                        f"Stream '{model.name}' uses IncrementingCountCursor which is not supported "
+                        f"with api_retention_period. IncrementingCountCursor does not use datetime-based "
+                        f"cursors, so cursor age validation cannot be performed."
+                    )
+
+        stream_state = self._connector_state_manager.get_stream_state(model.name, None)
+
+        if not stream_state:
+            return self._create_component_from_model(  # type: ignore[no-any-return]
+                model.full_refresh_stream, config=config, **kwargs
+            )
+
+        incremental_stream: DefaultStream = self._create_component_from_model(
+            model.incremental_stream, config=config, **kwargs
+        )  # type: ignore[assignment]
+
+        # Only run cursor age validation for streams that are in the configured
+        # catalog (or when no catalog was provided, e.g. during discover / connector
+        # builder).  Streams not selected by the user but instantiated as parent-stream
+        # dependencies must not go through this path because it emits state messages
+        # that the destination does not know about, causing "Stream not found" crashes.
+        stream_is_in_catalog = (
+            not self._stream_name_to_configured_stream  # no catalog → validate by default
+            or model.name in self._stream_name_to_configured_stream
+        )
+        if resolved_retention_period and stream_is_in_catalog:
+            full_refresh_stream: DefaultStream = self._create_component_from_model(
+                model.full_refresh_stream, config=config, **kwargs
+            )  # type: ignore[assignment]
+            if self._is_cursor_older_than_retention_period(
+                stream_state,
+                full_refresh_stream.cursor,
+                incremental_stream.cursor,
+                resolved_retention_period,
+                model.name,
+            ):
+                # Clear state BEFORE constructing the full_refresh_stream so that
+                # its cursor starts from start_date instead of the stale cursor.
+                self._connector_state_manager.update_state_for_stream(model.name, None, {})
+                state_message = self._connector_state_manager.create_state_message(model.name, None)
+                self._message_repository.emit_message(state_message)
+                return self._create_component_from_model(  # type: ignore[no-any-return]
+                    model.full_refresh_stream, config=config, **kwargs
+                )
+
+        return incremental_stream
+
+    @staticmethod
+    def _is_cursor_older_than_retention_period(
+        stream_state: Mapping[str, Any],
+        full_refresh_cursor: Cursor,
+        incremental_cursor: Cursor,
+        api_retention_period: str,
+        stream_name: str,
+    ) -> bool:
+        """Check if the cursor value in the state is older than the API's retention period.
+
+        Checks cursors in sequence: full refresh cursor first, then incremental cursor.
+        FinalStateCursor returns now() for completed full refresh state (NO_CURSOR_STATE_KEY),
+        which is always within retention, so we use incremental. For other states, it returns
+        None and we fall back to checking the incremental cursor.
+
+        Returns True if the cursor is older than the retention period (should use full refresh).
+        Returns False if the cursor is within the retention period (safe to use incremental).
+        """
+        retention_duration = parse_duration(api_retention_period)
+        retention_cutoff = datetime.datetime.now(datetime.timezone.utc) - retention_duration
+
+        # Check full refresh cursor first
+        cursor_datetime = full_refresh_cursor.get_cursor_datetime_from_state(stream_state)
+
+        # If full refresh cursor returns None, check incremental cursor
+        if cursor_datetime is None:
+            cursor_datetime = incremental_cursor.get_cursor_datetime_from_state(stream_state)
+
+        if cursor_datetime is None:
+            # Neither cursor could parse the state - fall back to full refresh to be safe
+            return True
+
+        if cursor_datetime < retention_cutoff:
+            logging.warning(
+                f"Stream '{stream_name}' has a cursor value older than "
+                f"the API's retention period of {api_retention_period} "
+                f"(cutoff: {retention_cutoff.isoformat()}). "
+                f"Falling back to full refresh to avoid data loss."
+            )
+            return True
+
+        return False
+
+    def _get_state_delegating_stream_model(
+        self,
+        model: StateDelegatingStreamModel,
+        parent_state: Optional[Mapping[str, Any]] = None,
+    ) -> DeclarativeStreamModel:
+        """Return the appropriate underlying stream model based on state."""
+        return (
             model.incremental_stream
-            if self._connector_state_manager.get_stream_state(model.name, None) or has_parent_state
+            if self._connector_state_manager.get_stream_state(model.name, None) or parent_state
             else model.full_refresh_stream
         )
 
-        return self._create_component_from_model(stream_model, config=config, **kwargs)  # type: ignore[no-any-return]  # Will be created DeclarativeStream as stream_model is stream description
+    _OPTIONAL_ASYNC_STATUS_FIELDS = {"skipped"}
 
     def _create_async_job_status_mapping(
         self, model: AsyncJobStatusMapModel, config: Config, **kwargs: Any
@@ -3481,6 +4271,14 @@ class ModelToComponentFactory:
             if cdk_status == "type":
                 # This is an element of the dict because of the typing of the CDK but it is not a CDK status
                 continue
+
+            if api_statuses is None:
+                if cdk_status in self._OPTIONAL_ASYNC_STATUS_FIELDS:
+                    continue
+                raise ValueError(
+                    f"Required CDK status '{cdk_status}' has no API statuses mapped. "
+                    f"Please provide at least an empty list for required status fields."
+                )
 
             for status in api_statuses:
                 if status in api_status_to_cdk_status:
@@ -3500,6 +4298,8 @@ class ModelToComponentFactory:
                 return AsyncJobStatus.FAILED
             case "timeout":
                 return AsyncJobStatus.TIMED_OUT
+            case "skipped":
+                return AsyncJobStatus.SKIPPED
             case _:
                 raise ValueError(f"Unsupported CDK status {status}")
 
@@ -3517,12 +4317,32 @@ class ModelToComponentFactory:
         transformations: List[RecordTransformation],
         **kwargs: Any,
     ) -> AsyncRetriever:
-        def _get_download_retriever() -> SimpleRetriever:
+        if model.download_target_requester and not model.download_target_extractor:
+            raise ValueError(
+                f"`download_target_extractor` required if using a `download_target_requester`"
+            )
+
+        for requester_field in (
+            "creation_requester",
+            "polling_requester",
+            "download_requester",
+            "download_target_requester",
+            "abort_requester",
+            "delete_requester",
+        ):
+            self._reject_reduce_page_size_action(
+                getattr(model, requester_field, None),
+                f"`{requester_field}` of the AsyncRetriever of stream {name}",
+            )
+
+        def _get_download_retriever(
+            requester: Requester, extractor: RecordExtractor, _decoder: Decoder
+        ) -> SimpleRetriever:
             # We create a record selector for the download retriever
             # with no schema normalization and no transformations, neither record filter
             # as all this occurs in the record_selector of the AsyncRetriever
             record_selector = RecordSelector(
-                extractor=download_extractor,
+                extractor=extractor,
                 name=name,
                 record_filter=None,
                 transformations=[],
@@ -3533,7 +4353,7 @@ class ModelToComponentFactory:
             paginator = (
                 self._create_component_from_model(
                     model=model.download_paginator,
-                    decoder=decoder,
+                    decoder=_decoder,
                     config=config,
                     url_base="",
                 )
@@ -3542,7 +4362,7 @@ class ModelToComponentFactory:
             )
 
             return SimpleRetriever(
-                requester=download_requester,
+                requester=requester,
                 record_selector=record_selector,
                 primary_key=None,
                 name=name,
@@ -3636,7 +4456,9 @@ class ModelToComponentFactory:
             config=config,
             name=job_download_components_name,
         )
-        download_retriever = _get_download_retriever()
+        download_retriever = _get_download_retriever(
+            download_requester, download_extractor, download_decoder
+        )
         abort_requester = (
             self._create_component_from_model(
                 model=model.abort_requester,
@@ -3670,11 +4492,15 @@ class ModelToComponentFactory:
         status_extractor = self._create_component_from_model(
             model=model.status_extractor, decoder=decoder, config=config, name=name
         )
-        download_target_extractor = self._create_component_from_model(
-            model=model.download_target_extractor,
-            decoder=decoder,
-            config=config,
-            name=name,
+        download_target_extractor = (
+            self._create_component_from_model(
+                model=model.download_target_extractor,
+                decoder=decoder,
+                config=config,
+                name=name,
+            )
+            if model.download_target_extractor
+            else None
         )
 
         job_repository: AsyncJobRepository = AsyncHttpJobRepository(
@@ -3690,6 +4516,17 @@ class ModelToComponentFactory:
             job_timeout=_get_job_timeout(),
         )
 
+        failed_retry_wait_time_in_seconds: Optional[int] = (
+            int(
+                InterpolatedString.create(
+                    str(model.failed_retry_wait_time_in_seconds),
+                    parameters={},
+                ).eval(config)
+            )
+            if model.failed_retry_wait_time_in_seconds
+            else None
+        )
+
         async_job_partition_router = AsyncJobPartitionRouter(
             job_orchestrator_factory=lambda stream_slices: AsyncJobOrchestrator(
                 job_repository,
@@ -3701,6 +4538,7 @@ class ModelToComponentFactory:
                 # set the `job_max_retry` to 1 for the `Connector Builder`` use-case.
                 # `None` == default retry is set to 3 attempts, under the hood.
                 job_max_retry=1 if self._emit_connector_builder_messages else None,
+                failed_retry_wait_time_in_seconds=failed_retry_wait_time_in_seconds,
             ),
             stream_slicer=stream_slicer,
             config=config,
@@ -3760,14 +4598,19 @@ class ModelToComponentFactory:
         )
 
     def create_substream_partition_router(
-        self, model: SubstreamPartitionRouterModel, config: Config, **kwargs: Any
+        self,
+        model: SubstreamPartitionRouterModel,
+        config: Config,
+        *,
+        stream_name: str,
+        **kwargs: Any,
     ) -> SubstreamPartitionRouter:
         parent_stream_configs = []
         if model.parent_stream_configs:
             parent_stream_configs.extend(
                 [
-                    self._create_message_repository_substream_wrapper(
-                        model=parent_stream_config, config=config, **kwargs
+                    self.create_parent_stream_config_with_substream_wrapper(
+                        model=parent_stream_config, config=config, stream_name=stream_name, **kwargs
                     )
                     for parent_stream_config in model.parent_stream_configs
                 ]
@@ -3779,31 +4622,111 @@ class ModelToComponentFactory:
             config=config,
         )
 
-    def _create_message_repository_substream_wrapper(
-        self, model: ParentStreamConfigModel, config: Config, **kwargs: Any
+    def create_parent_stream_config_with_substream_wrapper(
+        self, model: ParentStreamConfigModel, config: Config, *, stream_name: str, **kwargs: Any
     ) -> Any:
+        child_state = self._connector_state_manager.get_stream_state(stream_name, None)
+        if NO_CURSOR_STATE_KEY in child_state:
+            # Full refresh streams checkpoint a `{NO_CURSOR_STATE_KEY: true}` sentinel. When such a
+            # stream is later converted to incremental with an incremental_dependency parent,
+            # `_instantiate_parent_stream_state_manager` would treat the sentinel's boolean as a legacy
+            # cursor value and re-key it under the parent's cursor field, crashing cursor initialization.
+            child_state = {
+                key: value for key, value in child_state.items() if key != NO_CURSOR_STATE_KEY
+            }
+
+        parent_state: Optional[Mapping[str, Any]] = (
+            child_state if model.incremental_dependency and child_state else None
+        )
+        connector_state_manager = self._instantiate_parent_stream_state_manager(
+            child_state, config, model, parent_state
+        )
+
         substream_factory = ModelToComponentFactory(
+            custom_components_trusted=self._custom_components_trusted,
+            connector_state_manager=connector_state_manager,
             limit_pages_fetched_per_slice=self._limit_pages_fetched_per_slice,
             limit_slices_fetched=self._limit_slices_fetched,
             emit_connector_builder_messages=self._emit_connector_builder_messages,
             disable_retries=self._disable_retries,
             disable_cache=self._disable_cache,
-            message_repository=LogAppenderMessageRepositoryDecorator(
-                {"airbyte_cdk": {"stream": {"is_substream": True}}, "http": {"is_auxiliary": True}},
-                self._message_repository,
-                self._evaluate_log_level(self._emit_connector_builder_messages),
+            message_repository=StateFilteringMessageRepository(
+                LogAppenderMessageRepositoryDecorator(
+                    {
+                        "airbyte_cdk": {"stream": {"is_substream": True}},
+                        "http": {"is_auxiliary": True},
+                    },
+                    self._message_repository,
+                    self._evaluate_log_level(self._emit_connector_builder_messages),
+                ),
             ),
+            api_budget=self._api_budget,
+            # Share the authenticator registry so parent and child streams draw from the
+            # same token quota counters
+            rate_limited_authenticators=self._rate_limited_authenticators,
         )
 
-        # This flag will be used exclusively for StateDelegatingStream when a parent stream is created
-        has_parent_state = bool(
-            self._connector_state_manager.get_stream_state(kwargs.get("stream_name", ""), None)
-            if model.incremental_dependency
-            else False
+        return substream_factory.create_parent_stream_config(
+            model=model, config=config, stream_name=stream_name, **kwargs
         )
-        return substream_factory._create_component_from_model(
-            model=model, config=config, has_parent_state=has_parent_state, **kwargs
-        )
+
+    def _instantiate_parent_stream_state_manager(
+        self,
+        child_state: MutableMapping[str, Any],
+        config: Config,
+        model: ParentStreamConfigModel,
+        parent_state: Optional[Mapping[str, Any]] = None,
+    ) -> ConnectorStateManager:
+        """
+        With DefaultStream, the state needs to be provided during __init__ of the cursor as opposed to the
+        `set_initial_state` flow that existed for the declarative cursors. This state is taken from
+        self._connector_state_manager.get_stream_state (`self` being a newly created ModelToComponentFactory to account
+        for the MessageRepository being different). So we need to pass a ConnectorStateManager to the
+        ModelToComponentFactory that has the parent states. This method populates this if there is a child state and if
+        incremental_dependency is set.
+        """
+        if model.incremental_dependency and child_state:
+            parent_stream_name = model.stream.name or ""
+            extracted_parent_state = ConcurrentPerPartitionCursor.get_parent_state(
+                child_state, parent_stream_name
+            )
+
+            if not extracted_parent_state:
+                extracted_parent_state = ConcurrentPerPartitionCursor.get_global_state(
+                    child_state, parent_stream_name
+                )
+
+                if not extracted_parent_state and not isinstance(extracted_parent_state, dict):
+                    cursor_values = child_state.values()
+                    if cursor_values and len(cursor_values) == 1:
+                        incremental_sync_model: Union[
+                            DatetimeBasedCursorModel,
+                            IncrementingCountCursorModel,
+                        ] = (
+                            model.stream.incremental_sync  # type: ignore  # if we are there, it is because there is incremental_dependency and therefore there is an incremental_sync on the parent stream
+                            if isinstance(model.stream, DeclarativeStreamModel)
+                            else self._get_state_delegating_stream_model(
+                                model.stream, parent_state=parent_state
+                            ).incremental_sync
+                        )
+                        cursor_field = InterpolatedString.create(
+                            incremental_sync_model.cursor_field,
+                            parameters=incremental_sync_model.parameters or {},
+                        ).eval(config)
+                        extracted_parent_state = AirbyteStateMessage(
+                            type=AirbyteStateType.STREAM,
+                            stream=AirbyteStreamState(
+                                stream_descriptor=StreamDescriptor(
+                                    name=parent_stream_name, namespace=None
+                                ),
+                                stream_state=AirbyteStateBlob(
+                                    {cursor_field: list(cursor_values)[0]}
+                                ),
+                            ),
+                        )
+            return ConnectorStateManager([extracted_parent_state] if extracted_parent_state else [])
+
+        return ConnectorStateManager([])
 
     @staticmethod
     def create_wait_time_from_header(
@@ -3814,9 +4737,7 @@ class ModelToComponentFactory:
             parameters=model.parameters or {},
             config=config,
             regex=model.regex,
-            max_waiting_time_in_seconds=model.max_waiting_time_in_seconds
-            if model.max_waiting_time_in_seconds is not None
-            else None,
+            max_waiting_time_in_seconds=model.max_waiting_time_in_seconds,
         )
 
     @staticmethod
@@ -3829,6 +4750,7 @@ class ModelToComponentFactory:
             config=config,
             min_wait=model.min_wait,
             regex=model.regex,
+            max_waiting_time_in_seconds=model.max_waiting_time_in_seconds,
         )
 
     def get_message_repository(self) -> MessageRepository:
@@ -3860,15 +4782,12 @@ class ModelToComponentFactory:
     def create_http_components_resolver(
         self, model: HttpComponentsResolverModel, config: Config, stream_name: Optional[str] = None
     ) -> Any:
-        stream_slicer = self._build_stream_slicer_from_partition_router(model.retriever, config)
-        combined_slicers = self._build_resumable_cursor(model.retriever, stream_slicer)
-
         retriever = self._create_component_from_model(
             model=model.retriever,
             config=config,
             name=f"{stream_name if stream_name else '__http_components_resolver'}",
             primary_key=None,
-            stream_slicer=stream_slicer if stream_slicer else combined_slicers,
+            stream_slicer=self._build_stream_slicer_from_partition_router(model.retriever, config),
             transformations=[],
         )
 
@@ -3888,6 +4807,7 @@ class ModelToComponentFactory:
 
         return HttpComponentsResolver(
             retriever=retriever,
+            stream_slicer=self._build_stream_slicer_from_partition_router(model.retriever, config),
             config=config,
             components_mapping=components_mapping,
             parameters=model.parameters or {},
@@ -4028,6 +4948,7 @@ class ModelToComponentFactory:
     def create_file_uploader(
         self, model: FileUploaderModel, config: Config, **kwargs: Any
     ) -> FileUploader:
+        self._reject_reduce_page_size_action(model.requester, "requester of a `file_uploader`")
         name = "File Uploader"
         requester = self._create_component_from_model(
             model=model.requester,
@@ -4096,13 +5017,167 @@ class ModelToComponentFactory:
     def create_http_request_matcher(
         self, model: HttpRequestRegexMatcherModel, config: Config, **kwargs: Any
     ) -> HttpRequestRegexMatcher:
+        weight = model.weight
+        if weight is not None:
+            if isinstance(weight, str):
+                weight = int(InterpolatedString.create(weight, parameters={}).eval(config))
+            else:
+                weight = int(weight)
+            if weight < 1:
+                raise ValueError(f"weight must be >= 1, got {weight}")
         return HttpRequestRegexMatcher(
             method=model.method,
             url_base=model.url_base,
             url_path_pattern=model.url_path_pattern,
             params=model.params,
             headers=model.headers,
+            weight=weight,
         )
+
+    def create_rate_limited_multiple_token_authenticator(
+        self,
+        model: RateLimitedMultipleTokenAuthenticatorModel,
+        config: Config,
+        **kwargs: Any,
+    ) -> RateLimitedMultipleTokenAuthenticator:
+        if isinstance(model.tokens, str):
+            tokens_value = InterpolatedString.create(model.tokens, parameters={}).eval(config)
+            delimiter = model.token_delimiter or ","
+            tokens = [
+                token.strip() for token in str(tokens_value).split(delimiter) if token.strip()
+            ]
+        else:
+            tokens = [
+                token_value
+                for token in model.tokens
+                if (
+                    token_value := str(
+                        InterpolatedString.create(token, parameters={}).eval(config)
+                    ).strip()
+                )
+            ]
+
+        quota_specs = [
+            {
+                "name": quota_model.name,
+                "remaining_path": quota_model.remaining_path,
+                "reset_path": quota_model.reset_path,
+                "limit_path": quota_model.limit_path,
+                "remaining_header": quota_model.remaining_header,
+                "reset_header": quota_model.reset_header,
+                "limit_header": quota_model.limit_header,
+                # Normalize the same way as the runtime TokenQuota below, so an omitted field
+                # and an explicit `[]` key identically and keep sharing one set of counters.
+                "exhaustion_status_codes": quota_model.exhaustion_status_codes or [],
+                "matchers": [
+                    {
+                        "method": matcher_model.method,
+                        "url_base": matcher_model.url_base,
+                        "url_path_pattern": matcher_model.url_path_pattern,
+                        "params": matcher_model.params,
+                        "headers": matcher_model.headers,
+                        "weight": matcher_model.weight,
+                    }
+                    for matcher_model in quota_model.matchers or []
+                ],
+            }
+            for quota_model in model.quotas
+        ]
+
+        quota_status_url = str(
+            InterpolatedString.create(model.quota_status_source.url, parameters={}).eval(config)
+        )
+        quota_status_http_method = (
+            model.quota_status_source.http_method.value
+            if model.quota_status_source.http_method
+            else "GET"
+        )
+        quota_status_headers = {
+            key: str(InterpolatedString.create(value, parameters={}).eval(config))
+            for key, value in (model.quota_status_source.request_headers or {}).items()
+        }
+        # Normalize the same way as the quota specs above, so an omitted field and an explicit
+        # `[]` key identically and keep sharing one set of counters. Deduplicated as well as
+        # sorted, because the runtime turns this into a set: without it `[404]` and `[404, 404]`
+        # would key differently and stop sharing counters while behaving identically.
+        quota_status_unavailable_status_codes = sorted(
+            set(model.quota_status_source.unavailable_status_codes or [])
+        )
+        auth_method = model.auth_method or "Bearer"
+        header = model.header or "Authorization"
+        max_wait_time_str = str(
+            InterpolatedString.create(model.max_wait_time or "PT2H", parameters={}).eval(config)
+        )
+        max_wait_time = parse_duration(max_wait_time_str)
+        if not isinstance(max_wait_time, datetime.timedelta):
+            raise ValueError(
+                f"max_wait_time must be a fixed-length ISO 8601 duration (e.g. 'PT2H'); "
+                f"calendar-unit durations like '{max_wait_time_str}' are not supported"
+            )
+        budget_reserve_fraction = (
+            model.budget_reserve_fraction if model.budget_reserve_fraction is not None else 0.1
+        )
+        budget_min_reserve = (
+            model.budget_min_reserve if model.budget_min_reserve is not None else 50
+        )
+
+        # Reuse the same instance for identical definitions so that all streams share the
+        # same token quota counters (similar to how api_budget is shared). The key is built
+        # from the resolved constructor arguments rather than the raw model so that
+        # stream-specific `$parameters` propagated onto the model (and its nested components)
+        # cannot break instance sharing.
+        cache_key = json.dumps(
+            {
+                "tokens": tokens,
+                "quotas": quota_specs,
+                "quota_status_url": quota_status_url,
+                "quota_status_http_method": quota_status_http_method,
+                "quota_status_headers": quota_status_headers,
+                "quota_status_unavailable_status_codes": quota_status_unavailable_status_codes,
+                "auth_method": auth_method,
+                "header": header,
+                "max_wait_time": max_wait_time.total_seconds(),
+                "budget_reserve_fraction": budget_reserve_fraction,
+                "budget_min_reserve": budget_min_reserve,
+            },
+            sort_keys=True,
+        )
+        if cache_key in self._rate_limited_authenticators:
+            return self._rate_limited_authenticators[cache_key]
+
+        quotas = [
+            TokenQuota(
+                name=quota_model.name,
+                remaining_path=quota_model.remaining_path,
+                reset_path=quota_model.reset_path,
+                limit_path=quota_model.limit_path,
+                remaining_header=quota_model.remaining_header,
+                reset_header=quota_model.reset_header,
+                limit_header=quota_model.limit_header,
+                exhaustion_status_codes=quota_model.exhaustion_status_codes or [],
+                matchers=[
+                    self.create_http_request_matcher(matcher_model, config)
+                    for matcher_model in quota_model.matchers or []
+                ],
+            )
+            for quota_model in model.quotas
+        ]
+
+        authenticator = RateLimitedMultipleTokenAuthenticator(
+            tokens=tokens,
+            quotas=quotas,
+            quota_status_url=quota_status_url,
+            quota_status_http_method=quota_status_http_method,
+            quota_status_headers=quota_status_headers,
+            quota_status_unavailable_status_codes=quota_status_unavailable_status_codes,
+            auth_method=auth_method,
+            header=header,
+            max_wait_time=max_wait_time,
+            budget_reserve_fraction=budget_reserve_fraction,
+            budget_min_reserve=budget_min_reserve,
+        )
+        self._rate_limited_authenticators[cache_key] = authenticator
+        return authenticator
 
     def set_api_budget(self, component_definition: ComponentDefinition, config: Config) -> None:
         self._api_budget = self.create_component(
@@ -4110,10 +5185,18 @@ class ModelToComponentFactory:
         )
 
     def create_grouping_partition_router(
-        self, model: GroupingPartitionRouterModel, config: Config, **kwargs: Any
+        self,
+        model: GroupingPartitionRouterModel,
+        config: Config,
+        *,
+        stream_name: str,
+        **kwargs: Any,
     ) -> GroupingPartitionRouter:
         underlying_router = self._create_component_from_model(
-            model=model.underlying_partition_router, config=config
+            model=model.underlying_partition_router,
+            config=config,
+            stream_name=stream_name,
+            **kwargs,
         )
         if model.group_size < 1:
             raise ValueError(f"Group size must be greater than 0, got {model.group_size}")
@@ -4139,3 +5222,141 @@ class ModelToComponentFactory:
             deduplicate=model.deduplicate if model.deduplicate is not None else True,
             config=config,
         )
+
+    def create_union_partition_router(
+        self,
+        model: UnionPartitionRouterModel,
+        config: Config,
+        *,
+        stream_name: str,
+        **kwargs: Any,
+    ) -> UnionPartitionRouter:
+        # The schema enforces minItems: 2 for manifests; this guard covers construction paths
+        # that bypass JSON-schema validation (the generated model carries no min_items constraint).
+        if len(model.partition_routers) < 2:
+            raise ValueError(
+                f"UnionPartitionRouter for stream {stream_name} needs at least 2 child partition routers"
+            )
+
+        partition_routers = [
+            self._create_component_from_model(
+                model=child,
+                config=config,
+                stream_name=stream_name,
+                **kwargs,
+            )
+            for child in model.partition_routers
+        ]
+
+        # partition_field depends only on config/parameters, so it is evaluated once at build
+        # time; the runtime component always receives a plain string.
+        partition_field = InterpolatedString.create(
+            model.partition_field, parameters=model.parameters or {}
+        ).eval(config)
+
+        # Fail fast at build time when a built-in child router is statically known to emit a
+        # partition field different from the union's. CustomPartitionRouter children are opaque
+        # and can only be validated at runtime.
+        for child_model in model.partition_routers:
+            child_partition_fields: List[str] = []
+            if isinstance(child_model, ListPartitionRouterModel):
+                child_partition_fields.append(
+                    InterpolatedString.create(
+                        child_model.cursor_field, parameters=child_model.parameters or {}
+                    ).eval(config)
+                )
+            elif isinstance(child_model, SubstreamPartitionRouterModel):
+                for parent_stream_config in child_model.parent_stream_configs:
+                    child_partition_fields.append(
+                        InterpolatedString.create(
+                            parent_stream_config.partition_field,
+                            parameters=parent_stream_config.parameters
+                            or child_model.parameters
+                            or {},
+                        ).eval(config)
+                    )
+            elif isinstance(child_model, UnionPartitionRouterModel):
+                child_partition_fields.append(
+                    InterpolatedString.create(
+                        child_model.partition_field, parameters=child_model.parameters or {}
+                    ).eval(config)
+                )
+            for child_partition_field in child_partition_fields:
+                if child_partition_field != partition_field:
+                    raise ValueError(
+                        f"UnionPartitionRouter expects all child partition routers to emit the "
+                        f"partition field '{partition_field}', but a "
+                        f"{child_model.type} child emits '{child_partition_field}'."
+                    )
+
+        # A union slice comes from exactly one child partition router, so request options
+        # declared on children cannot be applied consistently to requests built from the
+        # normalized union slices. Partition values should be consumed via interpolation
+        # (e.g. stream_partition) instead. Note that this validation only covers built-in
+        # router types; CustomPartitionRouter children are opaque, so any request options
+        # they implement internally cannot be detected or rejected here.
+        for router in partition_routers:
+            if isinstance(router, SubstreamPartitionRouter):
+                if any(
+                    parent_config.request_option for parent_config in router.parent_stream_configs
+                ):
+                    raise ValueError("Request options are not supported for UnionPartitionRouter.")
+            if isinstance(router, ListPartitionRouter) and router.request_option:
+                raise ValueError("Request options are not supported for UnionPartitionRouter.")
+
+        return UnionPartitionRouter(
+            partition_routers=partition_routers,
+            partition_field=partition_field,
+            parameters=model.parameters or {},
+        )
+
+    def _ensure_query_properties_to_model(
+        self, requester: Union[HttpRequesterModel, CustomRequesterModel]
+    ) -> None:
+        """
+        For some reason, it seems like CustomRequesterModel request_parameters stays as dictionaries which means that
+        the other conditions relying on it being QueryPropertiesModel instead of a dict fail. Here, we migrate them to
+        proper model.
+        """
+        if not hasattr(requester, "request_parameters"):
+            return
+
+        request_parameters = requester.request_parameters
+        if request_parameters and isinstance(request_parameters, Dict):
+            for request_parameter_key in request_parameters.keys():
+                request_parameter = request_parameters[request_parameter_key]
+                if (
+                    isinstance(request_parameter, Dict)
+                    and request_parameter.get("type") == "QueryProperties"
+                ):
+                    request_parameters[request_parameter_key] = QueryPropertiesModel.parse_obj(
+                        request_parameter
+                    )
+
+    def _get_catalog_defined_cursor_field(
+        self, stream_name: str, allow_catalog_defined_cursor_field: bool
+    ) -> Optional[CursorField]:
+        if not allow_catalog_defined_cursor_field:
+            return None
+
+        configured_stream = self._stream_name_to_configured_stream.get(stream_name)
+
+        # Depending on the operation is being performed, there may not be a configured stream yet. In this
+        # case we return None which will then use the default cursor field defined on the cursor model.
+        # We also treat cursor_field: [""] (list with empty string) as no cursor field, since this can
+        # occur when the platform serializes "no cursor configured" streams incorrectly.
+        if (
+            not configured_stream
+            or not configured_stream.cursor_field
+            or not configured_stream.cursor_field[0]
+        ):
+            return None
+        elif len(configured_stream.cursor_field) > 1:
+            raise ValueError(
+                f"The `{stream_name}` stream does not support nested cursor_field. Please specify only a single cursor_field for the stream in the configured catalog."
+            )
+        else:
+            return CursorField(
+                cursor_field_key=configured_stream.cursor_field[0],
+                supports_catalog_defined_cursor_field=allow_catalog_defined_cursor_field,
+            )

@@ -4,6 +4,7 @@
 
 import json
 from copy import deepcopy
+from datetime import date as dt_date
 from unittest.mock import MagicMock
 
 import pytest
@@ -159,6 +160,20 @@ _MANIFEST_WITH_SCANNER_ERROR["dynamic_streams"][0]["components_resolver"][
     }
 )
 
+# Manifest with component definition with value containing tab characters
+# which would cause YAML ScannerError (tabs cannot start tokens in YAML)
+_MANIFEST_WITH_TAB_SCANNER_ERROR = deepcopy(_MANIFEST)
+_MANIFEST_WITH_TAB_SCANNER_ERROR["dynamic_streams"][0]["components_resolver"][
+    "components_mapping"
+].append(
+    {
+        "type": "ComponentMappingDefinition",
+        "create_or_update": True,
+        "field_path": ["retriever", "requester", "$parameters", "custom_query"],
+        "value": "SELECT\n\tcampaign.name,\n\tcampaign.id\nFROM campaign",  # Contains tab characters
+    }
+)
+
 
 @pytest.mark.parametrize(
     "manifest, config, expected_exception, expected_stream_names",
@@ -172,8 +187,15 @@ _MANIFEST_WITH_SCANNER_ERROR["dynamic_streams"][0]["components_resolver"][
         ),
         (_MANIFEST_WITH_STREAM_CONFIGS_LIST, _CONFIG, None, ["item_1", "item_2", "default_item"]),
         (_MANIFEST_WITH_SCANNER_ERROR, _CONFIG, None, ["item_1", "item_2", "default_item"]),
+        (_MANIFEST_WITH_TAB_SCANNER_ERROR, _CONFIG, None, ["item_1", "item_2", "default_item"]),
     ],
-    ids=["no_duplicates", "duplicates", "stream_configs_list", "scanner_error"],
+    ids=[
+        "no_duplicates",
+        "duplicates",
+        "stream_configs_list",
+        "scanner_error",
+        "tab_scanner_error",
+    ],
 )
 def test_dynamic_streams_read_with_config_components_resolver(
     manifest, config, expected_exception, expected_stream_names
@@ -383,5 +405,96 @@ def test_component_mapping_conditions(manifest, config, expected_conditional_par
     for stream in source.streams(config):
         if stream.name in expected_conditional_params:
             assert (
-                stream.retriever.requester._parameters == expected_conditional_params[stream.name]
+                stream._stream_partition_generator._partition_factory._retriever.requester._parameters
+                == expected_conditional_params[stream.name]
             )
+
+
+_MANIFEST_WITH_VALUE_TYPE_STR = deepcopy(_MANIFEST)
+_MANIFEST_WITH_VALUE_TYPE_STR["dynamic_streams"][0]["components_resolver"][
+    "components_mapping"
+].extend(
+    [
+        {
+            "type": "ComponentMappingDefinition",
+            "field_path": ["retriever", "requester", "$parameters", "as_string"],
+            "value": "true",  # valid YAML, but we want to keep it as *string*
+            "value_type": "string",
+            "create_or_update": True,
+        },
+        {
+            "type": "ComponentMappingDefinition",
+            "field_path": ["retriever", "requester", "$parameters", "as_yaml"],
+            "value": "true",  # no value_type -> should be parsed to boolean True
+            "create_or_update": True,
+        },
+        {
+            "type": "ComponentMappingDefinition",
+            "field_path": ["retriever", "requester", "$parameters", "json_string"],
+            "value": "[1, 2]",  # valid YAML/JSON-looking text; keep as string
+            "value_type": "string",
+            "create_or_update": True,
+        },
+        {
+            "type": "ComponentMappingDefinition",
+            "field_path": ["retriever", "requester", "$parameters", "json_parsed"],
+            "value": "[1, 2]",  # no value_type -> should parse to a list
+            "create_or_update": True,
+        },
+        {
+            "type": "ComponentMappingDefinition",
+            "field_path": ["retriever", "requester", "$parameters", "date_as_string"],
+            "value": "2024-07-10",  # date-like text that YAML would parse; force keep as string
+            "value_type": "string",
+            "create_or_update": True,
+        },
+        {
+            "type": "ComponentMappingDefinition",
+            "field_path": ["retriever", "requester", "$parameters", "date_yaml_parsed"],
+            "value": "2024-07-10",  # no value_type -> YAML should parse to datetime.date
+            "create_or_update": True,
+        },
+    ]
+)
+
+
+def test_value_type_str_avoids_yaml_parsing():
+    source = ConcurrentDeclarativeSource(
+        source_config=_MANIFEST_WITH_VALUE_TYPE_STR, config=_CONFIG, catalog=None, state=None
+    )
+
+    for stream in source.streams(_CONFIG):
+        params = (
+            stream._stream_partition_generator._partition_factory._retriever.requester._parameters
+        )
+
+        # Confirm the usual param is still present
+        assert "item_id" in params
+
+        # value_type="string" -> keep as string
+        assert "as_string" in params
+        assert isinstance(params["as_string"], str)
+        assert params["as_string"] == "true"
+
+        assert "json_string" in params
+        assert isinstance(params["json_string"], str)
+        assert params["json_string"] == "[1, 2]"
+
+        # No value_type -> YAML parsed
+        assert "as_yaml" in params
+        assert isinstance(params["as_yaml"], bool)
+        assert params["as_yaml"] is True
+
+        assert "json_parsed" in params
+        assert isinstance(params["json_parsed"], list)
+        assert params["json_parsed"] == [1, 2]
+
+        # value_type="string" -> remains a plain string
+        assert "date_as_string" in params
+        assert isinstance(params["date_as_string"], str)
+        assert params["date_as_string"] == "2024-07-10"
+
+        # no value_type -> YAML parses to datetime.date
+        assert "date_yaml_parsed" in params
+        assert isinstance(params["date_yaml_parsed"], dt_date)
+        assert params["date_yaml_parsed"].isoformat() == "2024-07-10"

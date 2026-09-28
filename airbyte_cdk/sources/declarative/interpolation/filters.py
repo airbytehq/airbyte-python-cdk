@@ -136,6 +136,13 @@ def regex_search(value: str, regex: str) -> str:
     return ""
 
 
+def regex_replace(value: str, regex: str, replacement: str) -> str:
+    """
+    Replace all occurrences of a regular expression pattern in a string.
+    """
+    return re.sub(regex, replacement, value)
+
+
 def hmac(value: Any, key: str, hash_type: str = "sha256") -> str:
     """
     Implementation of a custom Jinja2 hmac filter with SHA-256 support.
@@ -181,6 +188,7 @@ _filters_list = [
     base64binascii_decode,
     string,
     regex_search,
+    regex_replace,
     hmac,
 ]
 filters = {f.__name__: f for f in _filters_list}

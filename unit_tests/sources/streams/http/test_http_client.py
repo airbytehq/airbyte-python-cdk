@@ -1,6 +1,9 @@
 # Copyright (c) 2024 Airbyte, Inc., all rights reserved.
 
+import json
 import logging
+import os
+import time
 from datetime import timedelta
 from unittest.mock import MagicMock, patch
 
@@ -9,7 +12,10 @@ import requests
 from pympler import asizeof
 from requests_cache import CachedRequest
 
-from airbyte_cdk.models import FailureType
+from airbyte_cdk.models import FailureType, Level
+from airbyte_cdk.sources.declarative.auth.oauth import DeclarativeOauth2Authenticator
+from airbyte_cdk.sources.http_logger import format_http_message
+from airbyte_cdk.sources.message import InMemoryMessageRepository
 from airbyte_cdk.sources.streams.call_rate import CachedLimiterSession, LimiterSession
 from airbyte_cdk.sources.streams.http import HttpClient
 from airbyte_cdk.sources.streams.http.error_handlers import (
@@ -24,7 +30,15 @@ from airbyte_cdk.sources.streams.http.exceptions import (
     RequestBodyException,
     UserDefinedBackoffException,
 )
-from airbyte_cdk.sources.streams.http.requests_native_auth import TokenAuthenticator
+from airbyte_cdk.sources.streams.http.http_client import MessageRepresentationAirbyteTracedErrors
+from airbyte_cdk.sources.streams.http.page_size_reduction_exception import (
+    PageSizeReductionRequiredException,
+)
+from airbyte_cdk.sources.streams.http.requests_native_auth import (
+    Oauth2Authenticator,
+    TokenAuthenticator,
+)
+from airbyte_cdk.utils.datetime_helpers import ab_datetime_now
 from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 
 
@@ -178,7 +192,7 @@ def test_connection_pool():
     http_client = HttpClient(
         name="test", logger=MagicMock(), authenticator=TokenAuthenticator("test-token")
     )
-    assert http_client._session.adapters["https://"]._pool_connections == 20
+    assert http_client._session.adapters["https://"]._pool_connections == 40
 
 
 def test_valid_basic_send_request(mocker):
@@ -555,7 +569,7 @@ def test_disable_retries():
     session_send.return_value = mocked_response
 
     with patch.object(requests.Session, "send", return_value=mocked_response) as mocked_send:
-        with pytest.raises(UserDefinedBackoffException):
+        with pytest.raises(AirbyteTracedException) as e:
             http_client.send_request(
                 http_method="get", url="https://test_base_url.com/v1/endpoint", request_kwargs={}
             )
@@ -583,7 +597,7 @@ def test_default_max_retries():
     session_send.return_value = mocked_response
 
     with patch.object(requests.Session, "send", return_value=mocked_response) as mocked_send:
-        with pytest.raises(UserDefinedBackoffException):
+        with pytest.raises(AirbyteTracedException) as e:
             http_client.send_request(
                 http_method="get", url="https://test_base_url.com/v1/endpoint", request_kwargs={}
             )
@@ -613,7 +627,7 @@ def test_backoff_strategy_max_retries():
     session_send.return_value = mocked_response
 
     with patch.object(requests.Session, "send", return_value=mocked_response) as mocked_send:
-        with pytest.raises(UserDefinedBackoffException):
+        with pytest.raises(AirbyteTracedException) as e:
             http_client.send_request(
                 http_method="get", url="https://test_base_url.com/v1/endpoint", request_kwargs={}
             )
@@ -652,7 +666,7 @@ def test_backoff_strategy_max_time():
     session_send.return_value = mocked_response
 
     with patch.object(requests.Session, "send", return_value=mocked_response) as mocked_send:
-        with pytest.raises(UserDefinedBackoffException):
+        with pytest.raises(AirbyteTracedException) as e:
             http_client.send_request(
                 http_method="get", url="https://test_base_url.com/v1/endpoint", request_kwargs={}
             )
@@ -680,7 +694,7 @@ def test_send_emit_stream_status_with_rate_limit_reason(capsys):
     session_send.return_value = mocked_response
 
     with patch.object(requests.Session, "send", return_value=mocked_response) as mocked_send:
-        with pytest.raises(UserDefinedBackoffException):
+        with pytest.raises(AirbyteTracedException) as e:
             http_client.send_request(
                 http_method="get", url="https://test_base_url.com/v1/endpoint", request_kwargs={}
             )
@@ -709,7 +723,7 @@ def test_backoff_strategy_endless(
     session_send.return_value = mocked_response
 
     with patch.object(requests.Session, "send", return_value=mocked_response) as mocked_send:
-        with pytest.raises(expected_error):
+        with pytest.raises(AirbyteTracedException) as e:
             http_client.send_request(
                 http_method="get",
                 url="https://test_base_url.com/v1/endpoint",
@@ -744,3 +758,1083 @@ def test_given_different_headers_then_response_is_not_cached(requests_mock):
     )
 
     assert second_response.json()["test"] == "second response"
+
+
+def test_given_noproxy_for_another_url_when_send_request_then_do_not_break(requests_mock):
+    http_client = HttpClient(name="test", logger=MagicMock(), use_cache=True)
+    os.environ["no_proxy"] = "another.com"
+    requests_mock.register_uri(
+        "GET",
+        "https://google.com/",
+        json={"test": "a response"},
+    )
+
+    x = http_client.send_request("GET", "https://google.com/", request_kwargs={})
+
+    assert x
+
+
+@patch.dict("os.environ", {"REQUESTS_CA_BUNDLE": "/path/to/ca-bundle.crt"})
+def test_send_request_respects_environment_variables():
+    """Test that send_request respects REQUESTS_CA_BUNDLE environment variable."""
+    http_client = HttpClient(
+        name="test",
+        logger=MagicMock(),
+    )
+
+    with patch.object(http_client, "_send_with_retry") as mock_send_with_retry:
+        http_client.send_request(
+            http_method="GET", url="https://api.example.com", request_kwargs={"timeout": 10}
+        )
+
+        passed_kwargs = mock_send_with_retry.call_args[1]["request_kwargs"]
+
+        assert "verify" in passed_kwargs
+        assert passed_kwargs["verify"] == "/path/to/ca-bundle.crt"
+
+
+@pytest.mark.usefixtures("mock_sleep")
+@pytest.mark.parametrize(
+    "response_code, expected_failure_type, error_message, exception_class",
+    [
+        (400, FailureType.system_error, "test error message", UserDefinedBackoffException),
+        (401, FailureType.config_error, "test error message", UserDefinedBackoffException),
+        (403, FailureType.transient_error, "test error message", UserDefinedBackoffException),
+        (400, FailureType.system_error, "test error message", DefaultBackoffException),
+        (401, FailureType.config_error, "test error message", DefaultBackoffException),
+        (403, FailureType.transient_error, "test error message", DefaultBackoffException),
+        (400, FailureType.system_error, "test error message", RateLimitBackoffException),
+        (401, FailureType.config_error, "test error message", RateLimitBackoffException),
+        (403, FailureType.transient_error, "test error message", RateLimitBackoffException),
+    ],
+)
+def test_send_with_retry_raises_airbyte_traced_exception_with_failure_type(
+    response_code, expected_failure_type, error_message, exception_class, requests_mock
+):
+    if exception_class == UserDefinedBackoffException:
+
+        class CustomBackoffStrategy:
+            def backoff_time(self, response_or_exception, attempt_count):
+                return 0.1
+
+        backoff_strategy = CustomBackoffStrategy()
+        response_action = ResponseAction.RETRY
+    elif exception_class == RateLimitBackoffException:
+        backoff_strategy = None
+        response_action = ResponseAction.RATE_LIMITED
+    else:
+        backoff_strategy = None
+        response_action = ResponseAction.RETRY
+
+    error_mapping = {
+        response_code: ErrorResolution(response_action, expected_failure_type, error_message),
+    }
+
+    http_client = HttpClient(
+        name="test",
+        logger=MagicMock(spec=logging.Logger),
+        error_handler=HttpStatusErrorHandler(
+            logger=MagicMock(), error_mapping=error_mapping, max_retries=1
+        ),
+        backoff_strategy=backoff_strategy,
+    )
+
+    requests_mock.register_uri(
+        "GET",
+        "https://airbyte.io/",
+        status_code=response_code,
+        json={"error": error_message},
+        headers={},
+    )
+
+    with pytest.raises(AirbyteTracedException) as e:
+        http_client.send_request(http_method="get", url="https://airbyte.io/", request_kwargs={})
+    assert e.value.failure_type == expected_failure_type
+
+
+class MockOAuthAuthenticator:
+    def __init__(self):
+        self.access_token = "old_token"
+        self._token_expiry_date = None
+        self.refresh_called = False
+
+    def refresh_and_set_access_token(self):
+        self.refresh_called = True
+        self.access_token = "new_refreshed_token"
+        self._token_expiry_date = "2099-01-01T00:00:00Z"
+
+    def __call__(self, request):
+        request.headers["Authorization"] = f"Bearer {self.access_token}"
+        return request
+
+
+def test_refresh_token_then_retry_action_refreshes_oauth_token(mocker):
+    mock_authenticator = MockOAuthAuthenticator()
+    mocked_session = MagicMock(spec=requests.Session)
+    mocked_session.auth = mock_authenticator
+
+    http_client = HttpClient(
+        name="test",
+        logger=MagicMock(),
+        error_handler=HttpStatusErrorHandler(
+            logger=MagicMock(),
+            error_mapping={
+                401: ErrorResolution(
+                    ResponseAction.REFRESH_TOKEN_THEN_RETRY,
+                    FailureType.transient_error,
+                    "Token expired, refreshing",
+                )
+            },
+        ),
+        session=mocked_session,
+    )
+
+    prepared_request = requests.PreparedRequest()
+    mocked_response = MagicMock(spec=requests.Response)
+    mocked_response.status_code = 401
+    mocked_response.headers = {}
+    mocked_response.ok = False
+    mocked_session.send.return_value = mocked_response
+
+    with pytest.raises(DefaultBackoffException):
+        http_client._send(prepared_request, {})
+
+    assert mock_authenticator.refresh_called
+    assert mock_authenticator.access_token == "new_refreshed_token"
+    assert mock_authenticator._token_expiry_date == "2099-01-01T00:00:00Z"
+
+
+def test_refresh_token_then_retry_action_without_oauth_authenticator_proceeds_with_retry(mocker):
+    mocked_session = MagicMock(spec=requests.Session)
+    mocked_session.auth = None
+
+    mocked_logger = MagicMock()
+    http_client = HttpClient(
+        name="test",
+        logger=mocked_logger,
+        error_handler=HttpStatusErrorHandler(
+            logger=MagicMock(),
+            error_mapping={
+                401: ErrorResolution(
+                    ResponseAction.REFRESH_TOKEN_THEN_RETRY,
+                    FailureType.transient_error,
+                    "Token expired, refreshing",
+                )
+            },
+        ),
+        session=mocked_session,
+    )
+
+    prepared_request = requests.PreparedRequest()
+    mocked_response = MagicMock(spec=requests.Response)
+    mocked_response.status_code = 401
+    mocked_response.headers = {}
+    mocked_response.ok = False
+    mocked_session.send.return_value = mocked_response
+
+    with pytest.raises(DefaultBackoffException):
+        http_client._send(prepared_request, {})
+
+    mocked_logger.warning.assert_called()
+
+
+def test_refresh_token_then_retry_action_handles_refresh_failure_gracefully(mocker):
+    class FailingOAuthAuthenticator:
+        def __init__(self):
+            self.access_token = "old_token"
+
+        def refresh_and_set_access_token(self):
+            raise Exception("Token refresh failed")
+
+        def __call__(self, request):
+            return request
+
+    mock_authenticator = FailingOAuthAuthenticator()
+    mocked_session = MagicMock(spec=requests.Session)
+    mocked_session.auth = mock_authenticator
+
+    mocked_logger = MagicMock()
+    http_client = HttpClient(
+        name="test",
+        logger=mocked_logger,
+        error_handler=HttpStatusErrorHandler(
+            logger=MagicMock(),
+            error_mapping={
+                401: ErrorResolution(
+                    ResponseAction.REFRESH_TOKEN_THEN_RETRY,
+                    FailureType.transient_error,
+                    "Token expired, refreshing",
+                )
+            },
+        ),
+        session=mocked_session,
+    )
+
+    prepared_request = requests.PreparedRequest()
+    mocked_response = MagicMock(spec=requests.Response)
+    mocked_response.status_code = 401
+    mocked_response.headers = {}
+    mocked_response.ok = False
+    mocked_session.send.return_value = mocked_response
+
+    with pytest.raises(DefaultBackoffException):
+        http_client._send(prepared_request, {})
+
+    mocked_logger.warning.assert_called()
+
+
+def test_refresh_token_then_retry_action_with_single_use_refresh_token_authenticator(mocker):
+    from airbyte_cdk.sources.streams.http.requests_native_auth import (
+        SingleUseRefreshTokenOauth2Authenticator,
+    )
+
+    mock_authenticator = MagicMock(spec=SingleUseRefreshTokenOauth2Authenticator)
+
+    mocked_session = MagicMock(spec=requests.Session)
+    mocked_session.auth = mock_authenticator
+
+    http_client = HttpClient(
+        name="test",
+        logger=MagicMock(),
+        error_handler=HttpStatusErrorHandler(
+            logger=MagicMock(),
+            error_mapping={
+                401: ErrorResolution(
+                    ResponseAction.REFRESH_TOKEN_THEN_RETRY,
+                    FailureType.transient_error,
+                    "Token expired, refreshing",
+                )
+            },
+        ),
+        session=mocked_session,
+    )
+
+    prepared_request = requests.PreparedRequest()
+    mocked_response = MagicMock(spec=requests.Response)
+    mocked_response.status_code = 401
+    mocked_response.headers = {}
+    mocked_response.ok = False
+    mocked_session.send.return_value = mocked_response
+
+    with pytest.raises(DefaultBackoffException):
+        http_client._send(prepared_request, {})
+
+    mock_authenticator.refresh_and_set_access_token.assert_called_once()
+
+
+@pytest.mark.usefixtures("mock_sleep")
+def test_refresh_token_then_retry_action_retries_and_succeeds_after_token_refresh():
+    mock_authenticator = MockOAuthAuthenticator()
+    mocked_session = MagicMock(spec=requests.Session)
+    mocked_session.auth = mock_authenticator
+
+    valid_response = MagicMock(spec=requests.Response)
+    valid_response.status_code = 200
+    valid_response.ok = True
+    valid_response.headers = {}
+
+    call_count = 0
+
+    def update_response(*args, **kwargs):
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            retry_response = MagicMock(spec=requests.Response)
+            retry_response.ok = False
+            retry_response.status_code = 401
+            retry_response.headers = {}
+            return retry_response
+        else:
+            return valid_response
+
+    mocked_session.send.side_effect = update_response
+
+    http_client = HttpClient(
+        name="test",
+        logger=MagicMock(),
+        error_handler=HttpStatusErrorHandler(
+            logger=MagicMock(),
+            error_mapping={
+                401: ErrorResolution(
+                    ResponseAction.REFRESH_TOKEN_THEN_RETRY,
+                    FailureType.transient_error,
+                    "Token expired, refreshing",
+                )
+            },
+        ),
+        session=mocked_session,
+    )
+
+    prepared_request = requests.PreparedRequest()
+    returned_response = http_client._send_with_retry(prepared_request, request_kwargs={})
+
+    assert mock_authenticator.refresh_called
+    assert mock_authenticator.access_token == "new_refreshed_token"
+    assert returned_response == valid_response
+    assert call_count == 2
+
+
+def _build_refresh_token_then_retry_http_client(authenticator=None):
+    """An HttpClient backed by a real Oauth2Authenticator with a non-expired token, so the
+    first request does not itself trigger a refresh and only REFRESH_TOKEN_THEN_RETRY does."""
+    if authenticator is None:
+        authenticator = Oauth2Authenticator(
+            token_refresh_endpoint="https://example.com/oauth/token",
+            client_id="client_id",
+            client_secret="client_secret",
+            refresh_token="refresh_token",
+            token_expiry_date=ab_datetime_now() + timedelta(days=1),
+            refresh_token_error_status_codes=(400,),
+            refresh_token_error_key="error",
+            refresh_token_error_values=("invalid_grant",),
+        )
+    http_client = HttpClient(
+        name="test",
+        logger=logging.getLogger("test"),
+        authenticator=authenticator,
+        error_handler=HttpStatusErrorHandler(
+            logger=logging.getLogger("test"),
+            max_retries=5,
+            error_mapping={
+                401: ErrorResolution(
+                    ResponseAction.REFRESH_TOKEN_THEN_RETRY,
+                    FailureType.transient_error,
+                    "Token rejected; refresh and retry",
+                )
+            },
+        ),
+    )
+    return http_client
+
+
+def _request_count(requests_mock, url, method="GET"):
+    return len([r for r in requests_mock.request_history if r.url == url and r.method == method])
+
+
+@pytest.mark.usefixtures("mock_sleep")
+def test_refresh_token_then_retry_refreshes_once_and_succeeds(requests_mock):
+    requests_mock.get(
+        "https://example.com/data",
+        [{"status_code": 401}, {"status_code": 200, "json": {"data": "ok"}}],
+    )
+    requests_mock.post(
+        "https://example.com/oauth/token",
+        json={"access_token": "new", "expires_in": 3600},
+    )
+    http_client = _build_refresh_token_then_retry_http_client()
+
+    _, response = http_client.send_request("GET", "https://example.com/data", request_kwargs={})
+
+    assert response.status_code == 200
+    assert _request_count(requests_mock, "https://example.com/oauth/token", "POST") == 1
+    assert _request_count(requests_mock, "https://example.com/data") == 2
+    second_request = [
+        r for r in requests_mock.request_history if r.url == "https://example.com/data"
+    ][1]
+    assert second_request.headers["Authorization"] == "Bearer new"
+
+
+def test_refresh_token_then_retry_fails_fast_when_refresh_is_rejected(requests_mock):
+    requests_mock.get("https://example.com/data", status_code=401)
+    requests_mock.post(
+        "https://example.com/oauth/token",
+        status_code=400,
+        json={"error": "invalid_grant"},
+    )
+    http_client = _build_refresh_token_then_retry_http_client()
+
+    with patch("time.sleep") as mocked_sleep:
+        with pytest.raises(AirbyteTracedException) as exc_info:
+            http_client.send_request("GET", "https://example.com/data", request_kwargs={})
+
+    assert exc_info.value.failure_type == FailureType.config_error
+    assert _request_count(requests_mock, "https://example.com/oauth/token", "POST") == 1
+    assert _request_count(requests_mock, "https://example.com/data") == 1
+    assert http_client._token_refresh_outcomes == {}
+    mocked_sleep.assert_not_called()
+
+
+@pytest.mark.usefixtures("mock_sleep")
+def test_refresh_token_then_retry_does_not_refresh_twice_for_the_same_request(requests_mock):
+    requests_mock.get("https://example.com/data", status_code=401)
+    requests_mock.post(
+        "https://example.com/oauth/token",
+        json={"access_token": "new", "expires_in": 3600},
+    )
+    http_client = _build_refresh_token_then_retry_http_client()
+
+    with pytest.raises(AirbyteTracedException) as exc_info:
+        http_client.send_request("GET", "https://example.com/data", request_kwargs={})
+
+    assert exc_info.value.failure_type == FailureType.config_error
+    assert exc_info.value.message == "Refreshed OAuth access token is rejected by the API."
+    assert "Token rejected; refresh and retry" in exc_info.value.internal_message
+    assert _request_count(requests_mock, "https://example.com/oauth/token", "POST") == 1
+    assert _request_count(requests_mock, "https://example.com/data") == 2
+    assert http_client._token_refresh_outcomes == {}
+
+
+def test_refresh_token_then_retry_reports_transient_error_when_refresh_fails_transiently(
+    requests_mock, mocker
+):
+    requests_mock.get("https://example.com/data", status_code=401)
+    requests_mock.post(
+        "https://example.com/oauth/token",
+        exc=requests.exceptions.ConnectionError("token endpoint unreachable"),
+    )
+    http_client = _build_refresh_token_then_retry_http_client()
+
+    mocker.patch("time.sleep")
+    with pytest.raises(AirbyteTracedException) as exc_info:
+        http_client.send_request("GET", "https://example.com/data", request_kwargs={})
+
+    assert exc_info.value.failure_type == FailureType.transient_error
+    assert (
+        exc_info.value.message
+        == "API rejects the current OAuth access token and the token refresh failed."
+    )
+    # The token endpoint itself is retried by the backoff decorator on _make_handled_request.
+    assert _request_count(requests_mock, "https://example.com/oauth/token", "POST") > 1
+    assert _request_count(requests_mock, "https://example.com/data") == 2
+
+
+@pytest.mark.usefixtures("mock_sleep")
+def test_refresh_token_then_retry_refresh_rejected_outside_configured_errors(requests_mock):
+    requests_mock.get("https://example.com/data", status_code=401)
+    requests_mock.post(
+        "https://example.com/oauth/token",
+        status_code=401,
+        json={"error": "invalid_client"},
+    )
+    http_client = _build_refresh_token_then_retry_http_client()
+
+    with pytest.raises(AirbyteTracedException) as exc_info:
+        http_client.send_request("GET", "https://example.com/data", request_kwargs={})
+
+    assert exc_info.value.failure_type == FailureType.config_error
+    assert (
+        exc_info.value.message == "OAuth token refresh request is rejected by the token endpoint."
+    )
+    assert "401" in exc_info.value.internal_message
+    assert _request_count(requests_mock, "https://example.com/oauth/token", "POST") == 1
+    assert _request_count(requests_mock, "https://example.com/data") == 1
+    assert http_client._token_refresh_outcomes == {}
+
+
+def test_refresh_token_then_retry_token_endpoint_5xx_stays_transient(requests_mock, mocker):
+    """A 5xx from the token endpoint is a transient refresh failure, not a credential
+    rejection: the refresh is not retried here (the endpoint's own backoff decorator
+    handles that) and the request stays on the warn-and-retry path."""
+    requests_mock.get("https://example.com/data", status_code=401)
+    http_client = _build_refresh_token_then_retry_http_client()
+
+    token_response = requests.Response()
+    token_response.status_code = 503
+    token_response.url = "https://example.com/oauth/token"
+    refresh_error = DefaultBackoffException(
+        request=requests.Request(method="POST", url="https://example.com/oauth/token").prepare(),
+        response=token_response,
+        failure_type=FailureType.transient_error,
+    )
+    mocker.patch.object(Oauth2Authenticator, "_make_handled_request", side_effect=refresh_error)
+    mocker.patch("time.sleep")
+
+    with pytest.raises(AirbyteTracedException) as exc_info:
+        http_client.send_request("GET", "https://example.com/data", request_kwargs={})
+
+    assert exc_info.value.failure_type == FailureType.transient_error
+    assert (
+        exc_info.value.message
+        == "API rejects the current OAuth access token and the token refresh failed."
+    )
+    assert _request_count(requests_mock, "https://example.com/data") == 2
+
+
+@pytest.mark.usefixtures("mock_sleep")
+def test_refresh_token_then_retry_skips_refresh_when_token_already_replaced(requests_mock):
+    http_client = _build_refresh_token_then_retry_http_client()
+    authenticator = http_client._session.auth
+
+    def expire_token(request, context):
+        authenticator.access_token = "new"
+        context.status_code = 401
+        return json.dumps({})
+
+    requests_mock.get(
+        "https://example.com/data",
+        [{"text": expire_token}, {"status_code": 200, "json": {"data": "ok"}}],
+    )
+
+    with patch.object(authenticator, "refresh_and_set_access_token") as refresh_spy:
+        _, response = http_client.send_request("GET", "https://example.com/data", request_kwargs={})
+
+    assert response.status_code == 200
+    refresh_spy.assert_not_called()
+    assert _request_count(requests_mock, "https://example.com/oauth/token", "POST") == 0
+    assert _request_count(requests_mock, "https://example.com/data") == 2
+    second_request = [
+        r for r in requests_mock.request_history if r.url == "https://example.com/data"
+    ][1]
+    assert second_request.headers["Authorization"] == "Bearer new"
+    assert http_client._token_refresh_outcomes == {}
+
+
+@pytest.mark.usefixtures("mock_sleep")
+def test_refresh_token_then_retry_with_declarative_oauth_authenticator(requests_mock):
+    authenticator = DeclarativeOauth2Authenticator(
+        token_refresh_endpoint="https://example.com/oauth/token",
+        client_id="client_id",
+        client_secret="client_secret",
+        refresh_token="refresh_token",
+        config={},
+        parameters={},
+        access_token_value="old",
+        token_expiry_date=(ab_datetime_now() + timedelta(days=1)).isoformat(),
+        refresh_token_error_status_codes=(400,),
+        refresh_token_error_key="error",
+        refresh_token_error_values=("invalid_grant",),
+    )
+    http_client = _build_refresh_token_then_retry_http_client(authenticator=authenticator)
+
+    requests_mock.get(
+        "https://example.com/data",
+        [{"status_code": 401}, {"status_code": 200, "json": {"data": "ok"}}],
+    )
+    requests_mock.post(
+        "https://example.com/oauth/token",
+        json={"access_token": "new", "expires_in": 3600},
+    )
+
+    _, response = http_client.send_request("GET", "https://example.com/data", request_kwargs={})
+
+    assert response.status_code == 200
+    assert response.json() == {"data": "ok"}
+    assert _request_count(requests_mock, "https://example.com/oauth/token", "POST") == 1
+    assert _request_count(requests_mock, "https://example.com/data") == 2
+
+
+@pytest.mark.usefixtures("mock_sleep")
+def test_refresh_token_then_retry_state_is_evicted_after_success(requests_mock):
+    requests_mock.get(
+        "https://example.com/data",
+        [{"status_code": 401}, {"status_code": 200, "json": {"data": "ok"}}],
+    )
+    requests_mock.get(
+        "https://example.com/other",
+        [{"status_code": 401}, {"status_code": 200, "json": {"data": "ok"}}],
+    )
+    requests_mock.post(
+        "https://example.com/oauth/token",
+        json={"access_token": "new", "expires_in": 3600},
+    )
+    http_client = _build_refresh_token_then_retry_http_client()
+
+    _, response = http_client.send_request("GET", "https://example.com/data", request_kwargs={})
+    assert response.status_code == 200
+    assert http_client._token_refresh_outcomes == {}
+    # A different URL for the second request: PreparedRequest instances are keyed by
+    # identity, but a distinct URL also keeps the two request histories easy to count.
+    _, second_response = http_client.send_request(
+        "GET", "https://example.com/other", request_kwargs={}
+    )
+    assert second_response.status_code == 200
+
+    assert _request_count(requests_mock, "https://example.com/oauth/token", "POST") == 2
+
+
+class _RecordingAuthenticator(TokenAuthenticator):
+    """An authenticator that tracks quota state and wants to see responses."""
+
+    def __init__(self):
+        super().__init__(token="token")
+        self.seen = []
+
+    def update_from_response(self, request, response):
+        self.seen.append(response.status_code)
+
+
+def test_authenticator_receives_every_response(requests_mock):
+    """A quota-tracking authenticator only ever sees requests, so `HttpClient` hands it the
+    responses too. Every attempt counts, including the retried ones."""
+    authenticator = _RecordingAuthenticator()
+    http_client = HttpClient(
+        name="test",
+        logger=logging.getLogger("test"),
+        authenticator=authenticator,
+        error_handler=HttpStatusErrorHandler(logger=logging.getLogger("test"), max_retries=1),
+    )
+    requests_mock.get(
+        "https://example.com/",
+        [{"status_code": 500}, {"status_code": 200}],
+    )
+
+    with patch("time.sleep"):
+        http_client.send_request(http_method="GET", url="https://example.com/", request_kwargs={})
+
+    assert authenticator.seen == [500, 200]
+
+
+def test_authenticator_without_update_hook_is_left_alone(requests_mock):
+    """Duck typed, so authenticators that don't track quota are untouched."""
+    http_client = HttpClient(
+        name="test",
+        logger=logging.getLogger("test"),
+        authenticator=TokenAuthenticator(token="token"),
+    )
+    requests_mock.get("https://example.com/", status_code=200)
+
+    _, response = http_client.send_request(
+        http_method="GET", url="https://example.com/", request_kwargs={}
+    )
+
+    assert response.status_code == 200
+
+
+def test_authenticator_update_failure_does_not_break_the_request(requests_mock):
+    """Quota bookkeeping is best-effort; it must never turn a good response into a failure."""
+
+    class _BrokenAuthenticator(TokenAuthenticator):
+        def update_from_response(self, request, response):
+            raise ValueError("boom")
+
+    http_client = HttpClient(
+        name="test",
+        logger=logging.getLogger("test"),
+        authenticator=_BrokenAuthenticator(token="token"),
+    )
+    requests_mock.get("https://example.com/", status_code=200, json={"ok": True})
+
+    _, response = http_client.send_request(
+        http_method="GET", url="https://example.com/", request_kwargs={}
+    )
+
+    assert response.json() == {"ok": True}
+
+
+def test_rate_limited_token_rotates_on_the_retry_end_to_end(requests_mock):
+    """End-to-end: a rate-limited response zeroes that token's pool and the retry goes out on
+    another token.
+
+    This depends on `_send` re-signing the request on every attempt past the first. Nothing else
+    covers that line, so a refactor could silently drop rotation-on-retry and leave the sync
+    hammering a token the server has already rejected.
+
+    The 30-minute reset in the response is deliberately far away: the assertion on `sleeps` is
+    that it is *not* waited out, because the authenticator reports another token with quota.
+    """
+    from airbyte_cdk.sources.declarative.auth.rate_limited_multiple_token import (
+        RateLimitedMultipleTokenAuthenticator,
+        TokenQuota,
+    )
+    from airbyte_cdk.sources.declarative.requesters.error_handlers import DefaultErrorHandler
+    from airbyte_cdk.sources.declarative.requesters.error_handlers.backoff_strategies import (
+        WaitUntilTimeFromHeaderBackoffStrategy,
+    )
+
+    quota_status_url = "https://api.example.com/rate_limit"
+    reset = int(time.time()) + 1800
+    requests_mock.get(
+        quota_status_url,
+        json={"resources": {"core": {"remaining": 5000, "reset": reset, "limit": 5000}}},
+    )
+    authenticator = RateLimitedMultipleTokenAuthenticator(
+        tokens=["token_1", "token_2"],
+        quotas=[
+            TokenQuota(
+                name="rest",
+                remaining_path=["resources", "core", "remaining"],
+                reset_path=["resources", "core", "reset"],
+                limit_path=["resources", "core", "limit"],
+                remaining_header="X-RateLimit-Remaining",
+                reset_header="X-RateLimit-Reset",
+                exhaustion_status_codes=[429],
+            )
+        ],
+        quota_status_url=quota_status_url,
+        auth_method="token",
+    )
+
+    tokens_used = []
+
+    def respond(request, context):
+        token = request.headers["Authorization"].split()[-1]
+        tokens_used.append(token)
+        if token == "token_1":
+            context.status_code = 429
+            context.headers = {"X-RateLimit-Reset": str(reset), "X-RateLimit-Remaining": "0"}
+            return "{}"
+        context.status_code = 200
+        context.headers = {}
+        return "{}"
+
+    requests_mock.get("https://api.example.com/data", text=respond)
+    # The backoff strategies must be on the client: that is what `_handle_error_resolution`
+    # consults. Passing them only to the error handler falls through to a 1s default and hides
+    # the real wait.
+    http_client = HttpClient(
+        name="test",
+        logger=logging.getLogger("test"),
+        authenticator=authenticator,
+        error_handler=DefaultErrorHandler(config={}, parameters={}),
+        backoff_strategy=[
+            WaitUntilTimeFromHeaderBackoffStrategy(
+                header="X-RateLimit-Reset", config={}, parameters={}
+            )
+        ],
+    )
+
+    sleeps = []
+    with patch("time.sleep", side_effect=lambda seconds: sleeps.append(seconds)):
+        _, response = http_client.send_request(
+            http_method="GET", url="https://api.example.com/data", request_kwargs={}
+        )
+
+    assert response.status_code == 200
+    assert tokens_used == ["token_1", "token_2"]
+    assert authenticator._states["token_1"]["rest"].remaining == 0
+    # The 1800s reset is skipped: a token with quota was available the whole time.
+    assert max(sleeps) < 5, f"expected a prompt retry, slept {sleeps}"
+
+    tokens_used.clear()
+    with patch("time.sleep", side_effect=lambda seconds: sleeps.append(seconds)):
+        http_client.send_request(
+            http_method="GET", url="https://api.example.com/data", request_kwargs={}
+        )
+    assert tokens_used == ["token_2"]  # the spent token is not tried again
+
+
+class _SpareTokenAuthenticator(TokenAuthenticator):
+    """Reports a spare credential without tracking any quota."""
+
+    def __init__(self, has_spare=True):
+        super().__init__(token="token")
+        self.has_spare = has_spare
+
+    def has_alternative_token(self, request):
+        return self.has_spare
+
+
+def _rate_limited_client(authenticator, backoff_seconds=1800, backoff_strategy=None):
+    return HttpClient(
+        name="test",
+        logger=logging.getLogger("test"),
+        authenticator=authenticator,
+        error_handler=HttpStatusErrorHandler(
+            logger=logging.getLogger("test"),
+            error_mapping={
+                429: ErrorResolution(
+                    response_action=ResponseAction.RATE_LIMITED,
+                    failure_type=FailureType.transient_error,
+                    error_message="rate limited",
+                ),
+                500: ErrorResolution(
+                    response_action=ResponseAction.RETRY,
+                    failure_type=FailureType.transient_error,
+                    error_message="server error",
+                ),
+            },
+            max_retries=1,
+        ),
+        backoff_strategy=backoff_strategy or _ConstantBackoffStrategy(backoff_seconds),
+    )
+
+
+class _ConstantBackoffStrategy(BackoffStrategy):
+    def __init__(self, seconds):
+        self.seconds = seconds
+
+    def backoff_time(self, *args, **kwargs):
+        return self.seconds
+
+
+def test_rate_limit_wait_is_skipped_when_another_credential_is_available(requests_mock):
+    """The backoff is computed from the rejected credential's response, so it cannot know a
+    spare one is idle. The client asks before sleeping."""
+    requests_mock.get("https://example.com/", [{"status_code": 429}, {"status_code": 200}])
+    client = _rate_limited_client(_SpareTokenAuthenticator(has_spare=True))
+
+    sleeps = []
+    with patch("time.sleep", side_effect=lambda seconds: sleeps.append(seconds)):
+        _, response = client.send_request(
+            http_method="GET", url="https://example.com/", request_kwargs={}
+        )
+
+    assert response.status_code == 200
+    assert max(sleeps) < 5, f"expected a prompt retry, slept {sleeps}"
+
+
+def test_rate_limit_wait_is_paid_when_no_other_credential_is_available(requests_mock):
+    requests_mock.get("https://example.com/", [{"status_code": 429}, {"status_code": 200}])
+    client = _rate_limited_client(_SpareTokenAuthenticator(has_spare=False))
+
+    sleeps = []
+    with patch("time.sleep", side_effect=lambda seconds: sleeps.append(seconds)):
+        client.send_request(http_method="GET", url="https://example.com/", request_kwargs={})
+
+    assert max(sleeps) > 1000, f"the full rate-limit wait should stand, slept {sleeps}"
+
+
+class _RefusingBackoffStrategy(BackoffStrategy):
+    """A strategy that refuses to wait, the way `max_waiting_time_in_seconds` does."""
+
+    def backoff_time(self, *args, **kwargs):
+        raise AirbyteTracedException(
+            internal_message="wait longer than allowed",
+            message="The rate limit wait time is longer than the connector is allowed to wait.",
+            failure_type=FailureType.transient_error,
+        )
+
+
+def test_rotation_is_preferred_over_a_strategy_that_refuses_to_wait(requests_mock):
+    """A capped strategy raises rather than returning a number. Rotation has to be decided
+    before it runs, or a bound on waiting silently becomes a bound on the sync: the retry the
+    spare credential could serve in 0.1s never happens."""
+    requests_mock.get("https://example.com/", [{"status_code": 429}, {"status_code": 200}])
+    client = _rate_limited_client(
+        _SpareTokenAuthenticator(has_spare=True), backoff_strategy=_RefusingBackoffStrategy()
+    )
+
+    sleeps = []
+    with patch("time.sleep", side_effect=lambda seconds: sleeps.append(seconds)):
+        _, response = client.send_request(
+            http_method="GET", url="https://example.com/", request_kwargs={}
+        )
+
+    assert response.status_code == 200
+    assert max(sleeps) < 5, f"expected a prompt retry on the spare credential, slept {sleeps}"
+
+
+def test_a_refusing_strategy_still_ends_the_stream_without_a_spare_credential(requests_mock):
+    """The cap must keep working when rotation is not an option — that is what it is for."""
+    requests_mock.get("https://example.com/", [{"status_code": 429}, {"status_code": 200}])
+    client = _rate_limited_client(
+        _SpareTokenAuthenticator(has_spare=False), backoff_strategy=_RefusingBackoffStrategy()
+    )
+
+    with pytest.raises(AirbyteTracedException, match="longer than the connector is allowed"):
+        client.send_request(http_method="GET", url="https://example.com/", request_kwargs={})
+
+
+def test_rotation_is_preferred_over_the_real_capped_strategy(requests_mock):
+    """The stub tests above pin the client's contract — a strategy may raise. This one pins the
+    integration that actually regressed: the real `WaitUntilTimeFromHeaderBackoffStrategy` with a
+    cap it cannot honour. Without it, a change making the cap return instead of raise would leave
+    both stub tests green while the bug came back."""
+    from airbyte_cdk.sources.declarative.requesters.error_handlers.backoff_strategies import (
+        WaitUntilTimeFromHeaderBackoffStrategy,
+    )
+
+    reset = int(time.time()) + 3600
+    requests_mock.get(
+        "https://example.com/",
+        [
+            {"status_code": 429, "headers": {"X-RateLimit-Reset": str(reset)}},
+            {"status_code": 200},
+        ],
+    )
+    client = _rate_limited_client(
+        _SpareTokenAuthenticator(has_spare=True),
+        # A cap far below the hour the response asks for: the strategy would refuse the wait.
+        backoff_strategy=WaitUntilTimeFromHeaderBackoffStrategy(
+            header="X-RateLimit-Reset",
+            parameters={},
+            config={},
+            max_waiting_time_in_seconds=60,
+        ),
+    )
+
+    sleeps = []
+    with patch("time.sleep", side_effect=lambda seconds: sleeps.append(seconds)):
+        _, response = client.send_request(
+            http_method="GET", url="https://example.com/", request_kwargs={}
+        )
+
+    assert response.status_code == 200
+    assert max(sleeps) < 5, f"expected a prompt retry on the spare credential, slept {sleeps}"
+
+
+class _NoWaitBackoffStrategy(BackoffStrategy):
+    """Returns no wait at all, as a strategy does when the response carries no timing header."""
+
+    def __init__(self):
+        self.calls = 0
+
+    def backoff_time(self, *args, **kwargs):
+        self.calls += 1
+        return None
+
+
+def test_rotation_also_covers_a_rate_limit_with_no_computed_wait(requests_mock):
+    """Deciding rotation first widens it to rate limits that produce no backoff at all, where the
+    old order fell through to the default exponential retry. Intended — the retry goes out on a
+    credential with quota — but it is a behaviour change, so it is pinned rather than implied."""
+    requests_mock.get("https://example.com/", [{"status_code": 429}, {"status_code": 200}])
+    strategy = _NoWaitBackoffStrategy()
+    client = _rate_limited_client(
+        _SpareTokenAuthenticator(has_spare=True), backoff_strategy=strategy
+    )
+
+    sleeps = []
+    with patch("time.sleep", side_effect=lambda seconds: sleeps.append(seconds)):
+        _, response = client.send_request(
+            http_method="GET", url="https://example.com/", request_kwargs={}
+        )
+
+    assert response.status_code == 200
+    assert strategy.calls == 0, "the strategies are skipped entirely on the rotation path"
+    assert max(sleeps) < 5, f"expected the rotation retry, slept {sleeps}"
+
+
+def test_non_rate_limit_retry_is_not_shortened_by_a_spare_credential(requests_mock):
+    """A 500 has nothing to do with credentials; its backoff must be left alone."""
+    requests_mock.get("https://example.com/", [{"status_code": 500}, {"status_code": 200}])
+    client = _rate_limited_client(_SpareTokenAuthenticator(has_spare=True))
+
+    sleeps = []
+    with patch("time.sleep", side_effect=lambda seconds: sleeps.append(seconds)):
+        client.send_request(http_method="GET", url="https://example.com/", request_kwargs={})
+
+    assert max(sleeps) > 1000, f"a server-error backoff should stand, slept {sleeps}"
+
+
+def test_authenticator_without_alternative_token_hook_pays_the_full_wait(requests_mock):
+    requests_mock.get("https://example.com/", [{"status_code": 429}, {"status_code": 200}])
+    client = _rate_limited_client(TokenAuthenticator(token="token"))
+
+    sleeps = []
+    with patch("time.sleep", side_effect=lambda seconds: sleeps.append(seconds)):
+        client.send_request(http_method="GET", url="https://example.com/", request_kwargs={})
+
+    assert max(sleeps) > 1000
+
+
+def test_deprecated_alias_message_representation_airbyte_traced_errors_is_importable():
+    """Verify that the deprecated alias still resolves to AirbyteTracedException."""
+    assert MessageRepresentationAirbyteTracedErrors is AirbyteTracedException
+
+
+def test_deprecated_alias_is_catchable_as_airbyte_traced_exception():
+    """Verify that exceptions raised as the alias can be caught as AirbyteTracedException."""
+    with pytest.raises(AirbyteTracedException):
+        raise MessageRepresentationAirbyteTracedErrors(
+            internal_message="test",
+            message="test user message",
+        )
+
+
+def test_send_raises_page_size_reduction_required_exception_with_reduce_page_size_response_action():
+    mocked_session = MagicMock(spec=requests.Session)
+    http_client = HttpClient(
+        name="test",
+        logger=MagicMock(),
+        error_handler=HttpStatusErrorHandler(
+            logger=MagicMock(),
+            error_mapping={
+                502: ErrorResolution(
+                    ResponseAction.REDUCE_PAGE_SIZE,
+                    FailureType.transient_error,
+                    "test reduce page size message",
+                )
+            },
+        ),
+        session=mocked_session,
+    )
+    mocked_response = requests.Response()
+    mocked_response.status_code = 502
+    mocked_session.send.return_value = mocked_response
+
+    # the retriever is responsible for retrying with a smaller page, so the backoff handlers must not retry
+    with pytest.raises(PageSizeReductionRequiredException) as exception:
+        http_client.send_request(http_method="get", url="https://airbyte.io", request_kwargs={})
+
+    assert http_client._session.send.call_count == 1
+    # the error handler's own error_message has no other outlet, so it must reach the internal message. The
+    # stream is also called "test", so this asserts the mapping's text rather than any occurrence of "test".
+    assert "test reduce page size message" in exception.value.internal_message
+    # the exception is raised on every reduction, including the ones a correctly configured connector makes,
+    # so its message must describe the event rather than accuse the connector of a bug
+    assert "should be reported" not in exception.value.message
+    assert exception.value.message == (
+        "The API rejected a page of stream test and asked the connector for a smaller one. If this message "
+        "ends a sync, the stream is not set up to request a smaller page: add `page_size_reduction` to its "
+        "retriever, or remove the REDUCE_PAGE_SIZE action from its error handler."
+    )
+    # a retriever that cannot re-issue the page never retries it, so a job-level retry cannot help
+    assert exception.value.failure_type == FailureType.config_error
+
+
+def test_given_reduce_page_size_action_then_log_the_response_as_an_auxiliary_request():
+    """
+    The Connector Builder builds one page per non-auxiliary HTTP log and bounds a slice by the number of those
+    pages. A response resolving to REDUCE_PAGE_SIZE never becomes a page - the retriever re-issues it - so
+    counting it would report "limit reached" on a read that only retried.
+    """
+    message_repository = InMemoryMessageRepository(Level.DEBUG)
+    mocked_session = MagicMock(spec=requests.Session)
+    http_client = HttpClient(
+        name="test",
+        logger=MagicMock(),
+        error_handler=HttpStatusErrorHandler(
+            logger=MagicMock(),
+            error_mapping={
+                502: ErrorResolution(
+                    ResponseAction.REDUCE_PAGE_SIZE,
+                    FailureType.transient_error,
+                    "test reduce page size message",
+                )
+            },
+        ),
+        session=mocked_session,
+        message_repository=message_repository,
+    )
+    mocked_response = requests.Response()
+    mocked_response.status_code = 502
+    mocked_response.request = requests.Request(method="GET", url="https://airbyte.io").prepare()
+    mocked_session.send.return_value = mocked_response
+
+    with pytest.raises(PageSizeReductionRequiredException):
+        http_client.send_request(
+            http_method="get",
+            url="https://airbyte.io",
+            request_kwargs={},
+            log_formatter=lambda response: format_http_message(
+                response, "a title", "a description", "test"
+            ),
+        )
+
+    logged = [json.loads(message.log.message) for message in message_repository.consume_queue()]
+    assert [entry["http"]["is_auxiliary"] for entry in logged] == [True]
+    # The Builder labels its auxiliary panel from these two, and the formatter filled them with the wording of
+    # an ordinary page, so a rejected request would otherwise be indistinguishable from a successful fetch.
+    assert logged[0]["http"]["title"] == (
+        "Stream 'test' page rejected, retrying with a smaller page size"
+    )
+    assert "no records" in logged[0]["http"]["description"]
+
+
+def test_given_no_reduce_page_size_action_then_log_the_response_as_a_page():
+    message_repository = InMemoryMessageRepository(Level.DEBUG)
+    mocked_session = MagicMock(spec=requests.Session)
+    http_client = HttpClient(
+        name="test",
+        logger=MagicMock(),
+        error_handler=HttpStatusErrorHandler(logger=MagicMock()),
+        session=mocked_session,
+        message_repository=message_repository,
+    )
+    mocked_response = requests.Response()
+    mocked_response.status_code = 200
+    mocked_response.request = requests.Request(method="GET", url="https://airbyte.io").prepare()
+    mocked_session.send.return_value = mocked_response
+
+    http_client.send_request(
+        http_method="get",
+        url="https://airbyte.io",
+        request_kwargs={},
+        log_formatter=lambda response: format_http_message(
+            response, "a title", "a description", "test"
+        ),
+    )
+
+    logged = [json.loads(message.log.message) for message in message_repository.consume_queue()]
+    assert [entry["http"].get("is_auxiliary") for entry in logged] == [None]

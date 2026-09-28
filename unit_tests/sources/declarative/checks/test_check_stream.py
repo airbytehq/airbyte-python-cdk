@@ -12,10 +12,12 @@ import pytest
 import requests
 from jsonschema.exceptions import ValidationError
 
+from airbyte_cdk.models import Status
 from airbyte_cdk.sources.declarative.checks.check_stream import CheckStream
 from airbyte_cdk.sources.declarative.concurrent_declarative_source import (
     ConcurrentDeclarativeSource,
 )
+from airbyte_cdk.sources.streams.core import Stream
 from airbyte_cdk.sources.streams.http import HttpStream
 from airbyte_cdk.test.mock_http import HttpMocker, HttpRequest, HttpResponse
 
@@ -45,7 +47,7 @@ record = MagicMock()
 def test_check_stream_with_slices_as_list(
     test_name, record, streams_to_check, stream_slice, expectation, slices_as_list
 ):
-    stream = MagicMock()
+    stream = MagicMock(spec=Stream)
     stream.name = "s1"
     stream.availability_strategy = None
     if slices_as_list:
@@ -76,8 +78,104 @@ def mock_read_records(responses, default_response=None, **kwargs):
     )
 
 
+def test_check_stream_names_can_be_overridden_from_config():
+    static_stream = MagicMock(spec=Stream)
+    static_stream.name = "static_stream"
+    static_stream.availability_strategy = None
+    selected_stream = MagicMock(spec=Stream)
+    selected_stream.name = "selected_stream"
+    selected_stream.availability_strategy = None
+    selected_stream.read_records.return_value = iter([record])
+    selected_stream.stream_slices.return_value = iter([{}])
+    source = MagicMock()
+    source.streams.return_value = [static_stream, selected_stream]
+
+    check_stream = CheckStream(["static_stream"], parameters={})
+
+    assert check_stream.check_connection(
+        source, logger, {"__airbyte_check_stream_names": ["selected_stream"]}
+    ) == (True, None)
+    static_stream.stream_slices.assert_not_called()
+
+
+def test_check_stream_names_override_empty_list_falls_back_to_manifest_streams():
+    stream = MagicMock(spec=Stream)
+    stream.name = "static_stream"
+    stream.availability_strategy = None
+    stream.read_records.return_value = iter([record])
+    stream.stream_slices.return_value = iter([{}])
+    source = MagicMock()
+    source.streams.return_value = [stream]
+
+    check_stream = CheckStream(["static_stream"], parameters={})
+
+    assert check_stream.check_connection(source, logger, {"__airbyte_check_stream_names": []}) == (
+        True,
+        None,
+    )
+    stream.stream_slices.assert_called_once()
+
+
+@pytest.mark.parametrize("override", ["selected_stream", [1], ["selected_stream", 1], None])
+def test_check_stream_names_override_requires_list_of_strings(override):
+    stream = MagicMock(spec=Stream)
+    stream.name = "selected_stream"
+    stream.availability_strategy = None
+    source = MagicMock()
+    source.streams.return_value = [stream]
+
+    check_stream = CheckStream(["selected_stream"], parameters={})
+
+    with pytest.raises(ValueError, match="__airbyte_check_stream_names must be a list of strings."):
+        check_stream.check_connection(source, logger, {"__airbyte_check_stream_names": override})
+
+
+def test_check_stream_names_override_rejects_unknown_stream():
+    stream = MagicMock(spec=Stream)
+    stream.name = "selected_stream"
+    stream.availability_strategy = None
+    source = MagicMock()
+    source.streams.return_value = [stream]
+
+    check_stream = CheckStream(["selected_stream"], parameters={})
+
+    with pytest.raises(ValueError, match="unknown_stream is not part of the catalog."):
+        check_stream.check_connection(
+            source, logger, {"__airbyte_check_stream_names": ["unknown_stream"]}
+        )
+
+
+def test_check_stream_names_override_returns_unavailable_stream_message():
+    stream = MagicMock(spec=Stream)
+    stream.name = "selected_stream"
+    stream.availability_strategy = None
+    stream.stream_slices.return_value = iter([])
+    source = MagicMock()
+    source.streams.return_value = [stream]
+
+    check_stream = CheckStream(["other_stream"], parameters={})
+
+    stream_is_available, reason = check_stream.check_connection(
+        source, logger, {"__airbyte_check_stream_names": ["selected_stream"]}
+    )
+    assert not stream_is_available
+    assert "no stream slices were found, likely because the parent stream is empty" in reason
+
+
+def test_check_stream_names_override_validates_before_stream_discovery():
+    source = MagicMock()
+    check_stream = CheckStream(["selected_stream"], parameters={})
+
+    with pytest.raises(ValueError, match="__airbyte_check_stream_names must be a list of strings."):
+        check_stream.check_connection(
+            source, logger, {"__airbyte_check_stream_names": "selected_stream"}
+        )
+
+    source.streams.assert_not_called()
+
+
 def test_check_empty_stream():
-    stream = MagicMock()
+    stream = MagicMock(spec=Stream)
     stream.name = "s1"
     stream.read_records.return_value = iter([])
     stream.stream_slices.return_value = iter([None])
@@ -91,7 +189,7 @@ def test_check_empty_stream():
 
 
 def test_check_stream_with_no_stream_slices_aborts():
-    stream = MagicMock()
+    stream = MagicMock(spec=Stream)
     stream.name = "s1"
     stream.stream_slices.return_value = iter([])
 
@@ -367,7 +465,7 @@ _MANIFEST_WITHOUT_CHECK_COMPONENT = {
     [
         pytest.param(
             {"check": {"type": "CheckStream", "stream_names": ["static_stream"]}},
-            True,
+            Status.SUCCEEDED,
             False,
             200,
             [{"id": 1, "name": "static_1"}, {"id": 2, "name": "static_2"}],
@@ -388,7 +486,7 @@ _MANIFEST_WITHOUT_CHECK_COMPONENT = {
                     ],
                 }
             },
-            True,
+            Status.SUCCEEDED,
             False,
             200,
             [],
@@ -409,7 +507,7 @@ _MANIFEST_WITHOUT_CHECK_COMPONENT = {
                     ],
                 }
             },
-            True,
+            Status.SUCCEEDED,
             False,
             200,
             [],
@@ -433,11 +531,11 @@ _MANIFEST_WITHOUT_CHECK_COMPONENT = {
                     ],
                 }
             },
-            True,
+            Status.SUCCEEDED,
             False,
             200,
             [],
-            0,
+            1,
             id="test_check_http_dynamic_stream_and_config_dynamic_stream",
         ),
         pytest.param(
@@ -458,11 +556,11 @@ _MANIFEST_WITHOUT_CHECK_COMPONENT = {
                     ],
                 }
             },
-            True,
+            Status.SUCCEEDED,
             False,
             200,
             [],
-            0,
+            1,
             id="test_check_static_streams_and_http_dynamic_stream_and_config_dynamic_stream",
         ),
         pytest.param(
@@ -478,7 +576,7 @@ _MANIFEST_WITHOUT_CHECK_COMPONENT = {
                     ],
                 }
             },
-            True,
+            Status.SUCCEEDED,
             False,
             200,
             [],
@@ -486,8 +584,46 @@ _MANIFEST_WITHOUT_CHECK_COMPONENT = {
             id="test_stream_count_gt_generated_streams",
         ),
         pytest.param(
-            {"check": {"type": "CheckStream", "stream_names": ["non_existent_stream"]}},
+            {
+                "check": {
+                    "type": "CheckStream",
+                    "dynamic_streams_check_configs": [
+                        {
+                            "type": "DynamicStreamCheckConfig",
+                            "dynamic_stream_name": "http_dynamic_stream",
+                        },
+                    ],
+                }
+            },
+            Status.SUCCEEDED,
             False,
+            200,
+            [],
+            1,
+            id="test_stream_count_unset_checks_all_streams",
+        ),
+        pytest.param(
+            {
+                "check": {
+                    "type": "CheckStream",
+                    "dynamic_streams_check_configs": [
+                        {
+                            "type": "DynamicStreamCheckConfig",
+                            "dynamic_stream_name": "http_dynamic_stream",
+                        },
+                    ],
+                }
+            },
+            Status.FAILED,
+            False,
+            404,
+            ["Not found. The requested resource was not found on the server."],
+            0,
+            id="test_stream_count_unset_failed",
+        ),
+        pytest.param(
+            {"check": {"type": "CheckStream", "stream_names": ["non_existent_stream"]}},
+            Status.FAILED,
             True,
             200,
             [],
@@ -507,7 +643,7 @@ _MANIFEST_WITHOUT_CHECK_COMPONENT = {
                     ],
                 }
             },
-            False,
+            Status.FAILED,
             False,
             200,
             [],
@@ -516,7 +652,7 @@ _MANIFEST_WITHOUT_CHECK_COMPONENT = {
         ),
         pytest.param(
             {"check": {"type": "CheckStream", "stream_names": ["static_stream"]}},
-            False,
+            Status.FAILED,
             False,
             404,
             ["Not found. The requested resource was not found on the server."],
@@ -525,7 +661,7 @@ _MANIFEST_WITHOUT_CHECK_COMPONENT = {
         ),
         pytest.param(
             {"check": {"type": "CheckStream", "stream_names": ["static_stream"]}},
-            False,
+            Status.FAILED,
             False,
             403,
             ["Forbidden. You don't have permission to access this resource."],
@@ -534,7 +670,7 @@ _MANIFEST_WITHOUT_CHECK_COMPONENT = {
         ),
         pytest.param(
             {"check": {"type": "CheckStream", "stream_names": ["static_stream"]}},
-            False,
+            Status.FAILED,
             False,
             401,
             ["Unauthorized. Please ensure you are authenticated correctly."],
@@ -558,7 +694,7 @@ _MANIFEST_WITHOUT_CHECK_COMPONENT = {
                     ],
                 }
             },
-            False,
+            Status.FAILED,
             False,
             404,
             ["Not found. The requested resource was not found on the server."],
@@ -582,7 +718,7 @@ _MANIFEST_WITHOUT_CHECK_COMPONENT = {
                     ],
                 }
             },
-            False,
+            Status.FAILED,
             False,
             403,
             ["Forbidden. You don't have permission to access this resource."],
@@ -606,7 +742,7 @@ _MANIFEST_WITHOUT_CHECK_COMPONENT = {
                     ],
                 }
             },
-            False,
+            Status.FAILED,
             False,
             401,
             ["Unauthorized. Please ensure you are authenticated correctly."],
@@ -653,11 +789,62 @@ def test_check_stream1(
         )
         if expectation:
             with pytest.raises(ValueError):
-                source.check_connection(logger, _CONFIG)
+                source.check(logger, _CONFIG)
         else:
-            stream_is_available, reason = source.check_connection(logger, _CONFIG)
+            connection_status = source.check(logger, _CONFIG)
             http_mocker.assert_number_of_calls(item_request_2, request_count)
-            assert stream_is_available == expected_result
+            assert connection_status.status == expected_result
+
+
+def test_check_empty_static_stream_override_falls_back_to_manifest_streams_and_checks_dynamic_streams():
+    manifest = {
+        **deepcopy(_MANIFEST_WITHOUT_CHECK_COMPONENT),
+        **{
+            "check": {
+                "type": "CheckStream",
+                "stream_names": ["static_stream"],
+                "dynamic_streams_check_configs": [
+                    {
+                        "type": "DynamicStreamCheckConfig",
+                        "dynamic_stream_name": "http_dynamic_stream",
+                    },
+                ],
+            }
+        },
+    }
+    check_config = {**_CONFIG, "__airbyte_check_stream_names": []}
+
+    with HttpMocker() as http_mocker:
+        static_stream_request = HttpRequest(url="https://api.test.com/static")
+        static_stream_response = HttpResponse(body=json.dumps([]), status_code=500)
+        http_mocker.get(static_stream_request, static_stream_response)
+
+        items_request = HttpRequest(url="https://api.test.com/items")
+        items_response = HttpResponse(
+            body=json.dumps([{"id": 1, "name": "item_1"}, {"id": 2, "name": "item_2"}])
+        )
+        http_mocker.get(items_request, items_response)
+
+        item_request_1 = HttpRequest(url="https://api.test.com/items/1")
+        item_response = HttpResponse(body=json.dumps([]), status_code=200)
+        http_mocker.get(item_request_1, item_response)
+
+        item_request_2 = HttpRequest(url="https://api.test.com/items/2")
+        item_response = HttpResponse(body=json.dumps([]), status_code=200)
+        http_mocker.get(item_request_2, item_response)
+
+        source = ConcurrentDeclarativeSource(
+            source_config=manifest,
+            config=check_config,
+            catalog=None,
+            state=None,
+        )
+
+        connection_status = source.check(logger, check_config)
+
+        http_mocker.assert_number_of_calls(static_stream_request, 6)
+        http_mocker.assert_number_of_calls(item_request_2, 0)
+        assert connection_status.status == Status.FAILED
 
 
 def test_check_stream_missing_fields():
@@ -680,6 +867,36 @@ def test_check_stream_missing_fields():
         )
 
 
+@pytest.mark.parametrize(
+    "stream_count",
+    [pytest.param(0, id="zero"), pytest.param(-1, id="negative")],
+)
+def test_check_stream_non_positive_stream_count(stream_count: int) -> None:
+    """A ValidationError is raised when stream_count is less than 1."""
+    manifest = {
+        **deepcopy(_MANIFEST_WITHOUT_CHECK_COMPONENT),
+        **{
+            "check": {
+                "type": "CheckStream",
+                "dynamic_streams_check_configs": [
+                    {
+                        "type": "DynamicStreamCheckConfig",
+                        "dynamic_stream_name": "http_dynamic_stream",
+                        "stream_count": stream_count,
+                    }
+                ],
+            }
+        },
+    }
+    with pytest.raises(ValidationError):
+        ConcurrentDeclarativeSource(
+            source_config=manifest,
+            config=_CONFIG,
+            catalog=None,
+            state=None,
+        )
+
+
 def test_check_stream_only_type_provided():
     manifest = {**deepcopy(_MANIFEST_WITHOUT_CHECK_COMPONENT), **{"check": {"type": "CheckStream"}}}
     source = ConcurrentDeclarativeSource(
@@ -689,4 +906,4 @@ def test_check_stream_only_type_provided():
         state=None,
     )
     with pytest.raises(ValueError):
-        source.check_connection(logger, _CONFIG)
+        source.check(logger, _CONFIG)

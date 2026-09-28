@@ -19,11 +19,6 @@ DEFAULT_MODEL_TYPES: Mapping[str, str] = {
     "DatetimeBasedCursor.end_time_option": "RequestOption",
     "DatetimeBasedCursor.start_datetime": "MinMaxDatetime",
     "DatetimeBasedCursor.start_time_option": "RequestOption",
-    # CustomIncrementalSync
-    "CustomIncrementalSync.end_datetime": "MinMaxDatetime",
-    "CustomIncrementalSync.end_time_option": "RequestOption",
-    "CustomIncrementalSync.start_datetime": "MinMaxDatetime",
-    "CustomIncrementalSync.start_time_option": "RequestOption",
     # DeclarativeSource
     "DeclarativeSource.check": "CheckStream",
     "DeclarativeSource.spec": "Spec",
@@ -47,6 +42,7 @@ DEFAULT_MODEL_TYPES: Mapping[str, str] = {
     "DefaultPaginator.page_size_option": "RequestOption",
     # DpathExtractor
     "DpathExtractor.decoder": "JsonDecoder",
+    "DpathExtractor.record_expander": "RecordExpander",
     # HttpRequester
     "HttpRequester.error_handler": "DefaultErrorHandler",
     # ListPartitionRouter

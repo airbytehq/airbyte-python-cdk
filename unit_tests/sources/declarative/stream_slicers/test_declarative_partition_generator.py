@@ -6,15 +6,16 @@ from unittest.mock import Mock
 
 from airbyte_cdk.models import AirbyteLogMessage, AirbyteMessage, Level, Type
 from airbyte_cdk.sources.declarative.retrievers import Retriever
+from airbyte_cdk.sources.declarative.schema import InlineSchemaLoader
 from airbyte_cdk.sources.declarative.stream_slicers.declarative_partition_generator import (
     DeclarativePartitionFactory,
 )
 from airbyte_cdk.sources.message import MessageRepository
 from airbyte_cdk.sources.streams.core import StreamData
-from airbyte_cdk.sources.types import StreamSlice
+from airbyte_cdk.sources.types import Record, StreamSlice
 
 _STREAM_NAME = "a_stream_name"
-_JSON_SCHEMA = {"type": "object", "properties": {}}
+_SCHEMA_LOADER = InlineSchemaLoader({"type": "object", "properties": {}}, {})
 _A_STREAM_SLICE = StreamSlice(
     partition={"partition_key": "partition_value"}, cursor_slice={"cursor_key": "cursor_value"}
 )
@@ -34,7 +35,7 @@ class StreamSlicerPartitionGeneratorTest(TestCase):
         message_repository = Mock(spec=MessageRepository)
         partition_factory = DeclarativePartitionFactory(
             _STREAM_NAME,
-            _JSON_SCHEMA,
+            _SCHEMA_LOADER,
             retriever,
             message_repository,
         )
@@ -49,7 +50,7 @@ class StreamSlicerPartitionGeneratorTest(TestCase):
         message_repository = Mock(spec=MessageRepository)
         partition_factory = DeclarativePartitionFactory(
             _STREAM_NAME,
-            _JSON_SCHEMA,
+            _SCHEMA_LOADER,
             retriever,
             message_repository,
         )
@@ -67,7 +68,7 @@ class StreamSlicerPartitionGeneratorTest(TestCase):
         message_repository = Mock(spec=MessageRepository)
         partition_factory = DeclarativePartitionFactory(
             _STREAM_NAME,
-            _JSON_SCHEMA,
+            _SCHEMA_LOADER,
             retriever,
             message_repository,
         )
@@ -75,6 +76,123 @@ class StreamSlicerPartitionGeneratorTest(TestCase):
         list(partition_factory.create(_A_STREAM_SLICE).read())
 
         message_repository.emit_message.assert_called_once_with(_AIRBYTE_LOG_MESSAGE)
+
+    def test_max_records_reached_stops_reading(self) -> None:
+        expected_records = [
+            Record(data={"id": 1, "name": "Max"}, stream_name="stream_name"),
+            Record(data={"id": 1, "name": "Oscar"}, stream_name="stream_name"),
+            Record(data={"id": 1, "name": "Charles"}, stream_name="stream_name"),
+            Record(data={"id": 1, "name": "Alex"}, stream_name="stream_name"),
+            Record(data={"id": 1, "name": "Yuki"}, stream_name="stream_name"),
+        ]
+
+        mock_records = expected_records + [
+            Record(data={"id": 1, "name": "Lewis"}, stream_name="stream_name"),
+            Record(data={"id": 1, "name": "Lando"}, stream_name="stream_name"),
+        ]
+
+        retriever = self._mock_retriever(mock_records)
+        message_repository = Mock(spec=MessageRepository)
+        partition_factory = DeclarativePartitionFactory(
+            _STREAM_NAME,
+            _SCHEMA_LOADER,
+            retriever,
+            message_repository,
+            max_records_limit=5,
+        )
+
+        partition = partition_factory.create(_A_STREAM_SLICE)
+
+        actual_records = list(partition.read())
+
+        assert len(actual_records) == 5
+        assert actual_records == expected_records
+
+    def test_max_records_reached_on_previous_partition(self) -> None:
+        expected_records = [
+            Record(data={"id": 1, "name": "Max"}, stream_name="stream_name"),
+            Record(data={"id": 1, "name": "Oscar"}, stream_name="stream_name"),
+            Record(data={"id": 1, "name": "Charles"}, stream_name="stream_name"),
+        ]
+
+        mock_records = expected_records + [
+            Record(data={"id": 1, "name": "Alex"}, stream_name="stream_name"),
+            Record(data={"id": 1, "name": "Yuki"}, stream_name="stream_name"),
+        ]
+
+        retriever = self._mock_retriever(mock_records)
+        message_repository = Mock(spec=MessageRepository)
+        partition_factory = DeclarativePartitionFactory(
+            _STREAM_NAME,
+            _SCHEMA_LOADER,
+            retriever,
+            message_repository,
+            max_records_limit=3,
+        )
+
+        partition = partition_factory.create(_A_STREAM_SLICE)
+
+        first_partition_records = list(partition.read())
+
+        assert len(first_partition_records) == 3
+        assert first_partition_records == expected_records
+
+        second_partition_records = list(partition.read())
+        assert len(second_partition_records) == 0
+
+        # The DeclarativePartition exits out of the read before attempting to read_records() if
+        # the max_records_limit has already been reached. So we only expect to see read_records()
+        # called for the first partition read and not the second
+        retriever.read_records.assert_called_once()
+
+    def test_record_counter_isolation_between_different_factories(self) -> None:
+        """Test that record counters are isolated between different DeclarativePartitionFactory instances."""
+
+        # Create mock records that exceed the limit
+        records = [
+            Record(data={"id": 1, "name": "Record1"}, stream_name="stream_name"),
+            Record(data={"id": 2, "name": "Record2"}, stream_name="stream_name"),
+            Record(
+                data={"id": 3, "name": "Record3"}, stream_name="stream_name"
+            ),  # Should be blocked by limit
+        ]
+
+        # Create first factory with record limit of 2
+        retriever1 = self._mock_retriever(records)
+        message_repository1 = Mock(spec=MessageRepository)
+        factory1 = DeclarativePartitionFactory(
+            _STREAM_NAME,
+            _SCHEMA_LOADER,
+            retriever1,
+            message_repository1,
+            max_records_limit=2,
+        )
+
+        # First factory should read up to limit (2 records)
+        partition1 = factory1.create(_A_STREAM_SLICE)
+        first_factory_records = list(partition1.read())
+        assert len(first_factory_records) == 2
+
+        # Create second factory with same limit - should be independent
+        retriever2 = self._mock_retriever(records)
+        message_repository2 = Mock(spec=MessageRepository)
+        factory2 = DeclarativePartitionFactory(
+            _STREAM_NAME,
+            _SCHEMA_LOADER,
+            retriever2,
+            message_repository2,
+            max_records_limit=2,
+        )
+
+        # Second factory should also be able to read up to limit (2 records)
+        # This would fail before the fix because record counter was global
+        partition2 = factory2.create(_A_STREAM_SLICE)
+        second_factory_records = list(partition2.read())
+        assert len(second_factory_records) == 2
+
+        # Verify both retrievers were called (confirming isolation)
+        retriever1.read_records.assert_called_once()
+        retriever2.read_records.assert_called_once()
 
     @staticmethod
     def _mock_retriever(read_return_value: List[StreamData]) -> Mock:

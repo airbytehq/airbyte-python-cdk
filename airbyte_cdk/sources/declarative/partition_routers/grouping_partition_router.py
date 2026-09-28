@@ -140,11 +140,6 @@ class GroupingPartitionRouter(PartitionRouter):
     ) -> Mapping[str, Any]:
         return {}
 
-    def set_initial_state(self, stream_state: StreamState) -> None:
-        """Delegate state initialization to the underlying partition router."""
-        self.underlying_partition_router.set_initial_state(stream_state)
-        self._state = self.underlying_partition_router.get_stream_state()
-
     def get_stream_state(self) -> Optional[Mapping[str, StreamState]]:
         """Delegate state retrieval to the underlying partition router."""
         return self._state

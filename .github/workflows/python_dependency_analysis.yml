@@ -26,9 +26,9 @@ jobs:
         with:
           python-version: "3.10"
       - name: Set up Poetry
-        uses: Gr1N/setup-poetry@v9
+        uses: snok/install-poetry@v1
         with:
-          poetry-version: "2.0.1"
+          version: "2.0.1"
       - name: Install dependencies
         run: poetry install --all-extras
 

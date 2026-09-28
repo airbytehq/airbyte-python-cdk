@@ -177,7 +177,11 @@ class ConfigComponentsResolver(ComponentsResolver):
                 )
 
                 path = [path.eval(self.config, **kwargs) for path in resolved_component.field_path]
-                parsed_value = self._parse_yaml_if_possible(value)
+                # Avoid parsing strings that are meant to be strings
+                if not (isinstance(value, str) and valid_types == (str,)):
+                    parsed_value = self._parse_yaml_if_possible(value)
+                else:
+                    parsed_value = value
                 updated = dpath.set(updated_config, path, parsed_value)
 
                 if parsed_value and not updated and resolved_component.create_or_update:
@@ -200,8 +204,10 @@ class ConfigComponentsResolver(ComponentsResolver):
                 return yaml.safe_load(value)
             except ParserError:  # "{{ record[0] in ['cohortActiveUsers'] }}"   # not valid YAML
                 return value
-            except ScannerError as e:  # "%Y-%m-%d'   # not valid yaml
+            except ScannerError as e:  # "%Y-%m-%d" or strings with tabs - not valid YAML
                 if "expected alphabetic or numeric character, but found '%'" in str(e):
+                    return value
+                if "found character '\\t' that cannot start any token" in str(e):
                     return value
                 raise e
         return value

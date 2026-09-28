@@ -4,6 +4,7 @@
 
 import copy
 import json
+from datetime import timedelta
 
 import freezegun
 
@@ -21,9 +22,12 @@ from airbyte_cdk.models import (
     Level,
     StreamDescriptor,
 )
-from airbyte_cdk.sources.declarative.manifest_declarative_source import ManifestDeclarativeSource
+from airbyte_cdk.sources.declarative.concurrent_declarative_source import (
+    ConcurrentDeclarativeSource,
+)
 from airbyte_cdk.test.mock_http import HttpMocker, HttpRequest, HttpResponse
 from airbyte_cdk.test.mock_http.response_builder import find_template
+from airbyte_cdk.utils.datetime_helpers import ab_datetime_parse
 
 BASE_URL = "https://api.apilayer.com/exchangerates_data/"
 FREEZE_DATE = "2025-05-23"
@@ -182,7 +186,12 @@ CONFIGURED_CATALOG = {
                 "json_schema": {
                     "$schema": "http://json-schema.org/draft-07/schema#",
                     "type": "object",
-                    "properties": {},
+                    "properties": {
+                        "one": {"type": ["null", "string"]},
+                        "two": {"type": ["null", "string"]},
+                        "three": {"type": ["null", "string"]},
+                        "four": {"type": ["null", "string"]},
+                    },
                 },
                 "supported_sync_modes": ["full_refresh"],
                 "source_defined_cursor": False,
@@ -196,19 +205,32 @@ CONFIGURED_CATALOG = {
 
 @freezegun.freeze_time(f"{FREEZE_DATE}T00:00:00Z")
 def test_read():
+    # We need a state time earlier than the current time otherwise we will not generate any date range
+    # partitions to process on the concurrent engine
+    day_before = (ab_datetime_parse(f"{FREEZE_DATE}T00:00:00Z") - timedelta(days=1)).strftime(
+        "%Y-%m-%d"
+    )
     conversion_base = "USD"
     config = copy.deepcopy(TEST_READ_CONFIG)
-    config["start_date"] = f"{FREEZE_DATE}T00:00:00Z"
+    config["start_date"] = f"{day_before}T00:00:00Z"
     config["base"] = conversion_base
     config["api_key"] = "test_api_key"
 
-    stream_url = f"{BASE_URL}{FREEZE_DATE}?base={conversion_base}&{PROPERTY_KEY}="
+    catalog = ConfiguredAirbyteCatalogSerializer.load(CONFIGURED_CATALOG)
+
+    stream_url = f"{BASE_URL}{day_before}?base={conversion_base}&{PROPERTY_KEY}="
 
     with HttpMocker() as http_mocker:
-        source = ManifestDeclarativeSource(
-            source_config=MANIFEST, emit_connector_builder_messages=True
-        )
         limits = TestLimits()
+
+        source = ConcurrentDeclarativeSource(
+            source_config=MANIFEST,
+            config=config,
+            catalog=catalog,
+            state=_A_STATE,
+            emit_connector_builder_messages=True,
+            limits=limits,
+        )
 
         http_mocker.get(
             HttpRequest(url=f"{stream_url}{PROPERTY_LIST[0]}%2C{PROPERTY_LIST[1]}"),
@@ -230,7 +252,7 @@ def test_read():
             source,
             "test_read",
             config,
-            ConfiguredAirbyteCatalogSerializer.load(CONFIGURED_CATALOG),
+            catalog,
             _A_STATE,
             limits,
         )

@@ -4,23 +4,18 @@ on:
   push:
     branches:
       - main
-  pull_request:
-    # Only following types are handled by the action, but one can default to all as well
-    types: [opened, reopened, synchronize]
-  # # pull_request_target event is required for autolabeler to support PRs from forks
-  # pull_request_target:
-  #   types: [opened, reopened, synchronize]
+
+concurrency:
+  group: release-drafter
+  cancel-in-progress: false
 
 jobs:
   update_release_draft:
     permissions:
       contents: write
       pull-requests: write
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     steps:
-      # Drafts the next Release notes as Pull Requests are merged into "main"
-      - uses: release-drafter/release-drafter@v6
-        with:
-          config-name: release-drafter.yml
+      - uses: aaronsteers/semantic-pr-release-drafter@v2.2.0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

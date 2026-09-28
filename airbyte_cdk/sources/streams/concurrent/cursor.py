@@ -2,8 +2,10 @@
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
 
+import datetime
 import functools
 import logging
+import threading
 from abc import ABC, abstractmethod
 from typing import (
     Any,
@@ -18,7 +20,7 @@ from typing import (
 )
 
 from airbyte_cdk.sources.connector_state_manager import ConnectorStateManager
-from airbyte_cdk.sources.message import MessageRepository
+from airbyte_cdk.sources.message import MessageRepository, NoopMessageRepository
 from airbyte_cdk.sources.streams import NO_CURSOR_STATE_KEY
 from airbyte_cdk.sources.streams.concurrent.clamping import ClampingStrategy, NoClamping
 from airbyte_cdk.sources.streams.concurrent.cursor_types import CursorValueType, GapType
@@ -37,10 +39,13 @@ def _extract_value(mapping: Mapping[str, Any], path: List[str]) -> Any:
 
 
 class CursorField:
-    def __init__(self, cursor_field_key: str) -> None:
+    def __init__(
+        self, cursor_field_key: str, supports_catalog_defined_cursor_field: bool = False
+    ) -> None:
         self.cursor_field_key = cursor_field_key
+        self.supports_catalog_defined_cursor_field = supports_catalog_defined_cursor_field
 
-    def extract_value(self, record: Record) -> CursorValueType:
+    def extract_value(self, record: Record) -> Any:
         cursor_value = record.data.get(self.cursor_field_key)
         if cursor_value is None:
             raise ValueError(f"Could not find cursor field {self.cursor_field_key} in record")
@@ -84,6 +89,27 @@ class Cursor(StreamSlicer, ABC):
         Subclasses can override this method to provide actual behavior.
         """
         yield StreamSlice(partition={}, cursor_slice={})
+
+    def get_cursor_datetime_from_state(
+        self, stream_state: Mapping[str, Any]
+    ) -> datetime.datetime | None:
+        """Extract and parse the cursor datetime from the given stream state.
+
+        This method is used by StateDelegatingStream to validate cursor age against
+        an API's data retention period. Subclasses should implement this method to
+        extract the cursor value from their specific state structure and parse it
+        into a datetime object.
+
+        Returns None if the cursor cannot be extracted or parsed, which will cause
+        StateDelegatingStream to fall back to full refresh (safe default).
+
+        Raises NotImplementedError by default - subclasses must implement this method
+        if they want to support cursor age validation with api_retention_period.
+        """
+        raise NotImplementedError(
+            f"{self.__class__.__name__} does not implement get_cursor_datetime_from_state. "
+            f"Cursor age validation with api_retention_period is not supported for this cursor type."
+        )
 
 
 class FinalStateCursor(Cursor):
@@ -130,10 +156,44 @@ class FinalStateCursor(Cursor):
     def should_be_synced(self, record: Record) -> bool:
         return True
 
+    def get_cursor_datetime_from_state(
+        self, stream_state: Mapping[str, Any]
+    ) -> datetime.datetime | None:
+        """Return now() if state indicates a completed full refresh, else None.
+
+        When the state has NO_CURSOR_STATE_KEY: True, it means the previous sync was a
+        completed full refresh. Returning now() indicates the cursor is "current" and
+        within any retention period, so we should use incremental sync.
+
+        For any other state format, return None to indicate this cursor cannot parse it,
+        allowing the incremental cursor to handle the state instead.
+        """
+        if stream_state.get(NO_CURSOR_STATE_KEY):
+            return datetime.datetime.now(datetime.timezone.utc)
+        return None
+
 
 class ConcurrentCursor(Cursor):
     _START_BOUNDARY = 0
     _END_BOUNDARY = 1
+
+    def copy_without_state(self) -> "ConcurrentCursor":
+        return self.__class__(
+            stream_name=self._stream_name,
+            stream_namespace=self._stream_namespace,
+            stream_state={},
+            message_repository=NoopMessageRepository(),
+            connector_state_manager=ConnectorStateManager(),
+            connector_state_converter=self._connector_state_converter,
+            cursor_field=self._cursor_field,
+            slice_boundary_fields=self._slice_boundary_fields,
+            start=self._start,
+            end_provider=self._end_provider,
+            lookback_window=self._lookback_window,
+            slice_range=self._slice_range,
+            cursor_granularity=self._cursor_granularity,
+            clamping_strategy=self._clamping_strategy,
+        )
 
     def __init__(
         self,
@@ -173,6 +233,13 @@ class ConcurrentCursor(Cursor):
         # Flag to track if the logger has been triggered (per stream)
         self._should_be_synced_logger_triggered = False
         self._clamping_strategy = clamping_strategy
+        self._is_ascending_order = True
+
+        # A lock is required when closing a partition because updating the cursor's concurrent_state is
+        # not thread safe. When multiple partitions are being closed by the cursor at the same time, it is
+        # possible for one partition to update concurrent_state after a second partition has already read
+        # the previous state. This can lead to the second partition overwriting the previous one's state.
+        self._lock = threading.Lock()
 
     @property
     def state(self) -> MutableMapping[str, Any]:
@@ -222,6 +289,14 @@ class ConcurrentCursor(Cursor):
         )
 
     def observe(self, record: Record) -> None:
+        # Because observe writes to the most_recent_cursor_value_per_partition mapping,
+        # it is not thread-safe. However, this shouldn't lead to concurrency issues because
+        # observe() is only invoked by PartitionReader.process_partition(). Since the map is
+        # broken down according to partition, concurrent threads processing only read/write
+        # from different keys which avoids any conflicts.
+        #
+        # If we were to add thread safety, we should implement a lock per-partition
+        # which is instantiated during stream_slices()
         most_recent_cursor_value = self._most_recent_cursor_value_per_partition.get(
             record.associated_slice
         )
@@ -230,6 +305,8 @@ class ConcurrentCursor(Cursor):
 
             if most_recent_cursor_value is None or most_recent_cursor_value < cursor_value:
                 self._most_recent_cursor_value_per_partition[record.associated_slice] = cursor_value
+            elif most_recent_cursor_value > cursor_value:
+                self._is_ascending_order = False
         except ValueError:
             self._log_for_record_without_cursor_value()
 
@@ -237,13 +314,14 @@ class ConcurrentCursor(Cursor):
         return self._connector_state_converter.parse_value(self._cursor_field.extract_value(record))
 
     def close_partition(self, partition: Partition) -> None:
-        slice_count_before = len(self._concurrent_state.get("slices", []))
-        self._add_slice_to_state(partition)
-        if slice_count_before < len(
-            self._concurrent_state["slices"]
-        ):  # only emit if at least one slice has been processed
-            self._merge_partitions()
-            self._emit_state_message()
+        with self._lock:
+            slice_count_before = len(self._concurrent_state.get("slices", []))
+            self._add_slice_to_state(partition)
+            if slice_count_before < len(
+                self._concurrent_state["slices"]
+            ):  # only emit if at least one slice has been processed
+                self._merge_partitions()
+                self._emit_state_message()
         self._has_closed_at_least_one_slice = True
 
     def _add_slice_to_state(self, partition: Partition) -> None:
@@ -500,3 +578,75 @@ class ConcurrentCursor(Cursor):
                 f"Could not find cursor field `{self.cursor_field.cursor_field_key}` in record for stream {self._stream_name}. The incremental sync will assume it needs to be synced"
             )
             self._should_be_synced_logger_triggered = True
+
+    def reduce_slice_range(self, stream_slice: StreamSlice) -> StreamSlice:
+        # In theory, we might be more flexible here meaning that it doesn't need to be in ascending order but it just
+        # needs to be ordered. For now though, we will only support ascending order.
+        if not self._is_ascending_order:
+            LOGGER.warning(
+                "Attempting to reduce slice while records are not returned in incremental order might lead to missing records"
+            )
+
+        if stream_slice in self._most_recent_cursor_value_per_partition:
+            return StreamSlice(
+                partition=stream_slice.partition,
+                cursor_slice={
+                    self._slice_boundary_fields_wrapper[
+                        self._START_BOUNDARY
+                    ]: self._connector_state_converter.output_format(
+                        self._most_recent_cursor_value_per_partition[stream_slice]
+                    ),
+                    self._slice_boundary_fields_wrapper[
+                        self._END_BOUNDARY
+                    ]: stream_slice.cursor_slice[
+                        self._slice_boundary_fields_wrapper[self._END_BOUNDARY]
+                    ],
+                },
+                extra_fields=stream_slice.extra_fields,
+            )
+        else:
+            return stream_slice
+
+    def get_cursor_datetime_from_state(
+        self, stream_state: Mapping[str, Any]
+    ) -> datetime.datetime | None:
+        """Extract and parse the cursor datetime from the given stream state.
+
+        For concurrent cursors, the state can be in two formats:
+        1. Sequential/legacy format: {cursor_field: cursor_value}
+        2. Concurrent format: {state_type: "date-range", slices: [...]}
+
+        Returns the cursor datetime if present and parseable, otherwise returns None.
+        """
+        # Check if state is in concurrent format (need to convert to dict for type compatibility)
+        mutable_state: MutableMapping[str, Any] = dict(stream_state)
+        if self._connector_state_converter.is_state_message_compatible(mutable_state):
+            slices = stream_state.get("slices", [])
+            if not slices:
+                return None
+            # Get the most recent cursor value from the first slice (after merging)
+            first_slice = slices[0]
+            cursor_value = first_slice.get(
+                self._connector_state_converter.MOST_RECENT_RECORD_KEY
+            ) or first_slice.get(self._connector_state_converter.END_KEY)
+            if not cursor_value:
+                return None
+            try:
+                parsed_value = self._connector_state_converter.parse_value(cursor_value)
+                if isinstance(parsed_value, datetime.datetime):
+                    return parsed_value
+                return None
+            except (ValueError, TypeError):
+                return None
+
+        # Sequential/legacy format: {cursor_field: cursor_value}
+        cursor_value = stream_state.get(self._cursor_field.cursor_field_key)
+        if not cursor_value:
+            return None
+        try:
+            parsed_value = self._connector_state_converter.parse_value(cursor_value)
+            if isinstance(parsed_value, datetime.datetime):
+                return parsed_value
+            return None
+        except (ValueError, TypeError):
+            return None

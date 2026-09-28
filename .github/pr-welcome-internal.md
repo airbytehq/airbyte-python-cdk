@@ -2,6 +2,9 @@
 
 Here are some helpful tips and reminders for your convenience.
 
+<details>
+<summary><b>💡 Show Tips and Tricks</b></summary>
+
 ### Testing This CDK Version
 
 You can test this version of the CDK using the following:
@@ -15,10 +18,6 @@ cd airbyte-integrations/connectors/source-example
 poe use-cdk-branch {{ .branch_name }}
 ```
 
-### Helpful Resources
-
-- [CDK API Reference](https://airbytehq.github.io/airbyte-python-cdk/)
-
 ### PR Slash Commands
 
 Airbyte Maintainers can execute the following slash commands on your PR:
@@ -26,6 +25,19 @@ Airbyte Maintainers can execute the following slash commands on your PR:
 - `/autofix` - Fixes most formatting and linting issues
 - `/poetry-lock` - Updates poetry.lock file
 - `/test` - Runs connector tests with the updated CDK
+- `/prerelease` - Triggers a prerelease publish with default arguments
+- `/poe build` - Regenerate git-committed build artifacts, such as the pydantic models which are generated from the manifest JSON schema in YAML.
 - `/poe <command>` - Runs any poe command in the CDK environment
 
+</details>
+
+<details>
+<summary><b>📚 Show Repo Guidance</b></summary>
+
+### Helpful Resources
+
+- [CDK API Reference](https://airbytehq.github.io/airbyte-python-cdk/)
+
 [📝 _Edit this welcome message._](https://github.com/airbytehq/airbyte-python-cdk/blob/main/.github/pr-welcome-internal.md)
+
+</details>

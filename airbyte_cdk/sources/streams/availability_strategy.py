@@ -14,6 +14,7 @@ if typing.TYPE_CHECKING:
     from airbyte_cdk.sources import Source
 
 
+# FIXME this
 class AvailabilityStrategy(ABC):
     """
     Abstract base class for checking stream availability.

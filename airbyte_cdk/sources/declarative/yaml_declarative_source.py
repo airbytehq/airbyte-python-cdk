@@ -14,7 +14,7 @@ from airbyte_cdk.sources.declarative.concurrent_declarative_source import (
 from airbyte_cdk.sources.types import ConnectionDefinition
 
 
-class YamlDeclarativeSource(ConcurrentDeclarativeSource[List[AirbyteStateMessage]]):
+class YamlDeclarativeSource(ConcurrentDeclarativeSource):
     """Declarative source defined by a yaml file"""
 
     def __init__(

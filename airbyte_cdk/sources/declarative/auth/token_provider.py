@@ -71,6 +71,8 @@ class SessionTokenProvider(TokenProvider):
 
 @dataclass
 class InterpolatedStringTokenProvider(TokenProvider):
+    """Provides a token by interpolating a string with config values."""
+
     config: Config
     api_token: Union[InterpolatedString, str]
     parameters: Mapping[str, Any]
@@ -80,3 +82,24 @@ class InterpolatedStringTokenProvider(TokenProvider):
 
     def get_token(self) -> str:
         return str(self._token.eval(self.config))
+
+
+@dataclass
+class InterpolatedSessionTokenProvider(TokenProvider):
+    """Provides a token by interpolating a template with the session token.
+
+    This allows flexible token formatting, such as "Token {{ session_token }}"
+    for Django REST Framework APIs that expect "Authorization: Token <value>".
+    """
+
+    config: Config
+    api_token: Union[InterpolatedString, str]
+    session_token_provider: TokenProvider
+    parameters: Mapping[str, Any]
+
+    def __post_init__(self) -> None:
+        self._token_template = InterpolatedString.create(self.api_token, parameters=self.parameters)
+
+    def get_token(self) -> str:
+        session_token = self.session_token_provider.get_token()
+        return str(self._token_template.eval(self.config, session_token=session_token))

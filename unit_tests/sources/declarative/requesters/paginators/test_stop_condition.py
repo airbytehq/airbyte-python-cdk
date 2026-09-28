@@ -6,7 +6,6 @@ from unittest.mock import Mock, call
 
 from pytest import fixture
 
-from airbyte_cdk.sources.declarative.incremental.declarative_cursor import DeclarativeCursor
 from airbyte_cdk.sources.declarative.requesters.paginators.strategies.pagination_strategy import (
     PaginationStrategy,
 )
@@ -15,6 +14,7 @@ from airbyte_cdk.sources.declarative.requesters.paginators.strategies.stop_condi
     PaginationStopCondition,
     StopConditionPaginationStrategyDecorator,
 )
+from airbyte_cdk.sources.streams.concurrent.cursor import Cursor
 from airbyte_cdk.sources.types import Record
 
 ANY_RECORD = Mock()
@@ -24,7 +24,7 @@ ANY_RESPONSE = Mock()
 
 @fixture
 def mocked_cursor():
-    return Mock(spec=DeclarativeCursor)
+    return Mock(spec=Cursor)
 
 
 @fixture
@@ -116,3 +116,18 @@ def test_when_get_page_size_then_delegate(mocked_pagination_strategy, mocked_sto
 
     assert page_size == mocked_pagination_strategy.get_page_size.return_value
     mocked_pagination_strategy.get_page_size.assert_called_once_with()
+
+
+def test_given_page_size_override_when_next_page_token_then_forward_to_delegate(
+    mocked_pagination_strategy, mocked_stop_condition
+):
+    mocked_stop_condition.is_met.return_value = False
+    decorator = StopConditionPaginationStrategyDecorator(
+        mocked_pagination_strategy, mocked_stop_condition
+    )
+
+    decorator.next_page_token(ANY_RESPONSE, 25, NO_RECORD, None, page_size_override=25)
+
+    mocked_pagination_strategy.next_page_token.assert_called_once_with(
+        ANY_RESPONSE, 25, NO_RECORD, None, page_size_override=25
+    )

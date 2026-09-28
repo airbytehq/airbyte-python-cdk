@@ -50,7 +50,10 @@ class StreamFacadeSource(ConcurrentSourceAdapter):
         self._message_repository = InMemoryMessageRepository()
         threadpool_manager = ThreadPoolManager(threadpool, streams[0].logger)
         concurrent_source = ConcurrentSource(
-            threadpool_manager, streams[0].logger, NeverLogSliceLogger(), self._message_repository
+            threadpool=threadpool_manager,
+            logger=streams[0].logger,
+            slice_logger=NeverLogSliceLogger(),
+            message_repository=self._message_repository,
         )
         super().__init__(concurrent_source)
         self._streams = streams

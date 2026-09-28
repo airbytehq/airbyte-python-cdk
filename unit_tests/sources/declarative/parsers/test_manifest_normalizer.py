@@ -3,7 +3,7 @@
 #
 
 
-from airbyte_cdk.sources.declarative.manifest_declarative_source import (
+from airbyte_cdk.sources.declarative.concurrent_declarative_source import (
     _get_declarative_component_schema,
 )
 from airbyte_cdk.sources.declarative.parsers.manifest_normalizer import (

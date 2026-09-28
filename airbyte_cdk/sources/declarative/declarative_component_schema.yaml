@@ -45,6 +45,15 @@ properties:
     "$ref": "#/definitions/ConcurrencyLevel"
   api_budget:
     "$ref": "#/definitions/HTTPAPIBudget"
+  stream_groups:
+    title: Stream Groups
+    description: >
+      Groups of streams that share a common resource and should not be read simultaneously.
+      Each group defines a set of stream references and an action that controls how concurrent
+      reads are managed. Only applies to ConcurrentDeclarativeSource.
+    type: object
+    additionalProperties:
+      "$ref": "#/definitions/StreamGroup"
   max_concurrent_async_job_count:
     title: Maximum Concurrent Asynchronous Jobs
     description: Maximum number of concurrent asynchronous jobs to run. This property is only relevant for sources/streams that support asynchronous job execution through the AsyncRetriever (e.g. a report-based stream that initiates a job, polls the job status, and then fetches the job results). This is often set by the API's maximum number of concurrent jobs on the account level. Refer to the API's documentation for this information.
@@ -303,11 +312,226 @@ definitions:
             - "$ref": "#/definitions/LegacySessionTokenAuthenticator"
             - "$ref": "#/definitions/CustomAuthenticator"
             - "$ref": "#/definitions/NoAuth"
+            - "$ref": "#/definitions/RateLimitedMultipleTokenAuthenticator"
         examples:
           - authenticators:
               token: "#/definitions/ApiKeyAuthenticator"
               oauth: "#/definitions/OAuthAuthenticator"
               jwt: "#/definitions/JwtAuthenticator"
+      $parameters:
+        type: object
+        additionalProperties: true
+  RateLimitedMultipleTokenAuthenticator:
+    title: Rate Limited Multiple Token Authenticator
+    description: >
+      Authenticator that rotates between multiple interchangeable tokens, tracking each token's remaining
+      call quota. Outgoing requests are classified into quota pools using request matchers. When the active
+      token's quota for the matched pool is exhausted, the authenticator rotates to the next token. When all
+      tokens are exhausted, it waits until the earliest quota reset (bounded by `max_wait_time`) before
+      resuming. Quota counters are seeded per token from `quota_status_source` at startup and refreshed after
+      an exhaustion wait.
+    type: object
+    required:
+      - type
+      - tokens
+      - quota_status_source
+      - quotas
+    properties:
+      type:
+        type: string
+        enum: [RateLimitedMultipleTokenAuthenticator]
+      tokens:
+        title: Tokens
+        description: The tokens to rotate between. Either an explicit list of tokens, or a single string containing multiple tokens separated by `token_delimiter`.
+        anyOf:
+          - type: string
+          - type: array
+            minItems: 1
+            items:
+              type: string
+        interpolation_context:
+          - config
+        examples:
+          - "{{ config['credentials']['personal_access_token'] }}"
+          - ["{{ config['token_1'] }}", "{{ config['token_2'] }}"]
+      token_delimiter:
+        title: Token Delimiter
+        description: Delimiter used to split a single token string into multiple tokens.
+        type: string
+        default: ","
+      auth_method:
+        title: Auth Method
+        description: "The prefix to prepend to the token in the auth header value (e.g. `Authorization: Bearer <token>`)."
+        type: string
+        default: "Bearer"
+        examples:
+          - "Bearer"
+          - "token"
+      header:
+        title: Header Name
+        description: The name of the HTTP header in which to inject the token.
+        type: string
+        default: "Authorization"
+      quota_status_source:
+        title: Quota Status Source
+        description: Defines where to fetch each token's current quota status. Called once per token at startup and after an exhaustion wait, not per data request.
+        "$ref": "#/definitions/QuotaStatusSource"
+      quotas:
+        title: Quota Pools
+        description: >
+          Quota pools tracked per token. Each outgoing request is classified into the first pool whose
+          matchers match the request; a pool with no matchers acts as the default. The `remaining_path` and
+          `reset_path` locate each pool's values in the quota status response.
+        type: array
+        minItems: 1
+        items:
+          "$ref": "#/definitions/TokenQuota"
+      max_wait_time:
+        title: Maximum Wait Time
+        description: ISO 8601 duration. When all tokens are exhausted, the maximum time to wait for a quota reset before raising a transient error.
+        type: string
+        default: "PT2H"
+        interpolation_context:
+          - config
+        examples:
+          - "PT2H"
+          - "PT30M"
+          - "PT{{ config.get('max_waiting_time', 120) }}M"
+      budget_reserve_fraction:
+        title: Budget Reserve Fraction
+        description: Fraction of each token's quota to keep in reserve. When every token drops below its reserve, requests are proactively throttled to spread the remaining calls until the quota reset. Set to 0 (along with `budget_min_reserve`) to disable throttling.
+        type: number
+        default: 0.1
+      budget_min_reserve:
+        title: Budget Minimum Reserve
+        description: Minimum number of calls to keep in reserve per token before proactive throttling kicks in.
+        type: integer
+        default: 50
+      $parameters:
+        type: object
+        additionalProperties: true
+  QuotaStatusSource:
+    title: Quota Status Source
+    description: Describes the endpoint from which a token's current rate limit quota status can be fetched.
+    type: object
+    required:
+      - type
+      - url
+    properties:
+      type:
+        type: string
+        enum: [QuotaStatusSource]
+      url:
+        title: URL
+        description: The full URL of the quota status endpoint.
+        type: string
+        interpolation_context:
+          - config
+        examples:
+          - "https://api.github.com/rate_limit"
+          - "{{ config.get('api_url', 'https://api.github.com') }}/rate_limit"
+      http_method:
+        title: HTTP Method
+        description: The HTTP method used to fetch the quota status.
+        type: string
+        enum:
+          - GET
+          - POST
+        default: GET
+      request_headers:
+        title: Request Headers
+        description: Additional headers to send with the quota status request.
+        type: object
+        additionalProperties:
+          type: string
+      unavailable_status_codes:
+        title: Unavailable Status Codes
+        description: Status codes from the quota status endpoint that mean quota tracking is unavailable rather than broken, such as a self-hosted deployment with rate limiting turned off. Every pool of the token whose request returned that status is then treated as untracked, so the authenticator stops waiting for quota resets, stops throttling proactively and stops rotating on exhaustion for it, while still signing requests. A token untracked this way stays untracked for the rest of the sync, because the endpoint is never consulted for it again, so a status the endpoint can also return transiently costs quota tracking for the whole run. If only some tokens return that status the others stay tracked, but they are no longer refreshed either, because the authenticator stops waiting for quota resets as soon as one token is untracked; once their counters are locally spent all traffic moves onto the untracked tokens. Rate limiting reported by ordinary responses is still handled by the stream's error handler, so one that retries 429 or 403 keeps working, and a retry rotates onto the next token; it pays the backoff the response asks for rather than the shortened one a tracked pool would get, since an untracked pool has no counters with which to argue the rejection was about that credential. Any status not listed still fails the connection, and this field never excuses a quota path missing from a response the endpoint did answer, so list only the codes the endpoint uses to report that rate limiting is not enabled. Do not list authentication or authorization statuses, since a 401 or 403 from a revoked credential would then be read as quota tracking being unavailable rather than as a credentials failure.
+        type: array
+        items:
+          type: integer
+        uniqueItems: true
+        examples:
+          - [404]
+      $parameters:
+        type: object
+        additionalProperties: true
+  TokenQuota:
+    title: Token Quota
+    description: A named per-token quota pool with matchers that classify outgoing requests into the pool.
+    type: object
+    required:
+      - type
+      - name
+      - remaining_path
+      - reset_path
+    properties:
+      type:
+        type: string
+        enum: [TokenQuota]
+      name:
+        title: Name
+        description: Name of the quota pool.
+        type: string
+        examples:
+          - "rest"
+          - "graphql"
+      remaining_path:
+        title: Remaining Path
+        description: Path to the remaining call count for this pool in the quota status response.
+        type: array
+        items:
+          type: string
+        examples:
+          - ["resources", "core", "remaining"]
+      reset_path:
+        title: Reset Path
+        description: Path to the quota reset timestamp for this pool in the quota status response.
+        type: array
+        items:
+          type: string
+        examples:
+          - ["resources", "core", "reset"]
+      limit_path:
+        title: Limit Path
+        description: Optional path to the total call limit for this pool in the quota status response. Used to compute the proactive throttling reserve; falls back to the initially observed remaining count when not set. Setting it on every pool is recommended so the reserve does not shrink when a sync starts with the pool already partially consumed.
+        type: array
+        items:
+          type: string
+        examples:
+          - ["resources", "core", "limit"]
+      matchers:
+        title: Matchers
+        description: List of matchers that classify outgoing requests into this quota pool. The first pool whose matcher matches a request is used. A pool with no matchers acts as the default pool.
+        type: array
+        items:
+          "$ref": "#/definitions/HttpRequestRegexMatcher"
+      remaining_header:
+        title: Remaining Header
+        description: Optional response header carrying the remaining call count for this pool. When set, the pool's counter is reconciled against this header on every response, which corrects drift caused by sharing the token with other clients, by requests in flight concurrently, or by a sync running long enough for the initial quota status read to go stale. Without it the pool is only ever seeded from the quota status endpoint.
+        type: string
+        examples:
+          - "X-RateLimit-Remaining"
+      reset_header:
+        title: Reset Header
+        description: Optional response header carrying the quota reset timestamp for this pool. Parsed with the same rules as `reset_path`, so epoch seconds and ISO 8601 both work. Used to tell a rolled-over quota window from the current one; a response proving the window has rolled over restores the pool to its limit. Most useful alongside `remaining_header`.
+        type: string
+        examples:
+          - "X-RateLimit-Reset"
+      limit_header:
+        title: Limit Header
+        description: Optional response header carrying the total call limit for this pool, used to keep the proactive throttling reserve accurate as the limit changes.
+        type: string
+        examples:
+          - "X-RateLimit-Limit"
+      exhaustion_status_codes:
+        title: Exhaustion Status Codes
+        description: Response status codes that mean this token's pool is spent. These have two effects. A response carrying one of them but no remaining count sets the pool to zero, so the next request rotates to another token instead of waiting out the reset window. They also mark which responses may report a zero for a quota window that has already elapsed, so a rate limit whose reset header trails the value being held still stops the token being used; a zero on any other response is treated as the last call of a finished window and ignored. Leaving this empty means such trailing rejections are ignored unless their reset is within the skew tolerance of the current window. Only list codes the API uses exclusively for rate limiting -- a code that also signals other failures would park a healthy token.
+        type: array
+        items:
+          type: integer
+        examples:
+          - [429]
       $parameters:
         type: object
         additionalProperties: true
@@ -334,6 +558,14 @@ definitions:
         type: array
         items:
           "$ref": "#/definitions/DynamicStreamCheckConfig"
+      config_overrides:
+        title: Config Overrides
+        description: Values overlaid onto the connector config for the duration of the check operation only. Use this when a check must behave differently from a sync - for example a shorter rate limit wait budget, so that check fails fast with a clear message instead of sleeping until the quota resets. Keys should be fields declared in the connector's spec. Values are used as-is. They are not interpolated, a `$ref` inside them is not resolved, they replace a nested object rather than deep-merging into it, and they are applied after config migrations and transformations have run, so a field derived from an overridden field is not recomputed. Keys must be strings, and two combinations are rejected outright. Keys prefixed with `__airbyte` belong to the platform rather than to the connector's spec. And a manifest that declares a `refresh_token_updater` cannot use this field at all, because a token refresh during check emits the whole config it was handed as a CONNECTOR_CONFIG control message, which the platform persists - so a check-only override would become the connection's saved config and apply to every later sync.
+        type: object
+        additionalProperties: true
+        examples:
+          - max_waiting_time: 0
+          - page_size: 1
   DynamicStreamCheckConfig:
     type: object
     required:
@@ -349,9 +581,9 @@ definitions:
         type: string
       stream_count:
         title: Stream Count
-        description: The number of streams to attempt reading from during a check operation. If `stream_count` exceeds the total number of available streams, the minimum of the two values will be used.
+        description: The number of streams to attempt reading from during a check operation. If unset, all generated streams are checked. Must be a positive integer; if it exceeds the total number of available streams, all streams are checked.
         type: integer
-        default: 0
+        minimum: 1
   CheckDynamicStream:
     title: Dynamic Streams to Check
     description: (This component is experimental. Use at your own risk.) Defines the dynamic streams to try reading when running a check operation.
@@ -372,6 +604,14 @@ definitions:
         description: Enables stream check availability. This field is automatically set by the CDK.
         type: boolean
         default: true
+      config_overrides:
+        title: Config Overrides
+        description: Values overlaid onto the connector config for the duration of the check operation only. Use this when a check must behave differently from a sync - for example a shorter rate limit wait budget, so that check fails fast with a clear message instead of sleeping until the quota resets. Keys should be fields declared in the connector's spec. Values are used as-is. They are not interpolated, a `$ref` inside them is not resolved, they replace a nested object rather than deep-merging into it, and they are applied after config migrations and transformations have run, so a field derived from an overridden field is not recomputed. Keys must be strings, and two combinations are rejected outright. Keys prefixed with `__airbyte` belong to the platform rather than to the connector's spec. And a manifest that declares a `refresh_token_updater` cannot use this field at all, because a token refresh during check emits the whole config it was handed as a CONNECTOR_CONFIG control message, which the platform persists - so a check-only override would become the connection's saved config and apply to every later sync.
+        type: object
+        additionalProperties: true
+        examples:
+          - max_waiting_time: 0
+          - page_size: 1
   CompositeErrorHandler:
     title: Composite Error Handler
     description: Error handler that sequentially iterates over a list of error handlers.
@@ -391,6 +631,7 @@ definitions:
           anyOf:
             - "$ref": "#/definitions/CompositeErrorHandler"
             - "$ref": "#/definitions/DefaultErrorHandler"
+            - "$ref": "#/definitions/CustomErrorHandler"
       $parameters:
         type: object
         additionalProperties: true
@@ -472,6 +713,7 @@ definitions:
         anyOf:
           - type: number
             title: Number of seconds
+            minimum: 0
           - type: string
             title: Interpolated Value
         interpolation_context:
@@ -480,6 +722,13 @@ definitions:
           - 30
           - 30.5
           - "{{ config['backoff_time'] }}"
+      jitter_range_in_seconds:
+        title: Jitter Range
+        description: Optional additive jitter range in seconds. When set, the backoff time is uniformly distributed between backoff_time_in_seconds and backoff_time_in_seconds + (jitter_range_in_seconds * 2), so jitter only increases the base backoff.
+        type: number
+        minimum: 0
+        examples:
+          - 15
       $parameters:
         type: object
         additionalProperties: true
@@ -503,6 +752,7 @@ definitions:
           - headers
           - last_page_size
           - last_record
+          - page_size
           - response
         examples:
           - "{{ headers.link.next.cursor }}"
@@ -511,21 +761,38 @@ definitions:
       page_size:
         title: Page Size
         description: The number of records to include in each pages.
-        type: integer
+        anyOf:
+          - type: integer
+            title: Number of Records
+          - type: string
+            title: Interpolated Value
+        interpolation_context:
+          - config
         examples:
           - 100
+          - "{{ config['page_size'] }}"
       stop_condition:
         title: Stop Condition
-        description: Template string evaluating when to stop paginating.
+        description: >-
+          Template string evaluating when to stop paginating. Compare last_page_size against page_size rather than
+          against a hardcoded number: page_size is the page size that was actually requested, so the condition stays
+          correct when page_size_reduction shrinks it. It is only bound when this strategy declares page_size, and a
+          condition that reads it without one is rejected, so add page_size alongside the condition. Testing the page
+          for emptiness with last_page_size == 0 is equally safe and needs no page_size. A stream that enables
+          page_size_reduction is rejected when its stop condition compares last_page_size against anything else,
+          since a full page at a reduced size would then read as a short page.
         type: string
         interpolation_context:
           - config
           - headers
+          - last_page_size
           - last_record
+          - page_size
           - response
         examples:
           - "{{ response.data.has_more is false }}"
           - "{{ 'next' not in headers['link'] }}"
+          - "{{ last_page_size < page_size }}"
       $parameters:
         type: object
         additionalProperties: true
@@ -590,32 +857,6 @@ definitions:
         type: string
         examples:
           - "source_railz.components.MyCustomErrorHandler"
-      $parameters:
-        type: object
-        additionalProperties: true
-  CustomIncrementalSync:
-    title: Custom Incremental Sync
-    description: Incremental component whose behavior is derived from a custom code implementation of the connector.
-    type: object
-    additionalProperties: true
-    required:
-      - type
-      - class_name
-      - cursor_field
-    properties:
-      type:
-        type: string
-        enum: [CustomIncrementalSync]
-      class_name:
-        title: Class Name
-        description: Fully-qualified name of the class that will be implementing the custom incremental sync. The format is `source_<name>.<package>.<class_name>`.
-        type: string
-        additionalProperties: true
-        examples:
-          - "source_railz.components.MyCustomIncrementalSync"
-      cursor_field:
-        description: The location of the value on a record that will be used as a bookmark during sync.
-        type: string
       $parameters:
         type: object
         additionalProperties: true
@@ -875,6 +1116,10 @@ definitions:
         examples:
           - "created_at"
           - "{{ config['record_cursor'] }}"
+      allow_catalog_defined_cursor_field:
+        title: Allow Catalog Defined Cursor Field
+        description: Whether the cursor allows users to override the default cursor_field when configuring their connection. The user defined cursor field will be specified from within the configured catalog.
+        type: boolean
       start_value:
         title: Start Value
         description: The value that determines the earliest record that should be synced.
@@ -938,6 +1183,10 @@ definitions:
         examples:
           - "created_at"
           - "{{ config['record_cursor'] }}"
+      allow_catalog_defined_cursor_field:
+        title: Allow Catalog Defined Cursor Field
+        description: Whether the cursor allows users to override the default cursor_field when configuring their connection. The user defined cursor field will be specified from within the configured catalog.
+        type: boolean
       cursor_datetime_formats:
         title: Cursor Datetime Formats
         type: array
@@ -987,6 +1236,18 @@ definitions:
           - "%Y-%m-%d %H:%M:%S.%f+00:00"
           - "%s"
           - "%ms"
+        suggestions:
+          - "%Y-%m-%d"
+          - "%Y-%m-%d %H:%M:%S"
+          - "%Y-%m-%dT%H:%M:%S"
+          - "%Y-%m-%dT%H:%M:%SZ"
+          - "%Y-%m-%dT%H:%M:%S%z"
+          - "%Y-%m-%dT%H:%M:%S.%fZ"
+          - "%Y-%m-%dT%H:%M:%S.%f%z"
+          - "%Y-%m-%d %H:%M:%S.%f+00:00"
+          - "%s"
+          - "%ms"
+          - "%s_as_float"
       start_datetime:
         title: Start Datetime
         description: The datetime that determines the earliest record that should be synced.
@@ -1061,6 +1322,18 @@ definitions:
           - "%s"
           - "%ms"
           - "%s_as_float"
+        suggestions:
+          - "%Y-%m-%d"
+          - "%Y-%m-%d %H:%M:%S"
+          - "%Y-%m-%dT%H:%M:%S"
+          - "%Y-%m-%dT%H:%M:%SZ"
+          - "%Y-%m-%dT%H:%M:%S%z"
+          - "%Y-%m-%dT%H:%M:%S.%fZ"
+          - "%Y-%m-%dT%H:%M:%S.%f%z"
+          - "%Y-%m-%d %H:%M:%S.%f+00:00"
+          - "%s"
+          - "%ms"
+          - "%s_as_float"
       cursor_granularity:
         title: Cursor Granularity
         description: |
@@ -1075,13 +1348,20 @@ definitions:
         type: string
         examples:
           - "PT1S"
+        suggestions:
+          - "PT0.000001S"
+          - "PT0.001S"
+          - "PT1S"
+          - "PT1M"
+          - "PT1H"
+          - "P1D"
       is_data_feed:
         title: Data Feed API
-        description: A data feed API is an API that does not allow filtering and paginates the content from the most recent to the least recent. Given this, the CDK needs to know when to stop paginating and this field will generate a stop condition for pagination.
+        description: A data feed API is an API that does not allow filtering and paginates the content from the most recent to the least recent. Given this, the CDK needs to know when to stop paginating and this field will generate a stop condition for pagination. The last page fetched still holds records that fall outside the cursor window, and those are filtered out as well, so Client-side Incremental Filtering does not need to be enabled alongside this field. Records are kept when their cursor value is within the window that starts at the previous sync's cursor value (or the start date) and ends at the end date, defaulting to the current time, so records dated in the future are filtered out too.
         type: boolean
       is_client_side_incremental:
         title: Client-side Incremental Filtering
-        description: Set to True if the target API endpoint does not take cursor values to filter records and returns all records anyway. This will cause the connector to filter out records locally, and only emit new records from the last sync, hence incremental. This means that all records would be read from the API, but only new records will be emitted to the destination.
+        description: Set to True if the target API endpoint does not take cursor values to filter records and returns all records anyway. This will cause the connector to filter out records locally, keeping only the ones whose cursor value falls within the window that starts at the previous sync's cursor value (or the start date) and ends at the end date, defaulting to the current time. This means that all records would be read from the API, but only the records within that window will be emitted to the destination. This is not needed when Data Feed API is enabled, as a data feed already filters on the same window.
         type: boolean
       is_compare_strictly:
         title: Strict Start-End Time Comparison
@@ -1133,6 +1413,12 @@ definitions:
         examples:
           - "P1W"
           - "{{ config['step_increment'] }}"
+        suggestions:
+          - "PT1H"
+          - "P1D"
+          - "P1W"
+          - "P1M"
+          - "P1Y"
       $parameters:
         type: object
         additionalProperties: true
@@ -1259,6 +1545,16 @@ definitions:
         title: Additional JWT Payload Properties
         description: Additional properties to be added to the JWT payload.
         additionalProperties: true
+      passphrase:
+        title: Passphrase
+        description: A passphrase/password used to encrypt the private key. Only provide a passphrase if required by the API for JWT authentication. The API will typically provide the passphrase when generating the public/private key pair.
+        type: string
+        examples:
+          - "{{ config['passphrase'] }}"
+      request_option:
+        title: Request Option
+        description: A request option describing where the signed JWT token that is generated should be injected into the outbound API request.
+        "$ref": "#/definitions/RequestOption"
       $parameters:
         type: object
         additionalProperties: true
@@ -1380,6 +1676,13 @@ definitions:
         examples:
           - Authorization: "<AUTH_TOKEN>"
             Content-Type: "application/x-www-form-urlencoded"
+      send_refresh_request_as_query_params:
+        title: Send Refresh Request As Query Params
+        description: When set to true, the standard OAuth refresh args (`grant_type`, `refresh_token`, client credentials when not in an `Authorization` header, scopes, plus any `refresh_request_body` extras) are sent on the URL query string and the request body is emitted empty. Use this for OAuth providers like Gong that document their refresh endpoint with refresh args on the URL query string.
+        type: boolean
+        default: false
+        examples:
+          - true
       scopes:
         title: Scopes
         description: List of scopes that should be granted to the access token.
@@ -1405,6 +1708,28 @@ definitions:
         type: string
         examples:
           - "%Y-%m-%d %H:%M:%S.%f+00:00"
+      refresh_token_error_status_codes:
+        title: Refresh Token Error Status Codes
+        description: Status Codes to Identify refresh token error in response (Refresh Token Error Key and Refresh Token Error Values should be also specified). Responses with one of the error status code and containing an error value will be flagged as a config error
+        type: array
+        items:
+          type: integer
+        examples:
+          - [400, 500]
+      refresh_token_error_key:
+        title: Refresh Token Error Key
+        description: Key to Identify refresh token error in response (Refresh Token Error Status Codes and Refresh Token Error Values should be also specified).
+        type: string
+        examples:
+          - "error"
+      refresh_token_error_values:
+        title: Refresh Token Error Values
+        description: 'List of values to check for exception during token refresh process. Used to check if the error found in the response matches the key from the Refresh Token Error Key field (e.g. response={"error": "invalid_grant"}). Only responses with one of the error status code and containing an error value will be flagged as a config error'
+        type: array
+        items:
+          type: string
+        examples:
+          - ["invalid_grant", "invalid_permissions"]
       refresh_token_updater:
         title: Refresh Token Updater
         description: When the refresh token updater is defined, new refresh tokens, access tokens and the access token expiry date are written back from the authentication response to the config object. This is important if the refresh token can only used once.
@@ -1446,7 +1771,7 @@ definitions:
             examples:
               - ["credentials", "token_expiry_date"]
           refresh_token_error_status_codes:
-            title: Refresh Token Error Status Codes
+            title: (Deprecated - Use the same field on the OAuthAuthenticator level) Refresh Token Error Status Codes
             description: Status Codes to Identify refresh token error in response (Refresh Token Error Key and Refresh Token Error Values should be also specified). Responses with one of the error status code and containing an error value will be flagged as a config error
             type: array
             items:
@@ -1455,14 +1780,14 @@ definitions:
             examples:
               - [400, 500]
           refresh_token_error_key:
-            title: Refresh Token Error Key
+            title: (Deprecated - Use the same field on the OAuthAuthenticator level) Refresh Token Error Key
             description: Key to Identify refresh token error in response (Refresh Token Error Status Codes and Refresh Token Error Values should be also specified).
             type: string
             default: ""
             examples:
               - "error"
           refresh_token_error_values:
-            title: Refresh Token Error Values
+            title: (Deprecated - Use the same field on the OAuthAuthenticator level) Refresh Token Error Values
             description: 'List of values to check for exception during token refresh process. Used to check if the error found in the response matches the key from the Refresh Token Error Key field (e.g. response={"error": "invalid_grant"}). Only responses with one of the error status code and containing an error value will be flagged as a config error'
             type: array
             items:
@@ -1514,7 +1839,6 @@ definitions:
         anyOf:
           - "$ref": "#/definitions/DatetimeBasedCursor"
           - "$ref": "#/definitions/IncrementingCountCursor"
-          - "$ref": "#/definitions/CustomIncrementalSync"
       primary_key:
         title: Primary Key
         "$ref": "#/definitions/PrimaryKey"
@@ -1774,6 +2098,15 @@ definitions:
         description: The headers to match.
         type: object
         additionalProperties: true
+      weight:
+        title: Weight
+        description: >
+          The weight of a request matching this matcher when acquiring a call from the rate limiter.
+          Different endpoints can consume different amounts from a shared budget by specifying
+          different weights. If not set, each request counts as 1.
+        anyOf:
+          - type: integer
+          - type: string
     additionalProperties: true
   DefaultErrorHandler:
     title: Default Error Handler
@@ -1798,13 +2131,18 @@ definitions:
             - "$ref": "#/definitions/CustomBackoffStrategy"
       max_retries:
         title: Max Retry Count
-        description: The maximum number of time to retry a retryable request before giving up and failing.
-        type: integer
+        description: The maximum number of times to retry a retryable request before giving up and failing. Can be a hardcoded integer or a string interpolated from the connector config.
+        anyOf:
+          - type: integer
+          - type: string
+        interpolation_context:
+          - config
         default: 5
         examples:
           - 5
           - 0
           - 10
+          - "{{ config['max_retries_on_throttle'] }}"
       response_filters:
         title: Response Filters
         description: List of response filters to iterate on when deciding how to handle an error. When using an array of multiple filters, the filters will be applied sequentially and the response will be selected if it matches any of the filter's predicate.
@@ -1838,6 +2176,7 @@ definitions:
         "$ref": "#/definitions/RequestOption"
       page_token_option:
         title: Inject Page Token Into Outgoing HTTP Request
+        description: Inject the page token into the outgoing HTTP requests by inserting it into either the request URL path or a field on the request.
         anyOf:
           - "$ref": "#/definitions/RequestOption"
           - "$ref": "#/definitions/RequestPath"
@@ -1868,6 +2207,10 @@ definitions:
           - ["data", "records"]
           - ["data", "{{ parameters.name }}"]
           - ["data", "*", "record"]
+      record_expander:
+        title: Record Expander
+        description: Optional component to expand records by extracting items from nested array fields.
+        "$ref": "#/definitions/RecordExpander"
       $parameters:
         type: object
         additionalProperties: true
@@ -1881,6 +2224,67 @@ definitions:
       type:
         type: string
         enum: [ResponseToFileExtractor]
+      preserve_na_values:
+        title: Preserve NA Values
+        description: When enabled, string values such as "NA", "N/A", "NULL", "None" and "NaN" are kept as-is instead of being interpreted as missing and converted to null. Empty cells are still treated as null. Defaults to false to preserve historical behavior.
+        type: boolean
+        default: false
+      $parameters:
+        type: object
+        additionalProperties: true
+  RecordExpander:
+    title: Record Expander
+    description: Expands records by extracting items from a nested array field. When configured, this component extracts items from a specified nested array path within each record and emits each item as a separate record. Optionally, the original parent record can be embedded in each expanded item for context preservation. Supports wildcards (*) for matching multiple arrays.
+    type: object
+    required:
+      - type
+      - expand_records_from_field
+    properties:
+      type:
+        type: string
+        enum: [RecordExpander]
+      expand_records_from_field:
+        title: Expand Records From Field
+        description: Path to a nested array field within each record. Items from this array will be extracted and emitted as separate records. Supports wildcards (*) for matching multiple arrays.
+        type: array
+        items:
+          type: string
+        interpolation_context:
+          - config
+        examples:
+          - ["lines", "data"]
+          - ["items"]
+          - ["nested", "array"]
+          - ["sections", "*", "items"]
+      remain_original_record:
+        title: Remain Original Record
+        description: If true, each expanded record will include the original parent record in an "original_record" field. Defaults to false.
+        type: boolean
+        default: false
+      on_no_records:
+        title: On No Records
+        description: Behavior when the expansion path is missing, not a list, or an empty list. "skip" (default) emits nothing. "emit_parent" emits the original parent record unchanged.
+        type: string
+        enum:
+          - skip
+          - emit_parent
+        default: skip
+      truncation_indicator_path:
+        title: Truncation Indicator Path
+        description: Path within each record to a field indicating that the embedded nested list is truncated (e.g. a `has_more` flag on the list object). When the field evaluates to a truthy value and `truncated_list_retriever` is configured, the retriever is used to fetch the complete list instead of expanding the embedded items. When the field is truthy and no retriever is configured, the embedded items are expanded as normal and a WARNING is logged once per stream so the truncation is visible instead of silent. Glob characters (`*`, `?`, `[`) are not supported in this path, nor in `expand_records_from_field` when a retriever is configured; this is enforced on the interpolated values. This field is ignored by CDK versions that predate it, so pin the connector to a CDK version that supports it.
+        type: array
+        items:
+          type: string
+        interpolation_context:
+          - config
+        examples:
+          - ["data", "object", "lines", "has_more"]
+      truncated_list_retriever:
+        title: Truncated List Retriever
+        description: Retriever used to fetch the complete list of items when the field at `truncation_indicator_path` is truthy on a record. The record being expanded is exposed to the retriever's interpolation context as `stream_slice['parent_record']`. One fetch is issued per truncated record, so enable `use_cache` on the requester when the same list can be fetched repeatedly. Configure a `paginator`, since without one only the first page of the complete list is read. If the retriever returns no records, the embedded items are expanded as a fallback; if it returns fewer records than the `total_count` field next to the indicator, a WARNING is logged once per stream. Request failures surface through the retriever's `error_handler` and fail the stream like any other request. `$parameters` of the enclosing stream propagate into this retriever's components (including `request_parameters` on its requester); move request-shaping parameters to the outer requester's `request_parameters` when adopting this field. `partition_router` and `pagination_reset` are not supported. In Connector Builder test reads, its requests appear as auxiliary requests and the test-read page limit applies to each fetch independently, so the fetched list may be shorter than `total_count`; the incomplete-fetch warning is not emitted in test reads when a `paginator` is configured (without one the retriever is not capped, so the warning still applies). Requires `truncation_indicator_path`. This field is ignored by CDK versions that predate it, so pin the connector to a CDK version that supports it.
+        anyOf:
+          - "$ref": "#/definitions/SimpleRetriever"
+          - "$ref": "#/definitions/CustomRetriever"
       $parameters:
         type: object
         additionalProperties: true
@@ -1907,6 +2311,13 @@ definitions:
           - 5
           - 5.5
           - "10"
+      jitter_range_in_seconds:
+        title: Jitter Range
+        description: Optional additive jitter range in seconds. When set, the backoff time is uniformly distributed between computed_backoff and computed_backoff + (jitter_range_in_seconds * 2), so jitter only increases the computed backoff.
+        type: number
+        minimum: 0
+        examples:
+          - 2
       $parameters:
         type: object
         additionalProperties: true
@@ -2015,6 +2426,18 @@ definitions:
             field_name: Authorization
           - inject_into: request_parameter
             field_name: authKey
+      api_token:
+        title: API Token Template
+        description: 'A template for the token value to inject. Use {{ session_token }} to reference the session token. For example, use "Token {{ session_token }}" for APIs that expect "Authorization: Token <token>".'
+        type: string
+        default: "{{ session_token }}"
+        interpolation_context:
+          - config
+          - session_token
+        examples:
+          - "{{ session_token }}"
+          - "Token {{ session_token }}"
+          - "Bearer {{ session_token }}"
   SessionTokenRequestBearerAuthenticator:
     title: Bearer Authenticator
     description: Authenticator for requests using the session token as a standard bearer token.
@@ -2117,6 +2540,7 @@ definitions:
           - "$ref": "#/definitions/CustomAuthenticator"
           - "$ref": "#/definitions/NoAuth"
           - "$ref": "#/definitions/LegacySessionTokenAuthenticator"
+          - "$ref": "#/definitions/RateLimitedMultipleTokenAuthenticator"
       fetch_properties_from_endpoint:
         deprecated: true
         deprecation_message: "Use `query_properties` field instead."
@@ -2234,7 +2658,7 @@ definitions:
           - "$ref": "#/definitions/CustomErrorHandler"
       use_cache:
         title: Use Cache
-        description: Enables stream requests caching. This field is automatically set by the CDK.
+        description: Enables stream requests caching. When set to true, repeated requests to the same URL will return cached responses. Parent streams automatically have caching enabled. Only set this to false if you are certain that caching should be disabled, as it may negatively impact performance when the same data is needed multiple times (e.g., for scroll-based pagination APIs where caching causes duplicate records).
         type: boolean
         default: false
       $parameters:
@@ -2258,13 +2682,19 @@ definitions:
           - FAIL
           - RETRY
           - IGNORE
+          - RESET_PAGINATION
           - RATE_LIMITED
+          - REFRESH_TOKEN_THEN_RETRY
+          - REDUCE_PAGE_SIZE
         examples:
           - SUCCESS
           - FAIL
           - RETRY
           - IGNORE
+          - RESET_PAGINATION
           - RATE_LIMITED
+          - REFRESH_TOKEN_THEN_RETRY
+          - REDUCE_PAGE_SIZE
       failure_type:
         title: Failure Type
         description: Failure type of traced exception if a response matches the filter.
@@ -2486,6 +2916,40 @@ definitions:
       type:
         type: string
         enum: [JsonDecoder]
+  JsonItemsDecoder:
+    title: JSON Items (Streaming)
+    description: >-
+      Select 'JSON Items (Streaming)' to stream-decode a single JSON document
+      by yielding each element of a nested array, one at a time. Use this for
+      very large single-document JSON responses (e.g. a wrapping object
+      containing a multi-GB array) where buffering the whole document into
+      memory would cause out-of-memory errors. Powered by the `ijson`
+      streaming parser.
+    type: object
+    required:
+      - type
+      - items_path
+    properties:
+      type:
+        type: string
+        enum: [JsonItemsDecoder]
+      items_path:
+        title: Items Path
+        description: >-
+          Dot-separated path to the JSON array whose elements should be
+          yielded as records. Uses `ijson` path syntax (e.g. `data.users`),
+          not JSONPath syntax — do not include leading `$.` or trailing
+          `[*]`.
+        type: string
+        examples:
+          - dataByDepartmentAndSearchTerm
+          - dataByAsin
+          - data.users
+      encoding:
+        title: Encoding
+        description: Text encoding used to decode the streamed bytes before JSON parsing.
+        type: string
+        default: utf-8
   JsonlDecoder:
     title: JSON Lines
     description: Select 'JSON Lines' if the response consists of JSON objects separated by new lines ('\n') in JSONL format.
@@ -2496,6 +2960,34 @@ definitions:
       type:
         type: string
         enum: [JsonlDecoder]
+  JsonSchemaPropertySelector:
+    title: Json Schema Property Selector
+    description: When configured, the JSON schema supplied in the catalog containing which columns are selected for the current stream will be used to reduce which query properties will be included in the outbound API request. This can improve the performance of API requests, especially for those requiring multiple requests to get a complete record.
+    type: object
+    required:
+      - type
+    properties:
+      type:
+        type: string
+        enum: [JsonSchemaPropertySelector]
+      transformations:
+        title: Transformations
+        description: A list of transformations to be applied on the customer configured schema that will be used to filter out unselected fields when specifying query properties for API requests.
+        linkable: true
+        type: array
+        items:
+          anyOf:
+            - "$ref": "#/definitions/AddFields"
+            - "$ref": "#/definitions/RemoveFields"
+            - "$ref": "#/definitions/KeysToLower"
+            - "$ref": "#/definitions/KeysToSnakeCase"
+            - "$ref": "#/definitions/FlattenFields"
+            - "$ref": "#/definitions/DpathFlattenFields"
+            - "$ref": "#/definitions/KeysReplace"
+            - "$ref": "#/definitions/CustomTransformation"
+      $parameters:
+        type: object
+        additionalProperties: true
   KeysToLower:
     title: Keys to Lower Case
     description: A transformation that renames all keys to lower case.
@@ -2699,6 +3191,7 @@ definitions:
           - "$ref": "#/definitions/CsvDecoder"
           - "$ref": "#/definitions/GzipDecoder"
           - "$ref": "#/definitions/JsonDecoder"
+          - "$ref": "#/definitions/JsonItemsDecoder"
           - "$ref": "#/definitions/JsonlDecoder"
   ListPartitionRouter:
     title: List Partition Router
@@ -2803,6 +3296,18 @@ definitions:
           - "%Y-%m-%dT%H:%M:%S.%f%z"
           - "%Y-%m-%d"
           - "%s"
+        suggestions:
+          - "%Y-%m-%d"
+          - "%Y-%m-%d %H:%M:%S"
+          - "%Y-%m-%dT%H:%M:%S"
+          - "%Y-%m-%dT%H:%M:%SZ"
+          - "%Y-%m-%dT%H:%M:%S%z"
+          - "%Y-%m-%dT%H:%M:%S.%fZ"
+          - "%Y-%m-%dT%H:%M:%S.%f%z"
+          - "%Y-%m-%d %H:%M:%S.%f+00:00"
+          - "%s"
+          - "%ms"
+          - "%s_as_float"
       max_datetime:
         title: Max Datetime
         description: Ceiling applied on the datetime value. Must be formatted with the datetime_format field.
@@ -2949,6 +3454,55 @@ definitions:
               The DeclarativeOAuth Specific string of the scopes needed to be grant for authenticated user.
             examples:
               - user:read user:read_orders workspaces:read
+          # NOTE: scopes, optional_scopes, and scopes_join_strategy are processed by the
+          # platform OAuth handler (DeclarativeOAuthSpecHandler.kt), not by the CDK runtime.
+          # The CDK schema defines the manifest contract; the platform reads these fields
+          # during the OAuth consent flow to build the authorization URL.
+          scopes:
+            title: Scopes
+            type: array
+            items:
+              type: object
+              required:
+                - scope
+              properties:
+                scope:
+                  type: string
+                  description: The OAuth scope string to request from the provider.
+              additionalProperties: true
+            description: |-
+              List of OAuth scope objects. When present, takes precedence over the `scope` string property.
+              The scope values are joined using the `scopes_join_strategy` (default: space) before being
+              sent to the OAuth provider.
+            examples:
+              - [{"scope": "user:read"}, {"scope": "user:write"}]
+          optional_scopes:
+            title: Optional Scopes
+            type: array
+            items:
+              type: object
+              required:
+                - scope
+              properties:
+                scope:
+                  type: string
+                  description: The OAuth scope string to request from the provider.
+              additionalProperties: true
+            description: |-
+              Optional OAuth scope objects that may or may not be granted.
+            examples:
+              - [{"scope": "admin:read"}]
+          scopes_join_strategy:
+            title: Scopes Join Strategy
+            type: string
+            enum:
+              - space
+              - comma
+              - plus
+            default: space
+            description: |-
+              The strategy used to join the `scopes` array into a single string for the OAuth request.
+              Defaults to `space` per RFC 6749.
           access_token_url:
             title: Access Token URL
             type: string
@@ -3289,7 +3843,7 @@ definitions:
       - ["code", "type"]
   PropertiesFromEndpoint:
     title: Properties from Endpoint
-    description: Defines the behavior for fetching the list of properties from an API that will be loaded into the requests to extract records.
+    description: Defines the behavior for fetching the list of properties from an API that will be loaded into the requests to extract records. Note that stream_slices can't be interpolated from this retriever.
     type: object
     required:
       - type
@@ -3374,6 +3928,10 @@ definitions:
         title: Property Chunking
         description: Defines how query properties will be grouped into smaller sets for APIs with limitations on the number of properties fetched per API request.
         "$ref": "#/definitions/PropertyChunking"
+      property_selector:
+        title: Property Selector
+        description: Defines where to look for and which query properties that should be sent in outbound API requests. For example, you can specify that only the selected columns of a stream should be in the request.
+        "$ref": "#/definitions/JsonSchemaPropertySelector"
       $parameters:
         type: object
         additionalProperties: true
@@ -3486,7 +4044,7 @@ definitions:
           - [["content", "html"], ["content", "plain_text"]]
   RequestPath:
     title: Request Path
-    description: Specifies where in the request path a component's value should be inserted.
+    description: The URL path to be used for the HTTP request.
     type: object
     required:
       - type
@@ -3633,6 +4191,22 @@ definitions:
         title: Incremental Stream
         description: Component used to coordinate how records are extracted across stream slices and request pages when the state provided.
         "$ref": "#/definitions/DeclarativeStream"
+      api_retention_period:
+        title: API Retention Period
+        description: |
+          The data retention period of the incremental API (ISO8601 duration). If the cursor value is older than this retention period, the connector will automatically fall back to a full refresh to avoid data loss.
+          This is useful for APIs like Stripe Events API which only retain data for 30 days.
+          * **PT1H**: 1 hour
+          * **P1D**: 1 day
+          * **P1W**: 1 week
+          * **P1M**: 1 month
+          * **P1Y**: 1 year
+          * **P30D**: 30 days
+        type: string
+        examples:
+          - "P30D"
+          - "P90D"
+          - "P1Y"
       $parameters:
         type: object
         additionalProperties: true
@@ -3658,6 +4232,7 @@ definitions:
         description: Component decoding the response so records can be extracted.
         anyOf:
           - "$ref": "#/definitions/JsonDecoder"
+          - "$ref": "#/definitions/JsonItemsDecoder"
           - "$ref": "#/definitions/XmlDecoder"
           - "$ref": "#/definitions/CsvDecoder"
           - "$ref": "#/definitions/JsonlDecoder"
@@ -3674,6 +4249,18 @@ definitions:
         anyOf:
           - "$ref": "#/definitions/DefaultPaginator"
           - "$ref": "#/definitions/NoPagination"
+      pagination_reset:
+        description: Describes what triggers pagination reset and how to handle it.
+        "$ref": "#/definitions/PaginationReset"
+      page_size_reduction:
+        description: >-
+          Describes how the page size is reduced when an error handler resolves to the REDUCE_PAGE_SIZE action.
+          Requires a DefaultPaginator that defines both page_size_option and a pagination strategy with a page_size.
+          Cannot be combined with query properties, a file uploader, or a parent stream read lazily through
+          lazy_read_pointer, because in those cases records of the failing page have already been emitted and
+          re-issuing the page would emit them twice. A page_token_option of type RequestPath is rejected as
+          well, because the next page is then a URL built by the API which already carries the page size.
+        "$ref": "#/definitions/PageSizeReduction"
       ignore_stream_slicer_parameters_on_paginated_requests:
         description: If true, the partition router and incremental request options will be ignored when paginating requests. Request options set directly on the requester will not be ignored.
         type: boolean
@@ -3685,6 +4272,7 @@ definitions:
           - "$ref": "#/definitions/SubstreamPartitionRouter"
           - "$ref": "#/definitions/ListPartitionRouter"
           - "$ref": "#/definitions/GroupingPartitionRouter"
+          - "$ref": "#/definitions/UnionPartitionRouter"
           - "$ref": "#/definitions/CustomPartitionRouter"
           - type: array
             title: Multiple Partition Routers
@@ -3693,10 +4281,166 @@ definitions:
                 - "$ref": "#/definitions/SubstreamPartitionRouter"
                 - "$ref": "#/definitions/ListPartitionRouter"
                 - "$ref": "#/definitions/GroupingPartitionRouter"
+                - "$ref": "#/definitions/UnionPartitionRouter"
                 - "$ref": "#/definitions/CustomPartitionRouter"
       $parameters:
         type: object
         additionalProperties: true
+  PaginationReset:
+    title: Pagination Reset
+    description: Describes what triggers pagination reset and how to handle it. If SPLIT_USING_CURSOR, the connector developer is accountable for ensuring that the records are returned in ascending order.
+    type: object
+    required:
+      - type
+      - action
+    properties:
+      type:
+        type: string
+        enum: [PaginationReset]
+      action:
+        type: string
+        enum:
+          - SPLIT_USING_CURSOR
+          - RESET
+      limits:
+        "$ref": "#/definitions/PaginationResetLimits"
+  PaginationResetLimits:
+    title: Pagination Reset Limits
+    description: Describes the limits that trigger pagination reset
+    type: object
+    required:
+      - type
+    properties:
+      type:
+        type: string
+        enum: [PaginationResetLimits]
+      number_of_records:
+        type: integer
+  PageSizeReduction:
+    title: Page Size Reduction
+    description: >-
+      Describes how the page size is reduced when an error handler resolves to the REDUCE_PAGE_SIZE action. On such
+      a response, the connector re-issues the same page with a smaller page size instead of retrying the identical
+      request. Only supported on a DefaultPaginator that has a page_size_option and whose pagination_strategy
+      defines a page_size and is CursorPagination, OffsetIncrement, or a CustomPaginationStrategy whose
+      next_page_token accepts a page_size_override keyword argument. PageIncrement is not supported because a
+      smaller page size moves every following page boundary and would skip records. It is also rejected when the
+      stream uses query properties, a file uploader, or reads its parent stream lazily through lazy_read_pointer,
+      since re-issuing a page whose records were already emitted would duplicate them. A page_token_option of
+      type RequestPath is rejected too: the next page is then a URL built by the API which already carries the
+      page size, so the reduced page size would be sent next to the original one. Each reduction waits a
+      short, growing amount of time before re-issuing the page so that an endpoint failing at every page size
+      is not hit in a burst. That wait is the CDK's own: the error handler's backoff_strategies and any
+      Retry-After header are not consulted on this path, the same way they are not for RESET_PAGINATION, and
+      backoff_seconds is what sets its length.
+    type: object
+    required:
+      - type
+    properties:
+      type:
+        type: string
+        enum: [PageSizeReduction]
+      reduction_factor:
+        title: Reduction Factor
+        description: Divisor applied to the page size on each reduction. The new page size is floor(current page size / reduction factor).
+        type: number
+        default: 2
+        exclusiveMinimum: 1
+        examples:
+          - 2
+          - 4
+      minimum_page_size:
+        title: Minimum Page Size
+        description: >-
+          Page size below which the connector stops reducing and fails the sync. It must be smaller than the page
+          size configured on the pagination strategy, otherwise no reduction could ever be applied. It is one of
+          two bounds on the reduction and whichever is tighter wins: an unbroken run of failing pages divides the
+          page size by reduction_factor at most max_attempts times, so reaching this floor in a single run needs
+          max_attempts of at least log(page_size / minimum_page_size) / log(reduction_factor) - with the defaults,
+          a page size of 1000 bottoms out at 31 records per page and a floor of 10 is never reached. Pages that
+          succeed in between restart the max_attempts budget, so the floor is still reachable over a partition.
+        type: integer
+        default: 1
+        minimum: 1
+        examples:
+          - 1
+          - 10
+      max_attempts:
+        title: Maximum Reduction Attempts
+        description: >-
+          Maximum number of page size reductions made in a row without a single page succeeding, before the sync
+          fails with a transient error. Every reduction follows a request that failed, so at most
+          max_attempts + 1 failing requests are issued before giving up. The budget restarts after every page
+          that succeeds, under either reset_policy, so it bounds the reductions needed to get a single page
+          through and not the number of pages a partition may have: a stream that needs a reduction every now
+          and then reads to the end however long it is. Under NEVER the page size also strictly decreases, so
+          minimum_page_size bounds the reductions of the whole partition on its own. The wait between reduction
+          attempts is the CDK's own - it grows with each attempt - and does not consult the error handler's
+          backoff_strategies or a Retry-After header.
+        type: integer
+        default: 5
+        minimum: 1
+        examples:
+          - 5
+          - 10
+      backoff_seconds:
+        title: Backoff Seconds
+        description: >-
+          Base number of seconds to wait before the page is re-issued, multiplied by the number of attempts made in
+          a row, so the second attempt waits twice as long as the first. A REDUCE_PAGE_SIZE response never reaches
+          the error handler's retry budget, backoff_strategies or a Retry-After header, so this is the only thing
+          spacing those requests out. Raise it on an API whose error also means "we are briefly unwell" rather than
+          only "your page is too big", since the default spaces the whole run of attempts over a few seconds.
+        type: number
+        default: 0.5
+        minimum: 0
+        examples:
+          - 0.5
+          - 5
+      retries_at_minimum_page_size:
+        title: Retries At Minimum Page Size
+        description: >-
+          Number of times the same page is re-issued unchanged, each after the backoff wait, once the page size
+          cannot be shrunk any further, before the sync fails with a transient error. The default of 0 fails on the
+          first response received at minimum_page_size. Raise it when the API returns the same error for a page that
+          is too big and for a server-side hiccup: at the floor, reducing is no longer an option but waiting still
+          is, and without this budget those responses end the stream on the first one. This budget is separate from
+          max_attempts, which only counts reductions, and it restarts on every page that succeeds. It applies however the page size arrived at the floor, whether by
+          reduction or because page_size was already there; a page size that minimum_page_size blocks from ever
+          being reduced is still reported as a configuration error, but only once this budget is spent.
+        type: integer
+        default: 0
+        minimum: 0
+        examples:
+          - 0
+          - 3
+      failure_message:
+        title: Failure Message
+        description: >-
+          Sentence appended to the error message shown to the user when the connector runs out of reductions,
+          either because max_attempts was reached or because the page size is already at minimum_page_size. Use
+          it to tell the user what they can do about it in terms of this specific API, for instance which
+          filter narrows the query down. Without it the message only states that the API kept rejecting every
+          page size the connector asked for.
+        type: string
+        examples:
+          - Narrow the sync down by selecting fewer fields on this stream.
+          - Set a more recent start date so that each page covers less data.
+      reset_policy:
+        title: Reset Policy
+        description: >-
+          When to restore the page size configured on the pagination strategy. NEVER keeps the reduced page size for
+          the rest of the partition. AFTER_SUCCESSFUL_PAGE restores it as soon as one page succeeds, which means
+          hitting the same error again on every page - use it only when the reduction is worth one extra request per
+          page, for instance because the configured page size usually works and only some pages are too heavy.
+          It only controls the page size: the max_attempts budget restarts on every page that succeeds under both
+          policies, so there is no limit on how many reductions a partition may make in total. What is bounded is
+          the reductions that get no page through.
+        type: string
+        enum:
+          - NEVER
+          - AFTER_SUCCESSFUL_PAGE
+        default: NEVER
   GzipDecoder:
     title: gzip
     description: Select 'gzip' for response data that is compressed with gzip. Requires specifying an inner data type/decoder to parse the decompressed data.
@@ -3713,6 +4457,7 @@ definitions:
           - "$ref": "#/definitions/CsvDecoder"
           - "$ref": "#/definitions/GzipDecoder"
           - "$ref": "#/definitions/JsonDecoder"
+          - "$ref": "#/definitions/JsonItemsDecoder"
           - "$ref": "#/definitions/JsonlDecoder"
   CsvDecoder:
     title: CSV
@@ -3762,6 +4507,11 @@ definitions:
         type: array
         items:
           type: string
+      skipped:
+        description: "Statuses that indicate the job was skipped because there is no data to return. Jobs with these statuses will not be retried and no records will be fetched."
+        type: array
+        items:
+          type: string
   AsyncRetriever:
     title: Asynchronous Retriever
     description: "Retrieves records by Asynchronously sending requests to fetch records. The retriever acts as an orchestrator between the requester, the record selector, the paginator, and the partition router."
@@ -3774,7 +4524,6 @@ definitions:
       - polling_requester
       - download_requester
       - status_extractor
-      - download_target_extractor
     properties:
       type:
         type: string
@@ -3819,6 +4568,14 @@ definitions:
           - type: string
         interpolation_context:
           - config
+      failed_retry_wait_time_in_seconds:
+        description: Time in seconds to wait before retrying a failed async job. Only applies to jobs that ran on the API side and reported a FAILED status (e.g. report generation failed due to a cooldown). Creation failures (HTTP errors when starting a job, such as 429s) and TIMED_OUT jobs are retried immediately and are not affected by this setting. When set, the orchestrator defers retry of real failed jobs until the wait time has elapsed, without blocking other jobs.
+        anyOf:
+          - type: integer
+            minimum: 1
+          - type: string
+        interpolation_context:
+          - config
       download_target_requester:
         description: Requester component that describes how to prepare HTTP requests to send to the source API to extract the url from polling response by the completed async job.
         anyOf:
@@ -3852,6 +4609,7 @@ definitions:
           - "$ref": "#/definitions/ListPartitionRouter"
           - "$ref": "#/definitions/SubstreamPartitionRouter"
           - "$ref": "#/definitions/GroupingPartitionRouter"
+          - "$ref": "#/definitions/UnionPartitionRouter"
           - "$ref": "#/definitions/CustomPartitionRouter"
           - type: array
             items:
@@ -3859,6 +4617,7 @@ definitions:
                 - "$ref": "#/definitions/ListPartitionRouter"
                 - "$ref": "#/definitions/SubstreamPartitionRouter"
                 - "$ref": "#/definitions/GroupingPartitionRouter"
+                - "$ref": "#/definitions/UnionPartitionRouter"
                 - "$ref": "#/definitions/CustomPartitionRouter"
       decoder:
         title: HTTP Response Format
@@ -3867,6 +4626,7 @@ definitions:
           - "$ref": "#/definitions/CsvDecoder"
           - "$ref": "#/definitions/GzipDecoder"
           - "$ref": "#/definitions/JsonDecoder"
+          - "$ref": "#/definitions/JsonItemsDecoder"
           - "$ref": "#/definitions/JsonlDecoder"
           - "$ref": "#/definitions/IterableDecoder"
           - "$ref": "#/definitions/XmlDecoder"
@@ -3879,6 +4639,7 @@ definitions:
           - "$ref": "#/definitions/CsvDecoder"
           - "$ref": "#/definitions/GzipDecoder"
           - "$ref": "#/definitions/JsonDecoder"
+          - "$ref": "#/definitions/JsonItemsDecoder"
           - "$ref": "#/definitions/JsonlDecoder"
           - "$ref": "#/definitions/IterableDecoder"
           - "$ref": "#/definitions/XmlDecoder"
@@ -3975,6 +4736,43 @@ definitions:
             - "$ref": "#/definitions/ConfigRemoveFields"
             - "$ref": "#/definitions/CustomConfigTransformation"
         default: []
+  StreamGroup:
+    title: Stream Group
+    description: >
+      A group of streams that share a common resource and should not be read simultaneously.
+      Streams in the same group will be blocked from concurrent reads based on the specified action.
+    type: object
+    required:
+      - streams
+      - action
+    properties:
+      streams:
+        title: Streams
+        description: >
+          List of references to streams that belong to this group.
+        type: array
+        items:
+          anyOf:
+            - "$ref": "#/definitions/DeclarativeStream"
+      action:
+        title: Action
+        description: The action to apply to streams in this group.
+        "$ref": "#/definitions/BlockSimultaneousSyncsAction"
+  BlockSimultaneousSyncsAction:
+    title: Block Simultaneous Syncs Action
+    description: >
+      Action that prevents streams in the same group from being read concurrently.
+      When applied to a stream group, streams with this action will be deferred if
+      another stream in the same group is currently active.
+      This is useful for APIs that don't allow concurrent access to the same
+      endpoint or session. Only applies to ConcurrentDeclarativeSource.
+    type: object
+    required:
+      - type
+    properties:
+      type:
+        type: string
+        enum: [BlockSimultaneousSyncsAction]
   SubstreamPartitionRouter:
     title: Substream Partition Router
     description: Partition router that is used to retrieve records that have been partitioned according to records from the specified parent streams. An example of a parent stream is automobile brands and the substream would be the various car models associated with each branch.
@@ -4031,10 +4829,15 @@ definitions:
           - "([-+]?\\d+)"
       max_waiting_time_in_seconds:
         title: Max Waiting Time in Seconds
-        description: Given the value extracted from the header is greater than this value, stop the stream.
-        type: number
+        description: 'Stop the stream instead of waiting, when the value extracted from the header is greater than or equal to this value. Can be a hardcoded number, or a string interpolated from the connector config so that the bound can be changed without a connector release. A value of 0 means never wait. Not evaluated when a rate-limited retry can rotate to another credential with quota; any other retryable error still consults this strategy.'
+        anyOf:
+          - type: number
+          - type: string
+        interpolation_context:
+          - config
         examples:
           - 3600
+          - "{{ config['max_waiting_time'] * 60 }}"
       $parameters:
         type: object
         additionalProperties: true
@@ -4067,12 +4870,58 @@ definitions:
         anyOf:
           - "$ref": "#/definitions/ListPartitionRouter"
           - "$ref": "#/definitions/SubstreamPartitionRouter"
+          - "$ref": "#/definitions/UnionPartitionRouter"
           - "$ref": "#/definitions/CustomPartitionRouter"
       deduplicate:
         title: Deduplicate Partitions
         description: If true, ensures that partitions are unique within each group by removing duplicates based on the partition key.
         type: boolean
         default: true
+      $parameters:
+        type: object
+        additionalProperties: true
+  UnionPartitionRouter:
+    title: Union Partition Router
+    description: >
+      A partition router that yields the deduplicated union of the partitions produced by its child
+      partition routers. Every emitted partition is normalized to a single key defined by `partition_field`;
+      any other partition keys coming from a child router (such as a SubstreamPartitionRouter's `parent_slice`)
+      are moved into the slice's extra fields. The first occurrence of a partition value wins and later
+      duplicates are skipped. Partition values must be hashable; deduplication holds every distinct value
+      in memory for the duration of the sync, and the resulting partition count is the deduplicated sum
+      of the child routers' partition counts, which affects per-partition state size. Because child routers
+      must emit scalar partition values, GroupingPartitionRouter (which emits list-valued partitions)
+      cannot be used as a child.
+    type: object
+    required:
+      - type
+      - partition_field
+      - partition_routers
+    properties:
+      type:
+        type: string
+        enum: [UnionPartitionRouter]
+      partition_field:
+        title: Partition Field
+        description: The single partition key that all child partition routers' slices are normalized to. Each child router must emit this key in its partitions. Interpolation is evaluated once when the connector is built, using the connector config and $parameters.
+        type: string
+        interpolation_context:
+          - config
+          - parameters
+        examples:
+          - "repository"
+          - "{{ config['partition_field'] }}"
+      partition_routers:
+        title: Partition Routers
+        description: The child partition routers whose partitions are unioned. Request options are not supported on child partition routers; partition values should be consumed via interpolation (e.g. `stream_partition`).
+        type: array
+        minItems: 2
+        items:
+          anyOf:
+            - "$ref": "#/definitions/ListPartitionRouter"
+            - "$ref": "#/definitions/SubstreamPartitionRouter"
+            - "$ref": "#/definitions/UnionPartitionRouter"
+            - "$ref": "#/definitions/CustomPartitionRouter"
       $parameters:
         type: object
         additionalProperties: true
@@ -4114,6 +4963,17 @@ definitions:
           - config
         examples:
           - "([-+]?\\d+)"
+      max_waiting_time_in_seconds:
+        title: Max Waiting Time in Seconds
+        description: 'Stop the stream instead of waiting, when the wait this strategy computes is greater than or equal to this value. The comparison is against the computed wait rather than the raw header, since the header holds an absolute timestamp, and it is applied after `min_wait`, so a cap below the floor still wins -- including for the fallback where the header is absent and `min_wait` supplies the wait on its own. Can be a hardcoded number, or a string interpolated from the connector config so that the bound can be changed without a connector release. A value of 0 means never wait. Not evaluated when a rate-limited retry can rotate to another credential with quota; any other retryable error still consults this strategy.'
+        anyOf:
+          - type: number
+          - type: string
+        interpolation_context:
+          - config
+        examples:
+          - 3600
+          - "{{ config['max_waiting_time'] * 60 }}"
       $parameters:
         type: object
         additionalProperties: true
@@ -4141,11 +5001,9 @@ definitions:
           - stream_slice
           - stream_template_config
         examples:
-          - ["data"]
-          - ["data", "records"]
-          - ["data", 1, "name"]
-          - ["data", "{{ components_values.name }}"]
-          - ["data", "*", "record"]
+          - ["name"]
+          - ["retriever", "requester", "url"]
+          - ["retriever", "requester", "{{ components_values.field }}"]
           - ["*", "**", "name"]
       value:
         title: Value
@@ -4776,6 +5634,12 @@ interpolation:
     - title: stream_slice
       description: This variable is deprecated. Use stream_interval or stream_partition instead.
       type: object
+    - title: components_values
+      description: The record object produced by the components resolver for which a stream will be generated.
+      type: object
+      examples:
+        - name: "accounts"
+          id: 1234
   macros:
     - title: now_utc
       description: Returns the current date and time in the UTC timezone.
@@ -4887,3 +5751,12 @@ interpolation:
       return_type: str
       examples:
         - '{{ "goodbye, cruel world" | regex_search("goodbye,\s(.*)$") }} -> "cruel world"'
+    - title: regex_replace
+      description: Replace all occurrences in the string that match the provided regex pattern with the specified replacement string.
+      arguments:
+        regex: The regular expression pattern to match against.
+        replacement: The string to replace matched occurrences with.
+      return_type: str
+      examples:
+        - '{{ "hello world" | regex_replace("world", "universe") }} -> "hello universe"'
+        - '{{ "hello-world_foo" | regex_replace("[_-]", " ") }} -> "hello world foo"'

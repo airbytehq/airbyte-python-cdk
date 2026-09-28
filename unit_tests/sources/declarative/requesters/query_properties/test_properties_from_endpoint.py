@@ -44,11 +44,7 @@ def test_get_properties_from_endpoint():
         parameters={},
     )
 
-    properties = list(
-        properties_from_endpoint.get_properties_from_endpoint(
-            stream_slice=StreamSlice(cursor_slice={}, partition={})
-        )
-    )
+    properties = properties_from_endpoint.get_properties_from_endpoint()
 
     assert len(properties) == 9
     assert properties == expected_properties
@@ -89,11 +85,7 @@ def test_get_properties_from_endpoint_with_multiple_field_paths():
         parameters={},
     )
 
-    properties = list(
-        properties_from_endpoint.get_properties_from_endpoint(
-            stream_slice=StreamSlice(cursor_slice={}, partition={})
-        )
-    )
+    properties = properties_from_endpoint.get_properties_from_endpoint()
 
     assert len(properties) == 9
     assert properties == expected_properties
@@ -135,11 +127,51 @@ def test_get_properties_from_endpoint_with_interpolation():
         parameters={},
     )
 
-    properties = list(
-        properties_from_endpoint.get_properties_from_endpoint(
-            stream_slice=StreamSlice(cursor_slice={}, partition={})
-        )
-    )
+    properties = properties_from_endpoint.get_properties_from_endpoint()
 
     assert len(properties) == 9
+    assert properties == expected_properties
+
+
+def test_given_multiple_calls_when_get_properties_from_endpoint_then_only_call_retriever_once():
+    retriever = Mock(spec=SimpleRetriever)
+    retriever.read_records.return_value = iter(
+        [
+            Record(stream_name="players", data={"id": "ace", "value": 1}),
+        ]
+    )
+
+    properties_from_endpoint = PropertiesFromEndpoint(
+        retriever=retriever,
+        property_field_path=["value"],
+        config={},
+        parameters={},
+    )
+
+    properties_from_endpoint.get_properties_from_endpoint()
+    properties_from_endpoint.get_properties_from_endpoint()
+    properties_from_endpoint.get_properties_from_endpoint()
+
+    assert retriever.read_records.call_count == 1
+
+
+def test_given_value_is_int_when_get_properties_from_endpoint_then_return_str():
+    expected_properties = ["1"]
+
+    retriever = Mock(spec=SimpleRetriever)
+    retriever.read_records.return_value = iter(
+        [
+            Record(stream_name="players", data={"id": "ace", "value": 1}),
+        ]
+    )
+
+    properties_from_endpoint = PropertiesFromEndpoint(
+        retriever=retriever,
+        property_field_path=["value"],
+        config={},
+        parameters={},
+    )
+
+    properties = properties_from_endpoint.get_properties_from_endpoint()
+
     assert properties == expected_properties

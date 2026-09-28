@@ -2,11 +2,12 @@
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
 
-from dataclasses import InitVar, dataclass, field
+from dataclasses import InitVar, dataclass
 from typing import Any, List, Mapping, MutableMapping, Optional, Union
 
 import requests
 
+from airbyte_cdk.sources.declarative.interpolation import InterpolatedString
 from airbyte_cdk.sources.declarative.requesters.error_handlers.default_http_response_filter import (
     DefaultHttpResponseFilter,
 )
@@ -88,7 +89,10 @@ class DefaultErrorHandler(ErrorHandler):
 
     Attributes:
         response_filters (Optional[List[HttpResponseFilter]]): response filters to iterate on
-        max_retries (Optional[int]): maximum retry attempts
+        max_retries (Optional[Union[int, str]]): maximum retry attempts. Either a hardcoded int or
+            a string that interpolates from the connector config (e.g.
+            `"{{ config['max_retries_on_throttle'] }}"`). The string variant is evaluated once at
+            construction time and replaced with the resolved int.
         backoff_strategies (Optional[List[BackoffStrategy]]): list of backoff strategies to use to determine how long
         to wait before retrying
     """
@@ -96,10 +100,12 @@ class DefaultErrorHandler(ErrorHandler):
     parameters: InitVar[Mapping[str, Any]]
     config: Config
     response_filters: Optional[List[HttpResponseFilter]] = None
-    max_retries: Optional[int] = 5
+    # The base class declares max_retries as Optional[int]. We widen the input type to
+    # also accept a Jinja-interpolatable string (e.g. "{{ config['max_retries_on_throttle'] }}"),
+    # which is resolved to an int in __post_init__ so the post-construction invariant matches
+    # the base class contract.
+    max_retries: Optional[Union[int, str]] = 5  # type: ignore[assignment]
     max_time: int = 60 * 10
-    _max_retries: int = field(init=False, repr=False, default=5)
-    _max_time: int = field(init=False, repr=False, default=60 * 10)
     backoff_strategies: Optional[List[BackoffStrategy]] = None
 
     def __post_init__(self, parameters: Mapping[str, Any]) -> None:
@@ -107,6 +113,18 @@ class DefaultErrorHandler(ErrorHandler):
             self.response_filters = [HttpResponseFilter(config=self.config, parameters={})]
 
         self._last_request_to_attempt_count: MutableMapping[requests.PreparedRequest, int] = {}
+
+        if isinstance(self.max_retries, str):
+            evaluated = InterpolatedString(
+                string=self.max_retries, default="5", parameters=parameters
+            ).eval(config=self.config)
+            try:
+                self.max_retries = int(evaluated)
+            except (TypeError, ValueError) as exc:
+                raise ValueError(
+                    f"DefaultErrorHandler.max_retries did not evaluate to an integer "
+                    f"(got {evaluated!r})"
+                ) from exc
 
     def interpret_response(
         self, response_or_exception: Optional[Union[requests.Response, Exception]]

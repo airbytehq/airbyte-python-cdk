@@ -150,6 +150,7 @@ def build_connector_image(
     tag: str,
     no_verify: bool = False,
     dockerfile_override: Path | None = None,
+    base_image_override: str | None = None,
 ) -> str:
     """Build a connector Docker image.
 
@@ -163,6 +164,14 @@ def build_connector_image(
         metadata: The metadata of the connector.
         tag: The tag to apply to the built image.
         no_verify: If True, skip verification of the built image.
+        dockerfile_override: Optional path to a Dockerfile to use instead of the connector's default.
+        base_image_override: Optional base image to build `FROM` instead of the `baseImage`
+            declared in `metadata.yaml`. This lets CI build a connector on top of a
+            locally-built `source-declarative-manifest` image (e.g. one built from the current
+            branch) so the image tests exercise the branch's CDK rather than the published base
+            image's CDK. The image must be visible to the default buildx builder: locally-built
+            images are only resolved by the default `docker` driver, not by `docker-container`
+            builders (which would instead attempt to pull the image from the registry).
 
     Raises:
         ValueError: If the connector build options are not defined in metadata.yaml.
@@ -228,7 +237,7 @@ def build_connector_image(
             "Please check the connector's metadata file."
         )
 
-    base_image = metadata.data.connectorBuildOptions.baseImage
+    base_image = base_image_override or metadata.data.connectorBuildOptions.baseImage
     build_args: dict[str, str | None] = {
         "BASE_IMAGE": base_image,
         "CONNECTOR_NAME": connector_kebab_name,

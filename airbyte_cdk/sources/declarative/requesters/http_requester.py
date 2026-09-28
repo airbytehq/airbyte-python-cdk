@@ -168,7 +168,13 @@ class HttpRequester(Requester):
             next_page_token=next_page_token,
         )
 
-        full_url = self._join_url(url_base, path) if url_base else url + path if path else url
+        full_url = (
+            self._join_url(url_base, path)
+            if url_base
+            else self._join_url(url, path)
+            if path
+            else url
+        )
 
         return full_url
 

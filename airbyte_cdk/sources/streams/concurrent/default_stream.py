@@ -2,19 +2,23 @@
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
 
-from functools import lru_cache
 from logging import Logger
-from typing import Any, Iterable, List, Mapping, Optional
+from typing import Any, Callable, Iterable, List, Mapping, Optional, Union
 
 from airbyte_cdk.models import AirbyteStream, SyncMode
-from airbyte_cdk.sources.streams.concurrent.abstract_stream import AbstractStream
-from airbyte_cdk.sources.streams.concurrent.availability_strategy import (
-    AbstractAvailabilityStrategy,
-    StreamAvailability,
+from airbyte_cdk.sources.declarative.incremental.concurrent_partition_cursor import (
+    ConcurrentPerPartitionCursor,
 )
-from airbyte_cdk.sources.streams.concurrent.cursor import Cursor
+from airbyte_cdk.sources.declarative.partition_routers.partition_router import PartitionRouter
+from airbyte_cdk.sources.declarative.stream_slicers.declarative_partition_generator import (
+    StreamSlicerPartitionGenerator,
+)
+from airbyte_cdk.sources.streams.concurrent.abstract_stream import AbstractStream
+from airbyte_cdk.sources.streams.concurrent.availability_strategy import StreamAvailability
+from airbyte_cdk.sources.streams.concurrent.cursor import Cursor, CursorField
 from airbyte_cdk.sources.streams.concurrent.partitions.partition import Partition
 from airbyte_cdk.sources.streams.concurrent.partitions.partition_generator import PartitionGenerator
+from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 
 
 class DefaultStream(AbstractStream):
@@ -22,25 +26,25 @@ class DefaultStream(AbstractStream):
         self,
         partition_generator: PartitionGenerator,
         name: str,
-        json_schema: Mapping[str, Any],
-        availability_strategy: AbstractAvailabilityStrategy,
+        json_schema: Union[Mapping[str, Any], Callable[[], Mapping[str, Any]]],
         primary_key: List[str],
-        cursor_field: Optional[str],
+        cursor_field: Optional[CursorField],
         logger: Logger,
         cursor: Cursor,
         namespace: Optional[str] = None,
         supports_file_transfer: bool = False,
+        block_simultaneous_read: str = "",
     ) -> None:
         self._stream_partition_generator = partition_generator
         self._name = name
         self._json_schema = json_schema
-        self._availability_strategy = availability_strategy
         self._primary_key = primary_key
         self._cursor_field = cursor_field
         self._logger = logger
         self._cursor = cursor
         self._namespace = namespace
         self._supports_file_transfer = supports_file_transfer
+        self._block_simultaneous_read = block_simultaneous_read
 
     def generate_partitions(self) -> Iterable[Partition]:
         yield from self._stream_partition_generator.generate()
@@ -53,21 +57,17 @@ class DefaultStream(AbstractStream):
     def namespace(self) -> Optional[str]:
         return self._namespace
 
-    def check_availability(self) -> StreamAvailability:
-        return self._availability_strategy.check_availability(self._logger)
-
     @property
     def cursor_field(self) -> Optional[str]:
-        return self._cursor_field
+        return self._cursor_field.cursor_field_key if self._cursor_field else None
 
-    @lru_cache(maxsize=None)
     def get_json_schema(self) -> Mapping[str, Any]:
-        return self._json_schema
+        return self._json_schema() if callable(self._json_schema) else self._json_schema
 
     def as_airbyte_stream(self) -> AirbyteStream:
         stream = AirbyteStream(
             name=self.name,
-            json_schema=dict(self._json_schema),
+            json_schema=dict(self.get_json_schema()),
             supported_sync_modes=[SyncMode.full_refresh],
             is_resumable=False,
             is_file_based=self._supports_file_transfer,
@@ -77,10 +77,12 @@ class DefaultStream(AbstractStream):
             stream.namespace = self._namespace
 
         if self._cursor_field:
-            stream.source_defined_cursor = True
+            stream.source_defined_cursor = (
+                not self._cursor_field.supports_catalog_defined_cursor_field
+            )
             stream.is_resumable = True
             stream.supported_sync_modes.append(SyncMode.incremental)
-            stream.default_cursor_field = [self._cursor_field]
+            stream.default_cursor_field = [self._cursor_field.cursor_field_key]
 
         keys = self._primary_key
         if keys and len(keys) > 0:
@@ -100,3 +102,51 @@ class DefaultStream(AbstractStream):
     @property
     def cursor(self) -> Cursor:
         return self._cursor
+
+    @property
+    def block_simultaneous_read(self) -> str:
+        """Returns the blocking group name for this stream, or empty string if no blocking"""
+        return self._block_simultaneous_read
+
+    @block_simultaneous_read.setter
+    def block_simultaneous_read(self, value: str) -> None:
+        self._block_simultaneous_read = value
+
+    def get_partition_router(self) -> PartitionRouter | None:
+        """Return the partition router for this stream, or None if not available."""
+        if not isinstance(self._stream_partition_generator, StreamSlicerPartitionGenerator):
+            return None
+        stream_slicer = self._stream_partition_generator._stream_slicer
+        if not isinstance(stream_slicer, ConcurrentPerPartitionCursor):
+            return None
+        return stream_slicer._partition_router
+
+    def check_availability(self) -> StreamAvailability:
+        """
+        Check stream availability by attempting to read the first record of the stream.
+        """
+        try:
+            partition = next(iter(self.generate_partitions()))
+        except StopIteration:
+            # NOTE: The following comment was copied from legacy stuff and I don't know how relevant it is:
+            # If stream_slices has no `next()` item (Note - this is different from stream_slices returning [None]!)
+            # This can happen when a substream's `stream_slices` method does a `for record in parent_records: yield <something>`
+            # without accounting for the case in which the parent stream is empty.
+            return StreamAvailability.unavailable(
+                f"Cannot attempt to connect to stream {self.name} - no stream slices were found"
+            )
+        except AirbyteTracedException as error:
+            return StreamAvailability.unavailable(
+                error.message or error.internal_message or "<no error message>"
+            )
+
+        try:
+            next(iter(partition.read()))
+            return StreamAvailability.available()
+        except StopIteration:
+            self._logger.info(f"Successfully connected to stream {self.name}, but got 0 records.")
+            return StreamAvailability.available()
+        except AirbyteTracedException as error:
+            return StreamAvailability.unavailable(
+                error.message or error.internal_message or "<no error message>"
+            )

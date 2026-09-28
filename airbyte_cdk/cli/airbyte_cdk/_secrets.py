@@ -61,10 +61,12 @@ GLOBAL_MASK_KEYS_URL = "https://connectors.airbyte.com/files/registries/v0/specs
 logger = logging.getLogger("airbyte-cdk.cli.secrets")
 
 try:
+    import google.auth.exceptions
     from google.cloud import secretmanager_v1 as secretmanager
     from google.cloud.secretmanager_v1 import Secret
 except ImportError:
     # If the package is not installed, we will raise an error in the CLI command.
+    google = None  # type: ignore
     secretmanager = None  # type: ignore
     Secret = None  # type: ignore
 
@@ -235,7 +237,10 @@ def list_(
     """
     click.echo("Scanning secrets...", err=True)
 
-    connector_name, _ = resolve_connector_name_and_directory(connector)
+    if connector and isinstance(connector, str) and "/" not in connector and "\\" not in connector:
+        connector_name = connector
+    else:
+        connector_name, _ = resolve_connector_name_and_directory(connector)
     secrets: list[Secret] = _fetch_secret_handles(  # type: ignore
         connector_name=connector_name,
         gcp_project_id=gcp_project_id,
@@ -411,7 +416,14 @@ def _get_secret_filepath(
 
 
 def _get_gsm_secrets_client() -> "secretmanager.SecretManagerServiceClient":  # type: ignore
-    """Get the Google Secret Manager client."""
+    """Get the Google Secret Manager client.
+
+    If the `GCP_GSM_CREDENTIALS` environment variable is set, the client will be
+    created using service account credentials from that JSON string. Otherwise, the
+    client will fall back to Application Default Credentials (ADC), which supports
+    user credentials from `gcloud auth application-default login`, GCE metadata
+    server credentials, and other standard GCP authentication methods.
+    """
     if not secretmanager:
         raise ImportError(
             "google-cloud-secret-manager package is required for Secret Manager integration. "
@@ -420,18 +432,28 @@ def _get_gsm_secrets_client() -> "secretmanager.SecretManagerServiceClient":  # 
         )
 
     credentials_json = os.environ.get("GCP_GSM_CREDENTIALS")
-    if not credentials_json:
-        raise ValueError(
-            "No Google Cloud credentials found. "
-            "Please set the `GCP_GSM_CREDENTIALS` environment variable."
+    if credentials_json:
+        click.echo(
+            "Using GCP service account credentials from GCP_GSM_CREDENTIALS env var.", err=True
+        )
+        return cast(
+            "secretmanager.SecretManagerServiceClient",
+            secretmanager.SecretManagerServiceClient.from_service_account_info(
+                json.loads(credentials_json)
+            ),
         )
 
-    return cast(
-        "secretmanager.SecretManagerServiceClient",
-        secretmanager.SecretManagerServiceClient.from_service_account_info(
-            json.loads(credentials_json)
-        ),
+    click.echo(
+        "GCP_GSM_CREDENTIALS not set. Using Application Default Credentials (ADC).", err=True
     )
+    try:
+        return secretmanager.SecretManagerServiceClient()
+    except google.auth.exceptions.DefaultCredentialsError:
+        raise ValueError(
+            "No Google Cloud credentials found. "
+            "Either set the `GCP_GSM_CREDENTIALS` environment variable with service account JSON, "
+            "or run `gcloud auth application-default login` to authenticate with your user account."
+        ) from None
 
 
 def _print_ci_secrets_masks(
@@ -459,25 +481,60 @@ def _print_ci_secrets_masks(
         _print_ci_secrets_masks_for_config(config=config_dict)
 
 
+def _print_ci_secret_mask_for_string(secret: str) -> None:
+    """Print GitHub CI mask for a single secret string.
+
+    We expect single-line secrets, but we also handle the case where the secret contains newlines.
+    For multi-line secrets, we must print a secret mask for each line separately.
+    """
+    for line in secret.splitlines():
+        if line.strip():  # Skip empty lines
+            print(f"::add-mask::{line!s}")
+
+
+def _print_ci_secret_mask_for_value(value: Any) -> None:
+    """Print GitHub CI mask for a single secret value.
+
+    Call this function for any values identified as secrets, regardless of type.
+    """
+    if isinstance(value, dict):
+        # For nested dicts, we call recursively on each value
+        for v in value.values():
+            _print_ci_secret_mask_for_value(v)
+
+        return
+
+    if isinstance(value, list):
+        # For lists, we call recursively on each list item
+        for list_item in value:
+            _print_ci_secret_mask_for_value(list_item)
+
+        return
+
+    # For any other types besides dict and list, we convert to string and mask each line
+    # separately to handle multi-line secrets (e.g. private keys).
+    for line in str(value).splitlines():
+        if line.strip():  # Skip empty lines
+            _print_ci_secret_mask_for_string(line)
+
+
 def _print_ci_secrets_masks_for_config(
     config: dict[str, str] | list[Any] | Any,
 ) -> None:
     """Print GitHub CI mask for secrets config, navigating child nodes recursively."""
     if isinstance(config, list):
+        # Check each item in the list to look for nested dicts that may contain secrets:
         for item in config:
             _print_ci_secrets_masks_for_config(item)
 
-    if isinstance(config, dict):
+    elif isinstance(config, dict):
         for key, value in config.items():
             if _is_secret_property(key):
                 logger.debug(f"Masking secret for config key: {key}")
-                print(f"::add-mask::{value!s}")
-                if isinstance(value, dict):
-                    # For nested dicts, we also need to mask the json-stringified version
-                    print(f"::add-mask::{json.dumps(value)!s}")
-
-            if isinstance(value, (dict, list)):
-                _print_ci_secrets_masks_for_config(config=value)
+                _print_ci_secret_mask_for_value(value)
+            elif isinstance(value, (dict, list)):
+                # Recursively check nested dicts and lists
+                _print_ci_secrets_masks_for_config(value)
 
 
 def _is_secret_property(property_name: str) -> bool:

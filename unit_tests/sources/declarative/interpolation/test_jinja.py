@@ -8,8 +8,8 @@ import pytest
 from freezegun import freeze_time
 from jinja2.exceptions import TemplateSyntaxError
 
-from airbyte_cdk import StreamSlice
 from airbyte_cdk.sources.declarative.interpolation.jinja import JinjaInterpolation
+from airbyte_cdk.sources.types import StreamSlice
 from airbyte_cdk.utils import AirbyteTracedException
 
 interpolation = JinjaInterpolation()
@@ -343,6 +343,16 @@ def test_interpolation_private_partition_attribute():
     actual_output = JinjaInterpolation().eval(template, {}, **{"stream_slice": stream_slice})
 
     assert actual_output == expected_output
+
+
+def test_literal_eval_handles_unhashable_set_typeerror():
+    """Test that _literal_eval gracefully handles TypeError from ast.literal_eval for nested sets."""
+    # ast.literal_eval("{{'web'}, {'discover'}}") raises TypeError: unhashable type: 'set'
+    # The interpolation should return the string as-is instead of propagating the error.
+    config = {"query": "{{'web'}, {'discover'}}"}
+    s = "{{ config['query'] }}"
+    val = interpolation.eval(s, config)
+    assert val == "{{'web'}, {'discover'}}"
 
 
 def test_given_complex_when_eval_then_return_string():

@@ -8,12 +8,12 @@ import os
 import pytest
 import requests
 
-from airbyte_cdk import YamlDeclarativeSource
 from airbyte_cdk.models import SyncMode
 from airbyte_cdk.sources.declarative.models import DeclarativeStream as DeclarativeStreamModel
 from airbyte_cdk.sources.declarative.parsers.model_to_component_factory import (
     ModelToComponentFactory,
 )
+from airbyte_cdk.sources.declarative.yaml_declarative_source import YamlDeclarativeSource
 
 
 @pytest.mark.slow
@@ -93,9 +93,8 @@ def test_jsonl_decoder_memory_usage(
     requests_mock.get("https://for-all-mankind.nasa.com/api/v1/users/users3", body=get_body())
     requests_mock.get("https://for-all-mankind.nasa.com/api/v1/users/users4", body=get_body())
 
-    stream_slices = list(stream.stream_slices(sync_mode=SyncMode.full_refresh))
-    for stream_slice in stream_slices:
-        for _ in stream.retriever.read_records(records_schema={}, stream_slice=stream_slice):
+    for partition in stream.generate_partitions():
+        for _ in partition.read():
             counter += 1
 
-    assert counter == lines_in_response * len(stream_slices)
+    assert counter == lines_in_response * 4  # 4 partitions

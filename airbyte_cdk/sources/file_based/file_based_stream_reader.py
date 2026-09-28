@@ -3,13 +3,16 @@
 #
 
 import logging
+import time
+import uuid
 from abc import ABC, abstractmethod
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from io import IOBase
 from os import makedirs, path
-from typing import Any, Callable, Iterable, List, MutableMapping, Optional, Set, Tuple
+from typing import Any, Iterable, List, MutableMapping, Optional, Set, Tuple
 
+from airbyte_protocol_dataclasses.models import FailureType
 from wcmatch.glob import GLOBSTAR, globmatch
 
 from airbyte_cdk.models import AirbyteRecordMessageFileReference
@@ -19,8 +22,10 @@ from airbyte_cdk.sources.file_based.config.validate_config_transfer_modes import
     preserve_directory_structure,
     use_file_transfer,
 )
+from airbyte_cdk.sources.file_based.exceptions import FileSizeLimitError
 from airbyte_cdk.sources.file_based.file_record_data import FileRecordData
-from airbyte_cdk.sources.file_based.remote_file import RemoteFile
+from airbyte_cdk.sources.file_based.remote_file import RemoteFile, UploadableRemoteFile
+from airbyte_cdk.utils.datetime_helpers import ab_datetime_parse
 
 
 class FileReadMode(Enum):
@@ -34,6 +39,7 @@ class AbstractFileBasedStreamReader(ABC):
     FILE_NAME = "file_name"
     LOCAL_FILE_PATH = "local_file_path"
     FILE_FOLDER = "file_folder"
+    FILE_SIZE_LIMIT = 1_500_000_000
 
     def __init__(self) -> None:
         self._config = None
@@ -94,6 +100,33 @@ class AbstractFileBasedStreamReader(ABC):
         """
         ...
 
+    def _parse_start_date(self, start_date_str: str) -> datetime:
+        """Parse a start_date string, supporting both with and without microseconds.
+
+        AbstractFileBasedSpec accepts start_date in multiple formats as described by its
+        pattern_descriptor: "YYYY-MM-DD, YYYY-MM-DDTHH:mm:ssZ, or YYYY-MM-DDTHH:mm:ss.SSSSSSZ".
+        The primary format (self.DATE_TIME_FORMAT) includes microseconds, but the spec also
+        allows the shorter "YYYY-MM-DDTHH:mm:ssZ" variant. This method tries the primary
+        format first and falls back to the shorter format without microseconds.
+
+        Note: this fallback is only relevant for start_date values provided by the user in the
+        connector configuration. Cursor values persisted in connector state are always formatted
+        using the default DATE_TIME_FORMAT (with microseconds).
+        """
+        try:
+            return datetime.strptime(start_date_str, self.DATE_TIME_FORMAT)
+        except ValueError:
+            try:
+                return datetime.strptime(start_date_str, "%Y-%m-%dT%H:%M:%SZ")
+            except ValueError:
+                # ab_datetime_parse may return a timezone-aware datetime (e.g. for inputs
+                # like "2025-01-01T00:00:00+05:30"). We convert to UTC first so the offset
+                # is applied correctly, then strip tzinfo to produce a naive UTC datetime
+                # compatible with RemoteFile.last_modified comparisons.
+                return (
+                    ab_datetime_parse(start_date_str).astimezone(timezone.utc).replace(tzinfo=None)
+                )
+
     def filter_files_by_globs_and_start_date(
         self, files: List[RemoteFile], globs: List[str]
     ) -> Iterable[RemoteFile]:
@@ -101,7 +134,7 @@ class AbstractFileBasedStreamReader(ABC):
         Utility method for filtering files based on globs.
         """
         start_date = (
-            datetime.strptime(self.config.start_date, self.DATE_TIME_FORMAT)
+            self._parse_start_date(self.config.start_date)
             if self.config and self.config.start_date
             else None
         )
@@ -112,16 +145,6 @@ class AbstractFileBasedStreamReader(ABC):
                 if file.uri not in seen and (not start_date or file.last_modified >= start_date):
                     seen.add(file.uri)
                     yield file
-
-    @abstractmethod
-    def file_size(self, file: RemoteFile) -> int:
-        """Utility method to get size of the remote file.
-
-        This is required for connectors that will support writing to
-        files. If the connector does not support writing files, then the
-        subclass can simply `return 0`.
-        """
-        ...
 
     @staticmethod
     def file_matches_globs(file: RemoteFile, globs: List[str]) -> bool:
@@ -153,9 +176,8 @@ class AbstractFileBasedStreamReader(ABC):
             return include_identities_stream(self.config)
         return False
 
-    @abstractmethod
     def upload(
-        self, file: RemoteFile, local_directory: str, logger: logging.Logger
+        self, file: UploadableRemoteFile, local_directory: str, logger: logging.Logger
     ) -> Tuple[FileRecordData, AirbyteRecordMessageFileReference]:
         """
         This is required for connectors that will support writing to
@@ -173,7 +195,55 @@ class AbstractFileBasedStreamReader(ABC):
                    - file_size_bytes (int): The size of the referenced file in bytes.
                    - source_file_relative_path (str): The relative path to the referenced file in source.
         """
-        ...
+        if not isinstance(file, UploadableRemoteFile):
+            raise TypeError(f"Expected UploadableRemoteFile, got {type(file)}")
+
+        file_size = file.size
+
+        if file_size > self.FILE_SIZE_LIMIT:
+            message = (
+                f"File size exceeds the {self.FILE_SIZE_LIMIT / 1e9} GB limit. File URI: {file.uri}"
+            )
+            raise FileSizeLimitError(
+                message=message, internal_message=message, failure_type=FailureType.config_error
+            )
+
+        file_paths = self._get_file_transfer_paths(
+            source_file_relative_path=file.source_file_relative_path,
+            staging_directory=local_directory,
+        )
+        local_file_path = file_paths[self.LOCAL_FILE_PATH]
+        file_relative_path = file_paths[self.FILE_RELATIVE_PATH]
+        file_name = file_paths[self.FILE_NAME]
+
+        logger.info(
+            f"Starting to download the file {file.file_uri_for_logging} with size: {file_size / (1024 * 1024):,.2f} MB ({file_size / (1024 * 1024 * 1024):.2f} GB)"
+        )
+        start_download_time = time.time()
+
+        file.download_to_local_directory(local_file_path)
+
+        write_duration = time.time() - start_download_time
+        logger.info(
+            f"Finished downloading the file {file.file_uri_for_logging} and saved to {local_file_path} in {write_duration:,.2f} seconds."
+        )
+
+        file_record_data = FileRecordData(
+            folder=file_paths[self.FILE_FOLDER],
+            file_name=file_name,
+            bytes=file_size,
+            id=file.id,
+            mime_type=file.mime_type,
+            created_at=file.created_at,
+            updated_at=file.updated_at,
+            source_uri=file.source_uri,
+        )
+        file_reference = AirbyteRecordMessageFileReference(
+            staging_file_url=local_file_path,
+            source_file_relative_path=file_relative_path,
+            file_size_bytes=file_size,
+        )
+        return file_record_data, file_reference
 
     def _get_file_transfer_paths(
         self, source_file_relative_path: str, staging_directory: str
@@ -181,10 +251,17 @@ class AbstractFileBasedStreamReader(ABC):
         """
         This method is used to get the file transfer paths for a given source file relative path and local directory.
         It returns a dictionary with the following keys:
-            - FILE_RELATIVE_PATH: The relative path to file in reference to the staging directory.
-            - LOCAL_FILE_PATH: The absolute path to the file.
+            - FILE_RELATIVE_PATH: The logical path of the file, reported to the destination as
+              `source_file_relative_path` and used to derive the destination object key.
+            - LOCAL_FILE_PATH: The absolute path the file is staged at locally, which is
+              `FILE_RELATIVE_PATH` under a unique subdirectory of the staging directory.
             - FILE_NAME: The name of the referenced file.
             - FILE_FOLDER: The folder of the referenced file.
+
+        The local path is namespaced under a unique staging subdirectory so that two source files
+        resolving to the same relative path never share a staging file. Sharing a staging file makes
+        one download overwrite the other and makes the destination fail once it has consumed and
+        deleted the first copy.
         """
         preserve_directory_structure = self.preserve_directory_structure()
 
@@ -195,7 +272,7 @@ class AbstractFileBasedStreamReader(ABC):
             file_relative_path = source_file_relative_path.lstrip("/")
         else:
             file_relative_path = file_name
-        local_file_path = path.join(staging_directory, file_relative_path)
+        local_file_path = path.join(staging_directory, uuid.uuid4().hex, file_relative_path)
         # Ensure the local directory exists
         makedirs(path.dirname(local_file_path), exist_ok=True)
 

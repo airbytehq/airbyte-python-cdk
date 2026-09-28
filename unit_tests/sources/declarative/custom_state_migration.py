@@ -4,17 +4,19 @@
 
 from typing import Any, Mapping
 
-from airbyte_cdk.sources.declarative.declarative_stream import DeclarativeStream
 from airbyte_cdk.sources.declarative.interpolation.interpolated_string import InterpolatedString
 from airbyte_cdk.sources.declarative.migrations.state_migration import StateMigration
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    DeclarativeStream as DeclarativeStreamModel,
+)
 from airbyte_cdk.sources.types import Config
 
 
 class CustomStateMigration(StateMigration):
-    declarative_stream: DeclarativeStream
+    declarative_stream: DeclarativeStreamModel
     config: Config
 
-    def __init__(self, declarative_stream: DeclarativeStream, config: Config):
+    def __init__(self, declarative_stream: DeclarativeStreamModel, config: Config):
         self._config = config
         self.declarative_stream = declarative_stream
         self._cursor = declarative_stream.incremental_sync

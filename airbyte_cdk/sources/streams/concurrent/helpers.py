@@ -34,7 +34,8 @@ def get_cursor_field_from_stream(stream: Stream) -> Optional[str]:
             raise ValueError(
                 f"Nested cursor fields are not supported. Got {stream.cursor_field} for {stream.name}"
             )
-        elif len(stream.cursor_field) == 0:
+        elif len(stream.cursor_field) == 0 or not stream.cursor_field[0]:
+            # Treat cursor_field: [""] (list with empty string) as no cursor field
             return None
         else:
             return stream.cursor_field[0]

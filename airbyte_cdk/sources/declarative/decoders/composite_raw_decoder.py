@@ -2,6 +2,7 @@
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
 
+import codecs
 import csv
 import gzip
 import io
@@ -11,8 +12,10 @@ from dataclasses import dataclass
 from io import BufferedIOBase, TextIOWrapper
 from typing import Any, List, Optional
 
+import ijson
 import orjson
 import requests
+from typing_extensions import Buffer
 
 from airbyte_cdk.models import FailureType
 from airbyte_cdk.sources.declarative.decoders.decoder import DECODER_OUTPUT_TYPE, Decoder
@@ -27,23 +30,61 @@ from airbyte_cdk.utils import AirbyteTracedException
 logger = logging.getLogger("airbyte")
 
 
+class _PrefixedStream(io.RawIOBase):
+    """Restore consumed header bytes ahead of the remaining stream."""
+
+    def __init__(self, prefix: bytes, stream: BufferedIOBase) -> None:
+        super().__init__()
+        self._prefix = prefix
+        self._stream = stream
+
+    def readable(self) -> bool:
+        return True
+
+    def readinto(self, buffer: Buffer) -> int:
+        buffer_view = memoryview(buffer)
+        prefix_size = min(len(self._prefix), len(buffer_view))
+        if prefix_size:
+            buffer_view[:prefix_size] = self._prefix[:prefix_size]
+            self._prefix = self._prefix[prefix_size:]
+
+        if prefix_size == len(buffer_view):
+            return prefix_size
+
+        data = self._stream.read(len(buffer_view) - prefix_size)
+        if not data:
+            return prefix_size
+
+        buffer_view[prefix_size : prefix_size + len(data)] = data
+        return prefix_size + len(data)
+
+
 @dataclass
 class GzipParser(Parser):
     inner_parser: Parser
 
     def parse(self, data: BufferedIOBase) -> PARSER_OUTPUT_TYPE:
+        """Decompress gzipped data or pass uncompressed data through unchanged.
+
+        Args:
+            data: A byte stream containing compressed or uncompressed data.
+
+        Yields:
+            Records parsed by the inner parser.
         """
-        Decompress gzipped bytes and pass decompressed data to the inner parser.
+        prefix = b""
+        while len(prefix) < 2:
+            chunk = data.read(2 - len(prefix))
+            if not chunk:
+                break
+            prefix += chunk
+        prefixed_data = io.BufferedReader(_PrefixedStream(prefix, data))
 
-        IMPORTANT:
-            - If the data is not gzipped, reset the pointer and pass the data to the inner parser as is.
-
-        Note:
-            - The data is not decoded by default.
-        """
-
-        with gzip.GzipFile(fileobj=data, mode="rb") as gzipobj:
-            yield from self.inner_parser.parse(gzipobj)
+        if prefix == b"\x1f\x8b":
+            with gzip.GzipFile(fileobj=prefixed_data, mode="rb") as gzipobj:
+                yield from self.inner_parser.parse(gzipobj)
+        else:
+            yield from self.inner_parser.parse(prefixed_data)
 
 
 @dataclass
@@ -96,6 +137,60 @@ class JsonLineParser(Parser):
                 yield json.loads(line.decode(encoding=self.encoding or "utf-8"))
             except json.JSONDecodeError as e:
                 logger.warning(f"Cannot decode/parse line {line!r} as JSON, error: {e}")
+
+
+class _Utf8Recoder:
+    """Lazily transcode a byte stream from a source encoding into UTF-8 bytes.
+
+    Lets a non-UTF-8 byte stream be fed to ijson while keeping it on the native byte
+    backend (ijson deprecates text-mode inputs). Bytes are read from the underlying
+    stream and decoded incrementally, so multi-byte characters split across read
+    boundaries are handled and memory stays bounded regardless of document size.
+    """
+
+    def __init__(self, stream: BufferedIOBase, encoding: str) -> None:
+        self._stream = stream
+        self._decoder = codecs.getincrementaldecoder(encoding)()
+
+    def read(self, size: int = -1) -> bytes:
+        chunk = self._stream.read(size)
+        # `final` once the underlying stream is exhausted so a trailing partial sequence flushes.
+        return self._decoder.decode(chunk, final=not chunk).encode("utf-8")
+
+
+@dataclass
+class JsonItemsParser(Parser):
+    """Streaming JSON parser that yields each element of a nested array.
+
+    Use this for very large single-document JSON responses where the records
+    of interest live under a nested array (e.g. `dataByDepartmentAndSearchTerm`,
+    `data.users`). Powered by `ijson`, this parser does not materialize the
+    full document — peak memory is bounded by a single record plus ijson's
+    internal parse buffers, regardless of document size.
+
+    `items_path` uses `ijson` dotted path syntax (e.g. `data.users`), not
+    JSONPath syntax (`$.data.users[*]`). Internally we append `.item`, which
+    is the `ijson` convention for "iterate elements of this array".
+    """
+
+    items_path: str = ""
+    encoding: Optional[str] = "utf-8"
+
+    def parse(self, data: BufferedIOBase) -> PARSER_OUTPUT_TYPE:
+        if not self.items_path:
+            raise ValueError("JsonItemsParser requires a non-empty items_path.")
+        if self.encoding and codecs.lookup(self.encoding).name != "utf-8":
+            # ijson reads bytes natively (auto-detecting UTF-8/16/32). For an explicitly
+            # configured non-UTF-8 encoding (e.g. iso-8859-1) we transcode to UTF-8 bytes
+            # so ijson keeps using its fast byte backend rather than a (deprecated) text
+            # stream. The recoder decodes lazily in chunks, preserving bounded memory.
+            data = _Utf8Recoder(data, self.encoding)  # type: ignore[assignment]
+        # ijson auto-selects the best available backend (yajl2_c when present)
+        # and reads from `data` lazily — it does not call `.read()` on the
+        # whole stream up front.
+        # use_float=True yields floats for non-integer numbers instead of Decimal, matching
+        # json.loads/orjson behavior so downstream JSON serialization doesn't choke on Decimal.
+        yield from ijson.items(data, f"{self.items_path}.item", use_float=True)
 
 
 @dataclass

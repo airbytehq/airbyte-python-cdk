@@ -1,15 +1,19 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
+from unittest.mock import Mock
 
 import pytest as pytest
 
+from airbyte_cdk.legacy.sources.declarative.incremental.datetime_based_cursor import (
+    DatetimeBasedCursor,
+)
 from airbyte_cdk.sources.declarative.datetime.min_max_datetime import MinMaxDatetime
-from airbyte_cdk.sources.declarative.incremental.datetime_based_cursor import DatetimeBasedCursor
 from airbyte_cdk.sources.declarative.interpolation.interpolated_string import InterpolatedString
 from airbyte_cdk.sources.declarative.partition_routers import (
     CartesianProductStreamSlicer,
     ListPartitionRouter,
+    PartitionRouter,
 )
 from airbyte_cdk.sources.declarative.requesters.request_option import (
     RequestOption,
@@ -18,6 +22,8 @@ from airbyte_cdk.sources.declarative.requesters.request_option import (
 from airbyte_cdk.sources.types import StreamSlice
 
 
+# todo: All these tests rely on stream_slicers that are of a the deprecated legacy class DatetimeBasedCursor these
+#  should really be ConcurrentCursor, but this fix is a bit tedious and are tested in other parts of the code
 @pytest.mark.parametrize(
     "test_name, stream_slicers, expected_slices",
     [
@@ -169,6 +175,28 @@ def test_substream_slicer(test_name, stream_slicers, expected_slices):
     slicer = CartesianProductStreamSlicer(stream_slicers=stream_slicers, parameters={})
     slices = [s for s in slicer.stream_slices()]
     assert slices == expected_slices
+
+
+def test_substream_slicer_with_extra_fields():
+    decorated_slicer = Mock(spec=PartitionRouter)
+    decorated_slicer.stream_slices.return_value = iter(
+        [
+            StreamSlice(
+                partition={"first_stream_id": 0, "parent_slice": {}},
+                cursor_slice={},
+                extra_fields={"extra_field_key": "extra_field_value_0"},
+            ),
+            StreamSlice(
+                partition={"first_stream_id": 1, "parent_slice": {}},
+                cursor_slice={},
+                extra_fields={"extra_field_key": "extra_field_value_1"},
+            ),
+        ],
+    )
+    slicer = CartesianProductStreamSlicer(stream_slicers=[decorated_slicer], parameters={})
+    extra_fields = [bool(s.extra_fields) for s in slicer.stream_slices()]
+    assert len(extra_fields) == 2
+    assert all(extra_fields)
 
 
 def test_stream_slices_raises_exception_if_multiple_cursor_slice_components():

@@ -45,8 +45,6 @@ from types import ModuleType
 
 import rich_click as click
 
-from airbyte_cdk.test.standard_tests.util import create_connector_test_suite
-
 # from airbyte_cdk.test.standard_tests import pytest_hooks
 from airbyte_cdk.utils.connector_paths import (
     find_connector_root_from_name,
@@ -123,11 +121,18 @@ def connector_cli_group() -> None:
     multiple=True,
     help="Additional argument(s) to pass to pytest. Can be specified multiple times.",
 )
+@click.option(
+    "--no-creds",
+    is_flag=True,
+    default=False,
+    help="Skip tests that require credentials (marked with 'requires_creds').",
+)
 def connector_test(
     connector: str | Path | None = None,
     *,
     collect_only: bool = False,
     pytest_args: list[str] | None = None,
+    no_creds: bool = False,
 ) -> None:
     """Run connector tests.
 
@@ -143,9 +148,12 @@ def connector_test(
     click.echo("Connector test command executed.")
     connector_name, connector_directory = resolve_connector_name_and_directory(connector)
 
-    pytest_args = pytest_args or []
+    pytest_args = list(pytest_args or [])
     if collect_only:
         pytest_args.append("--collect-only")
+
+    if no_creds:
+        pytest_args.extend(["-m", "not requires_creds"])
 
     run_connector_tests(
         connector_name=connector_name,
@@ -163,6 +171,9 @@ def run_connector_tests(
         raise ImportError(
             "pytest is not installed. Please install pytest to run the connector tests."
         )
+
+    # Lazy import: this module requires pytest, which is only available via the [dev] extra.
+    from airbyte_cdk.test.standard_tests.util import create_connector_test_suite
 
     connector_test_suite = create_connector_test_suite(
         connector_name=connector_name if not connector_directory else None,

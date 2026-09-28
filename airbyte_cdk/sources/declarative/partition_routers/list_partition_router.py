@@ -108,12 +108,6 @@ class ListPartitionRouter(PartitionRouter):
         else:
             return {}
 
-    def set_initial_state(self, stream_state: StreamState) -> None:
-        """
-        ListPartitionRouter doesn't have parent streams
-        """
-        pass
-
     def get_stream_state(self) -> Optional[Mapping[str, StreamState]]:
         """
         ListPartitionRouter doesn't have parent streams

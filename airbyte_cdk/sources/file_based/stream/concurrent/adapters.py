@@ -21,7 +21,6 @@ from airbyte_cdk.sources import AbstractSource
 from airbyte_cdk.sources.connector_state_manager import ConnectorStateManager
 from airbyte_cdk.sources.file_based.availability_strategy import (
     AbstractFileBasedAvailabilityStrategy,
-    AbstractFileBasedAvailabilityStrategyWrapper,
 )
 from airbyte_cdk.sources.file_based.config.file_based_stream_config import PrimaryKeyType
 from airbyte_cdk.sources.file_based.file_types.file_type_parser import FileTypeParser
@@ -33,6 +32,7 @@ from airbyte_cdk.sources.file_based.types import StreamSlice
 from airbyte_cdk.sources.message import MessageRepository
 from airbyte_cdk.sources.source import ExperimentalClassWarning
 from airbyte_cdk.sources.streams.concurrent.abstract_stream_facade import AbstractStreamFacade
+from airbyte_cdk.sources.streams.concurrent.cursor import CursorField
 from airbyte_cdk.sources.streams.concurrent.default_stream import DefaultStream
 from airbyte_cdk.sources.streams.concurrent.exceptions import ExceptionWithDisplayMessage
 from airbyte_cdk.sources.streams.concurrent.helpers import (
@@ -97,9 +97,8 @@ class FileBasedStreamFacade(AbstractStreamFacade[DefaultStream], AbstractFileBas
                 ),
                 name=stream.name,
                 json_schema=stream.get_json_schema(),
-                availability_strategy=AbstractFileBasedAvailabilityStrategyWrapper(stream),
                 primary_key=pk,
-                cursor_field=cursor_field,
+                cursor_field=CursorField(cursor_field_key=cursor_field) if cursor_field else None,
                 logger=logger,
                 namespace=stream.namespace,
                 cursor=cursor,
@@ -156,10 +155,7 @@ class FileBasedStreamFacade(AbstractStreamFacade[DefaultStream], AbstractFileBas
 
     @property
     def primary_key(self) -> PrimaryKeyType:
-        return (
-            self._legacy_stream.config.primary_key
-            or self.get_parser().get_parser_defined_primary_key(self._legacy_stream.config)
-        )
+        return self._legacy_stream.primary_key
 
     def get_parser(self) -> FileTypeParser:
         return self._legacy_stream.get_parser()

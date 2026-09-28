@@ -5,11 +5,30 @@
 import logging
 import traceback
 from dataclasses import InitVar, dataclass
-from typing import Any, Dict, List, Mapping, Optional, Tuple
+from typing import Any, Dict, List, Mapping, Optional, Tuple, Union
 
-from airbyte_cdk import AbstractSource
+from airbyte_cdk.sources import Source
 from airbyte_cdk.sources.declarative.checks.connection_checker import ConnectionChecker
+from airbyte_cdk.sources.streams.concurrent.abstract_stream import AbstractStream
+from airbyte_cdk.sources.streams.core import Stream
 from airbyte_cdk.sources.streams.http.availability_strategy import HttpAvailabilityStrategy
+
+CHECK_STREAM_NAMES_CONFIG_KEY = "__airbyte_check_stream_names"
+
+
+def evaluate_availability(
+    stream: Union[Stream, AbstractStream], logger: logging.Logger
+) -> Tuple[bool, Optional[str]]:
+    """
+    As a transition period, we want to support both Stream and AbstractStream until we migrate everything to AbstractStream.
+    """
+    if isinstance(stream, Stream):
+        return HttpAvailabilityStrategy().check_availability(stream, logger)
+    elif isinstance(stream, AbstractStream):
+        availability = stream.check_availability()
+        return availability.is_available, availability.reason
+    else:
+        raise ValueError(f"Unsupported stream type {type(stream)}")
 
 
 @dataclass(frozen=True)
@@ -19,7 +38,7 @@ class DynamicStreamCheckConfig:
     and type enforcement."""
 
     dynamic_stream_name: str
-    stream_count: int = 0
+    stream_count: Optional[int] = None
 
 
 @dataclass
@@ -47,18 +66,22 @@ class CheckStream(ConnectionChecker):
         return False, error_message
 
     def check_connection(
-        self, source: AbstractSource, logger: logging.Logger, config: Mapping[str, Any]
+        self,
+        source: Source,
+        logger: logging.Logger,
+        config: Mapping[str, Any],
     ) -> Tuple[bool, Any]:
         """Checks the connection to the source and its streams."""
+        stream_names = self._get_stream_names(config)
         try:
-            streams = source.streams(config=config)
+            streams: List[Union[Stream, AbstractStream]] = source.streams(config=config)  # type: ignore  # this is a migration step and we expect the declarative CDK to migrate off of ConnectionChecker
             if not streams:
                 return False, f"No streams to connect to from source {source}"
         except Exception as error:
             return self._log_error(logger, "discovering streams", error)
 
         stream_name_to_stream = {s.name: s for s in streams}
-        for stream_name in self.stream_names:
+        for stream_name in stream_names:
             if stream_name not in stream_name_to_stream:
                 raise ValueError(
                     f"{stream_name} is not part of the catalog. Expected one of {list(stream_name_to_stream.keys())}."
@@ -81,14 +104,29 @@ class CheckStream(ConnectionChecker):
 
         return True, None
 
+    def _get_stream_names(self, config: Mapping[str, Any]) -> List[str]:
+        if (
+            CHECK_STREAM_NAMES_CONFIG_KEY not in config
+            or config[CHECK_STREAM_NAMES_CONFIG_KEY] == []
+        ):
+            return self.stream_names
+        configured_stream_names = config[CHECK_STREAM_NAMES_CONFIG_KEY]
+        if not isinstance(configured_stream_names, list) or not all(
+            isinstance(stream_name, str) for stream_name in configured_stream_names
+        ):
+            raise ValueError(f"{CHECK_STREAM_NAMES_CONFIG_KEY} must be a list of strings.")
+        return configured_stream_names
+
     def _check_stream_availability(
-        self, stream_name_to_stream: Dict[str, Any], stream_name: str, logger: logging.Logger
+        self,
+        stream_name_to_stream: Dict[str, Union[Stream, AbstractStream]],
+        stream_name: str,
+        logger: logging.Logger,
     ) -> Tuple[bool, Any]:
         """Checks if streams are available."""
-        availability_strategy = HttpAvailabilityStrategy()
         try:
             stream = stream_name_to_stream[stream_name]
-            stream_is_available, reason = availability_strategy.check_availability(stream, logger)
+            stream_is_available, reason = evaluate_availability(stream, logger)
             if not stream_is_available:
                 message = f"Stream {stream_name} is not available: {reason}"
                 logger.warning(message)
@@ -98,7 +136,10 @@ class CheckStream(ConnectionChecker):
         return True, None
 
     def _check_dynamic_streams_availability(
-        self, source: AbstractSource, stream_name_to_stream: Dict[str, Any], logger: logging.Logger
+        self,
+        source: Source,
+        stream_name_to_stream: Dict[str, Union[Stream, AbstractStream]],
+        logger: logging.Logger,
     ) -> Tuple[bool, Any]:
         """Checks the availability of dynamic streams."""
         dynamic_streams = source.resolved_manifest.get("dynamic_streams", [])  # type: ignore[attr-defined] # The source's resolved_manifest manifest is checked before calling this method
@@ -135,18 +176,20 @@ class CheckStream(ConnectionChecker):
     def _check_generated_streams_availability(
         self,
         generated_streams: List[Dict[str, Any]],
-        stream_name_to_stream: Dict[str, Any],
+        stream_name_to_stream: Dict[str, Union[Stream, AbstractStream]],
         logger: logging.Logger,
-        max_count: int,
+        max_count: Optional[int],
     ) -> Tuple[bool, Any]:
-        """Checks availability of generated dynamic streams."""
-        availability_strategy = HttpAvailabilityStrategy()
-        for declarative_stream in generated_streams[: min(max_count, len(generated_streams))]:
+        """Checks availability of generated dynamic streams.
+
+        If `max_count` is `None`, all generated streams are checked. Otherwise, the
+        first `max_count` streams are checked (capped at the number of available streams).
+        """
+        streams_to_check = generated_streams if max_count is None else generated_streams[:max_count]
+        for declarative_stream in streams_to_check:
             stream = stream_name_to_stream[declarative_stream["name"]]
             try:
-                stream_is_available, reason = availability_strategy.check_availability(
-                    stream, logger
-                )
+                stream_is_available, reason = evaluate_availability(stream, logger)
                 if not stream_is_available:
                     message = f"Dynamic Stream {stream.name} is not available: {reason}"
                     logger.warning(message)

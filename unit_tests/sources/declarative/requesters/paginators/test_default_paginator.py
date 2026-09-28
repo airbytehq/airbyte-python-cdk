@@ -36,7 +36,7 @@ from airbyte_cdk.sources.declarative.types import Record, StreamSlice, StreamSta
         (
             RequestPath(parameters={}),
             None,
-            "/next_url",
+            "https://airbyte.io/next_url",
             {"limit": 2},
             {},
             {},
@@ -128,7 +128,7 @@ from airbyte_cdk.sources.declarative.types import Record, StreamSlice, StreamSta
         (
             RequestPath(parameters={}),
             None,
-            "/next_url",
+            "https://airbyte.io/next_url",
             {"limit": 2},
             {},
             {},
@@ -541,40 +541,136 @@ def test_path_returns_none_when_option_not_request_path() -> None:
     assert result is None
 
 
-def test_path_with_additional_interpolation_context() -> None:
-    page_token_option = RequestPath(parameters={})
-    paginator = DefaultPaginator(
-        pagination_strategy=Mock(),
+def _paginator_with_page_size(page_size=100, inject_into=RequestOptionType.request_parameter):
+    return DefaultPaginator(
+        page_size_option=RequestOption(
+            inject_into=inject_into, field_name="page_size", parameters={}
+        ),
+        page_token_option=RequestOption(
+            inject_into=RequestOptionType.request_parameter, field_name="after", parameters={}
+        ),
+        pagination_strategy=CursorPaginationStrategy(
+            page_size=page_size, cursor_value="{{ response.next }}", config={}, parameters={}
+        ),
         config={},
-        url_base="https://api.domain.com/{{ stream_slice['campaign_id'] }}",
+        url_base="https://airbyte.io",
         parameters={},
-        page_token_option=page_token_option,
     )
-    # define stream_state here
-    stream_state = {"state": "state_value"}
-    # define stream_slice here
-    stream_slice = StreamSlice(
-        partition={
-            "campaign_id": "123_abcd",
-        },
-        cursor_slice={
-            "start": "A",
-            "end": "B",
-        },
-        extra_fields={
-            "extra_field_A": "value_A",
-            "extra_field_B": "value_B",
-        },
-    )
-    # define next_page_token here
-    next_page_token = {
-        "next_page_token": "https://api.domain.com/123_abcd/some_next_page_token_here"
-    }
 
-    expected_after_interpolation = "/some_next_page_token_here"
 
-    assert expected_after_interpolation == paginator.path(
-        next_page_token=next_page_token,
-        stream_state=stream_state,
-        stream_slice=stream_slice,
+def test_get_page_size_returns_the_strategy_page_size():
+    assert _paginator_with_page_size().get_page_size() == 100
+
+
+def test_given_page_size_override_then_injected_instead_of_the_configured_page_size():
+    paginator = _paginator_with_page_size()
+
+    assert paginator.get_request_params(page_size_override=25) == {"page_size": 25}
+    assert paginator.get_request_params() == {"page_size": 100}
+
+
+def test_given_page_size_override_when_injected_into_body_json_then_use_override():
+    paginator = _paginator_with_page_size(inject_into=RequestOptionType.body_json)
+
+    assert paginator.get_request_body_json(page_size_override=25) == {"page_size": 25}
+    assert paginator.get_request_headers(page_size_override=25) == {}
+
+
+def test_given_page_size_override_when_next_page_token_then_forward_to_strategy():
+    strategy = Mock()
+    strategy.next_page_token.return_value = "a token"
+    paginator = DefaultPaginator(
+        pagination_strategy=strategy, config={}, url_base="https://airbyte.io", parameters={}
     )
+    response = requests.Response()
+
+    paginator.next_page_token(response, 25, None, None, page_size_override=25)
+
+    assert strategy.next_page_token.call_args.kwargs["page_size_override"] == 25
+
+
+def test_given_no_page_size_override_when_next_page_token_then_strategy_called_without_the_argument():
+    strategy = Mock()
+    strategy.next_page_token.return_value = "a token"
+    paginator = DefaultPaginator(
+        pagination_strategy=strategy, config={}, url_base="https://airbyte.io", parameters={}
+    )
+    response = requests.Response()
+
+    paginator.next_page_token(response, 25, None, None)
+
+    assert "page_size_override" not in strategy.next_page_token.call_args.kwargs
+
+
+def test_test_read_decorator_delegates_page_size_override():
+    decorated = _paginator_with_page_size()
+    paginator = PaginatorTestReadDecorator(decorated, 5)
+
+    assert paginator.get_page_size() == 100
+    assert paginator.get_request_params(page_size_override=25) == {"page_size": 25}
+    assert paginator.get_request_params() == {"page_size": 100}
+
+
+_TEST_READ_DECORATOR_REQUEST_OPTION_METHODS = [
+    "get_request_params",
+    "get_request_headers",
+    "get_request_body_data",
+    "get_request_body_json",
+]
+
+
+@pytest.mark.parametrize("method_name", _TEST_READ_DECORATOR_REQUEST_OPTION_METHODS)
+def test_given_page_size_override_when_test_read_decorator_request_options_then_forward_it(
+    method_name,
+):
+    """
+    This is the Connector Builder path: a method that dropped the override would make a Builder test read of a
+    reduced stream request the configured page size again, or stop after the first reduced page.
+    """
+    decorated = Mock()
+    paginator = PaginatorTestReadDecorator(decorated, 5)
+
+    getattr(paginator, method_name)(page_size_override=25)
+
+    assert getattr(decorated, method_name).call_args.kwargs["page_size_override"] == 25
+
+
+@pytest.mark.parametrize("method_name", _TEST_READ_DECORATOR_REQUEST_OPTION_METHODS)
+def test_given_no_page_size_override_when_test_read_decorator_request_options_then_omit_it(
+    method_name,
+):
+    decorated = Mock()
+    paginator = PaginatorTestReadDecorator(decorated, 5)
+
+    getattr(paginator, method_name)()
+
+    assert "page_size_override" not in getattr(decorated, method_name).call_args.kwargs
+
+
+def test_given_page_size_override_when_test_read_decorator_next_page_token_then_forward_it():
+    decorated = Mock()
+    decorated.next_page_token.return_value = "a token"
+    paginator = PaginatorTestReadDecorator(decorated, 5)
+    response = requests.Response()
+
+    assert paginator.next_page_token(response, 25, None, None, page_size_override=25) == "a token"
+    assert decorated.next_page_token.call_args.kwargs["page_size_override"] == 25
+
+
+def test_given_no_page_size_override_when_test_read_decorator_next_page_token_then_omit_it():
+    decorated = Mock()
+    decorated.next_page_token.return_value = "a token"
+    paginator = PaginatorTestReadDecorator(decorated, 5)
+    response = requests.Response()
+
+    paginator.next_page_token(response, 25, None, None)
+
+    assert "page_size_override" not in decorated.next_page_token.call_args.kwargs
+
+
+def test_test_read_decorator_delegates_get_page_size():
+    decorated = Mock()
+    decorated.get_page_size.return_value = 100
+    paginator = PaginatorTestReadDecorator(decorated, 5)
+
+    assert paginator.get_page_size() == 100

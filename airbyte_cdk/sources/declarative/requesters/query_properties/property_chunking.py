@@ -2,7 +2,7 @@
 
 from dataclasses import InitVar, dataclass
 from enum import Enum
-from typing import Any, Iterable, List, Mapping, Optional
+from typing import Any, Iterable, List, Mapping, Optional, Set
 
 from airbyte_cdk.sources.declarative.requesters.query_properties.strategies import GroupByKey
 from airbyte_cdk.sources.declarative.requesters.query_properties.strategies.merge_strategy import (
@@ -40,7 +40,10 @@ class PropertyChunking:
         )
 
     def get_request_property_chunks(
-        self, property_fields: Iterable[str], always_include_properties: Optional[List[str]]
+        self,
+        property_fields: List[str],
+        always_include_properties: Optional[List[str]],
+        configured_properties: Optional[Set[str]],
     ) -> Iterable[List[str]]:
         if not self.property_limit:
             single_property_chunk = list(property_fields)
@@ -53,6 +56,8 @@ class PropertyChunking:
         for property_field in property_fields:
             # If property_limit_type is not defined, we default to property_count which is just an incrementing count
             # todo: Add ability to specify parameter delimiter representation and take into account in property_field_size
+            if configured_properties is not None and property_field not in configured_properties:
+                continue
             property_field_size = (
                 len(property_field)
                 + 3  # The +3 represents the extra characters for encoding the delimiter in between properties

@@ -18,20 +18,12 @@ COMPLEX_SCHEMA = {
         "number_prop": {"type": "number"},
         "int_prop": {"type": ["integer", "null"]},
         "too_many_types": {"type": ["boolean", "null", "string"]},
-        "def": {
-            "type": "object",
-            "properties": {"dd": {"$ref": "#/definitions/my_type"}},
-        },
-        "array": {"type": "array", "items": {"$ref": "#/definitions/str_type"}},
-        "nested": {"$ref": "#/definitions/nested_type"},
+        "array": {"type": "array", "items": {"type": "string"}},
+        "nested": {"type": "object", "properties": {"a": {"type": "string"}}},
         "list_of_lists": {
             "type": "array",
             "items": {"type": "array", "items": {"type": "string"}},
         },
-    },
-    "definitions": {
-        "str_type": {"type": "string"},
-        "nested_type": {"type": "object", "properties": {"a": {"type": "string"}}},
     },
 }
 VERY_NESTED_SCHEMA = {

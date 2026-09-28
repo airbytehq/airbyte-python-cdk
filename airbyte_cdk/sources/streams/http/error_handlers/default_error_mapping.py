@@ -31,56 +31,56 @@ DEFAULT_ERROR_MAPPING: Mapping[Union[int, str, Type[Exception]], ErrorResolution
     400: ErrorResolution(
         response_action=ResponseAction.FAIL,
         failure_type=FailureType.system_error,
-        error_message="Bad request. Please check your request parameters.",
+        error_message="HTTP Status Code: 400. Error: Bad request. Please check your request parameters.",
     ),
     401: ErrorResolution(
         response_action=ResponseAction.FAIL,
         failure_type=FailureType.config_error,
-        error_message="Unauthorized. Please ensure you are authenticated correctly.",
+        error_message="HTTP Status Code: 401. Error: Unauthorized. Please ensure you are authenticated correctly.",
     ),
     403: ErrorResolution(
         response_action=ResponseAction.FAIL,
         failure_type=FailureType.config_error,
-        error_message="Forbidden. You don't have permission to access this resource.",
+        error_message="HTTP Status Code: 403. Error: Forbidden. You don't have permission to access this resource.",
     ),
     404: ErrorResolution(
         response_action=ResponseAction.FAIL,
         failure_type=FailureType.system_error,
-        error_message="Not found. The requested resource was not found on the server.",
+        error_message="HTTP Status Code: 404. Error: Not found. The requested resource was not found on the server.",
     ),
     405: ErrorResolution(
         response_action=ResponseAction.FAIL,
         failure_type=FailureType.system_error,
-        error_message="Method not allowed. Please check your request method.",
+        error_message="HTTP Status Code: 405. Error: Method not allowed. Please check your request method.",
     ),
     408: ErrorResolution(
         response_action=ResponseAction.RETRY,
         failure_type=FailureType.transient_error,
-        error_message="Request timeout.",
+        error_message="HTTP Status Code: 408. Error: Request timeout.",
     ),
     429: ErrorResolution(
         response_action=ResponseAction.RATE_LIMITED,
         failure_type=FailureType.transient_error,
-        error_message="Too many requests.",
+        error_message="HTTP Status Code: 429. Error: Too many requests.",
     ),
     500: ErrorResolution(
         response_action=ResponseAction.RETRY,
         failure_type=FailureType.transient_error,
-        error_message="Internal server error.",
+        error_message="HTTP Status Code: 500. Error: Internal server error.",
     ),
     502: ErrorResolution(
         response_action=ResponseAction.RETRY,
         failure_type=FailureType.transient_error,
-        error_message="Bad gateway.",
+        error_message="HTTP Status Code: 502. Error: Bad gateway.",
     ),
     503: ErrorResolution(
         response_action=ResponseAction.RETRY,
         failure_type=FailureType.transient_error,
-        error_message="Service unavailable.",
+        error_message="HTTP Status Code: 503. Error: Service unavailable.",
     ),
     504: ErrorResolution(
         response_action=ResponseAction.RETRY,
         failure_type=FailureType.transient_error,
-        error_message="Gateway timeout.",
+        error_message="HTTP Status Code: 504. Error: Gateway timeout.",
     ),
 }
