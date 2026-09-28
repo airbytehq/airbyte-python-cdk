@@ -8,10 +8,12 @@ from typing import Any, Optional
 import pytest
 import requests
 
+from airbyte_cdk.models import FailureType
 from airbyte_cdk.sources.declarative.extractors import DpathExtractor
 from airbyte_cdk.sources.declarative.requesters.paginators.strategies.page_increment import (
     PageIncrement,
 )
+from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 
 
 @pytest.mark.parametrize(
@@ -160,3 +162,24 @@ def test_page_increment_paginator_strategy_initial_token(
     )
 
     assert paginator_strategy.initial_token == expected_initial_token
+
+
+def test_given_page_size_override_then_raise_config_error():
+    """
+    Reducing the page size would move every following page boundary, so PageIncrement refuses it. This is only
+    reachable when the factory is bypassed, so it has to report itself as a configuration error rather than
+    surfacing as a generic system error.
+    """
+    strategy = PageIncrement(page_size=100, config={}, parameters={}, start_from_page=1)
+    response = requests.Response()
+
+    with pytest.raises(AirbyteTracedException) as exception:
+        strategy.next_page_token(
+            response=response,
+            last_page_size=50,
+            last_record=None,
+            last_page_token_value=1,
+            page_size_override=50,
+        )
+
+    assert exception.value.failure_type == FailureType.config_error

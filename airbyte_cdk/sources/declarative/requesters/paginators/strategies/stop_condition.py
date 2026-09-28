@@ -7,6 +7,9 @@ from typing import Any, Optional
 
 import requests
 
+from airbyte_cdk.sources.declarative.requesters.paginators.paginator import (
+    page_size_override_kwargs,
+)
 from airbyte_cdk.sources.declarative.requesters.paginators.strategies.pagination_strategy import (
     PaginationStrategy,
 )
@@ -47,13 +50,18 @@ class StopConditionPaginationStrategyDecorator(PaginationStrategy):
         last_page_size: int,
         last_record: Optional[Record],
         last_page_token_value: Optional[Any] = None,
+        page_size_override: Optional[int] = None,
     ) -> Optional[Any]:
         # We evaluate in reverse order because the assumption is that most of the APIs using data feed structure
         # will return records in descending order. In terms of performance/memory, we return the records lazily
         if last_record and self._stop_condition.is_met(last_record):
             return None
         return self._delegate.next_page_token(
-            response, last_page_size, last_record, last_page_token_value
+            response,
+            last_page_size,
+            last_record,
+            last_page_token_value,
+            **page_size_override_kwargs(page_size_override),
         )
 
     def get_page_size(self) -> Optional[int]:
