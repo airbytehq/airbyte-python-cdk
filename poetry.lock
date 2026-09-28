@@ -7173,4 +7173,4 @@ vector-db-based = ["cohere", "langchain_community", "langchain_core", "langchain
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.10,<3.14"
-content-hash = "6128b706a6787fe37fa8e2561800ab8201385eb889727452a159016f91063613"
+content-hash = "16588f0ec5fed9bd99bed0f8b40d13971708a8cf3f9c1a24ab6f4bdb358cd97c"
