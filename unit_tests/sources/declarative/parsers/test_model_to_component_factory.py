@@ -7816,3 +7816,237 @@ def test_incremental_dependency_without_incremental_sync_warns(
         for record in caplog.records
     )
     assert warning_emitted == expected_warning
+
+
+def _json_items_decoder_component(items_path: str = "tickets"):
+    from airbyte_cdk.sources.declarative.decoders.composite_raw_decoder import (
+        CompositeRawDecoder,
+        JsonItemsParser,
+    )
+
+    return CompositeRawDecoder(parser=JsonItemsParser(items_path=items_path))
+
+
+_PAGINATOR_MANIFEST = """
+  paginator:
+    type: "DefaultPaginator"
+    page_token_option:
+      type: RequestPath
+    pagination_strategy:
+      type: "CursorPagination"
+      cursor_value: "{{ response.get('after_url') }}"
+      stop_condition: "{{ response.get('end_of_stream') }}"
+"""
+
+
+def _build_paginator(decoder):
+    parsed_manifest = YamlDeclarativeSource._parse(_PAGINATOR_MANIFEST)
+    resolved_manifest = resolver.preprocess_manifest(parsed_manifest)
+    paginator_manifest = transformer.propagate_types_and_parameters(
+        "", resolved_manifest["paginator"], {}
+    )
+    return factory.create_component(
+        model_type=DefaultPaginatorModel,
+        component_definition=paginator_manifest,
+        config=input_config,
+        url_base="https://airbyte.io",
+        decoder=decoder,
+    )
+
+
+def test_create_paginator_with_json_items_decoder_is_supported():
+    from airbyte_cdk.sources.declarative.decoders.composite_raw_decoder import (
+        CompositeRawDecoder,
+        GzipParser,
+        JsonItemsParser,
+    )
+    from airbyte_cdk.sources.streams.http.streamed_response import set_document_remainder
+
+    paginator = _build_paginator(_json_items_decoder_component())
+    assert isinstance(paginator, DefaultPaginator)
+    assert isinstance(paginator.page_token_option, RequestPath)
+
+    response = requests.Response()
+    response.status_code = 200
+    set_document_remainder(response, {"after_url": "https://next", "end_of_stream": False})
+    assert (
+        paginator.pagination_strategy.next_page_token(
+            response=response, last_page_size=2, last_record=None
+        )
+        == "https://next"
+    )
+    set_document_remainder(response, {"after_url": "https://next", "end_of_stream": True})
+    assert (
+        paginator.pagination_strategy.next_page_token(
+            response=response, last_page_size=2, last_record=None
+        )
+        is None
+    )
+
+    gzip_decoder = CompositeRawDecoder(
+        parser=GzipParser(inner_parser=JsonItemsParser(items_path="tickets"))
+    )
+    assert isinstance(_build_paginator(gzip_decoder), DefaultPaginator)
+
+
+def test_create_paginator_decoder_support_matrix_unchanged():
+    from airbyte_cdk.sources.declarative.decoders.composite_raw_decoder import (
+        CompositeRawDecoder,
+        CsvParser,
+    )
+    from airbyte_cdk.sources.declarative.decoders.xml_decoder import XmlDecoder
+
+    assert isinstance(_build_paginator(XmlDecoder(parameters={})), DefaultPaginator)
+    assert isinstance(_build_paginator(JsonDecoder(parameters={})), DefaultPaginator)
+    with pytest.raises(ValueError, match="not supported for pagination"):
+        _build_paginator(CompositeRawDecoder(parser=CsvParser()))
+
+
+_REQUESTER_MANIFEST = """
+requester:
+  type: HttpRequester
+  url_base: "https://airbyte.io"
+  path: "/v1/items"
+  http_method: "GET"
+  use_cache: {use_cache}
+"""
+
+
+def _build_requester(use_cache: bool, decoder, factory_=None):
+    content = _REQUESTER_MANIFEST.format(use_cache=str(use_cache).lower())
+    parsed_manifest = YamlDeclarativeSource._parse(content)
+    resolved_manifest = resolver.preprocess_manifest(parsed_manifest)
+    requester_manifest = transformer.propagate_types_and_parameters(
+        "", resolved_manifest["requester"], {}
+    )
+    return (factory_ or factory).create_component(
+        model_type=HttpRequesterModel,
+        component_definition=requester_manifest,
+        config=input_config,
+        name="name",
+        decoder=decoder,
+    )
+
+
+def test_use_cache_with_streaming_decoder_builds_fine():
+    from airbyte_cdk.sources.declarative.models import (
+        JsonlDecoder as JsonlDecoderModel,
+    )
+
+    requester = _build_requester(
+        True,
+        factory.create_jsonl_decoder(JsonlDecoderModel(type="JsonlDecoder"), input_config),
+    )
+    assert requester.use_cache is True
+
+
+def test_use_cache_with_spool_to_disk_decoder_raises():
+    from airbyte_cdk.sources.declarative.models import (
+        JsonItemsDecoder as JsonItemsDecoderModel,
+    )
+
+    with pytest.raises(ValueError, match="use_cache.*spool_to_disk"):
+        _build_requester(
+            True,
+            factory.create_json_items_decoder(
+                JsonItemsDecoderModel(
+                    type="JsonItemsDecoder", items_path="tickets", spool_to_disk=True
+                ),
+                input_config,
+            ),
+        )
+
+
+def test_spool_to_disk_propagates_to_requester():
+    from airbyte_cdk.sources.declarative.models import (
+        JsonItemsDecoder as JsonItemsDecoderModel,
+    )
+
+    requester = _build_requester(
+        False,
+        factory.create_json_items_decoder(
+            JsonItemsDecoderModel(
+                type="JsonItemsDecoder", items_path="tickets", spool_to_disk=True
+            ),
+            input_config,
+        ),
+    )
+    assert requester.stream_response is True
+    assert requester.spool_response is True
+
+
+def test_builder_mode_json_items_decoder_is_not_streamed_or_spooled():
+    from airbyte_cdk.sources.declarative.models import (
+        JsonItemsDecoder as JsonItemsDecoderModel,
+    )
+
+    builder_factory = ModelToComponentFactory(emit_connector_builder_messages=True)
+    decoder = builder_factory.create_json_items_decoder(
+        JsonItemsDecoderModel(type="JsonItemsDecoder", items_path="tickets", spool_to_disk=True),
+        input_config,
+    )
+    assert decoder.is_stream_response() is False
+    assert decoder.spools_response() is False
+
+
+def test_default_paginator_enables_remainder_capture_on_shared_decoder():
+    decoder = _json_items_decoder_component()
+    _build_paginator(decoder)
+    assert decoder._capture_document_remainder is True
+
+    decoder_without_paginator = _json_items_decoder_component()
+    assert decoder_without_paginator._capture_document_remainder is False
+
+
+_SPOOL_BODY_FILTER_MANIFEST = """
+requester:
+  type: HttpRequester
+  url_base: "https://airbyte.io"
+  path: "/v1/items"
+  http_method: "GET"
+  error_handler:
+    type: DefaultErrorHandler
+    response_filters:
+      - action: IGNORE
+        error_message_contains: "You do not have access"
+"""
+
+
+def _build_requester_from_manifest(content: str, decoder):
+    parsed_manifest = YamlDeclarativeSource._parse(content)
+    resolved_manifest = resolver.preprocess_manifest(parsed_manifest)
+    requester_manifest = transformer.propagate_types_and_parameters(
+        "", resolved_manifest["requester"], {}
+    )
+    return factory.create_component(
+        model_type=HttpRequesterModel,
+        component_definition=requester_manifest,
+        config=input_config,
+        name="name",
+        decoder=decoder,
+    )
+
+
+def _json_items_spooling_decoder():
+    from airbyte_cdk.sources.declarative.models import (
+        JsonItemsDecoder as JsonItemsDecoderModel,
+    )
+
+    return factory.create_json_items_decoder(
+        JsonItemsDecoderModel(type="JsonItemsDecoder", items_path="tickets", spool_to_disk=True),
+        input_config,
+    )
+
+
+def test_spool_to_disk_with_body_filters_logs_warning(caplog):
+    with caplog.at_level(logging.WARNING):
+        _build_requester_from_manifest(_SPOOL_BODY_FILTER_MANIFEST, _json_items_spooling_decoder())
+    assert any(
+        "spool_to_disk" in r.message and "response filters" in r.message for r in caplog.records
+    )
+
+
+def test_no_spool_to_disk_no_body_filter_warning(caplog):
+    with caplog.at_level(logging.WARNING):
+        _build_requester_from_manifest(_SPOOL_BODY_FILTER_MANIFEST, _json_items_decoder_component())
+    assert not any("spool_to_disk" in r.message for r in caplog.records)
