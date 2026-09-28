@@ -17,12 +17,14 @@ from airbyte_cdk.models import (
     AirbyteMessage,
     AirbyteStateMessage,
     AirbyteTraceMessage,
+    FailureType,
     Level,
 )
 from airbyte_cdk.models import Type as MessageType
 from airbyte_cdk.sources.declarative.interpolation.interpolated_string import InterpolatedString
 from airbyte_cdk.sources.message import MessageRepository
 from airbyte_cdk.sources.types import Config, Record, StreamSlice
+from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 
 if TYPE_CHECKING:
     from airbyte_cdk.sources.declarative.retrievers import Retriever
@@ -32,6 +34,9 @@ logger = logging.getLogger("airbyte")
 # dpath treats these characters as glob metacharacters (fnmatch semantics) inside a path segment.
 _GLOB_METACHARACTERS = ("*", "?", "[")
 
+# Returned by `_lookup` for a path the record does not have, since `None` is a valid value.
+_MISSING = object()
+
 # Protocol payloads a retriever may yield unwrapped (i.e. not inside an `AirbyteMessage` envelope).
 _BARE_PROTOCOL_MESSAGES = (
     AirbyteControlMessage,
@@ -39,6 +44,34 @@ _BARE_PROTOCOL_MESSAGES = (
     AirbyteStateMessage,
     AirbyteTraceMessage,
 )
+
+
+def _lookup(record: Any, path: Sequence[Any]) -> Any:
+    """Value at a glob-free `path`, or `_MISSING`, reading only the containers on the path.
+
+    Matches the way `dpath.get` resolves such a path: a mapping key is compared as a string, and
+    a segment reaching a list is taken as an index, negative ones counting from the end.
+    `dpath.get` itself walks the whole record, so on a parent holding a long list each lookup
+    costs as much as that list.
+    """
+    value = record
+    for segment in path:
+        if isinstance(value, Mapping):
+            key = str(segment)
+            if key not in value:
+                return _MISSING
+            value = value[key]
+        elif isinstance(value, list):
+            try:
+                index = int(segment)
+            except (TypeError, ValueError):
+                return _MISSING
+            if not -len(value) <= index < len(value):
+                return _MISSING
+            value = value[index]
+        else:
+            return _MISSING
+    return value
 
 
 def _detached(value: Any) -> Any:
@@ -83,8 +116,11 @@ class ParentFieldPath:
         self._record_path: list[InterpolatedString] = [
             InterpolatedString.create(path, parameters=parameters) for path in self.record_path
         ]
-        RecordExpander._reject_globs(self.evaluated_parent_path(), "parent_path")
-        RecordExpander._reject_globs(self.evaluated_record_path(), "record_path")
+        # The paths only interpolate `config`, so they are evaluated once instead of per item.
+        self._evaluated_parent_path = self.evaluated_parent_path()
+        self._evaluated_record_path = self.evaluated_record_path()
+        RecordExpander._reject_globs(self._evaluated_parent_path, "parent_path")
+        RecordExpander._reject_globs(self._evaluated_record_path, "record_path")
 
     def evaluated_parent_path(self) -> list[Any]:
         return [segment.eval(self.config) for segment in self._parent_path]
@@ -102,14 +138,26 @@ class ParentFieldPath:
         "present and null" would need a third option and no connector needs one.
 
         A container value is deep-copied, so that a downstream transformation writing inside it
-        cannot reach the parent record or the items expanded from it alongside this one. The copy
-        costs proportionally to the named value, not to the whole parent.
+        cannot reach the parent record or the items expanded from it alongside this one. Both the
+        lookup and the copy cost proportionally to the named value, not to the whole parent.
+
+        A `record_path` running through a value the item holds as a scalar or a list cannot be
+        written and fails the sync as a config error naming the path.
         """
+        value = _lookup(parent_record, self._evaluated_parent_path)
+        copied = None if value is _MISSING else _detached(value)
         try:
-            value = dpath.get(dict(parent_record), self.evaluated_parent_path())
-        except (KeyError, ValueError):
-            value = None
-        dpath.new(child_record, self.evaluated_record_path(), _detached(value))
+            dpath.new(child_record, self._evaluated_record_path, copied)
+        except (dpath.exceptions.PathNotFound, TypeError) as error:
+            message = (
+                f"Cannot write parent field to `record_path` {self._evaluated_record_path}: "
+                "the expanded item already holds a non-object value on that path."
+            )
+            raise AirbyteTracedException(
+                message=message,
+                internal_message=f"{message} {error!r}",
+                failure_type=FailureType.config_error,
+            ) from error
 
 
 @dataclass
@@ -475,12 +523,13 @@ class RecordExpander:
         so siblings of the list are kept and the parent itself is not mutated here. This base is
         built once per parent record and then deep-copied per item in `_apply_parent_context`,
         which is what keeps the parent and the sibling items isolated from one another. Every
-        match of the path is removed, which covers glob paths that select several lists.
+        list matched by the path is removed, which covers glob paths that select several lists;
+        a match that is not a list is kept, since nothing is expanded from it.
         """
         matched_paths = [
             path
-            for path, _ in dpath.segments.walk(parent_record)  # type: ignore[no-untyped-call]
-            if dpath.segments.match(path, expand_path)
+            for path, value in dpath.segments.walk(parent_record)  # type: ignore[no-untyped-call]
+            if isinstance(value, list) and dpath.segments.match(path, expand_path)
         ]
         stripped: Any = parent_record
         # Deepest and right-most first, so removing a list element never shifts the index of a
