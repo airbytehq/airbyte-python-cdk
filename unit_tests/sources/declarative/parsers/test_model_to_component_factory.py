@@ -10,7 +10,7 @@ from copy import deepcopy
 # mypy: ignore-errors
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Iterable, Mapping, Optional, Union
+from typing import Any, Dict, Iterable, Mapping, Optional, Union
 
 import freezegun
 import pytest
@@ -8372,6 +8372,187 @@ def test_union_combined_extractor_is_accepted_by_a_page_increment_paginator():
     pagination_strategy = retriever.paginator.pagination_strategy
     assert isinstance(pagination_strategy, PageIncrement)
     assert isinstance(pagination_strategy.extractor, CombinedExtractor)
+
+
+_FIRST_MATCH_SKIPPING_EMPTY_RECORDS = """          type: CombinedExtractor
+          mode: first_match
+          skip_empty_records: true
+          extractors:
+            - type: DpathExtractor
+              field_path: ["a"]
+            - type: DpathExtractor
+              field_path: ["b"]"""
+
+
+@pytest.mark.parametrize(
+    "pagination_strategy",
+    [
+        pytest.param(_OFFSET_INCREMENT, id="offset_increment"),
+        pytest.param(_PAGE_INCREMENT, id="page_increment"),
+    ],
+)
+def test_a_record_counting_paginator_counts_the_empty_records_the_extractor_drops(
+    pagination_strategy: str,
+):
+    """A null on a full page must not make the page look short and silently end pagination."""
+    retriever = _build_retriever(
+        _retriever_manifest_with_paginator(_FIRST_MATCH_SKIPPING_EMPTY_RECORDS, pagination_strategy)
+    )
+
+    record_selector_extractor = retriever.record_selector.extractor
+    counting_extractor = retriever.paginator.pagination_strategy.extractor
+    assert isinstance(record_selector_extractor, CombinedExtractor)
+    assert isinstance(counting_extractor, CombinedExtractor)
+    assert record_selector_extractor.count_dropped_empty_records is False
+    assert counting_extractor.count_dropped_empty_records is True
+
+    full_page_with_a_null = _json_response({"a": [None, {"id": 1}]})
+    assert list(record_selector_extractor.extract_records(full_page_with_a_null)) == [{"id": 1}]
+    # `last_page_size` is what the retriever emitted; the strategy must count the page itself.
+    assert (
+        retriever.paginator.pagination_strategy.next_page_token(
+            response=full_page_with_a_null,
+            last_page_size=1,
+            last_record={"id": 1},
+            last_page_token_value=0,
+        )
+        is not None
+    )
+
+
+def _async_retriever_definition(
+    download_extractor: Mapping[str, Any], download_paginator: Mapping[str, Any]
+) -> Dict[str, Any]:
+    return {
+        "type": "AsyncRetriever",
+        "status_mapping": {
+            "failed": ["failed"],
+            "running": ["pending"],
+            "timeout": ["timeout"],
+            "completed": ["ready"],
+        },
+        "status_extractor": {"type": "DpathExtractor", "field_path": ["status"]},
+        "download_target_extractor": {"type": "DpathExtractor", "field_path": ["url"]},
+        "download_extractor": download_extractor,
+        "download_paginator": download_paginator,
+        "record_selector": {
+            "type": "RecordSelector",
+            "extractor": {"type": "DpathExtractor", "field_path": []},
+        },
+        "polling_requester": {
+            "type": "HttpRequester",
+            "path": "/exports/{{ creation_response['id'] }}",
+            "url_base": "https://api.test.com",
+            "http_method": "GET",
+        },
+        "creation_requester": {
+            "type": "HttpRequester",
+            "path": "/exports",
+            "url_base": "https://api.test.com",
+            "http_method": "POST",
+        },
+        "download_requester": {
+            "type": "HttpRequester",
+            "path": "{{download_target}}",
+            "url_base": "",
+            "http_method": "GET",
+        },
+    }
+
+
+def _download_paginator(pagination_strategy_type: str) -> Dict[str, Any]:
+    return {
+        "type": "DefaultPaginator",
+        "pagination_strategy": {"type": pagination_strategy_type, "page_size": 2},
+        "page_token_option": {
+            "type": "RequestOption",
+            "inject_into": "request_parameter",
+            "field_name": "offset",
+        },
+    }
+
+
+def _build_download_paginator(definition: Mapping[str, Any]) -> Any:
+    component = factory.create_component(
+        model_type=AsyncRetrieverModel,
+        component_definition=definition,
+        name="test_stream",
+        primary_key="id",
+        stream_slicer=None,
+        transformations=[],
+        config={},
+    )
+    job_repository = component.stream_slicer.job_orchestrator_factory(
+        [StreamSlice(partition={}, cursor_slice={})]
+    )._job_repository
+    return job_repository.download_retriever.paginator
+
+
+def test_union_combined_download_extractor_is_rejected_by_an_offset_increment_download_paginator():
+    """The download paginator is built apart from the record selector's, so it needs its own check.
+
+    Without it the strategy falls back to the retriever's record count, which under `union` is the
+    sum over all sub-extractors, and the offsets skip the records in between.
+    """
+    definition = _async_retriever_definition(
+        {
+            "type": "CombinedExtractor",
+            "mode": "union",
+            "extractors": [
+                {"type": "DpathExtractor", "field_path": ["a"]},
+                {"type": "DpathExtractor", "field_path": ["b"]},
+            ],
+        },
+        _download_paginator("OffsetIncrement"),
+    )
+
+    with pytest.raises(AirbyteTracedException) as exc_info:
+        _build_download_paginator(definition)
+
+    assert exc_info.value.failure_type == FailureType.config_error
+    assert "union" in exc_info.value.message
+    assert "OffsetIncrement" in exc_info.value.message
+
+
+def test_combined_download_extractor_skipping_empty_records_counts_them_for_the_download_paginator():
+    definition = _async_retriever_definition(
+        {
+            "type": "CombinedExtractor",
+            "mode": "first_match",
+            "skip_empty_records": True,
+            "extractors": [
+                {"type": "DpathExtractor", "field_path": ["a"]},
+                {"type": "DpathExtractor", "field_path": ["b"]},
+            ],
+        },
+        _download_paginator("PageIncrement"),
+    )
+
+    pagination_strategy = _build_download_paginator(definition).pagination_strategy
+    assert isinstance(pagination_strategy, PageIncrement)
+    assert isinstance(pagination_strategy.extractor, CombinedExtractor)
+    assert pagination_strategy.extractor.count_dropped_empty_records is True
+    assert (
+        pagination_strategy.next_page_token(
+            response=_json_response({"a": [None, {"id": 1}]}),
+            last_page_size=1,
+            last_record={"id": 1},
+            last_page_token_value=0,
+        )
+        is not None
+    )
+
+
+def test_download_paginator_keeps_the_retriever_count_for_other_download_extractors():
+    """A paginator's copy would re-read a response a streaming download decoder already consumed."""
+    definition = _async_retriever_definition(
+        {"type": "DpathExtractor", "field_path": ["a"]},
+        _download_paginator("OffsetIncrement"),
+    )
+
+    pagination_strategy = _build_download_paginator(definition).pagination_strategy
+    assert isinstance(pagination_strategy, OffsetIncrement)
+    assert pagination_strategy.extractor is None
 
 
 def test_create_async_retriever_with_combined_extractors():

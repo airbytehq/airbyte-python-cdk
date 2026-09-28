@@ -31,6 +31,18 @@ class _NoRecord:
 _NO_RECORD = _NoRecord()
 
 
+class _DroppedEmptyRecord:
+    """Stands in for an empty record dropped by `skip_empty_records` when the extractor counts a page.
+
+    A record-counting paginator only takes the length of what the extractor yields, so the
+    placeholder makes the dropped record count toward the page size without ever reaching the
+    record stream.
+    """
+
+
+_DROPPED_EMPTY_RECORD = _DroppedEmptyRecord()
+
+
 @dataclass
 class CombinedExtractor(RecordExtractor):
     """Combines the output of several record extractors into a single stream of records.
@@ -67,7 +79,7 @@ class CombinedExtractor(RecordExtractor):
         mode: first_match
         extractors:
           - type: DpathExtractor
-            field_path: ["data", "boards", "*", "items_page", "items"]
+            field_path: ["data", "boards", "*", "items_page", "items", "*"]
           - type: DpathExtractor
             field_path: ["data", "next_items_page", "items"]
     ```
@@ -110,6 +122,9 @@ class CombinedExtractor(RecordExtractor):
     the behaviour of `source-monday`'s `MondayIncrementalItemsExtractor`, where a page of nulls
     must fall through to the pagination path rather than lock in the primary path.
 
+    The dropped records still count toward the size of the page, see "Record-counting paginators"
+    below.
+
     ## Cost
 
     Each sub-extractor decodes the response independently — `CompositeRawDecoder` re-parses the
@@ -136,17 +151,30 @@ class CombinedExtractor(RecordExtractor):
       count, so it works with either paginator as long as the path the count comes from is the one
       the API paginates over.
 
+    Empty records dropped by `skip_empty_records` are part of that count. The API returned them as
+    slots of the page, so a full page holding a null must still read as full: counting only the
+    surviving records would make both paginators stop at the first page with a null, and would
+    make an `OffsetIncrement` re-request records it already read. The factory builds the
+    paginator's copy of the extractor with `count_dropped_empty_records` set, which makes that copy
+    yield a placeholder for every empty record it drops. The winner under `first_match` is still
+    chosen by the surviving records alone, so the paginator counts the same sub-extractor the
+    record stream reads.
+
     Attributes:
         extractors (List[RecordExtractor]): The sub-extractors to combine. At least one is required.
         mode (CombineMode): How the sub-extractor outputs are combined. Defaults to `union`.
         skip_empty_records (bool): Whether falsy records are dropped before they are combined.
             Defaults to `False`.
+        count_dropped_empty_records (bool): Set by the factory on the copy a record-counting
+            paginator uses, never on the one that emits records: yield a placeholder in place of
+            every dropped empty record so it counts toward the page size. Defaults to `False`.
     """
 
     extractors: List[RecordExtractor]
     parameters: InitVar[Mapping[str, Any]]
     mode: CombineMode = CombineMode.union
     skip_empty_records: bool = False
+    count_dropped_empty_records: bool = False
 
     def __post_init__(self, parameters: Mapping[str, Any]) -> None:
         if not self.extractors:
@@ -169,12 +197,21 @@ class CombinedExtractor(RecordExtractor):
     def _extract_first_match(self, response: requests.Response) -> Iterable[Mapping[str, Any]]:
         for index in range(len(self.extractors)):
             records: Iterator[Mapping[str, Any]] = iter(self._records_of(index, response))
-            first_record: Union[Mapping[str, Any], _NoRecord] = next(records, _NO_RECORD)
+            # Placeholders for dropped empty records do not make a sub-extractor win, but they are
+            # kept so the winner's count still includes the ones that came before its first record.
+            dropped_placeholders: List[Mapping[str, Any]] = []
+            first_record: Union[Mapping[str, Any], _NoRecord] = _NO_RECORD
+            for record in records:
+                if isinstance(record, _DroppedEmptyRecord):
+                    dropped_placeholders.append(record)
+                    continue
+                first_record = record
+                break
             if isinstance(first_record, _NoRecord):
                 continue
             # Chain the peeked record back instead of restarting the extractor: the rest of the
             # records stay lazy and the response is never read twice.
-            yield from chain([first_record], records)
+            yield from chain(dropped_placeholders, [first_record], records)
             return
 
     def _records_of(
@@ -191,9 +228,14 @@ class CombinedExtractor(RecordExtractor):
         dropped = 0
         for record in records:
             if not record:
-                dropped += 1
+                if self.count_dropped_empty_records:
+                    yield _DROPPED_EMPTY_RECORD  # type: ignore[misc]  # only ever counted, never emitted
+                else:
+                    dropped += 1
                 continue
             yield record
+        # The paginator's copy re-reads the page the record stream already read, so only the
+        # record stream reports the drop.
         if dropped:
             logger.warning(
                 "CombinedExtractor dropped %s empty record(s) yielded by sub-extractor %s (%s) "

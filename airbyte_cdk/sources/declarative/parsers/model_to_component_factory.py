@@ -3253,6 +3253,38 @@ class ModelToComponentFactory:
             for sub_extractor in model.extractors
         )
 
+    def _create_record_counting_extractor(
+        self,
+        extractor_model: Optional[
+            Union[CustomRecordExtractorModel, DpathExtractorModel, CombinedExtractorModel]
+        ],
+        config: Config,
+        decoder: Optional[Decoder],
+    ) -> Optional[RecordExtractor]:
+        """Build the copy of the extractor an `OffsetIncrement` or `PageIncrement` counts a page with.
+
+        The paginator stops when the count falls below the page size, so the count has to be the
+        number of records the API returned. A `CombinedExtractor` with `skip_empty_records` drops
+        empty records before they are counted, which would make a full page holding a null look
+        short and silently end pagination, so every `CombinedExtractor` in the copy is told to count
+        the records it drops.
+        """
+        if not extractor_model:
+            return None
+        extractor: RecordExtractor = self._create_component_from_model(
+            model=extractor_model, config=config, decoder=decoder
+        )
+        self._count_dropped_empty_records(extractor)
+        return extractor
+
+    @staticmethod
+    def _count_dropped_empty_records(extractor: RecordExtractor) -> None:
+        if not isinstance(extractor, CombinedExtractor):
+            return
+        extractor.count_dropped_empty_records = True
+        for sub_extractor in extractor.extractors:
+            ModelToComponentFactory._count_dropped_empty_records(sub_extractor)
+
     def create_offset_increment(
         self,
         model: OffsetIncrementModel,
@@ -3283,13 +3315,7 @@ class ModelToComponentFactory:
         # decoder with various decorators here, but not in create_record_selector, it is simpler to retain existing
         # behavior by having two separate extractors with identical behavior since they use the same extractor model.
         # When we have more time to investigate we can look into reusing the same component.
-        extractor = (
-            self._create_component_from_model(
-                model=extractor_model, config=config, decoder=decoder_to_use
-            )
-            if extractor_model
-            else None
-        )
+        extractor = self._create_record_counting_extractor(extractor_model, config, decoder_to_use)
 
         # Pydantic v1 Union type coercion can convert int to string depending on Union order.
         # If page_size is a string that represents an integer (not an interpolation), convert it back.
@@ -3319,11 +3345,7 @@ class ModelToComponentFactory:
         # Like OffsetIncrement, we instantiate a separate extractor with identical behavior to the
         # RecordSelector's so the strategy can count the raw records in the response. This ensures
         # pagination is driven by the API's page size, not the post-filter record count.
-        extractor = (
-            self._create_component_from_model(model=extractor_model, config=config, decoder=decoder)
-            if extractor_model
-            else None
-        )
+        extractor = self._create_record_counting_extractor(extractor_model, config, decoder)
 
         # Pydantic v1 Union type coercion can convert int to string depending on Union order.
         # If page_size is a string that represents an integer (not an interpolation), convert it back.
@@ -4492,6 +4514,16 @@ class ModelToComponentFactory:
                     decoder=_decoder,
                     config=config,
                     url_base="",
+                    # Only a `CombinedExtractor` is handed over, so the `union` rejection and the
+                    # count of dropped empty records apply to downloads too. Other extractors keep
+                    # the retriever's own count: a paginator's copy would re-read the response,
+                    # which a streaming download decoder has already consumed, whereas a
+                    # `CombinedExtractor` is only ever built over a buffered decoder.
+                    extractor_model=(
+                        model.download_extractor
+                        if isinstance(model.download_extractor, CombinedExtractorModel)
+                        else None
+                    ),
                 )
                 if model.download_paginator
                 else NoPagination(parameters={})
