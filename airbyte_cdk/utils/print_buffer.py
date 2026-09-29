@@ -48,6 +48,7 @@ def _before_fork() -> None:
         try:
             b._flush_to_fd()  # the child must not inherit (and later re-emit) pending bytes
         except (OSError, ValueError):
+            # best effort: a broken/closed stdout must not block the fork
             pass
 
 
@@ -207,6 +208,7 @@ class PrintBuffer:
             try:
                 self._flush_to_fd()
             except (OSError, ValueError):
+                # stdout already broken/closed at shutdown; nothing more can be delivered
                 pass
 
     def _reset_after_fork(self) -> None:
