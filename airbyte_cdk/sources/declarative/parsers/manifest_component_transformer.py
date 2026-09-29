@@ -50,6 +50,8 @@ DEFAULT_MODEL_TYPES: Mapping[str, str] = {
     # ParentStreamConfig
     "ParentStreamConfig.request_option": "RequestOption",
     "ParentStreamConfig.stream": "DeclarativeStream",
+    # RecordExpander
+    "RecordExpander.parent_fields": "ParentFieldPath",
     # RecordSelector
     "RecordSelector.extractor": "DpathExtractor",
     "RecordSelector.record_filter": "RecordFilter",

@@ -2,9 +2,11 @@
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
 
+import inspect
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Any, Dict, Mapping, Optional
+from functools import lru_cache
+from typing import Any, Callable, Dict, Mapping, Optional
 
 import requests
 
@@ -22,6 +24,39 @@ def page_size_override_kwargs(page_size_override: Optional[int]) -> Dict[str, An
     need to when the stream actually reduces its page size (see `ResponseAction.REDUCE_PAGE_SIZE`).
     """
     return {"page_size_override": page_size_override} if page_size_override is not None else {}
+
+
+def stream_slice_kwargs(
+    next_page_token: Callable[..., Any], stream_slice: Optional[StreamSlice]
+) -> Dict[str, Any]:
+    """
+    Build the `stream_slice` keyword argument only for a `next_page_token` that accepts it.
+
+    Unlike `page_size_override`, the slice is almost always present, so passing it only when it is set would still
+    break a paginator or pagination strategy defined outside of the CDK whose signature predates the argument. The
+    signature is checked instead, and a callee that does not declare `stream_slice` (or `**kwargs`) is called as
+    before.
+    """
+    if stream_slice is None:
+        return {}
+    function = getattr(next_page_token, "__func__", next_page_token)
+    try:
+        accepts_stream_slice = _accepts_stream_slice(function)
+    except TypeError:
+        # Unhashable callables cannot be cached; they are rare enough to inspect on every call.
+        accepts_stream_slice = _accepts_stream_slice.__wrapped__(function)
+    return {"stream_slice": stream_slice} if accepts_stream_slice else {}
+
+
+@lru_cache(maxsize=None)
+def _accepts_stream_slice(function: Callable[..., Any]) -> bool:
+    try:
+        parameters = inspect.signature(function).parameters
+    except (TypeError, ValueError):
+        return False
+    return "stream_slice" in parameters or any(
+        parameter.kind == inspect.Parameter.VAR_KEYWORD for parameter in parameters.values()
+    )
 
 
 @dataclass
@@ -47,6 +82,7 @@ class Paginator(ABC, RequestOptionsProvider):
         last_record: Optional[Record],
         last_page_token_value: Optional[Any],
         page_size_override: Optional[int] = None,
+        stream_slice: Optional[StreamSlice] = None,
     ) -> Optional[Mapping[str, Any]]:
         """
         Returns the next_page_token to use to fetch the next page of records.
@@ -57,6 +93,8 @@ class Paginator(ABC, RequestOptionsProvider):
         :param last_page_token_value: The current value of the page token made on the last request
         :param page_size_override: the page size that was actually requested, when it differs from the configured
             one because of a `REDUCE_PAGE_SIZE` response action
+        :param stream_slice: the slice the page was read for, so that a stop condition can compare the page against
+            the slice's own window or partition
         :return: A mapping {"next_page_token": <token>} for the next page from the input response object. Returning None means there are no more pages to read in this response.
         """
         pass
