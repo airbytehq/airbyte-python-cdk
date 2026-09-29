@@ -4972,14 +4972,71 @@ def test_create_concurrent_cursor_from_perpartition_cursor_runs_state_migrations
     )
 
 
-def test_create_concurrent_cursor_from_perpartition_cursor_ignores_full_refresh_sentinel_state():
+@pytest.mark.parametrize(
+    "child_state, cursor_datetime_formats, expected_parent_cursor_value",
+    [
+        pytest.param(
+            {"__ab_no_cursor_state_message": True},
+            ["%Y-%m-%dT%H:%M:%S.%f%z"],
+            "2024-01-01T00:00:00.000000+0000",
+            id="full_refresh_sentinel",
+        ),
+        pytest.param(
+            {"__ab_full_refresh_sync_complete": True},
+            ["%Y-%m-%dT%H:%M:%S.%f%z"],
+            "2024-01-01T00:00:00.000000+0000",
+            id="resumable_full_refresh_sentinel",
+        ),
+        pytest.param(
+            {
+                "states": [
+                    {
+                        "partition": {"id": "1", "parent_slice": {}},
+                        "cursor": {"updated_at": "2024-02-01T00:00:00.000000+0000"},
+                    }
+                ]
+            },
+            ["%Y-%m-%dT%H:%M:%S.%f%z"],
+            "2024-01-01T00:00:00.000000+0000",
+            id="legacy_per_partition_state_without_parent_state",
+        ),
+        pytest.param(
+            {"updated_at": "2024-02-01T00:00:00.000000+0000"},
+            ["%Y-%m-%dT%H:%M:%S.%f%z"],
+            "2024-02-01T00:00:00.000000+0000",
+            id="legacy_string_cursor_value",
+        ),
+        pytest.param(
+            {"updated_at": 1706745600},
+            ["%Y-%m-%dT%H:%M:%S.%f%z", "%s"],
+            "2024-02-01T00:00:00.000000+0000",
+            id="legacy_epoch_cursor_value",
+        ),
+        pytest.param(
+            {"updated_at": 1706745600.0},
+            ["%Y-%m-%dT%H:%M:%S.%f%z", "%s"],
+            "2024-02-01T00:00:00.000000+0000",
+            id="legacy_float_epoch_cursor_value",
+        ),
+        pytest.param(
+            {"updated_at": "2024-02-01T00:00:00.000000+0000", "lookback_window": 0},
+            ["%Y-%m-%dT%H:%M:%S.%f%z"],
+            "2024-01-01T00:00:00.000000+0000",
+            id="multiple_values_are_not_a_legacy_cursor",
+        ),
+    ],
+)
+def test_create_concurrent_cursor_from_perpartition_cursor_seeds_parent_only_from_a_cursor_value(
+    child_state, cursor_datetime_formats, expected_parent_cursor_value
+):
     """
-    A stream that synced as full refresh checkpoints `{"__ab_no_cursor_state_message": true}`. If a later
-    connector version converts that stream to incremental with an `incremental_dependency` parent, the
-    sentinel must not be re-keyed under the parent's cursor field as if it were a legacy cursor value —
-    doing so crashed cursor initialization with `ValueError: No format in [...] matching True`.
+    Without `parent_state`, a legacy child state with a single cursor value seeds the parent cursor. A child
+    stream can also carry state that is not a cursor value: the full refresh sentinels, or a legacy
+    per-partition state. If a later connector version adds an `incremental_dependency` parent, that value
+    must not be re-keyed under the parent's cursor field - doing so crashed cursor initialization with
+    `ValueError: No format in [...] matching True`.
     """
-    content = """
+    content = f"""
     type: DeclarativeStream
     primary_key: "id"
     name: test
@@ -4995,7 +5052,8 @@ def test_create_concurrent_cursor_from_perpartition_cursor_ignores_full_refresh_
       type: "DatetimeBasedCursor"
       cursor_field: "updated_at"
       datetime_format: "%Y-%m-%dT%H:%M:%S.%f%z"
-      start_datetime: "{{ config['start_time'] }}"
+      cursor_datetime_formats: {cursor_datetime_formats}
+      start_datetime: "{{{{ config['start_time'] }}}}"
     retriever:
       type: SimpleRetriever
       name: test
@@ -5034,7 +5092,8 @@ def test_create_concurrent_cursor_from_perpartition_cursor_ignores_full_refresh_
                 type: "DatetimeBasedCursor"
                 cursor_field: "updated_at"
                 datetime_format: "%Y-%m-%dT%H:%M:%S.%f%z"
-                start_datetime: "{{ config['start_time'] }}"
+                cursor_datetime_formats: {cursor_datetime_formats}
+                start_datetime: "{{{{ config['start_time'] }}}}"
               retriever:
                 type: SimpleRetriever
                 requester:
@@ -5054,7 +5113,7 @@ def test_create_concurrent_cursor_from_perpartition_cursor_ignores_full_refresh_
                 type=AirbyteStateType.STREAM,
                 stream=AirbyteStreamState(
                     stream_descriptor=StreamDescriptor(name="test"),
-                    stream_state=AirbyteStateBlob({"__ab_no_cursor_state_message": True}),
+                    stream_state=AirbyteStateBlob(child_state),
                 ),
             )
         ]
@@ -5071,7 +5130,7 @@ def test_create_concurrent_cursor_from_perpartition_cursor_ignores_full_refresh_
     parent_cursor_state = stream.cursor._partition_router.parent_stream_configs[
         0
     ].stream.cursor.state
-    assert all(value is not True for value in parent_cursor_state.values())
+    assert parent_cursor_state == {"updated_at": expected_parent_cursor_value}
 
 
 def test_incrementing_count_cursor_with_partition_router_raises_error():
