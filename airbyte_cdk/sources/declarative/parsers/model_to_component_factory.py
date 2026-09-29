@@ -110,9 +110,12 @@ from airbyte_cdk.sources.declarative.decoders.composite_raw_decoder import (
 )
 from airbyte_cdk.sources.declarative.expanders.record_expander import (
     OnNoRecords,
+    ParentFieldPath,
     RecordExpander,
 )
 from airbyte_cdk.sources.declarative.extractors import (
+    CombinedExtractor,
+    CombineMode,
     DpathExtractor,
     RecordFilter,
     RecordSelector,
@@ -171,6 +174,9 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     CheckStream as CheckStreamModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    CombinedExtractor as CombinedExtractorModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     ComplexFieldType as ComplexFieldTypeModel,
@@ -398,6 +404,9 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
     ParametrizedComponentsResolver as ParametrizedComponentsResolverModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    ParentFieldPath as ParentFieldPathModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     ParentStreamConfig as ParentStreamConfigModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
@@ -595,6 +604,9 @@ from airbyte_cdk.sources.declarative.retrievers.page_size_reducer import (
     PageSizeResetPolicy,
 )
 from airbyte_cdk.sources.declarative.retrievers.pagination_tracker import PaginationTracker
+from airbyte_cdk.sources.declarative.retrievers.request_window_splitting import (
+    RequestWindowSplitting,
+)
 from airbyte_cdk.sources.declarative.schema import (
     ComplexFieldType,
     DefaultSchemaLoader,
@@ -702,6 +714,7 @@ from airbyte_cdk.sources.streams.concurrent.state_converters.incrementing_count_
 from airbyte_cdk.sources.streams.http.error_handlers.response_models import ResponseAction
 from airbyte_cdk.sources.types import Config
 from airbyte_cdk.sources.utils.transform import TransformConfig, TypeTransformer
+from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 
 ComponentDefinition = Mapping[str, Any]
 
@@ -714,6 +727,23 @@ _NO_STREAM_SLICING = SinglePartitionRouter(parameters={})
 # Ideally this should use the value defined in ConcurrentDeclarativeSource, but
 # this would be a circular import
 MAX_SLICES = 5
+
+# Smallest duration each `DatetimeParser`/`strftime` directive can distinguish, used by
+# `_smallest_datetime_format_unit` to check `datetime_format` can represent `cursor_granularity`. A format with
+# no entry here (e.g. a bare `%Y`/`%m`) is treated as "cannot determine" rather than rejected.
+_DATETIME_FORMAT_DIRECTIVE_GRANULARITY: List[Tuple[str, datetime.timedelta]] = [
+    ("%epoch_microseconds", datetime.timedelta(microseconds=1)),
+    ("%s_as_float", datetime.timedelta(microseconds=1)),
+    ("%f", datetime.timedelta(microseconds=1)),
+    ("%_ms", datetime.timedelta(milliseconds=1)),
+    ("%ms", datetime.timedelta(milliseconds=1)),
+    ("%S", datetime.timedelta(seconds=1)),
+    ("%s", datetime.timedelta(seconds=1)),
+    ("%M", datetime.timedelta(minutes=1)),
+    ("%H", datetime.timedelta(hours=1)),
+    ("%I", datetime.timedelta(hours=1)),
+    ("%d", datetime.timedelta(days=1)),
+]
 
 LOGGER = logging.getLogger(f"airbyte.model_to_component_factory")
 
@@ -799,6 +829,7 @@ class ModelToComponentFactory:
             DeclarativeStreamModel: self.create_default_stream,
             DefaultErrorHandlerModel: self.create_default_error_handler,
             DefaultPaginatorModel: self.create_default_paginator,
+            CombinedExtractorModel: self.create_combined_extractor,
             DpathExtractorModel: self.create_dpath_extractor,
             DpathValidatorModel: self.create_dpath_validator,
             ResponseToFileExtractorModel: self.create_response_to_file_extractor,
@@ -839,6 +870,7 @@ class ModelToComponentFactory:
             PropertiesFromEndpointModel: self.create_properties_from_endpoint,
             PropertyChunkingModel: self.create_property_chunking,
             QueryPropertiesModel: self.create_query_properties,
+            ParentFieldPathModel: self.create_parent_field_path,
             RecordExpanderModel: self.create_record_expander,
             RecordFilterModel: self.create_record_filter,
             RecordSelectorModel: self.create_record_selector,
@@ -1213,6 +1245,9 @@ class ModelToComponentFactory:
         self, model: SessionTokenAuthenticatorModel, config: Config, name: str, **kwargs: Any
     ) -> Union[ApiKeyAuthenticator, BearerAuthenticator]:
         self._reject_reduce_page_size_action(
+            model.login_requester, f"`login_requester` of the SessionTokenAuthenticator of {name}"
+        )
+        self._reject_split_request_window_action(
             model.login_requester, f"`login_requester` of the SessionTokenAuthenticator of {name}"
         )
         decoder = (
@@ -2446,7 +2481,9 @@ class ModelToComponentFactory:
         config: Config,
         *,
         url_base: str,
-        extractor_model: Optional[Union[CustomRecordExtractorModel, DpathExtractorModel]] = None,
+        extractor_model: Optional[
+            Union[CustomRecordExtractorModel, DpathExtractorModel, CombinedExtractorModel]
+        ] = None,
         decoder: Optional[Decoder] = None,
         cursor_used_for_stop_condition: Optional[Cursor] = None,
     ) -> Union[DefaultPaginator, PaginatorTestReadDecorator]:
@@ -2489,6 +2526,81 @@ class ModelToComponentFactory:
         if self._limit_pages_fetched_per_slice:
             return PaginatorTestReadDecorator(paginator, self._limit_pages_fetched_per_slice)
         return paginator
+
+    @staticmethod
+    def _is_decoder_downgraded_by_connector_builder(decoder: Decoder) -> bool:
+        """Is this the buffered stand-in the Connector Builder builds for a streaming decoder?
+
+        `create_csv_decoder`, `create_jsonl_decoder`, `create_json_items_decoder` and
+        `create_gzip_decoder` build a `CompositeRawDecoder` with `stream_response=False` when
+        `_emit_connector_builder_messages` is set, so a Builder test read can be replayed. Those
+        four instances are the only ones that stream in production while reporting
+        `is_stream_response() == False` in the Builder.
+
+        The match is on the exact class and on the parser, not on `isinstance`: a `CustomDecoder`
+        subclassing `CompositeRawDecoder` with `stream_response=False`, or a buffered
+        `CompositeRawDecoder` built around a `JsonParser`, reads the body from `response.content`
+        in production too and must not be rejected.
+        """
+        return type(decoder) is CompositeRawDecoder and isinstance(
+            decoder.parser, (CsvParser, JsonLineParser, JsonItemsParser, GzipParser)
+        )
+
+    def _reject_combined_extractor_over_streaming_decoder(self, decoder: Optional[Decoder]) -> None:
+        """Refuse to build a `CombinedExtractor` whose response body can only be read once.
+
+        Every sub-extractor is handed the same `requests.Response`. A streaming decoder consumes
+        and closes `response.raw`, so every sub-extractor after the first reads a closed
+        `urllib3.HTTPResponse`, which returns an empty body instead of raising: `union` emits only
+        the first sub-extractor's records and `first_match` emits nothing when the first path
+        misses. Rejecting the manifest is the only way to make that loud.
+
+        The Connector Builder downgrades those same decoders to `stream_response=False` so a test
+        read can be replayed, which would let a manifest look correct in the Builder and lose
+        records once published. The downgraded decoders are therefore rejected in the Builder too.
+        """
+        if decoder is None:
+            return
+        inner_decoder = (
+            decoder.decoder if isinstance(decoder, PaginationDecoderDecorator) else decoder
+        )
+        streams_in_production = inner_decoder.is_stream_response() or (
+            self._emit_connector_builder_messages
+            and self._is_decoder_downgraded_by_connector_builder(inner_decoder)
+        )
+        if not streams_in_production:
+            return
+        raise AirbyteTracedException(
+            message="CombinedExtractor is not supported with a streaming decoder.",
+            internal_message=(
+                f"CombinedExtractor was configured with {type(inner_decoder).__name__}, which "
+                f"streams the response and can only be read once. Sub-extractors after the first "
+                f"would read a closed response and silently return no records. The streaming "
+                f"decoders are CsvDecoder, JsonlDecoder, JsonItemsDecoder, GzipDecoder and "
+                f"IterableDecoder; use JsonDecoder, XmlDecoder or ZipfileDecoder, or declare a "
+                f"single extractor."
+            ),
+            failure_type=FailureType.config_error,
+        )
+
+    def create_combined_extractor(
+        self,
+        model: CombinedExtractorModel,
+        config: Config,
+        decoder: Optional[Decoder] = None,
+        **kwargs: Any,
+    ) -> CombinedExtractor:
+        self._reject_combined_extractor_over_streaming_decoder(decoder)
+        extractors = [
+            self._create_component_from_model(model=sub_extractor, config=config, decoder=decoder)
+            for sub_extractor in model.extractors
+        ]
+        return CombinedExtractor(
+            extractors=extractors,
+            mode=CombineMode(model.mode.value) if model.mode else CombineMode.union,
+            skip_empty_records=bool(model.skip_empty_records),
+            parameters=model.parameters or {},
+        )
 
     def create_dpath_extractor(
         self,
@@ -2563,6 +2675,13 @@ class ModelToComponentFactory:
             config=config,
             parameters=model.parameters or {},
             remain_original_record=model.remain_original_record or False,
+            parent_fields=[
+                self._create_component_from_model(model=parent_field, config=config)
+                for parent_field in model.parent_fields
+            ]
+            if model.parent_fields
+            else None,
+            merge_parent=model.merge_parent or False,
             on_no_records=OnNoRecords(model.on_no_records.value)
             if model.on_no_records
             else OnNoRecords.skip,
@@ -2570,6 +2689,19 @@ class ModelToComponentFactory:
             truncated_list_retriever=truncated_list_retriever,
             message_repository=self._message_repository,
             suppress_incomplete_fetch_warning=suppress_incomplete_fetch_warning,
+        )
+
+    @staticmethod
+    def create_parent_field_path(
+        model: ParentFieldPathModel,
+        config: Config,
+        **kwargs: Any,
+    ) -> ParentFieldPath:
+        return ParentFieldPath(
+            parent_path=model.parent_path,
+            record_path=model.record_path,
+            config=config,
+            parameters=model.parameters or {},
         )
 
     @staticmethod
@@ -3123,12 +3255,92 @@ class ModelToComponentFactory:
         # returning default values we think cover most cases
         return (400,), "error", ("invalid_grant", "invalid_permissions")
 
+    @staticmethod
+    def _reject_union_combined_extractor_for_offset_increment(
+        extractor_model: Optional[BaseModel],
+    ) -> None:
+        """Refuse an `OffsetIncrement` paginator driven by a `union` `CombinedExtractor`.
+
+        `OffsetIncrement.next_page_token` advances the offset by the number of records its
+        extractor returns for the page. Under `union` that number is the sum over all
+        sub-extractors, so the offset overshoots the API page size and every page after the first
+        starts past the records that were never read: with two sub-extractors returning two records
+        each and `page_size: 2`, the requested offsets are 0, 4, 8 instead of 0, 2, 4 and two
+        thirds of the records are silently dropped.
+
+        `first_match` returns the winning sub-extractor's count, which does not inflate the count,
+        and is left alone. A `union` nested anywhere in the tree inflates the count of the node
+        above it, so the whole tree is walked.
+        """
+        if not isinstance(extractor_model, CombinedExtractorModel):
+            return
+        if not ModelToComponentFactory._combined_extractor_tree_contains_union(extractor_model):
+            return
+        raise AirbyteTracedException(
+            message=(
+                'CombinedExtractor mode "union" is not supported with an OffsetIncrement paginator.'
+            ),
+            internal_message=(
+                "OffsetIncrement counts the records of its extractor to advance the offset. A "
+                "`union` CombinedExtractor returns the sum of its sub-extractors' records, which "
+                "overshoots the page the API returned, so records would be skipped. Use the "
+                "`first_match` mode, a CursorPagination or PageIncrement paginator, or a single "
+                "extractor."
+            ),
+            failure_type=FailureType.config_error,
+        )
+
+    @staticmethod
+    def _combined_extractor_tree_contains_union(model: CombinedExtractorModel) -> bool:
+        mode = CombineMode(model.mode.value) if model.mode else CombineMode.union
+        if mode == CombineMode.union:
+            return True
+        return any(
+            isinstance(sub_extractor, CombinedExtractorModel)
+            and ModelToComponentFactory._combined_extractor_tree_contains_union(sub_extractor)
+            for sub_extractor in model.extractors
+        )
+
+    def _create_record_counting_extractor(
+        self,
+        extractor_model: Optional[
+            Union[CustomRecordExtractorModel, DpathExtractorModel, CombinedExtractorModel]
+        ],
+        config: Config,
+        decoder: Optional[Decoder],
+    ) -> Optional[RecordExtractor]:
+        """Build the copy of the extractor an `OffsetIncrement` or `PageIncrement` counts a page with.
+
+        The paginator stops when the count falls below the page size, so the count has to be the
+        number of records the API returned. A `CombinedExtractor` with `skip_empty_records` drops
+        empty records before they are counted, which would make a full page holding a null look
+        short and silently end pagination, so every `CombinedExtractor` in the copy is told to count
+        the records it drops.
+        """
+        if not extractor_model:
+            return None
+        extractor: RecordExtractor = self._create_component_from_model(
+            model=extractor_model, config=config, decoder=decoder
+        )
+        self._count_dropped_empty_records(extractor)
+        return extractor
+
+    @staticmethod
+    def _count_dropped_empty_records(extractor: RecordExtractor) -> None:
+        if not isinstance(extractor, CombinedExtractor):
+            return
+        extractor.count_dropped_empty_records = True
+        for sub_extractor in extractor.extractors:
+            ModelToComponentFactory._count_dropped_empty_records(sub_extractor)
+
     def create_offset_increment(
         self,
         model: OffsetIncrementModel,
         config: Config,
         decoder: Decoder,
-        extractor_model: Optional[Union[CustomRecordExtractorModel, DpathExtractorModel]] = None,
+        extractor_model: Optional[
+            Union[CustomRecordExtractorModel, DpathExtractorModel, CombinedExtractorModel]
+        ] = None,
         **kwargs: Any,
     ) -> OffsetIncrement:
         if isinstance(decoder, PaginationDecoderDecorator):
@@ -3144,18 +3356,14 @@ class ModelToComponentFactory:
                 self._UNSUPPORTED_DECODER_ERROR.format(decoder_type=type(inner_decoder))
             )
 
+        self._reject_union_combined_extractor_for_offset_increment(extractor_model)
+
         # Ideally we would instantiate the runtime extractor from highest most level (in this case the SimpleRetriever)
         # so that it can be shared by OffSetIncrement and RecordSelector. However, due to how we instantiate the
         # decoder with various decorators here, but not in create_record_selector, it is simpler to retain existing
         # behavior by having two separate extractors with identical behavior since they use the same extractor model.
         # When we have more time to investigate we can look into reusing the same component.
-        extractor = (
-            self._create_component_from_model(
-                model=extractor_model, config=config, decoder=decoder_to_use
-            )
-            if extractor_model
-            else None
-        )
+        extractor = self._create_record_counting_extractor(extractor_model, config, decoder_to_use)
 
         # Pydantic v1 Union type coercion can convert int to string depending on Union order.
         # If page_size is a string that represents an integer (not an interpolation), convert it back.
@@ -3177,17 +3385,15 @@ class ModelToComponentFactory:
         model: PageIncrementModel,
         config: Config,
         decoder: Optional[Decoder] = None,
-        extractor_model: Optional[Union[CustomRecordExtractorModel, DpathExtractorModel]] = None,
+        extractor_model: Optional[
+            Union[CustomRecordExtractorModel, DpathExtractorModel, CombinedExtractorModel]
+        ] = None,
         **kwargs: Any,
     ) -> PageIncrement:
         # Like OffsetIncrement, we instantiate a separate extractor with identical behavior to the
         # RecordSelector's so the strategy can count the raw records in the response. This ensures
         # pagination is driven by the API's page size, not the post-filter record count.
-        extractor = (
-            self._create_component_from_model(model=extractor_model, config=config, decoder=decoder)
-            if extractor_model
-            else None
-        )
+        extractor = self._create_record_counting_extractor(extractor_model, config, decoder)
 
         # Pydantic v1 Union type coercion can convert int to string depending on Union order.
         # If page_size is a string that represents an integer (not an interpolation), convert it back.
@@ -3692,6 +3898,21 @@ class ModelToComponentFactory:
                 f"stream's `lazy_read_pointer` for stream {name}."
             )
 
+        if reads_parent_stream_lazily and (
+            model.request_window_splitting
+            or self._uses_split_request_window_action(
+                getattr(model.requester, "error_handler", None)
+            )
+        ):
+            # Same reasoning as the page_size_reduction check above: LazySimpleRetriever reads records
+            # embedded in the parent's own pages rather than requesting a window of its own, so there is
+            # nothing here for a split child window to be read from.
+            raise ValueError(
+                f"`request_window_splitting` and the SPLIT_REQUEST_WINDOW response action are not "
+                f"supported when reading a parent stream lazily. Remove either the request window "
+                f"splitting or the parent stream's `lazy_read_pointer` for stream {name}."
+            )
+
         if reads_parent_stream_lazily and not bool(
             self._connector_state_manager.get_stream_state(name, None)
         ):
@@ -3732,6 +3953,9 @@ class ModelToComponentFactory:
         ):
             raise ValueError("PaginationResetLimits are not supported while having record filter.")
 
+        request_window_splitting = self._create_request_window_splitting(
+            model, name, cursor, incremental_sync, query_properties, file_uploader
+        )
         return SimpleRetriever(
             name=name,
             paginator=paginator,
@@ -3749,6 +3973,12 @@ class ModelToComponentFactory:
             ),
             page_size_reduction=self._create_page_size_reduction(
                 model, name, query_properties, file_uploader
+            ),
+            request_window_splitting=request_window_splitting,
+            request_window_splitter=(
+                cursor.split_request_window
+                if request_window_splitting and hasattr(cursor, "split_request_window")
+                else None
             ),
             post_pagination_filter=post_pagination_filter,
             parameters=model.parameters or {},
@@ -4055,6 +4285,209 @@ class ModelToComponentFactory:
         # A CustomErrorHandler can return any action and we cannot inspect it, so we do not validate it.
         return False
 
+    def _create_request_window_splitting(
+        self,
+        model: SimpleRetrieverModel,
+        name: str,
+        cursor: Optional[Cursor],
+        incremental_sync: Optional[
+            Union[IncrementingCountCursorModel, DatetimeBasedCursorModel]
+        ] = None,
+        query_properties: Optional[QueryProperties] = None,
+        file_uploader: Optional[DefaultFileUploader] = None,
+    ) -> Optional[RequestWindowSplitting]:
+        # A CustomRequester does not necessarily define an error handler. A CustomRequester that does define
+        # one keeps it as a raw dict rather than a typed model, so this returns False for it as well.
+        error_handler = getattr(model.requester, "error_handler", None)
+        uses_action = self._uses_split_request_window_action(error_handler)
+        if uses_action and not model.request_window_splitting:
+            raise ValueError(
+                f"Stream {name} has a response filter with the SPLIT_REQUEST_WINDOW action but the "
+                f"retriever does not define `request_window_splitting`. Add a `request_window_splitting` "
+                f"block to the retriever."
+            )
+
+        if not model.request_window_splitting:
+            return None
+
+        if not uses_action:
+            # Not raised: a CustomErrorHandler can resolve to SPLIT_REQUEST_WINDOW without us being able to
+            # see it, and custom code can raise RequestWindowSplitRequiredException directly without
+            # going through any error handler at all - so the only safe reaction to a block we cannot tie to
+            # a known trigger is a warning.
+            LOGGER.warning(
+                f"Stream {name} defines `request_window_splitting` but no response filter with the "
+                f"SPLIT_REQUEST_WINDOW action was found on its requester. The request window will never "
+                f"be split unless a custom error handler or custom code resolves to that action."
+            )
+
+        self._validate_request_window_splitting_is_supported(
+            name,
+            cursor,
+            incremental_sync,
+            model.request_window_splitting.min_split_window,
+            query_properties,
+            file_uploader,
+        )
+
+        return RequestWindowSplitting(
+            failure_message=model.request_window_splitting.failure_message,
+            min_split_window=parse_duration(model.request_window_splitting.min_split_window)
+            if model.request_window_splitting.min_split_window
+            else None,
+        )
+
+    def _validate_request_window_splitting_is_supported(
+        self,
+        name: str,
+        cursor: Optional[Cursor],
+        incremental_sync: Optional[
+            Union[IncrementingCountCursorModel, DatetimeBasedCursorModel]
+        ] = None,
+        min_split_window: Optional[str] = None,
+        query_properties: Optional[QueryProperties] = None,
+        file_uploader: Optional[DefaultFileUploader] = None,
+    ) -> None:
+        """
+        Request window splitting replaces a failing slice with smaller children derived from the stream's own
+        cursor, so it only makes sense on a stream whose cursor exposes a `split_request_window` method and it
+        is rejected for the same structural reasons `page_size_reduction` is: `additional_query_properties` and
+        a `file_uploader` both mean records of the failing window may already have been emitted by the time the
+        split is requested, from inside the record generator rather than from a page boundary this retriever
+        controls.
+        """
+        if not hasattr(cursor, "split_request_window"):
+            raise ValueError(
+                f"`request_window_splitting` requires an incremental cursor that supports window splitting on "
+                f"stream {name}. Found {type(cursor).__name__ if cursor is not None else 'no cursor'}: this is "
+                f"only supported today for a `DatetimeBasedCursor` with `cursor_granularity` set and no "
+                f"partition router combining multiple cursors."
+            )
+
+        if not (
+            isinstance(incremental_sync, DatetimeBasedCursorModel)
+            and incremental_sync.cursor_granularity
+        ):
+            # `cursor_granularity` is both the smallest window the connector will ever request and what keeps
+            # two child windows from overlapping at their shared edge, so `split_request_window` cannot split
+            # at all without it - checked here, on the manifest model, rather than by reaching into the
+            # cursor's private state from outside the class it belongs to.
+            raise ValueError(
+                f"`request_window_splitting` requires `cursor_granularity` on the `DatetimeBasedCursor` of "
+                f"stream {name}: without it there is no smallest window to stop splitting at, and no way to "
+                f"keep two child windows from overlapping at their shared edge."
+            )
+
+        if incremental_sync.is_client_side_incremental:
+            # A client-side-incremental cursor filters records after they are read rather than sending the
+            # window as request parameters, so every child window sends the exact same request as its parent:
+            # splitting changes nothing, and the sync would keep splitting all the way to `min_split_window`
+            # or the safety-net depth before failing.
+            raise ValueError(
+                f"`request_window_splitting` cannot be used together with `is_client_side_incremental` on "
+                f"stream {name}: the window is filtered client-side rather than sent to the API, so splitting "
+                f"it would not change the request and could not resolve a SPLIT_REQUEST_WINDOW response."
+            )
+
+        parsed_cursor_granularity = parse_duration(incremental_sync.cursor_granularity)
+        if isinstance(
+            parsed_cursor_granularity, datetime.timedelta
+        ) and parsed_cursor_granularity <= datetime.timedelta(0):
+            # Passes the truthy check above (the string is non-empty), but a zero-or-negative granularity can
+            # never produce a child strictly smaller than the parent.
+            raise ValueError(
+                f"`request_window_splitting` requires a `cursor_granularity` greater than zero on stream "
+                f"{name}: `{incremental_sync.cursor_granularity}` parses to a zero-length duration, which can "
+                f"never produce a smaller child window."
+            )
+
+        smallest_format_unit = self._smallest_datetime_format_unit(incremental_sync.datetime_format)
+        if (
+            smallest_format_unit is not None
+            and isinstance(parsed_cursor_granularity, datetime.timedelta)
+            and parsed_cursor_granularity < smallest_format_unit
+        ):
+            # Two children split closer together than `datetime_format` can render would format to the same
+            # boundary value instead of splitting.
+            raise ValueError(
+                f"`request_window_splitting` requires `cursor_granularity` to be no finer than what "
+                f"`datetime_format` can represent on stream {name}: `datetime_format` "
+                f"{incremental_sync.datetime_format!r} cannot represent a value finer than "
+                f"{smallest_format_unit}, but `cursor_granularity` {incremental_sync.cursor_granularity!r} is "
+                f"finer than that. Use a `datetime_format` precise enough to represent `cursor_granularity`, "
+                f"or a coarser `cursor_granularity`."
+            )
+
+        if min_split_window:
+            parsed_min_split_window = parse_duration(min_split_window)
+            if not isinstance(
+                parsed_min_split_window, datetime.timedelta
+            ) or parsed_min_split_window <= datetime.timedelta(0):
+                # A duration with years or months (e.g. `P1M`) parses to an `isodate.Duration`, which has no
+                # fixed length to compare a window's span against - `split_request_window` would raise
+                # mid-sync trying to. A zero-or-negative duration would never stop splitting.
+                raise ValueError(
+                    f"`min_split_window` must be a positive duration expressible as a fixed number of "
+                    f"days/hours/minutes/seconds on stream {name}: `{min_split_window}` is not."
+                )
+
+        if query_properties:
+            raise ValueError(
+                f"`request_window_splitting` cannot be used together with query properties on stream {name}. "
+                f"Records from the earlier property chunks may have already been emitted when a chunk asks to "
+                f"split the window, so splitting and re-reading it could duplicate them."
+            )
+
+        if file_uploader:
+            raise ValueError(
+                f"`request_window_splitting` cannot be used together with a `file_uploader` on stream {name}. "
+                f"The file uploader sends one request per record from inside the window's record generator, so "
+                f"a split requested partway through could re-emit records already yielded by it."
+            )
+
+    @staticmethod
+    def _smallest_datetime_format_unit(datetime_format: str) -> Optional[datetime.timedelta]:
+        """
+        :return: the finest duration `datetime_format` can distinguish, per
+            `_DATETIME_FORMAT_DIRECTIVE_GRANULARITY`, or `None` if it contains none of those directives.
+        """
+        matches = [
+            granularity
+            for directive, granularity in _DATETIME_FORMAT_DIRECTIVE_GRANULARITY
+            if directive in datetime_format
+        ]
+        return min(matches) if matches else None
+
+    def _reject_split_request_window_action(self, requester: Any, description: str) -> None:
+        """
+        `error_handler` is defined on `HttpRequester`, which is referenced by requesters that have no window of
+        their own to split, so SPLIT_REQUEST_WINDOW is schema-legal in places where nothing can honor it. Only
+        the main requester of a `SimpleRetriever` reads a cursor-sliced window, so every other requester is
+        rejected here rather than surfacing the exception mid-sync as a generic failure.
+        """
+        if requester is None:
+            return
+        if self._uses_split_request_window_action(getattr(requester, "error_handler", None)):
+            raise ValueError(
+                f"The SPLIT_REQUEST_WINDOW response action is not supported on the {description}: only the "
+                f"main requester of a SimpleRetriever reads a window that can be split. Use a different "
+                f"action on that error handler."
+            )
+
+    def _uses_split_request_window_action(self, error_handler: Any) -> bool:
+        if isinstance(error_handler, CompositeErrorHandlerModel):
+            return any(
+                self._uses_split_request_window_action(nested)
+                for nested in error_handler.error_handlers
+            )
+        if isinstance(error_handler, DefaultErrorHandlerModel):
+            return any(
+                response_filter.action == HttpResponseFilterActionModel.SPLIT_REQUEST_WINDOW
+                for response_filter in error_handler.response_filters or []
+            )
+        # A CustomErrorHandler can return any action and we cannot inspect it, so we do not validate it.
+        return False
+
     def _create_pagination_tracker_factory(
         self, model: Optional[PaginationResetModel], cursor: Cursor
     ) -> Callable[[], PaginationTracker]:
@@ -4334,6 +4767,10 @@ class ModelToComponentFactory:
                 getattr(model, requester_field, None),
                 f"`{requester_field}` of the AsyncRetriever of stream {name}",
             )
+            self._reject_split_request_window_action(
+                getattr(model, requester_field, None),
+                f"`{requester_field}` of the AsyncRetriever of stream {name}",
+            )
 
         def _get_download_retriever(
             requester: Requester, extractor: RecordExtractor, _decoder: Decoder
@@ -4356,6 +4793,16 @@ class ModelToComponentFactory:
                     decoder=_decoder,
                     config=config,
                     url_base="",
+                    # Only a `CombinedExtractor` is handed over, so the `union` rejection and the
+                    # count of dropped empty records apply to downloads too. Other extractors keep
+                    # the retriever's own count: a paginator's copy would re-read the response,
+                    # which a streaming download decoder has already consumed, whereas a
+                    # `CombinedExtractor` is only ever built over a buffered decoder.
+                    extractor_model=(
+                        model.download_extractor
+                        if isinstance(model.download_extractor, CombinedExtractorModel)
+                        else None
+                    ),
                 )
                 if model.download_paginator
                 else NoPagination(parameters={})
@@ -4949,6 +5396,7 @@ class ModelToComponentFactory:
         self, model: FileUploaderModel, config: Config, **kwargs: Any
     ) -> FileUploader:
         self._reject_reduce_page_size_action(model.requester, "requester of a `file_uploader`")
+        self._reject_split_request_window_action(model.requester, "requester of a `file_uploader`")
         name = "File Uploader"
         requester = self._create_component_from_model(
             model=model.requester,

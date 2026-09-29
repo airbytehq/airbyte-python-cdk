@@ -8,7 +8,7 @@ from typing import Any, Optional
 
 import requests
 
-from airbyte_cdk.sources.types import Record
+from airbyte_cdk.sources.types import Record, StreamSlice
 
 
 @dataclass
@@ -32,6 +32,7 @@ class PaginationStrategy:
         last_record: Optional[Record],
         last_page_token_value: Optional[Any],
         page_size_override: Optional[int] = None,
+        stream_slice: Optional[StreamSlice] = None,
     ) -> Optional[Any]:
         """
         :param response: response to process
@@ -41,6 +42,8 @@ class PaginationStrategy:
         :param page_size_override: the page size that was actually requested, when it differs from the configured
             one because of a `REDUCE_PAGE_SIZE` response action. Strategies that use their configured page size as
             a stop condition must honor this value, else they end the pagination early and skip records.
+        :param stream_slice: the slice the page was read for. Only passed to strategies that declare it, so existing
+            strategies defined outside of the CDK keep working unchanged.
         :return: next page token. Returns None if there are no more pages to fetch
         """
         pass
