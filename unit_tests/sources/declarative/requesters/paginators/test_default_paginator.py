@@ -26,6 +26,9 @@ from airbyte_cdk.sources.declarative.requesters.paginators.strategies.offset_inc
 from airbyte_cdk.sources.declarative.requesters.paginators.strategies.page_increment import (
     PageIncrement,
 )
+from airbyte_cdk.sources.declarative.requesters.paginators.strategies.pagination_strategy import (
+    PaginationStrategy,
+)
 from airbyte_cdk.sources.declarative.requesters.request_path import RequestPath
 from airbyte_cdk.sources.declarative.types import Record, StreamSlice, StreamState
 
@@ -674,3 +677,49 @@ def test_test_read_decorator_delegates_get_page_size():
     paginator = PaginatorTestReadDecorator(decorated, 5)
 
     assert paginator.get_page_size() == 100
+
+
+class _StrategyWithoutStreamSlice(PaginationStrategy):
+    """A strategy written before `stream_slice` was passed to `next_page_token`, as custom ones in connectors are."""
+
+    @property
+    def initial_token(self):
+        return None
+
+    def next_page_token(self, response, last_page_size, last_record, last_page_token_value=None):
+        return "next"
+
+    def get_page_size(self):
+        return None
+
+
+def test_given_a_strategy_accepting_stream_slice_when_next_page_token_then_forward_the_slice():
+    strategy = MagicMock(spec=CursorPaginationStrategy)
+    strategy.next_page_token.return_value = "next"
+    paginator = DefaultPaginator(
+        pagination_strategy=strategy, config={}, url_base="https://airbyte.io", parameters={}
+    )
+    response = requests.Response()
+    stream_slice = StreamSlice(partition={"repository": "a/b"}, cursor_slice={})
+
+    token = paginator.next_page_token(response, 2, None, None, stream_slice=stream_slice)
+
+    assert token == {"next_page_token": "next"}
+    assert strategy.next_page_token.call_args.kwargs["stream_slice"] == stream_slice
+
+
+@pytest.mark.parametrize("decorated", [False, True], ids=["test_default", "test_test_read"])
+def test_given_a_strategy_without_stream_slice_when_next_page_token_then_do_not_pass_it(decorated):
+    paginator = DefaultPaginator(
+        pagination_strategy=_StrategyWithoutStreamSlice(),
+        config={},
+        url_base="https://airbyte.io",
+        parameters={},
+    )
+    if decorated:
+        paginator = PaginatorTestReadDecorator(paginator, maximum_number_of_pages=5)
+    stream_slice = StreamSlice(partition={"repository": "a/b"}, cursor_slice={})
+
+    token = paginator.next_page_token(requests.Response(), 2, None, None, stream_slice=stream_slice)
+
+    assert token == {"next_page_token": "next"}
