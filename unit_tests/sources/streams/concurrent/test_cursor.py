@@ -4,7 +4,7 @@
 
 from copy import deepcopy
 from datetime import datetime, timedelta, timezone
-from typing import Any, Mapping, Optional
+from typing import Any, Mapping, MutableMapping, Optional
 from unittest import TestCase
 from unittest.mock import Mock
 
@@ -35,6 +35,7 @@ from airbyte_cdk.sources.streams.concurrent.state_converters.abstract_stream_sta
 from airbyte_cdk.sources.streams.concurrent.state_converters.datetime_stream_state_converter import (
     CustomFormatConcurrentStreamStateConverter,
     EpochValueConcurrentStreamStateConverter,
+    IsoMillisConcurrentStreamStateConverter,
 )
 from airbyte_cdk.sources.types import Record, StreamSlice
 from airbyte_cdk.utils.traced_exception import AirbyteTracedException
@@ -1212,6 +1213,94 @@ def test_given_state_when_should_be_synced_then_use_cursor_value_to_filter():
         )
         == True
     )
+
+
+def _cursor_with_lookback(state: MutableMapping[str, Any]) -> ConcurrentCursor:
+    return ConcurrentCursor(
+        _A_STREAM_NAME,
+        _A_STREAM_NAMESPACE,
+        state,
+        Mock(spec=MessageRepository),
+        Mock(spec=ConnectorStateManager),
+        EpochValueConcurrentStreamStateConverter(True),
+        CursorField(_A_CURSOR_FIELD_KEY),
+        _SLICE_BOUNDARY_FIELDS,
+        datetime.fromtimestamp(_SHOULD_BE_SYNCED_START, timezone.utc),
+        EpochValueConcurrentStreamStateConverter.get_end_provider(),
+        timedelta(seconds=3),
+    )
+
+
+def _is_synced(cursor: ConcurrentCursor, cursor_value: int) -> bool:
+    return cursor.should_be_synced(
+        Record(data={_A_CURSOR_FIELD_KEY: cursor_value}, stream_name="test_stream")
+    )
+
+
+def test_given_state_and_lookback_window_when_should_be_synced_then_keep_records_within_lookback():
+    state_value = _SHOULD_BE_SYNCED_START + 5
+    cursor = _cursor_with_lookback({_A_CURSOR_FIELD_KEY: state_value})
+
+    assert _is_synced(cursor, state_value - 3)
+    assert not _is_synced(cursor, state_value - 4)
+
+
+def test_given_lookback_window_when_should_be_synced_then_never_keep_records_before_start():
+    cursor = _cursor_with_lookback({})
+    assert _is_synced(cursor, _SHOULD_BE_SYNCED_START)
+    assert not _is_synced(cursor, _SHOULD_BE_SYNCED_START - 1)
+
+    cursor = _cursor_with_lookback({_A_CURSOR_FIELD_KEY: _SHOULD_BE_SYNCED_START + 1})
+    assert not _is_synced(cursor, _SHOULD_BE_SYNCED_START - 1)
+
+
+def test_given_concurrent_state_before_start_and_lookback_window_when_should_be_synced_then_keep_records_from_state():
+    state_value = _SHOULD_BE_SYNCED_START - 5
+    cursor = _cursor_with_lookback(
+        {"state_type": "date-range", "slices": [{"start": 0, "end": state_value}]}
+    )
+
+    assert _is_synced(cursor, state_value + 2)
+    assert not _is_synced(cursor, state_value - 1)
+
+
+def test_given_no_start_nor_state_and_lookback_window_when_should_be_synced_then_do_not_overflow():
+    cursor = ConcurrentCursor(
+        _A_STREAM_NAME,
+        _A_STREAM_NAMESPACE,
+        {},
+        Mock(spec=MessageRepository),
+        Mock(spec=ConnectorStateManager),
+        IsoMillisConcurrentStreamStateConverter(),
+        CursorField(_A_CURSOR_FIELD_KEY),
+        _SLICE_BOUNDARY_FIELDS,
+        None,
+        IsoMillisConcurrentStreamStateConverter.get_end_provider(),
+        timedelta(days=1),
+    )
+
+    assert cursor.should_be_synced(
+        Record(data={_A_CURSOR_FIELD_KEY: "2024-01-01T00:00:00.000Z"}, stream_name="test_stream")
+    )
+
+
+def test_given_state_without_start_and_lookback_window_when_should_be_synced_then_keep_records_within_lookback():
+    cursor = ConcurrentCursor(
+        _A_STREAM_NAME,
+        _A_STREAM_NAMESPACE,
+        {_A_CURSOR_FIELD_KEY: 10},
+        Mock(spec=MessageRepository),
+        Mock(spec=ConnectorStateManager),
+        EpochValueConcurrentStreamStateConverter(True),
+        CursorField(_A_CURSOR_FIELD_KEY),
+        _SLICE_BOUNDARY_FIELDS,
+        None,
+        EpochValueConcurrentStreamStateConverter.get_end_provider(),
+        timedelta(seconds=3),
+    )
+
+    assert _is_synced(cursor, 7)
+    assert not _is_synced(cursor, 6)
 
 
 def test_given_partitioned_state_without_slices_nor_start_when_should_be_synced_then_use_zero_value_to_filter():
