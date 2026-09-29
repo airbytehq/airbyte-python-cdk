@@ -5,6 +5,7 @@ from unittest.mock import MagicMock
 
 import pytest
 import requests
+from requests.exceptions import ConnectTimeout, ReadTimeout, Timeout
 
 from airbyte_cdk.models import FailureType
 from airbyte_cdk.sources.streams.http.error_handlers import (
@@ -80,6 +81,14 @@ def test_given_requests_exception_returns_retry_action_as_transient_error():
 
     assert error_resolution.response_action == ResponseAction.RETRY
     assert error_resolution.failure_type
+
+
+@pytest.mark.parametrize("exception", [ReadTimeout(), ConnectTimeout(), Timeout()])
+def test_given_timeout_exception_returns_retry_action_as_transient_error(exception):
+    error_resolution = HttpStatusErrorHandler(logger).interpret_response(exception)
+
+    assert error_resolution.response_action == ResponseAction.RETRY
+    assert error_resolution.failure_type == FailureType.transient_error
 
 
 def test_given_unmapped_exception_returns_retry_action_as_system_error():

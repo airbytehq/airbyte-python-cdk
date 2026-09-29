@@ -17,6 +17,7 @@ from airbyte_cdk.sources.declarative.requesters.request_option import (
     RequestOption,
     RequestOptionType,
 )
+from airbyte_cdk.sources.streams.http.request_timeout import default_request_timeout
 from airbyte_cdk.sources.types import Config
 
 
@@ -164,6 +165,7 @@ def get_new_session_token(api_url: str, username: str, password: str, response_k
         f"{api_url}",
         headers={"Content-Type": "application/json"},
         json={"username": username, "password": password},
+        timeout=default_request_timeout(),
     )
     response.raise_for_status()
     if not response.ok:
@@ -250,6 +252,7 @@ class LegacySessionTokenAuthenticator(DeclarativeAuthenticator):
             response = requests.get(
                 f"{self._api_url.eval(self.config)}{self._validate_session_url.eval(self.config)}",
                 headers={self.auth_header: self._session_token.eval(self.config)},
+                timeout=default_request_timeout(),
             )
             response.raise_for_status()
         except requests.exceptions.HTTPError as e:

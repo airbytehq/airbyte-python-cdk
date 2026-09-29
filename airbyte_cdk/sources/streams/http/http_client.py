@@ -53,6 +53,9 @@ from airbyte_cdk.sources.streams.http.rate_limiting import (
     rate_limit_default_backoff_handler,
     user_defined_backoff_handler,
 )
+from airbyte_cdk.sources.streams.http.request_timeout import (
+    default_request_timeout,
+)
 from airbyte_cdk.sources.streams.http.request_window_split_exception import (
     RequestWindowSplitRequiredException,
 )
@@ -151,7 +154,14 @@ class HttpClient:
         error_message_parser: Optional[ErrorMessageParser] = None,
         disable_retries: bool = False,
         message_repository: Optional[MessageRepository] = None,
+        request_timeout: Optional[Union[float, Tuple[float, float]]] = None,
     ):
+        """Initializes the HTTP client.
+
+        `request_timeout` is the `(connect, read)` timeout in seconds (or a single value for both)
+        applied to every request whose `request_kwargs` do not set `timeout`; it defaults to
+        `default_request_timeout()`.
+        """
         self._name = name
         self._api_budget: APIBudget = api_budget or APIBudget(policies=[])
         if session:
@@ -182,6 +192,9 @@ class HttpClient:
         self._disable_retries = disable_retries
         self._message_repository = message_repository
         self._authenticator_update_failed = False
+        self._request_timeout: Union[float, Tuple[float, float]] = (
+            request_timeout if request_timeout is not None else default_request_timeout()
+        )
 
     @property
     def cache_filename(self) -> str:
@@ -442,6 +455,8 @@ class HttpClient:
         exc: Optional[requests.RequestException] = None
 
         try:
+            if "timeout" not in request_kwargs:
+                request_kwargs = {**request_kwargs, "timeout": self._request_timeout}
             response = self._session.send(request, **request_kwargs)
         except requests.RequestException as e:
             exc = e
