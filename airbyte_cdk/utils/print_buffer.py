@@ -110,11 +110,13 @@ class PrintBuffer:
         self._stop = threading.Event()
         self._pending = threading.Event()
         self._sync_flush = False
+        self._pending_marked = False
 
     def write(self, message: str) -> None:
         with self.lock:
             self.buffer.write(message)
-            self._mark_pending()
+            if not self._pending_marked:
+                self._mark_pending()
             current_time = time.monotonic()
             if (current_time - self.last_flush_time) >= self.flush_interval:
                 self.flush()
@@ -132,7 +134,8 @@ class PrintBuffer:
                 self._flush_to_fd()
             else:
                 self._drain()
-                self._mark_pending()
+                if not self._pending_marked:
+                    self._mark_pending()
 
     def _drain(self) -> None:
         combined_message = self.buffer.getvalue()
@@ -148,8 +151,10 @@ class PrintBuffer:
             return
         if self._sweeper is None:
             self._start_sweeper()
-        if not self._pending.is_set():
-            self._pending.set()
+        if self._sweeper is None:
+            return  # _start_sweeper fell back to synchronous flush
+        self._pending.set()
+        self._pending_marked = True
 
     def _start_sweeper(self) -> None:
         stop, pending = threading.Event(), threading.Event()
@@ -174,6 +179,8 @@ class PrintBuffer:
             stop.wait(self.flush_interval)  # coalesce for one interval
             with self.lock:
                 pending.clear()
+                if pending is self._pending:
+                    self._pending_marked = False
                 try:
                     self._flush_to_fd()
                 except (OSError, ValueError):  # broken pipe / closed stdout
@@ -184,6 +191,7 @@ class PrintBuffer:
         with self.lock:
             thread, stop, pending = self._sweeper, self._stop, self._pending
             self._sweeper = None
+            self._pending_marked = False
         if thread is None:
             return
         stop.set()
@@ -207,6 +215,7 @@ class PrintBuffer:
         self._sweeper = None
         self._stop = threading.Event()
         self._pending = threading.Event()
+        self._pending_marked = False
 
     def __enter__(self) -> "PrintBuffer":
         self.old_stdout, self.old_stderr = sys.stdout, sys.stderr

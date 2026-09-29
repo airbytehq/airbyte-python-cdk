@@ -235,7 +235,6 @@ with PRINT_BUFFER:
     process = _spawn_child(child)
     try:
         output, seen = _read_until(process, [b"sent_at="], timeout=10)
-        stderr = b""
         match = re.search(rb"sent_at=([0-9.]+)", output)
         assert match is not None, f"quiet-line not observed. stdout: {output!r}"
         sent_at = float(match.group(1))
@@ -252,7 +251,6 @@ with PRINT_BUFFER:
 
 def test_pending_output_flushed_on_exit():
     child = r"""
-import logging
 from airbyte_cdk.logger import PRINT_BUFFER, init_logger
 
 logger = init_logger("airbyte")
