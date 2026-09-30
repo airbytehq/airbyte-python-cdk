@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import inspect
+import os
 import shutil
 import sys
 import tempfile
@@ -298,6 +299,8 @@ class DockerConnectorTestSuite:
                     "docker",
                     "run",
                     "--rm",
+                    "--user",
+                    f"{os.getuid()}:{os.getgid()}",
                     "-v",
                     f"{temp_config_file}:{container_config_path}:rw",
                     connector_image,
@@ -405,6 +408,8 @@ class DockerConnectorTestSuite:
                     "docker",
                     "run",
                     "--rm",
+                    "--user",
+                    f"{os.getuid()}:{os.getgid()}",
                     "-v",
                     f"{temp_config_file}:{container_config_path}:rw",
                     connector_image,
@@ -462,6 +467,8 @@ class DockerConnectorTestSuite:
                     "docker",
                     "run",
                     "--rm",
+                    "--user",
+                    f"{os.getuid()}:{os.getgid()}",
                     "-v",
                     f"{temp_config_file}:{container_config_path}:rw",
                     "-v",
