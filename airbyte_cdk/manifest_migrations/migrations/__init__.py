@@ -8,6 +8,9 @@ from airbyte_cdk.manifest_migrations.migrations.http_requester_path_to_url impor
 from airbyte_cdk.manifest_migrations.migrations.http_requester_request_body_json_data_to_request_body import (
     HttpRequesterRequestBodyJsonDataToRequestBody,
 )
+from airbyte_cdk.manifest_migrations.migrations.http_requester_request_body_plain_text_json_to_request_body_json import (
+    HttpRequesterRequestBodyPlainTextJsonToRequestBodyJson,
+)
 from airbyte_cdk.manifest_migrations.migrations.http_requester_url_base_to_url import (
     HttpRequesterUrlBaseToUrl,
 )
@@ -15,5 +18,6 @@ from airbyte_cdk.manifest_migrations.migrations.http_requester_url_base_to_url i
 __all__ = [
     "HttpRequesterPathToUrl",
     "HttpRequesterRequestBodyJsonDataToRequestBody",
+    "HttpRequesterRequestBodyPlainTextJsonToRequestBodyJson",
     "HttpRequesterUrlBaseToUrl",
 ]
