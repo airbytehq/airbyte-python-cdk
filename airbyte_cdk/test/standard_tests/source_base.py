@@ -110,7 +110,12 @@ class SourceTestSuiteBase(ConnectorTestSuiteBase):
         from the source and return records. It first runs a `discover` job to
         obtain the catalog of streams, and then it runs a `read` job to fetch
         records from those streams.
+
+        The test is skipped if the connector's `acceptance-test-config.yml` declares a
+        `bypass_reason` for the `basic_read` category.
         """
+        self.skip_if_bypassed("basic_read")
+
         discover_result = run_test_job(
             self.create_connector(scenario),
             "discover",

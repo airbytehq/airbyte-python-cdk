@@ -123,6 +123,37 @@ class DockerConnectorTestSuite:
             )
         return tests_config
 
+    @classmethod
+    def get_bypass_reason(cls, category: str) -> str | None:
+        """Return the `bypass_reason` declared for an acceptance-test category, if any.
+
+        A category is considered bypassed only when it declares a non-empty `bypass_reason`
+        and does not declare any tests. This mirrors the semantics of `bypass_reason` in
+        `acceptance-test-config.yml`, so connectors with a documented reason (for example, a
+        test account that has no records) are not blocked by the standard test suite.
+        """
+        try:
+            all_tests_config = cls.acceptance_test_config
+        except (FileNotFoundError, ValueError):
+            return None
+
+        category_config = all_tests_config["acceptance_tests"].get(category)
+        if not isinstance(category_config, dict) or category_config.get("tests"):
+            return None
+
+        bypass_reason = category_config.get("bypass_reason")
+        if not isinstance(bypass_reason, str) or not bypass_reason.strip():
+            return None
+
+        return bypass_reason
+
+    @classmethod
+    def skip_if_bypassed(cls, category: str) -> None:
+        """Skip the running test if the given acceptance-test category is bypassed."""
+        bypass_reason = cls.get_bypass_reason(category)
+        if bypass_reason:
+            pytest.skip(f"Bypassed by '{category}.bypass_reason': {bypass_reason}")
+
     @staticmethod
     def _dedup_scenarios(scenarios: list[ConnectorTestScenario]) -> list[ConnectorTestScenario]:
         """
@@ -345,6 +376,8 @@ class DockerConnectorTestSuite:
         """
         if self.is_destination_connector():
             pytest.skip("Skipping read test for destination connector.")
+
+        self.skip_if_bypassed("basic_read")
 
         if scenario.expected_outcome.expect_exception():
             pytest.skip("Skipping (expected to fail).")
