@@ -648,15 +648,18 @@ class CsvReaderTest(unittest.TestCase):
         self._stream_reader.open_file.return_value = (
             CsvFileBuilder().with_data(["something"]).build()
         )
-        self._csv_reader._read_and_validate_headers = Mock(
-            side_effect=UnicodeDecodeError("encoding", b"", 0, 1, "reason")
-        )
+        unicode_error = UnicodeDecodeError("utf-8", b"\x9d", 0, 1, "invalid start byte")
+        self._csv_reader._read_and_validate_headers = Mock(side_effect=unicode_error)
 
         with pytest.raises(AirbyteTracedException) as ate:
             data_generator = self._read_data()
             assert len(list(data_generator)) == 0
 
         assert "encoding" in ate.value.message
+        assert ate.value.failure_type == FailureType.config_error
+        assert self._file.uri in ate.value.internal_message
+        assert "utf-8" in ate.value.internal_message
+        assert ate.value.__cause__ is unicode_error
         assert self._csv_reader._read_and_validate_headers.called
 
     def _read_data(self) -> Generator[Dict[str, str], None, None]:
