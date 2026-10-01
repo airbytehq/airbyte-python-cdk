@@ -5365,9 +5365,9 @@ def _partitioned_request_window_splitting_manifest():
 
 def _partitioned_request_window_splitting_manifest_with_interpolated_window():
     """
-    The shape of TikTok Marketing's daily report streams: a list of partition routers, which the factory wraps
-    in a `CartesianProductStreamSlicer`, and request parameters that read the window from `stream_interval`
-    rather than injecting it through `start_time_option`/`end_time_option`.
+    A list-form partition router, which the factory wraps in a `CartesianProductStreamSlicer`, and request
+    parameters that read the window from `stream_interval` rather than injecting it through
+    `start_time_option`/`end_time_option`.
     """
     manifest = _partitioned_request_window_splitting_manifest()
     stream = manifest["streams"][0]
