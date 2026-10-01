@@ -692,7 +692,7 @@ class ConcurrentPerPartitionCursor(Cursor):
         children keep `stream_slice`'s `partition` and `extra_fields`, and `SimpleRetriever` re-associates the
         records read from them with the original slice, so `observe` and `close_partition` are unaffected.
 
-        As for an unpartitioned stream, the children are not clamped again to the cursor's start or end.
+        As with an unpartitioned stream, the children are not clamped again to the cursor's start or end.
         """
         return self._get_request_window_splitting_cursor().split_request_window(
             stream_slice, min_split_window

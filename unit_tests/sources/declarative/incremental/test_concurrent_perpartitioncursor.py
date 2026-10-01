@@ -4460,9 +4460,7 @@ def _daily_cursor_factory() -> MagicMock:
     return MagicMock(wraps=ConcurrentCursorFactory(_create_daily_cursor))
 
 
-def _per_partition_cursor(
-    cursor_factory: MagicMock, use_global_cursor: bool = False
-) -> ConcurrentPerPartitionCursor:
+def _per_partition_cursor(cursor_factory: MagicMock) -> ConcurrentPerPartitionCursor:
     return ConcurrentPerPartitionCursor(
         cursor_factory=cursor_factory,
         partition_router=ListPartitionRouter(
@@ -4477,7 +4475,6 @@ def _per_partition_cursor(
             datetime_format="%Y-%m-%d", is_sequential_state=True
         ),
         cursor_field=CursorField(cursor_field_key="updated_at"),
-        use_global_cursor=use_global_cursor,
     )
 
 
@@ -4489,11 +4486,10 @@ def _partition_window(start: str, end: str) -> StreamSlice:
     )
 
 
-@pytest.mark.parametrize("use_global_cursor", [False, True])
-def test_given_partition_window_when_split_request_window_then_halves_keep_partition_and_extra_fields(
-    use_global_cursor: bool,
-) -> None:
-    cursor = _per_partition_cursor(_daily_cursor_factory(), use_global_cursor)
+def test_given_partition_window_when_split_request_window_then_halves_keep_partition_and_extra_fields() -> (
+    None
+):
+    cursor = _per_partition_cursor(_daily_cursor_factory())
 
     children = cursor.split_request_window(_partition_window("2024-01-01", "2024-01-14"))
 

@@ -8198,6 +8198,7 @@ def test_given_no_incremental_sync_and_request_window_splitting_then_raise():
         _request_window_splitting_stream(incremental_sync="")
 
     assert "cursor_granularity" in str(exception.value)
+    assert "partition router" not in str(exception.value)
 
 
 def test_given_datetime_based_cursor_without_cursor_granularity_then_raise():
@@ -8308,98 +8309,36 @@ def test_given_incrementing_count_cursor_and_request_window_splitting_then_raise
     assert "cursor_granularity" in str(exception.value)
 
 
-_LIST_PARTITION_ROUTER = (
-    "  partition_router:\n"
-    "    type: ListPartitionRouter\n"
-    '    values: ["a", "b"]\n'
-    "    cursor_field: partition_field\n"
-)
-
-
-def _partitioned_request_window_splitting_stream(retriever_type="type: SimpleRetriever"):
-    content = (
-        _REQUEST_WINDOW_REDUCTION_STREAM.format(
-            incremental_sync=_DATETIME_BASED_CURSOR_WITH_GRANULARITY,
-            request_window_splitting=(
-                "request_window_splitting:\n"
-                "    type: RequestWindowSplitting\n"
-                "    failure_message: Lower time_window so that each request covers less data.\n"
-                "    min_split_window: P1D"
-            ),
-            action="SPLIT_REQUEST_WINDOW",
-        )
-        .replace("  requester:\n", _LIST_PARTITION_ROUTER + "  requester:\n")
-        .replace("  type: SimpleRetriever", f"  {retriever_type}")
-    )
-    stream_manifest = transformer.propagate_types_and_parameters(
-        "", resolver.preprocess_manifest(YamlDeclarativeSource._parse(content)), {}
-    )
-    return factory.create_component(
-        model_type=DeclarativeStreamModel, component_definition=stream_manifest, config={}
-    )
-
-
 def test_given_partition_router_and_request_window_splitting_then_split_with_per_partition_cursor():
     """
     A partition router puts one cursor per partition behind a `ConcurrentPerPartitionCursor`, which splits a
     window the way any of those cursors would, so the stream is accepted and the retriever is bound to it.
     """
-    stream = _partitioned_request_window_splitting_stream()
-    retriever = get_retriever(stream)
-
-    assert isinstance(stream.cursor, ConcurrentPerPartitionCursor)
-    assert retriever.request_window_splitting == RequestWindowSplitting(
-        failure_message="Lower time_window so that each request covers less data.",
-        min_split_window=timedelta(days=1),
-    )
-    assert retriever.request_window_splitter.__self__ is stream.cursor
-    assert retriever.request_window_splitter.__name__ == "split_request_window"
-
-
-def test_given_custom_retriever_with_request_window_splitting_then_create_retriever_with_splitter():
-    """
-    `create_custom_component` builds a `CustomRetriever`'s fields generically, so declaring the block on it
-    needs `RequestWindowSplitting` to be a known component type, and the splitter has to be handed to it by
-    the stream rather than bound by `create_simple_retriever`.
-    """
-    stream = _partitioned_request_window_splitting_stream(
-        retriever_type=(
-            "type: CustomRetriever\n"
-            "  class_name: unit_tests.sources.declarative.parsers.testing_components.TestingCustomRetriever"
-        )
-    )
-    retriever = get_retriever(stream)
-
-    assert isinstance(retriever, TestingCustomRetriever)
-    assert retriever.request_window_splitting == RequestWindowSplitting(
-        failure_message="Lower time_window so that each request covers less data.",
-        min_split_window=timedelta(days=1),
-    )
-    assert retriever.request_window_splitter.__self__ is stream.cursor
-
-
-def test_given_custom_retriever_without_incremental_sync_then_no_request_window_splitter():
     content = _REQUEST_WINDOW_REDUCTION_STREAM.format(
-        incremental_sync="",
-        request_window_splitting="",
-        action="RETRY",
+        incremental_sync=_DATETIME_BASED_CURSOR_WITH_GRANULARITY,
+        request_window_splitting="request_window_splitting:\n    type: RequestWindowSplitting",
+        action="SPLIT_REQUEST_WINDOW",
     ).replace(
-        "  type: SimpleRetriever",
-        "  type: CustomRetriever\n"
-        "  class_name: unit_tests.sources.declarative.parsers.testing_components.TestingCustomRetriever",
+        "  requester:\n",
+        "  partition_router:\n"
+        "    type: ListPartitionRouter\n"
+        '    values: ["a", "b"]\n'
+        "    cursor_field: partition_field\n"
+        "  requester:\n",
     )
     stream_manifest = transformer.propagate_types_and_parameters(
         "", resolver.preprocess_manifest(YamlDeclarativeSource._parse(content)), {}
     )
 
-    retriever = get_retriever(
-        factory.create_component(
-            model_type=DeclarativeStreamModel, component_definition=stream_manifest, config={}
-        )
+    stream = factory.create_component(
+        model_type=DeclarativeStreamModel, component_definition=stream_manifest, config={}
     )
+    retriever = get_retriever(stream)
 
-    assert retriever.request_window_splitting is None
-    assert retriever.request_window_splitter is None
+    assert isinstance(stream.cursor, ConcurrentPerPartitionCursor)
+    assert retriever.request_window_splitting == RequestWindowSplitting()
+    assert retriever.request_window_splitter.__self__ is stream.cursor
+    assert retriever.request_window_splitter.__name__ == "split_request_window"
 
 
 def test_given_query_properties_and_request_window_splitting_then_raise():
