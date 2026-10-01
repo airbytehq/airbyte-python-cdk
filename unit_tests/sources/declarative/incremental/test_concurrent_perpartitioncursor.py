@@ -1,7 +1,7 @@
 # Copyright (c) 2024 Airbyte, Inc., all rights reserved.
 import copy
 from copy import deepcopy
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any, List, Mapping, MutableMapping, Optional, Union
 from unittest.mock import MagicMock, patch
 from urllib.parse import unquote
@@ -20,13 +20,16 @@ from airbyte_cdk.sources.declarative.concurrent_declarative_source import (
     ConcurrentDeclarativeSource,
 )
 from airbyte_cdk.sources.declarative.incremental import ConcurrentPerPartitionCursor
+from airbyte_cdk.sources.declarative.incremental.concurrent_partition_cursor import (
+    ConcurrentCursorFactory,
+)
 from airbyte_cdk.sources.declarative.partition_routers import ListPartitionRouter
 from airbyte_cdk.sources.declarative.schema import InlineSchemaLoader
 from airbyte_cdk.sources.declarative.stream_slicers.declarative_partition_generator import (
     DeclarativePartition,
     RecordCounter,
 )
-from airbyte_cdk.sources.streams.concurrent.cursor import CursorField
+from airbyte_cdk.sources.streams.concurrent.cursor import ConcurrentCursor, CursorField
 from airbyte_cdk.sources.streams.concurrent.state_converters.datetime_stream_state_converter import (
     CustomFormatConcurrentStreamStateConverter,
 )
@@ -4432,3 +4435,99 @@ def test_given_record_with_bad_cursor_value_the_global_state_parsing_does_not_br
             associated_slice=StreamSlice(partition={"partition_id": "1"}, cursor_slice={}),
         )
     )
+
+
+def _daily_cursor_factory() -> MagicMock:
+    def _create_daily_cursor(
+        stream_state: Mapping[str, Any], runtime_lookback_window: Optional[timedelta]
+    ) -> ConcurrentCursor:
+        return ConcurrentCursor(
+            stream_name="test_stream",
+            stream_namespace=None,
+            stream_state=stream_state,
+            message_repository=MagicMock(),
+            connector_state_manager=MagicMock(),
+            connector_state_converter=CustomFormatConcurrentStreamStateConverter(
+                datetime_format="%Y-%m-%d", is_sequential_state=True
+            ),
+            cursor_field=CursorField(cursor_field_key="updated_at"),
+            slice_boundary_fields=("start_time", "end_time"),
+            start=datetime(2024, 1, 1, tzinfo=timezone.utc),
+            end_provider=lambda: datetime(2024, 2, 1, tzinfo=timezone.utc),
+            cursor_granularity=timedelta(days=1),
+        )
+
+    return MagicMock(wraps=ConcurrentCursorFactory(_create_daily_cursor))
+
+
+def _per_partition_cursor(
+    cursor_factory: MagicMock, use_global_cursor: bool = False
+) -> ConcurrentPerPartitionCursor:
+    return ConcurrentPerPartitionCursor(
+        cursor_factory=cursor_factory,
+        partition_router=ListPartitionRouter(
+            values=["1", "2"], cursor_field="partition_id", config={}, parameters={}
+        ),
+        stream_name="test_stream",
+        stream_namespace=None,
+        stream_state={},
+        message_repository=MagicMock(),
+        connector_state_manager=MagicMock(),
+        connector_state_converter=CustomFormatConcurrentStreamStateConverter(
+            datetime_format="%Y-%m-%d", is_sequential_state=True
+        ),
+        cursor_field=CursorField(cursor_field_key="updated_at"),
+        use_global_cursor=use_global_cursor,
+    )
+
+
+def _partition_window(start: str, end: str) -> StreamSlice:
+    return StreamSlice(
+        partition={"partition_id": "2"},
+        cursor_slice={"start_time": start, "end_time": end},
+        extra_fields={"partition_name": "second"},
+    )
+
+
+@pytest.mark.parametrize("use_global_cursor", [False, True])
+def test_given_partition_window_when_split_request_window_then_halves_keep_partition_and_extra_fields(
+    use_global_cursor: bool,
+) -> None:
+    cursor = _per_partition_cursor(_daily_cursor_factory(), use_global_cursor)
+
+    children = cursor.split_request_window(_partition_window("2024-01-01", "2024-01-14"))
+
+    assert children == [
+        _partition_window("2024-01-01", "2024-01-07"),
+        _partition_window("2024-01-08", "2024-01-14"),
+    ]
+    assert [child.extra_fields for child in children] == [{"partition_name": "second"}] * 2
+
+
+def test_given_one_day_partition_window_when_split_request_window_then_none() -> None:
+    cursor = _per_partition_cursor(_daily_cursor_factory())
+
+    assert cursor.split_request_window(_partition_window("2024-01-01", "2024-01-01")) is None
+
+
+def test_given_min_split_window_when_split_request_window_then_stop_at_min_split_window() -> None:
+    cursor = _per_partition_cursor(_daily_cursor_factory())
+
+    assert (
+        cursor.split_request_window(
+            _partition_window("2024-01-01", "2024-01-03"), min_split_window=timedelta(days=2)
+        )
+        is None
+    )
+
+
+def test_split_request_window_builds_one_state_free_cursor_on_first_use() -> None:
+    cursor_factory = _daily_cursor_factory()
+    cursor = _per_partition_cursor(cursor_factory)
+    assert cursor_factory.create.call_count == 0
+
+    cursor.split_request_window(_partition_window("2024-01-01", "2024-01-14"))
+    cursor.split_request_window(_partition_window("2024-01-01", "2024-01-07"))
+
+    cursor_factory.create.assert_called_once_with(stream_state={}, runtime_lookback_window=None)
+    assert cursor._cursor_per_partition == {}

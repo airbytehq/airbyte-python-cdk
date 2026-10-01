@@ -5332,6 +5332,143 @@ def test_given_split_request_window_action_when_read_then_final_state_reflects_f
     )
 
 
+_ACCOUNT_PARTITION_ROUTER = {
+    "type": "ListPartitionRouter",
+    "values": ["a", "b"],
+    "cursor_field": "account",
+}
+
+
+def _partitioned_request_window_splitting_manifest():
+    """Two accounts, each read as one 14-day window and checkpointed with its own cursor."""
+    manifest = _request_window_splitting_manifest()
+    stream = manifest["streams"][0]
+    stream["incremental_sync"].update(
+        {
+            "start_datetime": "2024-01-01",
+            "end_datetime": "2024-01-14",
+            "step": "P14D",
+            "cursor_granularity": "P1D",
+            "datetime_format": "%Y-%m-%d",
+        }
+    )
+    stream["retriever"]["partition_router"] = {
+        **_ACCOUNT_PARTITION_ROUTER,
+        "request_option": {
+            "type": "RequestOption",
+            "inject_into": "request_parameter",
+            "field_name": "account",
+        },
+    }
+    return manifest
+
+
+def _partitioned_request_window_splitting_manifest_with_interpolated_window():
+    """
+    The shape of TikTok Marketing's daily report streams: a list of partition routers, which the factory wraps
+    in a `CartesianProductStreamSlicer`, and request parameters that read the window from `stream_interval`
+    rather than injecting it through `start_time_option`/`end_time_option`.
+    """
+    manifest = _partitioned_request_window_splitting_manifest()
+    stream = manifest["streams"][0]
+    del stream["incremental_sync"]["start_time_option"]
+    del stream["incremental_sync"]["end_time_option"]
+    stream["retriever"]["partition_router"] = [_ACCOUNT_PARTITION_ROUTER]
+    stream["retriever"]["requester"]["request_parameters"] = {
+        "account": "{{ stream_partition.account }}",
+        "start": "{{ stream_interval.start_time }}",
+        "end": "{{ stream_interval.end_time }}",
+    }
+    return manifest
+
+
+def _account_window_request(account: str, start: str, end: str) -> HttpRequest:
+    return HttpRequest(
+        "https://example.org/test",
+        query_params={"account": account, "start": start, "end": end},
+    )
+
+
+def _items_response(*updated_at: str) -> HttpResponse:
+    return HttpResponse(json.dumps({"items": [{"updated_at": value} for value in updated_at]}), 200)
+
+
+@pytest.mark.parametrize(
+    "manifest",
+    [
+        pytest.param(_partitioned_request_window_splitting_manifest(), id="request_options"),
+        pytest.param(
+            _partitioned_request_window_splitting_manifest_with_interpolated_window(),
+            id="interpolated_window",
+        ),
+    ],
+)
+def test_given_partitioned_stream_when_one_partition_window_is_rejected_then_split_only_that_partition(
+    manifest,
+):
+    """
+    The Google Ads and TikTok case: only one account's window is too large. That account's window is read as
+    two halves, the other account is read once, and each account is checkpointed with its own cursor.
+    """
+    account_a_request = _account_window_request("a", "2024-01-01", "2024-01-14")
+    account_b_request = _account_window_request("b", "2024-01-01", "2024-01-14")
+    account_b_first_half_request = _account_window_request("b", "2024-01-01", "2024-01-07")
+    account_b_second_half_request = _account_window_request("b", "2024-01-08", "2024-01-14")
+
+    with HttpMocker() as http_mocker:
+        http_mocker.get(account_a_request, _items_response("2024-01-10"))
+        http_mocker.get(account_b_request, HttpResponse("", 400))
+        http_mocker.get(account_b_first_half_request, _items_response("2024-01-03"))
+        http_mocker.get(account_b_second_half_request, _items_response("2024-01-12"))
+
+        messages = list(_read_request_window_splitting_source(manifest))
+
+        http_mocker.assert_number_of_calls(account_a_request, 1)
+        http_mocker.assert_number_of_calls(account_b_request, 1)
+        http_mocker.assert_number_of_calls(account_b_first_half_request, 1)
+        http_mocker.assert_number_of_calls(account_b_second_half_request, 1)
+
+    assert sorted(
+        message.record.data["updated_at"] for message in messages if message.type == Type.RECORD
+    ) == ["2024-01-03", "2024-01-10", "2024-01-12"]
+    final_state = get_states_for_stream(stream_name="Test", messages=messages)[
+        -1
+    ].stream.stream_state.__dict__
+    assert final_state["use_global_cursor"] is False
+    assert sorted(final_state["states"], key=lambda state: state["partition"]["account"]) == [
+        {"partition": {"account": "a"}, "cursor": {"updated_at": "2024-01-10"}},
+        {"partition": {"account": "b"}, "cursor": {"updated_at": "2024-01-12"}},
+    ]
+
+
+def test_given_partitioned_stream_when_one_day_window_is_rejected_then_transient_error():
+    account_a_request = _account_window_request("a", "2024-01-01", "2024-01-02")
+    account_b_request = _account_window_request("b", "2024-01-01", "2024-01-02")
+    account_b_first_day_request = _account_window_request("b", "2024-01-01", "2024-01-01")
+    manifest = _partitioned_request_window_splitting_manifest()
+    manifest["streams"][0]["incremental_sync"]["end_datetime"] = "2024-01-02"
+
+    messages = []
+    with HttpMocker() as http_mocker:
+        http_mocker.get(account_a_request, _items_response("2024-01-01"))
+        http_mocker.get(account_b_request, HttpResponse("", 400))
+        http_mocker.get(account_b_first_day_request, HttpResponse("", 400))
+
+        with pytest.raises(AirbyteTracedException):
+            messages.extend(_read_request_window_splitting_source(manifest))
+
+        http_mocker.assert_number_of_calls(account_b_request, 1)
+        http_mocker.assert_number_of_calls(account_b_first_day_request, 1)
+
+    errors = [
+        message.trace.error
+        for message in messages
+        if message.type == Type.TRACE and message.trace.type == TraceType.ERROR
+    ]
+    assert errors[0].failure_type == FailureType.transient_error
+    assert "could not split its request window" in errors[0].internal_message
+
+
 def test_given_pagination_limit_reached_when_read_then_reset_pagination():
     input_config = {}
     manifest = {

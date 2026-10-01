@@ -175,6 +175,7 @@ class ConcurrentPerPartitionCursor(Cursor):
         self._partition_key_to_index: dict[str, int] = {}
 
         self._lock = threading.Lock()
+        self._request_window_splitting_cursor: Optional[ConcurrentCursor] = None
         self._lookback_window: int = 0
         self._new_global_cursor: Optional[StreamState] = None
         self._number_of_partitions: int = 0
@@ -677,3 +678,31 @@ class ConcurrentPerPartitionCursor(Cursor):
         # Create a cursor to delegate the parsing
         cursor = self._cursor_factory.create(stream_state={}, runtime_lookback_window=None)
         return cursor.get_cursor_datetime_from_state(global_state)
+
+    def split_request_window(
+        self, stream_slice: StreamSlice, min_split_window: Optional[timedelta] = None
+    ) -> Optional[List[StreamSlice]]:
+        """
+        Split `stream_slice` in half the way any of this stream's per-partition cursors would.
+
+        `ConcurrentCursor.split_request_window` only reads the slice's boundaries and the cursor's granularity
+        and format, never the cursor's state, and every per-partition cursor is built by the same
+        `_cursor_factory`. So one state-free cursor can split the slices of every partition, including after
+        the switch to a global cursor, when the partition's own cursor may already have been evicted. The
+        children keep `stream_slice`'s `partition` and `extra_fields`, and `SimpleRetriever` re-associates the
+        records read from them with the original slice, so `observe` and `close_partition` are unaffected.
+
+        As for an unpartitioned stream, the children are not clamped again to the cursor's start or end.
+        """
+        return self._get_request_window_splitting_cursor().split_request_window(
+            stream_slice, min_split_window
+        )
+
+    def _get_request_window_splitting_cursor(self) -> ConcurrentCursor:
+        # Built on first use so that streams that never split a window do not pay for an extra cursor.
+        with self._lock:
+            if self._request_window_splitting_cursor is None:
+                self._request_window_splitting_cursor = self._cursor_factory.create(
+                    stream_state={}, runtime_lookback_window=None
+                )
+            return self._request_window_splitting_cursor

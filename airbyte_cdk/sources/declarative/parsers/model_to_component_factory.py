@@ -452,6 +452,9 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
     RequestPath as RequestPathModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    RequestWindowSplitting as RequestWindowSplittingModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     ResponseToFileExtractor as ResponseToFileExtractorModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
@@ -877,6 +880,7 @@ class ModelToComponentFactory:
             RemoveFieldsModel: self.create_remove_fields,
             RequestPathModel: self.create_request_path,
             RequestOptionModel: self.create_request_option,
+            RequestWindowSplittingModel: self.create_request_window_splitting,
             LegacySessionTokenAuthenticatorModel: self.create_legacy_session_token_authenticator,
             SelectiveAuthenticatorModel: self.create_selective_authenticator,
             SimpleRetrieverModel: self.create_simple_retriever,
@@ -2224,6 +2228,10 @@ class ModelToComponentFactory:
             has_stop_condition_cursor=self._is_stop_condition_on_cursor(model),
             is_client_side_incremental_sync=self._is_client_side_filtering_enabled(model),
             cursor=concurrent_cursor,
+            # `create_simple_retriever` binds the cursor's splitter itself, after validating the stream. A
+            # `CustomRetriever` is built generically by `create_custom_component`, so this is how a
+            # `SimpleRetriever` subclass that declares `request_window_splitting` gets the splitter.
+            request_window_splitter=getattr(concurrent_cursor, "split_request_window", None),
             transformations=transformations,
             file_uploader=file_uploader,
             incremental_sync=model.incremental_sync,
@@ -3962,7 +3970,7 @@ class ModelToComponentFactory:
             raise ValueError("PaginationResetLimits are not supported while having record filter.")
 
         request_window_splitting = self._create_request_window_splitting(
-            model, name, cursor, incremental_sync, query_properties, file_uploader
+            model, config, name, cursor, incremental_sync, query_properties, file_uploader
         )
         return SimpleRetriever(
             name=name,
@@ -4296,6 +4304,7 @@ class ModelToComponentFactory:
     def _create_request_window_splitting(
         self,
         model: SimpleRetrieverModel,
+        config: Config,
         name: str,
         cursor: Optional[Cursor],
         incremental_sync: Optional[
@@ -4338,10 +4347,21 @@ class ModelToComponentFactory:
             file_uploader,
         )
 
+        return self.create_request_window_splitting(model.request_window_splitting, config)
+
+    @staticmethod
+    def create_request_window_splitting(
+        model: RequestWindowSplittingModel, config: Config, **kwargs: Any
+    ) -> RequestWindowSplitting:
+        """
+        Also reached directly, without `_validate_request_window_splitting_is_supported`, when a
+        `CustomRetriever` declares `request_window_splitting`: `create_custom_component` builds the
+        retriever's fields generically, without the stream's cursor or incremental sync to validate against.
+        """
         return RequestWindowSplitting(
-            failure_message=model.request_window_splitting.failure_message,
-            min_split_window=parse_duration(model.request_window_splitting.min_split_window)
-            if model.request_window_splitting.min_split_window
+            failure_message=model.failure_message,
+            min_split_window=parse_duration(model.min_split_window)
+            if model.min_split_window
             else None,
         )
 
@@ -4368,8 +4388,7 @@ class ModelToComponentFactory:
             raise ValueError(
                 f"`request_window_splitting` requires an incremental cursor that supports window splitting on "
                 f"stream {name}. Found {type(cursor).__name__ if cursor is not None else 'no cursor'}: this is "
-                f"only supported today for a `DatetimeBasedCursor` with `cursor_granularity` set and no "
-                f"partition router combining multiple cursors."
+                f"only supported today for a `DatetimeBasedCursor` with `cursor_granularity` set."
             )
 
         if not (
