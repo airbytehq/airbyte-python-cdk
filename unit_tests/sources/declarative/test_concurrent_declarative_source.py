@@ -5332,6 +5332,191 @@ def test_given_split_request_window_action_when_read_then_final_state_reflects_f
     )
 
 
+_ACCOUNT_PARTITION_ROUTER = {
+    "type": "ListPartitionRouter",
+    "values": ["a", "b"],
+    "cursor_field": "account",
+}
+
+
+def _partitioned_request_window_splitting_manifest():
+    """Two accounts, each read as one 14-day window and checkpointed with its own cursor."""
+    manifest = _request_window_splitting_manifest()
+    stream = manifest["streams"][0]
+    stream["incremental_sync"].update(
+        {
+            "start_datetime": "2024-01-01",
+            "end_datetime": "2024-01-14",
+            "step": "P14D",
+            "cursor_granularity": "P1D",
+            "datetime_format": "%Y-%m-%d",
+        }
+    )
+    stream["retriever"]["partition_router"] = {
+        **_ACCOUNT_PARTITION_ROUTER,
+        "request_option": {
+            "type": "RequestOption",
+            "inject_into": "request_parameter",
+            "field_name": "account",
+        },
+    }
+    return manifest
+
+
+def _partitioned_request_window_splitting_manifest_with_interpolated_window():
+    """
+    A list-form partition router, which the factory wraps in a `CartesianProductStreamSlicer`, and request
+    parameters that read the window from `stream_interval` rather than injecting it through
+    `start_time_option`/`end_time_option`.
+    """
+    manifest = _partitioned_request_window_splitting_manifest()
+    stream = manifest["streams"][0]
+    del stream["incremental_sync"]["start_time_option"]
+    del stream["incremental_sync"]["end_time_option"]
+    stream["retriever"]["partition_router"] = [dict(_ACCOUNT_PARTITION_ROUTER)]
+    stream["retriever"]["requester"]["request_parameters"] = {
+        "account": "{{ stream_partition.account }}",
+        "start": "{{ stream_interval.start_time }}",
+        "end": "{{ stream_interval.end_time }}",
+    }
+    return manifest
+
+
+def _account_window_request(account: str, start: str, end: str) -> HttpRequest:
+    return HttpRequest(
+        "https://example.org/test",
+        query_params={"account": account, "start": start, "end": end},
+    )
+
+
+def _items_response(*updated_at: str) -> HttpResponse:
+    return HttpResponse(json.dumps({"items": [{"updated_at": value} for value in updated_at]}), 200)
+
+
+def _mock_only_account_b_rejected(http_mocker: HttpMocker) -> List[HttpRequest]:
+    """Account b's 14-day window is rejected and its two halves succeed; account a's window succeeds."""
+    responses = [
+        (_account_window_request("a", "2024-01-01", "2024-01-14"), _items_response("2024-01-10")),
+        (_account_window_request("b", "2024-01-01", "2024-01-14"), HttpResponse("", 400)),
+        (_account_window_request("b", "2024-01-01", "2024-01-07"), _items_response("2024-01-03")),
+        (_account_window_request("b", "2024-01-08", "2024-01-14"), _items_response("2024-01-12")),
+    ]
+    for request, response in responses:
+        http_mocker.get(request, response)
+    return [request for request, _ in responses]
+
+
+@pytest.mark.parametrize(
+    "manifest",
+    [
+        pytest.param(_partitioned_request_window_splitting_manifest(), id="request_options"),
+        pytest.param(
+            _partitioned_request_window_splitting_manifest_with_interpolated_window(),
+            id="interpolated_window",
+        ),
+    ],
+)
+def test_given_partitioned_stream_when_one_partition_window_is_rejected_then_split_only_that_partition(
+    manifest,
+):
+    """
+    The Google Ads and TikTok case: only one account's window is too large. That account's window is read as
+    two halves, the other account is read once, and each account is checkpointed with its own cursor.
+    """
+    with HttpMocker() as http_mocker:
+        requests = _mock_only_account_b_rejected(http_mocker)
+
+        messages = list(_read_request_window_splitting_source(manifest))
+
+        for request in requests:
+            http_mocker.assert_number_of_calls(request, 1)
+
+    assert sorted(
+        message.record.data["updated_at"] for message in messages if message.type == Type.RECORD
+    ) == ["2024-01-03", "2024-01-10", "2024-01-12"]
+    final_state = get_states_for_stream(stream_name="Test", messages=messages)[
+        -1
+    ].stream.stream_state.__dict__
+    assert final_state["use_global_cursor"] is False
+    assert sorted(final_state["states"], key=lambda state: state["partition"]["account"]) == [
+        {"partition": {"account": "a"}, "cursor": {"updated_at": "2024-01-10"}},
+        {"partition": {"account": "b"}, "cursor": {"updated_at": "2024-01-12"}},
+    ]
+
+
+def test_given_partitioned_stream_over_switch_to_global_limit_when_window_is_rejected_then_split():
+    """
+    Past `SWITCH_TO_GLOBAL_LIMIT` partitions, the stream keeps a single global cursor instead of one per
+    partition. Splitting does not depend on the per-partition cursors, so it works the same way.
+    """
+    from airbyte_cdk.sources.declarative.incremental import ConcurrentPerPartitionCursor
+
+    with HttpMocker() as http_mocker:
+        requests = _mock_only_account_b_rejected(http_mocker)
+
+        with patch.object(ConcurrentPerPartitionCursor, "SWITCH_TO_GLOBAL_LIMIT", 0):
+            messages = list(
+                _read_request_window_splitting_source(
+                    _partitioned_request_window_splitting_manifest()
+                )
+            )
+
+        for request in requests:
+            http_mocker.assert_number_of_calls(request, 1)
+
+    final_state = get_states_for_stream(stream_name="Test", messages=messages)[
+        -1
+    ].stream.stream_state.__dict__
+    assert final_state["use_global_cursor"] is True
+    assert final_state["state"] == {"updated_at": "2024-01-12"}
+
+
+def test_given_split_window_still_rejected_when_read_then_partition_is_not_checkpointed():
+    """
+    Account b's first half is read, but its second half is rejected again and is already at
+    `min_split_window`, so the stream fails with a `transient_error`. Account b's cursor must stay at its start
+    instead of moving to the record read from the first half, so the next sync re-reads the whole window,
+    while account a is still checkpointed.
+    """
+    manifest = _partitioned_request_window_splitting_manifest()
+    manifest["streams"][0]["retriever"]["request_window_splitting"]["min_split_window"] = "P7D"
+    account_b_request = _account_window_request("b", "2024-01-01", "2024-01-14")
+    account_b_first_half_request = _account_window_request("b", "2024-01-01", "2024-01-07")
+    account_b_second_half_request = _account_window_request("b", "2024-01-08", "2024-01-14")
+
+    messages = []
+    with HttpMocker() as http_mocker:
+        http_mocker.get(
+            _account_window_request("a", "2024-01-01", "2024-01-14"), _items_response("2024-01-10")
+        )
+        http_mocker.get(account_b_request, HttpResponse("", 400))
+        http_mocker.get(account_b_first_half_request, _items_response("2024-01-03"))
+        http_mocker.get(account_b_second_half_request, HttpResponse("", 400))
+
+        with pytest.raises(AirbyteTracedException):
+            messages.extend(_read_request_window_splitting_source(manifest))
+
+        http_mocker.assert_number_of_calls(account_b_request, 1)
+        http_mocker.assert_number_of_calls(account_b_first_half_request, 1)
+        http_mocker.assert_number_of_calls(account_b_second_half_request, 1)
+
+    errors = [
+        message.trace.error
+        for message in messages
+        if message.type == Type.TRACE and message.trace.type == TraceType.ERROR
+    ]
+    assert errors[0].failure_type == FailureType.transient_error
+    assert "could not split its request window" in errors[0].internal_message
+    final_state = get_states_for_stream(stream_name="Test", messages=messages)[
+        -1
+    ].stream.stream_state.__dict__
+    assert sorted(final_state["states"], key=lambda state: state["partition"]["account"]) == [
+        {"partition": {"account": "a"}, "cursor": {"updated_at": "2024-01-10"}},
+        {"partition": {"account": "b"}, "cursor": {"updated_at": "2024-01-01"}},
+    ]
+    assert "state" not in final_state
+
+
 def test_given_pagination_limit_reached_when_read_then_reset_pagination():
     input_config = {}
     manifest = {

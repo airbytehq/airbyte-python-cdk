@@ -4394,8 +4394,7 @@ class ModelToComponentFactory:
             raise ValueError(
                 f"`request_window_splitting` requires an incremental cursor that supports window splitting on "
                 f"stream {name}. Found {type(cursor).__name__ if cursor is not None else 'no cursor'}: this is "
-                f"only supported today for a `DatetimeBasedCursor` with `cursor_granularity` set and no "
-                f"partition router combining multiple cursors."
+                f"only supported today for a `DatetimeBasedCursor` with `cursor_granularity` set."
             )
 
         if not (

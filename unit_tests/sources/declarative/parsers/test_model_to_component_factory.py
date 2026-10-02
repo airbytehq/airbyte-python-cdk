@@ -8468,6 +8468,7 @@ def test_given_no_incremental_sync_and_request_window_splitting_then_raise():
         _request_window_splitting_stream(incremental_sync="")
 
     assert "cursor_granularity" in str(exception.value)
+    assert "partition router" not in str(exception.value)
 
 
 def test_given_datetime_based_cursor_without_cursor_granularity_then_raise():
@@ -8578,12 +8579,10 @@ def test_given_incrementing_count_cursor_and_request_window_splitting_then_raise
     assert "cursor_granularity" in str(exception.value)
 
 
-def test_given_partition_router_and_request_window_splitting_then_raise():
+def test_given_partition_router_and_request_window_splitting_then_split_with_per_partition_cursor():
     """
-    A partition router combines multiple cursors (one per partition) behind a `ConcurrentPerPartitionCursor`,
-    which does not implement `split_request_window` itself - there is no longer one cursor whose own
-    granularity/boundary fields splitting could rely on. Rejected the same way a stream with no incremental
-    cursor at all is.
+    A partition router puts one cursor per partition behind a `ConcurrentPerPartitionCursor`, which splits a
+    window the way any of those cursors would, so the stream is accepted and the retriever is bound to it.
     """
     content = _REQUEST_WINDOW_REDUCTION_STREAM.format(
         incremental_sync=_DATETIME_BASED_CURSOR_WITH_GRANULARITY,
@@ -8601,13 +8600,15 @@ def test_given_partition_router_and_request_window_splitting_then_raise():
         "", resolver.preprocess_manifest(YamlDeclarativeSource._parse(content)), {}
     )
 
-    with pytest.raises(ValueError) as exception:
-        factory.create_component(
-            model_type=DeclarativeStreamModel, component_definition=stream_manifest, config={}
-        )
+    stream = factory.create_component(
+        model_type=DeclarativeStreamModel, component_definition=stream_manifest, config={}
+    )
+    retriever = get_retriever(stream)
 
-    assert "request_window_splitting" in str(exception.value)
-    assert "partition router" in str(exception.value)
+    assert isinstance(stream.cursor, ConcurrentPerPartitionCursor)
+    assert retriever.request_window_splitting == RequestWindowSplitting()
+    assert retriever.request_window_splitter.__self__ is stream.cursor
+    assert retriever.request_window_splitter.__name__ == "split_request_window"
 
 
 def test_given_query_properties_and_request_window_splitting_then_raise():
