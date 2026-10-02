@@ -3112,6 +3112,14 @@ _SESSION_TOKEN_AUTHENTICATOR = {
     },
 }
 
+_LEGACY_SESSION_TOKEN_AUTHENTICATOR = {
+    "type": "LegacySessionTokenAuthenticator",
+    "header": "token",
+    "login_url": "login",
+    "session_token_response_key": "session",
+    "validate_session_url": "validate",
+}
+
 
 def _create_requester_with_authenticator(authenticator, config):
     return factory.create_component(
@@ -3146,13 +3154,7 @@ def test_create_requester_with_selective_authenticator_nesting_session_authentic
             "authenticator_selection_path": ["auth", "type"],
             "authenticators": {
                 "session": _SESSION_TOKEN_AUTHENTICATOR,
-                "legacy": {
-                    "type": "LegacySessionTokenAuthenticator",
-                    "header": "token",
-                    "login_url": "login",
-                    "session_token_response_key": "session",
-                    "validate_session_url": "validate",
-                },
+                "legacy": _LEGACY_SESSION_TOKEN_AUTHENTICATOR,
                 "token": {"type": "ApiKeyAuthenticator", "header": "X-Key", "api_token": "key"},
                 "oauth": {
                     "type": "OAuthAuthenticator",
@@ -3233,6 +3235,49 @@ def test_create_requester_with_selective_authenticator_nesting_custom_authentica
 
     session_token_provider = requester.authenticator.inner.token_provider.session_token_provider
     assert session_token_provider.login_requester.name == "lists_login_requester"
+
+
+def _create_custom_requester_with_selective_authenticator(authenticator, parameters=None):
+    return factory.create_component(
+        model_type=CustomRequesterModel,
+        component_definition={
+            "type": "CustomRequester",
+            "class_name": "unit_tests.sources.declarative.parsers.testing_components.TestingRequester",
+            "url_base": "https://api.sendgrid.com",
+            "path": "/v3/marketing/lists",
+            "authenticator": {
+                "type": "SelectiveAuthenticator",
+                "authenticator_selection_path": ["auth", "type"],
+                "authenticators": {"selected": authenticator},
+                "$parameters": parameters or {},
+            },
+        },
+        config={**input_config, "auth": {"type": "selected"}},
+        name="lists",
+    )
+
+
+def test_create_custom_requester_with_selective_authenticator_passes_stream_name_to_session_token_authenticator():
+    requester = _create_custom_requester_with_selective_authenticator(_SESSION_TOKEN_AUTHENTICATOR)
+
+    session_token_provider = requester.authenticator.token_provider.session_token_provider
+    assert session_token_provider.login_requester.name == "lists_login_requester"
+
+
+def test_create_custom_requester_with_selective_authenticator_passes_url_base_parameter_to_legacy_session_token_authenticator():
+    requester = _create_custom_requester_with_selective_authenticator(
+        _LEGACY_SESSION_TOKEN_AUTHENTICATOR, {"url_base": "https://api.legacy.com"}
+    )
+
+    assert isinstance(requester.authenticator, LegacySessionTokenAuthenticator)
+    assert requester.authenticator._api_url.eval(input_config) == "https://api.legacy.com"
+
+
+def test_create_custom_requester_with_selective_authenticator_without_url_base_for_legacy_session_token_authenticator_raises():
+    with pytest.raises(
+        ValueError, match=r"Please provide SelectiveAuthenticator\.\$parameters\.url_base$"
+    ):
+        _create_custom_requester_with_selective_authenticator(_LEGACY_SESSION_TOKEN_AUTHENTICATOR)
 
 
 def test_create_composite_error_handler():
@@ -3778,12 +3823,32 @@ def test_custom_components_do_not_contain_extra_fields():
     assert custom_substream_partition_router.custom_pagination_strategy.page_size == 100
 
 
-def test_parse_custom_component_fields_if_subcomponent():
+@pytest.mark.parametrize(
+    "custom_pagination_strategy, expected_strategy_class",
+    [
+        pytest.param(
+            {"type": "PageIncrement", "page_size": 100}, PageIncrement, id="test_page_increment"
+        ),
+        pytest.param(
+            {"type": "CursorPagination", "cursor_value": "{{ response.next }}", "page_size": 100},
+            CursorPaginationStrategy,
+            id="test_cursor_pagination_without_decoder",
+        ),
+        pytest.param(
+            {"type": "OffsetIncrement", "page_size": 100},
+            OffsetIncrement,
+            id="test_offset_increment_without_decoder",
+        ),
+    ],
+)
+def test_parse_custom_component_fields_if_subcomponent(
+    custom_pagination_strategy, expected_strategy_class
+):
     custom_substream_partition_router_manifest = {
         "type": "CustomPartitionRouter",
         "class_name": "unit_tests.sources.declarative.parsers.testing_components.TestingCustomSubstreamPartitionRouter",
         "custom_field": "here",
-        "custom_pagination_strategy": {"type": "PageIncrement", "page_size": 100},
+        "custom_pagination_strategy": custom_pagination_strategy,
         "parent_stream_configs": [
             {
                 "type": "ParentStreamConfig",
@@ -3845,8 +3910,11 @@ def test_parse_custom_component_fields_if_subcomponent():
         == "repository_id"
     )
 
-    assert isinstance(custom_substream_partition_router.custom_pagination_strategy, PageIncrement)
-    assert custom_substream_partition_router.custom_pagination_strategy.page_size == 100
+    strategy = custom_substream_partition_router.custom_pagination_strategy
+    assert isinstance(strategy, expected_strategy_class)
+    assert strategy.get_page_size() == 100
+    if expected_strategy_class is not PageIncrement:
+        assert isinstance(strategy.decoder.decoder, JsonDecoder)
 
 
 class TestCreateTransformations:
