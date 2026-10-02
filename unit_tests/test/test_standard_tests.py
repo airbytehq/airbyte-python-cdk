@@ -9,9 +9,11 @@ import pytest
 from airbyte_cdk.sources.declarative.concurrent_declarative_source import (
     ConcurrentDeclarativeSource,
 )
+from airbyte_cdk.sources.declarative.parsers.custom_code_compiler import validate_python_code
 from airbyte_cdk.sources.source import Source
 from airbyte_cdk.test.models.scenario import ConnectorTestScenario
 from airbyte_cdk.test.standard_tests._job_runner import IConnector
+from airbyte_cdk.test.standard_tests.declarative_sources import md5_checksum
 from airbyte_cdk.test.standard_tests.docker_base import DockerConnectorTestSuite
 from airbyte_cdk.test.standard_tests.pytest_hooks import _scenario_test_ids
 
@@ -108,3 +110,14 @@ def test_dedup_scenarios_conflicting_statuses_raise() -> None:
 def test_scenario_test_ids(config_paths: list[Path], expected_ids: list[str]) -> None:
     scenarios = [ConnectorTestScenario(config_path=path) for path in config_paths]
     assert _scenario_test_ids(scenarios) == expected_ids
+
+
+def test_md5_checksum_matches_injected_text_with_crlf(tmp_path: Path) -> None:
+    """Assert the checksum covers `read_text()`, which `create_connector` injects, not raw bytes."""
+    components_py_path = tmp_path / "components.py"
+    components_py_path.write_bytes(b"def sample_function():\r\n    return 1\r\n")
+
+    validate_python_code(
+        code_text=components_py_path.read_text(),
+        checksums={"md5": md5_checksum(components_py_path)},
+    )
