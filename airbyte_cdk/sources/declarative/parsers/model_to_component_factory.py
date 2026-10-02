@@ -5268,12 +5268,14 @@ class ModelToComponentFactory:
     def create_http_components_resolver(
         self, model: HttpComponentsResolverModel, config: Config, stream_name: Optional[str] = None
     ) -> Any:
+        partition_router = self._build_stream_slicer_from_partition_router(model.retriever, config)
         retriever = self._create_component_from_model(
             model=model.retriever,
             config=config,
             name=f"{stream_name if stream_name else '__http_components_resolver'}",
             primary_key=None,
-            stream_slicer=self._build_stream_slicer_from_partition_router(model.retriever, config),
+            stream_slicer=partition_router,
+            partition_router=partition_router,
             transformations=[],
         )
 
@@ -5293,7 +5295,10 @@ class ModelToComponentFactory:
 
         return HttpComponentsResolver(
             retriever=retriever,
-            stream_slicer=self._build_stream_slicer_from_partition_router(model.retriever, config),
+            # AsyncRetriever reads records only from the job slices its own slicer yields
+            stream_slicer=retriever.stream_slicer
+            if isinstance(retriever, AsyncRetriever)
+            else partition_router,
             config=config,
             components_mapping=components_mapping,
             parameters=model.parameters or {},
