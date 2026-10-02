@@ -9,6 +9,7 @@ from typing import Any, Dict, Iterable, List, Mapping
 import dpath
 from typing_extensions import deprecated
 
+from airbyte_cdk.models import AirbyteMessage
 from airbyte_cdk.sources.declarative.interpolation import InterpolatedString
 from airbyte_cdk.sources.declarative.resolvers.components_resolver import (
     ComponentMappingDefinition,
@@ -95,6 +96,9 @@ class HttpComponentsResolver(ComponentsResolver):
             for components_values in self.retriever.read_records(
                 records_schema={}, stream_slice=stream_slice
             ):
+                # AsyncRetriever emits a slice log message before its records
+                if isinstance(components_values, AirbyteMessage):
+                    continue
                 updated_config = deepcopy(stream_template_config)
                 kwargs["components_values"] = components_values  # type: ignore[assignment] # component_values will always be of type Mapping[str, Any]
                 kwargs["stream_slice"] = stream_slice  # type: ignore[assignment] # stream_slice will always be of type Mapping[str, Any]

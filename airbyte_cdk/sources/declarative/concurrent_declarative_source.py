@@ -890,7 +890,8 @@ class ConcurrentDeclarativeSource(Source):
                     f"Expected one of {list(COMPONENTS_RESOLVER_TYPE_MAPPING.keys())}."
                 )
 
-            if "retriever" in components_resolver_config:
+            # AsyncRetriever has no `requester`, and a cached polling request replays a stale status
+            if "requester" in components_resolver_config.get("retriever", {}):
                 components_resolver_config["retriever"]["requester"]["use_cache"] = True
 
             # Create a resolver for dynamic components based on type
