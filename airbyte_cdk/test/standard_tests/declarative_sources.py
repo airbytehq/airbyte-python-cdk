@@ -16,12 +16,11 @@ from airbyte_cdk.utils.connector_paths import MANIFEST_YAML
 
 
 def md5_checksum(file_path: Path) -> str:
-    """Helper function to calculate the MD5 checksum of a file.
+    """Calculate the MD5 checksum of the file text, as injected by `create_connector`.
 
     This is used to calculate the checksum of the `components.py` file, if it exists.
     """
-    with open(file_path, "rb") as file:
-        return md5(file.read()).hexdigest()
+    return md5(file_path.read_text().encode()).hexdigest()
 
 
 class DeclarativeSourceTestSuite(SourceTestSuiteBase):
