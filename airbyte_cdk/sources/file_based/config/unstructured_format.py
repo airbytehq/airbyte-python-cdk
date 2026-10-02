@@ -100,3 +100,11 @@ class UnstructuredFormat(BaseModel):
         discriminator="mode",
         type="object",
     )
+
+    output_format: str = Field(
+        default="markdown_text",
+        always_show=True,
+        title="Output Format",
+        enum=["markdown_text", "markdown_json"],
+        description="The output format for parsed document content. `markdown_text` renders the document as flat Markdown text. `markdown_json` outputs a JSON array of structured elements with type, text, and metadata fields, preserving document structure for easier downstream processing.",
+    )
