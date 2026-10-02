@@ -5178,8 +5178,15 @@ class ModelToComponentFactory:
                 )
 
                 if not extracted_parent_state and not isinstance(extracted_parent_state, dict):
-                    cursor_values = child_state.values()
-                    if cursor_values and len(cursor_values) == 1:
+                    cursor_values = list(child_state.values())
+                    # Only a scalar legacy cursor value can seed the parent. Sentinels such as
+                    # `{"__ab_full_refresh_sync_complete": true}` or legacy per-partition `states`
+                    # would crash the parent cursor initialization.
+                    if (
+                        len(cursor_values) == 1
+                        and isinstance(cursor_values[0], (str, int, float))
+                        and not isinstance(cursor_values[0], bool)
+                    ):
                         incremental_sync_model: Union[
                             DatetimeBasedCursorModel,
                             IncrementingCountCursorModel,
@@ -5200,9 +5207,7 @@ class ModelToComponentFactory:
                                 stream_descriptor=StreamDescriptor(
                                     name=parent_stream_name, namespace=None
                                 ),
-                                stream_state=AirbyteStateBlob(
-                                    {cursor_field: list(cursor_values)[0]}
-                                ),
+                                stream_state=AirbyteStateBlob({cursor_field: cursor_values[0]}),
                             ),
                         )
             return ConnectorStateManager([extracted_parent_state] if extracted_parent_state else [])
