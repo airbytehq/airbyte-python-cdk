@@ -1197,6 +1197,7 @@ class TestSingleUseRefreshTokenOauth2Authenticator:
             ("number_of_seconds", 42, None, "2022-12-31T00:00:42+00:00"),
             ("string_of_seconds", "42", None, "2022-12-31T00:00:42+00:00"),
             ("date_format", "2023-04-04", "YYYY-MM-DD", "2023-04-04T00:00:00+00:00"),
+            ("epoch_format", 1672531200, "%s", "2023-01-01T00:00:00+00:00"),
         ],
     )
     def test_given_no_message_repository_get_access_token(
@@ -1215,7 +1216,6 @@ class TestSingleUseRefreshTokenOauth2Authenticator:
             client_id=connector_config["credentials"]["client_id"],
             client_secret=connector_config["credentials"]["client_secret"],
             token_expiry_date_format=expiry_date_format,
-            token_expiry_is_time_of_expiration=bool(expiry_date_format),
         )
 
         # Mock the response from the refresh token endpoint
