@@ -78,6 +78,9 @@ class ThreadPoolManager:
         # this imperfect approach because we only do this in case of `self._most_recently_seen_exception` which we don't expect to happen
         self._threadpool.shutdown(wait=False, cancel_futures=True)
 
+    def shutdown(self) -> None:
+        self._shutdown()
+
     def is_done(self) -> bool:
         return all([f.done() for f in self._futures])
 
