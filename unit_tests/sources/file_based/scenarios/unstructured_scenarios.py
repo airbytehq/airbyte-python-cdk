@@ -5,6 +5,7 @@ import base64
 
 import nltk
 
+from airbyte_cdk.sources.file_based.file_types.unstructured_parser import SEMANTIC_SEARCH_ANNOTATION
 from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 from unit_tests.sources.file_based.scenarios.file_based_source_builder import FileBasedSourceBuilder
 from unit_tests.sources.file_based.scenarios.scenario_builder import TestScenarioBuilder
@@ -19,6 +20,7 @@ json_schema = {
         "content": {
             "type": ["null", "string"],
             "description": "Content of the file as markdown. Might be null if the file could not be parsed",
+            "x-airbyte-semantic-search": SEMANTIC_SEARCH_ANNOTATION,
         },
         "document_key": {
             "type": ["null", "string"],
