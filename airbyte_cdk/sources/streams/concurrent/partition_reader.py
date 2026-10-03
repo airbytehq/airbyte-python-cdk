@@ -14,6 +14,8 @@ from airbyte_cdk.sources.streams.concurrent.partitions.types import (
 )
 from airbyte_cdk.sources.utils.slice_logger import SliceLogger
 
+LOGGER = logging.getLogger(f"airbyte.PartitionReader")
+
 
 # Since moving all the connector builder workflow to the concurrent CDK which required correct ordering
 # of grouping log messages onto the main write thread using the ConcurrentMessageRepository, this
@@ -73,6 +75,7 @@ class PartitionReader:
         :return: None
         """
         try:
+            LOGGER.info(f"Starting to read from stream {partition.stream_name()} and partition {partition.to_slice()}")
             if self._partition_logger:
                 self._partition_logger.log(partition)
 
@@ -80,7 +83,10 @@ class PartitionReader:
                 self._queue.put(record)
                 cursor.observe(record)
             cursor.close_partition(partition)
+
+            LOGGER.info(f"Reading complete for stream {partition.stream_name()} and partition {partition.to_slice()}")
             self._queue.put(PartitionCompleteSentinel(partition, self._IS_SUCCESSFUL))
         except Exception as e:
+            LOGGER.info(f"Error while reading from {partition.stream_name()} and partition {partition.to_slice()}")
             self._queue.put(StreamThreadException(e, partition.stream_name()))
             self._queue.put(PartitionCompleteSentinel(partition, not self._IS_SUCCESSFUL))
