@@ -15,6 +15,7 @@ from airbyte_cdk.sources.declarative.interpolation.macros import macros
     [
         ("test_now_utc", "now_utc", True),
         ("test_today_utc", "today_utc", True),
+        ("test_timestamp_to_datetime", "timestamp_to_datetime", True),
         ("test_max", "max", True),
         ("test_min", "min", True),
         ("test_day_delta", "day_delta", True),
@@ -174,6 +175,38 @@ def test_timestamp(test_name, input_value, expected_output):
     timestamp_function = macros["timestamp"]
     actual_output = timestamp_function(input_value)
     assert actual_output == expected_output
+
+
+@pytest.mark.parametrize(
+    "test_name, input_value, expected_output",
+    [
+        (
+            "test_seconds_int",
+            1646006400,
+            datetime.datetime(2022, 2, 28, 0, 0, tzinfo=datetime.timezone.utc),
+        ),
+        (
+            "test_seconds_float",
+            1646006400.5,
+            datetime.datetime(2022, 2, 28, 0, 0, 0, 500000, tzinfo=datetime.timezone.utc),
+        ),
+        (
+            "test_seconds_string",
+            "1646006400",
+            datetime.datetime(2022, 2, 28, 0, 0, tzinfo=datetime.timezone.utc),
+        ),
+    ],
+)
+def test_timestamp_to_datetime(test_name, input_value, expected_output):
+    timestamp_to_datetime_fn = macros["timestamp_to_datetime"]
+    actual_output = timestamp_to_datetime_fn(input_value)
+    assert actual_output == expected_output
+
+
+def test_timestamp_to_datetime_invalid_value():
+    timestamp_to_datetime_fn = macros["timestamp_to_datetime"]
+    with pytest.raises(ValueError):
+        timestamp_to_datetime_fn("invalid-timestamp")
 
 
 def test_utc_datetime_to_local_timestamp_conversion():
