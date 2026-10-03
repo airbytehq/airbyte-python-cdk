@@ -389,6 +389,42 @@ def test_create_gzip_decoder_handles_transport_and_content_gzip(
     assert list(decoder.decode(response)) == [{"date": "2026-08-01", "units": "42"}]
 
 
+@pytest.mark.parametrize(
+    "headers",
+    [
+        {"Content-Type": "application/gzip"},
+        {"Content-Type": "application/x-gzip"},
+        {"Content-Type": "application/xml"},
+        {"Content-Encoding": "gzip"},
+    ],
+)
+@pytest.mark.parametrize("emit_connector_builder_messages", [False, True])
+def test_create_gzip_decoder_handles_xml_inner_decoder(
+    headers: Mapping[str, str], emit_connector_builder_messages: bool
+):
+    xml_data = b"<root><item id='1'><name>Book</name></item></root>"
+    response = requests.Response()
+    response.status_code = 200
+    response.headers.update(headers)
+    response.raw = HTTPResponse(
+        body=io.BytesIO(gzip.compress(xml_data)),
+        headers=headers,
+        status=200,
+        preload_content=False,
+        decode_content=False,
+    )
+
+    model = GzipDecoderModel(
+        type="GzipDecoder",
+        decoder=XmlDecoderModel(type="XmlDecoder"),
+    )
+    decoder = ModelToComponentFactory(
+        emit_connector_builder_messages=emit_connector_builder_messages
+    ).create_gzip_decoder(model, {})
+
+    assert list(decoder.decode(response)) == [{"root": {"item": {"@id": "1", "name": "Book"}}}]
+
+
 def test_create_component_type_mismatch():
     manifest = {"check": {"type": "MismatchType", "stream_names": ["list_stream"]}}
 
