@@ -48,7 +48,7 @@ def should_migrate_manifest(config: Mapping[str, Any]) -> bool:
 
     This flag is set by the UI.
     """
-    return config.get("__should_migrate", False)
+    return bool(config.get("__should_migrate", False))
 
 
 def should_normalize_manifest(config: Mapping[str, Any]) -> bool:
@@ -57,7 +57,7 @@ def should_normalize_manifest(config: Mapping[str, Any]) -> bool:
     :param config: The configuration to check
     :return: True if the manifest should be normalized, False otherwise.
     """
-    return config.get("__should_normalize", False)
+    return bool(config.get("__should_normalize", False))
 
 
 def create_source(

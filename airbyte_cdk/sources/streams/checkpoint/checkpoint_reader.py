@@ -245,11 +245,12 @@ class LegacyCursorBasedCheckpointReader(CursorBasedCheckpointReader):
 
     def next(self) -> Optional[Mapping[str, Any]]:
         try:
-            self.current_slice = self._find_next_slice()
+            current = self._find_next_slice()
+            self.current_slice = current
 
-            if "partition" in dict(self.current_slice):
+            if "partition" in dict(current):
                 raise ValueError("Stream is configured to use invalid stream slice key 'partition'")
-            elif "cursor_slice" in dict(self.current_slice):
+            elif "cursor_slice" in dict(current):
                 raise ValueError(
                     "Stream is configured to use invalid stream slice key 'cursor_slice'"
                 )
@@ -257,9 +258,9 @@ class LegacyCursorBasedCheckpointReader(CursorBasedCheckpointReader):
             # We convert StreamSlice to a regular mapping because legacy connectors operate on the basic Mapping object. We
             # also duplicate all fields at the top level for backwards compatibility for existing Python sources
             return {
-                "partition": self.current_slice.partition,
-                "cursor_slice": self.current_slice.cursor_slice,
-                **dict(self.current_slice),
+                "partition": current.partition,
+                "cursor_slice": current.cursor_slice,
+                **dict(current),
             }
         except StopIteration:
             self._finished_sync = True
