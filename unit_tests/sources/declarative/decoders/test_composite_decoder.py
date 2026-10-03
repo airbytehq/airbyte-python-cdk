@@ -327,6 +327,24 @@ def test_composite_raw_decoder_csv_parser_values(requests_mock, encoding: str, d
     assert parsed_records == expected_data
 
 
+def test_composite_raw_decoder_csv_parser_supports_large_field_values(requests_mock):
+    large_value = "a" * (200 * 1024)
+    requests_mock.register_uri(
+        "GET",
+        "https://airbyte.io/",
+        content=f"value\n{large_value}\n".encode(),
+    )
+    response = requests.get("https://airbyte.io/", stream=True)
+    previous_limit = csv.field_size_limit(131_072)
+
+    try:
+        parsed_records = list(CompositeRawDecoder(parser=CsvParser()).decode(response))
+    finally:
+        csv.field_size_limit(previous_limit)
+
+    assert parsed_records == [{"value": large_value}]
+
+
 @pytest.mark.parametrize("set_values_to_none", [None, [""], ["--"]])
 def test_composite_raw_decoder_parse_empty_strings(
     requests_mock, set_values_to_none: List[str] | None
