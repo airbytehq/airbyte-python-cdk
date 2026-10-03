@@ -125,6 +125,18 @@ The generated OpenAPI specification is consumed by other applications and tools 
 - Provide API documentation and validation
 - Enable integration with API development tools
 
+### Automated OpenAPI Spec Validation
+
+The project includes a GitHub Actions check that automatically verifies the OpenAPI spec is up-to-date whenever API models are modified. This prevents developers from forgetting to regenerate the spec after making changes to request/response types.
+
+If you modify any files in `airbyte_cdk/manifest_server/api_models/`, make sure to run:
+
+```bash
+poetry run manifest-server generate-openapi
+```
+
+The CI will fail if the committed OpenAPI spec doesn't match what would be generated from the current API models.
+
 ### Interactive API Documentation
 
 When running, interactive API documentation is available at:
