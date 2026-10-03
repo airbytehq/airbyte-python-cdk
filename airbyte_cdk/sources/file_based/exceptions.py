@@ -133,15 +133,15 @@ class DuplicatedFilesError(BaseFileBasedSourceError):
         for duplicated_file in self._duplicated_files_names:
             for duplicated_file_name, file_paths in duplicated_file.items():
                 file_duplicated_message = (
-                    f"{len(file_paths)} duplicates found for file name {duplicated_file_name}:\n\n"
+                    f"{len(file_paths)} duplicates found for resolved output path {duplicated_file_name}:\n\n"
                     + "".join(f"\n - {file_paths}")
                 )
                 duplicated_files_messages.append(file_duplicated_message)
 
         error_message = (
-            f"ERROR: Duplicate filenames found for stream {self._stream_name}. "
-            "Duplicate file names are not allowed if the Preserve Sub-Directories in File Paths option is disabled. "
-            "Please remove or rename the duplicate files before attempting to re-run the sync.\n\n"
+            f"ERROR: Duplicate files found for stream {self._stream_name}. "
+            "Multiple source files resolve to the same output path. "
+            "Rename or remove one of the conflicting source files before attempting to re-run the sync.\n\n"
             + "\n".join(duplicated_files_messages)
         )
 
