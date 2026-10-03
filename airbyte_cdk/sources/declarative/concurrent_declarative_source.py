@@ -50,6 +50,9 @@ from airbyte_cdk.sources.declarative.checks import COMPONENTS_CHECKER_TYPE_MAPPI
 from airbyte_cdk.sources.declarative.checks.connection_checker import ConnectionChecker
 from airbyte_cdk.sources.declarative.concurrency_level import ConcurrencyLevel
 from airbyte_cdk.sources.declarative.interpolation import InterpolatedBoolean
+from airbyte_cdk.sources.declarative.manifest_validation_error import (
+    format_manifest_validation_error,
+)
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     ConcurrencyLevel as ConcurrencyLevelModel,
 )
@@ -348,9 +351,7 @@ class ConcurrentDeclarativeSource(Source):
         try:
             validate(self._source_config, self._declarative_component_schema)
         except ValidationError as e:
-            raise ValidationError(
-                "Validation against json schema defined in declarative_component_schema.yaml schema failed"
-            ) from e
+            raise ValidationError(format_manifest_validation_error(e)) from e
 
     def _migrate_and_transform_config(
         self,

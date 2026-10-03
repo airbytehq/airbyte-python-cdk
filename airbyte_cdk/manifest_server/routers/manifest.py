@@ -56,7 +56,9 @@ def safe_build_source(
             slice_limit,
         )
     except jsonschema.exceptions.ValidationError as e:
-        raise HTTPException(status_code=400, detail=f"Invalid manifest: {e.message}")
+        raise HTTPException(
+            status_code=400, detail=filter_secrets(f"Invalid manifest: {e.message}")
+        )
 
 
 router = APIRouter(
@@ -213,6 +215,9 @@ def resolve(request: ResolveRequest) -> ManifestResponse:
     try:
         source = safe_build_source(request.manifest.model_dump(), {})
         return ManifestResponse(manifest=Manifest(**source.resolved_manifest))
+    except HTTPException:
+        # Re-raise HTTPExceptions as-is (like the invalid manifest check in safe_build_source)
+        raise
     except Exception as exc:
         # Filter secrets from error message before returning to client
         sanitized_message = filter_secrets(f"Error resolving manifest: {str(exc)}")
@@ -258,6 +263,9 @@ def full_resolve(request: FullResolveRequest) -> ManifestResponse:
 
         manifest["streams"] = streams
         return ManifestResponse(manifest=Manifest(**manifest))
+    except HTTPException:
+        # Re-raise HTTPExceptions as-is (like the invalid manifest check in safe_build_source)
+        raise
     except Exception as exc:
         # Filter secrets from error message before returning to client
         sanitized_message = filter_secrets(f"Error full resolving manifest: {str(exc)}")
