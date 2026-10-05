@@ -4,10 +4,12 @@
 
 import concurrent
 import logging
-from queue import Queue
+import os
+import time
+from queue import Empty, Queue
 from typing import Iterable, Iterator, List, Optional
 
-from airbyte_cdk.models import AirbyteMessage
+from airbyte_cdk.models import AirbyteMessage, FailureType
 from airbyte_cdk.sources.concurrent_source.concurrent_read_processor import ConcurrentReadProcessor
 from airbyte_cdk.sources.concurrent_source.partition_generation_completed_sentinel import (
     PartitionGenerationCompletedSentinel,
@@ -25,6 +27,7 @@ from airbyte_cdk.sources.streams.concurrent.partitions.types import (
 )
 from airbyte_cdk.sources.types import Record
 from airbyte_cdk.sources.utils.slice_logger import DebugSliceLogger, SliceLogger
+from airbyte_cdk.utils import AirbyteTracedException
 
 
 class ConcurrentSource:
@@ -36,6 +39,7 @@ class ConcurrentSource:
     """
 
     DEFAULT_TIMEOUT_SECONDS = 900
+    QUEUE_POLL_INTERVAL_SECONDS = 60
 
     @staticmethod
     def create(
@@ -46,6 +50,7 @@ class ConcurrentSource:
         message_repository: MessageRepository,
         queue: Optional[Queue[QueueItem]] = None,
         timeout_seconds: int = DEFAULT_TIMEOUT_SECONDS,
+        no_progress_timeout_seconds: Optional[int] = None,
     ) -> "ConcurrentSource":
         if initial_number_of_partitions_to_generate < 1:
             raise ValueError(
@@ -72,6 +77,7 @@ class ConcurrentSource:
             message_repository=message_repository,
             initial_number_partitions_to_generate=initial_number_of_partitions_to_generate,
             timeout_seconds=timeout_seconds,
+            no_progress_timeout_seconds=no_progress_timeout_seconds,
         )
 
     def __init__(
@@ -83,6 +89,7 @@ class ConcurrentSource:
         message_repository: MessageRepository = InMemoryMessageRepository(),
         initial_number_partitions_to_generate: int = 1,
         timeout_seconds: int = DEFAULT_TIMEOUT_SECONDS,
+        no_progress_timeout_seconds: Optional[int] = None,
     ) -> None:
         """
         :param threadpool: The threadpool to submit tasks to
@@ -90,7 +97,8 @@ class ConcurrentSource:
         :param slice_logger: The slice logger used to create messages on new slices
         :param message_repository: The repository to emit messages to
         :param initial_number_partitions_to_generate: The initial number of concurrent partition generation tasks. Limiting this number ensures will limit the latency of the first records emitted. While the latency is not critical, emitting the records early allows the platform and the destination to process them as early as possible.
-        :param timeout_seconds: The maximum number of seconds to wait for a record to be read from the queue. If no record is read within this time, the source will stop reading and return.
+        :param timeout_seconds: The interval in seconds between no-progress warning logs.
+        :param no_progress_timeout_seconds: The optional number of seconds without queue progress before stopping the source.
         """
         self._threadpool = threadpool
         self._logger = logger
@@ -98,6 +106,9 @@ class ConcurrentSource:
         self._message_repository = message_repository
         self._initial_number_partitions_to_generate = initial_number_partitions_to_generate
         self._timeout_seconds = timeout_seconds
+        self._no_progress_timeout_seconds = self._get_no_progress_timeout(
+            no_progress_timeout_seconds
+        )
 
         # We set a maxsize to for the main thread to process record items when the queue size grows. This assumes that there are less
         # threads generating partitions that than are max number of workers. If it weren't the case, we could have threads only generating
@@ -135,6 +146,35 @@ class ConcurrentSource:
         self._threadpool.check_for_errors_and_shutdown()
         self._logger.info("Finished syncing")
 
+    def _get_no_progress_timeout(self, configured_timeout: Optional[int]) -> Optional[int]:
+        if configured_timeout is not None:
+            if configured_timeout <= 0:
+                self._logger.warning(
+                    "Ignoring non-positive no_progress_timeout_seconds value: %s",
+                    configured_timeout,
+                )
+                return None
+            return configured_timeout
+
+        configured_timeout_from_env = os.getenv("AIRBYTE_NO_PROGRESS_TIMEOUT_SECONDS")
+        if configured_timeout_from_env is None:
+            return None
+        try:
+            timeout = int(configured_timeout_from_env)
+        except ValueError:
+            self._logger.warning(
+                "Ignoring invalid AIRBYTE_NO_PROGRESS_TIMEOUT_SECONDS value: %s",
+                configured_timeout_from_env,
+            )
+            return None
+        if timeout <= 0:
+            self._logger.warning(
+                "Ignoring non-positive AIRBYTE_NO_PROGRESS_TIMEOUT_SECONDS value: %s",
+                configured_timeout_from_env,
+            )
+            return None
+        return timeout
+
     def _submit_initial_partition_generators(
         self, concurrent_stream_processor: ConcurrentReadProcessor
     ) -> Iterable[AirbyteMessage]:
@@ -148,7 +188,49 @@ class ConcurrentSource:
         queue: Queue[QueueItem],
         concurrent_stream_processor: ConcurrentReadProcessor,
     ) -> Iterable[AirbyteMessage]:
-        while airbyte_message_or_record_or_exception := queue.get():
+        last_progress = time.monotonic()
+        last_warning = last_progress
+        poll_interval = min(
+            self.QUEUE_POLL_INTERVAL_SECONDS,
+            self._timeout_seconds,
+            self._no_progress_timeout_seconds or self._timeout_seconds,
+        )
+        while True:
+            try:
+                airbyte_message_or_record_or_exception = queue.get(timeout=poll_interval)
+            except Empty:
+                now = time.monotonic()
+                if now - last_progress >= self._timeout_seconds:
+                    if now - last_warning >= self._timeout_seconds:
+                        in_flight_description = (
+                            concurrent_stream_processor.get_in_flight_streams_description()
+                        )
+                        self._logger.warning(
+                            "No queue progress for %s seconds. %s",
+                            self._timeout_seconds,
+                            in_flight_description,
+                        )
+                        last_warning = now
+                if (
+                    self._no_progress_timeout_seconds is not None
+                    and now - last_progress >= self._no_progress_timeout_seconds
+                ):
+                    in_flight_description = (
+                        concurrent_stream_processor.get_in_flight_streams_description()
+                    )
+                    self._threadpool.shutdown()
+                    raise AirbyteTracedException(
+                        message=f"Source made no progress for {self._no_progress_timeout_seconds} seconds and was stopped.",
+                        internal_message=(
+                            f"No queue progress for {self._no_progress_timeout_seconds} seconds. "
+                            f"{in_flight_description}"
+                        ),
+                        failure_type=FailureType.system_error,
+                    )
+                continue
+            last_progress = time.monotonic()
+            if not airbyte_message_or_record_or_exception:
+                break
             yield from self._handle_item(
                 airbyte_message_or_record_or_exception,
                 concurrent_stream_processor,
