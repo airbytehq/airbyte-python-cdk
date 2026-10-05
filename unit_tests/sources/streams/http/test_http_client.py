@@ -39,8 +39,6 @@ from airbyte_cdk.sources.streams.http.page_size_reduction_exception import (
 from airbyte_cdk.sources.streams.http.request_timeout import (
     DEFAULT_CONNECT_TIMEOUT_SECONDS,
     DEFAULT_READ_TIMEOUT_SECONDS,
-    ENV_HTTP_CONNECT_TIMEOUT_SECONDS,
-    ENV_HTTP_READ_TIMEOUT_SECONDS,
 )
 from airbyte_cdk.sources.streams.http.request_window_split_exception import (
     RequestWindowSplitRequiredException,
@@ -269,15 +267,13 @@ def test_constructor_request_timeout_overrides_default():
     assert session.send.call_args.kwargs["timeout"] == (1, 2)
 
 
-def test_env_vars_override_default_timeout(monkeypatch):
-    monkeypatch.setenv(ENV_HTTP_CONNECT_TIMEOUT_SECONDS, "5")
-    monkeypatch.setenv(ENV_HTTP_READ_TIMEOUT_SECONDS, "9")
+def test_constructor_single_value_request_timeout_is_passed_through():
     session = _mock_success_session()
-    client = HttpClient(name="test", logger=MagicMock(), session=session)
+    client = HttpClient(name="test", logger=MagicMock(), session=session, request_timeout=10)
 
     client.send_request("GET", "https://test.example", request_kwargs={})
 
-    assert session.send.call_args.kwargs["timeout"] == (5.0, 9.0)
+    assert session.send.call_args.kwargs["timeout"] == 10
 
 
 def test_hanging_server_times_out_retries_and_raises():

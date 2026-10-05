@@ -24,7 +24,7 @@ from airbyte_cdk.sources.file_based.config.unstructured_format import (
 from airbyte_cdk.sources.file_based.exceptions import RecordParseError
 from airbyte_cdk.sources.file_based.file_types import UnstructuredParser
 from airbyte_cdk.sources.file_based.remote_file import RemoteFile
-from airbyte_cdk.sources.streams.http.request_timeout import ENV_HTTP_CONNECT_TIMEOUT_SECONDS
+from airbyte_cdk.sources.streams.http import request_timeout
 from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 
 FILE_URI = "path/to/file.xyz"
@@ -705,14 +705,14 @@ def test_read_file_remotely_applies_connect_only_timeout(mocker):
     assert mocked_post.call_args.kwargs["timeout"] == (30.0, None)
 
 
-def test_read_file_remotely_connect_timeout_honours_env_var(mocker, monkeypatch):
+def test_read_file_remotely_connect_timeout_follows_default(mocker, monkeypatch):
     response = mocker.Mock(status_code=200)
     response.json.return_value = []
     mocked_post = mocker.patch(
         "airbyte_cdk.sources.file_based.file_types.unstructured_parser.requests.post",
         return_value=response,
     )
-    monkeypatch.setenv(ENV_HTTP_CONNECT_TIMEOUT_SECONDS, "5")
+    monkeypatch.setattr(request_timeout, "DEFAULT_CONNECT_TIMEOUT_SECONDS", 5.0)
     format_config = APIProcessingConfigModel(mode="api", api_key="test")
 
     UnstructuredParser()._read_file_remotely(
@@ -723,7 +723,7 @@ def test_read_file_remotely_connect_timeout_honours_env_var(mocker, monkeypatch)
 
 
 def test_read_file_remotely_hanging_connect_fails_fast(monkeypatch):
-    monkeypatch.setenv(ENV_HTTP_CONNECT_TIMEOUT_SECONDS, "0.5")
+    monkeypatch.setattr(request_timeout, "DEFAULT_CONNECT_TIMEOUT_SECONDS", 0.5)
     format_config = APIProcessingConfigModel(
         mode="api",
         api_key="test",

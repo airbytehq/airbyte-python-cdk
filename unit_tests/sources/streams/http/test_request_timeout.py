@@ -1,18 +1,18 @@
 # Copyright (c) 2025 Airbyte, Inc., all rights reserved.
 
+from airbyte_cdk.sources.streams.http import request_timeout
 from airbyte_cdk.sources.streams.http.request_timeout import (
-    ENV_HTTP_CONNECT_TIMEOUT_SECONDS,
     connect_only_request_timeout,
+    default_request_timeout,
 )
 
 
-def test_connect_only_request_timeout_defaults(monkeypatch):
-    monkeypatch.delenv(ENV_HTTP_CONNECT_TIMEOUT_SECONDS, raising=False)
-
+def test_request_timeout_defaults():
+    assert default_request_timeout() == (30.0, 300.0)
     assert connect_only_request_timeout() == (30.0, None)
 
 
-def test_connect_only_request_timeout_honours_env_var(monkeypatch):
-    monkeypatch.setenv(ENV_HTTP_CONNECT_TIMEOUT_SECONDS, "7")
+def test_connect_only_request_timeout_follows_default_connect_timeout(monkeypatch):
+    monkeypatch.setattr(request_timeout, "DEFAULT_CONNECT_TIMEOUT_SECONDS", 7.0)
 
     assert connect_only_request_timeout() == (7.0, None)
