@@ -3,6 +3,8 @@
 import json
 import logging
 import os
+import re
+import threading
 import time
 from datetime import timedelta
 from unittest.mock import MagicMock, patch
@@ -41,6 +43,7 @@ from airbyte_cdk.sources.streams.http.requests_native_auth import (
     Oauth2Authenticator,
     TokenAuthenticator,
 )
+from airbyte_cdk.utils.constants import ENV_REQUEST_CACHE_PATH
 from airbyte_cdk.utils.datetime_helpers import ab_datetime_now
 from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 
@@ -761,6 +764,71 @@ def test_given_different_headers_then_response_is_not_cached(requests_mock):
     )
 
     assert second_response.json()["test"] == "second response"
+
+
+def test_cache_read_holds_the_lock_shared_by_every_cache(tmp_path, monkeypatch):
+    monkeypatch.setenv(ENV_REQUEST_CACHE_PATH, str(tmp_path))
+    first, second = (
+        HttpClient(name=name, logger=MagicMock(), use_cache=True)._session.cache
+        for name in ("first", "second")
+    )
+    assert first.responses._lock is second.responses._lock is second.redirects._lock
+
+    responses = second.responses
+    connection = responses._connection
+    lock_owned_during_read = []
+
+    class SpyCursor:
+        def __init__(self, cursor):
+            self.cursor = cursor
+
+        def fetchone(self):
+            lock_owned_during_read.append(responses._lock._is_owned())
+            return self.cursor.fetchone()
+
+        def close(self):
+            lock_owned_during_read.append(responses._lock._is_owned())
+            self.cursor.close()
+
+    class SpyConnection:
+        def execute(self, *args):
+            lock_owned_during_read.append(responses._lock._is_owned())
+            return SpyCursor(connection.execute(*args))
+
+    with patch.object(responses, "_connection", SpyConnection()):
+        assert responses.get("missing_key") is None
+
+    assert lock_owned_during_read == [True, True, True]
+
+
+@pytest.mark.parametrize("in_memory", [False, True], ids=["file", "in_memory"])
+def test_concurrent_cached_sends_do_not_fail(requests_mock, tmp_path, monkeypatch, in_memory):
+    if in_memory:
+        monkeypatch.delenv(ENV_REQUEST_CACHE_PATH, raising=False)
+    else:
+        monkeypatch.setenv(ENV_REQUEST_CACHE_PATH, str(tmp_path))
+    requests_mock.get(re.compile("https://api.example.com/.*"), json={"data": [1]})
+    clients = [HttpClient(name="same", logger=MagicMock(), use_cache=True) for _ in range(2)]
+    errors = []
+
+    def send(thread_id: int) -> None:
+        for i in range(50):
+            # even requests cache a url of their own, odd ones read urls every thread caches
+            path = str(i % 5) if i % 2 else f"{thread_id}/{i}"
+            try:
+                clients[thread_id % 2].send_request(
+                    "GET", f"https://api.example.com/{path}", request_kwargs={}
+                )
+            except Exception as exception:
+                errors.append(exception)
+
+    threads = [threading.Thread(target=send, args=(thread_id,)) for thread_id in range(8)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+    assert errors == []
 
 
 def test_given_noproxy_for_another_url_when_send_request_then_do_not_break(requests_mock):

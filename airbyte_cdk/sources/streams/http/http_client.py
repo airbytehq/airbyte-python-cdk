@@ -4,6 +4,7 @@
 
 import logging
 import os
+import threading
 import urllib
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Mapping, Optional, Tuple, Union
@@ -82,23 +83,31 @@ BODY_REQUEST_METHODS = ("GET", "POST", "PUT", "PATCH")
 
 def monkey_patched_get_item(self, key):  # type: ignore # this interface is a copy/paste from the requests_cache lib
     """
-    con.execute can lead to `sqlite3.InterfaceError: bad parameter or other API misuse`. There was a fix implemented
-    [here](https://github.com/requests-cache/requests-cache/commit/5ca6b9cdcb2797dd2fed485872110ccd72aee55d#diff-f43db4a5edf931647c32dec28ea7557aae4cae8444af4b26c8ecbe88d8c925aaL330-R332)
-    but there is still no official releases of requests_cache that this is part of. Hence, we will monkeypatch it for now.
+    requests_cache shares one sqlite3 connection between threads but only takes `self._lock` for
+    writes. A read that races another thread on that connection can return an empty value
+    (`EOFError: Ran out of input`), raise that thread's result code (`sqlite3.DatabaseError: no more
+    rows available`) or, when SQLite is not built in serialized mode, crash the interpreter. Reads
+    take the lock too, until requests_cache locks them itself.
     """
-    with self.connection() as con:
+    with self._lock, self.connection() as con:
         # Using placeholders here with python 3.12+ and concurrency results in the error:
         # sqlite3.InterfaceError: bad parameter or other API misuse
         cur = con.execute(f"SELECT value FROM {self.table_name} WHERE key='{key}'")
         row = cur.fetchone()
         cur.close()
-        if not row:
-            raise KeyError(key)
+    if not row:
+        raise KeyError(key)
 
-        return self.deserialize(key, row[0])
+    return self.deserialize(key, row[0])
 
 
 requests_cache.SQLiteDict.__getitem__ = monkey_patched_get_item  # type: ignore # see the method doc for more information
+
+# Every cache backend HttpClient creates uses this lock. Without REQUEST_CACHE_PATH they all share
+# one in-memory database, where a connection using a table another one is writing fails with
+# `database table is locked` instead of waiting.
+# ponytail: one lock per process, use one lock per sqlite path if contention ever shows
+_SQLITE_CACHE_LOCK = threading.RLock()
 
 
 def _as_auxiliary_request_log(
@@ -213,7 +222,10 @@ class HttpClient:
             # * https://github.com/requests-cache/requests-cache/commit/7fa89ffda300331c37d8fad7f773348a3b5b0236#diff-f43db4a5edf931647c32dec28ea7557aae4cae8444af4b26c8ecbe88d8c925aaR238
             # * https://github.com/requests-cache/requests-cache/commit/7fa89ffda300331c37d8fad7f773348a3b5b0236#diff-2e7f95b7d7be270ff1a8118f817ea3e6663cdad273592e536a116c24e6d23c18R164-R168
             # * `If the application running SQLite crashes, the data will be safe, but the database [might become corrupted](https://www.sqlite.org/howtocorrupt.html#cfgerr) if the operating system crashes or the computer loses power before that data has been written to the disk surface.` in [this description](https://www.sqlite.org/pragma.html#pragma_synchronous).
-            backend = requests_cache.SQLiteCache(sqlite_path, fast_save=True, wal=True)
+            # The backend creates its tables when built, so build it under the lock too
+            with _SQLITE_CACHE_LOCK:
+                backend = requests_cache.SQLiteCache(sqlite_path, fast_save=True, wal=True)
+                backend.responses._lock = backend.redirects._lock = _SQLITE_CACHE_LOCK
             return CachedLimiterSession(
                 cache_name=sqlite_path,
                 backend=backend,
