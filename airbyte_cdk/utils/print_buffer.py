@@ -52,9 +52,15 @@ class PrintBuffer:
                 self.last_flush_time = current_time
 
     def flush(self) -> None:
+        """Writes the buffered content to the real stdout and pushes it through to the file descriptor.
+
+        `sys.__stdout__` is block-buffered when stdout is a pipe, so without the explicit
+        `flush()` the messages would stay in the interpreter's ~8 KiB text buffer until it fills up.
+        """
         with self.lock:
             combined_message = self.buffer.getvalue()
             sys.__stdout__.write(combined_message)  # type: ignore[union-attr]
+            sys.__stdout__.flush()  # type: ignore[union-attr]
             self.buffer = StringIO()
 
     def __enter__(self) -> "PrintBuffer":
