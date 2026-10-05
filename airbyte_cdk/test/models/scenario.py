@@ -24,6 +24,49 @@ if TYPE_CHECKING:
     from collections.abc import Generator
 
 
+UPDATED_CONFIGURATIONS_DIRNAME = "updated_configurations"
+"""Subdirectory (next to a config file) holding configs rotated during a test run.
+
+Connectors that rotate credentials (for example, single-use OAuth refresh tokens)
+emit the new config as a `CONTROL`/`CONNECTOR_CONFIG` message. The standard test
+harness persists each such config as
+`<config dir>/updated_configurations/<config stem>|<emitted_at_ms>.json`. Later
+tests prefer the newest of these files over the original config, and CI pushes
+them back to the secrets store with `airbyte-ops secrets push`.
+"""
+
+
+def _updated_config_sort_key(path: Path) -> tuple[int, float]:
+    """Order updated config files by their `emitted_at` suffix, then by mtime."""
+    _, _, suffix = path.stem.partition("|")
+    try:
+        emitted_at = int(suffix)
+    except ValueError:
+        emitted_at = -1
+    return emitted_at, path.stat().st_mtime
+
+
+def find_latest_updated_config_file(config_path: Path) -> Path | None:
+    """Return the newest persisted update for `config_path`, if any.
+
+    Looks for `<config dir>/updated_configurations/<config stem>|*.json`. Returns
+    `None` when no update has been persisted.
+    """
+    updated_dir = config_path.parent / UPDATED_CONFIGURATIONS_DIRNAME
+    if not updated_dir.is_dir():
+        return None
+
+    candidates = [
+        path
+        for path in updated_dir.glob(f"{config_path.stem}|*{config_path.suffix}")
+        if path.is_file()
+    ]
+    if not candidates:
+        return None
+
+    return max(candidates, key=_updated_config_sort_key)
+
+
 class ConnectorTestScenario(BaseModel):
     """Acceptance test scenario, as a Pydantic model.
 
@@ -75,6 +118,11 @@ class ConnectorTestScenario(BaseModel):
         If a config dictionary has already been loaded, return it. Otherwise, load
         the config file and return the dictionary.
 
+        When loading from `self.config_path`, the newest persisted update under
+        `updated_configurations/` (see `find_latest_updated_config_file`) takes
+        precedence, so credentials rotated by an earlier test in the same run are
+        reused instead of the now-stale original.
+
         If `self.config_dict` and `self.config_path` are both `None`:
         - return an empty dictionary if `empty_if_missing` is True
         - raise a ValueError if `empty_if_missing` is False
@@ -82,21 +130,40 @@ class ConnectorTestScenario(BaseModel):
         if self.config_dict is not None:
             return self.config_dict
 
-        if self.config_path is not None:
-            config_path = self.config_path
-            if not config_path.is_absolute():
-                # We usually receive a relative path here. Let's resolve it.
-                config_path = (connector_root / self.config_path).resolve().absolute()
-
+        effective_config_path = self.get_effective_config_path(connector_root)
+        if effective_config_path is not None:
             return cast(
                 dict[str, Any],
-                yaml.safe_load(config_path.read_text()),
+                yaml.safe_load(effective_config_path.read_text()),
             )
 
         if empty_if_missing:
             return {}
 
         raise ValueError("No config dictionary or path provided.")
+
+    def resolve_config_path(self, connector_root: Path) -> Path | None:
+        """Return `self.config_path` as an absolute path, or `None` if unset.
+
+        Relative paths (the usual case) are resolved against `connector_root`.
+        """
+        if self.config_path is None:
+            return None
+
+        config_path = self.config_path
+        if not config_path.is_absolute():
+            # We usually receive a relative path here. Let's resolve it.
+            config_path = (connector_root / self.config_path).resolve().absolute()
+
+        return config_path
+
+    def get_effective_config_path(self, connector_root: Path) -> Path | None:
+        """Return the config file to read: the newest persisted update, else the original."""
+        config_path = self.resolve_config_path(connector_root)
+        if config_path is None:
+            return None
+
+        return find_latest_updated_config_file(config_path) or config_path
 
     @property
     def expected_outcome(self) -> ExpectedOutcome:
