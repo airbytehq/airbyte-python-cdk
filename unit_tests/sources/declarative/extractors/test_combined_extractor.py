@@ -444,17 +444,17 @@ def test_skip_empty_records_does_not_warn_when_nothing_is_dropped(caplog):
     assert [record.message for record in caplog.records if record.levelno == logging.WARNING] == []
 
 
-def _counting_copy(extractor: CombinedExtractor) -> CombinedExtractor:
-    """What the factory hands a record-counting paginator: the same tree, told to count its drops."""
+def _counting_drops(extractor: CombinedExtractor) -> CombinedExtractor:
+    """What the factory does to a record selector's extractor: every level counts its drops."""
     extractor.count_dropped_empty_records = True
     for sub_extractor in extractor.extractors:
         if isinstance(sub_extractor, CombinedExtractor):
-            _counting_copy(sub_extractor)
+            _counting_drops(sub_extractor)
     return extractor
 
 
-def test_the_counting_copy_counts_dropped_empty_records_under_union():
-    extractor = _counting_copy(
+def test_a_drop_counting_extractor_counts_dropped_empty_records_under_union():
+    extractor = _counting_drops(
         CombinedExtractor(
             extractors=[
                 _CountingExtractor(records=[{"id": 1}, None, {}]),
@@ -469,7 +469,7 @@ def test_the_counting_copy_counts_dropped_empty_records_under_union():
     assert len(list(extractor.extract_records(create_response(GRAPHQL_BODY)))) == 4
 
 
-def test_the_counting_copy_counts_the_same_winner_the_record_stream_reads():
+def test_a_drop_counting_extractor_counts_the_same_winner_the_record_stream_reads():
     """A page of nulls must not win the count while the record stream falls through past it.
 
     The winner is chosen by the surviving records, so the count is the fallback path's, dropped
@@ -488,7 +488,7 @@ def test_the_counting_copy_counts_the_same_winner_the_record_stream_reads():
     assert (
         len(
             list(
-                _counting_copy(_monday_extractor(skip_empty_records=True)).extract_records(
+                _counting_drops(_monday_extractor(skip_empty_records=True)).extract_records(
                     create_response(body)
                 )
             )
@@ -497,8 +497,8 @@ def test_the_counting_copy_counts_the_same_winner_the_record_stream_reads():
     )
 
 
-def test_the_counting_copy_counts_nothing_when_every_record_is_empty():
-    extractor = _counting_copy(
+def test_a_drop_counting_extractor_counts_nothing_when_every_record_is_empty():
+    extractor = _counting_drops(
         CombinedExtractor(
             extractors=[_CountingExtractor(records=[None]), _CountingExtractor(records=[{}])],
             mode=CombineMode.first_match,
@@ -510,8 +510,8 @@ def test_the_counting_copy_counts_nothing_when_every_record_is_empty():
     assert list(extractor.extract_records(create_response(GRAPHQL_BODY))) == []
 
 
-def test_the_counting_copy_counts_the_drops_of_a_nested_combined_extractor():
-    extractor = _counting_copy(
+def test_a_drop_counting_extractor_counts_the_drops_of_a_nested_combined_extractor():
+    extractor = _counting_drops(
         CombinedExtractor(
             extractors=[
                 CombinedExtractor(
@@ -535,9 +535,9 @@ def test_the_counting_copy_counts_the_drops_of_a_nested_combined_extractor():
     assert len(list(extractor.extract_records(create_response(GRAPHQL_BODY)))) == 2
 
 
-def test_the_counting_copy_does_not_warn(caplog):
-    """The record stream already warned about the page the paginator re-reads."""
-    extractor = _counting_copy(
+def test_a_drop_counting_extractor_warns_about_the_records_it_drops(caplog):
+    """It is the only extractor reading the page, so nothing else reports the drop."""
+    extractor = _counting_drops(
         CombinedExtractor(
             extractors=[_CountingExtractor(records=[{"id": 1}, None])],
             skip_empty_records=True,
@@ -548,7 +548,9 @@ def test_the_counting_copy_does_not_warn(caplog):
     with caplog.at_level(logging.WARNING, logger="airbyte"):
         list(extractor.extract_records(create_response(GRAPHQL_BODY)))
 
-    assert not [record for record in caplog.records if record.levelno == logging.WARNING]
+    warnings = [record.message for record in caplog.records if record.levelno == logging.WARNING]
+    assert len(warnings) == 1
+    assert "dropped 1 empty record(s)" in warnings[0]
 
 
 def test_the_documented_first_match_example_yields_one_record_per_item():

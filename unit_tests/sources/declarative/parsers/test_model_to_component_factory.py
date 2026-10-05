@@ -4427,15 +4427,12 @@ def test_create_offset_increment():
         inject_on_first_request=True,
     )
 
-    expected_extractor = DpathExtractor(field_path=["results"], config=input_config, parameters={})
-    extractor_model = DpathExtractorModel(
-        type="DpathExtractor", field_path=expected_extractor.field_path
-    )
+    extractor_model = DpathExtractorModel(type="DpathExtractor", field_path=["results"])
 
     expected_strategy = OffsetIncrement(
         page_size=10,
         inject_on_first_request=True,
-        extractor=expected_extractor,
+        extractor=None,
         parameters={},
         config=input_config,
     )
@@ -4448,8 +4445,7 @@ def test_create_offset_increment():
     assert strategy.inject_on_first_request == expected_strategy.inject_on_first_request
     assert strategy.config == input_config
 
-    assert isinstance(strategy.extractor, DpathExtractor)
-    assert strategy.extractor.field_path == expected_extractor.field_path
+    assert strategy.extractor is None
 
 
 class MyCustomSchemaLoader(SchemaLoader):
@@ -9691,12 +9687,10 @@ def test_first_match_combined_extractor_counts_only_the_winning_sub_extractor_fo
     assert isinstance(retriever.record_selector.extractor, CombinedExtractor)
     pagination_strategy = retriever.paginator.pagination_strategy
     assert isinstance(pagination_strategy, OffsetIncrement)
-    # The paginator counts records with its own copy, so the response is traversed twice per page.
-    assert isinstance(pagination_strategy.extractor, CombinedExtractor)
-    assert pagination_strategy.extractor is not retriever.record_selector.extractor
 
     # `a` misses, so the winner is `b` with its two records: the offset advances by 2, not by 4.
     response = _json_response({"a": [], "b": [{"id": 1}, {"id": 2}]})
+    list(retriever.record_selector.select_records(response, {}, {}))
     assert (
         pagination_strategy.next_page_token(
             response=response, last_page_size=2, last_record=None, last_page_token_value=0
@@ -9717,7 +9711,6 @@ def test_union_combined_extractor_is_accepted_by_a_page_increment_paginator():
 
     pagination_strategy = retriever.paginator.pagination_strategy
     assert isinstance(pagination_strategy, PageIncrement)
-    assert isinstance(pagination_strategy.extractor, CombinedExtractor)
 
 
 _FIRST_MATCH_SKIPPING_EMPTY_RECORDS = """          type: CombinedExtractor
@@ -9745,16 +9738,12 @@ def test_a_record_counting_paginator_counts_the_empty_records_the_extractor_drop
         _retriever_manifest_with_paginator(_FIRST_MATCH_SKIPPING_EMPTY_RECORDS, pagination_strategy)
     )
 
-    record_selector_extractor = retriever.record_selector.extractor
-    counting_extractor = retriever.paginator.pagination_strategy.extractor
-    assert isinstance(record_selector_extractor, CombinedExtractor)
-    assert isinstance(counting_extractor, CombinedExtractor)
-    assert record_selector_extractor.count_dropped_empty_records is False
-    assert counting_extractor.count_dropped_empty_records is True
-
     full_page_with_a_null = _json_response({"a": [None, {"id": 1}]})
-    assert list(record_selector_extractor.extract_records(full_page_with_a_null)) == [{"id": 1}]
-    # `last_page_size` is what the retriever emitted; the strategy must count the page itself.
+    assert [
+        record.data
+        for record in retriever.record_selector.select_records(full_page_with_a_null, {}, {})
+    ] == [{"id": 1}]
+    # `last_page_size` is what the retriever emitted; the strategy must count the whole page.
     assert (
         retriever.paginator.pagination_strategy.next_page_token(
             response=full_page_with_a_null,
@@ -9764,6 +9753,85 @@ def test_a_record_counting_paginator_counts_the_empty_records_the_extractor_drop
         )
         is not None
     )
+
+
+def _filtering_retriever(
+    pagination_strategy_type: str, decoder: Optional[Mapping[str, Any]] = None
+) -> SimpleRetriever:
+    """Requests pages of two records and drops the record with id 2."""
+    return _build_retriever(
+        {
+            "type": "SimpleRetriever",
+            **({"decoder": decoder} if decoder else {}),
+            "requester": {
+                "type": "HttpRequester",
+                "url_base": "https://api.test.com",
+                "path": "/records",
+                "http_method": "GET",
+            },
+            "paginator": {
+                "type": "DefaultPaginator",
+                "pagination_strategy": {"type": pagination_strategy_type, "page_size": 2},
+                "page_token_option": {
+                    "type": "RequestOption",
+                    "inject_into": "request_parameter",
+                    "field_name": "token",
+                },
+            },
+            "record_selector": {
+                "type": "RecordSelector",
+                "extractor": {"type": "DpathExtractor", "field_path": ["results"]},
+                "record_filter": {"type": "RecordFilter", "condition": "{{ record['id'] != 2 }}"},
+            },
+        }
+    )
+
+
+@pytest.mark.parametrize(
+    "pagination_strategy_type, second_page_token",
+    [("OffsetIncrement", "2"), ("PageIncrement", "1")],
+)
+def test_a_record_counting_paginator_extracts_each_page_once(
+    requests_mock, mocker, pagination_strategy_type: str, second_page_token: str
+):
+    """The filter drops a record of the full first page, which must not end the pagination."""
+    retriever = _filtering_retriever(pagination_strategy_type)
+    requests_mock.get(
+        "https://api.test.com/records",
+        [{"json": {"results": [{"id": 1}, {"id": 2}]}}, {"json": {"results": [{"id": 3}]}}],
+    )
+    extract_records = mocker.spy(DpathExtractor, "extract_records")
+
+    records = list(retriever.read_records({}, StreamSlice(partition={}, cursor_slice={})))
+
+    assert [record.data["id"] for record in records] == [1, 3]
+    assert [request.qs for request in requests_mock.request_history] == [
+        {},
+        {"token": [second_page_token]},
+    ]
+    assert extract_records.call_count == 2
+
+
+@pytest.mark.parametrize("pagination_strategy_type", ["OffsetIncrement", "PageIncrement"])
+def test_a_record_counting_paginator_paginates_a_streamed_response(
+    requests_mock, pagination_strategy_type: str
+):
+    """A streamed body can only be read once: counting the page by reading it again found none."""
+    retriever = _filtering_retriever(
+        pagination_strategy_type,
+        decoder={"type": "GzipDecoder", "decoder": {"type": "JsonDecoder"}},
+    )
+    requests_mock.get(
+        "https://api.test.com/records",
+        [
+            {"content": gzip.compress(json.dumps({"results": page}).encode())}
+            for page in ([{"id": 1}, {"id": 3}], [{"id": 4}])
+        ],
+    )
+
+    records = list(retriever.read_records({}, StreamSlice(partition={}, cursor_slice={})))
+
+    assert [record.data["id"] for record in records] == [1, 3, 4]
 
 
 def _async_retriever_definition(
@@ -9818,7 +9886,7 @@ def _download_paginator(pagination_strategy_type: str) -> Dict[str, Any]:
     }
 
 
-def _build_download_paginator(definition: Mapping[str, Any]) -> Any:
+def _build_download_retriever(definition: Mapping[str, Any]) -> Any:
     component = factory.create_component(
         model_type=AsyncRetrieverModel,
         component_definition=definition,
@@ -9831,7 +9899,7 @@ def _build_download_paginator(definition: Mapping[str, Any]) -> Any:
     job_repository = component.stream_slicer.job_orchestrator_factory(
         [StreamSlice(partition={}, cursor_slice={})]
     )._job_repository
-    return job_repository.download_retriever.paginator
+    return job_repository.download_retriever
 
 
 def test_union_combined_download_extractor_is_rejected_by_an_offset_increment_download_paginator():
@@ -9853,7 +9921,7 @@ def test_union_combined_download_extractor_is_rejected_by_an_offset_increment_do
     )
 
     with pytest.raises(AirbyteTracedException) as exc_info:
-        _build_download_paginator(definition)
+        _build_download_retriever(definition)
 
     assert exc_info.value.failure_type == FailureType.config_error
     assert "union" in exc_info.value.message
@@ -9874,13 +9942,14 @@ def test_combined_download_extractor_skipping_empty_records_counts_them_for_the_
         _download_paginator("PageIncrement"),
     )
 
-    pagination_strategy = _build_download_paginator(definition).pagination_strategy
+    download_retriever = _build_download_retriever(definition)
+    pagination_strategy = download_retriever.paginator.pagination_strategy
     assert isinstance(pagination_strategy, PageIncrement)
-    assert isinstance(pagination_strategy.extractor, CombinedExtractor)
-    assert pagination_strategy.extractor.count_dropped_empty_records is True
+    response = _json_response({"a": [None, {"id": 1}]})
+    list(download_retriever.record_selector.select_records(response, {}, {}))
     assert (
         pagination_strategy.next_page_token(
-            response=_json_response({"a": [None, {"id": 1}]}),
+            response=response,
             last_page_size=1,
             last_record={"id": 1},
             last_page_token_value=0,
@@ -9896,7 +9965,7 @@ def test_download_paginator_keeps_the_retriever_count_for_other_download_extract
         _download_paginator("OffsetIncrement"),
     )
 
-    pagination_strategy = _build_download_paginator(definition).pagination_strategy
+    pagination_strategy = _build_download_retriever(definition).paginator.pagination_strategy
     assert isinstance(pagination_strategy, OffsetIncrement)
     assert pagination_strategy.extractor is None
 

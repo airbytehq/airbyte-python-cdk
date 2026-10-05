@@ -34,9 +34,8 @@ _NO_RECORD = _NoRecord()
 class _DroppedEmptyRecord:
     """Stands in for an empty record dropped by `skip_empty_records` when the extractor counts a page.
 
-    A record-counting paginator only takes the length of what the extractor yields, so the
-    placeholder makes the dropped record count toward the page size without ever reaching the
-    record stream.
+    `RecordSelector` counts every item the extractor yields and discards this placeholder, so the
+    dropped record counts toward the page size without ever reaching the record stream.
     """
 
 
@@ -132,12 +131,10 @@ class CombinedExtractor(RecordExtractor):
     Combining three extractors over a large response costs roughly three times the decode time of
     a single one.
 
-    Note that an `OffsetIncrement` or `PageIncrement` paginator builds its own copy of the
-    extractor to count the records of a page, which doubles that cost.
-
     ## Record-counting paginators
 
-    The count those paginators obtain is the combined count, not the API's page size:
+    The count `OffsetIncrement` and `PageIncrement` obtain is the combined count, not the API's
+    page size:
 
     - `union` returns the SUM over all sub-extractors. An `OffsetIncrement` advances the offset by
       that sum, so the next page starts past the records that were never read — two sub-extractors
@@ -154,19 +151,19 @@ class CombinedExtractor(RecordExtractor):
     Empty records dropped by `skip_empty_records` are part of that count. The API returned them as
     slots of the page, so a full page holding a null must still read as full: counting only the
     surviving records would make both paginators stop at the first page with a null, and would
-    make an `OffsetIncrement` re-request records it already read. The factory builds the
-    paginator's copy of the extractor with `count_dropped_empty_records` set, which makes that copy
-    yield a placeholder for every empty record it drops. The winner under `first_match` is still
-    chosen by the surviving records alone, so the paginator counts the same sub-extractor the
-    record stream reads.
+    make an `OffsetIncrement` re-request records it already read. The factory sets
+    `count_dropped_empty_records` on the extractor of a `RecordSelector`, which makes it yield a
+    placeholder for every empty record it drops; the `RecordSelector` counts the placeholders and
+    discards them. The winner under `first_match` is still chosen by the surviving records alone,
+    so the placeholders never change which records are emitted.
 
     Attributes:
         extractors (List[RecordExtractor]): The sub-extractors to combine. At least one is required.
         mode (CombineMode): How the sub-extractor outputs are combined. Defaults to `union`.
         skip_empty_records (bool): Whether falsy records are dropped before they are combined.
             Defaults to `False`.
-        count_dropped_empty_records (bool): Set by the factory on the copy a record-counting
-            paginator uses, never on the one that emits records: yield a placeholder in place of
+        count_dropped_empty_records (bool): Set by the factory on the extractor of a
+            `RecordSelector`, which discards the placeholders: yield a placeholder in place of
             every dropped empty record so it counts toward the page size. Defaults to `False`.
     """
 
@@ -228,14 +225,11 @@ class CombinedExtractor(RecordExtractor):
         dropped = 0
         for record in records:
             if not record:
+                dropped += 1
                 if self.count_dropped_empty_records:
                     yield _DROPPED_EMPTY_RECORD  # type: ignore[misc]  # only ever counted, never emitted
-                else:
-                    dropped += 1
                 continue
             yield record
-        # The paginator's copy re-reads the page the record stream already read, so only the
-        # record stream reports the drop.
         if dropped:
             logger.warning(
                 "CombinedExtractor dropped %s empty record(s) yielded by sub-extractor %s (%s) "

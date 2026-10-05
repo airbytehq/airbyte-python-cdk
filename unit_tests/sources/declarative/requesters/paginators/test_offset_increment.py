@@ -4,14 +4,17 @@
 
 import json
 from typing import Any, Optional
+from unittest.mock import Mock
 
 import pytest
 import requests
 
-from airbyte_cdk.sources.declarative.extractors import DpathExtractor
+from airbyte_cdk.sources.declarative.decoders import JsonDecoder
+from airbyte_cdk.sources.declarative.extractors import DpathExtractor, RecordFilter, RecordSelector
 from airbyte_cdk.sources.declarative.requesters.paginators.strategies.offset_increment import (
     OffsetIncrement,
 )
+from airbyte_cdk.sources.utils.transform import TransformConfig, TypeTransformer
 
 
 @pytest.mark.parametrize(
@@ -241,3 +244,31 @@ def test_given_page_size_interpolates_to_empty_string_then_paginate_until_an_emp
         )
         is None
     )
+
+
+def test_given_a_page_counted_by_the_record_selector_then_do_not_read_the_response_again():
+    """The filter dropped the whole page, yet the offset advances by the two records returned."""
+    response = _response([{"id": 1}, {"id": 2}])
+    record_selector = RecordSelector(
+        extractor=DpathExtractor(field_path=["results"], config={}, parameters={}),
+        record_filter=RecordFilter(config={}, condition="{{ False }}", parameters={}),
+        config={},
+        name="test_stream",
+        schema_normalization=TypeTransformer(TransformConfig.NoTransform),
+        parameters={},
+    )
+    assert not list(
+        record_selector.select_records(response=response, stream_state={}, records_schema={})
+    )
+    decoder = Mock(wraps=JsonDecoder(parameters={}))
+    strategy = OffsetIncrement(
+        page_size=2, extractor=None, decoder=decoder, config={}, parameters={}
+    )
+
+    assert (
+        strategy.next_page_token(
+            response=response, last_page_size=0, last_record=None, last_page_token_value=4
+        )
+        == 6
+    )
+    decoder.decode.assert_not_called()
