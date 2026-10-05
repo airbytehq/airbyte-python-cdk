@@ -1242,7 +1242,7 @@ class ModelToComponentFactory:
         )
 
     def create_session_token_authenticator(
-        self, model: SessionTokenAuthenticatorModel, config: Config, name: str, **kwargs: Any
+        self, model: SessionTokenAuthenticatorModel, config: Config, *, name: str, **kwargs: Any
     ) -> Union[ApiKeyAuthenticator, BearerAuthenticator]:
         self._reject_reduce_page_size_action(
             model.login_requester, f"`login_requester` of the SessionTokenAuthenticator of {name}"
@@ -1864,8 +1864,15 @@ class ModelToComponentFactory:
             raise ValueError("jitter_range_in_seconds must be greater than or equal to 0")
 
     def create_cursor_pagination(
-        self, model: CursorPaginationModel, config: Config, decoder: Decoder, **kwargs: Any
+        self,
+        model: CursorPaginationModel,
+        config: Config,
+        decoder: Optional[Decoder] = None,
+        **kwargs: Any,
     ) -> CursorPaginationStrategy:
+        # None when nested under a custom component, which cannot pass a decoder
+        if decoder is None:
+            decoder = JsonDecoder(parameters={})
         if isinstance(decoder, PaginationDecoderDecorator):
             inner_decoder = decoder.decoder
         else:
@@ -3345,12 +3352,15 @@ class ModelToComponentFactory:
         self,
         model: OffsetIncrementModel,
         config: Config,
-        decoder: Decoder,
+        decoder: Optional[Decoder] = None,
         extractor_model: Optional[
             Union[CustomRecordExtractorModel, DpathExtractorModel, CombinedExtractorModel]
         ] = None,
         **kwargs: Any,
     ) -> OffsetIncrement:
+        # None when nested under a custom component, which cannot pass a decoder
+        if decoder is None:
+            decoder = JsonDecoder(parameters={})
         if isinstance(decoder, PaginationDecoderDecorator):
             inner_decoder = decoder.decoder
         else:
@@ -3671,11 +3681,27 @@ class ModelToComponentFactory:
         )
 
     def create_selective_authenticator(
-        self, model: SelectiveAuthenticatorModel, config: Config, **kwargs: Any
+        self,
+        model: SelectiveAuthenticatorModel,
+        config: Config,
+        *,
+        name: Optional[str] = None,
+        url_base: Optional[str] = None,
+        **kwargs: Any,
     ) -> DeclarativeAuthenticator:
+        # Keyword-only so that _create_nested_component also fills them under a custom component,
+        # from the parent's kwargs or $parameters. None is not forwarded, so a missing required one
+        # keeps its hint.
+        nested_kwargs = {
+            key: value
+            for key, value in {"name": name, "url_base": url_base}.items()
+            if value is not None
+        }
         authenticators = {
-            name: self._create_component_from_model(model=auth, config=config)
-            for name, auth in model.authenticators.items()
+            key: self._create_component_from_model(
+                model=auth, config=config, **nested_kwargs, **kwargs
+            )
+            for key, auth in model.authenticators.items()
         }
         # SelectiveAuthenticator will return instance of DeclarativeAuthenticator or raise ValueError error
         return SelectiveAuthenticator(  # type: ignore[abstract]
@@ -4368,8 +4394,7 @@ class ModelToComponentFactory:
             raise ValueError(
                 f"`request_window_splitting` requires an incremental cursor that supports window splitting on "
                 f"stream {name}. Found {type(cursor).__name__ if cursor is not None else 'no cursor'}: this is "
-                f"only supported today for a `DatetimeBasedCursor` with `cursor_granularity` set and no "
-                f"partition router combining multiple cursors."
+                f"only supported today for a `DatetimeBasedCursor` with `cursor_granularity` set."
             )
 
         if not (
@@ -5152,8 +5177,15 @@ class ModelToComponentFactory:
                 )
 
                 if not extracted_parent_state and not isinstance(extracted_parent_state, dict):
-                    cursor_values = child_state.values()
-                    if cursor_values and len(cursor_values) == 1:
+                    cursor_values = list(child_state.values())
+                    # Only a scalar legacy cursor value can seed the parent. Sentinels such as
+                    # `{"__ab_full_refresh_sync_complete": true}` or legacy per-partition `states`
+                    # would crash the parent cursor initialization.
+                    if (
+                        len(cursor_values) == 1
+                        and isinstance(cursor_values[0], (str, int, float))
+                        and not isinstance(cursor_values[0], bool)
+                    ):
                         incremental_sync_model: Union[
                             DatetimeBasedCursorModel,
                             IncrementingCountCursorModel,
@@ -5174,9 +5206,7 @@ class ModelToComponentFactory:
                                 stream_descriptor=StreamDescriptor(
                                     name=parent_stream_name, namespace=None
                                 ),
-                                stream_state=AirbyteStateBlob(
-                                    {cursor_field: list(cursor_values)[0]}
-                                ),
+                                stream_state=AirbyteStateBlob({cursor_field: cursor_values[0]}),
                             ),
                         )
             return ConnectorStateManager([extracted_parent_state] if extracted_parent_state else [])
@@ -5237,12 +5267,14 @@ class ModelToComponentFactory:
     def create_http_components_resolver(
         self, model: HttpComponentsResolverModel, config: Config, stream_name: Optional[str] = None
     ) -> Any:
+        partition_router = self._build_stream_slicer_from_partition_router(model.retriever, config)
         retriever = self._create_component_from_model(
             model=model.retriever,
             config=config,
             name=f"{stream_name if stream_name else '__http_components_resolver'}",
             primary_key=None,
-            stream_slicer=self._build_stream_slicer_from_partition_router(model.retriever, config),
+            stream_slicer=partition_router,
+            partition_router=partition_router,
             transformations=[],
         )
 
@@ -5262,7 +5294,10 @@ class ModelToComponentFactory:
 
         return HttpComponentsResolver(
             retriever=retriever,
-            stream_slicer=self._build_stream_slicer_from_partition_router(model.retriever, config),
+            # AsyncRetriever reads records only from the job slices its own slicer yields
+            stream_slicer=retriever.stream_slicer
+            if isinstance(retriever, AsyncRetriever)
+            else partition_router,
             config=config,
             components_mapping=components_mapping,
             parameters=model.parameters or {},

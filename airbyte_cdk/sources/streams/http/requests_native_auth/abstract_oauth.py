@@ -6,7 +6,7 @@ import logging
 import re
 import threading
 from abc import abstractmethod
-from datetime import timedelta
+from datetime import datetime, timedelta
 from json import JSONDecodeError
 from typing import Any, List, Mapping, MutableMapping, Optional, Tuple, Union
 
@@ -520,10 +520,13 @@ class AbstractOauth2Authenticator(AuthBase):
 
     def _parse_token_expiration_date(self, value: Union[str, int]) -> AirbyteDateTime:
         """
-        Parse a string or integer token expiration date into a datetime object
+        Parse a string or integer token expiration date into a datetime object. A datetime, which
+        `refresh_access_token` returns since 6.45.5, is passed through for setters written earlier.
 
         :return: expiration datetime
         """
+        if isinstance(value, datetime):
+            return AirbyteDateTime.from_datetime(value)
         if self.token_expiry_is_time_of_expiration:
             if not self.token_expiry_date_format:
                 raise ValueError(

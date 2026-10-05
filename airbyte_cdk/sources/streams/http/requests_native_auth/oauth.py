@@ -2,7 +2,8 @@
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
 
-from datetime import timedelta
+from contextlib import suppress
+from datetime import datetime, timedelta
 from typing import Any, List, Mapping, Optional, Sequence, Tuple, Union
 
 import dpath
@@ -126,6 +127,10 @@ class Oauth2Authenticator(AbstractOauth2Authenticator):
         return self._token_expiry_date
 
     def set_token_expiry_date(self, value: AirbyteDateTime) -> None:
+        # Overrides of `refresh_access_token` written before 6.45.5 return the raw `expires_in`.
+        if not isinstance(value, datetime):
+            with suppress(ValueError, OverflowError):
+                value = self._parse_token_expiration_date(value)
         self._token_expiry_date = value
 
     @property
@@ -199,7 +204,7 @@ class SingleUseRefreshTokenOauth2Authenticator(Oauth2Authenticator):
             access_token_config_path (Sequence[str]): Dpath to the access_token field in the connector configuration. Defaults to ("credentials", "access_token").
             refresh_token_config_path (Sequence[str]): Dpath to the refresh_token field in the connector configuration. Defaults to ("credentials", "refresh_token").
             token_expiry_date_config_path (Sequence[str]): Dpath to the token_expiry_date field in the connector configuration. Defaults to ("credentials", "token_expiry_date").
-            token_expiry_date_format (Optional[str]): Date format of the token expiry date field (set by expires_in_name). If not specified the token expiry date is interpreted as number of seconds until expiration.
+            token_expiry_date_format (Optional[str]): Date format of the token expiry date field (set by expires_in_name). If specified the token expiry date is interpreted as time of expiration, as with token_expiry_is_time_of_expiration, otherwise as number of seconds until expiration.
             token_expiry_is_time_of_expiration bool: set True it if expires_in is returned as time of expiration instead of the number seconds until expiration
             message_repository (MessageRepository): the message repository used to emit logs on HTTP requests and control message on config update
         """
@@ -238,7 +243,8 @@ class SingleUseRefreshTokenOauth2Authenticator(Oauth2Authenticator):
             grant_type_name=self._grant_type_name,
             grant_type=grant_type,
             token_expiry_date_format=token_expiry_date_format,
-            token_expiry_is_time_of_expiration=token_expiry_is_time_of_expiration,
+            token_expiry_is_time_of_expiration=token_expiry_is_time_of_expiration
+            or bool(token_expiry_date_format),
             refresh_token_error_status_codes=refresh_token_error_status_codes,
             refresh_token_error_key=refresh_token_error_key,
             refresh_token_error_values=refresh_token_error_values,
@@ -316,6 +322,13 @@ class SingleUseRefreshTokenOauth2Authenticator(Oauth2Authenticator):
         Args:
             new_token_expiry_date (AirbyteDateTime): The new expiry date for the token.
         """
+        if not (
+            isinstance(new_token_expiry_date, datetime) or self.token_expiry_is_time_of_expiration
+        ):
+            # Overrides of `refresh_access_token` written before 6.45.5 return the raw `expires_in`
+            # in seconds. Other values are stored as-is and parsed on read.
+            with suppress(ValueError, OverflowError):
+                new_token_expiry_date = self._parse_token_expiration_date(new_token_expiry_date)
         self._set_config_value_by_path(
             self._token_expiry_date_config_path, str(new_token_expiry_date)
         )
