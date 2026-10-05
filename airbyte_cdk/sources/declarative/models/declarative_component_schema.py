@@ -18,12 +18,6 @@ class AuthFlowType(Enum):
     oauth1_0 = "oauth1.0"
 
 
-class ScopesJoinStrategy(Enum):
-    space = "space"
-    comma = "comma"
-    plus = "plus"
-
-
 class BasicHttpAuthenticator(BaseModel):
     type: Literal["BasicHttpAuthenticator"]
     username: str = Field(
@@ -48,6 +42,42 @@ class BearerAuthenticator(BaseModel):
         description="Token to inject as request header for authenticating with the API.",
         examples=["{{ config['api_key'] }}", "{{ config['token'] }}"],
         title="Bearer Token",
+    )
+    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
+
+
+class HttpMethod(Enum):
+    GET = "GET"
+    POST = "POST"
+
+
+class QuotaStatusSource(BaseModel):
+    type: Literal["QuotaStatusSource"]
+    url: str = Field(
+        ...,
+        description="The full URL of the quota status endpoint.",
+        examples=[
+            "https://api.github.com/rate_limit",
+            "{{ config.get('api_url', 'https://api.github.com') }}/rate_limit",
+        ],
+        title="URL",
+    )
+    http_method: Optional[HttpMethod] = Field(
+        HttpMethod.GET,
+        description="The HTTP method used to fetch the quota status.",
+        title="HTTP Method",
+    )
+    request_headers: Optional[Dict[str, str]] = Field(
+        None,
+        description="Additional headers to send with the quota status request.",
+        title="Request Headers",
+    )
+    unavailable_status_codes: Optional[List[int]] = Field(
+        None,
+        description="Status codes from the quota status endpoint that mean quota tracking is unavailable rather than broken, such as a self-hosted deployment with rate limiting turned off. Every pool of the token whose request returned that status is then treated as untracked, so the authenticator stops waiting for quota resets, stops throttling proactively and stops rotating on exhaustion for it, while still signing requests. A token untracked this way stays untracked for the rest of the sync, because the endpoint is never consulted for it again, so a status the endpoint can also return transiently costs quota tracking for the whole run. If only some tokens return that status the others stay tracked, but they are no longer refreshed either, because the authenticator stops waiting for quota resets as soon as one token is untracked; once their counters are locally spent all traffic moves onto the untracked tokens. Rate limiting reported by ordinary responses is still handled by the stream's error handler, so one that retries 429 or 403 keeps working, and a retry rotates onto the next token; it pays the backoff the response asks for rather than the shortened one a tracked pool would get, since an untracked pool has no counters with which to argue the rejection was about that credential. Any status not listed still fails the connection, and this field never excuses a quota path missing from a response the endpoint did answer, so list only the codes the endpoint uses to report that rate limiting is not enabled. Do not list authentication or authorization statuses, since a 401 or 403 from a revoked credential would then be read as quota tracking being unavailable rather than as a credentials failure.",
+        examples=[[404]],
+        title="Unavailable Status Codes",
+        unique_items=True,
     )
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
@@ -140,10 +170,11 @@ class CursorPagination(BaseModel):
     )
     stop_condition: Optional[str] = Field(
         None,
-        description="Template string evaluating when to stop paginating.",
+        description="Template string evaluating when to stop paginating. Compare last_page_size against page_size rather than against a hardcoded number: page_size is the page size that was actually requested, so the condition stays correct when page_size_reduction shrinks it. It is only bound when this strategy declares page_size, and a condition that reads it without one is rejected, so add page_size alongside the condition. Testing the page for emptiness with last_page_size == 0 is equally safe and needs no page_size. A stream that enables page_size_reduction is rejected when its stop condition compares last_page_size against anything else, since a full page at a reduced size would then read as a short page.",
         examples=[
             "{{ response.data.has_more is false }}",
             "{{ 'next' not in headers['link'] }}",
+            "{{ last_page_size < page_size }}",
         ],
         title="Stop Condition",
     )
@@ -502,9 +533,14 @@ class HttpRequestRegexMatcher(BaseModel):
     )
     weight: Optional[Union[int, str]] = Field(
         None,
-        description="The weight of a request matching this matcher when acquiring a call from the rate limiter. Different endpoints can consume different amounts from a shared budget by specifying different weights. If not set, each request counts as 1.",
+        description="The weight of a request matching this matcher when acquiring a call from the rate limiter. Different endpoints can consume different amounts from a shared budget by specifying different weights. If not set, each request counts as 1.\n",
         title="Weight",
     )
+
+
+class CombineMode(Enum):
+    union = "union"
+    first_match = "first_match"
 
 
 class ResponseToFileExtractor(BaseModel):
@@ -520,6 +556,23 @@ class ResponseToFileExtractor(BaseModel):
 class OnNoRecords(Enum):
     skip = "skip"
     emit_parent = "emit_parent"
+
+
+class ParentFieldPath(BaseModel):
+    type: Literal["ParentFieldPath"]
+    parent_path: List[str] = Field(
+        ...,
+        description="Path to the value on the record being expanded.",
+        examples=[["url"], ["id"], ["repository", "name"]],
+        title="Parent Path",
+    )
+    record_path: List[str] = Field(
+        ...,
+        description="Path on the expanded item to write the value to. An existing value is overwritten. Intermediate objects are created as needed, so a path may not pass through a value the item already holds as a scalar, and a numeric path segment creates an array rather than an object - the same behavior as `AddFields`.",
+        examples=[["pull_request_url"], ["comment_id"], ["parent", "id"]],
+        title="Record Path",
+    )
+    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
 
 class ExponentialBackoffStrategy(BaseModel):
@@ -555,157 +608,6 @@ class SessionTokenRequestBearerAuthenticator(BaseModel):
     type: Literal["Bearer"]
 
 
-class HttpMethod(Enum):
-    GET = "GET"
-    POST = "POST"
-
-
-class QuotaStatusSource(BaseModel):
-    type: Literal["QuotaStatusSource"]
-    url: str = Field(
-        ...,
-        description="The full URL of the quota status endpoint.",
-        examples=[
-            "https://api.github.com/rate_limit",
-            "{{ config.get('api_url', 'https://api.github.com') }}/rate_limit",
-        ],
-        title="URL",
-    )
-    http_method: Optional[HttpMethod] = Field(
-        HttpMethod.GET,
-        description="The HTTP method used to fetch the quota status.",
-        title="HTTP Method",
-    )
-    request_headers: Optional[Dict[str, str]] = Field(
-        None,
-        description="Additional headers to send with the quota status request.",
-        title="Request Headers",
-    )
-    unavailable_status_codes: Optional[List[int]] = Field(
-        None,
-        description="Status codes from the quota status endpoint that mean quota tracking is unavailable rather than broken, such as a self-hosted deployment with rate limiting turned off. Every pool of the token whose request returned that status is then treated as untracked, so the authenticator stops waiting for quota resets, stops throttling proactively and stops rotating on exhaustion for it, while still signing requests. A token untracked this way stays untracked for the rest of the sync, because the endpoint is never consulted for it again, so a status the endpoint can also return transiently costs quota tracking for the whole run. If only some tokens return that status the others stay tracked, but they are no longer refreshed either, because the authenticator stops waiting for quota resets as soon as one token is untracked; once their counters are locally spent all traffic moves onto the untracked tokens. Rate limiting reported by ordinary responses is still handled by the stream's error handler, so one that retries 429 or 403 keeps working, and a retry rotates onto the next token; it pays the backoff the response asks for rather than the shortened one a tracked pool would get, since an untracked pool has no counters with which to argue the rejection was about that credential. Any status not listed still fails the connection, and this field never excuses a quota path missing from a response the endpoint did answer, so list only the codes the endpoint uses to report that rate limiting is not enabled. Do not list authentication or authorization statuses, since a 401 or 403 from a revoked credential would then be read as quota tracking being unavailable rather than as a credentials failure.",
-        examples=[[404]],
-        title="Unavailable Status Codes",
-        unique_items=True,
-    )
-    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
-
-
-class TokenQuota(BaseModel):
-    type: Literal["TokenQuota"]
-    name: str = Field(
-        ...,
-        description="Name of the quota pool.",
-        examples=["rest", "graphql"],
-        title="Name",
-    )
-    remaining_path: List[str] = Field(
-        ...,
-        description="Path to the remaining call count for this pool in the quota status response.",
-        examples=[["resources", "core", "remaining"]],
-        title="Remaining Path",
-    )
-    reset_path: List[str] = Field(
-        ...,
-        description="Path to the quota reset timestamp for this pool in the quota status response.",
-        examples=[["resources", "core", "reset"]],
-        title="Reset Path",
-    )
-    limit_path: Optional[List[str]] = Field(
-        None,
-        description="Optional path to the total call limit for this pool in the quota status response. Used to compute the proactive throttling reserve; falls back to the initially observed remaining count when not set. Setting it on every pool is recommended so the reserve does not shrink when a sync starts with the pool already partially consumed.",
-        examples=[["resources", "core", "limit"]],
-        title="Limit Path",
-    )
-    matchers: Optional[List[HttpRequestRegexMatcher]] = Field(
-        None,
-        description="List of matchers that classify outgoing requests into this quota pool. The first pool whose matcher matches a request is used. A pool with no matchers acts as the default pool.",
-        title="Matchers",
-    )
-    remaining_header: Optional[str] = Field(
-        None,
-        description="Optional response header carrying the remaining call count for this pool. When set, the pool's counter is reconciled against this header on every response, which corrects drift caused by sharing the token with other clients, by requests in flight concurrently, or by a sync running long enough for the initial quota status read to go stale. Without it the pool is only ever seeded from the quota status endpoint.",
-        examples=["X-RateLimit-Remaining"],
-        title="Remaining Header",
-    )
-    reset_header: Optional[str] = Field(
-        None,
-        description="Optional response header carrying the quota reset timestamp for this pool. Parsed with the same rules as `reset_path`, so epoch seconds and ISO 8601 both work. Used to tell a rolled-over quota window from the current one; a response proving the window has rolled over restores the pool to its limit. Most useful alongside `remaining_header`.",
-        examples=["X-RateLimit-Reset"],
-        title="Reset Header",
-    )
-    limit_header: Optional[str] = Field(
-        None,
-        description="Optional response header carrying the total call limit for this pool, used to keep the proactive throttling reserve accurate as the limit changes.",
-        examples=["X-RateLimit-Limit"],
-        title="Limit Header",
-    )
-    exhaustion_status_codes: Optional[List[int]] = Field(
-        None,
-        description="Response status codes that mean this token's pool is spent. These have two effects. A response carrying one of them but no remaining count sets the pool to zero, so the next request rotates to another token instead of waiting out the reset window. They also mark which responses may report a zero for a quota window that has already elapsed, so a rate limit whose reset header trails the value being held still stops the token being used; a zero on any other response is treated as the last call of a finished window and ignored. Leaving this empty means such trailing rejections are ignored unless their reset is within the skew tolerance of the current window. Only list codes the API uses exclusively for rate limiting -- a code that also signals other failures would park a healthy token.",
-        examples=[[429]],
-        title="Exhaustion Status Codes",
-    )
-    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
-
-
-class RateLimitedMultipleTokenAuthenticator(BaseModel):
-    type: Literal["RateLimitedMultipleTokenAuthenticator"]
-    tokens: Union[str, List[str]] = Field(
-        ...,
-        description="The tokens to rotate between. Either an explicit list of tokens, or a single string containing multiple tokens separated by `token_delimiter`.",
-        examples=[
-            "{{ config['credentials']['personal_access_token'] }}",
-            ["{{ config['token_1'] }}", "{{ config['token_2'] }}"],
-        ],
-        title="Tokens",
-    )
-    token_delimiter: Optional[str] = Field(
-        ",",
-        description="Delimiter used to split a single token string into multiple tokens.",
-        title="Token Delimiter",
-    )
-    auth_method: Optional[str] = Field(
-        "Bearer",
-        description="The prefix to prepend to the token in the auth header value (e.g. `Authorization: Bearer <token>`).",
-        examples=["Bearer", "token"],
-        title="Auth Method",
-    )
-    header: Optional[str] = Field(
-        "Authorization",
-        description="The name of the HTTP header in which to inject the token.",
-        title="Header Name",
-    )
-    quota_status_source: QuotaStatusSource = Field(
-        ...,
-        description="Defines where to fetch each token's current quota status. Called once per token at startup and after an exhaustion wait, not per data request.",
-        title="Quota Status Source",
-    )
-    quotas: List[TokenQuota] = Field(
-        ...,
-        description="Quota pools tracked per token. Each outgoing request is classified into the first pool whose matchers match the request; a pool with no matchers acts as the default. The `remaining_path` and `reset_path` locate each pool's values in the quota status response.\n",
-        min_items=1,
-        title="Quota Pools",
-    )
-    max_wait_time: Optional[str] = Field(
-        "PT2H",
-        description="ISO 8601 duration. When all tokens are exhausted, the maximum time to wait for a quota reset before raising a transient error.",
-        examples=["PT2H", "PT30M", "PT{{ config.get('max_waiting_time', 120) }}M"],
-        title="Maximum Wait Time",
-    )
-    budget_reserve_fraction: Optional[float] = Field(
-        0.1,
-        description="Fraction of each token's quota to keep in reserve. When every token drops below its reserve, requests are proactively throttled to spread the remaining calls until the quota reset. Set to 0 (along with `budget_min_reserve`) to disable throttling.",
-        title="Budget Reserve Fraction",
-    )
-    budget_min_reserve: Optional[int] = Field(
-        50,
-        description="Minimum number of calls to keep in reserve per token before proactive throttling kicks in.",
-        title="Budget Minimum Reserve",
-    )
-    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
-
-
 class Action(Enum):
     SUCCESS = "SUCCESS"
     FAIL = "FAIL"
@@ -714,6 +616,8 @@ class Action(Enum):
     RESET_PAGINATION = "RESET_PAGINATION"
     RATE_LIMITED = "RATE_LIMITED"
     REFRESH_TOKEN_THEN_RETRY = "REFRESH_TOKEN_THEN_RETRY"
+    REDUCE_PAGE_SIZE = "REDUCE_PAGE_SIZE"
+    SPLIT_REQUEST_WINDOW = "SPLIT_REQUEST_WINDOW"
 
 
 class FailureType(Enum):
@@ -735,6 +639,8 @@ class HttpResponseFilter(BaseModel):
             "RESET_PAGINATION",
             "RATE_LIMITED",
             "REFRESH_TOKEN_THEN_RETRY",
+            "REDUCE_PAGE_SIZE",
+            "SPLIT_REQUEST_WINDOW",
         ],
         title="Action",
     )
@@ -835,12 +741,13 @@ class JsonItemsDecoder(BaseModel):
     type: Literal["JsonItemsDecoder"]
     items_path: str = Field(
         ...,
-        description="Dot-separated path to the JSON array whose elements should be yielded as records. Uses `ijson` path syntax (e.g. `data.users`), not JSONPath syntax \u2014 do not include leading `$.` or trailing `[*]`.",
+        description="Dot-separated path to the JSON array whose elements should be yielded as records. Uses `ijson` path syntax (e.g. `data.users`), not JSONPath syntax — do not include leading `$.` or trailing `[*]`.",
+        examples=["dataByDepartmentAndSearchTerm", "dataByAsin", "data.users"],
         title="Items Path",
     )
     encoding: Optional[str] = Field(
         "utf-8",
-        description="The character encoding of the JSON data. Defaults to UTF-8.",
+        description="Text encoding used to decode the streamed bytes before JSON parsing.",
         title="Encoding",
     )
 
@@ -1003,22 +910,32 @@ class NoPagination(BaseModel):
     type: Literal["NoPagination"]
 
 
+class Scope(BaseModel):
+    class Config:
+        extra = Extra.allow
+
+    scope: str = Field(..., description="The OAuth scope string to request from the provider.")
+
+
+class OptionalScope(BaseModel):
+    class Config:
+        extra = Extra.allow
+
+    scope: str = Field(..., description="The OAuth scope string to request from the provider.")
+
+
+class ScopesJoinStrategy(Enum):
+    space = "space"
+    comma = "comma"
+    plus = "plus"
+
+
 class State(BaseModel):
     class Config:
         extra = Extra.allow
 
     min: int
     max: int
-
-
-class OAuthScope(BaseModel):
-    class Config:
-        extra = Extra.allow
-
-    scope: str = Field(
-        ...,
-        description="The OAuth scope string to request from the provider.",
-    )
 
 
 class OauthConnectorInputSpecification(BaseModel):
@@ -1040,17 +957,13 @@ class OauthConnectorInputSpecification(BaseModel):
         examples=["user:read user:read_orders workspaces:read"],
         title="Scopes",
     )
-    # NOTE: scopes, optional_scopes, and scopes_join_strategy are processed by the
-    # platform OAuth handler (DeclarativeOAuthSpecHandler.kt), not by the CDK runtime.
-    # The CDK schema defines the manifest contract; the platform reads these fields
-    # during the OAuth consent flow to build the authorization URL.
-    scopes: Optional[List[OAuthScope]] = Field(
+    scopes: Optional[List[Scope]] = Field(
         None,
         description="List of OAuth scope objects. When present, takes precedence over the `scope` string property.\nThe scope values are joined using the `scopes_join_strategy` (default: space) before being\nsent to the OAuth provider.",
         examples=[[{"scope": "user:read"}, {"scope": "user:write"}]],
         title="Scopes",
     )
-    optional_scopes: Optional[List[OAuthScope]] = Field(
+    optional_scopes: Optional[List[OptionalScope]] = Field(
         None,
         description="Optional OAuth scope objects that may or may not be granted.",
         examples=[[{"scope": "admin:read"}]],
@@ -1410,6 +1323,83 @@ class PaginationResetLimits(BaseModel):
     number_of_records: Optional[int] = None
 
 
+class ResetPolicy(Enum):
+    NEVER = "NEVER"
+    AFTER_SUCCESSFUL_PAGE = "AFTER_SUCCESSFUL_PAGE"
+
+
+class PageSizeReduction(BaseModel):
+    type: Literal["PageSizeReduction"]
+    reduction_factor: Optional[float] = Field(
+        2,
+        description="Divisor applied to the page size on each reduction. The new page size is floor(current page size / reduction factor).",
+        examples=[2, 4],
+        gt=1,
+        title="Reduction Factor",
+    )
+    minimum_page_size: Optional[int] = Field(
+        1,
+        description="Page size below which the connector stops reducing and fails the sync. It must be smaller than the page size configured on the pagination strategy, otherwise no reduction could ever be applied. It is one of two bounds on the reduction and whichever is tighter wins: an unbroken run of failing pages divides the page size by reduction_factor at most max_attempts times, so reaching this floor in a single run needs max_attempts of at least log(page_size / minimum_page_size) / log(reduction_factor) - with the defaults, a page size of 1000 bottoms out at 31 records per page and a floor of 10 is never reached. Pages that succeed in between restart the max_attempts budget, so the floor is still reachable over a partition.",
+        examples=[1, 10],
+        ge=1,
+        title="Minimum Page Size",
+    )
+    max_attempts: Optional[int] = Field(
+        5,
+        description="Maximum number of page size reductions made in a row without a single page succeeding, before the sync fails with a transient error. Every reduction follows a request that failed, so at most max_attempts + 1 failing requests are issued before giving up. The budget restarts after every page that succeeds, under either reset_policy, so it bounds the reductions needed to get a single page through and not the number of pages a partition may have: a stream that needs a reduction every now and then reads to the end however long it is. Under NEVER the page size also strictly decreases, so minimum_page_size bounds the reductions of the whole partition on its own. The wait between reduction attempts is the CDK's own - it grows with each attempt - and does not consult the error handler's backoff_strategies or a Retry-After header.",
+        examples=[5, 10],
+        ge=1,
+        title="Maximum Reduction Attempts",
+    )
+    backoff_seconds: Optional[float] = Field(
+        0.5,
+        description='Base number of seconds to wait before the page is re-issued, multiplied by the number of attempts made in a row, so the second attempt waits twice as long as the first. A REDUCE_PAGE_SIZE response never reaches the error handler\'s retry budget, backoff_strategies or a Retry-After header, so this is the only thing spacing those requests out. Raise it on an API whose error also means "we are briefly unwell" rather than only "your page is too big", since the default spaces the whole run of attempts over a few seconds.',
+        examples=[0.5, 5],
+        ge=0,
+        title="Backoff Seconds",
+    )
+    retries_at_minimum_page_size: Optional[int] = Field(
+        0,
+        description="Number of times the same page is re-issued unchanged, each after the backoff wait, once the page size cannot be shrunk any further, before the sync fails with a transient error. The default of 0 fails on the first response received at minimum_page_size. Raise it when the API returns the same error for a page that is too big and for a server-side hiccup: at the floor, reducing is no longer an option but waiting still is, and without this budget those responses end the stream on the first one. This budget is separate from max_attempts, which only counts reductions, and it restarts on every page that succeeds. It applies however the page size arrived at the floor, whether by reduction or because page_size was already there; a page size that minimum_page_size blocks from ever being reduced is still reported as a configuration error, but only once this budget is spent.",
+        examples=[0, 3],
+        ge=0,
+        title="Retries At Minimum Page Size",
+    )
+    failure_message: Optional[str] = Field(
+        None,
+        description="Sentence appended to the error message shown to the user when the connector runs out of reductions, either because max_attempts was reached or because the page size is already at minimum_page_size. Use it to tell the user what they can do about it in terms of this specific API, for instance which filter narrows the query down. Without it the message only states that the API kept rejecting every page size the connector asked for.",
+        examples=[
+            "Narrow the sync down by selecting fewer fields on this stream.",
+            "Set a more recent start date so that each page covers less data.",
+        ],
+        title="Failure Message",
+    )
+    reset_policy: Optional[ResetPolicy] = Field(
+        ResetPolicy.NEVER,
+        description="When to restore the page size configured on the pagination strategy. NEVER keeps the reduced page size for the rest of the partition. AFTER_SUCCESSFUL_PAGE restores it as soon as one page succeeds, which means hitting the same error again on every page - use it only when the reduction is worth one extra request per page, for instance because the configured page size usually works and only some pages are too heavy. It only controls the page size: the max_attempts budget restarts on every page that succeeds under both policies, so there is no limit on how many reductions a partition may make in total. What is bounded is the reductions that get no page through.",
+        title="Reset Policy",
+    )
+
+
+class RequestWindowSplitting(BaseModel):
+    type: Literal["RequestWindowSplitting"]
+    failure_message: Optional[str] = Field(
+        None,
+        description="Sentence appended to the error message when the connector can no longer split the window further. Use it to tell the user what to do for this API, for instance which filter narrows the query down.",
+        examples=[
+            "Narrow the sync down by selecting fewer fields on this stream.",
+            "Lower time_window so that each request covers less data.",
+        ],
+        title="Failure Message",
+    )
+    min_split_window: Optional[str] = Field(
+        None,
+        description="Approximate smallest window (ISO 8601 duration) the connector will split down to - a window at or below this size is not split further, though the result can end up a bit smaller than this, not larger. Independent of, and usually looser than, cursor_granularity - useful when a cursor could split further but many small requests are worse for this API than a few large ones.",
+        examples=["P1D", "PT1H"],
+        title="Minimum Split Window",
+    )
+
+
 class CsvDecoder(BaseModel):
     type: Literal["CsvDecoder"]
     encoding: Optional[str] = "utf-8"
@@ -1423,7 +1413,14 @@ class AsyncJobStatusMap(BaseModel):
     completed: List[str]
     failed: List[str]
     timeout: List[str]
-    skipped: Optional[List[str]] = None
+    skipped: Optional[List[str]] = Field(
+        None,
+        description="Statuses that indicate the job was skipped because there is no data to return. Jobs with these statuses will not be retried and no records will be fetched.",
+    )
+
+
+class BlockSimultaneousSyncsAction(BaseModel):
+    type: Literal["BlockSimultaneousSyncsAction"]
 
 
 class ValueType(Enum):
@@ -1791,6 +1788,64 @@ class AuthFlow(BaseModel):
     oauth_config_specification: Optional[OAuthConfigSpecification] = None
 
 
+class TokenQuota(BaseModel):
+    type: Literal["TokenQuota"]
+    name: str = Field(
+        ...,
+        description="Name of the quota pool.",
+        examples=["rest", "graphql"],
+        title="Name",
+    )
+    remaining_path: List[str] = Field(
+        ...,
+        description="Path to the remaining call count for this pool in the quota status response.",
+        examples=[["resources", "core", "remaining"]],
+        title="Remaining Path",
+    )
+    reset_path: List[str] = Field(
+        ...,
+        description="Path to the quota reset timestamp for this pool in the quota status response.",
+        examples=[["resources", "core", "reset"]],
+        title="Reset Path",
+    )
+    limit_path: Optional[List[str]] = Field(
+        None,
+        description="Optional path to the total call limit for this pool in the quota status response. Used to compute the proactive throttling reserve; falls back to the initially observed remaining count when not set. Setting it on every pool is recommended so the reserve does not shrink when a sync starts with the pool already partially consumed.",
+        examples=[["resources", "core", "limit"]],
+        title="Limit Path",
+    )
+    matchers: Optional[List[HttpRequestRegexMatcher]] = Field(
+        None,
+        description="List of matchers that classify outgoing requests into this quota pool. The first pool whose matcher matches a request is used. A pool with no matchers acts as the default pool.",
+        title="Matchers",
+    )
+    remaining_header: Optional[str] = Field(
+        None,
+        description="Optional response header carrying the remaining call count for this pool. When set, the pool's counter is reconciled against this header on every response, which corrects drift caused by sharing the token with other clients, by requests in flight concurrently, or by a sync running long enough for the initial quota status read to go stale. Without it the pool is only ever seeded from the quota status endpoint.",
+        examples=["X-RateLimit-Remaining"],
+        title="Remaining Header",
+    )
+    reset_header: Optional[str] = Field(
+        None,
+        description="Optional response header carrying the quota reset timestamp for this pool. Parsed with the same rules as `reset_path`, so epoch seconds and ISO 8601 both work. Used to tell a rolled-over quota window from the current one; a response proving the window has rolled over restores the pool to its limit. Most useful alongside `remaining_header`.",
+        examples=["X-RateLimit-Reset"],
+        title="Reset Header",
+    )
+    limit_header: Optional[str] = Field(
+        None,
+        description="Optional response header carrying the total call limit for this pool, used to keep the proactive throttling reserve accurate as the limit changes.",
+        examples=["X-RateLimit-Limit"],
+        title="Limit Header",
+    )
+    exhaustion_status_codes: Optional[List[int]] = Field(
+        None,
+        description="Response status codes that mean this token's pool is spent. These have two effects. A response carrying one of them but no remaining count sets the pool to zero, so the next request rotates to another token instead of waiting out the reset window. They also mark which responses may report a zero for a quota window that has already elapsed, so a rate limit whose reset header trails the value being held still stops the token being used; a zero on any other response is treated as the last call of a finished window and ignored. Leaving this empty means such trailing rejections are ignored unless their reset is within the skew tolerance of the current window. Only list codes the API uses exclusively for rate limiting -- a code that also signals other failures would park a healthy token.",
+        examples=[[429]],
+        title="Exhaustion Status Codes",
+    )
+    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
+
+
 class CheckStream(BaseModel):
     type: Literal["CheckStream"]
     stream_names: Optional[List[str]] = Field(
@@ -1906,12 +1961,12 @@ class DatetimeBasedCursor(BaseModel):
     )
     is_data_feed: Optional[bool] = Field(
         None,
-        description="A data feed API is an API that does not allow filtering and paginates the content from the most recent to the least recent. Given this, the CDK needs to know when to stop paginating and this field will generate a stop condition for pagination. The last page fetched still holds records that fall outside the cursor window, and those are filtered out as well, so Client-side Incremental Filtering does not need to be enabled alongside this field. Records are kept when their cursor value is within the window that starts at the previous sync's cursor value (or the start date) and ends at the end date, defaulting to the current time, so records dated in the future are filtered out too.",
+        description="A data feed API is an API that does not allow filtering and paginates the content from the most recent to the least recent. Given this, the CDK needs to know when to stop paginating and this field will generate a stop condition for pagination. The last page fetched still holds records that fall outside the cursor window, and those are filtered out as well, so Client-side Incremental Filtering does not need to be enabled alongside this field. Records are kept when their cursor value is within the window that starts at the previous sync's cursor value minus the lookback window, if one is set (never before the start date), and ends at the end date, defaulting to the current time, so records dated in the future are filtered out too.",
         title="Data Feed API",
     )
     is_client_side_incremental: Optional[bool] = Field(
         None,
-        description="Set to True if the target API endpoint does not take cursor values to filter records and returns all records anyway. This will cause the connector to filter out records locally, keeping only the ones whose cursor value falls within the window that starts at the previous sync's cursor value (or the start date) and ends at the end date, defaulting to the current time. This means that all records would be read from the API, but only the records within that window will be emitted to the destination. This is not needed when Data Feed API is enabled, as a data feed already filters on the same window.",
+        description="Set to True if the target API endpoint does not take cursor values to filter records and returns all records anyway. This will cause the connector to filter out records locally, keeping only the ones whose cursor value falls within the window that starts at the previous sync's cursor value minus the lookback window, if one is set (never before the start date), and ends at the end date, defaulting to the current time. This means that all records would be read from the API, but only the records within that window will be emitted to the destination. This is not needed when Data Feed API is enabled, as a data feed already filters on the same window.",
         title="Client-side Incremental Filtering",
     )
     is_compare_strictly: Optional[bool] = Field(
@@ -2300,10 +2355,31 @@ class RecordExpander(BaseModel):
         description='If true, each expanded record will include the original parent record in an "original_record" field. Defaults to false.',
         title="Remain Original Record",
     )
+    parent_fields: Optional[List[ParentFieldPath]] = Field(
+        None,
+        description="Named values to copy from the record being expanded onto each expanded item. Use this instead of `remain_original_record` when only a few parent fields are needed: it copies the named values rather than deep-copying the whole parent once per item, which matters when the parent record is large and the nested list is long. An existing value at `record_path` is overwritten, and a `parent_path` the parent does not have copies null. A copied object or array is deep-copied, so a transformation that writes inside it affects only that item. Independent of `remain_original_record`; both may be set. Applies to items fetched through `truncated_list_retriever` as well as to embedded ones. This field is ignored by CDK versions that predate it, so pin the connector to a CDK version that supports it.",
+        title="Parent Fields",
+    )
+    merge_parent: Optional[bool] = Field(
+        False,
+        description="If true, each expanded item is the parent record shallow-merged with the item, the item's own keys winning on collision, and the expanded list removed from the parent's copy. Only the value at `expand_records_from_field` is removed, so for a multi-segment path the top-level key stays with its other fields. Each item receives its own deep copy of the merged parent fields, so a transformation that writes into a nested value affects only that item. The merge happens first, then `parent_fields` are copied, then `original_record` is embedded when `remain_original_record` is set; all three may be combined. Applies to items fetched through `truncated_list_retriever` as well as to embedded ones. This field is ignored by CDK versions that predate it, so pin the connector to a CDK version that supports it.",
+        title="Merge Parent",
+    )
     on_no_records: Optional[OnNoRecords] = Field(
         OnNoRecords.skip,
         description='Behavior when the expansion path is missing, not a list, or an empty list. "skip" (default) emits nothing. "emit_parent" emits the original parent record unchanged.',
         title="On No Records",
+    )
+    truncation_indicator_path: Optional[List[str]] = Field(
+        None,
+        description="Path within each record to a field indicating that the embedded nested list is truncated (e.g. a `has_more` flag on the list object). When the field evaluates to a truthy value and `truncated_list_retriever` is configured, the retriever is used to fetch the complete list instead of expanding the embedded items. When the field is truthy and no retriever is configured, the embedded items are expanded as normal and a WARNING is logged once per stream so the truncation is visible instead of silent. Glob characters (`*`, `?`, `[`) are not supported in this path, nor in `expand_records_from_field` when a retriever is configured; this is enforced on the interpolated values. This field is ignored by CDK versions that predate it, so pin the connector to a CDK version that supports it.",
+        examples=[["data", "object", "lines", "has_more"]],
+        title="Truncation Indicator Path",
+    )
+    truncated_list_retriever: Optional[Union[SimpleRetriever, CustomRetriever]] = Field(
+        None,
+        description="Retriever used to fetch the complete list of items when the field at `truncation_indicator_path` is truthy on a record. The record being expanded is exposed to the retriever's interpolation context as `stream_slice['parent_record']`. One fetch is issued per truncated record, so enable `use_cache` on the requester when the same list can be fetched repeatedly. Configure a `paginator`, since without one only the first page of the complete list is read. If the retriever returns no records, the embedded items are expanded as a fallback; if it returns fewer records than the `total_count` field next to the indicator, a WARNING is logged once per stream. Request failures surface through the retriever's `error_handler` and fail the stream like any other request. `$parameters` of the enclosing stream propagate into this retriever's components (including `request_parameters` on its requester); move request-shaping parameters to the outer requester's `request_parameters` when adopting this field. `partition_router` and `pagination_reset` are not supported. In Connector Builder test reads, its requests appear as auxiliary requests and the test-read page limit applies to each fetch independently, so the fetched list may be shorter than `total_count`; the incomplete-fetch warning is not emitted in test reads when a `paginator` is configured (without one the retriever is not capped, so the warning still applies). Requires `truncation_indicator_path`. This field is ignored by CDK versions that predate it, so pin the connector to a CDK version that supports it.",
+        title="Truncated List Retriever",
     )
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
@@ -2451,6 +2527,63 @@ class ConfigAddFields(BaseModel):
     )
 
 
+class RateLimitedMultipleTokenAuthenticator(BaseModel):
+    type: Literal["RateLimitedMultipleTokenAuthenticator"]
+    tokens: Union[str, List[str]] = Field(
+        ...,
+        description="The tokens to rotate between. Either an explicit list of tokens, or a single string containing multiple tokens separated by `token_delimiter`.",
+        examples=[
+            "{{ config['credentials']['personal_access_token'] }}",
+            ["{{ config['token_1'] }}", "{{ config['token_2'] }}"],
+        ],
+        title="Tokens",
+    )
+    token_delimiter: Optional[str] = Field(
+        ",",
+        description="Delimiter used to split a single token string into multiple tokens.",
+        title="Token Delimiter",
+    )
+    auth_method: Optional[str] = Field(
+        "Bearer",
+        description="The prefix to prepend to the token in the auth header value (e.g. `Authorization: Bearer <token>`).",
+        examples=["Bearer", "token"],
+        title="Auth Method",
+    )
+    header: Optional[str] = Field(
+        "Authorization",
+        description="The name of the HTTP header in which to inject the token.",
+        title="Header Name",
+    )
+    quota_status_source: QuotaStatusSource = Field(
+        ...,
+        description="Defines where to fetch each token's current quota status. Called once per token at startup and after an exhaustion wait, not per data request.",
+        title="Quota Status Source",
+    )
+    quotas: List[TokenQuota] = Field(
+        ...,
+        description="Quota pools tracked per token. Each outgoing request is classified into the first pool whose matchers match the request; a pool with no matchers acts as the default. The `remaining_path` and `reset_path` locate each pool's values in the quota status response.\n",
+        min_items=1,
+        title="Quota Pools",
+    )
+    max_wait_time: Optional[str] = Field(
+        "PT2H",
+        description="ISO 8601 duration. When all tokens are exhausted, the maximum time to wait for a quota reset before raising a transient error.",
+        examples=["PT2H", "PT30M", "PT{{ config.get('max_waiting_time', 120) }}M"],
+        title="Maximum Wait Time",
+    )
+    budget_reserve_fraction: Optional[float] = Field(
+        0.1,
+        description="Fraction of each token's quota to keep in reserve. When every token drops below its reserve, requests are proactively throttled to spread the remaining calls until the quota reset. Set to 0 (along with `budget_min_reserve`) to disable throttling.",
+        title="Budget Reserve Fraction",
+    )
+    budget_min_reserve: Optional[int] = Field(
+        50,
+        description="Minimum number of calls to keep in reserve per token before proactive throttling kicks in.",
+        title="Budget Minimum Reserve",
+    )
+    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
+
+
 class CompositeErrorHandler(BaseModel):
     type: Literal["CompositeErrorHandler"]
     error_handlers: List[Union[CompositeErrorHandler, DefaultErrorHandler, CustomErrorHandler]] = (
@@ -2517,6 +2650,26 @@ class DpathExtractor(BaseModel):
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
 
+class CombinedExtractor(BaseModel):
+    type: Literal["CombinedExtractor"]
+    extractors: List[Union[DpathExtractor, CustomRecordExtractor, CombinedExtractor]] = Field(
+        ...,
+        description="The record extractors to combine. At least one is required. Each sub-extractor is given the same HTTP response and decodes it independently, so the response is parsed once per sub-extractor. Streaming decoders (CsvDecoder, JsonlDecoder, JsonItemsDecoder, GzipDecoder, IterableDecoder) can only read the response body once and are rejected.",
+        title="Extractors",
+    )
+    mode: Optional[CombineMode] = Field(
+        CombineMode.union,
+        description='How the records of the sub-extractors are combined. "union" (default) yields every record of every sub-extractor, in the order the extractors are declared. "first_match" yields the records of the first sub-extractor that produces at least one record and skips the remaining ones; nothing is yielded if none of them produces a record. Note that a paginator which counts the records of a page counts the combined records: under "union" that is the sum over all sub-extractors, which overshoots the API page size, so "union" is rejected with an OffsetIncrement paginator because the offset would skip records. Under "first_match" the count is the count of the winning sub-extractor, which is usually the number of records the API returned for the page.',
+        title="Combine Mode",
+    )
+    skip_empty_records: Optional[bool] = Field(
+        False,
+        description='Whether to drop empty records - null, {}, [], "" - yielded by a sub-extractor before the records are combined. Off by default, so the output of a sub-extractor is passed through as it is. Turn it on when the API can return nulls in the middle of a record list, which a GraphQL API does when it answers a partial response and reports the failure in a sibling error field. Under "first_match" this also changes which sub-extractor wins: a sub-extractor whose records are all empty no longer counts as a match, so the next one is tried. The dropped records still count toward the page size of an OffsetIncrement or PageIncrement paginator, so a full page holding a null does not end pagination early.',
+        title="Skip Empty Records",
+    )
+    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
+
+
 class ZipfileDecoder(BaseModel):
     class Config:
         extra = Extra.allow
@@ -2531,7 +2684,7 @@ class ZipfileDecoder(BaseModel):
 
 class RecordSelector(BaseModel):
     type: Literal["RecordSelector"]
-    extractor: Union[DpathExtractor, CustomRecordExtractor]
+    extractor: Union[DpathExtractor, CustomRecordExtractor, CombinedExtractor]
     record_filter: Optional[Union[RecordFilter, CustomRecordFilter]] = Field(
         None,
         description="Responsible for filtering records to be emitted by the Source.",
@@ -2642,7 +2795,7 @@ class DeclarativeSource1(BaseModel):
     api_budget: Optional[HTTPAPIBudget] = None
     stream_groups: Optional[Dict[str, StreamGroup]] = Field(
         None,
-        description="Groups of streams that share a common resource and should not be read simultaneously. Each group defines a set of stream references and an action that controls how concurrent reads are managed. Only applies to ConcurrentDeclarativeSource.",
+        description="Groups of streams that share a common resource and should not be read simultaneously. Each group defines a set of stream references and an action that controls how concurrent reads are managed. Only applies to ConcurrentDeclarativeSource.\n",
         title="Stream Groups",
     )
     max_concurrent_async_job_count: Optional[Union[int, str]] = Field(
@@ -2682,7 +2835,7 @@ class DeclarativeSource2(BaseModel):
     api_budget: Optional[HTTPAPIBudget] = None
     stream_groups: Optional[Dict[str, StreamGroup]] = Field(
         None,
-        description="Groups of streams that share a common resource and should not be read simultaneously. Each group defines a set of stream references and an action that controls how concurrent reads are managed. Only applies to ConcurrentDeclarativeSource.",
+        description="Groups of streams that share a common resource and should not be read simultaneously. Each group defines a set of stream references and an action that controls how concurrent reads are managed. Only applies to ConcurrentDeclarativeSource.\n",
         title="Stream Groups",
     )
     max_concurrent_async_job_count: Optional[Union[int, str]] = Field(
@@ -2776,9 +2929,11 @@ class FileUploader(BaseModel):
         ...,
         description="Requester component that describes how to prepare HTTP requests to send to the source API.",
     )
-    download_target_extractor: Union[DpathExtractor, CustomRecordExtractor] = Field(
-        ...,
-        description="Responsible for fetching the url where the file is located. This is applied on each records and not on the HTTP response",
+    download_target_extractor: Union[DpathExtractor, CustomRecordExtractor, CombinedExtractor] = (
+        Field(
+            ...,
+            description="Responsible for fetching the url where the file is located. This is applied on each records and not on the HTTP response",
+        )
     )
     file_extractor: Optional[Union[DpathExtractor, CustomRecordExtractor]] = Field(
         None,
@@ -3180,7 +3335,7 @@ class StateDelegatingStream(BaseModel):
     )
     api_retention_period: Optional[str] = Field(
         None,
-        description="The data retention period of the incremental API (ISO8601 duration). If the cursor value is older than this retention period, the connector will automatically fall back to a full refresh to avoid data loss.\nThis is useful for APIs like Stripe Events API which only retain data for 30 days.\n  * **PT1H**: 1 hour\n  * **P1D**: 1 day\n  * **P1W**: 1 week\n  * **P1M**: 1 month\n  * **P1Y**: 1 year\n  * **P30D**: 30 days\n",
+        description="The data retention period of the incremental API (ISO8601 duration). If the cursor value is older than this retention period, the connector will automatically fall back to a full refresh to avoid data loss.\nThis is useful for APIs like Stripe Events API which only retain data for 30 days.\n* **PT1H**: 1 hour\n* **P1D**: 1 day\n* **P1W**: 1 week\n* **P1M**: 1 month\n* **P1Y**: 1 year\n* **P30D**: 30 days\n",
         examples=["P30D", "P90D", "P1Y"],
         title="API Retention Period",
     )
@@ -3222,6 +3377,14 @@ class SimpleRetriever(BaseModel):
         None,
         description="Describes what triggers pagination reset and how to handle it.",
     )
+    page_size_reduction: Optional[PageSizeReduction] = Field(
+        None,
+        description="Describes how the page size is reduced when an error handler resolves to the REDUCE_PAGE_SIZE action. Requires a DefaultPaginator that defines both page_size_option and a pagination strategy with a page_size. Cannot be combined with query properties, a file uploader, or a parent stream read lazily through lazy_read_pointer, because in those cases records of the failing page have already been emitted and re-issuing the page would emit them twice. A page_token_option of type RequestPath is rejected as well, because the next page is then a URL built by the API which already carries the page size.",
+    )
+    request_window_splitting: Optional[RequestWindowSplitting] = Field(
+        None,
+        description="Describes how the request window is split when an error handler resolves to the SPLIT_REQUEST_WINDOW action. Requires an incremental_sync cursor that defines cursor_granularity. Distinct from page_size_reduction: this splits the cursor's window rather than a paginator's page size, and applies even when the API rejects the request before returning a single page.",
+    )
     ignore_stream_slicer_parameters_on_paginated_requests: Optional[bool] = Field(
         False,
         description="If true, the partition router and incremental request options will be ignored when paginating requests. Request options set directly on the requester will not be ignored.",
@@ -3260,15 +3423,17 @@ class AsyncRetriever(BaseModel):
     status_mapping: AsyncJobStatusMap = Field(
         ..., description="Async Job Status to Airbyte CDK Async Job Status mapping."
     )
-    status_extractor: Union[DpathExtractor, CustomRecordExtractor] = Field(
+    status_extractor: Union[DpathExtractor, CustomRecordExtractor, CombinedExtractor] = Field(
         ..., description="Responsible for fetching the actual status of the async job."
     )
-    download_target_extractor: Optional[Union[DpathExtractor, CustomRecordExtractor]] = Field(
+    download_target_extractor: Optional[
+        Union[DpathExtractor, CustomRecordExtractor, CombinedExtractor]
+    ] = Field(
         None,
         description="Responsible for fetching the final result `urls` provided by the completed / finished / ready async job.",
     )
     download_extractor: Optional[
-        Union[DpathExtractor, CustomRecordExtractor, ResponseToFileExtractor]
+        Union[DpathExtractor, CustomRecordExtractor, ResponseToFileExtractor, CombinedExtractor]
     ] = Field(None, description="Responsible for fetching the records from provided urls.")
     creation_requester: Union[HttpRequester, CustomRequester] = Field(
         ...,
@@ -3366,20 +3531,14 @@ class AsyncRetriever(BaseModel):
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
 
-class BlockSimultaneousSyncsAction(BaseModel):
-    type: Literal["BlockSimultaneousSyncsAction"]
-
-
 class StreamGroup(BaseModel):
-    streams: List[str] = Field(
+    streams: List[DeclarativeStream] = Field(
         ...,
-        description='List of references to streams that belong to this group. Use JSON references to stream definitions (e.g., "#/definitions/my_stream").',
+        description="List of references to streams that belong to this group.\n",
         title="Streams",
     )
     action: BlockSimultaneousSyncsAction = Field(
-        ...,
-        description="The action to apply to streams in this group.",
-        title="Action",
+        ..., description="The action to apply to streams in this group.", title="Action"
     )
 
 
@@ -3404,7 +3563,7 @@ class GroupingPartitionRouter(BaseModel):
     underlying_partition_router: Union[
         ListPartitionRouter,
         SubstreamPartitionRouter,
-        "UnionPartitionRouter",
+        UnionPartitionRouter,
         CustomPartitionRouter,
     ] = Field(
         ...,
@@ -3478,12 +3637,15 @@ class DynamicDeclarativeStream(BaseModel):
 ComplexFieldType.update_forward_refs()
 GzipDecoder.update_forward_refs()
 CompositeErrorHandler.update_forward_refs()
+CombinedExtractor.update_forward_refs()
 DeclarativeSource1.update_forward_refs()
 DeclarativeSource2.update_forward_refs()
 SelectiveAuthenticator.update_forward_refs()
 ConditionalStreams.update_forward_refs()
 FileUploader.update_forward_refs()
 DeclarativeStream.update_forward_refs()
+DpathExtractor.update_forward_refs()
+RecordExpander.update_forward_refs()
 SessionTokenAuthenticator.update_forward_refs()
 HttpRequester.update_forward_refs()
 DynamicSchemaLoader.update_forward_refs()
@@ -3492,4 +3654,3 @@ PropertiesFromEndpoint.update_forward_refs()
 SimpleRetriever.update_forward_refs()
 AsyncRetriever.update_forward_refs()
 GroupingPartitionRouter.update_forward_refs()
-UnionPartitionRouter.update_forward_refs()

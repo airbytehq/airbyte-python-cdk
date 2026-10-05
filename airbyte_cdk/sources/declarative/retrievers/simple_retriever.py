@@ -2,6 +2,7 @@
 # Copyright (c) 2025 Airbyte, Inc., all rights reserved.
 #
 
+import datetime
 import json
 import logging
 from collections import defaultdict
@@ -23,6 +24,7 @@ from typing import (
 import requests
 from typing_extensions import deprecated
 
+from airbyte_cdk.models import FailureType
 from airbyte_cdk.sources.declarative.extractors.http_selector import HttpSelector
 from airbyte_cdk.sources.declarative.extractors.record_filter import (
     ClientSideIncrementalRecordFilterDecorator,
@@ -32,26 +34,50 @@ from airbyte_cdk.sources.declarative.partition_routers.single_partition_router i
     SinglePartitionRouter,
 )
 from airbyte_cdk.sources.declarative.requesters.paginators.no_pagination import NoPagination
-from airbyte_cdk.sources.declarative.requesters.paginators.paginator import Paginator
+from airbyte_cdk.sources.declarative.requesters.paginators.paginator import (
+    Paginator,
+    page_size_override_kwargs,
+    stream_slice_kwargs,
+)
 from airbyte_cdk.sources.declarative.requesters.query_properties import QueryProperties
 from airbyte_cdk.sources.declarative.requesters.request_options import (
     DefaultRequestOptionsProvider,
     RequestOptionsProvider,
 )
 from airbyte_cdk.sources.declarative.requesters.requester import Requester
+from airbyte_cdk.sources.declarative.retrievers.page_size_reducer import (
+    PageSizeReducer,
+    PageSizeReduction,
+)
 from airbyte_cdk.sources.declarative.retrievers.pagination_tracker import PaginationTracker
+from airbyte_cdk.sources.declarative.retrievers.request_window_splitting import (
+    RequestWindowSplitting,
+)
 from airbyte_cdk.sources.declarative.retrievers.retriever import Retriever
 from airbyte_cdk.sources.declarative.stream_slicers.stream_slicer import StreamSlicer
 from airbyte_cdk.sources.source import ExperimentalClassWarning
 from airbyte_cdk.sources.streams.core import StreamData
+from airbyte_cdk.sources.streams.http.page_size_reduction_exception import (
+    PageSizeReductionNotSupportedException,
+    PageSizeReductionRequiredException,
+)
 from airbyte_cdk.sources.streams.http.pagination_reset_exception import (
     PaginationResetRequiredException,
 )
+from airbyte_cdk.sources.streams.http.request_window_split_exception import (
+    RequestWindowSplitNotSupportedException,
+    RequestWindowSplitRequiredException,
+)
 from airbyte_cdk.sources.types import Config, Record, StreamSlice
 from airbyte_cdk.utils.mapping_helpers import combine_mappings
+from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 
 FULL_REFRESH_SYNC_COMPLETE_KEY = "__ab_full_refresh_sync_complete"
 LOGGER = logging.getLogger("airbyte")
+
+# A defense-in-depth bound independent of any `request_window_splitter`'s own no-progress guard: protects
+# against a misbehaving custom cursor whose children don't actually shrink the window. Not user-configurable.
+_MAX_REQUEST_WINDOW_SPLIT_DEPTH = 10
 
 
 @dataclass
@@ -77,6 +103,20 @@ class SimpleRetriever(Retriever):
         parameters (Mapping[str, Any]): Additional runtime parameters to be used for string interpolation
         post_pagination_filter (Optional[ClientSideIncrementalRecordFilterDecorator]): Set for data feed streams only.
             Records the cursor considers already synced are dropped once pagination has observed them
+        page_size_reduction (Optional[PageSizeReduction]): How much to shrink the page size when an error handler
+            resolves to `ResponseAction.REDUCE_PAGE_SIZE`. `None` disables page size reduction entirely.
+            It is immutable configuration; the page size in effect lives in a `PageSizeReducer` that
+            `_read_pages` creates per call, so the retriever and its paginator - both shared by every
+            partition of the stream, read concurrently - stay stateless. When `page_size_reduction` is
+            `None` no reducer is created and `_read_pages` keeps its previous behaviour
+        request_window_splitting (Optional[RequestWindowSplitting]): Policy applied when an error handler
+            resolves to `ResponseAction.SPLIT_REQUEST_WINDOW`, or when `RequestWindowSplitRequiredException`
+            is raised directly by custom code. `None` disables request-window splitting entirely: `read_records`
+            converts the exception into `RequestWindowSplitNotSupportedException` instead of attempting a
+            split it cannot perform.
+        request_window_splitter: Bound method - normally the stream's own cursor's `split_request_window` -
+            asked to replace a failing `StreamSlice` with smaller children. `None` has the same effect as
+            `request_window_splitting` being `None`.
     """
 
     requester: Requester
@@ -101,6 +141,11 @@ class SimpleRetriever(Retriever):
         default_factory=lambda: lambda: PaginationTracker()
     )
     post_pagination_filter: Optional[ClientSideIncrementalRecordFilterDecorator] = None
+    page_size_reduction: Optional[PageSizeReduction] = None
+    request_window_splitting: Optional[RequestWindowSplitting] = None
+    request_window_splitter: Optional[
+        Callable[[StreamSlice, Optional[datetime.timedelta]], Optional[List[StreamSlice]]]
+    ] = None
 
     def __post_init__(self, parameters: Mapping[str, Any]) -> None:
         self._paginator = self.paginator or NoPagination(parameters=parameters)
@@ -145,6 +190,7 @@ class SimpleRetriever(Retriever):
         next_page_token: Optional[Mapping[str, Any]],
         paginator_method: Callable[..., Optional[Union[Mapping[str, Any], str]]],
         stream_slicer_method: Callable[..., Optional[Union[Mapping[str, Any], str]]],
+        page_size_override: Optional[int] = None,
     ) -> Union[Mapping[str, Any], str]:
         """
         Get the request_option from the paginator and the stream slicer.
@@ -157,6 +203,7 @@ class SimpleRetriever(Retriever):
             paginator_method(
                 stream_slice=stream_slice,
                 next_page_token=next_page_token,
+                **page_size_override_kwargs(page_size_override),
             ),
         ]
         if not next_page_token or not self.ignore_stream_slicer_parameters_on_paginated_requests:
@@ -172,6 +219,7 @@ class SimpleRetriever(Retriever):
         self,
         stream_slice: Optional[StreamSlice] = None,
         next_page_token: Optional[Mapping[str, Any]] = None,
+        page_size_override: Optional[int] = None,
     ) -> Mapping[str, Any]:
         """
         Specifies request headers.
@@ -182,6 +230,7 @@ class SimpleRetriever(Retriever):
             next_page_token,
             self._paginator.get_request_headers,
             self.request_option_provider.get_request_headers,
+            **page_size_override_kwargs(page_size_override),
         )
         if isinstance(headers, str):
             raise ValueError("Request headers cannot be a string")
@@ -191,6 +240,7 @@ class SimpleRetriever(Retriever):
         self,
         stream_slice: Optional[StreamSlice] = None,
         next_page_token: Optional[Mapping[str, Any]] = None,
+        page_size_override: Optional[int] = None,
     ) -> Mapping[str, Any]:
         """
         Specifies the query parameters that should be set on an outgoing HTTP request given the inputs.
@@ -202,6 +252,7 @@ class SimpleRetriever(Retriever):
             next_page_token,
             self._paginator.get_request_params,
             self.request_option_provider.get_request_params,
+            **page_size_override_kwargs(page_size_override),
         )
         if isinstance(params, str):
             raise ValueError("Request params cannot be a string")
@@ -211,6 +262,7 @@ class SimpleRetriever(Retriever):
         self,
         stream_slice: Optional[StreamSlice] = None,
         next_page_token: Optional[Mapping[str, Any]] = None,
+        page_size_override: Optional[int] = None,
     ) -> Union[Mapping[str, Any], str]:
         """
         Specifies how to populate the body of the request with a non-JSON payload.
@@ -226,12 +278,14 @@ class SimpleRetriever(Retriever):
             next_page_token,
             self._paginator.get_request_body_data,
             self.request_option_provider.get_request_body_data,
+            **page_size_override_kwargs(page_size_override),
         )
 
     def _request_body_json(
         self,
         stream_slice: Optional[StreamSlice] = None,
         next_page_token: Optional[Mapping[str, Any]] = None,
+        page_size_override: Optional[int] = None,
     ) -> Optional[Mapping[str, Any]]:
         """
         Specifies how to populate the body of the request with a JSON payload.
@@ -243,6 +297,7 @@ class SimpleRetriever(Retriever):
             next_page_token,
             self._paginator.get_request_body_json,
             self.request_option_provider.get_request_body_json,
+            **page_size_override_kwargs(page_size_override),
         )
         if isinstance(body_json, str):
             raise ValueError("Request body json cannot be a string")
@@ -298,6 +353,8 @@ class SimpleRetriever(Retriever):
         last_page_size: int,
         last_record: Optional[Record],
         last_page_token_value: Optional[Any],
+        page_size_override: Optional[int] = None,
+        stream_slice: Optional[StreamSlice] = None,
     ) -> Optional[Mapping[str, Any]]:
         """
         Specifies a pagination strategy.
@@ -311,12 +368,15 @@ class SimpleRetriever(Retriever):
             last_page_size=last_page_size,
             last_record=last_record,
             last_page_token_value=last_page_token_value,
+            **page_size_override_kwargs(page_size_override),
+            **stream_slice_kwargs(self._paginator.next_page_token, stream_slice),
         )
 
     def _fetch_next_page(
         self,
         stream_slice: StreamSlice,
         next_page_token: Optional[Mapping[str, Any]] = None,
+        page_size_override: Optional[int] = None,
     ) -> Optional[requests.Response]:
         return self.requester.send_request(
             path=self._paginator_path(
@@ -329,18 +389,22 @@ class SimpleRetriever(Retriever):
             request_headers=self._request_headers(
                 stream_slice=stream_slice,
                 next_page_token=next_page_token,
+                **page_size_override_kwargs(page_size_override),
             ),
             request_params=self._request_params(
                 stream_slice=stream_slice,
                 next_page_token=next_page_token,
+                **page_size_override_kwargs(page_size_override),
             ),
             request_body_data=self._request_body_data(
                 stream_slice=stream_slice,
                 next_page_token=next_page_token,
+                **page_size_override_kwargs(page_size_override),
             ),
             request_body_json=self._request_body_json(
                 stream_slice=stream_slice,
                 next_page_token=next_page_token,
+                **page_size_override_kwargs(page_size_override),
             ),
             log_formatter=self.log_formatter,
         )
@@ -353,9 +417,20 @@ class SimpleRetriever(Retriever):
     ) -> Iterable[Record]:
         original_stream_slice = stream_slice
         pagination_tracker = self.pagination_tracker_factory()
+        page_size_reducer = (
+            PageSizeReducer(
+                self.page_size_reduction,
+                self._paginator.get_page_size(),
+                stream_name=self.name,
+            )
+            if self.page_size_reduction
+            else None
+        )
         reset_pagination = False
+        reduce_page_size = False
         next_page_token = self._get_initial_next_page_token()
         while True:
+            page_size_override = page_size_reducer.page_size_override if page_size_reducer else None
             merged_records: MutableMapping[str, Any] = defaultdict(dict)
             last_page_size = 0
             last_record: Optional[Record] = None
@@ -371,7 +446,11 @@ class SimpleRetriever(Retriever):
                             cursor_slice=stream_slice.cursor_slice or {},
                             extra_fields={"query_properties": properties},
                         )
-                        response = self._fetch_next_page(stream_slice, next_page_token)
+                        response = self._fetch_next_page(
+                            stream_slice,
+                            next_page_token,
+                            **page_size_override_kwargs(page_size_override),
+                        )
 
                         for current_record in records_generator_fn(response):
                             if self.additional_query_properties.property_chunking:
@@ -401,7 +480,11 @@ class SimpleRetriever(Retriever):
                         last_record = record
                         yield record
                 else:
-                    response = self._fetch_next_page(stream_slice, next_page_token)
+                    response = self._fetch_next_page(
+                        stream_slice,
+                        next_page_token,
+                        **page_size_override_kwargs(page_size_override),
+                    )
                     for current_record in records_generator_fn(response):
                         pagination_tracker.observe(current_record)
                         last_page_size += 1
@@ -409,9 +492,38 @@ class SimpleRetriever(Retriever):
                         yield current_record
             except PaginationResetRequiredException:
                 reset_pagination = True
+            except PageSizeReductionRequiredException:
+                if page_size_reducer is None:
+                    # The action can be attached to a requester we cannot validate at config time, such as one
+                    # built by a custom error handler or a CustomRequester. Re-raise as the misconfiguration it
+                    # is: the exception being handled is the neutral "the API asked for a smaller page" signal.
+                    raise PageSizeReductionNotSupportedException(stream_name=self.name)
+                if last_page_size:
+                    # The reduction is safe only because it re-issues a page whose records were not emitted.
+                    # Every in-CDK way of reaching this raises from `_fetch_next_page`, before the record loop,
+                    # and the factory rejects the manifest constructs that would not, but a custom extractor,
+                    # filter or transformation can issue its own request from inside the record generator.
+                    # Re-issuing the page then duplicates the records already yielded, so fail instead.
+                    raise AirbyteTracedException(
+                        internal_message=f"Stream {self.name} requested a page size reduction after {last_page_size} records of the page had already been emitted",
+                        message=f"Stream {self.name} asked for a smaller page size in the middle of a page. The page cannot be requested again without duplicating the records already read from it. Move the REDUCE_PAGE_SIZE action to the error handler of the stream's main requester.",
+                        failure_type=FailureType.config_error,
+                    )
+                # Raises once the page size cannot be reduced any further and the retries allowed at that
+                # floor are spent, which is what stops the loop when the API keeps failing.
+                page_size_reducer.reduce()
+                reduce_page_size = True
             else:
+                if page_size_reducer:
+                    page_size_reducer.on_successful_page()
                 if not response:
                     break
+
+            if reduce_page_size:
+                # Retry the very same page: neither the token nor the slice change, only the page size does -
+                # and not even that once the reducer is at its floor and only waiting is left.
+                reduce_page_size = False
+                continue
 
             if reset_pagination or pagination_tracker.has_reached_limit():
                 next_page_token = self._get_initial_next_page_token()
@@ -432,6 +544,8 @@ class SimpleRetriever(Retriever):
                     last_page_size=last_page_size,
                     last_record=last_record,
                     last_page_token_value=last_page_token_value,
+                    **page_size_override_kwargs(page_size_override),
+                    **stream_slice_kwargs(self._next_page_token, stream_slice),
                 )
                 if not next_page_token:
                     break
@@ -457,27 +571,158 @@ class SimpleRetriever(Retriever):
         :return: The records read from the API source
         """
         _slice = stream_slice or StreamSlice(partition={}, cursor_slice={})  # None-check
+        yield from self._read_records_or_split_request_window(
+            records_schema, _slice, _slice, depth=0
+        )
 
+    def _read_records_or_split_request_window(
+        self,
+        records_schema: Mapping[str, Any],
+        stream_slice: StreamSlice,
+        original_slice: StreamSlice,
+        depth: int,
+    ) -> Iterable[StreamData]:
+        """
+        Read `stream_slice` to completion, replacing it with smaller children and recursing into each of them in
+        turn when a `RequestWindowSplitRequiredException` is raised while reading it.
+
+        Each recursive call re-enters this method - and, through it, `_read_pages` - from scratch for the child
+        slice it is given, so every child gets its own paginator token, `PaginationTracker`, and
+        `PageSizeReducer` for free: nothing here needs to reset that state explicitly. Because the whole
+        recursion lives inside the single generator `DeclarativePartition.read()` consumes,
+        `PartitionReader.process_partition()` only calls `cursor.close_partition()` once, after this generator is
+        fully exhausted - so a failure anywhere in the recursion (a child that cannot be read, or a window that
+        cannot be split any further) propagates out without ever checkpointing the original partition.
+
+        `original_slice` is threaded through the recursion unchanged so every record yielded, however deep the
+        recursion went to produce it, is re-stamped with the partition's own slice rather than the child slice it
+        was actually read against - see `_reassociate_with_original_slice`. `depth` bounds the recursion
+        independently of `request_window_splitter`'s own no-progress guard: it is enforced here so a
+        misbehaving custom cursor cannot recurse indefinitely regardless of what that guard does or does not
+        catch.
+        """
         record_generator = partial(
             self._parse_records,
             stream_slice=stream_slice,
             records_schema=records_schema,
         )
-        records: Iterable[Mapping[str, Any]] = self._read_pages(record_generator, _slice)
-        if self.post_pagination_filter:
-            # A data feed paginates until it reaches a record older than the cursor, so the page that triggers the stop
-            # condition still holds already-synced records. Those are filtered here rather than in the record selector
-            # so that the paginator keeps seeing the whole page: the stop condition is evaluated on the last record of
-            # the page, which is precisely one of the records being dropped. Two consequences of filtering this late:
-            # the pagination tracker observes the dropped records, and a `file_uploader` on the record selector has
-            # already uploaded their files by the time they are dropped.
-            records = self.post_pagination_filter.filter_records(
-                records,
-                # the filter is only used for its cursor comparison, which does not read the stream state
-                stream_state={},
-                stream_slice=_slice,
+
+        emitted_count = 0
+        try:
+            records: Iterable[Mapping[str, Any]] = self._read_pages(record_generator, stream_slice)
+            if self.post_pagination_filter:
+                # A data feed paginates until it reaches a record older than the cursor, so the page that triggers the stop
+                # condition still holds already-synced records. Those are filtered here rather than in the record selector
+                # so that the paginator keeps seeing the whole page: the stop condition is evaluated on the last record of
+                # the page, which is precisely one of the records being dropped. Two consequences of filtering this late:
+                # the pagination tracker observes the dropped records, and a `file_uploader` on the record selector has
+                # already uploaded their files by the time they are dropped.
+                records = self.post_pagination_filter.filter_records(
+                    records,
+                    # the filter is only used for its cursor comparison, which does not read the stream state
+                    stream_state={},
+                    stream_slice=stream_slice,
+                )
+            for record in records:
+                emitted_count += 1
+                yield self._reassociate_with_original_slice(record, original_slice)
+        except RequestWindowSplitRequiredException as exception:
+            if self.request_window_splitting is None or self.request_window_splitter is None:
+                raise RequestWindowSplitNotSupportedException(stream_name=self.name) from exception
+
+            if emitted_count:
+                # Splitting and re-reading the window re-emits these records: a failed partition is never
+                # checkpointed, so the next attempt would re-emit them anyway. Always replaying makes forward
+                # progress instead of retrying the same oversized window forever; primary-key dedup downstream
+                # handles the duplicates either way.
+                LOGGER.warning(
+                    f"Stream {self.name} already emitted {emitted_count} record(s) from {stream_slice} before "
+                    f"it was rejected; splitting and re-reading the window may re-emit them."
+                )
+
+            if depth >= _MAX_REQUEST_WINDOW_SPLIT_DEPTH:
+                # Logged separately from the exception below so it stays visible even if the trace message's
+                # internal_message isn't surfaced by whatever catches it.
+                LOGGER.warning(
+                    f"Stream {self.name} hit the maximum request window split depth "
+                    f"({_MAX_REQUEST_WINDOW_SPLIT_DEPTH}) while splitting {original_slice}."
+                )
+                raise AirbyteTracedException(
+                    internal_message=f"Stream {self.name} exceeded the maximum request window split depth of {_MAX_REQUEST_WINDOW_SPLIT_DEPTH} while splitting {original_slice}",
+                    # `transient_error`, so the only remediation is the connector's own, if it defined one.
+                    message=self._with_request_window_failure_message(
+                        f"Stream {self.name} could not split its request window to a size the API accepts "
+                        f"within {_MAX_REQUEST_WINDOW_SPLIT_DEPTH} splits. This usually means the stream's "
+                        f"cursor is not actually shrinking the window on each split; if it uses a custom "
+                        f"cursor, check its `split_request_window` implementation."
+                    ),
+                    failure_type=FailureType.transient_error,
+                ) from exception
+
+            children = self.request_window_splitter(
+                stream_slice, self.request_window_splitting.min_split_window
             )
-        yield from records
+            if children is None:
+                min_split_window_note = (
+                    f", its configured `min_split_window` ({self.request_window_splitting.min_split_window})"
+                    if self.request_window_splitting.min_split_window
+                    else ""
+                )
+                raise AirbyteTracedException(
+                    internal_message=f"Stream {self.name} could not split its request window {stream_slice} any further",
+                    # `transient_error` regardless of how the triggering response was classified: exhaustion is
+                    # never the user's fault, matching `PageSizeReducer`'s equivalent exhaustion branch.
+                    message=self._with_request_window_failure_message(
+                        f"The API kept rejecting stream {self.name}'s request window even at the smallest window "
+                        f"its cursor allows{min_split_window_note}, or splitting the window further would not "
+                        f"make progress."
+                    ),
+                    failure_type=FailureType.transient_error,
+                ) from exception
+
+            LOGGER.info(
+                f"Stream {self.name}: the API rejected request window {stream_slice} (split depth {depth}); "
+                f"reducing it to {children} and reading each in turn."
+            )
+            for child in children:
+                yield from self._read_records_or_split_request_window(
+                    records_schema, child, original_slice, depth + 1
+                )
+
+    def _with_request_window_failure_message(self, message: str) -> str:
+        """
+        :return: the message followed by `request_window_splitting`'s configured `failure_message`, when it
+            defined one - mirroring `PageSizeReducer._with_failure_message`
+        """
+        assert self.request_window_splitting is not None
+        failure_message = (self.request_window_splitting.failure_message or "").strip()
+        if not failure_message:
+            return message
+        return f"{message} {failure_message}"
+
+    @staticmethod
+    def _reassociate_with_original_slice(
+        record: StreamData, original_slice: StreamSlice
+    ) -> StreamData:
+        """
+        Records read while recursing into a split child window are parsed against that child's `StreamSlice`,
+        so `RecordSelector` stamps them with the child as `associated_slice`. `DeclarativePartition.read()`
+        passes an already-built `Record` through unchanged rather than re-wrapping it, so left uncorrected the
+        child slice - not the partition's own slice - is what `ConcurrentCursor.observe()` would key its
+        per-partition bookkeeping by. `close_partition()` always looks that bookkeeping up by the partition's own
+        slice, so it would never find it, silently losing the precise most-recently-observed cursor value for a
+        split partition (recoverable in practice today only because callers of that lookup fall back to the
+        slice's end boundary when it is missing). Re-stamping every record with `original_slice` here restores
+        the same tracking a non-split read already gets, rather than relying on that fallback.
+        """
+        if isinstance(record, Record) and record.associated_slice is not original_slice:
+            return Record(
+                data=record.data,
+                stream_name=record.stream_name,
+                associated_slice=original_slice,
+                file_reference=record.file_reference,
+            )
+        return record
 
     def _parse_records(
         self,
@@ -543,7 +788,13 @@ class LazySimpleRetriever(SimpleRetriever):
                 last_record = record
                 yield record
 
-            next_page_token = self._next_page_token(response, last_page_size, last_record, None)
+            next_page_token = self._next_page_token(
+                response,
+                last_page_size,
+                last_record,
+                None,
+                **stream_slice_kwargs(self._next_page_token, stream_slice),
+            )
             if next_page_token:
                 yield from self._paginate(
                     next_page_token,
@@ -583,7 +834,11 @@ class LazySimpleRetriever(SimpleRetriever):
                     next_page_token.get("next_page_token") if next_page_token else None
                 )
                 next_page_token = self._next_page_token(
-                    response, last_page_size, last_record, last_page_token_value
+                    response,
+                    last_page_size,
+                    last_record,
+                    last_page_token_value,
+                    **stream_slice_kwargs(self._next_page_token, stream_slice),
                 )
 
                 if not next_page_token:

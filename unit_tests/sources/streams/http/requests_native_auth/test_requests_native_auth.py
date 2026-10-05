@@ -88,6 +88,19 @@ def test_multiple_token_authenticator():
     assert {"Authorization": "Bearer token1"} == header3
 
 
+class _ComparableWithDatetime:
+    """Like `arrow.Arrow`: not a `datetime`, but comparable with one."""
+
+    def __init__(self, value):
+        self.value = value
+
+    def __lt__(self, other):
+        return self.value < other
+
+    def __gt__(self, other):
+        return self.value > other
+
+
 @freezegun.freeze_time("2022-01-01")
 class TestOauth2Authenticator:
     """
@@ -553,6 +566,154 @@ class TestOauth2Authenticator:
         assert isinstance(expires_datetime, AirbyteDateTime)
         assert expires_datetime == expected_token_expiry_date
         assert token == "access_token"
+
+    @pytest.mark.parametrize(
+        "expires_in, token_expiry_date_format",
+        [
+            (3600, None),
+            ("3600", None),
+            (3600.0, None),
+            (1640998800, "%s"),
+            (AirbyteDateTime(year=2022, month=1, day=1, hour=1), None),
+        ],
+        ids=["seconds", "string_of_seconds", "float_seconds", "epoch", "already_parsed"],
+    )
+    def test_get_access_token_parses_raw_expires_in_from_overridden_refresh_access_token(
+        self, mocker, expires_in, token_expiry_date_format
+    ):
+        """Overrides written before 6.45.5 return the raw `expires_in` from `refresh_access_token`."""
+        oauth = Oauth2Authenticator(
+            token_refresh_endpoint=TestOauth2Authenticator.refresh_endpoint,
+            client_id=TestOauth2Authenticator.client_id,
+            client_secret=TestOauth2Authenticator.client_secret,
+            refresh_token=TestOauth2Authenticator.refresh_token,
+            token_expiry_date_format=token_expiry_date_format,
+            token_expiry_is_time_of_expiration=bool(token_expiry_date_format),
+        )
+        mocked_refresh = mocker.patch.object(
+            Oauth2Authenticator, "refresh_access_token", return_value=("access_token", expires_in)
+        )
+
+        assert oauth.get_access_token() == "access_token"
+        assert oauth.get_access_token() == "access_token"
+        mocked_refresh.assert_called_once()
+        assert oauth.get_token_expiry_date() == AirbyteDateTime(year=2022, month=1, day=1, hour=1)
+
+    @pytest.mark.parametrize("override_refresh", [True, False], ids=["raw_override", "cdk_refresh"])
+    def test_set_token_expiry_date_override_that_parses_keeps_working(
+        self, mocker, requests_mock, override_refresh
+    ):
+        """Setters that parse, as `set_token_expiry_date` did before 6.45.5, get raw values from
+        older `refresh_access_token` overrides and datetimes from the CDK one."""
+
+        class ParsingSetterAuthenticator(Oauth2Authenticator):
+            def set_token_expiry_date(self, value):
+                self._token_expiry_date = self._parse_token_expiration_date(value)
+
+        oauth = ParsingSetterAuthenticator(
+            f"https://{TestOauth2Authenticator.refresh_endpoint}",
+            TestOauth2Authenticator.client_id,
+            TestOauth2Authenticator.client_secret,
+            TestOauth2Authenticator.refresh_token,
+        )
+        requests_mock.post(
+            f"https://{TestOauth2Authenticator.refresh_endpoint}",
+            json={"access_token": "access_token", "expires_in": 3600},
+        )
+        if override_refresh:
+            mocker.patch.object(
+                ParsingSetterAuthenticator,
+                "refresh_access_token",
+                return_value=("access_token", 3600),
+            )
+
+        assert oauth.get_access_token() == "access_token"
+        assert oauth.get_token_expiry_date() == ab_datetime_now() + timedelta(seconds=3600)
+
+    def test_set_token_expiry_date_override_that_takes_raw_expires_in_keeps_working(self):
+        class RawSetterAuthenticator(Oauth2Authenticator):
+            def refresh_access_token(self):
+                return "access_token", 3600
+
+            def set_token_expiry_date(self, value):
+                self._token_expiry_date = ab_datetime_now() + timedelta(seconds=value)
+
+        oauth = RawSetterAuthenticator(
+            TestOauth2Authenticator.refresh_endpoint,
+            TestOauth2Authenticator.client_id,
+            TestOauth2Authenticator.client_secret,
+            TestOauth2Authenticator.refresh_token,
+        )
+
+        assert oauth.get_access_token() == "access_token"
+        assert oauth.get_access_token() == "access_token"
+        assert oauth.get_token_expiry_date() == ab_datetime_now() + timedelta(seconds=3600)
+
+    def test_get_access_token_override_passing_raw_expires_in_to_set_token_expiry_date(self):
+        class LegacyAuthenticator(Oauth2Authenticator):
+            def get_access_token(self):
+                if self.token_has_expired():
+                    token, expires_in = self.refresh_access_token()
+                    self.access_token = token
+                    self.set_token_expiry_date(expires_in)
+                return self.access_token
+
+            def refresh_access_token(self):
+                return "access_token", 3600
+
+        oauth = LegacyAuthenticator(
+            TestOauth2Authenticator.refresh_endpoint,
+            TestOauth2Authenticator.client_id,
+            TestOauth2Authenticator.client_secret,
+            TestOauth2Authenticator.refresh_token,
+        )
+
+        assert oauth.get_access_token() == "access_token"
+        assert oauth.get_access_token() == "access_token"
+        assert oauth.get_token_expiry_date() == ab_datetime_now() + timedelta(seconds=3600)
+
+    def test_parse_token_expiration_date_override_only_gets_raw_values(self, requests_mock):
+        parsed = []
+
+        class SecondsParserAuthenticator(Oauth2Authenticator):
+            def _parse_token_expiration_date(self, value):
+                parsed.append(value)
+                return ab_datetime_now() + timedelta(seconds=int(value))
+
+        oauth = SecondsParserAuthenticator(
+            f"https://{TestOauth2Authenticator.refresh_endpoint}",
+            TestOauth2Authenticator.client_id,
+            TestOauth2Authenticator.client_secret,
+            TestOauth2Authenticator.refresh_token,
+        )
+        requests_mock.post(
+            f"https://{TestOauth2Authenticator.refresh_endpoint}",
+            json={"access_token": "access_token", "expires_in": 3600},
+        )
+
+        assert oauth.get_access_token() == "access_token"
+        assert oauth.get_access_token() == "access_token"
+        assert parsed == [3600]
+        assert oauth.get_token_expiry_date() == ab_datetime_now() + timedelta(seconds=3600)
+
+    @pytest.mark.parametrize(
+        "expires_in",
+        [_ComparableWithDatetime(AirbyteDateTime(year=2022, month=1, day=2)), None, 1641081600000],
+        ids=["comparable_object", "none", "epoch_millis"],
+    )
+    def test_get_access_token_stores_an_unparseable_expiry_as_is(self, mocker, expires_in):
+        oauth = Oauth2Authenticator(
+            TestOauth2Authenticator.refresh_endpoint,
+            TestOauth2Authenticator.client_id,
+            TestOauth2Authenticator.client_secret,
+            TestOauth2Authenticator.refresh_token,
+        )
+        mocker.patch.object(
+            Oauth2Authenticator, "refresh_access_token", return_value=("access_token", expires_in)
+        )
+
+        assert oauth.get_access_token() == "access_token"
+        assert oauth.get_token_expiry_date() is expires_in
 
     @pytest.mark.usefixtures("mock_sleep")
     @pytest.mark.parametrize("error_code", (429, 500, 502, 504))
@@ -1036,6 +1197,7 @@ class TestSingleUseRefreshTokenOauth2Authenticator:
             ("number_of_seconds", 42, None, "2022-12-31T00:00:42+00:00"),
             ("string_of_seconds", "42", None, "2022-12-31T00:00:42+00:00"),
             ("date_format", "2023-04-04", "YYYY-MM-DD", "2023-04-04T00:00:00+00:00"),
+            ("epoch_format", 1672531200, "%s", "2023-01-01T00:00:00+00:00"),
         ],
     )
     def test_given_no_message_repository_get_access_token(
@@ -1054,7 +1216,6 @@ class TestSingleUseRefreshTokenOauth2Authenticator:
             client_id=connector_config["credentials"]["client_id"],
             client_secret=connector_config["credentials"]["client_secret"],
             token_expiry_date_format=expiry_date_format,
-            token_expiry_is_time_of_expiration=bool(expiry_date_format),
         )
 
         # Mock the response from the refresh token endpoint
@@ -1197,6 +1358,142 @@ class TestSingleUseRefreshTokenOauth2Authenticator:
             ab_datetime_now().add(timedelta(seconds=42)),
             "new_refresh_token",
         )
+
+    def test_get_access_token_parses_raw_expires_in_from_overridden_refresh_access_token(
+        self, mocker, connector_config
+    ):
+        """A raw `expires_in` must not be stored as-is, where it reads back as an epoch in 1970."""
+        connector_config["credentials"]["token_expiry_date"] = ""
+        authenticator = SingleUseRefreshTokenOauth2Authenticator(
+            connector_config, token_refresh_endpoint="https://refresh_endpoint.com"
+        )
+        mocked_refresh = mocker.patch.object(
+            SingleUseRefreshTokenOauth2Authenticator,
+            "refresh_access_token",
+            return_value=("new_access_token", 3600, "new_refresh_token"),
+        )
+        mocker.patch.object(SingleUseRefreshTokenOauth2Authenticator, "_emit_control_message")
+
+        for _ in range(3):
+            assert authenticator.get_access_token() == "new_access_token"
+
+        mocked_refresh.assert_called_once()
+        assert connector_config["credentials"]["token_expiry_date"] == "2022-12-31T01:00:00+00:00"
+
+    @pytest.mark.parametrize(
+        "expires_in, token_expiry_date_format",
+        [
+            (1672531200, "%s"),
+            ("2023-01-01T00:00:00Z", None),
+            (None, None),
+            (1672531200000, None),
+        ],
+        ids=["epoch_with_format", "date", "none", "epoch_millis"],
+    )
+    def test_refresh_and_set_access_token_stores_other_overridden_expires_in_as_is(
+        self, capsys, mocker, connector_config, expires_in, token_expiry_date_format
+    ):
+        """Values other than a raw `expires_in` in seconds are stored and emitted as they were before."""
+        authenticator = SingleUseRefreshTokenOauth2Authenticator(
+            connector_config,
+            token_refresh_endpoint="https://refresh_endpoint.com",
+            token_expiry_date_format=token_expiry_date_format,
+        )
+        mocker.patch.object(
+            SingleUseRefreshTokenOauth2Authenticator,
+            "refresh_access_token",
+            return_value=("new_access_token", expires_in, "new_refresh_token"),
+        )
+
+        authenticator.refresh_and_set_access_token()
+
+        airbyte_message = json.loads(capsys.readouterr().out)
+        emitted_credentials = airbyte_message["control"]["connectorConfig"]["config"]["credentials"]
+        assert emitted_credentials["refresh_token"] == "new_refresh_token"
+        assert emitted_credentials["token_expiry_date"] == str(expires_in)
+
+    def test_parse_token_expiration_date_override_only_gets_raw_values(
+        self, mocker, connector_config
+    ):
+        parsed = []
+
+        class SecondsParserAuthenticator(SingleUseRefreshTokenOauth2Authenticator):
+            def _parse_token_expiration_date(self, value):
+                parsed.append(value)
+                return ab_datetime_now() + timedelta(seconds=int(value))
+
+        authenticator = SecondsParserAuthenticator(
+            connector_config, token_refresh_endpoint="https://refresh_endpoint.com"
+        )
+        resp.status_code = 200
+        mocker.patch.object(
+            resp,
+            "json",
+            return_value={"access_token": "new_access_token", "expires_in": 3600},
+        )
+        mocker.patch.object(requests, "request", side_effect=mock_request, autospec=True)
+        mocker.patch.object(SingleUseRefreshTokenOauth2Authenticator, "_emit_control_message")
+
+        authenticator.refresh_and_set_access_token()
+
+        assert parsed == [3600]
+        assert connector_config["credentials"]["token_expiry_date"] == "2022-12-31T01:00:00+00:00"
+
+    def test_set_token_expiry_date_override_that_takes_raw_expires_in_keeps_working(
+        self, capsys, connector_config
+    ):
+        class RawSetterAuthenticator(SingleUseRefreshTokenOauth2Authenticator):
+            refresh_count = 0
+
+            def refresh_access_token(self):
+                RawSetterAuthenticator.refresh_count += 1
+                return "new_access_token", 3600, "new_refresh_token"
+
+            def set_token_expiry_date(self, value):
+                super().set_token_expiry_date(ab_datetime_now() + timedelta(seconds=value))
+
+        connector_config["credentials"]["token_expiry_date"] = ""
+        authenticator = RawSetterAuthenticator(
+            connector_config, token_refresh_endpoint="https://refresh_endpoint.com"
+        )
+
+        for _ in range(3):
+            assert authenticator.get_access_token() == "new_access_token"
+
+        assert RawSetterAuthenticator.refresh_count == 1
+        airbyte_message = json.loads(capsys.readouterr().out)
+        emitted_credentials = airbyte_message["control"]["connectorConfig"]["config"]["credentials"]
+        assert emitted_credentials["refresh_token"] == "new_refresh_token"
+        assert emitted_credentials["token_expiry_date"] == "2022-12-31T01:00:00+00:00"
+
+    def test_set_token_expiry_date_does_not_parse_a_time_of_expiration(self, connector_config):
+        parsed = []
+
+        class RecordingParserAuthenticator(SingleUseRefreshTokenOauth2Authenticator):
+            def _parse_token_expiration_date(self, value):
+                parsed.append(value)
+                return super()._parse_token_expiration_date(value)
+
+        authenticator = RecordingParserAuthenticator(
+            connector_config,
+            token_refresh_endpoint="https://refresh_endpoint.com",
+            token_expiry_is_time_of_expiration=True,
+        )
+
+        authenticator.set_token_expiry_date(1672531200)
+
+        assert parsed == []
+        assert connector_config["credentials"]["token_expiry_date"] == "1672531200"
+
+    def test_set_token_expiry_date_stores_a_date_string_as_is(self, connector_config):
+        authenticator = SingleUseRefreshTokenOauth2Authenticator(
+            connector_config, token_refresh_endpoint="https://refresh_endpoint.com"
+        )
+
+        authenticator.set_token_expiry_date("2023-01-01T00:00:00Z")
+
+        assert connector_config["credentials"]["token_expiry_date"] == "2023-01-01T00:00:00Z"
+        assert authenticator.get_token_expiry_date() == AirbyteDateTime(year=2023, month=1, day=1)
 
     def test_send_refresh_request_as_query_params_picks_up_rotated_refresh_token(
         self, mocker, connector_config
@@ -1414,3 +1711,197 @@ class TestConcurrentTokenRefresh:
         assert len(results) == 5
         assert all(token == "new_access_token" for token in results)
         assert refresh_call_count == 1, f"Expected 1 refresh call, got {refresh_call_count}"
+
+    def test_refresh_and_set_access_token_skips_refresh_when_another_thread_already_refreshed(
+        self, mocker
+    ):
+        """
+        A forced refresh that was queued behind the class-level lock must not refresh
+        again when the access token changed while it waited: the request is retried
+        with the token the other thread already obtained.
+        """
+        oauth = Oauth2Authenticator(
+            token_refresh_endpoint="https://refresh_endpoint.com",
+            client_id="client_id",
+            client_secret="client_secret",
+            refresh_token="refresh_token",
+            token_expiry_date=ab_datetime_now() + timedelta(hours=1),
+        )
+        oauth.access_token = "old"
+
+        mocked_refresh = mocker.patch.object(oauth, "refresh_access_token")
+
+        snapshot_taken = threading.Event()
+        real_snapshot = oauth._current_access_token_or_none
+
+        def record_snapshot():
+            value = real_snapshot()
+            snapshot_taken.set()
+            return value
+
+        mocker.patch.object(oauth, "_current_access_token_or_none", side_effect=record_snapshot)
+
+        with Oauth2Authenticator._token_refresh_lock:
+            thread = threading.Thread(target=oauth.refresh_and_set_access_token)
+            thread.start()
+            # The worker took its pre-lock token snapshot and is now blocked on the lock.
+            assert snapshot_taken.wait(5)
+            oauth.access_token = "winner"
+        thread.join(timeout=5)
+
+        assert not thread.is_alive()
+        mocked_refresh.assert_not_called()
+        assert oauth.access_token == "winner"
+
+    def test_refresh_and_set_access_token_refreshes_when_token_unchanged(self, mocker):
+        oauth = Oauth2Authenticator(
+            token_refresh_endpoint="https://refresh_endpoint.com",
+            client_id="client_id",
+            client_secret="client_secret",
+            refresh_token="refresh_token",
+            token_expiry_date=ab_datetime_now() + timedelta(hours=1),
+        )
+        oauth.access_token = "old"
+
+        mocked_refresh = mocker.patch.object(
+            oauth,
+            "refresh_access_token",
+            return_value=("new", ab_datetime_now() + timedelta(hours=1)),
+        )
+
+        oauth.refresh_and_set_access_token()
+
+        mocked_refresh.assert_called_once()
+        assert oauth.access_token == "new"
+
+    def test_get_access_token_refresh_lock_is_reentrant(self, requests_mock):
+        """
+        get_access_token() holds the class-level refresh lock while calling
+        refresh_and_set_access_token, which re-acquires it; a non-reentrant lock
+        would deadlock. The worker thread must finish and report the new token.
+        """
+        requests_mock.post(
+            "https://refresh_endpoint.com",
+            json={"access_token": "new_access_token", "expires_in": 3600},
+        )
+        oauth = Oauth2Authenticator(
+            token_refresh_endpoint="https://refresh_endpoint.com",
+            client_id="client_id",
+            client_secret="client_secret",
+            refresh_token="refresh_token",
+            token_expiry_date=ab_datetime_now() - timedelta(hours=1),
+        )
+
+        results, errors = [], []
+
+        def get_token():
+            try:
+                results.append(oauth.get_access_token())
+            except Exception as e:
+                errors.append(e)
+
+        thread = threading.Thread(target=get_token)
+        thread.start()
+        thread.join(timeout=5)
+
+        assert not thread.is_alive(), "get_access_token deadlocked on a non-reentrant lock"
+        assert errors == []
+        assert results == ["new_access_token"]
+
+    def test_refresh_and_set_access_token_holds_lock_during_refresh(self, mocker):
+        """
+        The class-level lock must be held for the whole refresh: a probe from another
+        thread cannot acquire it while refresh_access_token is in flight.
+        """
+        oauth = Oauth2Authenticator(
+            token_refresh_endpoint="https://refresh_endpoint.com",
+            client_id="client_id",
+            client_secret="client_secret",
+            refresh_token="refresh_token",
+            token_expiry_date=ab_datetime_now() + timedelta(hours=1),
+        )
+        oauth.access_token = "old"
+
+        probe_results = []
+
+        def spy_refresh_access_token(self):
+            def probe():
+                acquired = Oauth2Authenticator._token_refresh_lock.acquire(blocking=False)
+                if acquired:
+                    Oauth2Authenticator._token_refresh_lock.release()
+                probe_results.append(acquired)
+
+            probe_thread = threading.Thread(target=probe)
+            probe_thread.start()
+            probe_thread.join()
+            return ("new", ab_datetime_now() + timedelta(hours=1))
+
+        mocker.patch.object(Oauth2Authenticator, "refresh_access_token", spy_refresh_access_token)
+
+        oauth.refresh_and_set_access_token()
+
+        assert probe_results == [False]
+        assert oauth.access_token == "new"
+
+
+class TestSingleUseRefreshTokenInstanceSkip:
+    """
+    Two SingleUseRefreshTokenOauth2Authenticator instances over one shared connector
+    config: a forced refresh queued behind the lock sees the token the first instance
+    already wrote back into the shared config and skips its own refresh.
+    """
+
+    def test_second_instance_skips_refresh_after_first_refreshes(self, requests_mock, mocker):
+        requests_mock.post(
+            "https://refresh_endpoint.com",
+            json={
+                "access_token": "new_access_token",
+                "refresh_token": "new_refresh_token",
+                "expires_in": 3600,
+            },
+        )
+        connector_config = {
+            "credentials": {
+                "client_id": "client_id",
+                "client_secret": "client_secret",
+                "refresh_token": "refresh_token",
+                "access_token": "old_access_token",
+                "token_expiry_date": str(ab_datetime_now() + timedelta(hours=1)),
+            }
+        }
+        auth1 = SingleUseRefreshTokenOauth2Authenticator(
+            connector_config=connector_config,
+            token_refresh_endpoint="https://refresh_endpoint.com",
+        )
+        auth2 = SingleUseRefreshTokenOauth2Authenticator(
+            connector_config=connector_config,
+            token_refresh_endpoint="https://refresh_endpoint.com",
+        )
+
+        mocked_emit = mocker.patch.object(
+            SingleUseRefreshTokenOauth2Authenticator, "_emit_control_message"
+        )
+
+        snapshot_taken = threading.Event()
+        real_snapshot = auth2._current_access_token_or_none
+
+        def record_snapshot():
+            value = real_snapshot()
+            snapshot_taken.set()
+            return value
+
+        mocker.patch.object(auth2, "_current_access_token_or_none", side_effect=record_snapshot)
+
+        with SingleUseRefreshTokenOauth2Authenticator._token_refresh_lock:
+            thread = threading.Thread(target=auth2.refresh_and_set_access_token)
+            thread.start()
+            # auth2 took its pre-lock snapshot ("old_access_token") and now waits on the lock.
+            assert snapshot_taken.wait(5)
+            auth1.refresh_and_set_access_token()
+        thread.join(timeout=5)
+
+        assert not thread.is_alive()
+        assert len(requests_mock.request_history) == 1
+        assert mocked_emit.call_count == 1
+        assert auth2.access_token == "new_access_token"
+        assert connector_config["credentials"]["refresh_token"] == "new_refresh_token"

@@ -158,16 +158,22 @@ def test_invalid_checksum_fails_to_run(
         datetime.datetime.now() - datetime.timedelta(days=2)
     ).strftime("%Y-%m-%d")
 
+    actual_checksum = py_components_config_dict["__injected_components_py_checksums"][hash_type]
     py_components_config_dict["__injected_components_py_checksums"][hash_type] = "invalid_checksum"
 
     with NamedTemporaryFile(delete=False, suffix=".json") as temp_config_file:
         json_str = json.dumps(py_components_config_dict)
         Path(temp_config_file.name).write_text(json_str)
         temp_config_file.flush()
-        with pytest.raises(AirbyteCodeTamperedError):
+        with pytest.raises(AirbyteCodeTamperedError) as exc_info:
             source = create_declarative_source(
                 ["check", "--config", temp_config_file.name],
             )
+
+    # No components code in the message: it lands in failure reasons and logs
+    assert str(exc_info.value) == f"{hash_type} checksum does not match." + str(
+        {"expected_checksum": "invalid_checksum", "actual_checksum": actual_checksum}
+    )
 
 
 @pytest.mark.parametrize(

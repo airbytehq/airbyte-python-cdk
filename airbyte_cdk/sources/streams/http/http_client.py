@@ -42,6 +42,9 @@ from airbyte_cdk.sources.streams.http.exceptions import (
     RequestBodyException,
     UserDefinedBackoffException,
 )
+from airbyte_cdk.sources.streams.http.page_size_reduction_exception import (
+    PageSizeReductionRequiredException,
+)
 from airbyte_cdk.sources.streams.http.pagination_reset_exception import (
     PaginationResetRequiredException,
 )
@@ -49,6 +52,9 @@ from airbyte_cdk.sources.streams.http.rate_limiting import (
     http_client_default_backoff_handler,
     rate_limit_default_backoff_handler,
     user_defined_backoff_handler,
+)
+from airbyte_cdk.sources.streams.http.request_window_split_exception import (
+    RequestWindowSplitRequiredException,
 )
 
 # Imported from the leaf module rather than the package: `protocols` pulls in nothing from the
@@ -93,6 +99,30 @@ def monkey_patched_get_item(self, key):  # type: ignore # this interface is a co
 
 
 requests_cache.SQLiteDict.__getitem__ = monkey_patched_get_item  # type: ignore # see the method doc for more information
+
+
+def _as_auxiliary_request_log(
+    log_message: Any, title: Optional[str] = None, description: Optional[str] = None
+) -> Any:
+    """
+    Flag an already-formatted request/response log as an auxiliary request.
+
+    The Connector Builder builds one page per non-auxiliary HTTP log and bounds a slice by the number of those
+    pages, so a request that will not produce a page has to be marked here or it inflates that count. The
+    Builder also labels its side panel from the log's `title` and `description`, which the formatter filled
+    with the wording of an ordinary page, so a caller that knows why the request is auxiliary passes its own
+    and the panel does not read as a successful page fetch. The log formatter is connector-supplied and only
+    the CDK's own one is guaranteed to have an `http` object, hence the defensive check.
+    """
+    if isinstance(log_message, dict):
+        http = log_message.get("http")
+        if isinstance(http, dict):
+            http["is_auxiliary"] = True
+            if title is not None:
+                http["title"] = title
+            if description is not None:
+                http["description"] = description
+    return log_message
 
 
 class HttpClient:
@@ -148,6 +178,7 @@ class HttpClient:
             self._backoff_strategies = [DefaultBackoffStrategy()]
         self._error_message_parser = error_message_parser or JsonErrorMessageParser()
         self._request_attempt_count: Dict[requests.PreparedRequest, int] = {}
+        self._token_refresh_outcomes: Dict[requests.PreparedRequest, bool] = {}
         self._disable_retries = disable_retries
         self._message_repository = message_repository
         self._authenticator_update_failed = False
@@ -447,9 +478,40 @@ class HttpClient:
             and self._message_repository is not None
         ):
             formatter = log_formatter
+            # A response resolving to REDUCE_PAGE_SIZE or SPLIT_REQUEST_WINDOW is not a page of the stream:
+            # the retriever discards it and re-issues the request with a smaller page size or a narrower
+            # window. Logging it as an auxiliary request keeps it visible in the Connector Builder while
+            # keeping it out of the per-slice page count, which would otherwise report "limit reached" on a
+            # read that only retried.
+            log_as_auxiliary = error_resolution.response_action in (
+                ResponseAction.REDUCE_PAGE_SIZE,
+                ResponseAction.SPLIT_REQUEST_WINDOW,
+            )
             self._message_repository.log_message(
                 Level.DEBUG,
-                lambda: formatter(response),
+                lambda: _as_auxiliary_request_log(
+                    formatter(response),
+                    title=(
+                        f"Stream '{self._name}' page rejected, retrying with a smaller page size"
+                        if error_resolution.response_action == ResponseAction.REDUCE_PAGE_SIZE
+                        else f"Stream '{self._name}' request window rejected, retrying with a smaller window"
+                    ),
+                    description=(
+                        (
+                            f"Request for stream '{self._name}' whose response asked for a smaller page. The "
+                            f"same page is requested again with a reduced page size, so this request produced "
+                            f"no records."
+                        )
+                        if error_resolution.response_action == ResponseAction.REDUCE_PAGE_SIZE
+                        else (
+                            f"Request for stream '{self._name}' whose response asked for a smaller request "
+                            f"window. The window is split and re-read as smaller children, so this request "
+                            f"produced no records."
+                        )
+                    ),
+                )
+                if log_as_auxiliary
+                else formatter(response),
             )
 
         self._handle_error_resolution(
@@ -495,6 +557,26 @@ class HttpClient:
         """
         if prepared_request in self._request_attempt_count:
             del self._request_attempt_count[prepared_request]
+        self._token_refresh_outcomes.pop(prepared_request, None)
+
+    def _auth_header_changed_since(self, request: requests.PreparedRequest) -> bool:
+        """Whether the authenticator's current Authorization header differs from the one the request was sent with."""
+        # request.headers is None on an unprepared request
+        sent = request.headers.get("Authorization") if request.headers else None
+        if not sent or not hasattr(self._session.auth, "get_auth_header"):
+            return False
+        current = self._session.auth.get_auth_header().get("Authorization")  # type: ignore[union-attr]
+        return current is not None and current != sent
+
+    @staticmethod
+    def _is_token_endpoint_rejection(error: requests.exceptions.RequestException) -> bool:
+        """Whether the token endpoint answered with a 4xx other than 429, i.e. it rejected the credentials rather than failing transiently."""
+        response = error.response
+        return (
+            response is not None
+            and 400 <= response.status_code < 500
+            and response.status_code != 429
+        )
 
     def _handle_error_resolution(
         self,
@@ -509,6 +591,18 @@ class HttpClient:
 
         if error_resolution.response_action == ResponseAction.RESET_PAGINATION:
             raise PaginationResetRequiredException()
+
+        if error_resolution.response_action == ResponseAction.REDUCE_PAGE_SIZE:
+            raise PageSizeReductionRequiredException(
+                stream_name=self._name, error_message=error_resolution.error_message
+            )
+
+        if error_resolution.response_action == ResponseAction.SPLIT_REQUEST_WINDOW:
+            raise RequestWindowSplitRequiredException(
+                stream_name=self._name,
+                error_message=error_resolution.error_message,
+                failure_type=error_resolution.failure_type,
+            )
 
         # Emit stream status RUNNING with the reason RATE_LIMITED to log that the rate limit has been reached
         if error_resolution.response_action == ResponseAction.RATE_LIMITED:
@@ -528,20 +622,81 @@ class HttpClient:
             # backoff retry loop. Adding `\n` to the message and ignore 'end' ensure that few messages are printed at the same time.
             print(f"{message}\n", end="", flush=True)
 
-        # Handle REFRESH_TOKEN_THEN_RETRY: Force refresh the OAuth token before retry
-        # This is useful when the API returns 401 but the stored token expiry hasn't been reached yet
-        # Only OAuth authenticators have refresh_and_set_access_token method
-        # Non-OAuth auth types (e.g., BearerAuthenticator) will fall through to normal retry
+        # Handle REFRESH_TOKEN_THEN_RETRY: force refresh the OAuth token before retrying,
+        # at most once per request. A config error from the refresh (e.g. bad credentials,
+        # including a 4xx rejection from the token endpoint) or a request rejected again
+        # after a refresh attempt fails fast instead of refreshing in a loop; the failure
+        # type reflects whether the refresh succeeded. Transient refresh failures (network
+        # errors, 5xx, 429) keep the retry transient. Non-OAuth auth types (e.g.,
+        # BearerAuthenticator) fall through to normal retry.
         if error_resolution.response_action == ResponseAction.REFRESH_TOKEN_THEN_RETRY:
+            status = (
+                f"status code '{response.status_code}'"
+                if response is not None
+                else f"exception '{exc}'"
+            )
+            if request in self._token_refresh_outcomes:
+                refreshed = self._token_refresh_outcomes[request]
+                self._evict_key(request)
+                if refreshed:
+                    internal_message = f"'{request.method}' request to '{request.url}' was rejected with {status} again after the OAuth token was refreshed; not refreshing again."
+                    failure_type = FailureType.config_error
+                    message = "Refreshed OAuth access token is rejected by the API."
+                else:
+                    internal_message = f"'{request.method}' request to '{request.url}' was rejected with {status} and the OAuth token could not be refreshed; not refreshing again."
+                    failure_type = FailureType.transient_error
+                    message = (
+                        "API rejects the current OAuth access token and the token refresh failed."
+                    )
+                if error_resolution.error_message:
+                    internal_message += (
+                        f" Error handler message: '{error_resolution.error_message}'"
+                    )
+                self._logger.error(internal_message)
+                raise AirbyteTracedException(
+                    internal_message=internal_message,
+                    message=message,
+                    failure_type=failure_type,
+                )
             if (
                 hasattr(self._session, "auth")
                 and self._session.auth is not None
                 and hasattr(self._session.auth, "refresh_and_set_access_token")
             ):
+                self._token_refresh_outcomes[request] = False
                 try:
-                    self._session.auth.refresh_and_set_access_token()  # type: ignore[union-attr]
-                    self._logger.info(
-                        "Refreshed OAuth token due to REFRESH_TOKEN_THEN_RETRY response action"
+                    if self._auth_header_changed_since(request):
+                        self._logger.info(
+                            "OAuth token was already replaced since this request was sent; retrying with the current token without refreshing again."
+                        )
+                    else:
+                        self._session.auth.refresh_and_set_access_token()  # type: ignore[union-attr]
+                        self._logger.info(
+                            "Refreshed OAuth token due to REFRESH_TOKEN_THEN_RETRY response action"
+                        )
+                    self._token_refresh_outcomes[request] = True
+                except AirbyteTracedException as refresh_error:
+                    if refresh_error.failure_type == FailureType.config_error:
+                        self._evict_key(request)
+                        raise
+                    self._logger.warning(
+                        f"Failed to refresh OAuth token: {refresh_error}. Proceeding with retry using existing token."
+                    )
+                except requests.exceptions.RequestException as refresh_error:
+                    if self._is_token_endpoint_rejection(refresh_error):
+                        self._evict_key(request)
+                        internal_message = (
+                            f"'{request.method}' request to '{request.url}' was rejected with {status} and the OAuth token endpoint "
+                            f"rejected the refresh request: {refresh_error}"
+                        )
+                        self._logger.error(internal_message)
+                        raise AirbyteTracedException(
+                            internal_message=internal_message,
+                            message="OAuth token refresh request is rejected by the token endpoint.",
+                            failure_type=FailureType.config_error,
+                        ) from refresh_error
+                    self._logger.warning(
+                        f"Failed to refresh OAuth token: {refresh_error}. Proceeding with retry using existing token."
                     )
                 except Exception as refresh_error:
                     self._logger.warning(
