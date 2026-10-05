@@ -15,6 +15,9 @@ from airbyte_cdk.sources.types import Record, StreamSlice
 class PaginationStrategy:
     """
     Defines how to get the next page token
+
+    One instance paginates every partition of the stream, several at once, so `next_page_token` must derive the
+    next token from its arguments, such as `last_page_token_value`, rather than from state kept on the instance.
     """
 
     @property

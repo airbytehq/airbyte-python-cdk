@@ -868,7 +868,7 @@ definitions:
         additionalProperties: true
   CustomPaginationStrategy:
     title: Custom Pagination Strategy
-    description: Pagination strategy component whose behavior is derived from a custom code implementation of the connector.
+    description: Pagination strategy component whose behavior is derived from a custom code implementation of the connector. One instance paginates every partition of the stream in several threads at once, so the next token must be derived from the method arguments, not from state kept on the instance.
     type: object
     additionalProperties: true
     required:
@@ -953,7 +953,7 @@ definitions:
         additionalProperties: true
   CustomRetriever:
     title: Custom Retriever
-    description: Retriever component whose behavior is derived from a custom code implementation of the connector.
+    description: Retriever component whose behavior is derived from a custom code implementation of the connector. One instance reads every partition of the stream and its `read_records` runs in several threads at once, so per-read state must live in local variables, not on the instance.
     type: object
     additionalProperties: true
     required:
