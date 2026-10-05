@@ -35,6 +35,31 @@ def test_flush_drains_without_fd_flush_and_sweeper_flushes(monkeypatch):
         assert flushed.wait(timeout=10)
 
 
+def test_unexpected_sweeper_error_falls_back_to_synchronous_flush(monkeypatch):
+    sweeper_failed = threading.Event()
+    mock_stdout = MagicMock()
+
+    def flush_fails_once():
+        if not sweeper_failed.is_set():
+            sweeper_failed.set()
+            raise RuntimeError("unexpected")
+
+    mock_stdout.flush.side_effect = flush_fails_once
+    monkeypatch.setattr(sys, "__stdout__", mock_stdout)
+
+    with PrintBuffer(flush_interval=0.01) as print_buffer:
+        print_buffer.write("a")
+        assert sweeper_failed.wait(timeout=10)
+        print_buffer._sweeper.join(timeout=10)
+        assert not print_buffer._sweeper.is_alive()
+        assert print_buffer._sync_flush
+
+        mock_stdout.flush.reset_mock()
+        print_buffer.flush()
+
+        mock_stdout.flush.assert_called_once()
+
+
 class _CountingRaw(io.RawIOBase):
     def __init__(self):
         self.write_calls = 0

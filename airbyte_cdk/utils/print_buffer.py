@@ -184,7 +184,9 @@ class PrintBuffer:
                     self._pending_marked = False
                 try:
                     self._flush_to_fd()
-                except (OSError, ValueError):  # broken pipe / closed stdout
+                except Exception:
+                    # broken pipe / closed stdout, or anything unexpected: hand fd flushes back to
+                    # callers so output never waits on a dead sweeper
                     self._sync_flush = True
                     return
 
