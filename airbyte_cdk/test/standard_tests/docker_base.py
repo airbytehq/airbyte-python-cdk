@@ -105,6 +105,8 @@ def _run_docker_airbyte_command_with_config_updates(
             if isinstance(parsed, dict):
                 in_place_updates.append(parsed)
     except (OSError, ValueError):
+        # The container may have deleted the file or left non-JSON behind; the CONTROL
+        # messages (if any) are still persisted below, so there is nothing more to do here.
         pass
 
     persist_config_updates(
