@@ -5,6 +5,8 @@
 import io
 import json
 
+import ijson
+import orjson
 import pytest
 import requests
 import urllib3
@@ -220,3 +222,93 @@ def test_composite_raw_decoder_does_not_capture_remainder_without_opt_in(mocker)
     assert list(decoder.decode(response)) == [{"id": 1}, {"id": 2}]
     spy.assert_not_called()
     assert get_document_remainder(response) is None
+
+
+@pytest.mark.parametrize("max_size", [64 << 10, 1], ids=["in_memory", "rolled_to_disk"])
+@pytest.mark.parametrize("with_remainder", [True, False], ids=["with_remainder", "no_remainder"])
+def test_json_items_parser_int64_overflow_falls_back_on_spooled_body(
+    max_size, with_remainder, caplog
+):
+    body = b'{"items":[1,9223372036854775808,3],"after_url":"x","end_of_stream":false}'
+    remainders = []
+    raw = _spooled_body(body, max_size=max_size)
+    kwargs = {"on_document_remainder": remainders.append} if with_remainder else {}
+    with caplog.at_level("WARNING"):
+        records = list(JsonItemsParser(items_path="items").parse(raw, **kwargs))
+    assert records == [1, 2**63, 3]
+    assert type(records[1]) is int
+    if with_remainder:
+        assert remainders == [{"items": [], "after_url": "x", "end_of_stream": False}]
+    warnings = [r for r in caplog.records if r.levelname == "WARNING"]
+    assert len(warnings) == 1
+    assert "re-parsing spooled body" in warnings[0].getMessage()
+    assert "9223372036854775808" not in warnings[0].getMessage()
+
+
+def test_json_items_parser_int64_overflow_mid_list_no_dups_or_gaps():
+    items = [{"id": i} for i in range(50)]
+    items[37]["big"] = 2**63
+    body = json.dumps({"items": items}).encode()
+    raw = _spooled_body(body, max_size=1)
+    records = list(JsonItemsParser(items_path="items").parse(raw))
+    assert [r["id"] for r in records] == list(range(50))
+    assert records[37]["big"] == 2**63
+
+
+def test_json_items_parser_int64_overflow_in_remainder_field():
+    body = b'{"items":[{"id":1},{"id":2}],"after_url":"x","total":9223372036854775808}'
+    remainders = []
+    raw = _spooled_body(body, max_size=1)
+    records = list(
+        JsonItemsParser(items_path="items").parse(raw, on_document_remainder=remainders.append)
+    )
+    assert records == [{"id": 1}, {"id": 2}]
+    assert remainders == [{"items": [], "after_url": "x", "total": 2**63}]
+
+
+def test_int64_overflow_in_remainder_field_full_decoder_path():
+    body = b'{"items":[{"id":1},{"id":2}],"after_url":"x","total":9223372036854775808}'
+    response = _streamed_response(body)
+    response.raw = _spooled_body(body, max_size=1)
+    decoder = CompositeRawDecoder(parser=JsonItemsParser(items_path="items"))
+    decoder.enable_document_remainder_capture()
+    assert list(decoder.decode(response)) == [{"id": 1}, {"id": 2}]
+    assert get_document_remainder(response) == {
+        "items": [],
+        "after_url": "x",
+        "total": 2**63,
+    }
+
+
+def test_json_items_parser_int64_overflow_non_seekable_raises():
+    response = _streamed_response(b'{"items":[1, 9223372036854775808]}')
+    decoder = CompositeRawDecoder(parser=JsonItemsParser(items_path="items"))
+    with pytest.raises(ijson.common.IncompleteJSONError, match="integer overflow"):
+        list(decoder.decode(response))
+
+
+@pytest.mark.parametrize(
+    "body",
+    [b'{"items":[1,2', b'{"items":[1, tru]}'],
+    ids=["truncated", "bad_token"],
+)
+def test_json_items_parser_malformed_json_still_raises(body, caplog):
+    raw = _spooled_body(body, max_size=1)
+    with caplog.at_level("WARNING"):
+        with pytest.raises(ijson.common.IncompleteJSONError) as exc_info:
+            list(JsonItemsParser(items_path="items").parse(raw))
+    assert "integer overflow" not in str(exc_info.value)
+    assert not any("re-parsing spooled body" in r.getMessage() for r in caplog.records)
+
+
+def test_json_items_parser_int64_overflow_fallback_matches_orjson_for_huge_ints():
+    body = b'{"items":[1,18446744073709551616,3],"total":1e30}'
+    remainders = []
+    raw = _spooled_body(body, max_size=1)
+    records = list(
+        JsonItemsParser(items_path="items").parse(raw, on_document_remainder=remainders.append)
+    )
+    expected = orjson.loads(body)
+    assert records == expected["items"]
+    assert type(records[1]) is float
+    assert remainders == [{"items": [], "total": 1e30}]

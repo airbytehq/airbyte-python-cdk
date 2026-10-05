@@ -160,6 +160,21 @@ class _Utf8Recoder:
         return self._decoder.decode(chunk, final=not chunk).encode("utf-8")
 
 
+_INTEGER_OVERFLOW_MESSAGE = "integer overflow"
+
+
+def _resolve_items_path(document: Any, items_path: str) -> Tuple[Any, str, List[Any]]:
+    """Walks an ijson dotted `items_path` and returns (parent, last_key, items_list)."""
+    *parents, key = items_path.split(".")
+    node = document
+    for part in parents:
+        node = node[part]
+    items = node[key]
+    if not isinstance(items, list):
+        raise ValueError(f"items_path {items_path!r} does not point at a JSON array.")
+    return node, key, items
+
+
 @dataclass
 class JsonItemsParser(Parser):
     """Streaming JSON parser that yields each element of a nested array.
@@ -192,25 +207,50 @@ class JsonItemsParser(Parser):
             # so ijson keeps using its fast byte backend rather than a (deprecated) text
             # stream. The recoder decodes lazily in chunks, preserving bounded memory.
             data = _Utf8Recoder(data, self.encoding)  # type: ignore[assignment]
+        source = data if not isinstance(data, _Utf8Recoder) else data._stream
         # ijson auto-selects the best available backend (yajl2_c when present)
         # and reads from `data` lazily — it does not call `.read()` on the
         # whole stream up front.
         # use_float=True yields floats for non-integer numbers instead of Decimal, matching
         # json.loads/orjson behavior so downstream JSON serialization doesn't choke on Decimal.
         items_prefix = f"{self.items_path}.item"
-        if on_document_remainder is None:
-            yield from ijson.items(data, items_prefix, use_float=True)
-            return
-        builder = ijson.common.ObjectBuilder()
+        yielded = 0
+        try:
+            if on_document_remainder is None:
+                for item in ijson.items(data, items_prefix, use_float=True):
+                    yield item
+                    yielded += 1
+                return
+            builder = ijson.common.ObjectBuilder()
 
-        def events() -> Generator[Tuple[str, str, Any], None, None]:
-            for prefix, event, value in ijson.parse(data, use_float=True):
-                if not (prefix == items_prefix or prefix.startswith(items_prefix + ".")):
-                    builder.event(event, value)
-                yield prefix, event, value
+            def events() -> Generator[Tuple[str, str, Any], None, None]:
+                for prefix, event, value in ijson.parse(data, use_float=True):
+                    if not (prefix == items_prefix or prefix.startswith(items_prefix + ".")):
+                        builder.event(event, value)
+                    yield prefix, event, value
 
-        yield from ijson.items(events(), items_prefix)
-        on_document_remainder(builder.value)
+            for item in ijson.items(events(), items_prefix):
+                yield item
+                yielded += 1
+            on_document_remainder(builder.value)
+        except ijson.common.IncompleteJSONError as exc:
+            if _INTEGER_OVERFLOW_MESSAGE not in str(exc) or not source.seekable():
+                raise
+            # yajl (ijson's C backend) rejects integers outside int64. The spooled body is
+            # rewindable, so fall back to a full (non-streaming) orjson parse of the same bytes,
+            # as JsonParser does, and skip the items this response already emitted.
+            logger.warning(
+                "JsonItemsParser: integer outside int64 in response; re-parsing spooled body "
+                "with orjson after %d items",
+                yielded,
+            )
+            source.seek(0)
+            document = orjson.loads(source.read().decode(self.encoding or "utf-8"))
+            parent, key, items = _resolve_items_path(document, self.items_path)
+            yield from items[yielded:]
+            if on_document_remainder is not None:
+                parent[key] = []
+                on_document_remainder(document)
 
 
 @dataclass
