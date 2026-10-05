@@ -5165,6 +5165,9 @@ def test_given_reductions_exhausted_when_read_then_emit_a_transient_error():
         "keeps rejecting pages of stream" in error.message and "records per page" in error.message
         for error in errors
     )
+    # the filter defines no `error_message`, so the default mapping's text for 502 is the rejection reported
+    assert "HTTP Status Code: 502" in errors[0].internal_message
+    assert "not set up" not in errors[0].stack_trace
 
 
 def _request_window_splitting_manifest():
@@ -5507,6 +5510,9 @@ def test_given_split_window_still_rejected_when_read_then_partition_is_not_check
     ]
     assert errors[0].failure_type == FailureType.transient_error
     assert "could not split its request window" in errors[0].internal_message
+    # the filter defines no `error_message`, so the default mapping's text for 400 is the rejection reported
+    assert "HTTP Status Code: 400" in errors[0].internal_message
+    assert "not set up" not in errors[0].stack_trace
     final_state = get_states_for_stream(stream_name="Test", messages=messages)[
         -1
     ].stream.stream_state.__dict__
