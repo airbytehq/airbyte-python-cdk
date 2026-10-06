@@ -313,6 +313,53 @@ def test_dynamic_schema_loader_manifest_flow():
     assert actual_catalog.streams[0].json_schema == expected_schema
 
 
+def test_dynamic_schema_loader_manifest_flow_with_keys_replace():
+    manifest = deepcopy(_MANIFEST)
+    schema_loader = manifest["definitions"]["party_members_stream"]["schema_loader"]
+    schema_loader["retriever"]["requester"]["path"] = "/keys_replace/schema"
+    schema_loader["schema_transformations"] = [
+        {
+            "type": "KeysReplace",
+            "old": "hs_v2_date_entered_(.*?)(?:_date)?$",
+            "new": "hs_lifecyclestage_\\1_date",
+            "regex": True,
+            "keep_original": True,
+            "only_if_missing": True,
+        }
+    ]
+    expected_properties = {
+        "hs_v2_date_entered_customer": {"type": ["null", "string"]},
+        "hs_v2_date_entered_lead_date": {"type": ["null", "string"]},
+        "hs_lifecyclestage_lead_date": {"type": ["null", "integer"]},
+        "hs_lifecyclestage_customer_date": {"type": ["null", "string"]},
+    }
+
+    source = ConcurrentDeclarativeSource(
+        source_config=manifest, config=_CONFIG, catalog=None, state=None
+    )
+
+    with HttpMocker() as http_mocker:
+        http_mocker.get(
+            HttpRequest(url="https://api.test.com/keys_replace/schema"),
+            HttpResponse(
+                body=json.dumps(
+                    {
+                        "fields": [
+                            {"name": "hs_v2_date_entered_customer", "type": "string"},
+                            {"name": "hs_v2_date_entered_lead_date", "type": "string"},
+                            {"name": "hs_lifecyclestage_lead_date", "type": "integer"},
+                        ]
+                    }
+                )
+            ),
+        )
+
+        actual_catalog = source.discover(logger=source.logger, config=_CONFIG)
+
+    assert len(actual_catalog.streams) == 1
+    assert actual_catalog.streams[0].json_schema["properties"] == expected_properties
+
+
 def test_dynamic_schema_loader_with_type_conditions():
     _MANIFEST_WITH_TYPE_CONDITIONS = deepcopy(_MANIFEST)
     _MANIFEST_WITH_TYPE_CONDITIONS["definitions"]["party_members_stream"]["schema_loader"][

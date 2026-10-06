@@ -145,6 +145,9 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
     JsonlDecoder as JsonlDecoderModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    KeysReplace as KeysReplaceModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     OffsetIncrement as OffsetIncrementModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
@@ -10096,3 +10099,77 @@ def test_create_file_uploader_with_a_combined_download_target_extractor():
     )
 
     assert isinstance(file_uploader.download_target_extractor, CombinedExtractor)
+
+
+def test_create_keys_replace_transformation_defaults():
+    transformation = factory.create_component(
+        model_type=KeysReplaceModel,
+        component_definition={"type": "KeysReplace", "old": " ", "new": "_"},
+        config=input_config,
+    )
+
+    assert isinstance(transformation, KeysReplaceTransformation)
+    assert transformation.regex is False
+    assert transformation.keep_original is False
+    assert transformation.only_if_missing is False
+    assert transformation.field_path is None
+
+
+def test_create_keys_replace_transformation_with_options():
+    content = r"""
+    type: KeysReplace
+    old: "hs_v2_date_entered_(.*?)(?:_date)?$"
+    new: "hs_lifecyclestage_\\1_date"
+    regex: true
+    keep_original: true
+    only_if_missing: true
+    field_path: ["properties"]
+    """
+    definition = YamlDeclarativeSource._parse(content)
+
+    transformation = factory.create_component(
+        model_type=KeysReplaceModel, component_definition=definition, config=input_config
+    )
+
+    assert isinstance(transformation, KeysReplaceTransformation)
+    assert transformation.new == r"hs_lifecyclestage_\1_date"
+    assert transformation.regex is True
+    assert transformation.keep_original is True
+    assert transformation.only_if_missing is True
+    assert transformation.field_path == ["properties"]
+
+    record = {
+        "id": 1,
+        "properties": {
+            "hs_v2_date_entered_customer": "2024-01-01",
+            "hs_v2_date_entered_lead_date": "2024-02-01",
+            "hs_v2_date_entered_opportunity": "2024-03-01",
+            "hs_lifecyclestage_opportunity_date": "2023-12-31",
+        },
+    }
+    transformation.transform(record, config=input_config)
+    assert record == {
+        "id": 1,
+        "properties": {
+            "hs_v2_date_entered_customer": "2024-01-01",
+            "hs_v2_date_entered_lead_date": "2024-02-01",
+            "hs_v2_date_entered_opportunity": "2024-03-01",
+            "hs_lifecyclestage_customer_date": "2024-01-01",
+            "hs_lifecyclestage_lead_date": "2024-02-01",
+            "hs_lifecyclestage_opportunity_date": "2023-12-31",
+        },
+    }
+
+
+def test_create_keys_replace_transformation_with_invalid_regex_raises():
+    with pytest.raises(ValueError, match="KeysReplace `old` is not a valid regular expression"):
+        factory.create_component(
+            model_type=KeysReplaceModel,
+            component_definition={
+                "type": "KeysReplace",
+                "old": "(unclosed",
+                "new": "x",
+                "regex": True,
+            },
+            config=input_config,
+        )

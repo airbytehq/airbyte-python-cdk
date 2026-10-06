@@ -1103,7 +1103,13 @@ class ModelToComponentFactory:
         self, model: KeysReplaceModel, config: Config, **kwargs: Any
     ) -> KeysReplaceTransformation:
         return KeysReplaceTransformation(
-            old=model.old, new=model.new, parameters=model.parameters or {}
+            old=model.old,
+            new=model.new,
+            regex=bool(model.regex),
+            keep_original=bool(model.keep_original),
+            only_if_missing=bool(model.only_if_missing),
+            field_path=list(model.field_path) if model.field_path else None,
+            parameters=model.parameters or {},
         )
 
     def create_flatten_fields(
