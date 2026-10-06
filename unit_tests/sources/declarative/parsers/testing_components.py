@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from typing import Any, ClassVar, List, Mapping, Optional
 
 from airbyte_cdk.sources.declarative.auth.declarative_authenticator import DeclarativeAuthenticator
+from airbyte_cdk.sources.declarative.decoders import Decoder
 from airbyte_cdk.sources.declarative.extractors import DpathExtractor
 from airbyte_cdk.sources.declarative.migrations.state_migration import StateMigration
 from airbyte_cdk.sources.declarative.partition_routers import SubstreamPartitionRouter
@@ -141,3 +142,14 @@ class TestingRequesterWithDefaultBudget(TestingRequester):
     def __post_init__(self, parameters: Mapping[str, Any]) -> None:
         self.api_budget = None
         super().__post_init__(parameters)
+
+
+@dataclass
+class TestingCustomRetrieverWithDecoder(SimpleRetriever):
+    """
+    A test class based on SimpleRetriever that declares a `decoder` field, like source-google-ads' GoogleAdsRetriever.
+    """
+
+    __test__: ClassVar[bool] = False  # Tell Pytest this is not a Pytest class, despite its name
+
+    decoder: Optional[Decoder] = None
