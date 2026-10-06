@@ -11,6 +11,7 @@ router = APIRouter(
 )
 
 
+@router.get("", include_in_schema=False)
 @router.get("/", operation_id="getCapabilities")
 def get_capabilities() -> CapabilitiesResponse:
     """
