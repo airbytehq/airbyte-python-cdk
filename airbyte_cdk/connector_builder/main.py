@@ -7,6 +7,7 @@ import sys
 from typing import Any, List, Mapping, Optional, Tuple
 
 import orjson
+from jsonschema.exceptions import ValidationError
 
 from airbyte_cdk.connector import BaseConnector
 from airbyte_cdk.connector_builder.connector_builder_handler import (
@@ -24,6 +25,7 @@ from airbyte_cdk.models import (
     AirbyteStateMessage,
     ConfiguredAirbyteCatalog,
     ConfiguredAirbyteCatalogSerializer,
+    FailureType,
 )
 from airbyte_cdk.sources.declarative.concurrent_declarative_source import (
     ConcurrentDeclarativeSource,
@@ -105,8 +107,13 @@ if __name__ == "__main__":
     try:
         print(handle_request(sys.argv[1:]))
     except Exception as exc:
+        failure_type = (
+            FailureType.config_error
+            if isinstance(exc, ValidationError)
+            else FailureType.system_error
+        )
         error = AirbyteTracedException.from_exception(
-            exc, message=f"Error handling request: {str(exc)}"
+            exc, message=f"Error handling request: {str(exc)}", failure_type=failure_type
         )
         m = error.as_airbyte_message()
         print(orjson.dumps(AirbyteMessageSerializer.dump(m)).decode())

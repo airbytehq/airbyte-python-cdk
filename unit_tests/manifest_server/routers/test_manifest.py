@@ -2,10 +2,13 @@ import hashlib
 from unittest.mock import Mock, patch
 
 import pytest
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
 from airbyte_cdk.connector_builder.models import StreamRead as CDKStreamRead
 from airbyte_cdk.manifest_server.app import app
+from airbyte_cdk.manifest_server.routers.manifest import safe_build_source
+from airbyte_cdk.utils.airbyte_secrets_utils import update_secrets
 
 client = TestClient(app)
 
@@ -269,6 +272,27 @@ class TestManifestRouter:
 
         response = client.post("/v1/manifest/resolve", json=request_data)
         assert response.status_code == 422  # Validation error
+
+    def test_safe_build_source_filters_secrets_from_validation_error(
+        self, sample_manifest, sample_config
+    ):
+        """Secrets used as invalid manifest values must not leak into the HTTPException detail."""
+        secret = "my-super-secret-http-method"
+        sample_manifest["streams"][0]["retriever"]["requester"]["http_method"] = secret
+
+        update_secrets([secret])
+        try:
+            with pytest.raises(HTTPException) as exc_info:
+                safe_build_source(sample_manifest, sample_config)
+        finally:
+            update_secrets([])
+
+        assert exc_info.value.status_code == 400
+        assert secret not in exc_info.value.detail
+        assert (
+            "Invalid manifest: Manifest field "
+            "'streams[0].retriever.requester.http_method'" in exc_info.value.detail
+        )
 
     def test_full_resolve_endpoint_success(self, sample_manifest, sample_config, mock_source):
         """Test successful full_resolve endpoint call."""
