@@ -831,7 +831,7 @@ class TestOauth2Authenticator:
     trailing_marker = "Correlation ID: 11111111-2222-3333-4444-555555555555"
 
     @pytest.mark.parametrize(
-        "error, error_description, expected_code",
+        "error, error_description, expected_code, expected_guidance",
         (
             (
                 # Grant revoked, e.g. the user changed their password: re-authentication is the fix.
@@ -840,6 +840,8 @@ class TestOauth2Authenticator:
                 "token is needed. The user might have changed or reset their password.\r\n"
                 "Trace ID: 00000000-0000-0000-0000-000000000000\r\n" + trailing_marker,
                 "AADSTS50173",
+                "Microsoft Entra revoked the grant, typically because the authorizing user's "
+                "password was changed or reset. Re-authenticate this source to restore syncs.",
             ),
             (
                 # Client type / credential misconfiguration: re-authentication will not help.
@@ -847,6 +849,8 @@ class TestOauth2Authenticator:
                 "AADSTS7000218: The request body must contain the following parameter: "
                 "'client_assertion' or 'client_secret'.\r\n" + trailing_marker,
                 "AADSTS7000218",
+                "Refresh token was rejected by the OAuth provider (invalid, expired, or already used). "
+                "Re-authenticate this source's credentials in its connection settings.",
             ),
             (
                 # Conditional Access requires an interactive sign-in.
@@ -855,11 +859,13 @@ class TestOauth2Authenticator:
                 "you moved to a new location, you must use multi-factor authentication to access "
                 "the resource.\r\n" + trailing_marker,
                 "AADSTS50076",
+                "Refresh token was rejected by the OAuth provider (invalid, expired, or already used). "
+                "Re-authenticate this source's credentials in its connection settings.",
             ),
         ),
     )
     def test_refresh_access_token_surfaces_provider_error_code(
-        self, requests_mock, error, error_description, expected_code
+        self, requests_mock, error, error_description, expected_code, expected_guidance
     ):
         """The provider's own diagnostic must reach the logs and the user-facing message."""
         oauth = self._entra_style_authenticator()
@@ -872,15 +878,11 @@ class TestOauth2Authenticator:
         with pytest.raises(AirbyteTracedException) as exc_info:
             oauth.refresh_access_token()
 
-        guidance = (
-            "Refresh token was rejected by the OAuth provider (invalid, expired, or already used). "
-            "Re-authenticate this source's credentials in its connection settings."
-        )
         # The full provider response reaches the internal message, which is logged.
         assert expected_code in exc_info.value.internal_message
         assert TestOauth2Authenticator.trailing_marker in exc_info.value.internal_message
         # The actionable guidance still leads the user-facing message ...
-        assert exc_info.value.message.startswith(guidance)
+        assert exc_info.value.message.startswith(expected_guidance)
         # ... followed by a short, single-line provider detail carrying the error code.
         assert f"Provider error: {error}: {expected_code}" in exc_info.value.message
         assert "\n" not in exc_info.value.message and "\r" not in exc_info.value.message
@@ -1015,6 +1017,165 @@ class TestOauth2Authenticator:
         with pytest.raises(AirbyteTracedException) as exc_info:
             oauth.refresh_access_token()
         return exc_info.value.message
+
+    @pytest.mark.parametrize(
+        "code, error_description, expected_guidance",
+        (
+            (
+                "AADSTS50078",
+                "AADSTS50078: Due to a change in your security information or because the MFA "
+                "session is no longer valid, you must use multi-factor authentication.\r\n"
+                "Trace ID: 01234567-89ab-cdef-0123-456789abcdef\r\n"
+                "Correlation ID: 11111111-2222-3333-4444-555555555555\r\n"
+                "Timestamp: 2026-03-14T09:26:53Z",
+                "The tenant's Microsoft Entra policy requires a new MFA sign-in. Re-authenticate this "
+                "source to restore syncs. If this recurs on a schedule, the usual cause is an Entra MFA "
+                'session setting such as "remember multi-factor authentication on trusted devices", '
+                "which the tenant's Entra administrator controls.",
+            ),
+            (
+                "AADSTS70043",
+                "AADSTS70043: The refresh token has expired due to sign-in frequency checks by "
+                "Conditional Access.\r\n"
+                "Trace ID: 23456789-abcd-ef01-2345-6789abcdef01\r\n"
+                "Correlation ID: 22222222-3333-4444-5555-666666666666\r\n"
+                "Timestamp: 2026-04-15T10:27:54Z",
+                "A Microsoft Entra Conditional Access sign-in frequency policy expired the refresh "
+                "token. Re-authenticate this source to restore syncs. The tenant's Entra administrator "
+                "sets how often this is required.",
+            ),
+            (
+                "AADSTS700082",
+                "AADSTS700082: The refresh token has expired due to inactivity. The token was issued "
+                "on 2026-06-11T03:14:07.000Z and was inactive for 90.00:00:00.\r\n"
+                "Trace ID: 3456789a-bcde-f012-3456-789abcdef012\r\n"
+                "Correlation ID: 33333333-4444-5555-6666-777777777777\r\n"
+                "Timestamp: 2026-06-12T11:28:55Z",
+                "The Microsoft Entra refresh token expired after a period of inactivity. "
+                "Re-authenticate this source to restore syncs, and keep its connection syncing "
+                "regularly to avoid a recurrence.",
+            ),
+            (
+                "AADSTS50173",
+                "AADSTS50173: The provided grant has expired due to it being revoked, typically after "
+                "the user changed or reset their password.\r\n"
+                "Trace ID: 456789ab-cdef-0123-4567-89abcdef0123\r\n"
+                "Correlation ID: 44444444-5555-6666-7777-888888888888\r\n"
+                "Timestamp: 2026-07-13T12:29:56Z",
+                "Microsoft Entra revoked the grant, typically because the authorizing user's password "
+                "was changed or reset. Re-authenticate this source to restore syncs.",
+            ),
+        ),
+        ids=["AADSTS50078", "AADSTS70043", "AADSTS700082", "AADSTS50173"],
+    )
+    def test_entra_error_code_maps_to_guidance(
+        self, requests_mock, code, error_description, expected_guidance
+    ):
+        oauth = self._entra_style_authenticator()
+        requests_mock.post(
+            f"https://{TestOauth2Authenticator.refresh_endpoint}",
+            status_code=400,
+            json={"error": "invalid_grant", "error_description": error_description},
+        )
+
+        with pytest.raises(AirbyteTracedException) as exc_info:
+            oauth.refresh_access_token()
+
+        message = exc_info.value.message
+        assert message == f"{expected_guidance} Provider error: invalid_grant: {code}"
+        assert "(invalid, expired, or already used)" not in message
+        assert exc_info.value.failure_type == FailureType.config_error
+        assert "Trace ID:" in exc_info.value.internal_message
+
+    @pytest.mark.parametrize(
+        "error_content, expected_detail",
+        (
+            (
+                {
+                    "error": "invalid_grant",
+                    "error_description": (
+                        "AADSTS50076: Due to a configuration change, MFA is required.\r\n"
+                        "Trace ID: 56789abc-def0-1234-5678-9abcdef01234"
+                    ),
+                },
+                "invalid_grant: AADSTS50076",
+            ),
+            (
+                {
+                    "error": "invalid_grant",
+                    "error_description": "Token has been expired or revoked.",
+                },
+                "invalid_grant",
+            ),
+            ({"error": "invalid_grant"}, "invalid_grant"),
+        ),
+        ids=["unknown_entra_code", "non_entra_provider", "no_description"],
+    )
+    def test_refresh_error_message_unchanged_without_mapped_code(
+        self, requests_mock, error_content, expected_detail
+    ):
+        oauth = self._entra_style_authenticator()
+        requests_mock.post(
+            f"https://{TestOauth2Authenticator.refresh_endpoint}",
+            status_code=400,
+            json=error_content,
+        )
+
+        with pytest.raises(AirbyteTracedException) as exc_info:
+            oauth.refresh_access_token()
+
+        generic = (
+            "Refresh token was rejected by the OAuth provider (invalid, expired, or already used). "
+            "Re-authenticate this source's credentials in its connection settings."
+        )
+        assert exc_info.value.message == f"{generic} Provider error: {expected_detail}"
+
+    @pytest.mark.parametrize(
+        "code, first_description, second_description, expected_message",
+        (
+            (
+                "AADSTS50078",
+                "AADSTS50078: MFA session expired.\r\n"
+                "Trace ID: 6789abcd-ef01-2345-6789-abcdef012345\r\n"
+                "Correlation ID: 55555555-6666-7777-8888-999999999999\r\n"
+                "Timestamp: 2026-03-14T09:26:53Z",
+                "AADSTS50078: MFA session expired.\r\n"
+                "Trace ID: 789abcde-f012-3456-789a-bcdef0123456\r\n"
+                "Correlation ID: 66666666-7777-8888-9999-aaaaaaaaaaaa\r\n"
+                "Timestamp: 2026-08-15T10:27:54Z",
+                "The tenant's Microsoft Entra policy requires a new MFA sign-in. Re-authenticate this "
+                "source to restore syncs. If this recurs on a schedule, the usual cause is an Entra MFA "
+                'session setting such as "remember multi-factor authentication on trusted devices", '
+                "which the tenant's Entra administrator controls. Provider error: invalid_grant: "
+                "AADSTS50078",
+            ),
+            (
+                "AADSTS700082",
+                "AADSTS700082: The refresh token has expired due to inactivity. The token was issued "
+                "on 2026-06-11T03:14:07.000Z and was inactive for 90.00:00:00.\r\n"
+                "Trace ID: 89abcdef-0123-4567-89ab-cdef01234567\r\n"
+                "Correlation ID: 77777777-8888-9999-aaaa-bbbbbbbbbbbb\r\n"
+                "Timestamp: 2026-06-12T11:28:55Z",
+                "AADSTS700082: The refresh token has expired due to inactivity. The token was issued "
+                "on 2026-07-29T22:01:52.000Z and was inactive for 90.00:00:00.\r\n"
+                "Trace ID: 9abcdef0-1234-5678-9abc-def012345678\r\n"
+                "Correlation ID: 88888888-9999-aaaa-bbbb-cccccccccccc\r\n"
+                "Timestamp: 2026-07-30T12:29:56Z",
+                "The Microsoft Entra refresh token expired after a period of inactivity. "
+                "Re-authenticate this source to restore syncs, and keep its connection syncing "
+                "regularly to avoid a recurrence. Provider error: invalid_grant: AADSTS700082",
+            ),
+        ),
+        ids=["AADSTS50078", "AADSTS700082"],
+    )
+    def test_mapped_entra_message_is_deterministic(
+        self, requests_mock, code, first_description, second_description, expected_message
+    ):
+        first = self._message_for_description(requests_mock, first_description)
+        second = self._message_for_description(requests_mock, second_description)
+
+        assert first == second
+        assert first == expected_message
 
     # AADSTS700082 embeds the token issue timestamp in the *first sentence* of the description,
     # so no first-line rule and no character cap can separate it from the stable text.
