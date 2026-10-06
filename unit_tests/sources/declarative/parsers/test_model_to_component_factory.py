@@ -5403,6 +5403,41 @@ def test_incrementing_count_cursor_with_partition_router_raises_error():
         )
 
 
+@pytest.mark.parametrize(
+    "is_compare_strictly, expected_slices",
+    [
+        pytest.param(
+            False, [{"start_time": "2024-09-01", "end_time": "2024-09-01"}], id="reads_the_one_day"
+        ),
+        pytest.param(True, [], id="skipped_when_compare_strictly"),
+    ],
+)
+def test_create_concurrent_cursor_from_datetime_based_cursor_given_start_equals_end(
+    is_compare_strictly, expected_slices
+):
+    concurrent_cursor = (
+        ModelToComponentFactory().create_concurrent_cursor_from_datetime_based_cursor(
+            model_type=DatetimeBasedCursorModel,
+            component_definition={
+                "type": "DatetimeBasedCursor",
+                "cursor_field": "updated_at",
+                "datetime_format": "%Y-%m-%d",
+                "start_datetime": "2024-09-01",
+                "end_datetime": "2024-09-01",
+                "step": "P30D",
+                "cursor_granularity": "P1D",
+                "is_compare_strictly": is_compare_strictly,
+            },
+            stream_name="test",
+            stream_namespace=None,
+            stream_state={},
+            config={},
+        )
+    )
+
+    assert list(concurrent_cursor.stream_slices()) == expected_slices
+
+
 def test_create_concurrent_cursor_uses_min_max_datetime_format_if_defined():
     """
     Validates a special case for when the start_time.datetime_format and end_time.datetime_format are defined, the date to
