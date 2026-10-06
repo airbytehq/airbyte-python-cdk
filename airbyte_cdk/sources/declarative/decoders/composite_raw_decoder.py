@@ -199,6 +199,7 @@ class CsvParser(Parser):
     encoding: Optional[str] = "utf-8"
     delimiter: Optional[str] = ","
     set_values_to_none: Optional[List[str]] = None
+    max_field_size: Optional[int] = 2**31
 
     def _get_delimiter(self) -> Optional[str]:
         """
@@ -214,12 +215,28 @@ class CsvParser(Parser):
         """
         Parse CSV data from decompressed bytes.
         """
-        text_data = TextIOWrapper(data, encoding=self.encoding)  # type: ignore
-        reader = csv.DictReader(text_data, delimiter=self._get_delimiter() or ",")
-        for row in reader:
-            if self.set_values_to_none:
-                row = {k: (None if v in self.set_values_to_none else v) for k, v in row.items()}
-            yield row
+        max_field_size = self.max_field_size if self.max_field_size is not None else 2**31
+        previous_field_size_limit = csv.field_size_limit(max_field_size)
+        try:
+            text_data = TextIOWrapper(data, encoding=self.encoding)  # type: ignore
+            reader = csv.DictReader(text_data, delimiter=self._get_delimiter() or ",")
+            try:
+                for row in reader:
+                    if self.set_values_to_none:
+                        row = {
+                            k: (None if v in self.set_values_to_none else v) for k, v in row.items()
+                        }
+                    yield row
+            except csv.Error as exc:
+                if not str(exc).startswith("field larger than field limit"):
+                    raise
+                raise AirbyteTracedException(
+                    message=f"CSV field exceeds the configured maximum size of {max_field_size} characters.",
+                    internal_message=str(exc),
+                    failure_type=FailureType.config_error,
+                ) from exc
+        finally:
+            csv.field_size_limit(previous_field_size_limit)
 
 
 class CompositeRawDecoder(Decoder):
