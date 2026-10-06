@@ -2492,11 +2492,12 @@ class PredicateValidator(BaseModel):
     type: Literal["PredicateValidator"]
     value: Optional[Union[str, float, Dict[str, Any], List[Any], bool]] = Field(
         ...,
-        description="The value to be validated. Can be a literal value or interpolated from configuration.",
+        description="The value to be validated. Can be a literal value or interpolated from configuration. Strings (including strings nested in arrays and objects) are interpolated against the config at validation time, after config transformations are applied, and rendered strings are parsed as literals so an expression rendering a list is validated as a list.",
         examples=[
             "test-value",
             "{{ config['api_version'] }}",
             "{{ config['tenant_id'] }}",
+            "{{ config['report_options_list'] | map(attribute='stream_name') | list }}",
             123,
         ],
         title="Value",

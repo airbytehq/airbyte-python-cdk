@@ -53,3 +53,39 @@ class TestPredicateValidator(TestCase):
 
         assert strategy.validate_called
         assert strategy.validated_value == test_value
+
+    def test_given_interpolated_value_when_validate_then_value_is_evaluated_against_config(self):
+        strategy = MockValidationStrategy()
+        validator = PredicateValidator(value="{{ config['domain'] }}", strategy=strategy)
+
+        validator.validate({"domain": "example.atlassian.net"})
+
+        assert strategy.validated_value == "example.atlassian.net"
+
+    def test_given_interpolated_list_expression_when_validate_then_strategy_receives_list(self):
+        strategy = MockValidationStrategy()
+        validator = PredicateValidator(
+            value="{{ config['report_options_list'] | map(attribute='stream_name') | list }}",
+            strategy=strategy,
+        )
+
+        validator.validate({"report_options_list": [{"stream_name": "a"}, {"stream_name": "b"}]})
+
+        assert strategy.validated_value == ["a", "b"]
+
+    def test_given_literal_non_string_values_when_validate_then_values_are_preserved(self):
+        for literal in [123, 1.5, True, None, ["a", 1], {"key": [1, 2]}]:
+            strategy = MockValidationStrategy()
+            PredicateValidator(value=literal, strategy=strategy).validate({})
+            assert strategy.validated_value == literal
+
+    def test_given_nested_interpolated_values_when_validate_then_nested_strings_are_evaluated(self):
+        strategy = MockValidationStrategy()
+        validator = PredicateValidator(
+            value={"name": "{{ config['name'] }}", "ids": ["{{ config['id'] }}", 2]},
+            strategy=strategy,
+        )
+
+        validator.validate({"name": "test", "id": 1})
+
+        assert strategy.validated_value == {"name": "test", "ids": [1, 2]}

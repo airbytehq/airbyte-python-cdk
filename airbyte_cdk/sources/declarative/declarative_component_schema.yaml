@@ -5487,7 +5487,7 @@ definitions:
         enum: [PredicateValidator]
       value:
         title: Value
-        description: The value to be validated. Can be a literal value or interpolated from configuration.
+        description: The value to be validated. Can be a literal value or interpolated from configuration. Strings (including strings nested in arrays and objects) are interpolated against the config at validation time, after config transformations are applied, and rendered strings are parsed as literals so an expression rendering a list is validated as a list.
         type:
           - string
           - number
@@ -5501,6 +5501,7 @@ definitions:
           - "test-value"
           - "{{ config['api_version'] }}"
           - "{{ config['tenant_id'] }}"
+          - "{{ config['report_options_list'] | map(attribute='stream_name') | list }}"
           - 123
       validation_strategy:
         title: Validation Strategy
