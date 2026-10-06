@@ -405,7 +405,36 @@ def test_only_propagate_parameters_to_components():
     assert actual_component == expected_component
 
 
-def test_do_not_propagate_parameters_on_json_schema_object():
+@pytest.mark.parametrize(
+    "schema",
+    [
+        pytest.param(
+            {
+                "type": "object",
+                "$schema": "http://json-schema.org/schema#",
+                "properties": {"id": {"type": "string"}},
+            },
+            id="object",
+        ),
+        pytest.param(
+            {"type": ["null", "object"], "properties": {"id": {"type": ["null", "string"]}}},
+            id="null_object",
+        ),
+        pytest.param(
+            {"type": ["object", "null"], "properties": {"id": {"type": ["null", "string"]}}},
+            id="object_null",
+        ),
+        pytest.param(
+            {"type": ["object"], "properties": {"id": {"type": ["integer"]}}},
+            id="object_only",
+        ),
+        pytest.param(
+            {"properties": {"type": {"type": "string"}, "id": {"type": "string"}}},
+            id="no_root_type_with_type_property",
+        ),
+    ],
+)
+def test_do_not_propagate_parameters_on_json_schema_object(schema):
     component = {
         "type": "DeclarativeStream",
         "streams": [
@@ -413,11 +442,7 @@ def test_do_not_propagate_parameters_on_json_schema_object():
                 "type": "DeclarativeStream",
                 "schema_loader": {
                     "type": "InlineSchemaLoader",
-                    "schema": {
-                        "type": "object",
-                        "$schema": "http://json-schema.org/schema#",
-                        "properties": {"id": {"type": "string"}},
-                    },
+                    "schema": schema,
                 },
                 "$parameters": {
                     "name": "roasters",
@@ -438,11 +463,7 @@ def test_do_not_propagate_parameters_on_json_schema_object():
                     "type": "InlineSchemaLoader",
                     "name": "roasters",
                     "primary_key": "id",
-                    "schema": {
-                        "type": "object",
-                        "$schema": "http://json-schema.org/schema#",
-                        "properties": {"id": {"type": "string"}},
-                    },
+                    "schema": schema,
                     "$parameters": {
                         "name": "roasters",
                         "primary_key": "id",
