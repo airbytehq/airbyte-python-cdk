@@ -842,6 +842,27 @@ class KeysReplace(BaseModel):
         ],
         title="New value",
     )
+    regex: Optional[bool] = Field(
+        False,
+        description="If true, `old` is treated as a regular expression pattern and `new` as a `re.sub` replacement string, which supports backreferences such as `\\1` or `\\g<1>`. Invalid patterns fail when the component is created.",
+        title="Regex",
+    )
+    keep_original: Optional[bool] = Field(
+        False,
+        description="If true, the value is copied to the new key and the original key is kept, instead of renaming it.",
+        title="Keep Original",
+    )
+    only_if_missing: Optional[bool] = Field(
+        False,
+        description="If true, the new key is only written when it is absent from the object or its value is null. When the key is not written and `keep_original` is false, the original key is kept unchanged.",
+        title="Only If Missing",
+    )
+    field_path: Optional[List[str]] = Field(
+        None,
+        description="Path to the object whose keys are replaced. Defaults to the whole record. A `*` segment applies the replacement to every matching object. If the path does not exist or does not point to an object, the transformation does nothing.",
+        examples=[["properties"], ["data", "*", "attributes"]],
+        title="Field Path",
+    )
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
 

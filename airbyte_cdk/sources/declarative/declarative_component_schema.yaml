@@ -3210,7 +3210,30 @@ definitions:
         additionalProperties: true
   KeysReplace:
     title: Keys Replace
-    description: A transformation that replaces symbols in keys.
+    description: >-
+      A transformation that replaces symbols in keys. By default, every occurrence of `old` in each key is
+      replaced with `new` (literal match), the old key is dropped (rename), and the replacement is applied
+      recursively to nested objects of the whole record. `regex`, `keep_original`, `only_if_missing` and
+      `field_path` adjust this behavior. Keys are evaluated against a snapshot of the object, so keys written
+      by the transformation are not processed again. It can also be used in `DynamicSchemaLoader.schema_transformations`,
+      where it is applied to the map of schema properties.
+    examples:
+      - type: KeysReplace
+        old: " "
+        new: "_"
+      - type: KeysReplace
+        old: "hs_v2_date_entered_"
+        new: "hs_date_entered_"
+        keep_original: true
+        only_if_missing: true
+        field_path: ["properties"]
+      - type: KeysReplace
+        old: "hs_v2_date_entered_(.*?)(?:_date)?$"
+        new: "hs_lifecyclestage_\\1_date"
+        regex: true
+        keep_original: true
+        only_if_missing: true
+        field_path: ["properties"]
     type: object
     required:
       - type
@@ -3246,6 +3269,39 @@ definitions:
           - config
           - record
           - stream_slice
+      regex:
+        type: boolean
+        title: Regex
+        description: >-
+          If true, `old` is treated as a regular expression pattern and `new` as a `re.sub` replacement string,
+          which supports backreferences such as `\1` or `\g<1>`. Invalid patterns fail when the component is created.
+        default: false
+      keep_original:
+        type: boolean
+        title: Keep Original
+        description: If true, the value is copied to the new key and the original key is kept, instead of renaming it.
+        default: false
+      only_if_missing:
+        type: boolean
+        title: Only If Missing
+        description: >-
+          If true, the new key is only written when it is absent from the object or its value is null. When the key
+          is not written and `keep_original` is false, the original key is kept unchanged.
+        default: false
+      field_path:
+        type: array
+        title: Field Path
+        description: >-
+          Path to the object whose keys are replaced. Defaults to the whole record. A `*` segment applies the
+          replacement to every matching object. If the path does not exist or does not point to an object,
+          the transformation does nothing.
+        items:
+          type: string
+        interpolation_context:
+          - config
+        examples:
+          - ["properties"]
+          - ["data", "*", "attributes"]
       $parameters:
         type: object
         additionalProperties: true
