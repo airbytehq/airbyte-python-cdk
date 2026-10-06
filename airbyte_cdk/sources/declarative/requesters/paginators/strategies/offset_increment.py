@@ -13,6 +13,7 @@ from airbyte_cdk.sources.declarative.decoders import (
     PaginationDecoderDecorator,
 )
 from airbyte_cdk.sources.declarative.extractors.dpath_extractor import RecordExtractor
+from airbyte_cdk.sources.declarative.extractors.record_selector import extracted_record_count
 from airbyte_cdk.sources.declarative.interpolation import InterpolatedString
 from airbyte_cdk.sources.declarative.requesters.paginators.strategies.pagination_strategy import (
     PaginationStrategy,
@@ -42,12 +43,14 @@ class OffsetIncrement(PaginationStrategy):
 
     Attributes:
         page_size (InterpolatedString): the number of records to request
+        extractor (Optional[RecordExtractor]): counts the records of a page by extracting them
+            again. Leave it unset to use the count of the `RecordSelector` that read the page
     """
 
     config: Config
     page_size: Optional[Union[str, int]]
     parameters: InitVar[Mapping[str, Any]]
-    extractor: Optional[RecordExtractor]
+    extractor: Optional[RecordExtractor] = None
     decoder: Decoder = field(
         default_factory=lambda: PaginationDecoderDecorator(decoder=JsonDecoder(parameters={}))
     )
@@ -77,29 +80,28 @@ class OffsetIncrement(PaginationStrategy):
         page_size_override: Optional[int] = None,
         stream_slice: Optional[StreamSlice] = None,
     ) -> Optional[Any]:
-        decoded_response = next(self.decoder.decode(response))
-
+        # The records the API returned, not the ones emitted: a record filter must neither end the
+        # pagination nor shorten the offset.
         if self.extractor:
-            page_size_from_response = len(list(self.extractor.extract_records(response=response)))
-            # The extractor could return 0 records which is valid, but evaluates to False. Our fallback in other
-            # cases as the best effort option is to use the incoming last_page_size
-            last_page_size = (
-                page_size_from_response if page_size_from_response is not None else last_page_size
-            )
+            last_page_size = len(list(self.extractor.extract_records(response=response)))
+        else:
+            last_page_size = extracted_record_count(response, default=last_page_size)
 
         # Stop paginating when there are fewer records than the page size or the current page has no records.
         # The comparison uses the page size that was actually requested: after a `REDUCE_PAGE_SIZE` reduction, a
         # full page is smaller than the configured page size and comparing against the latter would end the
         # pagination early and skip records.
-        requested_page_size = (
-            page_size_override
-            if page_size_override is not None
-            else (
-                self._page_size.eval(self.config, response=decoded_response)
-                if self._page_size
-                else None
+        if page_size_override is not None:
+            requested_page_size: Optional[int] = page_size_override
+        elif isinstance(self.page_size, int):
+            # A constant needs no response, which would otherwise be decoded a second time.
+            requested_page_size = self.page_size
+        elif self._page_size:
+            requested_page_size = self._page_size.eval(
+                self.config, response=next(self.decoder.decode(response))
             )
-        )
+        else:
+            requested_page_size = None
         if (requested_page_size and last_page_size < requested_page_size) or last_page_size == 0:
             return None
         elif last_page_token_value is None:
