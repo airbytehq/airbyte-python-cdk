@@ -85,6 +85,7 @@ from airbyte_cdk.sources.declarative.models import (
 from airbyte_cdk.sources.declarative.models import (
     CustomRecordExtractor as CustomRecordExtractorModel,
 )
+from airbyte_cdk.sources.declarative.models import CustomRetriever as CustomRetrieverModel
 from airbyte_cdk.sources.declarative.models import CustomSchemaLoader as CustomSchemaLoaderModel
 from airbyte_cdk.sources.declarative.models import DatetimeBasedCursor as DatetimeBasedCursorModel
 from airbyte_cdk.sources.declarative.models import DeclarativeStream as DeclarativeStreamModel
@@ -279,6 +280,7 @@ from airbyte_cdk.utils import AirbyteTracedException
 from airbyte_cdk.utils.datetime_helpers import AirbyteDateTime, ab_datetime_now, ab_datetime_parse
 from unit_tests.sources.declarative.parsers.testing_components import (
     TestingCustomRetriever,
+    TestingCustomRetrieverWithDecoder,
     TestingCustomSubstreamPartitionRouter,
     TestingSomeComponent,
 )
@@ -10096,3 +10098,157 @@ def test_create_file_uploader_with_a_combined_download_target_extractor():
     )
 
     assert isinstance(file_uploader.download_target_extractor, CombinedExtractor)
+
+
+_CUSTOM_RETRIEVER_WITH_DECODER = (
+    "unit_tests.sources.declarative.parsers.testing_components.TestingCustomRetrieverWithDecoder"
+)
+_CUSTOM_RETRIEVER_WITHOUT_DECODER = (
+    "unit_tests.sources.declarative.parsers.testing_components.TestingCustomRetriever"
+)
+
+
+def _create_stream_with_custom_retriever(
+    retriever_definition: Mapping[str, Any], component_factory: ModelToComponentFactory = factory
+) -> DefaultStream:
+    stream_manifest = transformer.propagate_types_and_parameters(
+        "",
+        {
+            "type": "DeclarativeStream",
+            "primary_key": "id",
+            "schema_loader": {"type": "InlineSchemaLoader", "schema": {"type": "object"}},
+            "retriever": {
+                "requester": {
+                    "type": "HttpRequester",
+                    "url": "https://api.test.com/items",
+                },
+                "record_selector": {
+                    "type": "RecordSelector",
+                    "extractor": {"type": "DpathExtractor", "field_path": []},
+                },
+                **retriever_definition,
+            },
+            "$parameters": {"name": "items"},
+        },
+        {},
+    )
+    return component_factory.create_component(
+        model_type=DeclarativeStreamModel, component_definition=stream_manifest, config=input_config
+    )
+
+
+def test_custom_retriever_decoder_is_passed_to_nested_requester_and_record_selector():
+    stream = _create_stream_with_custom_retriever(
+        {
+            "type": "CustomRetriever",
+            "class_name": _CUSTOM_RETRIEVER_WITH_DECODER,
+            "decoder": {"type": "JsonlDecoder"},
+        }
+    )
+
+    retriever = get_retriever(stream)
+    assert isinstance(retriever, TestingCustomRetrieverWithDecoder)
+    assert isinstance(retriever.decoder, CompositeRawDecoder)
+    assert retriever.decoder.is_stream_response()
+    assert retriever.requester.decoder is retriever.decoder
+    assert retriever.requester.stream_response is True
+    assert retriever.record_selector.extractor.decoder is retriever.decoder
+
+
+def test_custom_retriever_decoder_is_passed_to_nested_paginator():
+    stream = _create_stream_with_custom_retriever(
+        {
+            "type": "CustomRetriever",
+            "class_name": _CUSTOM_RETRIEVER_WITH_DECODER,
+            "decoder": {"type": "GzipDecoder", "decoder": {"type": "JsonDecoder"}},
+            "paginator": {
+                "type": "DefaultPaginator",
+                "pagination_strategy": {
+                    "type": "CursorPagination",
+                    "cursor_value": "{{ response.next }}",
+                },
+                "$parameters": {"url_base": "https://api.test.com"},
+            },
+        }
+    )
+
+    retriever = get_retriever(stream)
+    assert retriever.requester.stream_response is True
+    assert retriever.requester.decoder is retriever.decoder
+    assert retriever.record_selector.extractor.decoder is retriever.decoder
+    assert retriever.paginator.decoder.decoder is retriever.decoder
+
+
+def test_custom_retriever_decoder_is_buffered_in_connector_builder():
+    stream = _create_stream_with_custom_retriever(
+        {
+            "type": "CustomRetriever",
+            "class_name": _CUSTOM_RETRIEVER_WITH_DECODER,
+            "decoder": {"type": "JsonlDecoder"},
+        },
+        component_factory=ModelToComponentFactory(emit_connector_builder_messages=True),
+    )
+
+    retriever = get_retriever(stream)
+    assert retriever.requester.decoder is retriever.decoder
+    assert retriever.requester.stream_response is False
+    assert retriever.record_selector.extractor.decoder is retriever.decoder
+
+
+def test_custom_retriever_without_decoder_keeps_json_decoder_defaults():
+    stream = _create_stream_with_custom_retriever(
+        {"type": "CustomRetriever", "class_name": _CUSTOM_RETRIEVER_WITH_DECODER}
+    )
+
+    retriever = get_retriever(stream)
+    assert retriever.decoder is None
+    assert isinstance(retriever.requester.decoder, JsonDecoder)
+    assert retriever.requester.stream_response is False
+    assert isinstance(retriever.record_selector.extractor.decoder, JsonDecoder)
+
+
+def test_custom_retriever_without_decoder_field_does_not_pass_manifest_decoder_to_subcomponents():
+    stream = _create_stream_with_custom_retriever(
+        {
+            "type": "CustomRetriever",
+            "class_name": _CUSTOM_RETRIEVER_WITHOUT_DECODER,
+            "decoder": {"type": "JsonlDecoder"},
+        }
+    )
+
+    retriever = get_retriever(stream)
+    assert isinstance(retriever.requester.decoder, JsonDecoder)
+    assert retriever.requester.stream_response is False
+    assert isinstance(retriever.record_selector.extractor.decoder, JsonDecoder)
+
+
+def test_custom_retriever_decoder_passed_by_parent_takes_precedence_over_manifest_decoder():
+    parent_decoder = JsonDecoder(parameters={})
+
+    retriever = factory.create_component(
+        model_type=CustomRetrieverModel,
+        component_definition={
+            "type": "CustomRetriever",
+            "class_name": _CUSTOM_RETRIEVER_WITH_DECODER,
+            "decoder": {"type": "JsonlDecoder"},
+            "requester": {
+                "type": "HttpRequester",
+                "url": "https://api.test.com/items",
+                "$parameters": {"name": "items"},
+            },
+            "record_selector": {
+                "type": "RecordSelector",
+                "extractor": {"type": "DpathExtractor", "field_path": []},
+                "$parameters": {"name": "items"},
+            },
+        },
+        config=input_config,
+        name="items",
+        primary_key="id",
+        decoder=parent_decoder,
+    )
+
+    assert retriever.decoder is parent_decoder
+    assert retriever.requester.decoder is parent_decoder
+    assert retriever.requester.stream_response is False
+    assert retriever.record_selector.extractor.decoder is parent_decoder

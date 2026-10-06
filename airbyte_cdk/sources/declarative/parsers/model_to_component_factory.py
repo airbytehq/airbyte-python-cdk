@@ -1932,10 +1932,16 @@ class ModelToComponentFactory:
         for key, arg in kwargs.items():
             model_args[key] = arg
 
+        # A custom component declaring a `decoder` field shares it with its nested subcomponents (requester, record selector,
+        # paginator) like `create_simple_retriever` does, so the decoder is built first. A decoder passed by the parent still wins.
+        nested_component_kwargs = dict(kwargs)
+        fields_in_build_order = sorted(model_args, key=lambda model_field: model_field != "decoder")
+
         # Pydantic is unable to parse a custom component's fields that are subcomponents into models because their fields and types are not
         # defined in the schema. The fields and types are defined within the Python class implementation. Pydantic can only parse down to
         # the custom component and this code performs a second parse to convert the sub-fields first into models, then declarative components
-        for model_field, model_value in model_args.items():
+        for model_field in fields_in_build_order:
+            model_value = model_args[model_field]
             # If a custom component field doesn't have a type set, we try to use the type hints to infer the type
             if (
                 isinstance(model_value, dict)
@@ -1954,7 +1960,7 @@ class ModelToComponentFactory:
                     model_field,
                     model_value,
                     config,
-                    **kwargs,
+                    **nested_component_kwargs,
                 )
             elif isinstance(model_value, list):
                 vals = []
@@ -1972,12 +1978,19 @@ class ModelToComponentFactory:
                                 model_field,
                                 v,
                                 config,
-                                **kwargs,
+                                **nested_component_kwargs,
                             )
                         )
                     else:
                         vals.append(v)
                 model_args[model_field] = vals
+
+            if (
+                model_field == "decoder"
+                and "decoder" in component_fields
+                and isinstance(model_args[model_field], Decoder)
+            ):
+                nested_component_kwargs.setdefault("decoder", model_args[model_field])
 
         kwargs = {
             class_field: model_args[class_field]
@@ -2742,12 +2755,14 @@ class ModelToComponentFactory:
         self,
         model: HttpRequesterModel,
         config: Config,
-        decoder: Decoder = JsonDecoder(parameters={}),
         query_properties_key: Optional[str] = None,
         use_cache: Optional[bool] = None,
         *,
         name: str,
+        decoder: Optional[Decoder] = None,
     ) -> HttpRequester:
+        if decoder is None:
+            decoder = JsonDecoder(parameters={})
         authenticator = (
             self._create_component_from_model(
                 model=model.authenticator,
@@ -2804,7 +2819,7 @@ class ModelToComponentFactory:
             message_repository=self._message_repository,
             use_cache=should_use_cache,
             decoder=decoder,
-            stream_response=decoder.is_stream_response() if decoder else False,
+            stream_response=decoder.is_stream_response(),
         )
 
     @staticmethod
