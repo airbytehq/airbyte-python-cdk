@@ -136,8 +136,15 @@ class ConstantBackoffStrategy(BaseModel):
     type: Literal["ConstantBackoffStrategy"]
     backoff_time_in_seconds: Union[float, str] = Field(
         ...,
-        description="Backoff time in seconds.",
-        examples=[30, 30.5, "{{ config['backoff_time'] }}"],
+        description="Backoff time in seconds. Can be computed from the response via interpolation; if the rendered value is empty, None, 0, or non-numeric, this strategy is skipped and the next backoff strategy is used.",
+        examples=[
+            30,
+            30.5,
+            "{{ config['backoff_time'] }}",
+            "{{ 900 if 'load quota exceeded' in ((response.get('error') or {}).get('message') or '') | lower else 0 }}",
+            "{{ (1 / (headers.get('x-amzn-RateLimit-Limit') | float)) if (headers.get('x-amzn-RateLimit-Limit') | float) > 0 else 60 }}",
+            "{{ (response.get('message', '') | regex_search('(?i)Retry after\\s+(\\d+)\\s+seconds')) or min(2 ** attempt_count, 120) if response is mapping else min(2 ** attempt_count, 120) }}",
+        ],
         title="Backoff Time",
     )
     jitter_range_in_seconds: Optional[float] = Field(
