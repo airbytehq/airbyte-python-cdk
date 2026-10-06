@@ -807,7 +807,7 @@ def test_concurrent_cached_sends_do_not_fail(requests_mock, tmp_path, monkeypatc
         monkeypatch.delenv(ENV_REQUEST_CACHE_PATH, raising=False)
     else:
         monkeypatch.setenv(ENV_REQUEST_CACHE_PATH, str(tmp_path))
-    requests_mock.get(re.compile("https://api.example.com/.*"), json={"data": [1]})
+    requests_mock.get(re.compile(r"https://api\.example\.com/.*"), json={"data": [1]})
     clients = [HttpClient(name="same", logger=MagicMock(), use_cache=True) for _ in range(2)]
     errors = []
 
