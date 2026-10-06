@@ -195,6 +195,7 @@ class ConcurrentCursor(Cursor):
             slice_range=self._slice_range,
             cursor_granularity=self._cursor_granularity,
             clamping_strategy=self._clamping_strategy,
+            is_compare_strictly=self._is_compare_strictly,
         )
 
     def __init__(
@@ -213,6 +214,7 @@ class ConcurrentCursor(Cursor):
         slice_range: Optional[GapType] = None,
         cursor_granularity: Optional[GapType] = None,
         clamping_strategy: ClampingStrategy = NoClamping(),
+        is_compare_strictly: bool = False,
     ) -> None:
         self._stream_name = stream_name
         self._stream_namespace = stream_namespace
@@ -235,6 +237,7 @@ class ConcurrentCursor(Cursor):
         # Flag to track if the logger has been triggered (per stream)
         self._should_be_synced_logger_triggered = False
         self._clamping_strategy = clamping_strategy
+        self._is_compare_strictly = is_compare_strictly
         self._is_ascending_order = True
 
         # A lock is required when closing a partition because updating the cursor's concurrent_state is
@@ -483,20 +486,30 @@ class ConcurrentCursor(Cursor):
     def _split_per_slice_range(
         self, lower: CursorValueType, upper: CursorValueType, upper_is_end: bool
     ) -> Iterable[StreamSlice]:
-        if lower >= upper:
+        if lower > upper or (lower == upper and not self._cursor_granularity):
             return
 
         if self._start and upper < self._start:
             return
 
         lower = max(lower, self._start) if self._start else lower
+        # Clamp first, else a step shorter than the clamping period collapses the first window
+        lower = self._clamping_strategy.clamp(lower)
+        # With a granularity the last window includes upper, so lower == upper is one unit to read,
+        # unless the API rejects start == end. In a gap, the next slice already reads upper.
+        if lower > upper or (lower == upper and (self._is_compare_strictly or not upper_is_end)):
+            return
         if not self._slice_range or self._evaluate_upper_safely(lower, self._slice_range) >= upper:
-            clamped_lower = self._clamping_strategy.clamp(lower)
-            clamped_upper = self._clamping_strategy.clamp(upper)
+            # With a granularity upper is the last unit to read: clamping it would read past the end
+            clamped_upper = (
+                upper
+                if upper_is_end and self._cursor_granularity
+                else self._clamping_strategy.clamp(upper)
+            )
             start_value, end_value = (
-                (clamped_lower, clamped_upper - self._cursor_granularity)
+                (lower, clamped_upper - self._cursor_granularity)
                 if self._cursor_granularity and not upper_is_end
-                else (clamped_lower, clamped_upper)
+                else (lower, clamped_upper)
             )
             yield StreamSlice(
                 partition={},
@@ -516,12 +529,14 @@ class ConcurrentCursor(Cursor):
                 current_upper_boundary = min(
                     self._evaluate_upper_safely(current_lower_boundary, self._slice_range), upper
                 )
-                has_reached_upper_boundary = current_upper_boundary >= upper
-
                 clamped_upper = (
                     self._clamping_strategy.clamp(current_upper_boundary)
                     if current_upper_boundary != upper
                     else current_upper_boundary
+                )
+                # A boundary clamped onto upper makes this the last window, else upper is dropped
+                has_reached_upper_boundary = (
+                    current_upper_boundary >= upper or clamped_upper == upper
                 )
                 clamped_lower = self._clamping_strategy.clamp(current_lower_boundary)
                 if clamped_lower >= clamped_upper:
@@ -546,7 +561,7 @@ class ConcurrentCursor(Cursor):
                     },
                 )
                 current_lower_boundary = clamped_upper
-                if current_upper_boundary >= upper:
+                if has_reached_upper_boundary:
                     stop_processing = True
 
     def _evaluate_upper_safely(self, lower: CursorValueType, step: GapType) -> CursorValueType:

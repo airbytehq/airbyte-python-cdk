@@ -1651,6 +1651,7 @@ class ModelToComponentFactory:
             slice_range=step_length,
             cursor_granularity=cursor_granularity,
             clamping_strategy=clamping_strategy,
+            is_compare_strictly=datetime_based_cursor_model.is_compare_strictly or False,
         )
 
     def create_concurrent_cursor_from_incrementing_count_cursor(
