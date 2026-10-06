@@ -110,10 +110,11 @@ class PageSizeReducer:
         """
         return self._current_page_size
 
-    def reduce(self) -> None:
+    def reduce(self, error_message: Optional[str] = None) -> None:
         """
         Shrink the page size used for the next request. Raises once the page size cannot be shrunk any further
-        so that an endpoint that keeps failing does not loop forever.
+        so that an endpoint that keeps failing does not loop forever. Those errors include `error_message`, the
+        error handler's message for the rejected page.
         """
         if self._configured_page_size is None:
             raise AirbyteTracedException(
@@ -139,6 +140,7 @@ class PageSizeReducer:
                 failure_type=FailureType.config_error,
             )
 
+        rejection = f"; the API rejected the page: {error_message}" if error_message else ""
         reduced_page_size = max(
             self._config.minimum_page_size,
             int(current_page_size // self._config.reduction_factor),
@@ -146,7 +148,7 @@ class PageSizeReducer:
         if reduced_page_size >= current_page_size:
             # Nothing left to give up on the page size. Whether that is the end of the read is
             # `retries_at_minimum_page_size`'s call, not this branch's: the response may still be transient.
-            self._retry_at_minimum_page_size(current_page_size)
+            self._retry_at_minimum_page_size(current_page_size, rejection)
             return
 
         self._attempts += 1
@@ -157,7 +159,7 @@ class PageSizeReducer:
             # succeeding restarts this counter on each of them, under either reset policy, and reads to the
             # end however many pages it has; a partition where nothing gets through burns the budget here.
             raise AirbyteTracedException(
-                internal_message=f"Stream {self._stream_name} reduced its page size {self._attempts - 1} times in a row without a single page succeeding, which is the configured maximum of {self._config.max_attempts} ({self._total_reductions - 1} reductions so far while reading this partition)",
+                internal_message=f"Stream {self._stream_name} reduced its page size {self._attempts - 1} times in a row without a single page succeeding, which is the configured maximum of {self._config.max_attempts} ({self._total_reductions - 1} reductions so far while reading this partition){rejection}",
                 # `transient_error`, so the only remediation is the connector's own, if it defined one.
                 message=self._with_failure_message(
                     f"The source keeps rejecting pages of stream {self._stream_name} at every page size the "
@@ -174,7 +176,7 @@ class PageSizeReducer:
         self._current_page_size = reduced_page_size
         self._sleep(backoff)
 
-    def _retry_at_minimum_page_size(self, current_page_size: int) -> None:
+    def _retry_at_minimum_page_size(self, current_page_size: int, rejection: str) -> None:
         """
         Handle a `REDUCE_PAGE_SIZE` response that arrives when the page size is already as small as the
         connector is allowed to request.
@@ -215,7 +217,8 @@ class PageSizeReducer:
                     f" ({self._retries_at_minimum_page_size} retries at that size were spent first)"
                     if self._retries_at_minimum_page_size
                     else ""
-                ),
+                )
+                + rejection,
                 message=f"The page size of stream {self._stream_name} ({current_page_size}) is already at or below "
                 f"the configured minimum of {self._config.minimum_page_size}, so the connector cannot reduce it. "
                 f"Raise the page size of the stream, or lower `minimum_page_size`.",
@@ -228,7 +231,8 @@ class PageSizeReducer:
                 f", after {self._retries_at_minimum_page_size} retries at that size"
                 if self._retries_at_minimum_page_size
                 else ""
-            ),
+            )
+            + rejection,
             # `transient_error`, so the only remediation is the connector's own, if it defined one.
             message=self._with_failure_message(
                 f"The source keeps rejecting pages of stream {self._stream_name} at the smallest page size "
