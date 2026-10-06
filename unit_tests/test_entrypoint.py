@@ -3,6 +3,8 @@
 #
 
 import os
+import socket
+import sys
 from argparse import Namespace
 from collections import defaultdict
 from copy import deepcopy
@@ -559,7 +561,7 @@ def test_invalid_command(entrypoint: AirbyteEntrypoint, config_mock):
         pytest.param(
             "CLOUD",
             "https://192.168.27.30    ",
-            ValueError,
+            requests.ConnectionError,
             id="test_cloud_incorrect_ip_format_is_rejected",
         ),
         pytest.param(
@@ -944,3 +946,57 @@ def test_memory_failfast_flushes_queued_state_before_raising(mocker):
     with pytest.raises(AirbyteTracedException) as exc_info:
         next(gen)
     assert exc_info.value is fail_fast_exc
+
+
+@pytest.mark.parametrize(
+    "gaierror_errno,gaierror_msg",
+    [
+        pytest.param(
+            socket.EAI_AGAIN, "Temporary failure in name resolution", id="transient_dns_EAI_AGAIN"
+        ),
+        pytest.param(socket.EAI_NONAME, "Name or service not known", id="unknown_host_EAI_NONAME"),
+        pytest.param(
+            socket.EAI_FAIL,
+            "Non-recoverable failure in name resolution",
+            id="permanent_dns_EAI_FAIL",
+        ),
+    ],
+)
+def test_filtered_send_raises_connection_error_on_dns_failure(gaierror_errno, gaierror_msg):
+    """filtered_send must re-raise socket.gaierror as ConnectionError, not InvalidURL."""
+    entrypoint_module._init_internal_request_filter()
+
+    prepared = requests.PreparedRequest()
+    prepared.prepare_url("https://graph.facebook.com/v25.0/", None)
+
+    dns_error = socket.gaierror(gaierror_errno, gaierror_msg)
+
+    with patch.object(entrypoint_module, "_is_private_url", side_effect=dns_error):
+        with pytest.raises(
+            requests.ConnectionError, match="DNS resolution failed for graph.facebook.com"
+        ):
+            requests.Session().send(prepared)
+
+
+def test_filtered_send_dns_failure_is_not_invalid_url():
+    """Verify DNS errors are raised as ConnectionError, not InvalidURL."""
+    entrypoint_module._init_internal_request_filter()
+
+    prepared = requests.PreparedRequest()
+    prepared.prepare_url("https://graph.facebook.com/v25.0/", None)
+
+    dns_error = socket.gaierror(socket.EAI_AGAIN, "Temporary failure in name resolution")
+
+    with patch.object(entrypoint_module, "_is_private_url", side_effect=dns_error):
+        with pytest.raises(requests.ConnectionError):
+            requests.Session().send(prepared)
+
+    # The raised exception must not be a subclass of InvalidURL
+    with patch.object(entrypoint_module, "_is_private_url", side_effect=dns_error):
+        try:
+            requests.Session().send(prepared)
+            pytest.fail("Expected ConnectionError to be raised")
+        except requests.ConnectionError:
+            assert not isinstance(sys.exc_info()[1], requests.exceptions.InvalidURL), (
+                "DNS failure should raise ConnectionError, not InvalidURL"
+            )
