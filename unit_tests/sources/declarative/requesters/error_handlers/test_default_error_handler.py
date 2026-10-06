@@ -2,6 +2,7 @@
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
 
+import json
 from unittest.mock import MagicMock
 
 import pytest
@@ -240,6 +241,60 @@ def test_default_error_handler_with_constant_backoff_strategy():
         error_handler.backoff_time(response_or_exception=response_mock, attempt_count=0)
         == SOME_BACKOFF_TIME
     )
+
+
+GSC_BACKOFF_EXPRESSION = "{{ 900 if 'load quota exceeded' in ((response.get('error') or {}).get('message') or '') | lower else 0 }}"
+
+
+def _real_response(status_code, json_body=None, headers=None):
+    response = requests.Response()
+    response.status_code = status_code
+    response.url = "https://airbyte.io"
+    response.headers.update(headers or {})
+    response._content = json.dumps(json_body or {}).encode("utf-8")
+    return response
+
+
+def test_default_error_handler_falls_through_to_next_backoff_strategy():
+    error_handler = DefaultErrorHandler(
+        config={},
+        parameters={},
+        backoff_strategies=[
+            ConstantBackoffStrategy(GSC_BACKOFF_EXPRESSION, config={}, parameters={}),
+            ConstantBackoffStrategy(60, jitter_range_in_seconds=15, config={}, parameters={}),
+        ],
+    )
+
+    load_quota_response = _real_response(
+        429, json_body={"error": {"message": "Search Analytics load quota exceeded."}}
+    )
+    assert (
+        error_handler.backoff_time(response_or_exception=load_quota_response, attempt_count=0)
+        == 900
+    )
+
+    qps_response = _real_response(
+        429, json_body={"error": {"message": "Search Analytics QPS quota exceeded."}}
+    )
+    for _ in range(50):
+        backoff = error_handler.backoff_time(response_or_exception=qps_response, attempt_count=0)
+        assert 60 <= backoff <= 90
+
+
+def test_default_error_handler_falsy_render_with_jitter_falls_through():
+    error_handler = DefaultErrorHandler(
+        config={},
+        parameters={},
+        backoff_strategies=[
+            ConstantBackoffStrategy(
+                "{{ 0 }}", jitter_range_in_seconds=15, config={}, parameters={}
+            ),
+            ExponentialBackoffStrategy(factor=5, config={}, parameters={}),
+        ],
+    )
+
+    response = _real_response(429)
+    assert error_handler.backoff_time(response_or_exception=response, attempt_count=0) == 5
 
 
 @pytest.mark.parametrize(
