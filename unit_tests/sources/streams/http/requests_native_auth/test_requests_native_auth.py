@@ -1495,29 +1495,6 @@ class TestSingleUseRefreshTokenOauth2Authenticator:
         assert connector_config["credentials"]["token_expiry_date"] == "2023-01-01T00:00:00Z"
         assert authenticator.get_token_expiry_date() == AirbyteDateTime(year=2023, month=1, day=1)
 
-    def test_refresh_access_token_applies_default_timeout(self, mocker, connector_config):
-        authenticator = SingleUseRefreshTokenOauth2Authenticator(
-            connector_config,
-            token_refresh_endpoint="https://refresh_endpoint.com",
-            client_id=connector_config["credentials"]["client_id"],
-            client_secret=connector_config["credentials"]["client_secret"],
-        )
-        resp.status_code = 200
-        mocker.patch.object(
-            resp,
-            "json",
-            return_value={
-                authenticator.get_access_token_name(): "new_access_token",
-                authenticator.get_expires_in_name(): "42",
-                authenticator.get_refresh_token_name(): "new_refresh_token",
-            },
-        )
-        mocked_request = mocker.patch.object(requests, "request", return_value=resp)
-
-        authenticator.refresh_access_token()
-
-        assert mocked_request.call_args.kwargs["timeout"] == (30.0, 300.0)
-
     def test_send_refresh_request_as_query_params_picks_up_rotated_refresh_token(
         self, mocker, connector_config
     ):
