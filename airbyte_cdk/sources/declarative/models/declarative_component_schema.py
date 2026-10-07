@@ -3204,6 +3204,26 @@ class HttpRequester(BaseModelWithDeprecations):
         description="Enables stream requests caching. When set to true, repeated requests to the same URL will return cached responses. Parent streams automatically have caching enabled. Only set this to false if you are certain that caching should be disabled, as it may negatively impact performance when the same data is needed multiple times (e.g., for scroll-based pagination APIs where caching causes duplicate records).",
         title="Use Cache",
     )
+    connect_timeout_in_seconds: Optional[float] = Field(
+        None,
+        description="Maximum time to establish the connection (TCP + TLS handshake). When unset, no connect timeout is applied.",
+        examples=[30],
+        gt=0,
+        title="Connect Timeout (seconds)",
+    )
+    read_timeout_in_seconds: Optional[float] = Field(
+        None,
+        description="The maximum time to wait for the server to send any data (the first byte of the response, or the next chunk while the body is read). It is NOT a limit on the total request duration. When unset, no read timeout is applied. Only set it when every endpoint served by this requester responds well within the value; synchronous report or export endpoints can stay silent for minutes.",
+        examples=[300],
+        gt=0,
+        title="Read Timeout (seconds)",
+    )
+    use_tcp_keepalive: Optional[bool] = Field(
+        False,
+        description="Enables TCP keepalive (60 s idle, 10 s probe interval, 6 probes) on this requester's connections, so dead or NAT-dropped connections are detected and fail instead of hanging forever. Does not fail slow but alive servers; use read_timeout_in_seconds to bound those.",
+        examples=[True],
+        title="Use TCP Keepalive",
+    )
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
 
