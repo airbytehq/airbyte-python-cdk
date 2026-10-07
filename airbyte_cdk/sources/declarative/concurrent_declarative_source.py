@@ -247,7 +247,7 @@ class ConcurrentDeclarativeSource(Source):
             concurrency_level_component = self._constructor.create_component(
                 model_type=ConcurrencyLevelModel,
                 component_definition=concurrency_level_from_manifest,
-                config=config or {},
+                config=self._config,
             )
             if not isinstance(concurrency_level_component, ConcurrencyLevel):
                 raise ValueError(

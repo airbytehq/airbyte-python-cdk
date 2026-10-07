@@ -1987,9 +1987,8 @@ def test_send_raises_page_size_reduction_required_exception_with_reduce_page_siz
     # so its message must describe the event rather than accuse the connector of a bug
     assert "should be reported" not in exception.value.message
     assert exception.value.message == (
-        "The API rejected a page of stream test and asked the connector for a smaller one. If this message "
-        "ends a sync, the stream is not set up to request a smaller page: add `page_size_reduction` to its "
-        "retriever, or remove the REDUCE_PAGE_SIZE action from its error handler."
+        "The API rejected a page of stream test and asked the connector for a smaller one: "
+        "test reduce page size message"
     )
     # a retriever that cannot re-issue the page never retries it, so a job-level retry cannot help
     assert exception.value.failure_type == FailureType.config_error
@@ -2100,9 +2099,8 @@ def test_send_raises_request_window_splitting_required_exception_with_split_requ
     assert http_client._session.send.call_count == 1
     assert "test reduce request window message" in exception.value.internal_message
     assert exception.value.message == (
-        "The API rejected the current request window of stream test and requires a smaller one. If this "
-        "message ends a sync, the stream is not set up to split its window: add `request_window_splitting` "
-        "to its retriever, or remove the `SPLIT_REQUEST_WINDOW` action from its error handler."
+        "The API rejected the current request window of stream test and requires a smaller one: "
+        "test reduce request window message"
     )
     # the classifying error's own failure_type is preserved rather than defaulting to config_error
     assert exception.value.failure_type == FailureType.config_error

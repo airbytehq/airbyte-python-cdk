@@ -492,7 +492,7 @@ class SimpleRetriever(Retriever):
                         yield current_record
             except PaginationResetRequiredException:
                 reset_pagination = True
-            except PageSizeReductionRequiredException:
+            except PageSizeReductionRequiredException as exception:
                 if page_size_reducer is None:
                     # The action can be attached to a requester we cannot validate at config time, such as one
                     # built by a custom error handler or a CustomRequester. Re-raise as the misconfiguration it
@@ -511,7 +511,7 @@ class SimpleRetriever(Retriever):
                     )
                 # Raises once the page size cannot be reduced any further and the retries allowed at that
                 # floor are spent, which is what stops the loop when the API keeps failing.
-                page_size_reducer.reduce()
+                page_size_reducer.reduce(exception.error_message)
                 reduce_page_size = True
             else:
                 if page_size_reducer:
@@ -640,6 +640,7 @@ class SimpleRetriever(Retriever):
                     f"it was rejected; splitting and re-reading the window may re-emit them."
                 )
 
+            rejection = f": {exception.error_message}" if exception.error_message else ""
             if depth >= _MAX_REQUEST_WINDOW_SPLIT_DEPTH:
                 # Logged separately from the exception below so it stays visible even if the trace message's
                 # internal_message isn't surfaced by whatever catches it.
@@ -648,13 +649,11 @@ class SimpleRetriever(Retriever):
                     f"({_MAX_REQUEST_WINDOW_SPLIT_DEPTH}) while splitting {original_slice}."
                 )
                 raise AirbyteTracedException(
-                    internal_message=f"Stream {self.name} exceeded the maximum request window split depth of {_MAX_REQUEST_WINDOW_SPLIT_DEPTH} while splitting {original_slice}",
+                    internal_message=f"Stream {self.name} exceeded the maximum request window split depth of {_MAX_REQUEST_WINDOW_SPLIT_DEPTH} while splitting {original_slice}; the API still rejected {stream_slice}{rejection}",
                     # `transient_error`, so the only remediation is the connector's own, if it defined one.
                     message=self._with_request_window_failure_message(
                         f"Stream {self.name} could not split its request window to a size the API accepts "
-                        f"within {_MAX_REQUEST_WINDOW_SPLIT_DEPTH} splits. This usually means the stream's "
-                        f"cursor is not actually shrinking the window on each split; if it uses a custom "
-                        f"cursor, check its `split_request_window` implementation."
+                        f"within {_MAX_REQUEST_WINDOW_SPLIT_DEPTH} splits."
                     ),
                     failure_type=FailureType.transient_error,
                 ) from exception
@@ -669,7 +668,7 @@ class SimpleRetriever(Retriever):
                     else ""
                 )
                 raise AirbyteTracedException(
-                    internal_message=f"Stream {self.name} could not split its request window {stream_slice} any further",
+                    internal_message=f"Stream {self.name} could not split its request window {stream_slice} any further; the API rejected it{rejection}",
                     # `transient_error` regardless of how the triggering response was classified: exhaustion is
                     # never the user's fault, matching `PageSizeReducer`'s equivalent exhaustion branch.
                     message=self._with_request_window_failure_message(

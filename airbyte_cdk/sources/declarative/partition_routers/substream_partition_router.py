@@ -229,13 +229,15 @@ class SubstreamPartitionRouter(PartitionRouter):
                             )
                             record_data = parent_record.data
 
-                            try:
-                                partition_value = dpath.get(
-                                    record_data,  # type: ignore [arg-type]
-                                    parent_field,
+                            partition_value = dpath.get(
+                                record_data,  # type: ignore [arg-type]
+                                parent_field,
+                                default=None,
+                            )
+                            if partition_value is None:
+                                self.logger.debug(
+                                    f"Skipping {parent_stream.name} record with missing or null parent key '{parent_field}'"
                                 )
-                            except KeyError:
-                                # FIXME a log here would go a long way for debugging
                                 emit_slice = False
 
                             if emit_slice:

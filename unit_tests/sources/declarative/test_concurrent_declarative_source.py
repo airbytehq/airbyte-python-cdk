@@ -1797,6 +1797,42 @@ def test_concurrency_level_initial_number_partitions_to_generate_is_always_one_o
     assert source._concurrent_source._initial_number_partitions_to_generate == 1
 
 
+_SET_NUM_WORKERS_TO_4 = {
+    "type": "ConfigAddFields",
+    "fields": [{"type": "AddedFieldDefinition", "path": ["num_workers"], "value": "4"}],
+}
+
+
+@pytest.mark.parametrize(
+    "config_normalization_rules",
+    [
+        pytest.param(
+            {
+                "config_migrations": [
+                    {"type": "ConfigMigration", "transformations": [_SET_NUM_WORKERS_TO_4]}
+                ]
+            },
+            id="config_migrations",
+        ),
+        pytest.param({"transformations": [_SET_NUM_WORKERS_TO_4]}, id="transformations"),
+    ],
+)
+def test_concurrency_level_uses_normalized_config(config_normalization_rules):
+    manifest = copy.deepcopy(_MANIFEST)
+    manifest["spec"] = {
+        "type": "Spec",
+        "connection_specification": {},
+        "config_normalization_rules": {
+            "type": "ConfigNormalizationRules",
+            **config_normalization_rules,
+        },
+    }
+
+    source = ConcurrentDeclarativeSource(source_config=manifest, config={"num_workers": 1})
+
+    assert source._concurrent_source._threadpool._threadpool._max_workers == 4
+
+
 def test_async_incremental_stream_uses_concurrent_cursor_with_state():
     state = [
         AirbyteStateMessage(
@@ -5165,6 +5201,9 @@ def test_given_reductions_exhausted_when_read_then_emit_a_transient_error():
         "keeps rejecting pages of stream" in error.message and "records per page" in error.message
         for error in errors
     )
+    # the filter defines no `error_message`, so the default mapping's text for 502 is the rejection reported
+    assert "HTTP Status Code: 502" in errors[0].internal_message
+    assert "not set up" not in errors[0].stack_trace
 
 
 def _request_window_splitting_manifest():
@@ -5507,6 +5546,9 @@ def test_given_split_window_still_rejected_when_read_then_partition_is_not_check
     ]
     assert errors[0].failure_type == FailureType.transient_error
     assert "could not split its request window" in errors[0].internal_message
+    # the filter defines no `error_message`, so the default mapping's text for 400 is the rejection reported
+    assert "HTTP Status Code: 400" in errors[0].internal_message
+    assert "not set up" not in errors[0].stack_trace
     final_state = get_states_for_stream(stream_name="Test", messages=messages)[
         -1
     ].stream.stream_state.__dict__

@@ -1725,6 +1725,39 @@ def test_given_reductions_exhausted_when_read_records_then_raise_transient_error
     assert requester.send_request.call_count == 3
 
 
+@pytest.mark.parametrize(
+    "page_size_reduction",
+    [
+        pytest.param(PageSizeReduction(max_attempts=2), id="max_attempts_reached"),
+        pytest.param(PageSizeReduction(minimum_page_size=50), id="minimum_page_size_reached"),
+        pytest.param(PageSizeReduction(minimum_page_size=100), id="page_size_starts_at_minimum"),
+    ],
+)
+def test_given_reductions_exhausted_when_read_records_then_report_the_api_rejection(
+    page_size_reduction,
+):
+    """
+    The error handler's message is the only record of why the API rejected the page, so the error that ends
+    the read carries it, and its traceback does not claim the stream is not set up to reduce its page size.
+    """
+    requester = Mock(spec=Requester)
+    requester.send_request.side_effect = PageSizeReductionRequiredException(
+        stream_name=A_STREAM_NAME, error_message="Query cost 9000 exceeds 5000."
+    )
+    paginator = _mock_paginator()
+    paginator.get_page_size.return_value = 100
+    paginator.get_initial_token.return_value = None
+    retriever = _page_size_reduction_retriever(
+        requester, paginator, Mock(spec=HttpSelector), page_size_reduction
+    )
+
+    with pytest.raises(AirbyteTracedException) as exception:
+        list(retriever.read_records(A_RECORD_SCHEMA, A_STREAM_SLICE))
+
+    assert "Query cost 9000 exceeds 5000." in exception.value.internal_message
+    assert "not set up" not in exception.value.as_airbyte_message().trace.error.stack_trace
+
+
 def test_given_no_page_size_reduction_when_reduce_page_size_required_then_raise_config_error():
     requester = Mock(spec=Requester)
     requester.send_request.side_effect = PageSizeReductionRequiredException()
@@ -2645,6 +2678,64 @@ def test_given_max_split_depth_exceeded_when_read_records_then_raise_terminal_er
     # depth, from 0 up to the cap) before the cap stops the next call - the exception then propagates
     # immediately, so sibling branches at shallower depths are never explored
     assert request_window_splitter.call_count == _MAX_REQUEST_WINDOW_SPLIT_DEPTH
+
+
+def _halve_window(
+    stream_slice: StreamSlice, min_split_window: Optional[timedelta]
+) -> List[StreamSlice]:
+    start, end = stream_slice.cursor_slice["start"], stream_slice.cursor_slice["end"]
+    middle = (start + end) // 2
+    return [
+        StreamSlice(partition={}, cursor_slice={"start": start, "end": middle}),
+        StreamSlice(partition={}, cursor_slice={"start": middle + 1, "end": end}),
+    ]
+
+
+@pytest.mark.parametrize(
+    "request_window_splitter, last_window",
+    [
+        pytest.param(
+            lambda stream_slice, min_split_window: None,
+            {"start": 0, "end": 4095},
+            id="window_cannot_be_split_further",
+        ),
+        pytest.param(_halve_window, {"start": 0, "end": 3}, id="max_split_depth_reached"),
+    ],
+)
+def test_given_window_still_rejected_when_splitting_is_exhausted_then_report_the_api_rejection(
+    request_window_splitter, last_window
+):
+    """
+    The error handler's message is the only record of why the API rejected the last window, so the error that
+    ends the read carries it along with that window. A cursor that halved the window on every split is not
+    blamed for reaching the depth cap, and the traceback does not claim the stream is not set up to split.
+    """
+
+    def reject_window(**kwargs: Any) -> None:
+        raise RequestWindowSplitRequiredException(
+            stream_name=A_STREAM_NAME,
+            error_message="HTTP Status Code: 504. Error: Gateway timeout.",
+        )
+
+    requester = Mock(spec=Requester)
+    requester.send_request.side_effect = reject_window
+    paginator = _mock_paginator()
+    paginator.get_initial_token.return_value = None
+    retriever = _request_window_splitting_retriever(
+        requester, paginator, Mock(spec=HttpSelector), request_window_splitter
+    )
+
+    with pytest.raises(AirbyteTracedException) as exception:
+        list(
+            retriever.read_records(
+                A_RECORD_SCHEMA, StreamSlice(partition={}, cursor_slice={"start": 0, "end": 4095})
+            )
+        )
+
+    assert "HTTP Status Code: 504. Error: Gateway timeout." in exception.value.internal_message
+    assert str(last_window) in exception.value.internal_message
+    assert "split_request_window" not in exception.value.message
+    assert "not set up" not in exception.value.as_airbyte_message().trace.error.stack_trace
 
 
 def test_given_partitions_read_concurrently_then_window_reduction_isolates_between_partitions():
