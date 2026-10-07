@@ -1,5 +1,29 @@
 # CDK Migration Guide
 
+## Upgrading to 7.34.0
+
+[Version 7.34.0](https://github.com/airbytehq/airbyte-python-cdk/releases/tag/v7.34.0) of the CDK changes what the Standard Tests (`airbyte-cdk connector test` and `airbyte-cdk image test`, including the in-process `test_check` of `SourceTestSuiteBase` / `ConnectorTestSuiteBase` and the Docker-based `test_docker_image_build_and_check`) assert about the outcome of `check`. Previously only an exception or a non-zero exit failed the test, so a `check` that reported `status: FAILED` passed. Both test paths now assert the reported `CONNECTION_STATUS` against the `status` declared for the config in `acceptance-test-config.yml`, with the same semantics as the Connector Acceptance Tests (CAT):
+
+| `status` in `acceptance-test-config.yml` | What `check` must do |
+|---|---|
+| `succeed` | Report a `CONNECTION_STATUS` message with status `SUCCEEDED`. |
+| `failed` | Report a `CONNECTION_STATUS` message with status `FAILED` (gracefully, without raising). |
+| `exception` | Raise: a `TRACE` error must be emitted and no `SUCCEEDED` status may be reported. A `CONNECTION_STATUS` message is not required. |
+| not declared, config listed under `connection` | Treated as `succeed` for `check`, matching the CAT default. |
+| not declared, config listed only under `spec` or `basic_read` | Report a `CONNECTION_STATUS` message; either status is accepted (CAT never ran `check` with these configs). |
+
+This change is breaking for the connector test suites of connectors whose `check` does not currently satisfy the declared (or defaulted) expectation. The connector monorepo installs the `airbyte-cdk` CLI unpinned (`uv tool install --upgrade 'airbyte-cdk[dev]'`), so connector CI picks the new assertions up with this release, without a per-connector CDK bump.
+
+Migration steps:
+
+- A config listed under `connection` without a `status` must now pass `check`. If the config is meant to fail, declare `status: failed`; if its secret has expired, refresh it.
+- A `check` that raises (uncaught exception, non-zero exit) now fails the test for every config that is not declared `status: failed` or `status: exception`, on the in-process path as well as the Docker path.
+- A `status: failed` config whose `check` raises instead of reporting `FAILED` must either be fixed to report its failure gracefully, or be declared as `status: exception` if raising is the intended behaviour.
+- A `status: exception` config whose `check` reports a `CONNECTION_STATUS` without raising must be declared as `status: failed` (or `succeed`).
+- Python code that inspects `ExpectedOutcome` directly: `ExpectedOutcome.from_status_str("exception")` now returns the new member `EXPECT_UNCAUGHT_ERROR` instead of `EXPECT_EXCEPTION`. `expect_exception()` still returns `True` for both members; use `expect_uncaught_error()` to distinguish them.
+
+Rationale: A `check` that fails is reported as `status: FAILED` in a `CONNECTION_STATUS` message with exit code 0, so an exit-code or exception check cannot detect it. The Standard Tests replaced CAT as the only `check` coverage for most connectors, and without asserting the reported status a connector whose credentials expired, or whose custom components are rejected by the CDK baked into the base image, kept passing. Asserting the reported status in both paths restores the CAT guarantees.
+
 ## Upgrading to 7.0.0
 
 [Version 7.0.0](https://github.com/airbytehq/airbyte-python-cdk/releases/tag/v7.0.0) of the CDK migrates the CDK to the Concurrent CDK by removing some of the Declarative CDK concepts that are better expressed in the Concurrent CDK or that are outright incompatible with it. This changes mostly impact the Python implementations although the concept of CustomIncrementalSync has been removed from the declarative language as well.

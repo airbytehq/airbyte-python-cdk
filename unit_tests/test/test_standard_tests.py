@@ -1,15 +1,17 @@
-# Copyright (c) 2024 Airbyte, Inc., all rights reserved.
+# Copyright (c) 2026 Airbyte, Inc., all rights reserved.
 """Unit tests for FAST Airbyte Standard Tests."""
 
 from pathlib import Path
 from typing import Any
 
 import pytest
+import yaml
 
 from airbyte_cdk.sources.declarative.concurrent_declarative_source import (
     ConcurrentDeclarativeSource,
 )
 from airbyte_cdk.sources.source import Source
+from airbyte_cdk.test.models import ExpectedOutcome
 from airbyte_cdk.test.models.scenario import ConnectorTestScenario
 from airbyte_cdk.test.standard_tests._job_runner import IConnector
 from airbyte_cdk.test.standard_tests.docker_base import DockerConnectorTestSuite
@@ -85,6 +87,139 @@ def test_dedup_scenarios_conflicting_statuses_raise() -> None:
     ]
     with pytest.raises(ValueError, match="Conflicting expected statuses"):
         DockerConnectorTestSuite._dedup_scenarios(scenarios)
+
+
+def _suite_for_acceptance_test_config(
+    tmp_path: Path,
+    acceptance_test_config: dict[str, Any],
+) -> type[DockerConnectorTestSuite]:
+    """Build a suite class whose connector root holds the given acceptance-test-config.yml."""
+    (tmp_path / "acceptance-test-config.yml").write_text(yaml.safe_dump(acceptance_test_config))
+
+    class _Suite(DockerConnectorTestSuite):
+        @classmethod
+        def get_connector_root_dir(cls) -> Path:
+            return tmp_path
+
+    return _Suite
+
+
+@pytest.mark.parametrize(
+    "acceptance_tests, expected_statuses, expected_check_statuses",
+    [
+        pytest.param(
+            {
+                "spec": {"tests": [{"spec_path": "manifest.yaml"}]},
+                "connection": {"tests": [{"config_path": "secrets/config.json"}]},
+            },
+            {"secrets/config.json": None},
+            {"secrets/config.json": "succeed"},
+            id="statusless_connection_entry_defaults_to_succeed_for_check",
+        ),
+        pytest.param(
+            {
+                "basic_read": {
+                    "tests": [
+                        {
+                            "config_path": "secrets/config.json",
+                            "configured_catalog_path": "integration_tests/catalog.json",
+                        }
+                    ]
+                },
+            },
+            {"secrets/config.json": None},
+            {"secrets/config.json": None},
+            id="basic_read_only_config_keeps_open_expectation",
+        ),
+        pytest.param(
+            {
+                "spec": {
+                    "tests": [
+                        {"spec_path": "manifest.yaml", "config_path": "secrets/config.json"},
+                    ]
+                },
+            },
+            {"secrets/config.json": None},
+            {"secrets/config.json": None},
+            id="spec_only_config_keeps_open_expectation",
+        ),
+        pytest.param(
+            {
+                "spec": {
+                    "tests": [
+                        {"spec_path": "manifest.yaml", "config_path": "secrets/config.json"},
+                    ]
+                },
+                "connection": {
+                    "tests": [
+                        {"config_path": "secrets/config.json"},
+                        {
+                            "config_path": "integration_tests/invalid_config.json",
+                            "status": "failed",
+                        },
+                        {
+                            "config_path": "integration_tests/broken_config.json",
+                            "status": "exception",
+                        },
+                    ]
+                },
+                "basic_read": {
+                    "tests": [
+                        {
+                            "config_path": "secrets/config.json",
+                            "configured_catalog_path": "integration_tests/catalog.json",
+                        }
+                    ]
+                },
+            },
+            {
+                "secrets/config.json": None,
+                "integration_tests/invalid_config.json": "failed",
+                "integration_tests/broken_config.json": "exception",
+            },
+            {
+                "secrets/config.json": "succeed",
+                "integration_tests/invalid_config.json": "failed",
+                "integration_tests/broken_config.json": "exception",
+            },
+            id="declared_statuses_are_kept",
+        ),
+    ],
+)
+def test_check_scenario_applies_cat_default_only_to_connection_entries(
+    tmp_path: Path,
+    acceptance_tests: dict[str, Any],
+    expected_statuses: dict[str, str | None],
+    expected_check_statuses: dict[str, str | None],
+) -> None:
+    """Status-less `connection` configs default to `succeed` for `check` only.
+
+    `get_scenarios` leaves the declared statuses untouched (so `discover`/`read` keep their
+    expectations); `_check_scenario` applies the CAT default on top of them.
+    """
+    suite = _suite_for_acceptance_test_config(tmp_path, {"acceptance_tests": acceptance_tests})
+    scenarios = suite.get_scenarios()
+    assert {str(s.config_path): s.status for s in scenarios} == expected_statuses
+
+    check_scenarios = [suite._check_scenario(scenario) for scenario in scenarios]
+    assert {str(s.config_path): s.status for s in check_scenarios} == expected_check_statuses
+    for scenario in check_scenarios:
+        assert scenario.expected_outcome == ExpectedOutcome.from_status_str(scenario.status)
+
+
+def test_check_scenario_without_acceptance_test_config(tmp_path: Path) -> None:
+    """Scenarios built in code (no config_path, or no config file) are returned unchanged."""
+
+    class _Suite(DockerConnectorTestSuite):
+        @classmethod
+        def get_connector_root_dir(cls) -> Path:
+            return tmp_path
+
+    in_code = ConnectorTestScenario(config_dict={"key": "value"})
+    assert _Suite._check_scenario(in_code) is in_code
+
+    from_file = ConnectorTestScenario(config_path=Path("secrets/config.json"))
+    assert _Suite._check_scenario(from_file) is from_file
 
 
 @pytest.mark.parametrize(

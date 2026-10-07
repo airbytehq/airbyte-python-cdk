@@ -106,14 +106,23 @@ class ConnectorTestSuiteBase(DockerConnectorTestSuite):
         self,
         scenario: ConnectorTestScenario,
     ) -> None:
-        """Run `connection` acceptance tests."""
+        """Run `connection` acceptance tests.
+
+        Scenarios declared with `status: exception` expect `check` to raise instead of reporting
+        a status; for those, only the presence of a trace error is asserted (in `run_test_job`).
+        """
+        scenario = self._check_scenario(scenario)
         result: entrypoint_wrapper.EntrypointOutput = run_test_job(
             self.create_connector(scenario),
             "check",
             test_scenario=scenario,
             connector_root=self.get_connector_root_dir(),
         )
+        if scenario.expected_outcome.expect_uncaught_error():
+            # An uncaught error is the expected outcome; no CONNECTION_STATUS is required.
+            return
+
         assert len(result.connection_status_messages) == 1, (
             f"Expected exactly one CONNECTION_STATUS message. "
-            "Got: {result.connection_status_messages!s}"
+            f"Got: {result.connection_status_messages!s}"
         )

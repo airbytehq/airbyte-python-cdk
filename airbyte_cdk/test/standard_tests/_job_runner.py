@@ -104,19 +104,24 @@ def run_test_job(
         args=args,
         expected_outcome=test_scenario.expected_outcome,
     )
-    if result.errors and test_scenario.expected_outcome.expect_success():
-        raise result.as_exception()
-
     if verb == "check":
-        # Check is expected to report its outcome as a CONNECTION_STATUS message, gracefully and
-        # without an exception. We use the same assertion as the Docker-based test suite so that
-        # both paths enforce the same expectations.
+        # Unless the scenario declares `status: exception`, `check` is expected to report its
+        # outcome as a CONNECTION_STATUS message, gracefully and without an exception. Any
+        # uncaught error is surfaced as-is (mirroring `raise_if_errors` on the Docker path), and
+        # the reported status is then validated with the same assertion as the Docker-based test
+        # suite so that both paths enforce the same expectations.
+        if result.errors and not test_scenario.expected_outcome.expect_exception():
+            raise result.as_exception()
+
         assert_check_outcome(
             check_result=result,
             expected_outcome=test_scenario.expected_outcome,
             connector_name=connector_root.absolute().name,
         )
         return result
+
+    if result.errors and test_scenario.expected_outcome.expect_success():
+        raise result.as_exception()
 
     # For all other verbs, we assert check that an exception is raised (or not).
     if test_scenario.expected_outcome.expect_exception():
