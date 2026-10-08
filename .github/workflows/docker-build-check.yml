@@ -45,6 +45,47 @@ jobs:
           tags: airbyte/source-declarative-manifest:pr-${{ github.event.pull_request.number }}
           outputs: type=image,name=target,annotation-index.org.opencontainers.image.description=SDM Docker image for PR ${{ github.event.pull_request.number }}
 
+      - name: Build Docker image for bytecode check (linux/amd64)
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          platforms: linux/amd64
+          load: true
+          tags: airbyte/source-declarative-manifest:bytecode-check
+
+      - name: Verify every site-packages module has precompiled bytecode
+        run: |
+          docker run --rm -i --entrypoint python airbyte/source-declarative-manifest:bytecode-check - <<'EOF'
+          import importlib.util
+          import pathlib
+          import struct
+          import sys
+          import sysconfig
+
+          root = pathlib.Path(sysconfig.get_paths()["purelib"])
+          missing, stale = [], []
+          total = 0
+          for src in root.rglob("*.py"):
+              total += 1
+              pyc = pathlib.Path(importlib.util.cache_from_source(str(src)))
+              if not pyc.is_file():
+                  missing.append(src)
+                  continue
+              header = pyc.read_bytes()[:16]
+              flags = int.from_bytes(header[4:8], "little")
+              if header[:4] != importlib.util.MAGIC_NUMBER:
+                  stale.append(src)
+              elif flags == 0:
+                  mtime, size = struct.unpack("<II", header[8:16])
+                  st = src.stat()
+                  if (mtime, size) != (int(st.st_mtime) & 0xFFFFFFFF, st.st_size & 0xFFFFFFFF):
+                      stale.append(src)
+          print(f"{root}: {total} .py files, {len(missing)} without .pyc, {len(stale)} with stale .pyc")
+          for path in (missing + stale)[:20]:
+              print(f"  {path}")
+          sys.exit(1 if total == 0 or missing or stale else 0)
+          EOF
+
   manifest-server-docker-build-check:
     name: Manifest Server Docker Image Build
     runs-on: ubuntu-24.04
