@@ -21,6 +21,7 @@ from airbyte_cdk.models import (
     AirbyteCatalog,
     ConfiguredAirbyteCatalog,
     ConfiguredAirbyteStream,
+    ConnectorSpecification,
     DestinationSyncMode,
     Status,
     SyncMode,
@@ -28,6 +29,11 @@ from airbyte_cdk.models import (
 from airbyte_cdk.models.connector_metadata import MetadataFile
 from airbyte_cdk.test.entrypoint_wrapper import EntrypointOutput
 from airbyte_cdk.test.models import ConnectorTestScenario, ExpectedOutcome
+from airbyte_cdk.test.standard_tests._spec_lint import (
+    assert_no_secrets_in_output,
+    assert_spec_is_valid,
+    get_single_spec,
+)
 from airbyte_cdk.utils.connector_paths import (
     ACCEPTANCE_TEST_CONFIG,
     find_connector_root,
@@ -74,6 +80,21 @@ def _assert_check_outcome(
         assert connection_statuses[-1].status == Status.SUCCEEDED, (
             f"`check` for connector '{connector_name}' did not succeed: {connection_statuses[-1]}"
         )
+
+
+def _run_docker_spec(connector_image: str, *, connector_name: str) -> ConnectorSpecification:
+    """Run `spec` in the connector image and return the single spec it emits."""
+    spec_result = run_docker_airbyte_command(
+        [
+            "docker",
+            "run",
+            "--rm",
+            connector_image,
+            "spec",
+        ],
+        raise_if_errors=True,
+    )
+    return get_single_spec(spec_result, connector_name=connector_name)
 
 
 class DockerConnectorTestSuite:
@@ -227,7 +248,12 @@ class DockerConnectorTestSuite:
         connector_image_override: str | None,
         connector_base_image_override: str | None,
     ) -> None:
-        """Run `docker_image` acceptance tests."""
+        """Run `spec` in the connector image and lint the spec it emits.
+
+        The image must emit exactly one SPEC message. `airbyte-cdk image test` builds the
+        image with `no_verify=True`, which skips the build-time spec check, so this test is
+        what catches an image that emits no spec on that path.
+        """
         connector_root = self.get_connector_root_dir().absolute()
         metadata = MetadataFile.from_file(connector_root / "metadata.yaml")
 
@@ -243,16 +269,8 @@ class DockerConnectorTestSuite:
                 base_image_override=connector_base_image_override,
             )
 
-        _ = run_docker_airbyte_command(
-            [
-                "docker",
-                "run",
-                "--rm",
-                connector_image,
-                "spec",
-            ],
-            raise_if_errors=True,
-        )
+        spec = _run_docker_spec(connector_image, connector_name=connector_root.name)
+        assert_spec_is_valid(spec, connector_name=connector_root.name)
 
     @pytest.mark.skipif(
         shutil.which("docker") is None,
@@ -318,6 +336,14 @@ class DockerConnectorTestSuite:
             check_result=check_result,
             expected_outcome=scenario.expected_outcome,
             connector_name=connector_root.absolute().name,
+        )
+        connector_name = connector_root.absolute().name
+        assert_no_secrets_in_output(
+            check_result,
+            spec=_run_docker_spec(connector_image, connector_name=connector_name),
+            config=scenario.get_config_dict(connector_root=connector_root, empty_if_missing=True),
+            verb="check",
+            connector_name=connector_name,
         )
 
     @pytest.mark.skipif(

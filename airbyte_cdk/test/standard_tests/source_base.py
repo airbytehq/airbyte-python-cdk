@@ -19,6 +19,7 @@ from airbyte_cdk.test.models import (
     ConnectorTestScenario,
 )
 from airbyte_cdk.test.standard_tests._job_runner import run_test_job
+from airbyte_cdk.test.standard_tests._spec_lint import assert_spec_is_valid, get_single_spec
 from airbyte_cdk.test.standard_tests.connector_base import (
     ConnectorTestSuiteBase,
 )
@@ -55,6 +56,7 @@ class SourceTestSuiteBase(ConnectorTestSuiteBase):
             f"Expected exactly one CONNECTION_STATUS message. Got {num_status_messages}: \n"
             + "\n".join([str(m) for m in result.get_message_iterator()])
         )
+        self.assert_no_secrets_in_output(scenario, result, verb="check")
 
     def test_discover(
         self,
@@ -82,7 +84,7 @@ class SourceTestSuiteBase(ConnectorTestSuiteBase):
         does not require any inputs.
 
         We assume `spec` should always succeed and it should always generate
-        a valid `SPEC` message.
+        a single valid `SPEC` message, which must pass the credential-free spec lint.
 
         Note: the parsing of messages by type also implicitly validates that
         the generated `SPEC` message is valid JSON.
@@ -95,10 +97,8 @@ class SourceTestSuiteBase(ConnectorTestSuiteBase):
         )
         # If an error occurs, it will be raised above.
 
-        assert len(result.spec_messages) == 1, (
-            f"Expected exactly 1 spec message but got {len(result.spec_messages)}. "
-            f"Errors: {result.errors!s}"
-        )
+        spec = get_single_spec(result, connector_name=self.connector_name)
+        assert_spec_is_valid(spec, connector_name=self.connector_name)
 
     def test_basic_read(
         self,

@@ -15,6 +15,10 @@ from airbyte_cdk.test.models import (
     ConnectorTestScenario,
 )
 from airbyte_cdk.test.standard_tests._job_runner import IConnector, run_test_job
+from airbyte_cdk.test.standard_tests._spec_lint import (
+    assert_no_secrets_in_output,
+    get_single_spec,
+)
 from airbyte_cdk.test.standard_tests.docker_base import DockerConnectorTestSuite
 
 if TYPE_CHECKING:
@@ -100,6 +104,30 @@ class ConnectorTestSuiteBase(DockerConnectorTestSuite):
             "override `cls.create_connector()` to define a custom initialization process."
         )
 
+    def assert_no_secrets_in_output(
+        self,
+        scenario: ConnectorTestScenario,
+        output: entrypoint_wrapper.EntrypointOutput,
+        *,
+        verb: str,
+    ) -> None:
+        """Assert that no `airbyte_secret` value from the scenario's config is in `output`."""
+        spec_result = run_test_job(
+            self.create_connector(scenario),
+            "spec",
+            connector_root=self.get_connector_root_dir(),
+        )
+        assert_no_secrets_in_output(
+            output,
+            spec=get_single_spec(spec_result, connector_name=self.connector_name),
+            config=scenario.get_config_dict(
+                connector_root=self.get_connector_root_dir(),
+                empty_if_missing=True,
+            ),
+            verb=verb,
+            connector_name=self.connector_name,
+        )
+
     # Test Definitions
 
     def test_check(
@@ -117,3 +145,4 @@ class ConnectorTestSuiteBase(DockerConnectorTestSuite):
             "Expected exactly one CONNECTION_STATUS message. "
             f"Got: {result.connection_status_messages!s}"
         )
+        self.assert_no_secrets_in_output(scenario, result, verb="check")
