@@ -28,6 +28,7 @@ Available test suites base classes:
 '''
 
 from airbyte_cdk.test.models.scenario import ConnectorTestScenario
+from airbyte_cdk.test.standard_tests._catalog_checks import DiscoveredCatalogWarning
 from airbyte_cdk.test.standard_tests.connector_base import ConnectorTestSuiteBase
 from airbyte_cdk.test.standard_tests.declarative_sources import (
     DeclarativeSourceTestSuite,
@@ -40,5 +41,6 @@ __all__ = [
     "ConnectorTestSuiteBase",
     "DeclarativeSourceTestSuite",
     "DestinationTestSuiteBase",
+    "DiscoveredCatalogWarning",
     "SourceTestSuiteBase",
 ]
