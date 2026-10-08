@@ -8,7 +8,7 @@ since all paths must enforce the same expectations:
 - `status: succeed`  -> a CONNECTION_STATUS message with status SUCCEEDED.
 - `status: failed`   -> a CONNECTION_STATUS message with status FAILED.
 - `status: exception` -> an uncaught error (TRACE error), no SUCCEEDED status.
-- no `status`        -> a CONNECTION_STATUS message, either value accepted.
+- no `status`        -> treated as `succeed` (the CAT default).
 """
 
 from __future__ import annotations
@@ -20,7 +20,6 @@ from pathlib import Path
 from typing import Any, Iterable, Literal, Mapping
 
 import pytest
-import yaml
 
 from airbyte_cdk.models import (
     AirbyteCatalog,
@@ -156,9 +155,11 @@ OUTCOME_MATRIX = [
     pytest.param(
         ExpectedOutcome.EXPECT_UNCAUGHT_ERROR, None, False, MSG_NO_TRACE, id="exception_no_status"
     ),
-    # No declared status: a CONNECTION_STATUS must be reported, either value is accepted.
+    # No declared status: treated as `succeed`, matching the CAT default.
     pytest.param(ExpectedOutcome.ALLOW_ANY, "SUCCEEDED", False, None, id="allow_any_succeeded"),
-    pytest.param(ExpectedOutcome.ALLOW_ANY, "FAILED", False, None, id="allow_any_failed"),
+    pytest.param(
+        ExpectedOutcome.ALLOW_ANY, "FAILED", False, MSG_NOT_SUCCEEDED, id="allow_any_failed"
+    ),
     pytest.param(ExpectedOutcome.ALLOW_ANY, None, False, MSG_NO_STATUS, id="allow_any_no_status"),
     pytest.param(ExpectedOutcome.ALLOW_ANY, None, True, MSG_NO_STATUS, id="allow_any_raised"),
 ]
@@ -365,9 +366,15 @@ IN_PROCESS_MATRIX = [
         MSG_NO_TRACE,
         id="exception_failed",
     ),
-    # No declared status
+    # No declared status: treated as `succeed`.
     pytest.param(ExpectedOutcome.ALLOW_ANY, "succeeded", None, None, id="allow_any_succeeded"),
-    pytest.param(ExpectedOutcome.ALLOW_ANY, "failed", None, None, id="allow_any_failed"),
+    pytest.param(
+        ExpectedOutcome.ALLOW_ANY,
+        "failed",
+        AssertionError,
+        MSG_NOT_SUCCEEDED,
+        id="allow_any_failed",
+    ),
     pytest.param(
         ExpectedOutcome.ALLOW_ANY,
         "raise",
@@ -498,7 +505,14 @@ DOCKER_MATRIX = [
         MSG_NO_TRACE,
         id="exception_succeeded",
     ),
-    pytest.param(ExpectedOutcome.ALLOW_ANY, "FAILED", False, None, None, id="allow_any_failed"),
+    pytest.param(
+        ExpectedOutcome.ALLOW_ANY,
+        "FAILED",
+        False,
+        AssertionError,
+        MSG_NOT_SUCCEEDED,
+        id="allow_any_failed",
+    ),
     pytest.param(
         ExpectedOutcome.ALLOW_ANY,
         None,
@@ -570,87 +584,3 @@ def test_docker_image_build_and_check_asserts_reported_status(
     assert recorded_calls[0]["cmd"][-4:-1] == ["airbyte/source-test:dev", "check", "--config"]
     # Only `failed` and `exception` scenarios may let a trace error through to the assertion.
     assert recorded_calls[0]["raise_if_errors"] is (not expected_outcome.expect_exception())
-
-
-def _write_acceptance_test_config(connector_root: Path, section: str, config_name: str) -> None:
-    """Write an acceptance-test-config.yml listing `config_name` under `section`, with no status."""
-    entry: dict[str, Any] = {"config_path": config_name}
-    if section == "spec":
-        entry["spec_path"] = "manifest.yaml"
-    if section == "basic_read":
-        entry["configured_catalog_path"] = "integration_tests/catalog.json"
-    (connector_root / "acceptance-test-config.yml").write_text(
-        yaml.safe_dump({"acceptance_tests": {section: {"tests": [entry]}}})
-    )
-    (connector_root / config_name).write_text(json.dumps({"dummy_setting": "dummy_value"}))
-
-
-# (section the status-less config is listed under, reported status, expected failure or None)
-CAT_DEFAULT_MATRIX = [
-    # CAT ran `check` for `connection` entries with a default of `succeed`.
-    pytest.param("connection", "SUCCEEDED", None, id="connection_succeeded"),
-    pytest.param("connection", "FAILED", MSG_NOT_SUCCEEDED, id="connection_failed"),
-    # CAT never ran `check` for `spec` or `basic_read` entries: either status is accepted.
-    pytest.param("spec", "FAILED", None, id="spec_only_failed"),
-    pytest.param("basic_read", "FAILED", None, id="basic_read_only_failed"),
-]
-
-
-@pytest.mark.parametrize("suite_class", [_FakeSourceSuite, _FakeConnectorSuite])
-@pytest.mark.parametrize("section, status, failure_match", CAT_DEFAULT_MATRIX)
-def test_suite_test_check_applies_cat_default_for_statusless_configs(
-    suite_class: type[_SuiteWithFakeConnector],
-    section: str,
-    status: str,
-    failure_match: str | None,
-    tmp_path: Path,
-) -> None:
-    _write_acceptance_test_config(tmp_path, section, "config.json")
-    suite_class.connector_root_dir = tmp_path
-    suite_class.connector_behavior = status.lower()
-    scenario = ConnectorTestScenario(config_path=Path("config.json"))
-    suite = suite_class()
-
-    if failure_match is None:
-        suite.test_check(scenario)  # type: ignore[attr-defined]
-        return
-
-    with pytest.raises(AssertionError, match=failure_match):
-        suite.test_check(scenario)  # type: ignore[attr-defined]
-
-
-@pytest.mark.parametrize("section, status, failure_match", CAT_DEFAULT_MATRIX)
-def test_docker_image_build_and_check_applies_cat_default_for_statusless_configs(
-    section: str,
-    status: str,
-    failure_match: str | None,
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    shutil.copy(POKEAPI_RESOURCE_DIR / "metadata.yaml", tmp_path / "metadata.yaml")
-    _write_acceptance_test_config(tmp_path, section, "config.json")
-    monkeypatch.setattr(
-        "airbyte_cdk.test.standard_tests.docker_base.run_docker_airbyte_command",
-        lambda cmd, *, raise_if_errors=False: _check_output(status),
-    )
-
-    class _Suite(DockerConnectorTestSuite):
-        @classmethod
-        def get_connector_root_dir(cls) -> Path:
-            return tmp_path
-
-    scenario = ConnectorTestScenario(config_path=Path("config.json"))
-
-    def _run() -> None:
-        _Suite().test_docker_image_build_and_check(
-            scenario,
-            connector_image_override="airbyte/source-test:dev",
-            connector_base_image_override=None,
-        )
-
-    if failure_match is None:
-        _run()
-        return
-
-    with pytest.raises(AssertionError, match=failure_match):
-        _run()

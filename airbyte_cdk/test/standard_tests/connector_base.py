@@ -111,7 +111,6 @@ class ConnectorTestSuiteBase(DockerConnectorTestSuite):
         Scenarios declared with `status: exception` expect `check` to raise instead of reporting
         a status; for those, only the presence of a trace error is asserted (in `run_test_job`).
         """
-        scenario = self._check_scenario(scenario)
         result: entrypoint_wrapper.EntrypointOutput = run_test_job(
             self.create_connector(scenario),
             "check",

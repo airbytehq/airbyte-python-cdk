@@ -9,14 +9,13 @@
 | `succeed` | Report a `CONNECTION_STATUS` message with status `SUCCEEDED`. |
 | `failed` | Report a `CONNECTION_STATUS` message with status `FAILED` (gracefully, without raising). |
 | `exception` | Raise: a `TRACE` error must be emitted and no `SUCCEEDED` status may be reported. A `CONNECTION_STATUS` message is not required. |
-| not declared, config listed under `connection` | Treated as `succeed` for `check`, matching the CAT default. |
-| not declared, config listed only under `spec` or `basic_read` | Report a `CONNECTION_STATUS` message; either status is accepted (CAT never ran `check` with these configs). |
+| not declared | Treated as `succeed`, matching the CAT default, whichever section (`spec`, `connection`, `basic_read`) lists the config. |
 
 This change is breaking for the connector test suites of connectors whose `check` does not currently satisfy the declared (or defaulted) expectation. The connector monorepo installs the `airbyte-cdk` CLI unpinned (`uv tool install --upgrade 'airbyte-cdk[dev]'`), so connector CI picks the new assertions up with this release, without a per-connector CDK bump.
 
 Migration steps:
 
-- A config listed under `connection` without a `status` must now pass `check`. If the config is meant to fail, declare `status: failed`; if its secret has expired, refresh it.
+- A config without a `status` must now pass `check`, including configs that are only listed under `spec` or `basic_read` (which CAT never ran `check` with). If the config is meant to fail `check`, declare `status: failed` for it under `connection`; if its secret has expired, refresh it.
 - A `check` that raises (uncaught exception, non-zero exit) now fails the test for every config that is not declared `status: failed` or `status: exception`, on the in-process path as well as the Docker path.
 - A `status: failed` config whose `check` raises instead of reporting `FAILED` must either be fixed to report its failure gracefully, or be declared as `status: exception` if raising is the intended behaviour.
 - A `status: exception` config whose `check` reports a `CONNECTION_STATUS` without raising must be declared as `status: failed` (or `succeed`).

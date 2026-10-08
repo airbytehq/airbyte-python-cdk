@@ -29,10 +29,8 @@ def assert_check_outcome(
     - `failed` (`EXPECT_EXCEPTION`): a `CONNECTION_STATUS` message with status `FAILED`.
     - `exception` (`EXPECT_UNCAUGHT_ERROR`): `check` raises, so a `TRACE` error must be present
       and no `SUCCEEDED` status may be reported. A `CONNECTION_STATUS` message is not required.
-    - no `status` (`ALLOW_ANY`): `check` must report a `CONNECTION_STATUS` message, but either
-      `SUCCEEDED` or `FAILED` is accepted. The CAT default of `succeed` for status-less
-      `connection` entries is applied by the callers (see
-      `DockerConnectorTestSuite._check_scenario`).
+    - no `status` (`ALLOW_ANY`): treated as `succeed`, matching the CAT default. A config that
+      `check` is expected to reject must declare `status: failed` (or `exception`).
 
     When more than one `CONNECTION_STATUS` message is present, the last one wins.
     """
@@ -69,10 +67,7 @@ def assert_check_outcome(
         )
         return
 
-    if expected_outcome.expect_success():
-        assert reported_status == Status.SUCCEEDED, (
-            f"`check` for connector '{connector_name}' did not succeed: {connection_statuses[-1]}"
-        )
-        return
-
-    # `ALLOW_ANY`: a status was reported, and either value is accepted.
+    # Both `EXPECT_SUCCESS` and `ALLOW_ANY` (no declared status) require a successful `check`.
+    assert reported_status == Status.SUCCEEDED, (
+        f"`check` for connector '{connector_name}' did not succeed: {connection_statuses[-1]}"
+    )

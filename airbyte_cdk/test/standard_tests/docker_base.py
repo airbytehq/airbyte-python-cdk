@@ -179,47 +179,6 @@ class DockerConnectorTestSuite:
 
         return deduped_test_scenarios
 
-    @classmethod
-    def _config_paths_under_connection_tests(cls) -> set[Path]:
-        """Return the config paths listed under the `connection` section of the acceptance tests.
-
-        These are the configs that CAT ran `check` with. Returns an empty set when there is no
-        acceptance-test-config file or no `connection` section.
-        """
-        try:
-            all_tests_config = cls.acceptance_test_config
-        except FileNotFoundError:
-            return set()
-
-        connection_tests = all_tests_config["acceptance_tests"].get("connection") or {}
-        return {
-            Path(test["config_path"])
-            for test in connection_tests.get("tests") or []
-            if "config_path" in test
-        }
-
-    @classmethod
-    def _check_scenario(cls, scenario: ConnectorTestScenario) -> ConnectorTestScenario:
-        """Return the scenario as it applies to `check`, with the CAT default status applied.
-
-        CAT ran `check` only for the configs listed under `connection`, and defaulted their
-        `status` to `succeed` (see `connector_acceptance_test/config/config.py`). A scenario
-        without a declared status whose config is listed there is therefore expected to pass
-        `check`. Every other scenario is returned unchanged: a declared status is kept, and a
-        status-less config that is listed only under `spec` or `basic_read` (which CAT never ran
-        `check` with) keeps its open expectation, where either reported status is accepted.
-
-        The default is applied here, and not in `get_scenarios`, so that it only affects the
-        `check` tests: the `discover` and `read` tests keep their previous expectations.
-        """
-        if scenario.status is not None or scenario.config_path is None:
-            return scenario
-
-        if scenario.config_path in cls._config_paths_under_connection_tests():
-            return scenario.with_expecting_success()
-
-        return scenario
-
     @pytest.mark.skipif(
         shutil.which("docker") is None,
         reason="docker CLI not found in PATH, skipping docker image tests",
@@ -277,7 +236,6 @@ class DockerConnectorTestSuite:
           - In the rare case that image caches need to be cleared, please clear
             the local docker image cache using `docker image prune -a` command.
         """
-        scenario = self._check_scenario(scenario)
         tag = "dev-latest"
         connector_root = self.get_connector_root_dir()
         metadata = MetadataFile.from_file(connector_root / "metadata.yaml")
