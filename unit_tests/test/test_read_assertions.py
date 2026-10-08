@@ -474,25 +474,26 @@ BASIC_READ_MATRIX = [
         MSG_MISSING_STREAMS,
         id="hand_built_scenario_is_a_basic_read_config",
     ),
-    # A config never listed under `basic_read` has nowhere to declare its empty streams or its
-    # `validate_schema` opt-out, so only the "some records" floor applies.
+    # A config read only because it is listed under `full_refresh` has no `basic_read` entry to
+    # declare its empty streams or its `validate_schema` opt-out in, so only the "some records"
+    # floor applies.
     pytest.param(
-        _scenario("connection"),
+        _scenario("connection", "full_refresh"),
         {"users": VALID_USERS},
         None,
-        id="connection_only_empty_stream",
+        id="full_refresh_only_empty_stream",
     ),
     pytest.param(
-        _scenario("connection"),
+        _scenario("connection", "full_refresh"),
         {},
         MSG_NO_RECORDS,
-        id="connection_only_no_records",
+        id="full_refresh_only_no_records",
     ),
     pytest.param(
-        _scenario("connection"),
+        _scenario("connection", "full_refresh"),
         {"users": [{"id": "1"}]},
         None,
-        id="connection_only_schema_mismatch",
+        id="full_refresh_only_schema_mismatch",
     ),
     pytest.param(
         _scenario("connection", "basic_read"),
@@ -506,11 +507,11 @@ BASIC_READ_MATRIX = [
         None,
         id="basic_read_schema_mismatch_opted_out",
     ),
-    # No declared `status`: any outcome is allowed, but emitted records must match the schema.
+    # No declared `status` means `succeed`, the CAT default, so both checks apply.
     pytest.param(
         _scenario("basic_read", status=None),
         {"users": VALID_USERS},
-        None,
+        MSG_MISSING_STREAMS,
         id="no_status_empty_stream",
     ),
     pytest.param(

@@ -13,25 +13,54 @@ import json
 import tempfile
 from contextlib import contextmanager, suppress
 from pathlib import Path  # noqa: TC003  # Pydantic needs this (don't move to 'if typing' block)
+from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Literal, cast
 
 import yaml
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, field_validator
 
 from airbyte_cdk.test.models.outcome import ExpectedOutcome
 
 if TYPE_CHECKING:
-    from collections.abc import Generator
+    from collections.abc import Generator, Mapping
 
 
-FULL_SUITE_SECTIONS: tuple[str, ...] = ("spec", "connection", "basic_read")
-"""Sections of `acceptance-test-config.yml` whose configs run every standard test."""
+ScenarioCommand = Literal["spec", "check", "discover", "read", "incremental_read"]
+"""A connector command the standard tests run for a scenario. See `SECTION_COMMANDS`."""
 
-CHECK_ONLY_SECTIONS: tuple[str, ...] = ("discovery", "full_refresh", "incremental")
-"""Sections whose configs run `check` only. See `ConnectorTestScenario.check_only`."""
+SECTION_COMMANDS: Mapping[str, frozenset[ScenarioCommand]] = MappingProxyType(
+    {
+        "spec": frozenset({"spec"}),
+        "connection": frozenset({"check"}),
+        "discovery": frozenset({"discover"}),
+        "basic_read": frozenset({"read"}),
+        "full_refresh": frozenset({"read"}),
+        "incremental": frozenset({"incremental_read"}),
+    }
+)
+"""The command that runs for a config listed under each section of `acceptance-test-config.yml`.
 
-SCENARIO_SECTIONS: tuple[str, ...] = FULL_SUITE_SECTIONS + CHECK_ONLY_SECTIONS
+Each section stands for the connector command the Connector Acceptance Tests ran its configs
+with, and the standard tests run that command for the config:
+
+- `spec`: the config must validate against the connector's spec (`test_config_matches_spec`).
+- `connection`: `check` must report the declared `status` (`test_check`).
+- `discovery`: `discover` must succeed and return streams (`test_discover`).
+- `basic_read`, `full_refresh`: a full-refresh `read` of every discovered stream must succeed
+  and return records (`test_basic_read`, `test_fail_read_with_bad_catalog`).
+- `incremental`: an incremental `read` of every stream that supports it must succeed and emit
+  state (`test_incremental_read`, `test_fail_read_with_bad_catalog`).
+
+A config listed under several sections runs the union of their commands.
+"""
+
+SCENARIO_SECTIONS: tuple[str, ...] = tuple(SECTION_COMMANDS)
 """Every section that `get_scenarios()` reads, in the order its entries are collected."""
+
+ALL_COMMANDS: frozenset[ScenarioCommand] = frozenset(
+    command for commands in SECTION_COMMANDS.values() for command in commands
+)
+"""Every command; what a scenario built by hand (no `sections`) runs."""
 
 
 class ConnectorTestScenario(BaseModel):
@@ -76,8 +105,19 @@ class ConnectorTestScenario(BaseModel):
     # CAT's `basic_read` opt-out from validating records against the stream schemas.
     validate_schema: bool = True
     # The sections of `acceptance-test-config.yml` that list this config. Populated by
-    # `get_scenarios()`; empty for scenarios built by hand, which run every test.
+    # `get_scenarios()`; empty for scenarios built by hand, which run every command.
     sections: tuple[str, ...] = ()
+
+    @field_validator("sections")
+    @classmethod
+    def _sections_must_be_known(cls, sections: tuple[str, ...]) -> tuple[str, ...]:
+        unknown = [section for section in sections if section not in SECTION_COMMANDS]
+        if unknown:
+            raise ValueError(
+                f"Unknown `acceptance-test-config.yml` section(s) {unknown}; "
+                f"expected any of {list(SCENARIO_SECTIONS)}."
+            )
+        return sections
 
     def get_config_dict(
         self,
@@ -123,19 +163,22 @@ class ConnectorTestScenario(BaseModel):
         return ExpectedOutcome.from_status_str(self.status)
 
     @property
-    def check_only(self) -> bool:
-        """Whether only `check` runs for this scenario.
+    def commands(self) -> frozenset[ScenarioCommand]:
+        """The connector commands the standard tests run for this scenario.
 
-        Every config listed anywhere in `acceptance-test-config.yml` is validated with `check`
-        against its declared `status` (`succeed` when none is declared). A config listed only
-        under `discovery`, `full_refresh` or `incremental` stops there: those sections described
-        CAT tests that the standard tests do not reproduce, and `discover` and `read` are not
-        run for it. A config that also appears under `spec`, `connection` or `basic_read` runs
-        every test.
+        A config runs the command of every `acceptance-test-config.yml` section that lists it
+        (`SECTION_COMMANDS`). A scenario built by hand, with no `sections`, runs every command.
         """
-        return bool(self.sections) and not any(
-            section in FULL_SUITE_SECTIONS for section in self.sections
+        if not self.sections:
+            return ALL_COMMANDS
+
+        return frozenset(
+            command for section in self.sections for command in SECTION_COMMANDS[section]
         )
+
+    def runs(self, *commands: ScenarioCommand) -> bool:
+        """Whether any of `commands` runs for this scenario. See `commands`."""
+        return bool(self.commands & frozenset(commands))
 
     @property
     def is_basic_read_config(self) -> bool:
@@ -143,9 +186,9 @@ class ConnectorTestScenario(BaseModel):
 
         Only the records of these configs are checked as in CAT's basic read test: every stream
         not declared in `empty_streams` returns records, and every record matches its stream's
-        schema unless `validate_schema: false` is set. A config listed only under `spec` or
-        `connection` never had a basic read test, and has nowhere to declare those exceptions,
-        so its `read` only has to return some records.
+        schema unless `validate_schema: false` is set. A config read only because it is listed
+        under `full_refresh` never had CAT's basic read checks, and has no `basic_read` entry to
+        declare those exceptions in, so its `read` only has to return some records.
         """
         return not self.sections or "basic_read" in self.sections
 
@@ -229,6 +272,18 @@ class ConnectorTestScenario(BaseModel):
             **self.model_dump(exclude={"status"}),
             status="succeed",
         )
+
+    def with_default_success(self) -> ConnectorTestScenario:
+        """Return the scenario, expecting success when it declares no `status`.
+
+        No `status` in `acceptance-test-config.yml` means `succeed`, the CAT default, for every
+        command a config runs. `ALLOW_ANY` is kept only for intermediate steps that defer their
+        expectation (see `without_expected_outcome`).
+        """
+        if self.status is not None:
+            return self
+
+        return self.with_expecting_success()
 
     @property
     def requires_creds(self) -> bool:
