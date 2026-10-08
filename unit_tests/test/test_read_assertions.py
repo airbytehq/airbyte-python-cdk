@@ -474,7 +474,8 @@ BASIC_READ_MATRIX = [
         MSG_MISSING_STREAMS,
         id="hand_built_scenario_is_a_basic_read_config",
     ),
-    # A config never listed under `basic_read` has nowhere to declare its empty streams.
+    # A config never listed under `basic_read` has nowhere to declare its empty streams or its
+    # `validate_schema` opt-out, so only the "some records" floor applies.
     pytest.param(
         _scenario("connection"),
         {"users": VALID_USERS},
@@ -490,7 +491,7 @@ BASIC_READ_MATRIX = [
     pytest.param(
         _scenario("connection"),
         {"users": [{"id": "1"}]},
-        MSG_SCHEMA,
+        None,
         id="connection_only_schema_mismatch",
     ),
     pytest.param(

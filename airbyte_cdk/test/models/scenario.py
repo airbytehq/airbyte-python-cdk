@@ -141,10 +141,11 @@ class ConnectorTestScenario(BaseModel):
     def is_basic_read_config(self) -> bool:
         """Whether this config is listed under `basic_read` (or the scenario was built by hand).
 
-        Only these configs must return records from every stream not declared in
-        `empty_streams`, as in CAT. A config listed only under `spec` or `connection` never had a
-        basic read test, and has nowhere to declare its empty streams, so its `read` only has to
-        return some records.
+        Only the records of these configs are checked as in CAT's basic read test: every stream
+        not declared in `empty_streams` returns records, and every record matches its stream's
+        schema unless `validate_schema: false` is set. A config listed only under `spec` or
+        `connection` never had a basic read test, and has nowhere to declare those exceptions,
+        so its `read` only has to return some records.
         """
         return not self.sections or "basic_read" in self.sections
 
