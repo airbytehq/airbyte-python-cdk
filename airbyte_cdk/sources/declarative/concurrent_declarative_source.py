@@ -20,7 +20,6 @@ from typing import (
 )
 
 import orjson
-import yaml
 from airbyte_protocol_dataclasses.models import AirbyteStreamStatus, Level, StreamDescriptor
 from jsonschema.exceptions import ValidationError
 from jsonschema.validators import validate
@@ -105,6 +104,7 @@ from airbyte_cdk.sources.utils.slice_logger import (
 from airbyte_cdk.utils.airbyte_secrets_utils import add_to_secrets, get_secrets
 from airbyte_cdk.utils.stream_status_utils import as_airbyte_message
 from airbyte_cdk.utils.traced_exception import AirbyteTracedException
+from airbyte_cdk.utils.yaml_loader import safe_load_yaml
 
 
 @dataclass
@@ -128,7 +128,7 @@ def _get_declarative_component_schema() -> Dict[str, Any]:
             "airbyte_cdk", "sources/declarative/declarative_component_schema.yaml"
         )
         if raw_component_schema is not None:
-            declarative_component_schema = yaml.load(raw_component_schema, Loader=yaml.SafeLoader)
+            declarative_component_schema = safe_load_yaml(raw_component_schema)
             return declarative_component_schema  # type: ignore
         else:
             raise RuntimeError(
