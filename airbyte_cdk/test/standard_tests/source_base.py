@@ -22,6 +22,7 @@ from airbyte_cdk.test.standard_tests._job_runner import run_test_job
 from airbyte_cdk.test.standard_tests.connector_base import (
     ConnectorTestSuiteBase,
 )
+from airbyte_cdk.test.standard_tests.docker_base import skip_if_check_only
 
 if TYPE_CHECKING:
     from airbyte_cdk.test import entrypoint_wrapper
@@ -68,6 +69,7 @@ class SourceTestSuiteBase(ConnectorTestSuiteBase):
         scenario: ConnectorTestScenario,
     ) -> None:
         """Standard test for `discover`."""
+        skip_if_check_only(scenario)
         if scenario.expected_outcome.expect_exception():
             # If the scenario expects an exception, we can't ensure it specifically would fail
             # in discover, because some discover implementations do not need to make a connection.
@@ -118,6 +120,7 @@ class SourceTestSuiteBase(ConnectorTestSuiteBase):
         obtain the catalog of streams, and then it runs a `read` job to fetch
         records from those streams.
         """
+        skip_if_check_only(scenario)
         discover_result = run_test_job(
             self.create_connector(scenario),
             "discover",
@@ -160,6 +163,7 @@ class SourceTestSuiteBase(ConnectorTestSuiteBase):
         scenario: ConnectorTestScenario,
     ) -> None:
         """Standard test for `read` when passed a bad catalog file."""
+        skip_if_check_only(scenario)
         invalid_configured_catalog = ConfiguredAirbyteCatalog(
             streams=[
                 # Create ConfiguredAirbyteStream which is deliberately invalid

@@ -27,6 +27,7 @@ from airbyte_cdk.models import (
 from airbyte_cdk.models.connector_metadata import MetadataFile
 from airbyte_cdk.test.entrypoint_wrapper import EntrypointOutput
 from airbyte_cdk.test.models import ConnectorTestScenario
+from airbyte_cdk.test.models.scenario import SCENARIO_SECTIONS
 from airbyte_cdk.test.standard_tests._assertions import assert_check_outcome
 from airbyte_cdk.utils.connector_paths import (
     ACCEPTANCE_TEST_CONFIG,
@@ -36,6 +37,19 @@ from airbyte_cdk.utils.docker import (
     build_connector_image,
     run_docker_airbyte_command,
 )
+
+
+def skip_if_check_only(scenario: ConnectorTestScenario) -> None:
+    """Skip the current test when only `check` runs for this scenario.
+
+    See `ConnectorTestScenario.check_only`.
+    """
+    if scenario.check_only:
+        pytest.skip(
+            f"Only `check` runs for scenario '{scenario.id}': its config is listed only under "
+            f"{', '.join(f'`{section}`' for section in scenario.sections)} in "
+            "`acceptance-test-config.yml`."
+        )
 
 
 class DockerConnectorTestSuite:
@@ -98,6 +112,10 @@ class DockerConnectorTestSuite:
         We also carry over any explicitly declared `status`. Only the `connection` section declares one,
         so without this an entry from another section (e.g. `spec`) would win and silently drop the
         declared expectation. Conflicting non-null statuses for the same config raise a `ValueError`.
+
+        The sections a config is listed under are unioned as well, so a config that appears under
+        `discovery` and `basic_read` keeps running every test, while one listed only under the
+        check-only sections runs `check` alone (see `ConnectorTestScenario.check_only`).
         """
         deduped_scenarios: list[ConnectorTestScenario] = []
 
@@ -123,6 +141,9 @@ class DockerConnectorTestSuite:
                         update={
                             "empty_streams": list(set(all_empty_streams)),
                             "status": existing_scenario.status or scenario.status,
+                            "sections": tuple(
+                                dict.fromkeys(existing_scenario.sections + scenario.sections)
+                            ),
                         }
                     )
                     deduped_scenarios.remove(existing_scenario)
@@ -137,7 +158,12 @@ class DockerConnectorTestSuite:
     def get_scenarios(
         cls,
     ) -> list[ConnectorTestScenario]:
-        """Get acceptance tests for a given category.
+        """Collect one scenario per config listed in `acceptance-test-config.yml`.
+
+        Every section with a `tests` list contributes its configs (`SCENARIO_SECTIONS`), so each
+        config is validated with `check` against its declared `status`. Configs listed only under
+        `discovery`, `full_refresh` or `incremental` are marked check-only; the others also run
+        `discover` and `read`.
 
         This has to be a separate function because pytest does not allow
         parametrization of fixtures with arguments from the test class itself.
@@ -154,8 +180,7 @@ class DockerConnectorTestSuite:
             return []
 
         test_scenarios: list[ConnectorTestScenario] = []
-        # we look in the basic_read section to find any empty streams
-        for category in ["spec", "connection", "basic_read"]:
+        for category in SCENARIO_SECTIONS:
             if (
                 category not in all_tests_config["acceptance_tests"]
                 or "tests" not in all_tests_config["acceptance_tests"][category]
@@ -171,7 +196,7 @@ class DockerConnectorTestSuite:
                     # We skip iam_role tests for now, as they are not supported in the test suite.
                     continue
 
-                scenario = ConnectorTestScenario.model_validate(test)
+                scenario = ConnectorTestScenario.model_validate({**test, "sections": (category,)})
 
                 test_scenarios.append(scenario)
 
@@ -308,6 +333,8 @@ class DockerConnectorTestSuite:
         """
         if self.is_destination_connector():
             pytest.skip("Skipping read test for destination connector.")
+
+        skip_if_check_only(scenario)
 
         if scenario.expected_outcome.expect_exception():
             pytest.skip("Skipping (expected to fail).")

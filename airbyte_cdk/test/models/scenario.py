@@ -24,6 +24,16 @@ if TYPE_CHECKING:
     from collections.abc import Generator
 
 
+FULL_SUITE_SECTIONS: tuple[str, ...] = ("spec", "connection", "basic_read")
+"""Sections of `acceptance-test-config.yml` whose configs run every standard test."""
+
+CHECK_ONLY_SECTIONS: tuple[str, ...] = ("discovery", "full_refresh", "incremental")
+"""Sections whose configs run `check` only. See `ConnectorTestScenario.check_only`."""
+
+SCENARIO_SECTIONS: tuple[str, ...] = FULL_SUITE_SECTIONS + CHECK_ONLY_SECTIONS
+"""Every section that `get_scenarios()` reads, in the order its entries are collected."""
+
+
 class ConnectorTestScenario(BaseModel):
     """Acceptance test scenario, as a Pydantic model.
 
@@ -63,6 +73,9 @@ class ConnectorTestScenario(BaseModel):
     expect_records: AcceptanceTestExpectRecords | None = None
     file_types: AcceptanceTestFileTypes | None = None
     status: Literal["succeed", "failed", "exception"] | None = None
+    # The sections of `acceptance-test-config.yml` that list this config. Populated by
+    # `get_scenarios()`; empty for scenarios built by hand, which run every test.
+    sections: tuple[str, ...] = ()
 
     def get_config_dict(
         self,
@@ -106,6 +119,21 @@ class ConnectorTestScenario(BaseModel):
         and None if there is no set expectation.
         """
         return ExpectedOutcome.from_status_str(self.status)
+
+    @property
+    def check_only(self) -> bool:
+        """Whether only `check` runs for this scenario.
+
+        Every config listed anywhere in `acceptance-test-config.yml` is validated with `check`
+        against its declared `status` (`succeed` when none is declared). A config listed only
+        under `discovery`, `full_refresh` or `incremental` stops there: those sections described
+        CAT tests that the standard tests do not reproduce, and `discover` and `read` are not
+        run for it. A config that also appears under `spec`, `connection` or `basic_read` runs
+        every test.
+        """
+        return bool(self.sections) and not any(
+            section in FULL_SUITE_SECTIONS for section in self.sections
+        )
 
     @property
     def id(self) -> str:
