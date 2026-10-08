@@ -1,6 +1,6 @@
 # CDK Migration Guide
 
-## Upgrading to 7.34.0
+## Upgrading to 7.35.0
 
 [Version 7.34.0](https://github.com/airbytehq/airbyte-python-cdk/releases/tag/v7.34.0) of the CDK changes what the Standard Tests (`airbyte-cdk connector test` and `airbyte-cdk image test`, including the in-process `test_check` of `SourceTestSuiteBase` / `ConnectorTestSuiteBase` and the Docker-based `test_docker_image_build_and_check`) assert about the outcome of `check`. Previously only an exception or a non-zero exit failed the test, so a `check` that reported `status: FAILED` passed. Both test paths now assert the reported `CONNECTION_STATUS` against the `status` declared for the config in `acceptance-test-config.yml`, with the same semantics as the Connector Acceptance Tests (CAT):
 
