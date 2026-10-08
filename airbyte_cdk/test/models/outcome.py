@@ -23,8 +23,10 @@ class ExpectedOutcome(Enum):
       `check`, this means a `CONNECTION_STATUS` message with status `FAILED`.
     - `EXPECT_UNCAUGHT_ERROR` (`status: exception`): the connector must raise (a `TRACE` error
       is emitted) instead of reporting a `CONNECTION_STATUS` message.
-    - `ALLOW_ANY` (no `status` declared): for `check`, the CAT default of `succeed` applies.
-      For the other commands, any outcome that does not raise is accepted.
+    - `ALLOW_ANY` (no `status` declared): the CAT default of `succeed` applies to every command
+      the scenario runs (`ConnectorTestScenario.with_default_success`). As an outcome it is the
+      internal "no expectation yet" state of intermediate steps, such as the `discover` step of
+      a read test, which accept any outcome.
     """
 
     EXPECT_EXCEPTION = auto()

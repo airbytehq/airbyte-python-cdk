@@ -8,9 +8,16 @@ enforce the same expectations.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING, Any
+
+import jsonschema
+
 from airbyte_cdk.models import Status
 from airbyte_cdk.test.entrypoint_wrapper import EntrypointOutput
 from airbyte_cdk.test.models import ExpectedOutcome
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping
 
 
 def assert_check_outcome(
@@ -71,3 +78,33 @@ def assert_check_outcome(
     assert reported_status == Status.SUCCEEDED, (
         f"`check` for connector '{connector_name}' did not succeed: {connection_statuses[-1]}"
     )
+
+
+def assert_config_matches_spec(
+    *,
+    config: Mapping[str, Any],
+    spec_result: EntrypointOutput,
+    connector_name: str,
+    scenario_id: str,
+) -> None:
+    """Assert that a config validates against the `connectionSpecification` the connector reports.
+
+    This is the CAT `test_config_match_spec` check for configs listed under `spec` in
+    `acceptance-test-config.yml`: the connector's own spec must accept the config. The config's
+    values never appear in the failure message, since they may be secrets.
+    """
+    specs = [message.spec for message in spec_result.spec_messages if message.spec is not None]
+    assert len(specs) == 1, (
+        f"Expected exactly one SPEC message from connector '{connector_name}', got {len(specs)}."
+        + (f"\nErrors: {spec_result.get_formatted_error_message()}" if spec_result.errors else "")
+    )
+    try:
+        jsonschema.validate(instance=config, schema=specs[0].connectionSpecification)
+    except jsonschema.ValidationError as exc:
+        # `exc.message` embeds the offending value; keep it (and the chained exception, whose
+        # text includes the instance) out of the test output.
+        message = exc.message.replace(repr(exc.instance), "<config value>")
+        raise AssertionError(
+            f"Config '{scenario_id}' does not match the spec of connector '{connector_name}' "
+            f"at `{exc.json_path}`: {message}"
+        ) from None

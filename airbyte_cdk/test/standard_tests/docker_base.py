@@ -18,7 +18,7 @@ import yaml
 from boltons.typeutils import classproperty
 
 from airbyte_cdk.models import (
-    AirbyteCatalog,
+    AirbyteStream,
     ConfiguredAirbyteCatalog,
     ConfiguredAirbyteStream,
     DestinationSyncMode,
@@ -27,8 +27,11 @@ from airbyte_cdk.models import (
 from airbyte_cdk.models.connector_metadata import MetadataFile
 from airbyte_cdk.test.entrypoint_wrapper import EntrypointOutput
 from airbyte_cdk.test.models import ConnectorTestScenario
-from airbyte_cdk.test.models.scenario import SCENARIO_SECTIONS
-from airbyte_cdk.test.standard_tests._assertions import assert_check_outcome
+from airbyte_cdk.test.models.scenario import SCENARIO_SECTIONS, ScenarioCommand
+from airbyte_cdk.test.standard_tests._assertions import (
+    assert_check_outcome,
+    assert_config_matches_spec,
+)
 from airbyte_cdk.utils.connector_paths import (
     ACCEPTANCE_TEST_CONFIG,
     find_connector_root,
@@ -39,17 +42,63 @@ from airbyte_cdk.utils.docker import (
 )
 
 
-def skip_if_check_only(scenario: ConnectorTestScenario) -> None:
-    """Skip the current test when only `check` runs for this scenario.
+def skip_unless_runs(scenario: ConnectorTestScenario, *commands: ScenarioCommand) -> None:
+    """Skip the current test unless one of `commands` runs for `scenario`.
 
-    See `ConnectorTestScenario.check_only`.
+    A config runs the command of every `acceptance-test-config.yml` section that lists it; see
+    `ConnectorTestScenario.commands`.
     """
-    if scenario.check_only:
-        pytest.skip(
-            f"Only `check` runs for scenario '{scenario.id}': its config is listed only under "
-            f"{', '.join(f'`{section}`' for section in scenario.sections)} in "
-            "`acceptance-test-config.yml`."
+    if scenario.runs(*commands):
+        return
+
+    wanted = ", ".join(f"`{command}`" for command in commands)
+    verb = "does not run" if len(commands) == 1 else "do not run"
+    pytest.skip(
+        f"{wanted} {verb} for scenario '{scenario.id}': its config is listed under "
+        f"{', '.join(f'`{section}`' for section in scenario.sections)} in "
+        "`acceptance-test-config.yml`, which runs "
+        f"{', '.join(f'`{command}`' for command in sorted(scenario.commands))}."
+    )
+
+
+def get_discovered_streams(
+    discover_result: EntrypointOutput,
+    connector_name: str,
+) -> list[AirbyteStream]:
+    """Return the streams of a `discover` result, failing on a missing or empty catalog."""
+    catalog_message = discover_result.catalog
+    assert catalog_message.catalog is not None, "Catalog message missing catalog."
+    if not catalog_message.catalog.streams:
+        raise ValueError(
+            f"Discovered catalog for connector '{connector_name}' is empty. "
+            "Please check the connector's discover implementation."
         )
+    return list(catalog_message.catalog.streams)
+
+
+def _configured_stream(
+    stream: AirbyteStream,
+    *,
+    prefer_incremental: bool,
+) -> ConfiguredAirbyteStream:
+    """Configure a stream for the Docker read.
+
+    With `prefer_incremental`, a stream that supports incremental sync and has a cursor the
+    catalog can name (source-defined, or a default cursor field) is read incrementally; any
+    other stream is read in its first supported sync mode.
+    """
+    sync_modes = stream.supported_sync_modes or [SyncMode.full_refresh]
+    incremental = (
+        prefer_incremental
+        and SyncMode.incremental in sync_modes
+        and bool(stream.source_defined_cursor or stream.default_cursor_field)
+    )
+    return ConfiguredAirbyteStream(
+        stream=stream,
+        sync_mode=SyncMode.incremental if incremental else sync_modes[0],
+        cursor_field=stream.default_cursor_field if incremental else None,
+        destination_sync_mode=DestinationSyncMode.append,
+    )
 
 
 class DockerConnectorTestSuite:
@@ -114,8 +163,8 @@ class DockerConnectorTestSuite:
         declared expectation. Conflicting non-null statuses for the same config raise a `ValueError`.
 
         The sections a config is listed under are unioned as well, so a config that appears under
-        `discovery` and `basic_read` keeps running every test, while one listed only under the
-        check-only sections runs `check` alone (see `ConnectorTestScenario.check_only`).
+        `discovery` and `basic_read` runs both `discover` and `read` (see
+        `ConnectorTestScenario.commands`).
         """
         deduped_scenarios: list[ConnectorTestScenario] = []
 
@@ -160,10 +209,11 @@ class DockerConnectorTestSuite:
     ) -> list[ConnectorTestScenario]:
         """Collect one scenario per config listed in `acceptance-test-config.yml`.
 
-        Every section with a `tests` list contributes its configs (`SCENARIO_SECTIONS`), so each
-        config is validated with `check` against its declared `status`. Configs listed only under
-        `discovery`, `full_refresh` or `incremental` are marked check-only; the others also run
-        `discover` and `read`.
+        Every section with a `tests` list contributes its configs (`SCENARIO_SECTIONS`), and each
+        config runs the command of the section(s) that list it: `spec` validates the config
+        against the spec, `connection` runs `check` against the declared `status`, `discovery`
+        runs `discover`, `basic_read` and `full_refresh` run a full-refresh `read`, and
+        `incremental` runs an incremental `read` (`SECTION_COMMANDS`).
 
         This has to be a separate function because pytest does not allow
         parametrization of fixtures with arguments from the test class itself.
@@ -204,6 +254,33 @@ class DockerConnectorTestSuite:
 
         return deduped_test_scenarios
 
+    @classmethod
+    def _connector_image(
+        cls,
+        connector_image_override: str | None,
+        connector_base_image_override: str | None,
+    ) -> str:
+        """Return the image under test: the override if given, else a fresh `dev-latest` build.
+
+        Note:
+          - It is expected for docker image caches to be reused between test runs.
+          - In the rare case that image caches need to be cleared, please clear
+            the local docker image cache using `docker image prune -a` command.
+        """
+        if connector_image_override:
+            return connector_image_override
+
+        connector_root = cls.get_connector_root_dir().absolute()
+        metadata = MetadataFile.from_file(connector_root / "metadata.yaml")
+        return build_connector_image(
+            connector_name=connector_root.name,
+            connector_directory=connector_root,
+            metadata=metadata,
+            tag="dev-latest",
+            no_verify=False,
+            base_image_override=connector_base_image_override,
+        )
+
     @pytest.mark.skipif(
         shutil.which("docker") is None,
         reason="docker CLI not found in PATH, skipping docker image tests",
@@ -215,20 +292,9 @@ class DockerConnectorTestSuite:
         connector_base_image_override: str | None,
     ) -> None:
         """Run `docker_image` acceptance tests."""
-        connector_root = self.get_connector_root_dir().absolute()
-        metadata = MetadataFile.from_file(connector_root / "metadata.yaml")
-
-        connector_image: str | None = connector_image_override
-        if not connector_image:
-            tag = "dev-latest"
-            connector_image = build_connector_image(
-                connector_name=connector_root.absolute().name,
-                connector_directory=connector_root,
-                metadata=metadata,
-                tag=tag,
-                no_verify=False,
-                base_image_override=connector_base_image_override,
-            )
+        connector_image = self._connector_image(
+            connector_image_override, connector_base_image_override
+        )
 
         _ = run_docker_airbyte_command(
             [
@@ -254,27 +320,14 @@ class DockerConnectorTestSuite:
     ) -> None:
         """Run `docker_image` acceptance tests.
 
-        This test builds the connector image and runs the `check` command inside the container.
-
-        Note:
-          - It is expected for docker image caches to be reused between test runs.
-          - In the rare case that image caches need to be cleared, please clear
-            the local docker image cache using `docker image prune -a` command.
+        This test builds the connector image and runs the `check` command inside the container,
+        for configs listed under `connection` in `acceptance-test-config.yml`.
         """
-        tag = "dev-latest"
+        skip_unless_runs(scenario, "check")
         connector_root = self.get_connector_root_dir()
-        metadata = MetadataFile.from_file(connector_root / "metadata.yaml")
-        connector_image: str | None = connector_image_override
-        if not connector_image:
-            tag = "dev-latest"
-            connector_image = build_connector_image(
-                connector_name=connector_root.absolute().name,
-                connector_directory=connector_root,
-                metadata=metadata,
-                tag=tag,
-                no_verify=False,
-                base_image_override=connector_base_image_override,
-            )
+        connector_image = self._connector_image(
+            connector_image_override, connector_base_image_override
+        )
 
         container_config_path = "/secrets/config.json"
         with scenario.with_temp_config_file(
@@ -313,6 +366,94 @@ class DockerConnectorTestSuite:
         reason="docker CLI not found in PATH, skipping docker image tests",
     )
     @pytest.mark.image_tests
+    def test_docker_image_build_and_config_matches_spec(
+        self,
+        scenario: ConnectorTestScenario,
+        connector_image_override: str | None,
+        connector_base_image_override: str | None,
+    ) -> None:
+        """Validate the scenario's config against the `spec` the image reports.
+
+        Runs for configs listed under `spec` in `acceptance-test-config.yml` (the CAT
+        `test_config_match_spec` check).
+        """
+        skip_unless_runs(scenario, "spec")
+        connector_root = self.get_connector_root_dir()
+        connector_image = self._connector_image(
+            connector_image_override, connector_base_image_override
+        )
+
+        spec_result = run_docker_airbyte_command(
+            [
+                "docker",
+                "run",
+                "--rm",
+                connector_image,
+                "spec",
+            ],
+            raise_if_errors=True,
+        )
+        assert_config_matches_spec(
+            config=scenario.get_config_dict(connector_root=connector_root, empty_if_missing=False),
+            spec_result=spec_result,
+            connector_name=connector_root.absolute().name,
+            scenario_id=scenario.id,
+        )
+
+    @pytest.mark.skipif(
+        shutil.which("docker") is None,
+        reason="docker CLI not found in PATH, skipping docker image tests",
+    )
+    @pytest.mark.image_tests
+    def test_docker_image_build_and_discover(
+        self,
+        scenario: ConnectorTestScenario,
+        connector_image_override: str | None,
+        connector_base_image_override: str | None,
+    ) -> None:
+        """Run `discover` inside the connector image and require a non-empty catalog.
+
+        Runs for configs listed under `discovery` in `acceptance-test-config.yml`.
+        """
+        if self.is_destination_connector():
+            pytest.skip("Skipping discover test for destination connector.")
+
+        skip_unless_runs(scenario, "discover")
+
+        if scenario.expected_outcome.expect_exception():
+            pytest.skip("Skipping (expected to fail).")
+
+        connector_root = self.get_connector_root_dir()
+        connector_image = self._connector_image(
+            connector_image_override, connector_base_image_override
+        )
+
+        container_config_path = "/secrets/config.json"
+        with scenario.with_temp_config_file(
+            connector_root=connector_root,
+        ) as temp_config_file:
+            discover_result = run_docker_airbyte_command(
+                [
+                    "docker",
+                    "run",
+                    "--rm",
+                    "-v",
+                    f"{temp_config_file}:{container_config_path}:rw",
+                    connector_image,
+                    "discover",
+                    "--config",
+                    container_config_path,
+                ],
+                raise_if_errors=True,
+            )
+
+        get_discovered_streams(discover_result, connector_root.absolute().name)
+
+    @pytest.mark.skipif(
+        shutil.which("docker") is None,
+        reason="docker CLI not found in PATH, skipping docker image tests",
+    )
+    @pytest.mark.image_tests
     def test_docker_image_build_and_read(
         self,
         scenario: ConnectorTestScenario,
@@ -323,18 +464,18 @@ class DockerConnectorTestSuite:
     ) -> None:
         """Read from the connector's Docker image.
 
-        This test builds the connector image and runs the `read` command inside the container.
+        This test builds the connector image and runs the `read` command inside the container,
+        for configs listed under `basic_read`, `full_refresh` or `incremental` in
+        `acceptance-test-config.yml`. A config listed only under `incremental` is read in
+        incremental mode where the stream supports it.
 
         Note:
-          - It is expected for docker image caches to be reused between test runs.
-          - In the rare case that image caches need to be cleared, please clear
-            the local docker image cache using `docker image prune -a` command.
           - If the --connector-image arg is provided, it will be used instead of building the image.
         """
         if self.is_destination_connector():
             pytest.skip("Skipping read test for destination connector.")
 
-        skip_if_check_only(scenario)
+        skip_unless_runs(scenario, "read", "incremental_read")
 
         if scenario.expected_outcome.expect_exception():
             pytest.skip("Skipping (expected to fail).")
@@ -361,21 +502,12 @@ class DockerConnectorTestSuite:
                 f"(not in --read-scenarios={read_scenarios})."
             )
 
-        tag = "dev-latest"
         connector_root = self.get_connector_root_dir()
         connector_name = connector_root.absolute().name
         metadata = MetadataFile.from_file(connector_root / "metadata.yaml")
-        connector_image: str | None = connector_image_override
-        if not connector_image:
-            tag = "dev-latest"
-            connector_image = build_connector_image(
-                connector_name=connector_name,
-                connector_directory=connector_root,
-                metadata=metadata,
-                tag=tag,
-                no_verify=False,
-                base_image_override=connector_base_image_override,
-            )
+        connector_image = self._connector_image(
+            connector_image_override, connector_base_image_override
+        )
 
         container_config_path = "/secrets/config.json"
         container_catalog_path = "/secrets/catalog.json"
@@ -405,16 +537,9 @@ class DockerConnectorTestSuite:
                 raise_if_errors=True,
             )
 
-            catalog_message = discover_result.catalog  # Get catalog message
-            assert catalog_message.catalog is not None, "Catalog message missing catalog."
-            discovered_catalog: AirbyteCatalog = catalog_message.catalog
-            if not discovered_catalog.streams:
-                raise ValueError(
-                    f"Discovered catalog for connector '{connector_name}' is empty. "
-                    "Please check the connector's discover implementation."
-                )
+            discovered_streams = get_discovered_streams(discover_result, connector_name)
 
-            streams_list = [stream.name for stream in discovered_catalog.streams]
+            streams_list = [stream.name for stream in discovered_streams]
             if read_from_streams == "default" and metadata.data.suggestedStreams:
                 # set `streams_list` to be the intersection of discovered and suggested streams.
                 streams_list = list(set(streams_list) & set(metadata.data.suggestedStreams.streams))
@@ -426,20 +551,16 @@ class DockerConnectorTestSuite:
             if scenario.empty_streams:
                 # Filter out streams marked as empty in the scenario.
                 empty_stream_names = [stream.name for stream in scenario.empty_streams]
-                streams_list = [s for s in streams_list if s.name not in empty_stream_names]
+                streams_list = [s for s in streams_list if s not in empty_stream_names]
 
             configured_catalog: ConfiguredAirbyteCatalog = ConfiguredAirbyteCatalog(
                 streams=[
-                    ConfiguredAirbyteStream(
-                        stream=stream,
-                        sync_mode=(
-                            stream.supported_sync_modes[0]
-                            if stream.supported_sync_modes
-                            else SyncMode.full_refresh
-                        ),
-                        destination_sync_mode=DestinationSyncMode.append,
+                    _configured_stream(
+                        stream,
+                        # Listed only under `incremental`: read incrementally where supported.
+                        prefer_incremental=not scenario.runs("read"),
                     )
-                    for stream in discovered_catalog.streams
+                    for stream in discovered_streams
                     if stream.name in streams_list
                 ]
             )
