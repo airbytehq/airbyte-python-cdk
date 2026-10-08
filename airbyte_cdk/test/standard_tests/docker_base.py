@@ -116,6 +116,8 @@ class DockerConnectorTestSuite:
         The sections a config is listed under are unioned as well, so a config that appears under
         `discovery` and `basic_read` keeps running every test, while one listed only under the
         check-only sections runs `check` alone (see `ConnectorTestScenario.check_only`).
+
+        A `validate_schema: false` opt-out declared by any entry for the config is kept.
         """
         deduped_scenarios: list[ConnectorTestScenario] = []
 
@@ -141,6 +143,8 @@ class DockerConnectorTestSuite:
                         update={
                             "empty_streams": list(set(all_empty_streams)),
                             "status": existing_scenario.status or scenario.status,
+                            "validate_schema": existing_scenario.validate_schema
+                            and scenario.validate_schema,
                             "sections": tuple(
                                 dict.fromkeys(existing_scenario.sections + scenario.sections)
                             ),

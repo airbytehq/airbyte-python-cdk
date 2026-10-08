@@ -19,6 +19,7 @@ from airbyte_cdk.test.models import (
     ConnectorTestScenario,
 )
 from airbyte_cdk.test.standard_tests._job_runner import run_test_job
+from airbyte_cdk.test.standard_tests._read_assertions import assert_read_records
 from airbyte_cdk.test.standard_tests.connector_base import (
     ConnectorTestSuiteBase,
 )
@@ -118,7 +119,11 @@ class SourceTestSuiteBase(ConnectorTestSuiteBase):
         This test is designed to validate the connector's ability to read data
         from the source and return records. It first runs a `discover` job to
         obtain the catalog of streams, and then it runs a `read` job to fetch
-        records from those streams.
+        records from those streams, except the ones declared in `empty_streams`.
+
+        Unless the scenario expects a failure, every record must match its stream's JSON schema
+        (opt out with `validate_schema: false`). A scenario expected to succeed must return
+        records, and for a config listed under `basic_read` every stream must return at least one.
         """
         skip_if_check_only(scenario)
         discover_result = run_test_job(
@@ -155,6 +160,18 @@ class SourceTestSuiteBase(ConnectorTestSuiteBase):
             catalog=configured_catalog,
         )
 
+        if scenario.expected_outcome.expect_exception():
+            # The read failed as expected (asserted by `run_test_job`); there are no records to check.
+            return
+
+        assert_read_records(
+            records=result.records_iterator,
+            configured_catalog=configured_catalog,
+            require_records_per_stream=(
+                scenario.expected_outcome.expect_success() and scenario.is_basic_read_config
+            ),
+            validate_schema=scenario.validate_schema,
+        )
         if scenario.expected_outcome.expect_success() and not result.records:
             raise AssertionError("Expected records but got none.")
 

@@ -1,5 +1,23 @@
 # CDK Migration Guide
 
+## Upgrading to 7.36.0
+
+Version 7.36.0 of the CDK adds record assertions to the in-process `read` Standard Test (`SourceTestSuiteBase.test_basic_read`, run by `airbyte-cdk connector test`). Previously the test only failed when the whole read returned no records, so one stream with records passed the test for every stream. It now restores two checks of the Connector Acceptance Tests (CAT) basic read test:
+
+- **Every stream returns records.** For a config listed under `basic_read` in `acceptance-test-config.yml` and expected to succeed, every stream that is not declared in that config's `empty_streams` must return at least one record. A config listed only under `spec` or `connection` keeps the old "some records" check, since it has nowhere to declare its empty streams.
+- **Records match their schema.** Unless the config's `status` is `failed` or `exception`, every record is validated against its stream's JSON schema with the validator CAT used: Draft 7, integers must be integers (`1.0` and `true` are not), `date-time` values must look like a date and a time and parse as a datetime (a space separator and a missing offset are accepted), other `format`s use the `jsonschema` defaults, and extra columns are allowed. A record that shares no field with a schema that declares `properties` also fails.
+
+The failure message names each stream, the number of failing records, and for each distinct schema error the record number and the path of the offending value inside the record (for example ``record #3 at `$.items[0].price`: 'free' is not of type 'number'``).
+
+This change is breaking for the connector test suites of connectors whose test accounts have empty streams that are not declared, or whose records do not match their declared schemas. The connector monorepo installs the `airbyte-cdk` CLI unpinned, so connector CI picks the new assertions up with this release, without a per-connector CDK bump.
+
+Migration steps:
+
+- A stream with no records for a `basic_read` config: add data to the test account, or list the stream under `empty_streams` for that config, with a `bypass_reason`. Declared empty streams are not read.
+- A schema error: fix the stream's schema (or the records) so they agree. To skip schema validation for one config while the fix is pending, set `validate_schema: false` in its `basic_read` entry, which CAT honoured too.
+
+Rationale: The Standard Tests replaced CAT as the only `read` coverage for most connectors, and CAT's per-stream and schema checks were not carried over. A stream that silently stopped returning records, or a schema that drifted from the API, kept passing as long as some other stream returned a record.
+
 ## Upgrading to 7.35.0
 
 [Version 7.34.0](https://github.com/airbytehq/airbyte-python-cdk/releases/tag/v7.34.0) of the CDK changes what the Standard Tests (`airbyte-cdk connector test` and `airbyte-cdk image test`, including the in-process `test_check` of `SourceTestSuiteBase` / `ConnectorTestSuiteBase` and the Docker-based `test_docker_image_build_and_check`) assert about the outcome of `check`. Previously only an exception or a non-zero exit failed the test, so a `check` that reported `status: FAILED` passed. Both test paths now assert the reported `CONNECTION_STATUS` against the `status` declared for the config in `acceptance-test-config.yml`, with the same semantics as the Connector Acceptance Tests (CAT):

@@ -73,6 +73,8 @@ class ConnectorTestScenario(BaseModel):
     expect_records: AcceptanceTestExpectRecords | None = None
     file_types: AcceptanceTestFileTypes | None = None
     status: Literal["succeed", "failed", "exception"] | None = None
+    # CAT's `basic_read` opt-out from validating records against the stream schemas.
+    validate_schema: bool = True
     # The sections of `acceptance-test-config.yml` that list this config. Populated by
     # `get_scenarios()`; empty for scenarios built by hand, which run every test.
     sections: tuple[str, ...] = ()
@@ -134,6 +136,17 @@ class ConnectorTestScenario(BaseModel):
         return bool(self.sections) and not any(
             section in FULL_SUITE_SECTIONS for section in self.sections
         )
+
+    @property
+    def is_basic_read_config(self) -> bool:
+        """Whether this config is listed under `basic_read` (or the scenario was built by hand).
+
+        Only these configs must return records from every stream not declared in
+        `empty_streams`, as in CAT. A config listed only under `spec` or `connection` never had a
+        basic read test, and has nowhere to declare its empty streams, so its `read` only has to
+        return some records.
+        """
+        return not self.sections or "basic_read" in self.sections
 
     @property
     def id(self) -> str:
