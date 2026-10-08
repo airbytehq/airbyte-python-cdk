@@ -15,6 +15,7 @@ import pytest
 import requests
 import yaml
 from jsonschema.exceptions import ValidationError
+from jsonschema.validators import Draft7Validator, validate
 
 import unit_tests.sources.declarative.external_component  # Needed for dynamic imports to work
 from airbyte_cdk.legacy.sources.declarative.manifest_declarative_source import (
@@ -33,6 +34,7 @@ from airbyte_cdk.models import (
 )
 from airbyte_cdk.sources.declarative.concurrent_declarative_source import (
     ConcurrentDeclarativeSource,
+    _get_declarative_component_schema,
 )
 from airbyte_cdk.sources.declarative.parsers.model_to_component_factory import (
     ModelToComponentFactory,
@@ -2540,3 +2542,74 @@ def test_dynamic_stream_discovery_http_requests_use_api_budget():
         "HttpComponentsResolver's requester should have api_budget set during dynamic stream "
         "discovery, but it was None. This means discovery HTTP requests are not rate-limited."
     )
+
+
+def _two_stream_schema_validation_manifest() -> dict[str, Any]:
+    def stream(name: str) -> dict[str, Any]:
+        return {
+            "type": "DeclarativeStream",
+            "name": name,
+            "primary_key": [],
+            "schema_loader": {
+                "type": "InlineSchemaLoader",
+                "schema": {"type": "object", "properties": {}},
+            },
+            "retriever": {
+                "type": "SimpleRetriever",
+                "requester": {
+                    "type": "HttpRequester",
+                    "url_base": "https://api.test.com",
+                    "path": f"/{name}",
+                    "http_method": "GET",
+                },
+                "record_selector": {
+                    "type": "RecordSelector",
+                    "extractor": {"type": "DpathExtractor", "field_path": []},
+                },
+            },
+        }
+
+    return {
+        "version": "6.0.0",
+        "type": "DeclarativeSource",
+        "check": {"type": "CheckStream", "stream_names": ["a"]},
+        "streams": [stream("a"), stream("b")],
+    }
+
+
+def test_invalid_manifest_raises_the_best_match_error_not_the_first():
+    manifest = _two_stream_schema_validation_manifest()
+    manifest["streams"][0]["primary_key"] = 5
+    manifest["streams"][1]["retriever"]["requester"]["http_method"] = "FETCH"
+    schema = _get_declarative_component_schema()
+
+    assert next(Draft7Validator(schema).iter_errors(manifest)).json_path == "$.streams[0]"
+
+    with pytest.raises(ValidationError) as expected_error:
+        validate(manifest, schema)
+    expected = expected_error.value
+
+    with pytest.raises(ValidationError) as exc_info:
+        ManifestDeclarativeSource(source_config=manifest)
+
+    assert (
+        exc_info.value.message
+        == "Validation against json schema defined in declarative_component_schema.yaml schema failed"
+    )
+    cause = exc_info.value.__cause__
+    assert cause is not None
+    assert cause.message == expected.message
+    assert cause.json_path == expected.json_path
+    assert list(cause.schema_path) == list(expected.schema_path)
+    assert cause.validator == expected.validator
+    assert cause.validator_value == expected.validator_value
+    assert cause.json_path == "$.streams[1].retriever.requester.http_method"
+
+
+def test_building_a_source_does_not_check_the_component_schema():
+    with patch.object(
+        Draft7Validator,
+        "check_schema",
+        side_effect=AssertionError("check_schema must not run at source build"),
+    ):
+        ManifestDeclarativeSource(source_config=_two_stream_schema_validation_manifest())
