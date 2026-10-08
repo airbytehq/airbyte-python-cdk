@@ -186,12 +186,22 @@ def test_valid_records_pass(schema: Mapping[str, Any], data: Mapping[str, Any]) 
 @pytest.mark.parametrize(
     "schema, data, expected_path, expected_message",
     [
-        pytest.param(USERS_SCHEMA, {"id": "1"}, "$.id", "'1' is not of type 'integer'", id="type"),
         pytest.param(
-            USERS_SCHEMA, {"id": 1.0}, "$.id", "1.0 is not of type 'integer'", id="float_integer"
+            USERS_SCHEMA, {"id": "1"}, "$.id", "expected type 'integer', got string", id="type"
         ),
         pytest.param(
-            USERS_SCHEMA, {"id": True}, "$.id", "True is not of type 'integer'", id="bool_integer"
+            USERS_SCHEMA,
+            {"id": 1.0},
+            "$.id",
+            "expected type 'integer', got number",
+            id="float_integer",
+        ),
+        pytest.param(
+            USERS_SCHEMA,
+            {"id": True},
+            "$.id",
+            "expected type 'integer', got boolean",
+            id="bool_integer",
         ),
         pytest.param(
             USERS_SCHEMA,
@@ -226,14 +236,14 @@ def test_valid_records_pass(schema: Mapping[str, Any], data: Mapping[str, Any]) 
             },
             {"items": [{"price": 1}, {"price": "free"}]},
             "$.items[1].price",
-            "'free' is not of type 'number'",
+            "expected type 'number', got string",
             id="nested_array",
         ),
         pytest.param(
             {"type": "object", "properties": {"first name": {"type": "string"}}},
             {"first name": 1},
             "$['first name']",
-            "1 is not of type 'string'",
+            "expected type 'string', got integer",
             id="non_identifier_key",
         ),
     ],
@@ -251,6 +261,14 @@ def test_invalid_records_fail_with_stream_and_record_path(
     assert f"record #0 at `{expected_path}`" in message
     assert expected_message in message
     assert "validate_schema: false" in message
+
+
+def test_type_errors_name_the_type_instead_of_printing_the_value() -> None:
+    schema = {"type": "object", "properties": {"reason": {"type": ["null", "string"]}}}
+    message = _schema_error(schema, {"reason": {"text": "private value"}})
+    assert message is not None
+    assert "record #0 at `$.reason`: expected type 'null' or 'string', got object" in message
+    assert "private value" not in message
 
 
 def test_validate_schema_false_skips_schema_checks() -> None:

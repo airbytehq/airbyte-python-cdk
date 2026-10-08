@@ -86,6 +86,38 @@ def format_record_path(path: Iterable[Any]) -> str:
     return rendered
 
 
+_JSON_TYPE_NAMES: tuple[tuple[type, str], ...] = (
+    (bool, "boolean"),  # before `int`: `bool` is an `int` subclass
+    (int, "integer"),
+    (float, "number"),
+    (str, "string"),
+    (list, "array"),
+    (Mapping, "object"),
+)
+
+
+def _json_type_name(value: object) -> str:
+    if value is None:
+        return "null"
+    for python_type, name in _JSON_TYPE_NAMES:
+        if isinstance(value, python_type):
+            return name
+    return type(value).__name__
+
+
+def _describe_error(error: ValidationError) -> str:
+    if error.validator == "type":
+        # The value can be a whole nested object, and record values end up in public CI logs:
+        # name its JSON type instead of printing it.
+        expected = error.validator_value
+        expected_types = [expected] if isinstance(expected, str) else list(expected)
+        return (
+            f"expected type {' or '.join(repr(name) for name in expected_types)}, "
+            f"got {_json_type_name(error.instance)}"
+        )
+    return _truncate(error.message)
+
+
 def _truncate(text: str) -> str:
     if len(text) <= _MAX_MESSAGE_CHARS:
         return text
@@ -208,7 +240,7 @@ class _StreamSchemaChecker:
                 if schema_rule not in report.errors:
                     report.errors[schema_rule] = (
                         f"record #{record_number} at `{format_record_path(error.absolute_path)}`: "
-                        f"{_truncate(error.message)} "
+                        f"{_describe_error(error)} "
                         f"(schema rule: `{'/'.join(str(part) for part in schema_rule)}`)"
                     )
 
