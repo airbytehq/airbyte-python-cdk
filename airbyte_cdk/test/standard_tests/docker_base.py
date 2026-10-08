@@ -28,6 +28,16 @@ from airbyte_cdk.models import (
 from airbyte_cdk.models.connector_metadata import MetadataFile
 from airbyte_cdk.test.entrypoint_wrapper import EntrypointOutput
 from airbyte_cdk.test.models import ConnectorTestScenario, ExpectedOutcome
+from airbyte_cdk.test.standard_tests.backward_compatibility import (
+    DEPLOYMENT_MODE_ENV_VARS,
+    DeploymentMode,
+    compare_specs,
+    declared_breaking_changes,
+    disabled_for_version,
+    fetch_published_spec,
+    format_breaking_spec_changes,
+    is_newer_version,
+)
 from airbyte_cdk.utils.connector_paths import (
     ACCEPTANCE_TEST_CONFIG,
     find_connector_root,
@@ -35,6 +45,7 @@ from airbyte_cdk.utils.connector_paths import (
 from airbyte_cdk.utils.docker import (
     build_connector_image,
     run_docker_airbyte_command,
+    run_docker_command,
 )
 
 
@@ -74,6 +85,36 @@ def _assert_check_outcome(
         assert connection_statuses[-1].status == Status.SUCCEEDED, (
             f"`check` for connector '{connector_name}' did not succeed: {connection_statuses[-1]}"
         )
+
+
+def _run_spec_in_image(connector_image: str, deployment_mode: DeploymentMode) -> dict[str, Any]:
+    """Run `spec` in the image as the registry publisher does, and return the raw spec object.
+
+    The raw JSON is compared rather than the parsed protocol model, because the registry stores
+    the raw output and parsing would drop or add keys that are not in the model.
+    """
+    env_args = [
+        arg
+        for name, value in DEPLOYMENT_MODE_ENV_VARS[deployment_mode].items()
+        for arg in ("-e", f"{name}={value}")
+    ]
+    result = run_docker_command(
+        ["docker", "run", "--rm", *env_args, connector_image, "spec"],
+        capture_stdout=True,
+        capture_stderr=True,
+    )
+    for line in result.stdout.splitlines():
+        try:
+            message = orjson.loads(line)
+        except orjson.JSONDecodeError:
+            continue
+        if isinstance(message, dict) and message.get("type") == "SPEC":
+            return cast(dict[str, Any], message["spec"])
+
+    raise AssertionError(
+        f"`spec` in image '{connector_image}' ({deployment_mode} mode) emitted no SPEC message. "
+        f"Stderr: {result.stderr}"
+    )
 
 
 class DockerConnectorTestSuite:
@@ -253,6 +294,109 @@ class DockerConnectorTestSuite:
             ],
             raise_if_errors=True,
         )
+
+    @pytest.mark.skipif(
+        shutil.which("docker") is None,
+        reason="docker CLI not found in PATH, skipping docker image tests",
+    )
+    @pytest.mark.image_tests
+    def test_docker_image_spec_backward_compatibility(
+        self,
+        connector_image_override: str | None,
+        connector_base_image_override: str | None,
+    ) -> None:
+        """Fail if the image's spec rejects configs that the published version accepted.
+
+        The spec is compared against the `latest` version in the public connector registry,
+        once per registry the connector is published to, with `spec` run in the matching
+        deployment mode. A connector that was never published, or whose version is older than
+        the published one, has nothing to compare against.
+
+        Breaking findings are waived, and the test is skipped, when the change goes through the
+        breaking-change process (a `releases.breakingChanges` entry in metadata.yaml for a
+        version after the published one), or when `disable_for_version` in
+        acceptance-test-config.yml names the published version.
+        """
+        connector_root = self.get_connector_root_dir().absolute()
+        metadata = MetadataFile.from_file(connector_root / "metadata.yaml")
+        metadata_data = metadata.data.model_dump()
+        current_version = metadata.data.dockerImageTag
+
+        published_specs = {
+            registry: published
+            for registry in DEPLOYMENT_MODE_ENV_VARS
+            if (published := fetch_published_spec(metadata.data.dockerRepository, registry))
+        }
+        if not published_specs:
+            pytest.skip(f"`{self.connector_name}` has no published version to compare against.")
+
+        newer_versions = sorted(
+            {
+                published.version
+                for published in published_specs.values()
+                if is_newer_version(published.version, current_version)
+            }
+        )
+        published_specs = {
+            registry: published
+            for registry, published in published_specs.items()
+            if published.version not in newer_versions
+        }
+        if not published_specs:
+            pytest.skip(
+                f"`{self.connector_name}` {current_version} is older than the published version "
+                f"{', '.join(newer_versions)}, so there is no earlier spec to compare against."
+            )
+
+        connector_image: str | None = connector_image_override
+        if not connector_image:
+            connector_image = build_connector_image(
+                connector_name=connector_root.name,
+                connector_directory=connector_root,
+                metadata=metadata,
+                tag="dev-latest",
+                no_verify=False,
+                base_image_override=connector_base_image_override,
+            )
+
+        try:
+            disabled_versions = disabled_for_version(self.acceptance_test_config)
+        except (FileNotFoundError, ValueError):
+            disabled_versions = []
+
+        failures: list[str] = []
+        waivers: list[str] = []
+        for registry, published in published_specs.items():
+            comparison = compare_specs(
+                published.spec, _run_spec_in_image(connector_image, registry)
+            )
+            if comparison.is_backward_compatible:
+                continue
+
+            summary = (
+                f"{len(comparison.breaking)} breaking change(s) to the {registry.upper()} spec "
+                f"since {published.version}"
+            )
+            declared = declared_breaking_changes(metadata_data, published.version, current_version)
+            if declared:
+                waivers.append(f"{summary}, declared as breaking in {', '.join(declared)}")
+            elif published.version in disabled_versions:
+                waivers.append(f"{summary}, waived by `disable_for_version: {published.version}`")
+            else:
+                failures.append(
+                    format_breaking_spec_changes(
+                        connector_name=self.connector_name,
+                        current_version=current_version,
+                        registry=registry,
+                        published=published,
+                        comparison=comparison,
+                    )
+                )
+
+        if failures:
+            pytest.fail("\n\n".join(failures))
+        if waivers:
+            pytest.skip("; ".join(waivers))
 
     @pytest.mark.skipif(
         shutil.which("docker") is None,
