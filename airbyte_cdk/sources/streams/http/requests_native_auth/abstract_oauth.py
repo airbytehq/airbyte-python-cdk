@@ -30,6 +30,35 @@ _NOOP_MESSAGE_REPOSITORY = NoopMessageRepository()
 # Only the code is appended to the user-facing message: it is the entire grouping key, and unlike
 # the surrounding prose it is identical on every attempt at the same failure.
 _PROVIDER_ERROR_CODE_PATTERN = re.compile(r"^[A-Za-z]{3,}\d{4,}\b")
+_REFRESH_TOKEN_REJECTED_GUIDANCE = (
+    "Refresh token was rejected by the OAuth provider (invalid, expired, or already used). "
+    "Re-authenticate this source's credentials in its connection settings."
+)
+# Guidance for Microsoft Entra refresh errors, keyed on the AADSTS code leading `error_description`.
+# Replaces the generic guidance above. Fixed strings only: the full message is the failure-summary
+# grouping key, so it must be identical on every attempt at the same failure.
+_ENTRA_REFRESH_ERROR_GUIDANCE: Mapping[str, str] = {
+    "AADSTS50078": (
+        "Microsoft Entra refused the refresh because the tenant's MFA policy now requires a new "
+        "MFA sign-in. Re-authenticate this source to restore syncs. This can recur on a fixed "
+        "schedule set by the tenant's MFA session settings, such as \"remember multi-factor "
+        'authentication on trusted devices".'
+    ),
+    "AADSTS70043": (
+        "A Microsoft Entra Conditional Access sign-in frequency policy expired the refresh token. "
+        "Re-authenticate this source to restore syncs. The tenant's Entra administrator sets how "
+        "often this is required."
+    ),
+    "AADSTS700082": (
+        "The Microsoft Entra refresh token expired after a period of inactivity. Re-authenticate "
+        "this source to restore syncs, and keep its connection syncing regularly to avoid a "
+        "recurrence."
+    ),
+    "AADSTS50173": (
+        "Microsoft Entra revoked the grant, typically because the authorizing user's password was "
+        "changed or reset. Re-authenticate this source to restore syncs."
+    ),
+}
 # Upper bound on the provider-controlled text appended to the user-facing message. Both the
 # RFC 6749 `error` token and the extracted code come from the provider, so both are still capped.
 # The longest standard token (`unsupported_grant_type`, 22) plus a 7-digit Entra code is 37
@@ -315,6 +344,19 @@ class AbstractOauth2Authenticator(AuthBase):
     def _truncate(value: str, max_length: int) -> str:
         return value if len(value) <= max_length else value[:max_length] + "..."
 
+    @staticmethod
+    def _extract_provider_error_code(
+        response_content: Optional[Mapping[str, Any]],
+    ) -> Optional[str]:
+        if not response_content:
+            return None
+        description = response_content.get("error_description")
+        if isinstance(description, str):
+            code_match = _PROVIDER_ERROR_CODE_PATTERN.match(description.strip())
+            if code_match:
+                return code_match.group()
+        return None
+
     def _build_provider_error_detail(
         self, response_content: Optional[Mapping[str, Any]]
     ) -> Optional[str]:
@@ -339,11 +381,9 @@ class AbstractOauth2Authenticator(AuthBase):
         error = response_content.get("error")
         if isinstance(error, str) and error.strip():
             parts.append(" ".join(error.split()))
-        description = response_content.get("error_description")
-        if isinstance(description, str):
-            code_match = _PROVIDER_ERROR_CODE_PATTERN.match(description.strip())
-            if code_match:
-                parts.append(code_match.group())
+        provider_error_code = self._extract_provider_error_code(response_content)
+        if provider_error_code:
+            parts.append(provider_error_code)
         if not parts:
             return None
         return self._truncate(
@@ -465,10 +505,9 @@ class AbstractOauth2Authenticator(AuthBase):
                     )
             error_content = self._parse_error_response_content(e.response)
             if self._wrap_refresh_token_exception(e, response_content=error_content):
-                message = (
-                    "Refresh token was rejected by the OAuth provider (invalid, expired, or "
-                    "already used). Re-authenticate this source's credentials in its connection "
-                    "settings."
+                provider_error_code = self._extract_provider_error_code(error_content)
+                message = _ENTRA_REFRESH_ERROR_GUIDANCE.get(
+                    provider_error_code or "", _REFRESH_TOKEN_REJECTED_GUIDANCE
                 )
                 provider_error_detail = self._build_provider_error_detail(error_content)
                 if provider_error_detail:

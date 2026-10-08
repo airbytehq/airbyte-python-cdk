@@ -788,7 +788,7 @@ class TestOauth2Authenticator:
             oauth.refresh_access_token()
 
         assert exc_info.value.failure_type == FailureType.config_error
-        assert exc_info.value.message.startswith("Refresh token was rejected by the OAuth provider")
+        assert exc_info.value.message.startswith("Microsoft Entra revoked the grant")
         # Only the provider code is surfaced, so the echoed credentials cannot reach the
         # user-facing message at all -- they are absent by construction, not merely masked.
         assert exc_info.value.message.endswith("Provider error: invalid_grant: AADSTS50173")
