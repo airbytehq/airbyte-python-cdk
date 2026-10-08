@@ -10,7 +10,6 @@ from dataclasses import InitVar, dataclass
 from math import nan
 from typing import Any, Dict, Iterable, Mapping, Optional, Tuple
 
-import pandas as pd
 import requests
 
 from airbyte_cdk.sources.declarative.extractors.record_extractor import RecordExtractor
@@ -138,6 +137,9 @@ class ResponseToFileExtractor(RecordExtractor):
         Raises:
             ValueError: If an IO/Error occurs while reading the temporary data.
         """
+
+        # Imported lazily: pandas (and numpy) are slow to import and only needed for CSV parsing.
+        import pandas as pd
 
         try:
             with open(path, "r", encoding=file_encoding) as data:
