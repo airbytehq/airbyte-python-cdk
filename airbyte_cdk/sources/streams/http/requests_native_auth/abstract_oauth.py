@@ -39,10 +39,10 @@ _REFRESH_TOKEN_REJECTED_GUIDANCE = (
 # grouping key, so it must be identical on every attempt at the same failure.
 _ENTRA_REFRESH_ERROR_GUIDANCE: Mapping[str, str] = {
     "AADSTS50078": (
-        "The tenant's Microsoft Entra policy requires a new MFA sign-in. Re-authenticate this "
-        "source to restore syncs. If this recurs on a schedule, the usual cause is an Entra MFA "
-        'session setting such as "remember multi-factor authentication on trusted devices", which '
-        "the tenant's Entra administrator controls."
+        "Microsoft Entra refused the refresh because the tenant's MFA policy now requires a new "
+        "MFA sign-in. Re-authenticate this source to restore syncs. This can recur on a fixed "
+        "schedule set by the tenant's MFA session settings, such as \"remember multi-factor "
+        'authentication on trusted devices".'
     ),
     "AADSTS70043": (
         "A Microsoft Entra Conditional Access sign-in frequency policy expired the refresh token. "

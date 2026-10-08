@@ -1028,10 +1028,10 @@ class TestOauth2Authenticator:
                 "Trace ID: 01234567-89ab-cdef-0123-456789abcdef\r\n"
                 "Correlation ID: 11111111-2222-3333-4444-555555555555\r\n"
                 "Timestamp: 2026-03-14T09:26:53Z",
-                "The tenant's Microsoft Entra policy requires a new MFA sign-in. Re-authenticate this "
-                "source to restore syncs. If this recurs on a schedule, the usual cause is an Entra MFA "
-                'session setting such as "remember multi-factor authentication on trusted devices", '
-                "which the tenant's Entra administrator controls.",
+                "Microsoft Entra refused the refresh because the tenant's MFA policy now requires a "
+                "new MFA sign-in. Re-authenticate this source to restore syncs. This can recur on a "
+                "fixed schedule set by the tenant's MFA session settings, such as \"remember "
+                'multi-factor authentication on trusted devices".',
             ),
             (
                 "AADSTS70043",
@@ -1143,10 +1143,10 @@ class TestOauth2Authenticator:
                 "Trace ID: 789abcde-f012-3456-789a-bcdef0123456\r\n"
                 "Correlation ID: 66666666-7777-8888-9999-aaaaaaaaaaaa\r\n"
                 "Timestamp: 2026-08-15T10:27:54Z",
-                "The tenant's Microsoft Entra policy requires a new MFA sign-in. Re-authenticate this "
-                "source to restore syncs. If this recurs on a schedule, the usual cause is an Entra MFA "
-                'session setting such as "remember multi-factor authentication on trusted devices", '
-                "which the tenant's Entra administrator controls. Provider error: invalid_grant: "
+                "Microsoft Entra refused the refresh because the tenant's MFA policy now requires a "
+                "new MFA sign-in. Re-authenticate this source to restore syncs. This can recur on a "
+                "fixed schedule set by the tenant's MFA session settings, such as \"remember "
+                'multi-factor authentication on trusted devices". Provider error: invalid_grant: '
                 "AADSTS50078",
             ),
             (
