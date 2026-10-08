@@ -2,6 +2,7 @@
 # Copyright (c) 2026 Airbyte, Inc., all rights reserved.
 #
 
+import logging
 import socket
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -124,6 +125,44 @@ def test_socket_options_drop_rejected_option(monkeypatch):
     assert not any(optname == socket.TCP_KEEPCNT for _, optname, _ in options)
     monkeypatch.undo()
     assert isinstance(real_socket_cls(socket.AF_INET, socket.SOCK_STREAM), real_socket_cls)
+
+
+def test_socket_options_warn_when_keepalive_rejected(monkeypatch, caplog):
+    class FakeSocket:
+        def setsockopt(self, level, optname, value):
+            if (level, optname) == (socket.SOL_SOCKET, socket.SO_KEEPALIVE):
+                raise OSError("unsupported")
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(socket, "socket", lambda *a, **kw: FakeSocket())
+
+    with caplog.at_level(logging.WARNING, logger="airbyte"):
+        options = tcp_keepalive_socket_options()
+
+    assert options == tuple(urllib3.connection.HTTPConnection.default_socket_options)
+    assert "TCP keepalive is unavailable" in caplog.text
+
+
+def test_socket_options_warn_when_probe_socket_fails(monkeypatch, caplog):
+    def failing_socket(*args, **kwargs):
+        raise OSError("no sockets")
+
+    monkeypatch.setattr(socket, "socket", failing_socket)
+
+    with caplog.at_level(logging.WARNING, logger="airbyte"):
+        options = tcp_keepalive_socket_options()
+
+    assert options == tuple(urllib3.connection.HTTPConnection.default_socket_options)
+    assert "TCP keepalive is unavailable" in caplog.text
+
+
+def test_socket_options_do_not_warn_when_supported(caplog):
+    with caplog.at_level(logging.WARNING, logger="airbyte"):
+        tcp_keepalive_socket_options()
+
+    assert "TCP keepalive is unavailable" not in caplog.text
 
 
 def test_adapter_passes_options_to_pool_and_proxy_managers():

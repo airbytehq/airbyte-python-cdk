@@ -3213,7 +3213,7 @@ class HttpRequester(BaseModelWithDeprecations):
     )
     read_timeout_in_seconds: Optional[float] = Field(
         None,
-        description="The maximum time to wait for the server to send any data (the first byte of the response, or the next chunk while the body is read). It is NOT a limit on the total request duration. When unset, no read timeout is applied. Only set it when every endpoint served by this requester responds well within the value; synchronous report or export endpoints can stay silent for minutes.",
+        description="The maximum time to wait for the server to send any data (the first byte of the response, or the next chunk while the body is read). It is NOT a limit on the total request duration. When unset, no read timeout is applied. Only set it when every endpoint served by this requester responds well within the value; synchronous report or export endpoints can stay silent for minutes. Each timed-out attempt counts against the error handler's retry window (600 s for manifest connectors), so a value near 300 allows only a few retries.",
         examples=[300],
         gt=0,
         title="Read Timeout (seconds)",

@@ -3,6 +3,7 @@
 #
 
 import functools
+import logging
 import socket
 from typing import List, Tuple, cast
 
@@ -12,6 +13,8 @@ import urllib3.connection
 TCP_KEEPALIVE_IDLE_SECONDS = 60
 TCP_KEEPALIVE_INTERVAL_SECONDS = 10
 TCP_KEEPALIVE_PROBE_COUNT = 6
+
+logger = logging.getLogger("airbyte")
 
 
 @functools.lru_cache(maxsize=None)
@@ -45,22 +48,31 @@ def tcp_keepalive_socket_options() -> Tuple[Tuple[int, int, int], ...]:
 
     try:
         probe = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    except OSError:
+    except OSError as error:
+        _warn_keepalive_unavailable(error)
         return tuple(base_options)
     try:
         supported = base_options
         for level, optname, value in candidates:
             try:
                 probe.setsockopt(level, optname, value)
-            except OSError:
+            except OSError as error:
                 if (level, optname) == (socket.SOL_SOCKET, socket.SO_KEEPALIVE):
                     # Without SO_KEEPALIVE the tuning options are useless.
+                    _warn_keepalive_unavailable(error)
                     return tuple(base_options)
                 continue
             supported.append((level, optname, value))
         return tuple(supported)
     finally:
         probe.close()
+
+
+def _warn_keepalive_unavailable(error: OSError) -> None:
+    # Logged once per process because tcp_keepalive_socket_options() is cached.
+    logger.warning(
+        "TCP keepalive is unavailable on this platform, so connections use plain sockets: %s", error
+    )
 
 
 class TcpKeepaliveHTTPAdapter(requests.adapters.HTTPAdapter):
