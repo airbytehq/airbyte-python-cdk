@@ -73,10 +73,40 @@ def _spec_message(properties: dict[str, Any]) -> dict[str, Any]:
         pytest.param("primary_key", False, id="primary_key"),
         pytest.param("access_key_id", False, id="access_key_id"),
         pytest.param("start_date", False, id="unrelated"),
+        pytest.param("clientSecret", True, id="camel_case_client_secret"),
+        pytest.param("accessToken", True, id="camel_case_access_token"),
+        pytest.param("privateKey", True, id="camel_case_private_key"),
+        pytest.param("apiKey", True, id="camel_case_api_key"),
+        pytest.param("APIKey", True, id="upper_case_acronym"),
+        pytest.param("OAuthRefreshToken", True, id="pascal_case"),
+        pytest.param("tokenExpiryDate", False, id="camel_case_token_prefix_only"),
+        pytest.param("accessKeyId", False, id="camel_case_access_key_id"),
+        pytest.param("access_key", True, id="lone_access_key"),
     ],
 )
 def test_is_secret_property_name(name: str, expected: bool) -> None:
     assert is_secret_property_name(name) == expected
+
+
+@pytest.mark.parametrize(
+    "name, sibling_names, expected",
+    [
+        pytest.param("app_access_key", ["app_secret"], False, id="100ms_key_pair"),
+        pytest.param("access_key", ["secret_key"], False, id="access_key_with_secret_key"),
+        pytest.param("accessKey", ["secretKey"], False, id="camel_case_key_pair"),
+        pytest.param("access_key", ["secret"], False, id="access_key_with_secret"),
+        pytest.param("access_key", ["bucket", "region"], True, id="no_secret_sibling"),
+        pytest.param("access_key", ["access_key"], True, id="itself_is_not_a_sibling"),
+        pytest.param(
+            "aws_secret_access_key", ["aws_access_key_id", "client_secret"], True, id="secret_half"
+        ),
+        pytest.param("api_key", ["api_secret"], True, id="only_access_keys_are_exempt"),
+    ],
+)
+def test_is_secret_property_name_exempts_the_public_half_of_a_key_pair(
+    name: str, sibling_names: list[str], expected: bool
+) -> None:
+    assert is_secret_property_name(name, sibling_names) == expected
 
 
 @pytest.mark.parametrize(
@@ -173,6 +203,42 @@ def test_is_secret_property_name(name: str, expected: bool) -> None:
             {"start_date": {"type": "string", "airbyte_secret": False}},
             [],
             id="false_marking_on_non_secret_name_passes",
+        ),
+        pytest.param(
+            {
+                "app_access_key": {"type": "string"},
+                "app_secret": {"type": "string", "airbyte_secret": True},
+            },
+            [],
+            id="unmarked_public_half_of_a_key_pair_passes",
+        ),
+        pytest.param(
+            {"access_key": {"type": "string"}},
+            ["`/properties/access_key` looks like a secret"],
+            id="unmarked_lone_access_key_fails",
+        ),
+        pytest.param(
+            {
+                "keys": {
+                    "type": "object",
+                    "oneOf": [
+                        {
+                            "type": "object",
+                            "properties": {
+                                "access_key": {"type": "string"},
+                                "secret_key": {"type": "string", "airbyte_secret": True},
+                            },
+                        }
+                    ],
+                }
+            },
+            [],
+            id="key_pair_inside_one_of_passes",
+        ),
+        pytest.param(
+            {"clientSecret": {"type": "string"}},
+            ["`/properties/clientSecret` looks like a secret"],
+            id="unmarked_camel_case_secret_fails",
         ),
     ],
 )

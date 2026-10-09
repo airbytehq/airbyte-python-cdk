@@ -55,7 +55,13 @@ SECRET_PROPERTY_NAME_SUFFIXES = (
 
 CAT matched exact names only, so it never flagged an unmarked `api_key`, the most common
 secret property name in the connector fleet.
+
+An `access_key` that sits next to a `secret` or `secret_key` property is exempt: it is the
+public half of a key pair, like an AWS access key ID (see `is_secret_property_name`).
 """
+
+_ACCESS_KEY_SUFFIX = "access_key"
+_KEY_PAIR_SECRET_SUFFIXES = ("_secret", "secret_key")
 
 _SECRET_CAPABLE_TYPES = {"string", "integer", "number"}
 
@@ -68,12 +74,41 @@ Short values, such as `123` in a test config, occur in ordinary output by coinci
 """
 
 
-def is_secret_property_name(name: str) -> bool:
-    """Return whether a spec property with this name is expected to hold a secret."""
-    normalized_name = name.lower().replace("-", "_")
-    return normalized_name in SECRET_PROPERTY_NAMES or normalized_name.endswith(
-        SECRET_PROPERTY_NAME_SUFFIXES
-    )
+def _normalize_property_name(name: str) -> str:
+    """Return `name` in snake case: `clientSecret` and `client-secret` become `client_secret`."""
+    return re.sub(r"(?<=[a-z0-9])(?=[A-Z])", "_", name).lower().replace("-", "_")
+
+
+def _is_key_pair_secret_name(normalized_name: str) -> bool:
+    return normalized_name == "secret" or normalized_name.endswith(_KEY_PAIR_SECRET_SUFFIXES)
+
+
+def is_secret_property_name(name: str, sibling_names: Iterable[str] = ()) -> bool:
+    """Return whether a spec property with this name is expected to hold a secret.
+
+    Names are compared in snake case, so `clientSecret`, `client-secret` and `Client_Secret`
+    all match `client_secret`.
+
+    `sibling_names` are the names of the other properties of the same object. An
+    `*access_key` with a sibling such as `app_secret` or `secret_key` is the public half of
+    a key pair: it identifies the key rather than authenticates with it, so it is not
+    expected to be secret. An `*access_key` on its own is the credential, as with the many
+    APIs that take a single `access_key` parameter.
+    """
+    normalized_name = _normalize_property_name(name)
+    if normalized_name in SECRET_PROPERTY_NAMES:
+        return True
+    if not normalized_name.endswith(SECRET_PROPERTY_NAME_SUFFIXES):
+        return False
+    if normalized_name.endswith(_ACCESS_KEY_SUFFIX) and not normalized_name.endswith(
+        f"secret_{_ACCESS_KEY_SUFFIX}"
+    ):
+        return not any(
+            _is_key_pair_secret_name(_normalize_property_name(sibling))
+            for sibling in sibling_names
+            if sibling != name
+        )
+    return True
 
 
 def _can_hold_secret(property_schema: Mapping[str, Any]) -> bool:
@@ -96,35 +131,41 @@ def _iter_named_properties(
     schema: Mapping[str, Any],
     pointer: str = "",
     name: str | None = None,
-) -> Iterator[tuple[str, str, Mapping[str, Any]]]:
-    """Yield `(json_pointer, property_name, property_schema)` for each property in a schema.
+    sibling_names: frozenset[str] = frozenset(),
+) -> Iterator[tuple[str, str, frozenset[str], Mapping[str, Any]]]:
+    """Yield `(json_pointer, name, sibling_names, property_schema)` for each property.
 
-    Variants of a `oneOf`/`anyOf`/`allOf` and the `items` of an array are yielded under the
-    name of the property that declares them.
+    `sibling_names` holds the names of every property of the object that declares the
+    property, itself included. Variants of a `oneOf`/`anyOf`/`allOf` and the `items` of an
+    array are yielded under the name and siblings of the property that declares them.
     """
     if name is not None:
-        yield pointer, name, schema
+        yield pointer, name, sibling_names, schema
 
     properties = schema.get("properties")
     if isinstance(properties, Mapping):
+        property_names = frozenset(properties)
         for property_name, property_schema in properties.items():
             if isinstance(property_schema, Mapping):
                 yield from _iter_named_properties(
                     property_schema,
                     f"{pointer}/properties/{property_name}",
                     property_name,
+                    property_names,
                 )
 
-    for keyword in ("oneOf", "anyOf", "allOf"):
+    for keyword in _COMBINATORS:
         variants = schema.get(keyword)
         if isinstance(variants, list):
             for index, variant in enumerate(variants):
                 if isinstance(variant, Mapping):
-                    yield from _iter_named_properties(variant, f"{pointer}/{keyword}/{index}", name)
+                    yield from _iter_named_properties(
+                        variant, f"{pointer}/{keyword}/{index}", name, sibling_names
+                    )
 
     items = schema.get("items")
     if isinstance(items, Mapping):
-        yield from _iter_named_properties(items, f"{pointer}/items", name)
+        yield from _iter_named_properties(items, f"{pointer}/items", name, sibling_names)
 
 
 def find_secret_marking_errors(connection_specification: Mapping[str, Any]) -> list[str]:
@@ -137,7 +178,9 @@ def find_secret_marking_errors(connection_specification: Mapping[str, Any]) -> l
     boolean or an object, must not set it.
     """
     errors: list[str] = []
-    for pointer, name, property_schema in _iter_named_properties(connection_specification):
+    for pointer, name, sibling_names, property_schema in _iter_named_properties(
+        connection_specification
+    ):
         marking = property_schema.get("airbyte_secret")
         if marking is not None and not isinstance(marking, bool):
             errors.append(
@@ -145,7 +188,7 @@ def find_secret_marking_errors(connection_specification: Mapping[str, Any]) -> l
                 "boolean, so the CDK does not treat the value as a secret."
             )
             continue
-        if "type" not in property_schema or not is_secret_property_name(name):
+        if "type" not in property_schema or not is_secret_property_name(name, sibling_names):
             continue
 
         marked_as_secret = marking is True
