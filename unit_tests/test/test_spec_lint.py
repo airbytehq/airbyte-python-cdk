@@ -3,12 +3,21 @@
 
 import base64
 import json
+import logging
+from collections.abc import Iterator, Mapping
 from pathlib import Path
 from typing import Any
 
 import pytest
 
-from airbyte_cdk.models import ConnectorSpecification
+from airbyte_cdk.models import (
+    AirbyteCatalog,
+    AirbyteConnectionStatus,
+    AirbyteMessage,
+    ConnectorSpecification,
+    Status,
+)
+from airbyte_cdk.sources.source import Source
 from airbyte_cdk.test.entrypoint_wrapper import EntrypointOutput
 from airbyte_cdk.test.models import ConnectorTestScenario
 from airbyte_cdk.test.standard_tests import docker_base
@@ -21,7 +30,9 @@ from airbyte_cdk.test.standard_tests._spec_lint import (
     get_single_spec,
     is_secret_property_name,
 )
+from airbyte_cdk.test.standard_tests.connector_base import ConnectorTestSuiteBase
 from airbyte_cdk.test.standard_tests.docker_base import DockerConnectorTestSuite
+from airbyte_cdk.test.standard_tests.source_base import SourceTestSuiteBase
 from airbyte_cdk.utils.airbyte_secrets_utils import get_secrets
 
 SECRET = "sk_live_51UWRAsFuIbeygfIY3"
@@ -278,6 +289,14 @@ def test_find_leaked_secrets_numbers_messages_and_groups_pointers() -> None:
     assert leaks == ["`/a`, `/b` in message #2 (LOG)", "`/a` in message #3 (LOG)"]
 
 
+def test_find_leaked_secrets_searches_stderr() -> None:
+    output = EntrypointOutput(
+        messages=[json.dumps(_log("ok"))],
+        stderr=f"Traceback (most recent call last):\n  KeyError: {SECRET}\n",
+    )
+    assert find_leaked_secrets(output, [("/api_key", SECRET)]) == ["`/api_key` in stderr line 2"]
+
+
 def test_find_leaked_secrets_ignores_control_messages() -> None:
     control_message = {
         "type": "CONTROL",
@@ -397,6 +416,7 @@ def test_leak_report_contains_no_part_of_a_multi_line_secret(
             ),
             json.dumps(_log(base64.b64encode(_PRIVATE_KEY.encode()).decode())),
         ],
+        stderr=text,
     )
     with pytest.raises(AssertionError) as error:
         assert_no_secrets_in_output(
@@ -410,6 +430,7 @@ def test_leak_report_contains_no_part_of_a_multi_line_secret(
     failure_text = str(error.value)
     pointers = ", ".join(f"`{pointer}`" for pointer in expected_pointers)
     assert f"{pointers} in message #1 (CONNECTION_STATUS)" in failure_text
+    assert "stderr line 1" in failure_text
     assert "message #2" not in failure_text, "base64 is not searched, so it is not reported"
     for fragment in _secret_fragments():
         assert fragment not in failure_text
@@ -580,6 +601,8 @@ def _fake_docker(
     def run_docker_airbyte_command(cmd: list[str], *, raise_if_errors: bool) -> EntrypointOutput:
         commands.append(cmd)
         verb = next(verb for verb in outputs if verb in cmd)
+        if raise_if_errors:
+            outputs[verb].raise_if_errors()
         return outputs[verb]
 
     monkeypatch.setattr(docker_base, "run_docker_airbyte_command", run_docker_airbyte_command)
@@ -642,3 +665,119 @@ def test_docker_check_test_fails_when_check_prints_a_secret(
     else:
         with pytest.raises(AssertionError, match="printed secret values"):
             _run_docker_check(scenario)
+
+
+@pytest.mark.parametrize(
+    "check_output",
+    [
+        pytest.param(
+            _output(_connection_status("FAILED", f"401 Unauthorized: token {SECRET}")),
+            id="failed_status_on_a_success_scenario",
+        ),
+        pytest.param(
+            _output(
+                {
+                    "type": "TRACE",
+                    "trace": {
+                        "type": "ERROR",
+                        "emitted_at": 0,
+                        "error": {"message": "boom", "stack_trace": f"KeyError: {SECRET}"},
+                    },
+                }
+            ),
+            id="trace_error_on_a_success_scenario",
+        ),
+        pytest.param(
+            EntrypointOutput(
+                messages=[json.dumps(_connection_status("SUCCEEDED", "ok"))],
+                stderr=f"warning: retrying with {SECRET}",
+            ),
+            id="stderr",
+        ),
+    ],
+)
+def test_docker_check_test_runs_the_leak_check_before_the_outcome_assertions(
+    monkeypatch: pytest.MonkeyPatch,
+    check_output: EntrypointOutput,
+) -> None:
+    """The outcome assertions print raw messages, so the leak check must fail first."""
+    _fake_docker(monkeypatch, {"spec": _output(_SECRET_SPEC_MESSAGE), "check": check_output})
+    scenario = ConnectorTestScenario(config_dict={"api_key": SECRET}, status="succeed")
+
+    with pytest.raises(AssertionError, match="printed secret values") as error:
+        _run_docker_check(scenario)
+    assert SECRET not in str(error.value)
+
+
+def test_docker_check_test_still_asserts_the_outcome_without_a_leak(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    check_output = _output(_connection_status("FAILED", "401 Unauthorized"))
+    _fake_docker(monkeypatch, {"spec": _output(_SECRET_SPEC_MESSAGE), "check": check_output})
+    scenario = ConnectorTestScenario(config_dict={"api_key": SECRET}, status="succeed")
+
+    with pytest.raises(AssertionError, match="did not succeed"):
+        _run_docker_check(scenario)
+
+
+class _LeakySource(Source):
+    """A source whose `check` echoes its API key in the connection status message."""
+
+    succeed = False
+
+    def spec(self, logger: logging.Logger) -> ConnectorSpecification:
+        return ConnectorSpecification(
+            connectionSpecification=_spec({"api_key": {"type": "string", "airbyte_secret": True}})
+        )
+
+    def check(self, logger: logging.Logger, config: Mapping[str, Any]) -> AirbyteConnectionStatus:
+        status = Status.SUCCEEDED if self.succeed else Status.FAILED
+        return AirbyteConnectionStatus(status=status, message=f"Used key {config['api_key']}")
+
+    def discover(self, logger: logging.Logger, config: Mapping[str, Any]) -> AirbyteCatalog:
+        return AirbyteCatalog(streams=[])
+
+    def read(self, *args: Any, **kwargs: Any) -> Iterator[AirbyteMessage]:
+        yield from ()
+
+
+class _SucceedingLeakySource(_LeakySource):
+    succeed = True
+
+
+class _InProcessSuite(SourceTestSuiteBase):
+    connector = _LeakySource
+
+    @classmethod
+    def get_connector_root_dir(cls) -> Path:
+        return POKEAPI_CONNECTOR_ROOT
+
+
+@pytest.mark.parametrize(
+    "connector, status",
+    [
+        pytest.param(_LeakySource, "succeed", id="failed_check_on_a_success_scenario"),
+        pytest.param(_SucceedingLeakySource, "failed", id="succeeded_check_on_a_failure_scenario"),
+    ],
+)
+@pytest.mark.parametrize(
+    "suite_test",
+    [
+        pytest.param(SourceTestSuiteBase.test_check, id="source_suite"),
+        pytest.param(ConnectorTestSuiteBase.test_check, id="connector_suite"),
+    ],
+)
+def test_in_process_check_test_fails_when_check_prints_a_secret(
+    monkeypatch: pytest.MonkeyPatch,
+    connector: type[Source],
+    status: str,
+    suite_test: Any,
+) -> None:
+    """The leak check fails first, whatever the outcome, and prints no part of the secret."""
+    monkeypatch.setattr(_InProcessSuite, "connector", connector)
+    scenario = ConnectorTestScenario(config_dict={"api_key": SECRET}, status=status)
+
+    with pytest.raises(AssertionError, match="printed secret values") as error:
+        suite_test(_InProcessSuite(), scenario)
+    assert "`/api_key` in message #" in str(error.value)
+    assert SECRET not in str(error.value)

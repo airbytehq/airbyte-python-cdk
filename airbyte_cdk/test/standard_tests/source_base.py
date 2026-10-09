@@ -50,13 +50,15 @@ class SourceTestSuiteBase(ConnectorTestSuiteBase):
             "check",
             test_scenario=scenario,
             connector_root=self.get_connector_root_dir(),
+            inspect_output=lambda output: self._assert_no_secrets_in_output(
+                scenario, output, verb="check"
+            ),
         )
         num_status_messages = len(result.connection_status_messages)
         assert num_status_messages == 1, (
             f"Expected exactly one CONNECTION_STATUS message. Got {num_status_messages}: \n"
             + "\n".join([str(m) for m in result.get_message_iterator()])
         )
-        self.assert_no_secrets_in_output(scenario, result, verb="check")
 
     def test_discover(
         self,

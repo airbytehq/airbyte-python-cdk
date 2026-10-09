@@ -323,10 +323,23 @@ class DockerConnectorTestSuite:
                     "--config",
                     container_config_path,
                 ],
-                # For expected-failure scenarios, a non-zero exit or trace error is an
-                # acceptable way for `check` to fail; don't raise before we assert on it.
-                raise_if_errors=not scenario.expected_outcome.expect_exception(),
+                raise_if_errors=False,
             )
+
+        # The leak check runs first, whatever the outcome: the assertions below print the raw
+        # CONNECTION_STATUS and error messages, which are the likeliest to carry a secret.
+        connector_name = connector_root.absolute().name
+        assert_no_secrets_in_output(
+            check_result,
+            spec=_run_docker_spec(connector_image, connector_name=connector_name),
+            config=scenario.get_config_dict(connector_root=connector_root, empty_if_missing=True),
+            verb="check",
+            connector_name=connector_name,
+        )
+        # For expected-failure scenarios, a non-zero exit or trace error is an acceptable way
+        # for `check` to fail, so only the other scenarios raise on errors.
+        if not scenario.expected_outcome.expect_exception():
+            check_result.raise_if_errors()
 
         # This makes the image test exercise the connector's actual `check` outcome inside the
         # container, in both directions (e.g. it fails if bundled custom components are rejected
@@ -335,14 +348,6 @@ class DockerConnectorTestSuite:
         _assert_check_outcome(
             check_result=check_result,
             expected_outcome=scenario.expected_outcome,
-            connector_name=connector_root.absolute().name,
-        )
-        connector_name = connector_root.absolute().name
-        assert_no_secrets_in_output(
-            check_result,
-            spec=_run_docker_spec(connector_image, connector_name=connector_name),
-            config=scenario.get_config_dict(connector_root=connector_root, empty_if_missing=True),
-            verb="check",
             connector_name=connector_name,
         )
 

@@ -483,6 +483,7 @@ def run_docker_airbyte_command(
     result_output = EntrypointOutput(
         command=cmd,
         messages=process_result.stdout.splitlines(),
+        stderr=process_result.stderr,
         uncaught_exception=(
             subprocess.CalledProcessError(
                 cmd=cmd,

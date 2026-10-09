@@ -104,14 +104,18 @@ class ConnectorTestSuiteBase(DockerConnectorTestSuite):
             "override `cls.create_connector()` to define a custom initialization process."
         )
 
-    def assert_no_secrets_in_output(
+    def _assert_no_secrets_in_output(
         self,
         scenario: ConnectorTestScenario,
         output: entrypoint_wrapper.EntrypointOutput,
         *,
         verb: str,
     ) -> None:
-        """Assert that no `airbyte_secret` value from the scenario's config is in `output`."""
+        """Assert that no `airbyte_secret` value from the scenario's config is in `output`.
+
+        Pass this to `run_test_job` as `inspect_output`, so it runs before the job's own
+        assertions print raw messages.
+        """
         spec_result = run_test_job(
             self.create_connector(scenario),
             "spec",
@@ -140,9 +144,11 @@ class ConnectorTestSuiteBase(DockerConnectorTestSuite):
             "check",
             test_scenario=scenario,
             connector_root=self.get_connector_root_dir(),
+            inspect_output=lambda output: self._assert_no_secrets_in_output(
+                scenario, output, verb="check"
+            ),
         )
         assert len(result.connection_status_messages) == 1, (
             "Expected exactly one CONNECTION_STATUS message. "
             f"Got: {result.connection_status_messages!s}"
         )
-        self.assert_no_secrets_in_output(scenario, result, verb="check")

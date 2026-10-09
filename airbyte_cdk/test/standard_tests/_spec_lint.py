@@ -313,8 +313,8 @@ def find_leaked_secrets(
     """Return one line per place in `output` that contains a secret from `secrets`.
 
     `secrets` holds `(config_pointer, value)` pairs, as `find_config_secrets` returns. A line names the pointers of the secrets found and where they were found: the
-    message number (on the Docker path, the stdout line number), and its type and stream. It
-    never contains any text from the output, so it cannot print a
+    message number (on the Docker path, the stdout line number), its type and stream, or the
+    stderr line number. It never contains any text from the output, so it cannot print a
     secret in any encoding. The stream name is left out if it overlaps any secret.
 
     CONTROL messages are skipped: a connector config update carries the full config,
@@ -358,6 +358,12 @@ def find_leaked_secrets(
         if stream and not any(form in stream or stream in form for form in every_secret_form):
             location += f", stream `{stream}`"
         leaks.append(f"{describe(pointers)} in message #{number} ({location})")
+
+    stderr_lines = (output.stderr or "").splitlines()
+    for number, line in enumerate(stderr_lines, start=1):
+        pointers = leaked_pointers(line)
+        if pointers:
+            leaks.append(f"{describe(pointers)} in stderr line {number}")
     return leaks
 
 
@@ -369,7 +375,14 @@ def assert_no_secrets_in_output(
     verb: str,
     connector_name: str,
 ) -> None:
-    """Assert that no `airbyte_secret` value from `config` appears in the connector's output."""
+    """Assert that no `airbyte_secret` value from `config` appears in the connector's output.
+
+    This searches every message the connector emitted and, on the Docker path, its raw
+    stdout and stderr. In-process, a `print()` to stdout is not captured: only the messages
+    the connector yields and the records of the root logger are searched.
+
+    Run this before any other assertion on `output`, since those print raw messages.
+    """
     secrets = find_config_secrets(spec.connectionSpecification, config)
     leaks = find_leaked_secrets(output, secrets)
     assert not leaks, (
