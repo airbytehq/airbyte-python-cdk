@@ -46,6 +46,7 @@ from airbyte_cdk.models import (
 from airbyte_cdk.sources import Source
 from airbyte_cdk.sources.connector_state_manager import HashableStreamDescriptor
 from airbyte_cdk.utils import AirbyteTracedException
+from airbyte_cdk.utils.airbyte_secrets_utils import update_secrets
 
 
 class MockSource(Source):
@@ -944,3 +945,61 @@ def test_memory_failfast_flushes_queued_state_before_raising(mocker):
     with pytest.raises(AirbyteTracedException) as exc_info:
         next(gen)
     assert exc_info.value is fail_fast_exc
+
+
+@pytest.fixture
+def reset_secret_filter():
+    yield
+    update_secrets([])
+
+
+_PASSWORD_SPEC = ConnectorSpecification(
+    connectionSpecification={
+        "type": "object",
+        "properties": {
+            "password": {"type": "string", "pattern": "^[a-z]+$", "airbyte_secret": True}
+        },
+    }
+)
+
+
+@pytest.mark.parametrize("config_mock", [{"password": "abcd1234"}], indirect=True)
+def test_check_masks_secrets_in_the_config_validation_error(
+    entrypoint: AirbyteEntrypoint, mocker, config_mock, reset_secret_filter
+):
+    """jsonschema quotes the rejected value, so the CONNECTION_STATUS must mask it."""
+    mocker.patch.object(MockSource, "spec", return_value=_PASSWORD_SPEC)
+    check_mock = mocker.patch.object(MockSource, "check")
+
+    messages = list(entrypoint.run(Namespace(command="check", config="config_path")))
+
+    check_mock.assert_not_called()
+    status_message = orjson.loads(messages[-1])["connectionStatus"]["message"]
+    assert status_message.startswith("Config validation error:")
+    assert "abcd1234" not in status_message
+    assert "****" in status_message
+
+
+@freezegun.freeze_time("1970-01-01T00:00:00.001Z")
+@pytest.mark.parametrize("config_mock", [{"password": "secretpw"}], indirect=True)
+def test_check_masks_secrets_in_a_config_error_raised_by_the_connector(
+    entrypoint: AirbyteEntrypoint, mocker, config_mock, reset_secret_filter
+):
+    spec = ConnectorSpecification(
+        connectionSpecification={
+            "type": "object",
+            "properties": {"password": {"type": "string", "airbyte_secret": True}},
+        }
+    )
+    mocker.patch.object(MockSource, "spec", return_value=spec)
+    exception = AirbyteTracedException(
+        message="Login failed for secretpw",
+        internal_message="401 for secretpw",
+        failure_type=FailureType.config_error,
+    )
+    mocker.patch.object(MockSource, "check", side_effect=exception)
+
+    messages = list(entrypoint.run(Namespace(command="check", config="config_path")))
+
+    assert "secretpw" not in "".join(messages)
+    assert orjson.loads(messages[-1])["connectionStatus"]["message"] == "Login failed for ****"
