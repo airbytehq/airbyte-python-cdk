@@ -4,14 +4,17 @@
 
 import json
 from typing import Any, Optional
+from unittest.mock import Mock
 
 import pytest
 import requests
 
-from airbyte_cdk.sources.declarative.extractors import DpathExtractor
+from airbyte_cdk.sources.declarative.decoders import JsonDecoder
+from airbyte_cdk.sources.declarative.extractors import DpathExtractor, RecordFilter, RecordSelector
 from airbyte_cdk.sources.declarative.requesters.paginators.strategies.offset_increment import (
     OffsetIncrement,
 )
+from airbyte_cdk.sources.utils.transform import TransformConfig, TypeTransformer
 
 
 @pytest.mark.parametrize(
@@ -146,3 +149,126 @@ def test_offset_increment_paginator_strategy_initial_token(
     )
 
     assert paginator_strategy.initial_token == expected_initial_token
+
+
+def _response(records):
+    response = requests.Response()
+    response._content = json.dumps({"results": records}).encode("utf-8")
+    return response
+
+
+def test_given_page_size_override_when_page_is_full_for_the_override_then_keep_paginating():
+    """
+    A page that is full for the reduced page size is not the last page, even though it is smaller than the
+    configured page size.
+    """
+    strategy = OffsetIncrement(page_size=100, extractor=None, config={}, parameters={})
+
+    next_page_token = strategy.next_page_token(
+        response=_response([{"id": index} for index in range(50)]),
+        last_page_size=50,
+        last_record=None,
+        last_page_token_value=0,
+        page_size_override=50,
+    )
+
+    assert next_page_token == 50
+
+
+def test_given_page_size_override_when_page_is_not_full_for_the_override_then_stop_paginating():
+    strategy = OffsetIncrement(page_size=100, extractor=None, config={}, parameters={})
+
+    next_page_token = strategy.next_page_token(
+        response=_response([{"id": index} for index in range(30)]),
+        last_page_size=30,
+        last_record=None,
+        last_page_token_value=0,
+        page_size_override=50,
+    )
+
+    assert next_page_token is None
+
+
+def test_given_page_size_override_then_offset_follows_the_records_actually_returned():
+    strategy = OffsetIncrement(page_size=100, extractor=None, config={}, parameters={})
+
+    assert (
+        strategy.next_page_token(
+            response=_response([{"id": index} for index in range(100)]),
+            last_page_size=100,
+            last_record=None,
+            last_page_token_value=0,
+        )
+        == 100
+    )
+    assert (
+        strategy.next_page_token(
+            response=_response([{"id": index} for index in range(50)]),
+            last_page_size=50,
+            last_record=None,
+            last_page_token_value=100,
+            page_size_override=50,
+        )
+        == 150
+    )
+
+
+def test_given_page_size_interpolates_to_empty_string_then_paginate_until_an_empty_page():
+    """
+    `page_size` interpolating to an empty string is the one behaviour change on the no-override path: the stop
+    condition used to compare the rendered value with `<`, which raised a TypeError for a string. It is now
+    treated as "no page size known", so pagination runs until a page comes back empty.
+
+    This is only reachable when the paginator has no `page_size_option`, since `get_page_size` raises for a
+    non-integer page size before the request is built.
+    """
+    strategy = OffsetIncrement(
+        page_size="{{ config['page_size'] }}", extractor=None, config={}, parameters={}
+    )
+
+    assert (
+        strategy.next_page_token(
+            response=_response([{"id": index} for index in range(30)]),
+            last_page_size=30,
+            last_record=None,
+            last_page_token_value=0,
+        )
+        == 30
+    )
+    assert (
+        strategy.next_page_token(
+            response=_response([]),
+            last_page_size=0,
+            last_record=None,
+            last_page_token_value=30,
+        )
+        is None
+    )
+
+
+def test_given_a_page_counted_by_the_record_selector_then_do_not_read_the_response_again():
+    """The filter dropped the whole page, yet the offset advances by the two records returned."""
+    response = _response([{"id": 1}, {"id": 2}])
+    record_selector = RecordSelector(
+        extractor=DpathExtractor(field_path=["results"], config={}, parameters={}),
+        record_filter=RecordFilter(config={}, condition="{{ False }}", parameters={}),
+        config={},
+        name="test_stream",
+        schema_normalization=TypeTransformer(TransformConfig.NoTransform),
+        parameters={},
+    )
+    assert not list(
+        record_selector.select_records(response=response, stream_state={}, records_schema={})
+    )
+    decoder = Mock(wraps=JsonDecoder(parameters={}))
+    strategy = OffsetIncrement(
+        page_size=2, extractor=None, decoder=decoder, config={}, parameters={}
+    )
+
+    assert (
+        strategy.next_page_token(
+            response=response, last_page_size=0, last_record=None, last_page_token_value=4
+        )
+        == 6
+    )
+    decoder.decode.assert_not_called()

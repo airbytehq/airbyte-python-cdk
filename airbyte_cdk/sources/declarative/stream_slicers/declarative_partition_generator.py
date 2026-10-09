@@ -41,9 +41,9 @@ class DeclarativePartitionFactory:
         max_records_limit: Optional[int] = None,
     ) -> None:
         """
-        The DeclarativePartitionFactory takes a retriever_factory and not a retriever directly. The reason is that our components are not
-        thread safe and classes like `DefaultPaginator` may not work because multiple threads can access and modify a shared field across each other.
-        In order to avoid these problems, we will create one retriever per thread which should make the processing thread-safe.
+        Every partition this factory creates reads through the same `retriever`, and the worker threads read partitions
+        concurrently. Sharing it keeps one authenticator, HTTP session and async job repository per stream; see `Retriever`
+        for what it requires from implementations.
         """
         self._stream_name = stream_name
         self._schema_loader = schema_loader

@@ -1797,6 +1797,42 @@ def test_concurrency_level_initial_number_partitions_to_generate_is_always_one_o
     assert source._concurrent_source._initial_number_partitions_to_generate == 1
 
 
+_SET_NUM_WORKERS_TO_4 = {
+    "type": "ConfigAddFields",
+    "fields": [{"type": "AddedFieldDefinition", "path": ["num_workers"], "value": "4"}],
+}
+
+
+@pytest.mark.parametrize(
+    "config_normalization_rules",
+    [
+        pytest.param(
+            {
+                "config_migrations": [
+                    {"type": "ConfigMigration", "transformations": [_SET_NUM_WORKERS_TO_4]}
+                ]
+            },
+            id="config_migrations",
+        ),
+        pytest.param({"transformations": [_SET_NUM_WORKERS_TO_4]}, id="transformations"),
+    ],
+)
+def test_concurrency_level_uses_normalized_config(config_normalization_rules):
+    manifest = copy.deepcopy(_MANIFEST)
+    manifest["spec"] = {
+        "type": "Spec",
+        "connection_specification": {},
+        "config_normalization_rules": {
+            "type": "ConfigNormalizationRules",
+            **config_normalization_rules,
+        },
+    }
+
+    source = ConcurrentDeclarativeSource(source_config=manifest, config={"num_workers": 1})
+
+    assert source._concurrent_source._threadpool._threadpool._max_workers == 4
+
+
 def test_async_incremental_stream_uses_concurrent_cursor_with_state():
     state = [
         AirbyteStateMessage(
@@ -4981,6 +5017,548 @@ def test_given_response_action_is_pagination_reset_when_read_then_reset_paginati
     assert len(list(filter(lambda message: message.type == Type.RECORD, messages)))
 
 
+def _page_size_reduction_manifest(pagination_strategy, page_token_option=None):
+    paginator = {
+        "type": "DefaultPaginator",
+        "pagination_strategy": pagination_strategy,
+        "page_size_option": {
+            "type": "RequestOption",
+            "inject_into": "request_parameter",
+            "field_name": "first",
+        },
+    }
+    if page_token_option:
+        paginator["page_token_option"] = page_token_option
+    return {
+        "version": "0.34.2",
+        "type": "DeclarativeSource",
+        "check": {"type": "CheckStream", "stream_names": ["Test"]},
+        "streams": [
+            {
+                "type": "DeclarativeStream",
+                "name": "Test",
+                "schema_loader": {
+                    "type": "InlineSchemaLoader",
+                    "schema": {"type": "object"},
+                },
+                "retriever": {
+                    "type": "SimpleRetriever",
+                    "page_size_reduction": {"type": "PageSizeReduction"},
+                    "requester": {
+                        "type": "HttpRequester",
+                        "url_base": "https://example.org",
+                        "path": "/test",
+                        "authenticator": {"type": "NoAuth"},
+                        "error_handler": {
+                            "type": "DefaultErrorHandler",
+                            "response_filters": [
+                                {
+                                    "type": "HttpResponseFilter",
+                                    "http_codes": [502],
+                                    # no `failure_type`: HttpResponseFilter only applies it to the FAIL
+                                    # action, and the failure the user sees comes from PageSizeReducer
+                                    "action": "REDUCE_PAGE_SIZE",
+                                },
+                            ],
+                        },
+                    },
+                    "paginator": paginator,
+                    "record_selector": {
+                        "type": "RecordSelector",
+                        "extractor": {"type": "DpathExtractor", "field_path": ["items"]},
+                    },
+                },
+            }
+        ],
+        "spec": {
+            "type": "Spec",
+            "documentation_url": "https://example.org",
+            "connection_specification": {},
+        },
+    }
+
+
+def _read_page_size_reduction_source(manifest):
+    catalog = create_catalog("Test")
+    source = ConcurrentDeclarativeSource(
+        source_config=manifest,
+        config={},
+        catalog=catalog,
+        state=None,
+    )
+    # the reducer waits before each reduction retry; taking those waits for real adds seconds to every CI run
+    with patch("airbyte_cdk.sources.declarative.retrievers.page_size_reducer.time.sleep"):
+        yield from source.read(logger=source.logger, config={}, catalog=catalog, state=[])
+
+
+def test_given_reduce_page_size_action_when_read_then_retry_page_with_smaller_page_size():
+    """
+    The call counts are asserted explicitly: the context-manager form of `HttpMocker` does not validate that
+    every matcher was called, so without them the test would also pass if the connector had started at the
+    reduced page size and never requested the configured one.
+    """
+    manifest = _page_size_reduction_manifest(
+        {
+            "type": "CursorPagination",
+            "page_size": 100,
+            "cursor_value": "{{ response.next }}",
+            "stop_condition": "{{ not response.next }}",
+        }
+    )
+    full_page_request = HttpRequest("https://example.org/test", query_params={"first": "100"})
+    reduced_page_request = HttpRequest("https://example.org/test", query_params={"first": "50"})
+
+    with HttpMocker() as http_mocker:
+        http_mocker.get(full_page_request, HttpResponse("", 502))
+        http_mocker.get(reduced_page_request, HttpResponse(json.dumps({"items": [{"id": 1}]}), 200))
+
+        messages = list(_read_page_size_reduction_source(manifest))
+
+        http_mocker.assert_number_of_calls(full_page_request, 1)
+        http_mocker.assert_number_of_calls(reduced_page_request, 1)
+
+    assert [message.record.data["id"] for message in messages if message.type == Type.RECORD] == [1]
+
+
+def test_given_offset_increment_and_reduce_page_size_action_when_read_then_keep_paginating():
+    """
+    `OffsetIncrement` is the only strategy whose stop condition depends on the page size. A page that is full
+    for the reduced size is smaller than the configured size, so comparing against the configured size would
+    end the pagination there and silently drop the tail of the partition.
+    """
+    manifest = _page_size_reduction_manifest(
+        {"type": "OffsetIncrement", "page_size": 100},
+        page_token_option={
+            "type": "RequestOption",
+            "inject_into": "request_parameter",
+            "field_name": "offset",
+        },
+    )
+    full_page_request = HttpRequest("https://example.org/test", query_params={"first": "100"})
+    first_reduced_page_request = HttpRequest(
+        "https://example.org/test", query_params={"first": "50"}
+    )
+    second_reduced_page_request = HttpRequest(
+        "https://example.org/test", query_params={"first": "50", "offset": "50"}
+    )
+    with HttpMocker() as http_mocker:
+        http_mocker.get(full_page_request, HttpResponse("", 502))
+        http_mocker.get(
+            first_reduced_page_request,
+            HttpResponse(json.dumps({"items": [{"id": index} for index in range(50)]}), 200),
+        )
+        http_mocker.get(
+            second_reduced_page_request,
+            HttpResponse(json.dumps({"items": [{"id": 50 + index} for index in range(20)]}), 200),
+        )
+
+        messages = list(_read_page_size_reduction_source(manifest))
+
+        http_mocker.assert_number_of_calls(full_page_request, 1)
+        http_mocker.assert_number_of_calls(first_reduced_page_request, 1)
+        http_mocker.assert_number_of_calls(second_reduced_page_request, 1)
+
+    assert [
+        message.record.data["id"] for message in messages if message.type == Type.RECORD
+    ] == list(range(70))
+
+
+def test_given_reductions_exhausted_when_read_then_emit_a_transient_error():
+    """
+    The failure type decides whether the platform retries the whole job, and an endpoint that refuses every
+    page size is the case the reduction budget exists for.
+    """
+    manifest = _page_size_reduction_manifest(
+        {
+            "type": "CursorPagination",
+            "page_size": 100,
+            "cursor_value": "{{ response.next }}",
+            "stop_condition": "{{ not response.next }}",
+        }
+    )
+    manifest["streams"][0]["retriever"]["page_size_reduction"]["max_attempts"] = 2
+
+    messages = []
+    with HttpMocker() as http_mocker:
+        for page_size in ("100", "50", "25"):
+            http_mocker.get(
+                HttpRequest("https://example.org/test", query_params={"first": page_size}),
+                HttpResponse("", 502),
+            )
+
+        # the read fails, which is the point: the messages emitted before it are what the platform sees
+        with pytest.raises(AirbyteTracedException):
+            messages.extend(_read_page_size_reduction_source(manifest))
+
+    errors = [
+        message.trace.error
+        for message in messages
+        if message.type == Type.TRACE and message.trace.type == TraceType.ERROR
+    ]
+    assert errors
+    assert all(error.failure_type == FailureType.transient_error for error in errors)
+    assert any(
+        "keeps rejecting pages of stream" in error.message and "records per page" in error.message
+        for error in errors
+    )
+    # the filter defines no `error_message`, so the default mapping's text for 502 is the rejection reported
+    assert "HTTP Status Code: 502" in errors[0].internal_message
+    assert "not set up" not in errors[0].stack_trace
+
+
+def _request_window_splitting_manifest():
+    return {
+        "version": "0.34.2",
+        "type": "DeclarativeSource",
+        "check": {"type": "CheckStream", "stream_names": ["Test"]},
+        "streams": [
+            {
+                "type": "DeclarativeStream",
+                "name": "Test",
+                "schema_loader": {
+                    "type": "InlineSchemaLoader",
+                    "schema": {"type": "object"},
+                },
+                "incremental_sync": {
+                    "type": "DatetimeBasedCursor",
+                    "start_datetime": "2024-01-01T00:00:00Z",
+                    "end_datetime": "2024-01-01T23:59:59Z",
+                    "step": "P1D",
+                    "cursor_field": "updated_at",
+                    "cursor_granularity": "PT1S",
+                    "datetime_format": "%Y-%m-%dT%H:%M:%SZ",
+                    "start_time_option": {
+                        "type": "RequestOption",
+                        "inject_into": "request_parameter",
+                        "field_name": "start",
+                    },
+                    "end_time_option": {
+                        "type": "RequestOption",
+                        "inject_into": "request_parameter",
+                        "field_name": "end",
+                    },
+                },
+                "retriever": {
+                    "type": "SimpleRetriever",
+                    "request_window_splitting": {"type": "RequestWindowSplitting"},
+                    "requester": {
+                        "type": "HttpRequester",
+                        "url_base": "https://example.org",
+                        "path": "/test",
+                        "authenticator": {"type": "NoAuth"},
+                        "error_handler": {
+                            "type": "DefaultErrorHandler",
+                            "response_filters": [
+                                {
+                                    "type": "HttpResponseFilter",
+                                    "http_codes": [400],
+                                    "action": "SPLIT_REQUEST_WINDOW",
+                                },
+                            ],
+                        },
+                    },
+                    "record_selector": {
+                        "type": "RecordSelector",
+                        "extractor": {"type": "DpathExtractor", "field_path": ["items"]},
+                    },
+                },
+            }
+        ],
+        "spec": {
+            "type": "Spec",
+            "documentation_url": "https://example.org",
+            "connection_specification": {},
+        },
+    }
+
+
+def _read_request_window_splitting_source(manifest):
+    catalog = create_catalog("Test")
+    source = ConcurrentDeclarativeSource(
+        source_config=manifest,
+        config={},
+        catalog=catalog,
+        state=None,
+    )
+    yield from source.read(logger=source.logger, config={}, catalog=catalog, state=[])
+
+
+def test_given_split_request_window_action_when_read_then_split_and_read_both_halves():
+    """
+    Mirrors the real PayPal `RESULTSET_TOO_LARGE` incident this feature exists to generalize: a request for
+    the full day is rejected outright, and the connector reads it back as two half-day requests instead, with
+    a complete, gap-free, non-duplicated record set.
+    """
+    full_window_request = HttpRequest(
+        "https://example.org/test",
+        query_params={"start": "2024-01-01T00:00:00Z", "end": "2024-01-01T23:59:59Z"},
+    )
+    first_half_request = HttpRequest(
+        "https://example.org/test",
+        query_params={"start": "2024-01-01T00:00:00Z", "end": "2024-01-01T11:59:59Z"},
+    )
+    second_half_request = HttpRequest(
+        "https://example.org/test",
+        query_params={"start": "2024-01-01T12:00:00Z", "end": "2024-01-01T23:59:59Z"},
+    )
+
+    with HttpMocker() as http_mocker:
+        http_mocker.get(full_window_request, HttpResponse("", 400))
+        http_mocker.get(first_half_request, HttpResponse(json.dumps({"items": [{"id": 1}]}), 200))
+        http_mocker.get(second_half_request, HttpResponse(json.dumps({"items": [{"id": 2}]}), 200))
+
+        messages = list(_read_request_window_splitting_source(_request_window_splitting_manifest()))
+
+        http_mocker.assert_number_of_calls(full_window_request, 1)
+        http_mocker.assert_number_of_calls(first_half_request, 1)
+        http_mocker.assert_number_of_calls(second_half_request, 1)
+
+    assert sorted(
+        message.record.data["id"] for message in messages if message.type == Type.RECORD
+    ) == [1, 2]
+
+
+def test_given_split_request_window_action_when_read_then_final_state_reflects_full_original_window():
+    """
+    Regression coverage for a bug where records read from a split child window carried the child's own slice
+    as `Record.associated_slice`, which `ConcurrentCursor.observe()` keys its bookkeeping by - a key
+    `close_partition()` (which always looks up by the *original* partition's slice) could never find. Left
+    unfixed, `_get_latest_complete_time`'s `first_interval.get("most_recent_cursor_value") or
+    first_interval[START_KEY]` fallback would silently commit the window's *start* boundary as the emitted
+    state instead of the actual highest cursor value observed across the two split children - reverting the
+    cursor all the way back to the beginning of the (already fully synced) day on the very next sync, rather
+    than a merely imprecise-but-safe value.
+    """
+    full_window_request = HttpRequest(
+        "https://example.org/test",
+        query_params={"start": "2024-01-01T00:00:00Z", "end": "2024-01-01T23:59:59Z"},
+    )
+    first_half_request = HttpRequest(
+        "https://example.org/test",
+        query_params={"start": "2024-01-01T00:00:00Z", "end": "2024-01-01T11:59:59Z"},
+    )
+    second_half_request = HttpRequest(
+        "https://example.org/test",
+        query_params={"start": "2024-01-01T12:00:00Z", "end": "2024-01-01T23:59:59Z"},
+    )
+
+    with HttpMocker() as http_mocker:
+        http_mocker.get(full_window_request, HttpResponse("", 400))
+        http_mocker.get(
+            first_half_request,
+            HttpResponse(
+                json.dumps({"items": [{"id": 1, "updated_at": "2024-01-01T05:00:00Z"}]}), 200
+            ),
+        )
+        http_mocker.get(
+            second_half_request,
+            # the higher cursor value lives in the *second* half, so a fallback to the slice's end boundary
+            # instead of the true observed maximum would be easy to miss if it happened to match by accident
+            HttpResponse(
+                json.dumps({"items": [{"id": 2, "updated_at": "2024-01-01T20:00:00Z"}]}), 200
+            ),
+        )
+
+        messages = list(_read_request_window_splitting_source(_request_window_splitting_manifest()))
+
+    states = get_states_for_stream(stream_name="Test", messages=messages)
+    assert states
+    # the declarative DatetimeBasedCursor emits sequential-format state (a flat {cursor_field: value} dict) by
+    # default; every emitted state must show the true observed maximum, never the window's start boundary
+    assert all(
+        state.stream.stream_state.__dict__ == {"updated_at": "2024-01-01T20:00:00Z"}
+        for state in states
+    )
+
+
+_ACCOUNT_PARTITION_ROUTER = {
+    "type": "ListPartitionRouter",
+    "values": ["a", "b"],
+    "cursor_field": "account",
+}
+
+
+def _partitioned_request_window_splitting_manifest():
+    """Two accounts, each read as one 14-day window and checkpointed with its own cursor."""
+    manifest = _request_window_splitting_manifest()
+    stream = manifest["streams"][0]
+    stream["incremental_sync"].update(
+        {
+            "start_datetime": "2024-01-01",
+            "end_datetime": "2024-01-14",
+            "step": "P14D",
+            "cursor_granularity": "P1D",
+            "datetime_format": "%Y-%m-%d",
+        }
+    )
+    stream["retriever"]["partition_router"] = {
+        **_ACCOUNT_PARTITION_ROUTER,
+        "request_option": {
+            "type": "RequestOption",
+            "inject_into": "request_parameter",
+            "field_name": "account",
+        },
+    }
+    return manifest
+
+
+def _partitioned_request_window_splitting_manifest_with_interpolated_window():
+    """
+    A list-form partition router, which the factory wraps in a `CartesianProductStreamSlicer`, and request
+    parameters that read the window from `stream_interval` rather than injecting it through
+    `start_time_option`/`end_time_option`.
+    """
+    manifest = _partitioned_request_window_splitting_manifest()
+    stream = manifest["streams"][0]
+    del stream["incremental_sync"]["start_time_option"]
+    del stream["incremental_sync"]["end_time_option"]
+    stream["retriever"]["partition_router"] = [dict(_ACCOUNT_PARTITION_ROUTER)]
+    stream["retriever"]["requester"]["request_parameters"] = {
+        "account": "{{ stream_partition.account }}",
+        "start": "{{ stream_interval.start_time }}",
+        "end": "{{ stream_interval.end_time }}",
+    }
+    return manifest
+
+
+def _account_window_request(account: str, start: str, end: str) -> HttpRequest:
+    return HttpRequest(
+        "https://example.org/test",
+        query_params={"account": account, "start": start, "end": end},
+    )
+
+
+def _items_response(*updated_at: str) -> HttpResponse:
+    return HttpResponse(json.dumps({"items": [{"updated_at": value} for value in updated_at]}), 200)
+
+
+def _mock_only_account_b_rejected(http_mocker: HttpMocker) -> List[HttpRequest]:
+    """Account b's 14-day window is rejected and its two halves succeed; account a's window succeeds."""
+    responses = [
+        (_account_window_request("a", "2024-01-01", "2024-01-14"), _items_response("2024-01-10")),
+        (_account_window_request("b", "2024-01-01", "2024-01-14"), HttpResponse("", 400)),
+        (_account_window_request("b", "2024-01-01", "2024-01-07"), _items_response("2024-01-03")),
+        (_account_window_request("b", "2024-01-08", "2024-01-14"), _items_response("2024-01-12")),
+    ]
+    for request, response in responses:
+        http_mocker.get(request, response)
+    return [request for request, _ in responses]
+
+
+@pytest.mark.parametrize(
+    "manifest",
+    [
+        pytest.param(_partitioned_request_window_splitting_manifest(), id="request_options"),
+        pytest.param(
+            _partitioned_request_window_splitting_manifest_with_interpolated_window(),
+            id="interpolated_window",
+        ),
+    ],
+)
+def test_given_partitioned_stream_when_one_partition_window_is_rejected_then_split_only_that_partition(
+    manifest,
+):
+    """
+    The Google Ads and TikTok case: only one account's window is too large. That account's window is read as
+    two halves, the other account is read once, and each account is checkpointed with its own cursor.
+    """
+    with HttpMocker() as http_mocker:
+        requests = _mock_only_account_b_rejected(http_mocker)
+
+        messages = list(_read_request_window_splitting_source(manifest))
+
+        for request in requests:
+            http_mocker.assert_number_of_calls(request, 1)
+
+    assert sorted(
+        message.record.data["updated_at"] for message in messages if message.type == Type.RECORD
+    ) == ["2024-01-03", "2024-01-10", "2024-01-12"]
+    final_state = get_states_for_stream(stream_name="Test", messages=messages)[
+        -1
+    ].stream.stream_state.__dict__
+    assert final_state["use_global_cursor"] is False
+    assert sorted(final_state["states"], key=lambda state: state["partition"]["account"]) == [
+        {"partition": {"account": "a"}, "cursor": {"updated_at": "2024-01-10"}},
+        {"partition": {"account": "b"}, "cursor": {"updated_at": "2024-01-12"}},
+    ]
+
+
+def test_given_partitioned_stream_over_switch_to_global_limit_when_window_is_rejected_then_split():
+    """
+    Past `SWITCH_TO_GLOBAL_LIMIT` partitions, the stream keeps a single global cursor instead of one per
+    partition. Splitting does not depend on the per-partition cursors, so it works the same way.
+    """
+    from airbyte_cdk.sources.declarative.incremental import ConcurrentPerPartitionCursor
+
+    with HttpMocker() as http_mocker:
+        requests = _mock_only_account_b_rejected(http_mocker)
+
+        with patch.object(ConcurrentPerPartitionCursor, "SWITCH_TO_GLOBAL_LIMIT", 0):
+            messages = list(
+                _read_request_window_splitting_source(
+                    _partitioned_request_window_splitting_manifest()
+                )
+            )
+
+        for request in requests:
+            http_mocker.assert_number_of_calls(request, 1)
+
+    final_state = get_states_for_stream(stream_name="Test", messages=messages)[
+        -1
+    ].stream.stream_state.__dict__
+    assert final_state["use_global_cursor"] is True
+    assert final_state["state"] == {"updated_at": "2024-01-12"}
+
+
+def test_given_split_window_still_rejected_when_read_then_partition_is_not_checkpointed():
+    """
+    Account b's first half is read, but its second half is rejected again and is already at
+    `min_split_window`, so the stream fails with a `transient_error`. Account b's cursor must stay at its start
+    instead of moving to the record read from the first half, so the next sync re-reads the whole window,
+    while account a is still checkpointed.
+    """
+    manifest = _partitioned_request_window_splitting_manifest()
+    manifest["streams"][0]["retriever"]["request_window_splitting"]["min_split_window"] = "P7D"
+    account_b_request = _account_window_request("b", "2024-01-01", "2024-01-14")
+    account_b_first_half_request = _account_window_request("b", "2024-01-01", "2024-01-07")
+    account_b_second_half_request = _account_window_request("b", "2024-01-08", "2024-01-14")
+
+    messages = []
+    with HttpMocker() as http_mocker:
+        http_mocker.get(
+            _account_window_request("a", "2024-01-01", "2024-01-14"), _items_response("2024-01-10")
+        )
+        http_mocker.get(account_b_request, HttpResponse("", 400))
+        http_mocker.get(account_b_first_half_request, _items_response("2024-01-03"))
+        http_mocker.get(account_b_second_half_request, HttpResponse("", 400))
+
+        with pytest.raises(AirbyteTracedException):
+            messages.extend(_read_request_window_splitting_source(manifest))
+
+        http_mocker.assert_number_of_calls(account_b_request, 1)
+        http_mocker.assert_number_of_calls(account_b_first_half_request, 1)
+        http_mocker.assert_number_of_calls(account_b_second_half_request, 1)
+
+    errors = [
+        message.trace.error
+        for message in messages
+        if message.type == Type.TRACE and message.trace.type == TraceType.ERROR
+    ]
+    assert errors[0].failure_type == FailureType.transient_error
+    assert "could not split its request window" in errors[0].internal_message
+    # the filter defines no `error_message`, so the default mapping's text for 400 is the rejection reported
+    assert "HTTP Status Code: 400" in errors[0].internal_message
+    assert "not set up" not in errors[0].stack_trace
+    final_state = get_states_for_stream(stream_name="Test", messages=messages)[
+        -1
+    ].stream.stream_state.__dict__
+    assert sorted(final_state["states"], key=lambda state: state["partition"]["account"]) == [
+        {"partition": {"account": "a"}, "cursor": {"updated_at": "2024-01-10"}},
+        {"partition": {"account": "b"}, "cursor": {"updated_at": "2024-01-01"}},
+    ]
+    assert "state" not in final_state
+
+
 def test_given_pagination_limit_reached_when_read_then_reset_pagination():
     input_config = {}
     manifest = {
@@ -5334,6 +5912,111 @@ def test_given_record_selector_is_filtering_when_read_then_raise_error():
 
     with pytest.raises(ValueError):
         list(source.read(logger=source.logger, config=input_config, catalog=catalog, state=[]))
+
+
+@pytest.mark.parametrize(
+    "auth_type, expected_headers, expected_login_calls",
+    [
+        pytest.param("session", {"X-Session": "a_session_token"}, 1, id="test_session_selected"),
+        pytest.param("token", {"X-Key": "a_key"}, 0, id="test_token_selected"),
+    ],
+)
+def test_given_selective_authenticator_nesting_session_token_authenticator_when_read_then_authenticate(
+    auth_type, expected_headers, expected_login_calls
+):
+    input_config = {"auth_type": auth_type, "username": "a_user", "api_key": "a_key"}
+    manifest = {
+        "version": "0.34.2",
+        "type": "DeclarativeSource",
+        "check": {"type": "CheckStream", "stream_names": ["Test"]},
+        "streams": [
+            {
+                "type": "DeclarativeStream",
+                "name": "Test",
+                "schema_loader": {
+                    "type": "InlineSchemaLoader",
+                    "schema": {"type": "object"},
+                },
+                "retriever": {
+                    "type": "SimpleRetriever",
+                    "requester": {
+                        "type": "HttpRequester",
+                        "url_base": "https://example.org",
+                        "path": "/test",
+                        "authenticator": {
+                            "type": "SelectiveAuthenticator",
+                            "authenticator_selection_path": ["auth_type"],
+                            "authenticators": {
+                                "session": {
+                                    "type": "SessionTokenAuthenticator",
+                                    "login_requester": {
+                                        "type": "HttpRequester",
+                                        "url_base": "https://example.org",
+                                        "path": "/login",
+                                        "http_method": "POST",
+                                        "request_body_json": {
+                                            "username": "{{ config['username'] }}"
+                                        },
+                                    },
+                                    "session_token_path": ["token"],
+                                    "expiration_duration": "PT1H",
+                                    "request_authentication": {
+                                        "type": "ApiKey",
+                                        "inject_into": {
+                                            "type": "RequestOption",
+                                            "inject_into": "header",
+                                            "field_name": "X-Session",
+                                        },
+                                    },
+                                },
+                                "token": {
+                                    "type": "ApiKeyAuthenticator",
+                                    "header": "X-Key",
+                                    "api_token": "{{ config['api_key'] }}",
+                                },
+                            },
+                        },
+                    },
+                    "record_selector": {
+                        "type": "RecordSelector",
+                        "extractor": {"type": "DpathExtractor", "field_path": []},
+                    },
+                },
+            }
+        ],
+        "spec": {
+            "type": "Spec",
+            "documentation_url": "https://example.org",
+            "connection_specification": {},
+        },
+    }
+
+    catalog = create_catalog("Test")
+    source = ConcurrentDeclarativeSource(
+        source_config=manifest,
+        config=input_config,
+        catalog=catalog,
+        state=None,
+    )
+    login_request = HttpRequest(
+        "https://example.org/login", body=json.dumps({"username": "a_user"})
+    )
+
+    with HttpMocker() as http_mocker:
+        http_mocker.post(login_request, HttpResponse(json.dumps({"token": "a_session_token"})))
+        http_mocker.get(
+            HttpRequest("https://example.org/test", headers=expected_headers),
+            HttpResponse(json.dumps([{"id": 1}])),
+        )
+        messages = list(
+            source.read(logger=source.logger, config=input_config, catalog=catalog, state=[])
+        )
+
+        http_mocker.assert_number_of_calls(login_request, expected_login_calls)
+
+    assert [message.record.data for message in messages if message.type == Type.RECORD] == [
+        {"id": 1}
+    ]
 
 
 def _make_default_stream(name: str) -> DefaultStream:
@@ -6113,3 +6796,171 @@ def test_dynamic_stream_discovery_http_requests_use_api_budget():
         "HttpComponentsResolver's requester should have api_budget set during dynamic stream "
         "discovery, but it was None. This means discovery HTTP requests are not rate-limited."
     )
+
+
+def _validation_messages(error: ValidationError) -> Iterable[str]:
+    """Flattens a jsonschema error tree; the top-level message of an `anyOf` miss carries no detail."""
+    yield error.message
+    for sub_error in error.context or []:
+        yield from _validation_messages(sub_error)
+
+
+def _combined_extractor_manifest(extractor: Mapping[str, Any]) -> Dict[str, Any]:
+    return {
+        "version": "6.0.0",
+        "type": "DeclarativeSource",
+        "check": {"type": "CheckStream", "stream_names": ["lists"]},
+        "streams": [
+            {
+                "type": "DeclarativeStream",
+                "name": "lists",
+                "primary_key": [],
+                "schema_loader": {
+                    "type": "InlineSchemaLoader",
+                    "schema": {
+                        "$schema": "http://json-schema.org/schema#",
+                        "type": "object",
+                        "properties": {},
+                    },
+                },
+                "retriever": {
+                    "type": "SimpleRetriever",
+                    "requester": {
+                        "type": "HttpRequester",
+                        "url_base": "https://api.test.com",
+                        "path": "/lists",
+                        "http_method": "GET",
+                    },
+                    "record_selector": {"type": "RecordSelector", "extractor": extractor},
+                },
+            }
+        ],
+    }
+
+
+def test_combined_extractor_manifest_passes_schema_validation():
+    """Covers the CombinedExtractor JSON-Schema definition, which the factory tests never reach."""
+    manifest = _combined_extractor_manifest(
+        {
+            "type": "CombinedExtractor",
+            "mode": "first_match",
+            "extractors": [
+                {"type": "DpathExtractor", "field_path": ["rows", "*", "dimensions"]},
+                {
+                    "type": "CombinedExtractor",
+                    "extractors": [
+                        {"type": "DpathExtractor", "field_path": ["rows", "*", "metrics"]}
+                    ],
+                },
+            ],
+        }
+    )
+
+    source = ConcurrentDeclarativeSource(
+        source_config=manifest, config={}, catalog=create_catalog("lists"), state=None
+    )
+
+    assert len(source.streams(config={})) == 1
+
+
+def test_combined_extractor_with_an_unknown_mode_fails_schema_validation():
+    manifest = _combined_extractor_manifest(
+        {
+            "type": "CombinedExtractor",
+            "mode": "concatenate",
+            "extractors": [{"type": "DpathExtractor", "field_path": ["rows"]}],
+        }
+    )
+
+    with pytest.raises(ValidationError):
+        ConcurrentDeclarativeSource(
+            source_config=manifest, config={}, catalog=create_catalog("lists"), state=None
+        )
+
+
+def test_combined_extractor_with_an_empty_extractors_list_fails_schema_validation():
+    """`minItems: 1` turns what used to be a runtime `ValueError` into a field-level schema error."""
+    manifest = _combined_extractor_manifest({"type": "CombinedExtractor", "extractors": []})
+
+    with pytest.raises(ValidationError) as exc_info:
+        ConcurrentDeclarativeSource(
+            source_config=manifest, config={}, catalog=create_catalog("lists"), state=None
+        )
+
+    # `_validate_source` re-raises a generic message; the field-level error is in the cause tree.
+    assert any(
+        "should be non-empty" in message
+        for message in _validation_messages(exc_info.value.__cause__)
+    )
+
+
+@pytest.mark.parametrize(
+    "pagination_strategy, page_token_field, page_tokens",
+    [
+        pytest.param(
+            {"type": "OffsetIncrement", "page_size": 3}, "offset", ["3", "6"], id="offset_increment"
+        ),
+        pytest.param(
+            {"type": "PageIncrement", "page_size": 3, "start_from_page": 0},
+            "page",
+            ["1", "2"],
+            id="page_increment",
+        ),
+    ],
+)
+def test_combined_extractor_skipping_empty_records_reads_every_page(
+    pagination_strategy, page_token_field, page_tokens
+):
+    """A null on a full page used to make the page look short, so the later pages were never read."""
+    manifest = _combined_extractor_manifest(
+        {
+            "type": "CombinedExtractor",
+            "mode": "first_match",
+            "skip_empty_records": True,
+            "extractors": [
+                {"type": "DpathExtractor", "field_path": ["data", "items"]},
+                {"type": "DpathExtractor", "field_path": ["data", "fallback"]},
+            ],
+        }
+    )
+    manifest["streams"][0]["retriever"]["paginator"] = {
+        "type": "DefaultPaginator",
+        "pagination_strategy": pagination_strategy,
+        "page_token_option": {
+            "type": "RequestOption",
+            "inject_into": "request_parameter",
+            "field_name": page_token_field,
+        },
+    }
+    catalog = create_catalog("lists")
+    source = ConcurrentDeclarativeSource(
+        source_config=manifest, config={}, catalog=catalog, state=None
+    )
+
+    with HttpMocker() as http_mocker:
+        http_mocker.get(
+            HttpRequest("https://api.test.com/lists"),
+            HttpResponse(json.dumps({"data": {"items": [{"id": 1}, None, {"id": 3}]}})),
+        )
+        http_mocker.get(
+            HttpRequest(
+                "https://api.test.com/lists", query_params={page_token_field: page_tokens[0]}
+            ),
+            HttpResponse(json.dumps({"data": {"items": [{"id": 4}, {"id": 5}, {"id": 6}]}})),
+        )
+        http_mocker.get(
+            HttpRequest(
+                "https://api.test.com/lists", query_params={page_token_field: page_tokens[1]}
+            ),
+            HttpResponse(json.dumps({"data": {"items": [{"id": 7}]}})),
+        )
+        messages = list(source.read(logger=source.logger, config={}, catalog=catalog, state=[]))
+
+    assert [record.data["id"] for record in get_records_for_stream("lists", messages)] == [
+        1,
+        3,
+        4,
+        5,
+        6,
+        7,
+    ]

@@ -8,10 +8,13 @@ from typing import Any, Optional
 import pytest
 import requests
 
-from airbyte_cdk.sources.declarative.extractors import DpathExtractor
+from airbyte_cdk.models import FailureType
+from airbyte_cdk.sources.declarative.extractors import DpathExtractor, RecordFilter, RecordSelector
 from airbyte_cdk.sources.declarative.requesters.paginators.strategies.page_increment import (
     PageIncrement,
 )
+from airbyte_cdk.sources.utils.transform import TransformConfig, TypeTransformer
+from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 
 
 @pytest.mark.parametrize(
@@ -160,3 +163,49 @@ def test_page_increment_paginator_strategy_initial_token(
     )
 
     assert paginator_strategy.initial_token == expected_initial_token
+
+
+def test_given_page_size_override_then_raise_config_error():
+    """
+    Reducing the page size would move every following page boundary, so PageIncrement refuses it. This is only
+    reachable when the factory is bypassed, so it has to report itself as a configuration error rather than
+    surfacing as a generic system error.
+    """
+    strategy = PageIncrement(page_size=100, config={}, parameters={}, start_from_page=1)
+    response = requests.Response()
+
+    with pytest.raises(AirbyteTracedException) as exception:
+        strategy.next_page_token(
+            response=response,
+            last_page_size=50,
+            last_record=None,
+            last_page_token_value=1,
+            page_size_override=50,
+        )
+
+    assert exception.value.failure_type == FailureType.config_error
+
+
+def test_given_a_page_counted_by_the_record_selector_then_use_its_count():
+    """The filter dropped the whole page, yet the page is full, so the pagination goes on."""
+    response = requests.Response()
+    response._content = json.dumps({"results": [{"id": 1}, {"id": 2}]}).encode("utf-8")
+    record_selector = RecordSelector(
+        extractor=DpathExtractor(field_path=["results"], config={}, parameters={}),
+        record_filter=RecordFilter(config={}, condition="{{ False }}", parameters={}),
+        config={},
+        name="test_stream",
+        schema_normalization=TypeTransformer(TransformConfig.NoTransform),
+        parameters={},
+    )
+    assert not list(
+        record_selector.select_records(response=response, stream_state={}, records_schema={})
+    )
+    strategy = PageIncrement(page_size=2, start_from_page=1, config={}, parameters={})
+
+    assert (
+        strategy.next_page_token(
+            response=response, last_page_size=0, last_record=None, last_page_token_value=3
+        )
+        == 4
+    )
