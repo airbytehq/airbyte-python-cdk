@@ -2,6 +2,7 @@
 # Copyright (c) 2025 Airbyte, Inc., all rights reserved.
 #
 
+import io
 import pkgutil
 from pathlib import Path
 from typing import Any
@@ -115,3 +116,97 @@ def test_declarative_call_sites_use_c_loader(
     manifest_file.write_text("version: 1.0.0\nstreams: []")
     _parse_manifest_from_file(str(manifest_file))
     assert len(instantiated) == 5
+
+
+# A list item whose nested mapping is indented one space short.
+MISINDENTED_YAML = (
+    'version: "1"\nstreams:\n  - type: DeclarativeStream\n    name: a\n   primary_key: id\n'
+)
+
+
+@requires_libyaml
+def test_syntax_error_in_string_matches_pure_python_message() -> None:
+    with pytest.raises(yaml.YAMLError) as expected_exc_info:
+        yaml.load(MISINDENTED_YAML, Loader=yaml.SafeLoader)
+
+    with pytest.raises(yaml.YAMLError) as actual_exc_info:
+        safe_load_yaml(MISINDENTED_YAML)
+
+    assert str(actual_exc_info.value) == str(expected_exc_info.value)
+    assert type(actual_exc_info.value) is type(expected_exc_info.value)
+    assert "^" in str(actual_exc_info.value)
+
+    with pytest.raises(yaml.YAMLError) as parse_exc_info:
+        YamlDeclarativeSource._parse(MISINDENTED_YAML)
+
+    assert str(parse_exc_info.value) == str(expected_exc_info.value)
+    assert type(parse_exc_info.value) is type(expected_exc_info.value)
+
+
+@requires_libyaml
+def test_syntax_error_in_file_matches_pure_python_message(tmp_path: Path) -> None:
+    path = tmp_path / "manifest.yaml"
+    path.write_text(MISINDENTED_YAML)
+
+    with open(path) as f:
+        with pytest.raises(yaml.YAMLError) as expected_exc_info:
+            yaml.load(f, Loader=yaml.SafeLoader)
+
+    with open(path) as f:
+        with pytest.raises(yaml.YAMLError) as actual_exc_info:
+            safe_load_yaml(f)
+
+    assert str(actual_exc_info.value) == str(expected_exc_info.value)
+    assert str(path) in str(actual_exc_info.value)
+
+
+@requires_libyaml
+def test_syntax_error_in_non_seekable_stream_keeps_c_loader_message() -> None:
+    class _NonSeekable(io.StringIO):
+        def seekable(self) -> bool:
+            return False
+
+    with pytest.raises(yaml.YAMLError) as expected_exc_info:
+        yaml.load(_NonSeekable(MISINDENTED_YAML), Loader=yaml.CSafeLoader)
+
+    with pytest.raises(yaml.YAMLError) as actual_exc_info:
+        safe_load_yaml(_NonSeekable(MISINDENTED_YAML))
+
+    assert str(actual_exc_info.value) == str(expected_exc_info.value)
+
+
+@requires_libyaml
+def test_successful_parse_never_uses_pure_python_loader(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    instantiated: list[Any] = []
+
+    class _Spy(yaml.SafeLoader):
+        def __init__(self, stream: Any) -> None:
+            instantiated.append(stream)
+            super().__init__(stream)
+
+    monkeypatch.setattr(yaml, "SafeLoader", _Spy)
+
+    assert safe_load_yaml("a: 1") == {"a": 1}
+    assert safe_load_yaml(b"a: 1") == {"a": 1}
+
+    yaml_file = tmp_path / "source.yaml"
+    yaml_file.write_text("a: 1")
+    with open(yaml_file) as f:
+        assert safe_load_yaml(f) == {"a": 1}
+
+    assert instantiated == []
+
+
+@requires_libyaml
+def test_pure_python_result_returned_if_only_c_loader_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _FailingLoader(yaml.CSafeLoader):
+        def get_single_data(self) -> Any:
+            raise yaml.YAMLError("boom")
+
+    monkeypatch.setattr(yaml, "CSafeLoader", _FailingLoader)
+
+    assert safe_load_yaml("a: 1") == {"a": 1}
