@@ -13,12 +13,12 @@ from typing_extensions import Protocol, runtime_checkable
 
 from airbyte_cdk.models import (
     ConfiguredAirbyteCatalog,
-    Status,
 )
 from airbyte_cdk.test import entrypoint_wrapper
 from airbyte_cdk.test.models import (
     ConnectorTestScenario,
 )
+from airbyte_cdk.test.standard_tests._assertions import assert_check_outcome
 
 
 @runtime_checkable
@@ -104,31 +104,24 @@ def run_test_job(
         args=args,
         expected_outcome=test_scenario.expected_outcome,
     )
+    if verb == "check":
+        # Unless the scenario declares `status: exception`, `check` is expected to report its
+        # outcome as a CONNECTION_STATUS message, gracefully and without an exception. Any
+        # uncaught error is surfaced as-is (mirroring `raise_if_errors` on the Docker path), and
+        # the reported status is then validated with the same assertion as the Docker-based test
+        # suite so that both paths enforce the same expectations.
+        if result.errors and not test_scenario.expected_outcome.expect_exception():
+            raise result.as_exception()
+
+        assert_check_outcome(
+            check_result=result,
+            expected_outcome=test_scenario.expected_outcome,
+            connector_name=connector_root.absolute().name,
+        )
+        return result
+
     if result.errors and test_scenario.expected_outcome.expect_success():
         raise result.as_exception()
-
-    if verb == "check":
-        # Check is expected to fail gracefully without an exception.
-        # Instead, we assert that we have a CONNECTION_STATUS message with
-        # a failure status.
-        assert len(result.connection_status_messages) == 1, (
-            "Expected exactly one CONNECTION_STATUS message. Got "
-            f"{len(result.connection_status_messages)}:\n"
-            + "\n".join([str(msg) for msg in result.connection_status_messages])
-            + result.get_formatted_error_message()
-        )
-        if test_scenario.expected_outcome.expect_exception():
-            conn_status = result.connection_status_messages[0].connectionStatus
-            assert conn_status, (
-                "Expected CONNECTION_STATUS message to be present. Got: \n"
-                + "\n".join([str(msg) for msg in result.connection_status_messages])
-            )
-            assert conn_status.status == Status.FAILED, (
-                "Expected CONNECTION_STATUS message to be FAILED. Got: \n"
-                + "\n".join([str(msg) for msg in result.connection_status_messages])
-            )
-
-        return result
 
     # For all other verbs, we assert check that an exception is raised (or not).
     if test_scenario.expected_outcome.expect_exception():

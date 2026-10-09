@@ -22,6 +22,10 @@ from airbyte_cdk.test.standard_tests._job_runner import run_test_job
 from airbyte_cdk.test.standard_tests.connector_base import (
     ConnectorTestSuiteBase,
 )
+from airbyte_cdk.test.standard_tests.docker_base import (
+    get_discovered_streams,
+    skip_unless_runs,
+)
 
 if TYPE_CHECKING:
     from airbyte_cdk.test import entrypoint_wrapper
@@ -40,16 +44,25 @@ class SourceTestSuiteBase(ConnectorTestSuiteBase):
     ) -> None:
         """Run standard `check` tests on the connector.
 
-        Assert that the connector returns a single CONNECTION_STATUS message.
-        This test is designed to validate the connector's ability to establish a connection
-        and return its status with the expected message type.
+        Runs for configs listed under `connection` in `acceptance-test-config.yml`. Assert that
+        the connector returns a single CONNECTION_STATUS message whose status matches the
+        scenario's expectation. This test is designed to validate the connector's ability to
+        establish a connection and return its status with the expected message type.
+
+        Scenarios declared with `status: exception` expect `check` to raise instead of reporting
+        a status; for those, only the presence of a trace error is asserted (in `run_test_job`).
         """
+        skip_unless_runs(scenario, "check")
         result: entrypoint_wrapper.EntrypointOutput = run_test_job(
             self.create_connector(scenario),
             "check",
             test_scenario=scenario,
             connector_root=self.get_connector_root_dir(),
         )
+        if scenario.expected_outcome.expect_uncaught_error():
+            # An uncaught error is the expected outcome; no CONNECTION_STATUS is required.
+            return
+
         num_status_messages = len(result.connection_status_messages)
         assert num_status_messages == 1, (
             f"Expected exactly one CONNECTION_STATUS message. Got {num_status_messages}: \n"
@@ -60,7 +73,12 @@ class SourceTestSuiteBase(ConnectorTestSuiteBase):
         self,
         scenario: ConnectorTestScenario,
     ) -> None:
-        """Standard test for `discover`."""
+        """Standard test for `discover`.
+
+        Runs for configs listed under `discovery` in `acceptance-test-config.yml`: `discover`
+        must succeed and return at least one stream.
+        """
+        skip_unless_runs(scenario, "discover")
         if scenario.expected_outcome.expect_exception():
             # If the scenario expects an exception, we can't ensure it specifically would fail
             # in discover, because some discover implementations do not need to make a connection.
@@ -68,12 +86,14 @@ class SourceTestSuiteBase(ConnectorTestSuiteBase):
             pytest.skip("Skipping discover test for scenario that expects an exception.")
             return
 
-        run_test_job(
+        connector_root = self.get_connector_root_dir()
+        discover_result = run_test_job(
             self.create_connector(scenario),
             "discover",
-            connector_root=self.get_connector_root_dir(),
-            test_scenario=scenario,
+            connector_root=connector_root,
+            test_scenario=scenario.with_default_success(),
         )
+        get_discovered_streams(discover_result, connector_root.absolute().name)
 
     def test_spec(self) -> None:
         """Standard test for `spec`.
@@ -106,21 +126,26 @@ class SourceTestSuiteBase(ConnectorTestSuiteBase):
     ) -> None:
         """Run standard `read` test on the connector.
 
-        This test is designed to validate the connector's ability to read data
-        from the source and return records. It first runs a `discover` job to
-        obtain the catalog of streams, and then it runs a `read` job to fetch
+        Runs for configs listed under `basic_read` or `full_refresh` in
+        `acceptance-test-config.yml`. This test is designed to validate the connector's ability
+        to read data from the source and return records. It first runs a `discover` job to
+        obtain the catalog of streams, and then it runs a full-refresh `read` job to fetch
         records from those streams.
         """
+        skip_unless_runs(scenario, "read")
+        connector_root = self.get_connector_root_dir()
         discover_result = run_test_job(
             self.create_connector(scenario),
             "discover",
-            connector_root=self.get_connector_root_dir(),
+            connector_root=connector_root,
             test_scenario=scenario.without_expected_outcome(),
         )
         if scenario.expected_outcome.expect_exception() and discover_result.errors:
             # Failed as expected; we're done.
             return
-        streams = discover_result.catalog.catalog.streams  # type: ignore [reportOptionalMemberAccess, union-attr]
+        if discover_result.errors:
+            raise discover_result.as_exception()
+        streams = get_discovered_streams(discover_result, connector_root.absolute().name)
 
         if scenario.empty_streams:
             # Filter out streams marked as empty in the scenario.
@@ -137,22 +162,95 @@ class SourceTestSuiteBase(ConnectorTestSuiteBase):
                 for stream in streams
             ]
         )
+        read_scenario = scenario.with_default_success()
         result = run_test_job(
             self.create_connector(scenario),
             "read",
-            test_scenario=scenario,
-            connector_root=self.get_connector_root_dir(),
+            test_scenario=read_scenario,
+            connector_root=connector_root,
             catalog=configured_catalog,
         )
 
-        if scenario.expected_outcome.expect_success() and not result.records:
+        if read_scenario.expected_outcome.expect_success() and not result.records:
             raise AssertionError("Expected records but got none.")
+
+    def test_incremental_read(
+        self,
+        scenario: ConnectorTestScenario,
+    ) -> None:
+        """Run an incremental `read` on the connector.
+
+        Runs for configs listed under `incremental` in `acceptance-test-config.yml`. Every
+        discovered stream that supports incremental sync (minus `empty_streams`, and minus
+        streams that need a user-defined cursor the catalog cannot know) is read in incremental
+        mode; the read must finish without errors and emit at least one STATE message.
+        """
+        skip_unless_runs(scenario, "incremental_read")
+        if scenario.expected_outcome.expect_exception():
+            pytest.skip("Skipping incremental read test for scenario that expects an exception.")
+            return
+
+        connector_root = self.get_connector_root_dir()
+        discover_result = run_test_job(
+            self.create_connector(scenario),
+            "discover",
+            connector_root=connector_root,
+            test_scenario=scenario.with_default_success(),
+        )
+        streams = get_discovered_streams(discover_result, connector_root.absolute().name)
+        incremental_streams = [
+            stream
+            for stream in streams
+            if SyncMode.incremental in (stream.supported_sync_modes or [])
+            and (stream.source_defined_cursor or stream.default_cursor_field)
+        ]
+        assert incremental_streams, (
+            f"Config '{scenario.id}' is listed under `incremental` in "
+            "`acceptance-test-config.yml`, but no discovered stream supports incremental sync."
+        )
+
+        if scenario.empty_streams:
+            empty_stream_names = [stream.name for stream in scenario.empty_streams]
+            incremental_streams = [
+                stream for stream in incremental_streams if stream.name not in empty_stream_names
+            ]
+            if not incremental_streams:
+                pytest.skip("Every incremental stream is listed in `empty_streams`.")
+                return
+
+        configured_catalog = ConfiguredAirbyteCatalog(
+            streams=[
+                ConfiguredAirbyteStream(
+                    stream=stream,
+                    sync_mode=SyncMode.incremental,
+                    cursor_field=stream.default_cursor_field,
+                    destination_sync_mode=DestinationSyncMode.append_dedup,
+                )
+                for stream in incremental_streams
+            ]
+        )
+        result = run_test_job(
+            self.create_connector(scenario),
+            "read",
+            test_scenario=scenario.with_default_success(),
+            connector_root=connector_root,
+            catalog=configured_catalog,
+        )
+        assert result.state_messages, (
+            f"Incremental read for config '{scenario.id}' emitted no STATE message. "
+            f"Streams read: {[stream.name for stream in incremental_streams]}"
+        )
 
     def test_fail_read_with_bad_catalog(
         self,
         scenario: ConnectorTestScenario,
     ) -> None:
-        """Standard test for `read` when passed a bad catalog file."""
+        """Standard test for `read` when passed a bad catalog file.
+
+        Runs for configs listed under `basic_read`, `full_refresh` or `incremental` in
+        `acceptance-test-config.yml`.
+        """
+        skip_unless_runs(scenario, "read", "incremental_read")
         invalid_configured_catalog = ConfiguredAirbyteCatalog(
             streams=[
                 # Create ConfiguredAirbyteStream which is deliberately invalid

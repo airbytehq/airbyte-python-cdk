@@ -11,6 +11,9 @@ acceptance_tests:
     tests:
       - config_path: "valid_config.yaml"
         status: "succeed"
+      # Fails spec validation (`pokemon_name` is not in the enum), so `check` must report FAILED.
+      - config_path: "integration_tests/invalid_config.json"
+        status: "failed"
   discovery:
     tests:
       - config_path: "valid_config.yaml"

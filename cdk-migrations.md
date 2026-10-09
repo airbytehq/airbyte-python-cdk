@@ -1,5 +1,49 @@
 # CDK Migration Guide
 
+## Upgrading to the next minor release (unreleased)
+
+This release of the CDK changes which commands the Standard Tests (`airbyte-cdk connector test` and `airbyte-cdk image test`) run for the configs listed in `acceptance-test-config.yml`, and what they assert about the outcome of `check`. The release is a minor one, since only the test harness changes, but the connector test suites of connectors whose configs do not satisfy the new expectations start failing. The connector monorepo installs the `airbyte-cdk` CLI unpinned (`uv tool install --upgrade 'airbyte-cdk[dev]'`), so connector CI picks the new behaviour up with this release, without a per-connector CDK bump.
+
+### Each config runs the command of the section that lists it
+
+Previously only the `spec`, `connection` and `basic_read` sections of `acceptance-test-config.yml` were read, every config listed there ran every test (`check`, `discover` and `read`), and configs listed only under `discovery`, `full_refresh` or `incremental` were never tested. Now every section with a `tests` list contributes its configs, and each config runs the command the Connector Acceptance Tests (CAT) ran it with:
+
+| Section | What the config must do | Tests |
+|---|---|---|
+| `spec` | Validate against the connector's `connectionSpecification` (the CAT `test_config_match_spec` check). | `test_config_matches_spec`, `test_docker_image_build_and_config_matches_spec` |
+| `connection` | Make `check` report the declared `status` (see below). | `test_check`, `test_docker_image_build_and_check` |
+| `discovery` | Make `discover` succeed and return at least one stream. | `test_discover`, `test_docker_image_build_and_discover` |
+| `basic_read`, `full_refresh` | Make a full-refresh `read` of every discovered stream (minus `empty_streams`) succeed and return records. | `test_basic_read`, `test_fail_read_with_bad_catalog`, `test_docker_image_build_and_read` |
+| `incremental` | Make an incremental `read` of every discovered stream that supports it (minus `empty_streams`) succeed and emit at least one `STATE` message. Streams whose cursor is user-defined (no `default_cursor_field`) are left out. | `test_incremental_read`, `test_fail_read_with_bad_catalog`, `test_docker_image_build_and_read` (incremental mode where supported) |
+
+A config listed under several sections runs the union of their commands, and no others: a config listed only under `spec` is no longer run through `check`, and a config listed only under `connection` is no longer read. `ConnectorTestScenario.sections` records where a config is listed and `ConnectorTestScenario.commands` the commands that run for it; a test that does not apply to a config skips with a reason naming its sections. The Docker read test keeps the `--read-scenarios` default (the `config`, `valid_config` and `default` configs), so other configs listed under the read sections are read by `airbyte-cdk connector test` (what the monorepo runs for manifest-only connectors) but not by `airbyte-cdk image test` (what it runs for Python connectors). The Docker read test also no longer fails with an `AttributeError` when the scenario declares `empty_streams`.
+
+### `check` must report the declared status
+
+Previously only an exception or a non-zero exit failed the `check` tests, so a `check` that reported `status: FAILED` passed. Both test paths now assert the reported `CONNECTION_STATUS` against the `status` declared for the config under `connection`, with the same semantics as CAT:
+
+| `status` in `acceptance-test-config.yml` | What `check` must do |
+|---|---|
+| `succeed` | Report a `CONNECTION_STATUS` message with status `SUCCEEDED`. |
+| `failed` | Report a `CONNECTION_STATUS` message with status `FAILED` (gracefully, without raising). |
+| `exception` | Raise: a `TRACE` error must be emitted and no `SUCCEEDED` status may be reported. A `CONNECTION_STATUS` message is not required. |
+| not declared | Treated as `succeed`, matching the CAT default. |
+
+The `succeed` default applies to every command a config runs, not only `check`: for a config without a `status`, `discover` and `read` errors, and a `read` without records, now fail the test (previously they were tolerated unless `status: succeed` was declared explicitly).
+
+Migration steps:
+
+- A config listed under `spec` must validate against the connector's spec: remove the keys the spec no longer declares, or declare them in the spec.
+- A config listed under `connection` without a `status` must now pass `check`. If the config is meant to fail `check`, declare `status: failed`; if its secret has expired, refresh it; if it is no longer used, remove it.
+- A `check` that raises (uncaught exception, non-zero exit) now fails the test for every config that is not declared `status: failed` or `status: exception`, on the in-process path as well as the Docker path.
+- A `status: failed` config whose `check` raises instead of reporting `FAILED` must either be fixed to report its failure gracefully, or be declared as `status: exception` if raising is the intended behaviour.
+- A `status: exception` config whose `check` reports a `CONNECTION_STATUS` without raising must be declared as `status: failed` (or `succeed`).
+- A config listed under `discovery`, `basic_read`, `full_refresh` or `incremental` must make that command succeed: `discover` must return streams, a full-refresh `read` must return records, and an incremental `read` needs at least one stream that supports incremental sync with a source-defined or default cursor, and must emit state. List the streams that legitimately return nothing, or that the config's credentials cannot read, under `empty_streams` (with a `bypass_reason`); move a config whose read is expected to fail out of the read sections, as the read tests carry no failure expectation.
+- Configs listed only under `discovery`, `full_refresh` or `incremental` were never tested before, so expect new failures from expired secrets and stale configs there. Remove the configs that are no longer needed.
+- Python code that inspects `ExpectedOutcome` directly: `ExpectedOutcome.from_status_str("exception")` now returns the new member `EXPECT_UNCAUGHT_ERROR` instead of `EXPECT_EXCEPTION`. `expect_exception()` still returns `True` for both members; use `expect_uncaught_error()` to distinguish them.
+
+Rationale: A `check` that fails is reported as `status: FAILED` in a `CONNECTION_STATUS` message with exit code 0, so an exit-code or exception check cannot detect it. The Standard Tests replaced CAT as the only `check` coverage for most connectors, and without asserting the reported status a connector whose credentials expired, or whose custom components are rejected by the CDK baked into the base image, kept passing. The sections of `acceptance-test-config.yml` name the CAT test each config was written for; running every command for every config would add syncs nobody asked for, running `check` alone would test the wrong thing for most of them, and running nothing left expired secrets and stale configs undetected. Running each config with its own command, with the `succeed` default CAT applied, restores the CAT guarantees in both paths.
+
 ## Upgrading to 7.0.0
 
 [Version 7.0.0](https://github.com/airbytehq/airbyte-python-cdk/releases/tag/v7.0.0) of the CDK migrates the CDK to the Concurrent CDK by removing some of the Declarative CDK concepts that are better expressed in the Concurrent CDK or that are outright incompatible with it. This changes mostly impact the Python implementations although the concept of CustomIncrementalSync has been removed from the declarative language as well.
