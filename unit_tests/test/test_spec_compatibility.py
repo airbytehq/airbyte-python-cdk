@@ -402,9 +402,12 @@ def test_branch_key_does_not_depend_on_property_order() -> None:
 
 
 def test_swapped_auth_method_reads_as_one_removed_and_one_added() -> None:
+    def branch(auth_type: str) -> dict[str, Any]:
+        return {"properties": {"auth_type": {"const": auth_type}}, "required": ["auth_type"]}
+
     comparison = compare_specs(
-        _spec({"credentials": {"oneOf": [{"properties": {"auth_type": {"const": "api_key"}}}]}}),
-        _spec({"credentials": {"oneOf": [{"properties": {"auth_type": {"const": "oauth2.0"}}}]}}),
+        _spec({"credentials": {"oneOf": [branch("api_key")]}}),
+        _spec({"credentials": {"oneOf": [branch("oauth2.0")]}}),
     )
 
     assert comparison.breaking == [
@@ -832,12 +835,17 @@ def _credentials(*branches: dict[str, Any]) -> dict[str, Any]:
     return _spec({"credentials": {"type": "object", "oneOf": list(branches)}})
 
 
-def _branch(title: str, *fields: str, **consts: str) -> dict[str, Any]:
+def _branch(
+    title: str, *fields: str, required: list[str] | None = None, **consts: str
+) -> dict[str, Any]:
     properties: dict[str, Any] = {
         name: {"type": "string", "const": value} for name, value in consts.items()
     }
     properties.update({name: {"type": "string"} for name in fields})
-    return {"title": title, "type": "object", "properties": properties}
+    branch: dict[str, Any] = {"title": title, "type": "object", "properties": properties}
+    if required is not None:
+        branch["required"] = required
+    return branch
 
 
 def test_optional_discriminator_added_beside_the_existing_one_is_compatible() -> None:
@@ -895,9 +903,9 @@ def test_removed_branch_without_a_discriminator_is_breaking() -> None:
 
 
 def test_branches_sharing_a_discriminator_are_told_apart_by_title() -> None:
-    app = _branch("OAuth app", "client_id", auth_type="oauth2.0")
-    token = _branch("OAuth token", "access_token", auth_type="oauth2.0")
-    key = _branch("API key", "api_key", auth_type="api_key")
+    app = _branch("OAuth app", "client_id", required=["client_id"], auth_type="oauth2.0")
+    token = _branch("OAuth token", "access_token", required=["access_token"], auth_type="oauth2.0")
+    key = _branch("API key", "api_key", required=["api_key"], auth_type="api_key")
 
     comparison = compare_specs(_credentials(app, token), _credentials(token, app, key))
 
@@ -909,8 +917,8 @@ def test_branches_sharing_a_discriminator_are_told_apart_by_title() -> None:
 
 def test_renamed_discriminator_is_breaking_even_with_the_same_title() -> None:
     comparison = compare_specs(
-        _credentials(_branch("OAuth", "client_id", auth_type="oauth")),
-        _credentials(_branch("OAuth", "client_id", auth_type="oauth2.0")),
+        _credentials(_branch("OAuth", "client_id", required=["auth_type"], auth_type="oauth")),
+        _credentials(_branch("OAuth", "client_id", required=["auth_type"], auth_type="oauth2.0")),
     )
 
     assert comparison.breaking == [
@@ -929,6 +937,252 @@ def test_anyof_type_branches(current_branches: list[Any], compatible: bool) -> N
     comparison = compare_specs(
         _spec({"page_size": {"anyOf": [{"type": "string"}, {"type": "integer"}]}}),
         _spec({"page_size": {"anyOf": current_branches}}),
+    )
+
+    assert comparison.is_backward_compatible is compatible
+
+
+# oneOf branches that overlap
+
+_KEY_BRANCH = {
+    "properties": {"auth_type": {"const": "key"}, "api_key": {"type": "string"}},
+    "required": ["api_key"],
+}
+_TOKEN_BRANCH = {
+    "properties": {"auth_type": {"const": "tok"}, "token": {"type": "string"}},
+    "required": ["token"],
+}
+
+
+def _one_of(*branches: dict[str, Any], keyword: str = "oneOf") -> dict[str, Any]:
+    return _spec({"credentials": {"type": "object", keyword: list(branches)}})
+
+
+def test_added_oneof_branch_that_matches_existing_configs_is_breaking() -> None:
+    # `{"api_key": "k"}` matched only the first branch; it matches the new one too, and a config
+    # that matches two `oneOf` branches is rejected.
+    loose = {"properties": {"auth_type": {"const": "none"}}}
+
+    comparison = compare_specs(
+        _one_of(_KEY_BRANCH, _TOKEN_BRANCH), _one_of(_KEY_BRANCH, _TOKEN_BRANCH, loose)
+    )
+
+    assert len(comparison.breaking) == 1
+    assert comparison.breaking[0].startswith(
+        "`connectionSpecification.properties.credentials.oneOf[2]` was added and may also match "
+        "existing configs"
+    )
+
+
+@pytest.mark.parametrize(
+    "added",
+    [
+        pytest.param(
+            {"properties": {"refresh_token": {"type": "string"}}, "required": ["refresh_token"]},
+            id="requires-a-field-no-other-branch-declares",
+        ),
+        pytest.param(
+            {"properties": {"auth_type": {"const": "none"}}, "required": ["auth_type"]},
+            id="requires-its-own-discriminator",
+        ),
+    ],
+)
+def test_added_oneof_branch_that_rejects_existing_configs_is_compatible(
+    added: dict[str, Any],
+) -> None:
+    comparison = compare_specs(
+        _one_of(_KEY_BRANCH, _TOKEN_BRANCH), _one_of(_KEY_BRANCH, _TOKEN_BRANCH, added)
+    )
+
+    assert comparison.is_backward_compatible
+    assert comparison.compatible == [
+        "`connectionSpecification.properties.credentials.oneOf[2]` was added"
+    ]
+
+
+def test_added_oneof_branch_pinned_apart_from_branches_that_overlap_without_it_is_compatible() -> (
+    None
+):
+    # No branch requires `filetype`, but a config that leaves it out matches the `jsonl` branch
+    # as well as its own, so the configs that were valid all set it, and the new branch rejects
+    # them. This is the shape of the file-based `format` options.
+    def file_format(filetype: str, **fields: Any) -> dict[str, Any]:
+        return {
+            "title": filetype,
+            "type": "object",
+            "properties": {"filetype": {"type": "string", "const": filetype}, **fields},
+        }
+
+    previous = [
+        file_format("avro", double_as_string={"type": "boolean"}),
+        file_format("csv", delimiter={"type": "string"}),
+        file_format("jsonl"),
+    ]
+
+    comparison = compare_specs(_one_of(*previous), _one_of(*previous, file_format("unstructured")))
+
+    assert comparison.is_backward_compatible
+
+
+def test_added_anyof_branch_only_widens() -> None:
+    loose = {"properties": {"auth_type": {"const": "none"}}}
+
+    comparison = compare_specs(
+        _one_of(_KEY_BRANCH, _TOKEN_BRANCH, keyword="anyOf"),
+        _one_of(_KEY_BRANCH, _TOKEN_BRANCH, loose, keyword="anyOf"),
+    )
+
+    assert comparison.is_backward_compatible
+
+
+def test_oneof_branch_widened_into_another_branch_is_breaking() -> None:
+    # Without its discriminator and its required field, the first branch also matches every
+    # config of the second one.
+    widened_key = {"properties": {"auth_type": {}, "api_key": {"type": "string"}}}
+    tokens = {
+        "properties": {"auth_type": {"const": "tok"}, "token": {"type": "string"}},
+        "required": ["auth_type", "token"],
+    }
+    keys = {**_KEY_BRANCH, "required": ["auth_type", "api_key"]}
+
+    comparison = compare_specs(_one_of(keys, tokens), _one_of(widened_key, tokens))
+
+    assert (
+        "`connectionSpecification.properties.credentials.oneOf[0]` may now also match the configs "
+        "of `connectionSpecification.properties.credentials.oneOf[1]`, which `oneOf` then rejects"
+    ) in comparison.breaking
+
+
+def test_removed_discriminator_of_a_oneof_branch_is_breaking() -> None:
+    keys = {**_KEY_BRANCH, "required": ["auth_type"]}
+    tokens = {**_TOKEN_BRANCH, "required": ["auth_type"]}
+    keys_without_const = {"properties": {"auth_type": {}, "api_key": {"type": "string"}}}
+
+    comparison = compare_specs(_one_of(keys, tokens), _one_of(keys_without_const, tokens))
+
+    assert comparison.breaking == [
+        "`connectionSpecification.properties.credentials.oneOf[0]` may now also match the configs "
+        "of `connectionSpecification.properties.credentials.oneOf[1]`, which `oneOf` then rejects"
+    ]
+
+
+def test_oneof_branch_that_keeps_its_discriminator_is_compatible() -> None:
+    keys = {**_KEY_BRANCH, "required": ["auth_type", "api_key"]}
+    tokens = {**_TOKEN_BRANCH, "required": ["auth_type", "token"]}
+    keys_with_optional_key = {**keys, "required": ["auth_type"]}
+
+    comparison = compare_specs(_one_of(keys, tokens), _one_of(keys_with_optional_key, tokens))
+
+    assert comparison.is_backward_compatible
+
+
+# patternProperties
+
+
+@pytest.mark.parametrize(
+    "previous_schema",
+    [
+        pytest.param({}, id="keyword-added"),
+        pytest.param({"patternProperties": {}}, id="pattern-added-to-an-empty-map"),
+        pytest.param(
+            {"patternProperties": {"^y_": {"type": "string"}}}, id="pattern-added-beside-another"
+        ),
+    ],
+)
+def test_added_pattern_property_is_breaking(previous_schema: dict[str, Any]) -> None:
+    patterns = {**previous_schema.get("patternProperties", {}), "^x_": {"type": "integer"}}
+
+    comparison = compare_specs(
+        _spec({"options": {"type": "object", **previous_schema}}),
+        _spec({"options": {"type": "object", "patternProperties": patterns}}),
+    )
+
+    assert not comparison.is_backward_compatible
+
+
+def test_pattern_properties_added_at_its_default_is_compatible() -> None:
+    comparison = compare_specs(
+        _spec({"options": {"type": "object"}}),
+        _spec({"options": {"type": "object", "patternProperties": {}}}),
+    )
+
+    assert comparison.is_backward_compatible
+
+
+def test_config_field_named_pattern_properties_is_a_field() -> None:
+    comparison = compare_specs(
+        _spec({"options": {"type": "object", "properties": {}}}),
+        _spec({"options": {"type": "object", "properties": {"patternProperties": {}}}}),
+    )
+
+    assert comparison.is_backward_compatible
+
+
+# JSON equality and widenings the generic comparison cannot see
+
+
+@pytest.mark.parametrize(
+    "previous_schema, current_schema",
+    [
+        pytest.param({"enum": [1]}, {"enum": [True]}, id="enum-1-to-true"),
+        pytest.param({"enum": [True]}, {"enum": [1]}, id="enum-true-to-1"),
+        pytest.param({"const": 0}, {"const": False}, id="const-0-to-false"),
+        pytest.param({"enum": [{"a": 1}]}, {"enum": [{"a": True}]}, id="nested-enum"),
+    ],
+)
+def test_booleans_are_not_numbers(
+    previous_schema: dict[str, Any], current_schema: dict[str, Any]
+) -> None:
+    comparison = compare_specs(_spec({"flag": previous_schema}), _spec({"flag": current_schema}))
+
+    assert not comparison.is_backward_compatible
+
+
+def test_integer_and_float_of_the_same_value_are_equal() -> None:
+    assert (
+        compare_specs(
+            _spec({"page_size": {"type": "number", "maximum": 10}}),
+            _spec({"page_size": {"type": "number", "maximum": 10.0}}),
+        )
+        == SpecComparison()
+    )
+
+
+@pytest.mark.parametrize(
+    "keyword, current_value",
+    [
+        pytest.param("additionalProperties", {"type": "string"}, id="additionalProperties"),
+        pytest.param("items", {"type": "string"}, id="items"),
+    ],
+)
+def test_false_relaxed_to_a_schema_is_compatible(keyword: str, current_value: Any) -> None:
+    comparison = compare_specs(
+        _spec({"options": {"type": "object", keyword: False}}),
+        _spec({"options": {"type": "object", keyword: current_value}}),
+    )
+
+    assert comparison.is_backward_compatible
+    assert comparison.compatible == [
+        f"`connectionSpecification.properties.options.{keyword}` relaxed from False to "
+        "{'type': 'string'}"
+    ]
+
+
+@pytest.mark.parametrize(
+    "previous_value, current_value, compatible",
+    [
+        pytest.param(4, 2, True, id="divisor-relaxes"),
+        pytest.param(0.5, 0.25, True, id="float-divisor-relaxes"),
+        pytest.param(2, 4, False, id="multiple-tightens"),
+        pytest.param(4, 3, False, id="unrelated-tightens"),
+    ],
+)
+def test_multiple_of_is_judged_by_divisibility(
+    previous_value: float, current_value: float, compatible: bool
+) -> None:
+    comparison = compare_specs(
+        _spec({"page_size": {"type": "integer", "multipleOf": previous_value}}),
+        _spec({"page_size": {"type": "integer", "multipleOf": current_value}}),
     )
 
     assert comparison.is_backward_compatible is compatible

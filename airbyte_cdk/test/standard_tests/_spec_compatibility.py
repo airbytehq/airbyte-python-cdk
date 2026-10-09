@@ -106,7 +106,7 @@ def compare_specs(previous: Mapping[str, Any], current: Mapping[str, Any]) -> Sp
         current: The `spec` object the version under test emits, as plain JSON.
     """
     comparison = SpecComparison()
-    _diff_node(_compared_part(previous), _compared_part(current), "", None, False, comparison)
+    _diff_node(_compared_part(previous), _compared_part(current), "", None, None, comparison)
     return comparison
 
 
@@ -168,6 +168,9 @@ _KEYWORD_DEFAULTS: dict[str, tuple[Any, ...]] = {
 
 # Keywords with a default whose value describes fields rather than constrains a value.
 _FIELD_KEYWORDS = frozenset({"items", "patternProperties", "properties"})
+
+# Keywords whose value is a schema or a boolean. `false` rejects every value they apply to.
+_SCHEMA_OR_FALSE_KEYS = frozenset({"additionalItems", "additionalProperties", "items"})
 
 _BOUNDS_RELAXED_BY_GROWING = frozenset(
     {"exclusiveMaximum", "maxContains", "maxItems", "maxLength", "maxProperties", "maximum"}
@@ -262,8 +265,26 @@ def _is_keyword_default(key: str, value: Any) -> bool:
 
 
 def _same_json(left: Any, right: Any) -> bool:
-    """JSON equality, which unlike Python's does not equate `false` with `0`."""
-    return isinstance(left, bool) == isinstance(right, bool) and left == right
+    """JSON equality, which unlike Python's does not equate `false` with `0` or `true` with `1`.
+
+    The comparison recurses into objects and arrays, so `{"const": 0}` and `{"const": false}`
+    differ too. `1` and `1.0` are the same JSON number and stay equal.
+    """
+    if isinstance(left, bool) or isinstance(right, bool):
+        return isinstance(left, bool) and isinstance(right, bool) and left == right
+    if isinstance(left, dict) and isinstance(right, dict):
+        return left.keys() == right.keys() and all(
+            _same_json(value, right[key]) for key, value in left.items()
+        )
+    if isinstance(left, list) and isinstance(right, list):
+        return len(left) == len(right) and all(map(_same_json, left, right))
+    if isinstance(left, (dict, list)) or isinstance(right, (dict, list)):
+        return False
+    return bool(left == right)
+
+
+def _contains_json(values: list[Any], value: Any) -> bool:
+    return any(_same_json(value, candidate) for candidate in values)
 
 
 def _is_secret(value: Any) -> bool:
@@ -276,14 +297,19 @@ def _diff_node(
     current: Any,
     path: str,
     key: str | None,
-    is_property_map: bool,
+    property_map: str | None,
     comparison: SpecComparison,
 ) -> None:
-    if previous == current:
+    """Compare two values found under `key`.
+
+    `property_map` names the keyword (`properties`, `patternProperties`, ...) when the values
+    map field names to schemas, and is `None` when they are schemas or other spec objects.
+    """
+    if _same_json(previous, current):
         return
 
     if isinstance(previous, dict) and isinstance(current, dict):
-        _diff_object(previous, current, path, is_property_map, comparison)
+        _diff_object(previous, current, path, property_map, comparison)
         return
 
     if isinstance(previous, list) and isinstance(current, list):
@@ -299,9 +325,10 @@ def _diff_object(
     previous: dict[str, Any],
     current: dict[str, Any],
     path: str,
-    is_property_map: bool,
+    property_map: str | None,
     comparison: SpecComparison,
 ) -> None:
+    is_property_map = property_map is not None
     required_handled = not is_property_map and _diff_required(
         previous.get("required"), current.get("required"), path, comparison
     )
@@ -315,13 +342,13 @@ def _diff_object(
             _record_removed_key(key, previous[key], child_path, is_property_map, comparison)
             continue
 
-        if previous[key] != current[key]:
+        if not _same_json(previous[key], current[key]):
             _diff_member(key, previous[key], current[key], child_path, is_property_map, comparison)
 
     for key in current:
         if key in previous or (required_handled and key == "required"):
             continue
-        _record_added_key(key, current[key], _child_path(path, key), is_property_map, comparison)
+        _record_added_key(key, current[key], _child_path(path, key), property_map, comparison)
 
 
 def _record_removed_key(
@@ -355,12 +382,20 @@ def _record_added_key(
     key: str,
     value: Any,
     child_path: str,
-    is_property_map: bool,
+    property_map: str | None,
     comparison: SpecComparison,
 ) -> None:
     label = _label(child_path)
 
-    if is_property_map or key in _PROPERTY_MAP_KEYS:
+    if property_map == "patternProperties" or (
+        property_map is None and key == "patternProperties" and not _is_keyword_default(key, value)
+    ):
+        # A pattern applies to every field whose name matches it, declared or not, so it can
+        # reject the value of a field that saved configs already set.
+        comparison.breaking.append(
+            f"{label} was added; the existing fields whose names match it must now satisfy it"
+        )
+    elif property_map is not None or key in _PROPERTY_MAP_KEYS:
         comparison.compatible.append(f"{label} was added")
     elif key == _SECRET_KEY:
         comparison.compatible.append(f"{label} was added")
@@ -434,8 +469,17 @@ def _diff_member(
             if isinstance(previous_value, bool) and isinstance(current_value, bool):
                 comparison.breaking.append(f"{label} tightened to {current_value!r}")
                 return
+            if key in _SCHEMA_OR_FALSE_KEYS and previous_value is False:
+                # `false` accepts nothing, so any schema accepts at least as much.
+                comparison.compatible.append(
+                    f"{label} relaxed from False to {_brief(current_value)}"
+                )
+                return
 
         if _is_number(previous_value) and _is_number(current_value):
+            if key == "multipleOf":
+                _diff_multiple_of(previous_value, current_value, label, comparison)
+                return
             if _diff_bound(key, previous_value, current_value, label, comparison):
                 return
 
@@ -444,7 +488,7 @@ def _diff_member(
         current_value,
         child_path,
         key,
-        not is_property_map and key in _PROPERTY_MAP_KEYS,
+        key if not is_property_map and key in _PROPERTY_MAP_KEYS else None,
         comparison,
     )
 
@@ -533,6 +577,20 @@ def _diff_bound(
     return True
 
 
+def _diff_multiple_of(
+    previous_value: float,
+    current_value: float,
+    label: str,
+    comparison: SpecComparison,
+) -> None:
+    """A new `multipleOf` relaxes the old one when it divides it: every multiple of 4 is even."""
+    quotient = previous_value / current_value if current_value else 0.5
+    relaxed = current_value > 0 and abs(quotient - round(quotient)) < 1e-9
+    verb = "relaxed" if relaxed else "changed"
+    message = f"{label} {verb} from {previous_value!r} to {current_value!r}"
+    (comparison.compatible if relaxed else comparison.breaking).append(message)
+
+
 def _is_number(value: Any) -> bool:
     return isinstance(value, (int, float)) and not isinstance(value, bool)
 
@@ -545,15 +603,15 @@ def _diff_list(
     comparison: SpecComparison,
 ) -> None:
     if key in _BRANCH_KEYS:
-        _diff_branches(previous, current, path, comparison)
+        _diff_branches(previous, current, path, exclusive=key == "oneOf", comparison=comparison)
         return
 
     if key in _SET_VALUED_KEYS:
         for entry in previous:
-            if entry not in current:
+            if not _contains_json(current, entry):
                 comparison.breaking.append(f"{_label(path)} no longer allows {_brief(entry)}")
         for entry in current:
-            if entry not in previous:
+            if not _contains_json(previous, entry):
                 comparison.compatible.append(f"{_label(path)} also allows {_brief(entry)}")
         return
 
@@ -562,7 +620,7 @@ def _diff_list(
         if index >= len(current):
             comparison.breaking.append(f"{_label(child_path)} was removed")
             continue
-        _diff_node(previous_entry, current[index], child_path, key, False, comparison)
+        _diff_node(previous_entry, current[index], child_path, key, None, comparison)
 
     for index in range(len(previous), len(current)):
         comparison.breaking.append(
@@ -574,6 +632,8 @@ def _diff_branches(
     previous: list[Any],
     current: list[Any],
     path: str,
+    *,
+    exclusive: bool,
     comparison: SpecComparison,
 ) -> None:
     """Compare `oneOf`/`anyOf` branches, matched by what identifies them.
@@ -581,6 +641,12 @@ def _diff_branches(
     Reordering auth methods is a common, harmless edit; compared by position it would read as
     every field of both branches being replaced. A previous branch without a partner is reported
     as removed, and a current one as added. Paths follow each version's own ordering.
+
+    Under `oneOf` (`exclusive`), a config must match exactly one branch, so a branch that can
+    also match the configs of another previous branch rejects them. An added branch is
+    compatible only if `_excludes` proves it rejects the configs of every previous branch, and a
+    matched branch is breaking if it loses that proof for a previous branch it had it for, for
+    example when its discriminating `const` is removed. Under `anyOf` an added branch only widens.
     """
     partners = _match_branches(previous, current)
 
@@ -589,12 +655,107 @@ def _diff_branches(
         if partner is None:
             comparison.breaking.append(f"{_label(f'{path}[{index}]')} was removed")
             continue
-        _diff_node(branch, current[partner], f"{path}[{index}]", None, False, comparison)
+        branch_path = f"{path}[{index}]"
+        _diff_node(branch, current[partner], branch_path, None, None, comparison)
+        if exclusive:
+            overlapped = [
+                _label(f"{path}[{other_index}]")
+                for other_index, other in enumerate(previous)
+                if other_index != index
+                and _excludes(branch, previous, other_index)
+                and not _excludes(current[partner], previous, other_index)
+            ]
+            if overlapped:
+                comparison.breaking.append(
+                    f"{_label(branch_path)} may now also match the configs of "
+                    f"{', '.join(overlapped)}, which `oneOf` then rejects"
+                )
 
     matched = set(partners.values())
     for index in range(len(current)):
-        if index not in matched:
-            comparison.compatible.append(f"{_label(f'{path}[{index}]')} was added")
+        if index in matched:
+            continue
+        branch_path = _label(f"{path}[{index}]")
+        if exclusive and not all(
+            _excludes(current[index], previous, other_index) for other_index in range(len(previous))
+        ):
+            comparison.breaking.append(
+                f"{branch_path} was added and may also match existing configs, which `oneOf` "
+                "then rejects; give it a required field, or a required discriminating `const`, "
+                "that the other branches do not share"
+            )
+        else:
+            comparison.compatible.append(f"{branch_path} was added")
+
+
+def _excludes(branch: Any, previous: list[Any], other_index: int) -> bool:
+    """Whether `branch` provably rejects every valid config of the previous branch `other_index`.
+
+    It does when it requires a field that the other branch does not declare, so the other
+    branch's configs do not set it, or when both pin a field to different values. A pinned
+    field that neither branch requires still tells them apart if the other branch's configs
+    that leave it out were invalid already, because another previous branch matched them too.
+    Configs are assumed to set only the fields their branch declares, as the UI writes them.
+    """
+    other = previous[other_index]
+    if not isinstance(branch, dict) or not isinstance(other, dict):
+        return False
+    required = _required_names(branch)
+    other_required = _required_names(other)
+    if any(name not in _property_schemas(other) for name in required):
+        return True
+
+    other_pinned = _discriminators(other)
+    for name, value in _discriminators(branch).items():
+        if name not in other_pinned or _same_json(value, other_pinned[name]):
+            continue
+        if name in required or name in other_required:
+            return True
+        if any(
+            _matches_configs_without(candidate, other, name)
+            for candidate_index, candidate in enumerate(previous)
+            if candidate_index != other_index
+        ):
+            return True
+    return False
+
+
+def _matches_configs_without(candidate: Any, branch: dict[str, Any], name: str) -> bool:
+    """Whether `candidate` accepts every config of `branch` that does not set the field `name`.
+
+    Only a candidate that constrains nothing but the fields it declares is considered. Each of
+    them must be one that `branch` does not declare either, or declares with the same schema.
+    """
+    if not isinstance(candidate, dict):
+        return False
+    for key, value in candidate.items():
+        if _is_annotation(key) or key in ("properties", "required"):
+            continue
+        if key == "type" and "object" in _as_type_set(value):
+            continue
+        if key == "additionalProperties" and _is_keyword_default(key, value):
+            continue
+        return False
+
+    if not _required_names(candidate) <= _required_names(branch) - {name}:
+        return False
+    fields = _property_schemas(branch)
+    return all(
+        field_name == name or field_name not in fields or _same_json(schema, fields[field_name])
+        for field_name, schema in _property_schemas(candidate).items()
+    )
+
+
+def _property_schemas(branch: dict[str, Any]) -> dict[str, Any]:
+    properties = branch.get("properties")
+    return properties if isinstance(properties, dict) else {}
+
+
+def _required_names(branch: dict[str, Any]) -> set[str]:
+    required = branch.get("required")
+    if not isinstance(required, list) or not _is_name_list(required):
+        return set()
+    return set(required)
 
 
 def _match_branches(previous: list[Any], current: list[Any]) -> dict[int, int]:
@@ -632,7 +793,8 @@ def _branch_pair_rank(previous: Any, current: Any, distance: int) -> tuple[Any, 
     current_discriminators = _discriminators(current)
     shared_names = previous_discriminators.keys() & current_discriminators.keys()
     agreeing = sum(
-        previous_discriminators[name] == current_discriminators[name] for name in shared_names
+        _same_json(previous_discriminators[name], current_discriminators[name])
+        for name in shared_names
     )
     disagreeing = len(shared_names) - agreeing
     if disagreeing and not agreeing:
@@ -643,7 +805,7 @@ def _branch_pair_rank(previous: Any, current: Any, distance: int) -> tuple[Any, 
     same_title = isinstance(previous_title, str) and previous_title == current_title
 
     return (
-        previous == current,
+        _same_json(previous, current),
         agreeing - disagreeing,
         same_title,
         _similarity(_branch_features(previous), _branch_features(current)),
