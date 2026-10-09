@@ -1,6 +1,7 @@
 # Copyright (c) 2026 Airbyte, Inc., all rights reserved.
 """Unit tests for the credential-free spec lint in `airbyte_cdk.test.standard_tests._spec_lint`."""
 
+import base64
 import json
 from pathlib import Path
 from typing import Any
@@ -14,12 +15,14 @@ from airbyte_cdk.test.standard_tests import docker_base
 from airbyte_cdk.test.standard_tests._spec_lint import (
     assert_no_secrets_in_output,
     assert_spec_is_valid,
+    find_config_secrets,
     find_leaked_secrets,
     find_secret_marking_errors,
     get_single_spec,
     is_secret_property_name,
 )
 from airbyte_cdk.test.standard_tests.docker_base import DockerConnectorTestSuite
+from airbyte_cdk.utils.airbyte_secrets_utils import get_secrets
 
 SECRET = "sk_live_51UWRAsFuIbeygfIY3"
 POKEAPI_CONNECTOR_ROOT = (
@@ -197,9 +200,13 @@ def test_get_single_spec_returns_the_spec() -> None:
 
 
 @pytest.mark.parametrize(
-    "message",
+    "message, location",
     [
-        pytest.param(_log(f"Calling https://api.example.com/?key={SECRET}"), id="log"),
+        pytest.param(
+            _log(f"Calling https://api.example.com/?key={SECRET}"),
+            "message #1 (LOG)",
+            id="log",
+        ),
         pytest.param(
             {
                 "type": "TRACE",
@@ -209,6 +216,7 @@ def test_get_single_spec_returns_the_spec() -> None:
                     "error": {"message": "Request failed", "stack_trace": f"token={SECRET}"},
                 },
             },
+            "message #1 (TRACE)",
             id="trace_stack_trace",
         ),
         pytest.param(
@@ -216,16 +224,58 @@ def test_get_single_spec_returns_the_spec() -> None:
                 "type": "CONNECTION_STATUS",
                 "connectionStatus": {"status": "FAILED", "message": f"401 for {SECRET}"},
             },
+            "message #1 (CONNECTION_STATUS)",
             id="connection_status",
+        ),
+        pytest.param(
+            {
+                "type": "RECORD",
+                "record": {"stream": "users", "data": {"token": SECRET}, "emitted_at": 0},
+            },
+            "message #1 (RECORD, stream `users`)",
+            id="record_names_the_stream",
+        ),
+        pytest.param(
+            {
+                "type": "TRACE",
+                "trace": {
+                    "type": "ERROR",
+                    "emitted_at": 0,
+                    "error": {
+                        "message": f"Failed with {SECRET}",
+                        "stream_descriptor": {"name": "users"},
+                    },
+                },
+            },
+            "message #1 (TRACE, stream `users`)",
+            id="trace_names_the_stream",
+        ),
+        pytest.param(
+            {
+                "type": "RECORD",
+                "record": {"stream": f"users_{SECRET}", "data": {}, "emitted_at": 0},
+            },
+            "message #1 (RECORD)",
+            id="stream_name_holding_a_secret_is_left_out",
         ),
     ],
 )
-def test_find_leaked_secrets_reports_masked_excerpt(message: dict[str, Any]) -> None:
-    leaks = find_leaked_secrets(_output(message), [SECRET])
-    assert len(leaks) == 1
-    assert leaks[0].startswith(message["type"])
-    assert "****" in leaks[0]
-    assert SECRET not in leaks[0]
+def test_find_leaked_secrets_reports_where_without_any_text(
+    message: dict[str, Any], location: str
+) -> None:
+    leaks = find_leaked_secrets(_output(message), [("/api_key", SECRET)])
+    assert leaks == [f"`/api_key` in {location}"]
+
+
+def test_find_leaked_secrets_numbers_messages_and_groups_pointers() -> None:
+    other_secret = "pk_test_99887766554433"
+    output = _output(
+        _log("starting"),
+        _log(f"{SECRET} and {other_secret}"),
+        _log(f"again {SECRET}"),
+    )
+    leaks = find_leaked_secrets(output, [("/b", other_secret), ("/a", SECRET)])
+    assert leaks == ["`/a`, `/b` in message #2 (LOG)", "`/a` in message #3 (LOG)"]
 
 
 def test_find_leaked_secrets_ignores_control_messages() -> None:
@@ -237,7 +287,7 @@ def test_find_leaked_secrets_ignores_control_messages() -> None:
             "connectorConfig": {"config": {"api_key": SECRET}},
         },
     }
-    assert find_leaked_secrets(_output(control_message), [SECRET]) == []
+    assert find_leaked_secrets(_output(control_message), [("/api_key", SECRET)]) == []
 
 
 @pytest.mark.parametrize(
@@ -246,25 +296,235 @@ def test_find_leaked_secrets_ignores_control_messages() -> None:
         pytest.param("123", "Fetched 123 records", id="too_short"),
         pytest.param("invalid_api_key", "Got invalid_api_key from the API", id="no_digit"),
         pytest.param(True, "True", id="boolean"),
-        pytest.param({"nested": SECRET}, SECRET, id="not_a_scalar"),
+        pytest.param(None, "None", id="none"),
     ],
 )
 def test_find_leaked_secrets_skips_values_that_match_by_coincidence(secret: Any, text: str) -> None:
-    assert find_leaked_secrets(_output(_log(text)), [secret]) == []
+    assert find_leaked_secrets(_output(_log(text)), [("/secret", secret)]) == []
 
 
-def test_leak_excerpt_masks_overlapping_secrets_whole() -> None:
-    short_secret = "abc12345"
-    long_secret = short_secret + "6789xyz"
-    leaks = find_leaked_secrets(_output(_log(f"token={long_secret}")), [short_secret, long_secret])
-    assert leaks == ["LOG message: token=****"]
+_PRIVATE_KEY = (
+    "-----BEGIN PRIVATE KEY-----\n"
+    "MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQC7VJTUt9Us8cKj\n"
+    "MzEfYyjiWA4R4/M2bS1GB4t7NXp98C3SC6dVMvDuictGeurT8jNbvJZHtCSuYEvu\n"
+    'NMoSfm76oqFvAp8Gy0iz5sxjZmSnXyCdPEovGhLa0VzMaQ8s+CLOyS56YyCFGeJZ"q\n'
+    "-----END PRIVATE KEY-----\n"
+)
+_SERVICE_ACCOUNT_INFO = json.dumps(
+    {
+        "type": "service_account",
+        "project_id": "test-project-424242",
+        "private_key_id": "0f1e2d3c4b5a69788796a5b4c3d2e1f0aabbccdd",
+        "private_key": _PRIVATE_KEY,
+        "client_email": "airbyte@test-project-424242.iam.gserviceaccount.com",
+    }
+)
+_MULTI_LINE_SECRETS_SPEC = _spec(
+    {
+        "api_key": {"type": "string", "airbyte_secret": True},
+        "credentials": {
+            "type": "object",
+            "properties": {
+                "private_key": {"type": "string", "airbyte_secret": True},
+                "service_account_info": {"type": "string", "airbyte_secret": True},
+            },
+        },
+    }
+)
 
 
-def test_leak_excerpt_is_centered_on_the_leak() -> None:
-    text = "x" * 1000 + SECRET + "y" * 1000
-    [leak] = find_leaked_secrets(_output(_log(text)), [SECRET])
-    assert "****" in leak
-    assert len(leak) < 400
+def _secret_fragments() -> list[str]:
+    """Return every piece of the multi-line secrets that the failure text must not contain."""
+    fragments: list[str] = []
+    for secret in (_PRIVATE_KEY, _SERVICE_ACCOUNT_INFO):
+        fragments += [
+            secret,
+            json.dumps(secret)[1:-1],
+            repr(secret)[1:-1],
+            base64.b64encode(secret.encode()).decode(),
+        ]
+    fragments += [line for line in _PRIVATE_KEY.splitlines() if "PRIVATE KEY" not in line]
+    fragments += [line for line in json.dumps(_PRIVATE_KEY)[1:-1].split("\\n") if line]
+    fragments += ["0f1e2d3c4b5a69788796a5b4c3d2e1f0aabbccdd", "test-project-424242"]
+    return fragments
+
+
+@pytest.mark.parametrize(
+    "printed_text, expected_pointers",
+    [
+        pytest.param(
+            lambda config: "bad config: " + json.dumps(config),
+            ["/api_key", "/credentials/private_key", "/credentials/service_account_info"],
+            id="json_dumped_config",
+        ),
+        pytest.param(
+            lambda config: f"bad config: {config!r}",
+            ["/api_key", "/credentials/private_key", "/credentials/service_account_info"],
+            id="repr_of_config",
+        ),
+        pytest.param(
+            lambda config: "key: " + json.dumps(config["credentials"]["private_key"]),
+            ["/credentials/private_key", "/credentials/service_account_info"],
+            id="json_escaped_key_alone",
+        ),
+        pytest.param(
+            lambda config: "line: " + config["credentials"]["private_key"].splitlines()[2],
+            ["/credentials/private_key", "/credentials/service_account_info"],
+            id="single_line_of_the_key",
+        ),
+    ],
+)
+def test_leak_report_contains_no_part_of_a_multi_line_secret(
+    printed_text: Any,
+    expected_pointers: list[str],
+) -> None:
+    config = {
+        "api_key": SECRET,
+        "credentials": {
+            "private_key": _PRIVATE_KEY,
+            "service_account_info": _SERVICE_ACCOUNT_INFO,
+            "auth_type": "service_account",
+        },
+    }
+    text = printed_text(config)
+    output = EntrypointOutput(
+        messages=[
+            json.dumps(
+                {
+                    "type": "CONNECTION_STATUS",
+                    "connectionStatus": {"status": "FAILED", "message": text},
+                }
+            ),
+            json.dumps(_log(base64.b64encode(_PRIVATE_KEY.encode()).decode())),
+        ],
+    )
+    with pytest.raises(AssertionError) as error:
+        assert_no_secrets_in_output(
+            output,
+            spec=ConnectorSpecification(connectionSpecification=_MULTI_LINE_SECRETS_SPEC),
+            config=config,
+            verb="check",
+            connector_name="source-test",
+        )
+
+    failure_text = str(error.value)
+    pointers = ", ".join(f"`{pointer}`" for pointer in expected_pointers)
+    assert f"{pointers} in message #1 (CONNECTION_STATUS)" in failure_text
+    assert "message #2" not in failure_text, "base64 is not searched, so it is not reported"
+    for fragment in _secret_fragments():
+        assert fragment not in failure_text
+    for line in failure_text.splitlines()[1:]:
+        assert line.startswith("`/"), line
+
+
+_ONESIGNAL_STYLE_SPEC = _spec(
+    {
+        "user_auth_key": {"type": "string", "airbyte_secret": True},
+        "applications": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "app_id": {"type": "string"},
+                    "app_api_key": {"type": "string", "airbyte_secret": True},
+                },
+            },
+        },
+    }
+)
+
+
+@pytest.mark.parametrize(
+    "spec, config, expected",
+    [
+        pytest.param(
+            _ONESIGNAL_STYLE_SPEC,
+            {
+                "user_auth_key": "uak_0000000000000001",
+                "applications": [
+                    {"app_id": "app-1", "app_api_key": "key_0000000000000001"},
+                    {"app_id": "app-2", "app_api_key": "key_0000000000000002"},
+                ],
+            },
+            [
+                ("/user_auth_key", "uak_0000000000000001"),
+                ("/applications/0/app_api_key", "key_0000000000000001"),
+                ("/applications/1/app_api_key", "key_0000000000000002"),
+            ],
+            id="secrets_in_array_items",
+        ),
+        pytest.param(
+            _spec(
+                {
+                    "auth": {
+                        "anyOf": [
+                            {"type": "object", "properties": {"token": {"airbyte_secret": True}}},
+                            {"type": "object", "properties": {"user": {"type": "string"}}},
+                        ],
+                        "allOf": [
+                            {"properties": {"password": {"airbyte_secret": True}}},
+                        ],
+                    },
+                }
+            ),
+            {"auth": {"token": "t-1", "password": "p-1", "user": "u"}},
+            [("/auth/token", "t-1"), ("/auth/password", "p-1")],
+            id="any_of_and_all_of_variants",
+        ),
+        pytest.param(
+            _spec({"a/b": {"type": "string", "airbyte_secret": True}}),
+            {"a/b": "s-1"},
+            [("/a~1b", "s-1")],
+            id="pointer_is_escaped",
+        ),
+        pytest.param(
+            _spec({"headers": {"type": "object", "airbyte_secret": True}}),
+            {"headers": {"X-Token": "tok-1", "extra": ["tok-2"]}},
+            [
+                ("/headers", "X-Token"),
+                ("/headers", "tok-1"),
+                ("/headers", "extra"),
+                ("/headers", "tok-2"),
+            ],
+            id="secret_object_never_names_its_keys",
+        ),
+    ],
+)
+def test_find_config_secrets(
+    spec: dict[str, Any], config: dict[str, Any], expected: list[tuple[str, Any]]
+) -> None:
+    assert find_config_secrets(spec, config) == expected
+
+
+@pytest.mark.parametrize(
+    "spec, config",
+    [
+        pytest.param(_ONESIGNAL_STYLE_SPEC, {"user_auth_key": "a", "applications": []}, id="items"),
+        pytest.param(
+            _spec(
+                {
+                    "credentials": {
+                        "type": "object",
+                        "oneOf": [
+                            {"properties": {"client_secret": {"airbyte_secret": True}}},
+                            {"properties": {"api_key": {"airbyte_secret": True}}},
+                        ],
+                    },
+                    "password": {"type": "string", "airbyte_secret": True},
+                }
+            ),
+            {"credentials": {"api_key": "k"}, "password": "p"},
+            id="one_of",
+        ),
+        pytest.param(_MULTI_LINE_SECRETS_SPEC, {"api_key": "k", "credentials": {}}, id="nested"),
+    ],
+)
+def test_find_config_secrets_finds_every_runtime_secret(
+    spec: dict[str, Any], config: dict[str, Any]
+) -> None:
+    """Every value the runtime log filter masks is also searched for in the output."""
+    found = {value for _, value in find_config_secrets(spec, config)}
+    assert set(get_secrets(spec, config)) <= found
 
 
 def test_assert_no_secrets_in_output_reads_secret_paths_from_the_spec() -> None:
@@ -346,6 +606,21 @@ def test_docker_spec_test_lints_the_spec(monkeypatch: pytest.MonkeyPatch) -> Non
         )
 
 
+_SECRET_SPEC_MESSAGE = _spec_message({"api_key": {"type": "string", "airbyte_secret": True}})
+
+
+def _connection_status(status: str, message: str) -> dict[str, Any]:
+    return {"type": "CONNECTION_STATUS", "connectionStatus": {"status": status, "message": message}}
+
+
+def _run_docker_check(scenario: ConnectorTestScenario) -> None:
+    _DockerSuite().test_docker_image_build_and_check(
+        scenario=scenario,
+        connector_image_override="source-test:dev",
+        connector_base_image_override=None,
+    )
+
+
 @pytest.mark.parametrize(
     "status_message, should_pass",
     [
@@ -358,25 +633,12 @@ def test_docker_check_test_fails_when_check_prints_a_secret(
     status_message: str,
     should_pass: bool,
 ) -> None:
-    secret_spec = _spec_message({"api_key": {"type": "string", "airbyte_secret": True}})
-    check_output = _output(
-        {
-            "type": "CONNECTION_STATUS",
-            "connectionStatus": {"status": "FAILED", "message": status_message},
-        }
-    )
-    _fake_docker(monkeypatch, {"spec": _output(secret_spec), "check": check_output})
+    check_output = _output(_connection_status("FAILED", status_message))
+    _fake_docker(monkeypatch, {"spec": _output(_SECRET_SPEC_MESSAGE), "check": check_output})
     scenario = ConnectorTestScenario(config_dict={"api_key": SECRET}, status="failed")
 
-    def run_check() -> None:
-        _DockerSuite().test_docker_image_build_and_check(
-            scenario=scenario,
-            connector_image_override="source-test:dev",
-            connector_base_image_override=None,
-        )
-
     if should_pass:
-        run_check()
+        _run_docker_check(scenario)
     else:
         with pytest.raises(AssertionError, match="printed secret values"):
-            run_check()
+            _run_docker_check(scenario)

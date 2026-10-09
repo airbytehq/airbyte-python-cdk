@@ -12,10 +12,10 @@ import json
 import re
 from collections.abc import Iterable, Iterator, Mapping
 from typing import Any
+from urllib.parse import quote
 
 from airbyte_cdk.models import AirbyteMessageSerializer, ConnectorSpecification, Type
 from airbyte_cdk.test.entrypoint_wrapper import EntrypointOutput
-from airbyte_cdk.utils.airbyte_secrets_utils import get_secrets
 
 SECRET_PROPERTY_NAMES = frozenset(
     {
@@ -59,8 +59,7 @@ secret property name in the connector fleet.
 
 _SECRET_CAPABLE_TYPES = {"string", "integer", "number"}
 
-_MASK = "****"
-_EXCERPT_CONTEXT = 150
+_COMBINATORS = ("oneOf", "anyOf", "allOf")
 
 _MIN_LEAK_CHECK_LENGTH = 8
 """Secret values shorter than this are not searched for in the output.
@@ -187,6 +186,114 @@ def assert_spec_is_valid(spec: ConnectorSpecification, *, connector_name: str) -
     )
 
 
+def _pointer_token(name: str) -> str:
+    return name.replace("~", "~0").replace("/", "~1")
+
+
+def _scalars(value: Any) -> Iterator[Any]:
+    """Yield every scalar inside a JSON-like value, mapping keys included."""
+    if isinstance(value, Mapping):
+        for key, item in value.items():
+            yield key
+            yield from _scalars(item)
+    elif isinstance(value, list):
+        for item in value:
+            yield from _scalars(item)
+    elif value is not None:
+        yield value
+
+
+def _iter_config_secrets(
+    schema: Any,
+    config: Any,
+    pointer: str = "",
+) -> Iterator[tuple[str, Any]]:
+    """Yield `(config_pointer, value)` for each value in `config` that `schema` marks secret.
+
+    The pointer is built from spec property names and array indices only, never from config
+    keys or values, so it is safe to print. Every scalar inside a secret object or array is
+    yielded under the pointer of that object or array.
+    """
+    if not isinstance(schema, Mapping):
+        return
+    if schema.get("airbyte_secret") is True:
+        for value in _scalars(config):
+            yield pointer, value
+
+    properties = schema.get("properties")
+    if isinstance(properties, Mapping) and isinstance(config, Mapping):
+        for name, property_schema in properties.items():
+            if name in config:
+                yield from _iter_config_secrets(
+                    property_schema, config[name], f"{pointer}/{_pointer_token(name)}"
+                )
+
+    for keyword in _COMBINATORS:
+        variants = schema.get(keyword)
+        if isinstance(variants, list):
+            for variant in variants:
+                yield from _iter_config_secrets(variant, config, pointer)
+
+    items = schema.get("items")
+    if isinstance(items, Mapping) and isinstance(config, list):
+        for index, item in enumerate(config):
+            yield from _iter_config_secrets(items, item, f"{pointer}/{index}")
+
+
+def find_config_secrets(
+    connection_specification: Mapping[str, Any],
+    config: Mapping[str, Any],
+) -> list[tuple[str, Any]]:
+    """Return `(config_pointer, value)` for every `airbyte_secret` value in `config`.
+
+    Unlike `airbyte_cdk.utils.airbyte_secrets_utils.get_secrets`, which the CDK uses to mask
+    logs at runtime, this also walks array `items` and every `anyOf`/`allOf`/`oneOf` variant,
+    so it finds a secret in an array of objects, such as one API key per account. It finds
+    every value `get_secrets` finds for the spec shapes connectors use.
+    """
+    return list(dict.fromkeys(_iter_config_secrets(connection_specification, config)))
+
+
+def _is_searchable(value: str) -> bool:
+    return len(value) >= _MIN_LEAK_CHECK_LENGTH and re.search(r"\d", value) is not None
+
+
+def _secret_variants(secret: Any) -> set[str]:
+    """Return every form of `secret` worth searching for in the output.
+
+    Besides the literal value, a secret shows up JSON-escaped when a connector dumps its
+    config, `repr`-escaped when it formats a Python object, and URL-encoded in a logged URL.
+    Each line of a multi-line secret, such as a PEM private key, is searched on its own too.
+    Only values of at least `_MIN_LEAK_CHECK_LENGTH` characters that contain a digit are
+    kept: shorter or word-like values, such as the `invalid_api_key` placeholders found in
+    test configs, appear in ordinary output by coincidence.
+    """
+    if isinstance(secret, bool) or not isinstance(secret, (str, int, float)):
+        return set()
+    value = str(secret)
+    if not _is_searchable(value):
+        return set()
+    variants = {value, json.dumps(value)[1:-1], repr(value)[1:-1], quote(value, safe="")}
+    variants.update(line for line in re.split(r"\r?\n|\\n", value) if _is_searchable(line))
+    return variants
+
+
+def _stream_name(message: Mapping[str, Any]) -> str | None:
+    """Return the name of the stream a serialized message is about, if any."""
+    record = message.get("record")
+    if isinstance(record, Mapping) and isinstance(record.get("stream"), str):
+        return str(record["stream"])
+    for value in message.values():
+        if isinstance(value, Mapping):
+            descriptor = value.get("stream_descriptor")
+            if isinstance(descriptor, Mapping) and isinstance(descriptor.get("name"), str):
+                return str(descriptor["name"])
+            nested_name = _stream_name(value)
+            if nested_name is not None:
+                return nested_name
+    return None
+
+
 def _string_values(value: Any) -> Iterator[str]:
     """Yield every string found in a JSON-like value, recursively."""
     if isinstance(value, str):
@@ -199,59 +306,58 @@ def _string_values(value: Any) -> Iterator[str]:
             yield from _string_values(item)
 
 
-def _searchable_secrets(secrets: Iterable[Any]) -> list[str]:
-    """Return the secret values worth searching for in the output.
+def find_leaked_secrets(
+    output: EntrypointOutput,
+    secrets: Iterable[tuple[str, Any]],
+) -> list[str]:
+    """Return one line per place in `output` that contains a secret from `secrets`.
 
-    Only values of at least `_MIN_LEAK_CHECK_LENGTH` characters that contain a digit are
-    kept. Shorter or word-like values, such as the `invalid_api_key` placeholders found in
-    test configs, appear in ordinary output by coincidence.
-    """
-    searchable: list[str] = []
-    for secret in secrets:
-        if isinstance(secret, bool) or not isinstance(secret, (str, int, float)):
-            continue
-        value = str(secret)
-        if len(value) >= _MIN_LEAK_CHECK_LENGTH and re.search(r"\d", value):
-            searchable.append(value)
-    return searchable
-
-
-def _leak_excerpt(text: str, secrets: Iterable[Any]) -> str:
-    """Return an excerpt of `text` around its first secret, with every secret masked.
-
-    Secrets are masked longest first so that a secret containing another one is masked whole,
-    and before the excerpt is cut so that the cut cannot expose part of a secret.
-    """
-    secret_values = sorted(
-        {str(secret) for secret in secrets if secret and not isinstance(secret, bool)},
-        key=len,
-        reverse=True,
-    )
-    for secret in secret_values:
-        text = text.replace(secret, _MASK)
-    start = max(text.find(_MASK) - _EXCERPT_CONTEXT, 0)
-    return text[start : start + 2 * _EXCERPT_CONTEXT]
-
-
-def find_leaked_secrets(output: EntrypointOutput, secrets: Iterable[Any]) -> list[str]:
-    """Return a masked excerpt of each message in `output` that contains one of `secrets`.
+    `secrets` holds `(config_pointer, value)` pairs, as `find_config_secrets` returns. A line names the pointers of the secrets found and where they were found: the
+    message number (on the Docker path, the stdout line number), and its type and stream. It
+    never contains any text from the output, so it cannot print a
+    secret in any encoding. The stream name is left out if it overlaps any secret.
 
     CONTROL messages are skipped: a connector config update carries the full config,
     including its secrets, by design.
     """
     secrets = list(secrets)
-    searchable_secrets = _searchable_secrets(secrets)
-    if not searchable_secrets:
+    variants_by_pointer: dict[str, set[str]] = {}
+    for pointer, secret in secrets:
+        if variants := _secret_variants(secret):
+            variants_by_pointer.setdefault(pointer, set()).update(variants)
+    if not variants_by_pointer:
         return []
+    every_secret_form = {str(secret) for _, secret in secrets if str(secret)}.union(
+        *variants_by_pointer.values()
+    )
+
+    def leaked_pointers(text: str) -> list[str]:
+        return [
+            pointer
+            for pointer, variants in variants_by_pointer.items()
+            if any(variant in text for variant in variants)
+        ]
+
+    def describe(pointers: Iterable[str]) -> str:
+        return ", ".join(f"`{pointer}`" for pointer in sorted(set(pointers)))
 
     leaks: list[str] = []
-    for message in output.get_message_iterator():
+    for number, message in enumerate(output.get_message_iterator(), start=1):
         if message.type == Type.CONTROL:
             continue
-        for text in _string_values(AirbyteMessageSerializer.dump(message)):
-            if any(secret in text for secret in searchable_secrets):
-                leaks.append(f"{message.type.value} message: {_leak_excerpt(text, secrets)}")
-                break
+        serialized_message = AirbyteMessageSerializer.dump(message)
+        pointers = [
+            pointer
+            for text in _string_values(serialized_message)
+            for pointer in leaked_pointers(text)
+        ]
+        if not pointers:
+            continue
+        location = message.type.value
+        stream = _stream_name(serialized_message)
+        if stream and not any(form in stream or stream in form for form in every_secret_form):
+            location += f", stream `{stream}`"
+        leaks.append(f"{describe(pointers)} in message #{number} ({location})")
     return leaks
 
 
@@ -264,10 +370,10 @@ def assert_no_secrets_in_output(
     connector_name: str,
 ) -> None:
     """Assert that no `airbyte_secret` value from `config` appears in the connector's output."""
-    secrets = get_secrets(spec.connectionSpecification, config)
+    secrets = find_config_secrets(spec.connectionSpecification, config)
     leaks = find_leaked_secrets(output, secrets)
     assert not leaks, (
         f"`{verb}` for connector '{connector_name}' printed secret values from its config. "
-        "Secrets must never appear in logs, traces or connection status messages:\n"
-        + "\n".join(leaks)
+        "Secrets must never appear in logs, traces or connection status messages. The values "
+        "at these config paths were found in the output:\n" + "\n".join(leaks)
     )
